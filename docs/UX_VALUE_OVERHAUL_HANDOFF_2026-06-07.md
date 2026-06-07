@@ -1,461 +1,233 @@
-# UX Value Overhaul Handoff — 2026-06-07
+# UX Value Overhaul — Handover for Codex
 
-Branch: `ux-overhaul`
+_Updated 2026-06-07 (after a Claude verification+fix session that followed Codex's big pass).
+Self-contained: assume no memory of prior sessions. Read top-to-bottom before editing.
+Supersedes the earlier version of this file (recoverable via git history)._
 
-Purpose: continuation handoff for the risky Noum UX/value revamp. This file captures where the current Codex session stopped, what was learned from the agent council, what has already changed in the dirty worktree, and what Claude should do next.
-
-## Owner brief
-
-The owner is dissatisfied with the app's UX and perceived value: too much text, too much useless information, not enough felt coaching value, not enough reason to return. They want a major overhaul, including team/agent workflow, market research, testers, developers, UX evaluation, iteration, and eventual confidence that Noum can approach the value of a human communications coach without relying on shallow gamification.
-
-Important correction: do not claim Noum "replaces a human coach" in product copy or launch framing yet. Treat it as the long-term ambition. The shippable wedge is narrower and stronger:
-
-> Coach-grade deliberate practice for high-stakes short speaking moments: one short rep, one grounded read, one next move, durable memory, and eventual real-world transfer proof.
-
-## Required context already read
-
-Read and synthesized:
-
-- `AGENTS.md`
-- `docs/VISION.md`
-- `docs/CURRENT_STATE.md`
-- `docs/M15_handoff.md`
-- `docs/UX_VALUE_OVERHAUL_ROADMAP.md`
-- `docs/UX_RENDERED_REVIEW.md`
-- `docs/COACH_PARITY_ROADMAP.md`
-- `.claude/skills/noum-design/SKILL.md`
-- `.claude/skills/noum-design/README.md`
-- `.agents/skills/noum-orchestrator/SKILL.md`
-
-Note: the orchestrator skill points at `.Codex/skills/noum-design/SKILL.md`, but this repo actually has `.claude/skills/noum-design/SKILL.md`.
-
-## Architecture framing
-
-Milestone served: UX value overhaul on top of M15/M25 coaching/value work.
-
-Product pillars supported:
-
-- believable progress
-- personalized coaching
-- pressure fairness
-- proof-backed improvement
-- conversational intelligence
-- real-world transfer
-- return motivation through value, not coercion
-
-State owners to preserve:
-
-- Home: `ContentView`, `HomeSignalGate`, `HomeCoachCard`
-- Sessions/summary: `PracticeSessionStore`, `SummaryView`, `SummaryDataStore`, `PostRepCoachNoteStore`
-- Proof: `ProofMomentService`, `ProofMomentStore`, `GrowthLibraryView`
-- Ratings/progression: `RatingStore`, `RatingEngine`, `BaselineStore`, `SkillProgressionStore`, `PathProgressManager`, `LeagueManager`
-- Recommendations: `RecommendationBiasEngine`, `RecommendationLearningStore`, `CoachingPlanner`, `TrendAnalyzer`
-- Coach memory: `CoachMemoryStore`, `CoachCaseFile`, `CoachContextBuilder`, `CoachCheckInStore`
-- Onboarding: `FirstRunOnboardingManager`, `CoachingOnboardingView`, `CoachingProfileStore`, `NoumApp`
-- Transfer: `BigMomentStore`, `PrepSessionPlanner`, `BigMomentOutcomeInlineCard`
-- Notifications: `NotificationManager`, `NotificationCopy`, `NotificationPrePromptManager`
-
-Do not create duplicate stores or parallel screens for the revamp.
-
-## Agent team created
-
-Agent Teams tooling was available, and `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` was `1`. Five read-only agents were spawned:
-
-- UX teardown lead: `019ea282-f0e7-7323-8c3a-96103dcc1bdc`
-- Market/pre-market lead: `019ea283-0e6c-7f11-a6b7-98378dcff472`
-- QA/accessibility lead: `019ea283-2b3e-75b3-b143-fc49dc8b8a60`
-- Coach-parity/value strategist: `019ea283-4863-7a43-a9d9-ce57bb13a2a2`
-- Implementation architecture lead: `019ea283-68b6-7831-a1fe-cc5eb9f2b57d`
-
-All five completed read-only reports. No subagent edited files.
-
-## Consensus diagnosis
-
-The app's core coaching logic is much stronger than the UX makes it feel. The killer issue is not lack of features. It is hierarchy, trust, and value presentation:
-
-- value is buried under repeated prose and dashboards
-- the user has to interpret metrics instead of receiving a coach's judgment
-- progress currencies compete with each other
-- some reward/motion still fires from broad activity thresholds instead of true improvement crossings
-- first-run still does not force a fast "speak -> honest read" payoff before Home
-- Profile is default-collapsed now, but the disclosure is still a large junk drawer
-- Ask Noum still returns prose strings, so deep context can feel like generic chat
-
-The right direction is subtraction plus a tighter loop:
-
-> Speak -> one evidenced read -> one prescribed next rep -> real pattern movement -> real-event prep/outcome -> coach adapts.
-
-## Market synthesis
-
-Competitors set the baseline expectation:
-
-- Yoodli: AI speech coaching, roleplay, real-time/post-session feedback, enterprise rubrics
-- Orai/Speeko: filler, pacing, tone, lessons, progress charts
-- Poised: discreet real-time meeting coaching
-- Vocal Image/BoldVoice/ELSA: bite-sized daily speech/voice/accent practice
-- Duolingo: retention mechanics, useful only as interaction inspiration, not a product model
-
-Category disappointments Noum must avoid:
-
-- metrics without judgment
-- context-blind filler detection
-- generic repetition
-- cluttered AI surfaces
-- trust/privacy friction around voice data
-- streak/hearts/league gamification drifting away from real learning
-
-Noum's differentiation:
-
-> Evidence-led private communication coaching, grounded in the user's own speech and durable memory.
-
-The most defensible dopamine is not badges. It is "Noum noticed the real thing I said, showed the pattern moving, and gave me the next rep."
-
-Useful sources from the market agent:
-
-- https://yoodli.ai/
-- https://orai.com/
-- https://www.speeko.co/home
-- https://www.poised.com/
-- https://www.vocalimage.app/en/
-- https://apps.apple.com/us/app/boldvoice-accent-training/id1567841142
-- https://arxiv.org/abs/2507.07930
-- https://arxiv.org/abs/2203.16175
-
-## Current dirty worktree reality
-
-The roadmap docs are partly stale because this branch already contains many revamp changes.
-
-Already implemented or mostly implemented in the dirty tree:
-
-- Home gating/collapse via `HomeSignalGate`
-- Home optional override in Settings via `practice.showAllHomeCards`
-- `HomeUtilityStrip`, `DailyChallengeTile`, and `VoiceMetricsCard` are retired from default Home
-- `PostRepVerdictCard` exists and is wired into `SummaryView`
-- Profile default surface is collapsed around identity, coach read, evidence links, and a disclosure
-- `CoachParityReadinessCard` deleted
-- `SocialProfileView.swift`, `SplashScreenView.swift`, `OnboardingHeroView.swift`, and `OnboardingHeroManager.swift` deleted
-- `FirstRunOnboardingManager.swift` added
-- First-run fake loading / splash appears removed
-- Practice picker has recommended hero, "Other ways to practice", and mode expansion copy
-- "3 hearts, no second chances" softened to "Three slips ends the rep"
-- `PracticeMode.suddenDeath.displayLabel` returns "Pressure Drill"
-- pressure result copy no longer says "Time Broke You"
-- fake League/Silver zero-data placement appears improved
-- Path debug controls are `#if DEBUG` plus developer-gated
-- simulated challenge random opponent scoring appears removed
-- Home/summary/profile tests were being added/updated
-
-Still not proven or still risky:
-
-- first-run does not clearly route directly into one short rep before Home
-- summary celebration still appears locally thresholded by score/XP rather than canonical `RewardEngine` `.major`
-- first-rep celebration/share may still reward participation before improvement
-- Ask Noum remains prose-shaped (`ChatOutcome.reply(String)` style), not structured read/evidence/move
-- Profile disclosure still contains rank, arc, peak wall, charts, mode mastery, achievements, coaching evidence, league, social, and stats
-- user-facing "Sudden Death" strings still survive in history/share/daily challenge/deep surfaces
-- `PostRepVerdictCard` CTA buttons need stable accessibility identifiers and integrated proof-failure tests
-- notification copy still may include "Hold your N-day streak" daily reminder language
-- several reduced-motion risks remain in onboarding, summary hero animations, profile numeric transitions, picker selection, and history disclosure
-
-## Current git status summary
-
-At the time of handoff, branch is `ux-overhaul...origin/ux-overhaul`.
-
-The worktree is dirty and broad. Do not revert user/previous-agent changes.
-
-Notable modified/deleted/added files include:
-
-- `Noum/ContentView.swift`
-- `Noum/HomeSignalGate.swift`
-- `Noum/HomeCoachCard.swift`
-- `Noum/SummaryView.swift`
-- `Noum/SummaryCards.swift`
-- `Noum/PostRepVerdictCard.swift` (untracked)
-- `Noum/PracticeModeSelectionView.swift`
-- `Noum/NoumApp.swift`
-- `Noum/FirstRunOnboardingManager.swift` (untracked)
-- `Noum/CoachingOnboardingView.swift`
-- `ProfileView.swift`
-- `Noum/NotificationCopy.swift`
-- `Noum/LeagueManager.swift`
-- `Noum/LeagueView.swift`
-- `Noum/FriendLeaderboardView.swift`
-- `Noum/PathProgressManager.swift`
-- `Noum/PathJourneyView.swift`
-- `NoumTests/NoumTests.swift`
-- `Noum/SocialProfileView.swift` deleted
-- `Noum/SplashScreenView.swift` deleted
-- `Noum/OnboardingHeroView.swift` deleted
-- `Noum/OnboardingHeroManager.swift` deleted
-- `Noum/CoachParityReadinessCard.swift` deleted
-- `.screenshots/2026-06-07_ux-value-overhaul-batch/HANDOFF.md` staged from prior work
-
-There is also a modified `.derived-data-log-0CA5RPJ1`; treat it as generated unless proven otherwise.
-
-## Figma / design tooling
-
-The user mentioned Figma/Canva. During this handoff session:
-
-- Figma plugin was installed successfully.
-- Figma tools are now available via `mcp__codex_apps__figma`.
-- Canva was listed as installable but was not installed.
-
-No Figma file was created yet. If continuing design work, first load Figma guidance as required by the Figma tool, then create either:
-
-- a FigJam workflow map of the council loop, or
-- Figma mockups for the four critical screens: first-run, post-rep verdict, Home, Profile.
-
-Do not block engineering on Figma. Production tokens remain `Noum/DesignSystem.swift` and `Noum/Typography.swift`.
-
-## Recommended workflow from here
-
-Phase 0 — lead only:
-
-- Freeze the current dirty baseline mentally.
-- Run `git status --short --branch`.
-- Inspect all untracked/deleted files before editing.
-- Get a green build before allowing worker agents to edit.
-
-Phase 1 — lead integration:
-
-- Stabilize cross-cutting files: `NoumApp.swift`, `ContentView.swift`, `SummaryView.swift`, `PracticeSupport.swift`, `ProfileView.swift`, `NoumTests.swift`.
-- Confirm deleted files stay deleted unless there is a compile break.
-
-Phase 2 — parallel workers after green build:
-
-- Agent A, Summary proof/value: `SummaryView.swift`, `PostRepVerdictCard.swift`, proof/reward tests only.
-- Agent B, First-run value path: `NoumApp.swift`, `FirstRunOnboardingManager.swift`, `CoachingOnboardingView.swift`, first-run tests only. This is collision-prone; consider serial ownership.
-- Agent C, Profile/Home discipline: `HomeSignalGate.swift`, `HomeCoachCard.swift`, `ProfileView.swift`, no store changes.
-- Agent D, copy/honesty cleanup: `NotificationCopy.swift`, `SessionHistoryView.swift`, `DailyChallenge.swift`, remaining pressure labels.
-- Agent E, QA/screenshot sweep: no code edits; reduced-motion/a11y/screenshot verification.
-
-Merge order:
-
-1. lead baseline/build fixes
-2. pure copy/presentation fixes
-3. Summary reward/proof fixes
-4. first-run routing
-5. Profile/Home cleanup
-6. QA/docs sync
-
-## First sprint
-
-Sprint goal: stabilize the already-started overhaul and make the highest-value loop honest.
-
-Priority 1 — reward ownership:
-
-- Find current summary celebration gate in `SummaryView`.
-- Route celebration through canonical `RewardEngine` / `.major` events only.
-- Add tests:
-  - no full celebration on first rep
-  - no full celebration for score >= 7 alone
-  - no full celebration for XP >= 100 alone
-  - full celebration only on true major crossing
-  - reduced-motion fallback exists
-
-Priority 2 — first-run to first value:
-
-- Confirm `CoachingOnboardingView` save path.
-- After the three-question intake, route directly into one short recommended first rep instead of dismissing to Home.
-- After rep, show honest "first read" via the summary/verdict path.
-- No celebration or parity/verdict overclaim on first rep.
-- Preserve `UI_TESTING` launch behavior.
-
-Priority 3 — proof and verdict safety:
-
-- Ensure `PostRepVerdictCard` displays only transcript-verified proof quotes or deterministic fallback.
-- Add integrated fail-path tests:
-  - rejected AI quote
-  - no transcript
-  - short transcript
-  - provider unavailable
-  - fallback does not fabricate quote
-- Add stable identifiers/hints for verdict CTAs.
-
-Priority 4 — pressure language cleanup:
-
-- Finish user-facing rename from "Sudden Death" to "Pressure Drill" where appropriate.
-- Keep internal enum as `.suddenDeath` if cheaper/safe; do not churn persistence.
-- Audit:
-  - `SessionHistoryView.swift`
-  - `ProfileView.swift`
-  - `DailyChallenge.swift`
-  - `SuddenDeathResultView.swift`
-  - share/export labels
-- Preserve old strings only where they are purely code comments or persistence compatibility.
-
-Priority 5 — profile disclosure discipline:
-
-- Default Profile is much better; the disclosure is now the problem.
-- Break the disclosure into fewer, named destinations or cut surfaces from default entirely.
-- Do not add a "simple mode" toggle.
-- Keep:
-  - rating trajectory
-  - one coach read / next move
-  - growth library / review reps
-  - real transfer loop
-- Demote or cut from the default evidence disclosure:
-  - mode mastery
-  - achievements
-  - league/social
-  - duplicate peak wall/card combinations
-  - internal coaching instrumentation
-
-Priority 6 — notification and motion/a11y:
-
-- Remove remaining loss-aversion daily reminder copy such as "Hold your N-day streak."
-- Add reduced-motion gates where QA flagged:
-  - `CoachingOnboardingView`
-  - `SummaryCards.HeroScoreCard`
-  - `ProfileView` numeric animations
-  - `PracticeModeSelectionView` crutch/pace selection animations
-  - `SessionHistoryView` disclosure animations
-- Check VoiceOver for `LookingAheadCard` and `PostRepVerdictCard` CTAs.
-
-## Test filters to run early
-
-Use exact suite names only after confirming they compile in `NoumTests/NoumTests.swift`.
-
-Suggested focused tests:
-
-- `HomeSignalGateTests`
-- `HomeSignalGateEdgeTests`
-- `HomeBottomShortcutContractTests`
-- `FirstRunFrictionContractTests`
-- `PracticeModeRowExpansionTests`
-- `PracticeModePrescriptionCopyTests`
-- `PostRepVerdictContentTests`
-- `ProofMomentServiceTests`
-- `ProofMomentArchiveTests`
-- `ProfileCollapseContractTests`
-- `SummaryPracticeAgainRouterTests`
-- `SummaryLookingAheadRouterTests`
-- `LookingAheadCardStartCTAContractTests`
-- `NotificationCopyEveningNudgeTests`
-- add/extend daily reminder notification tests
-- add/extend reward ownership tests
-
-Recommended build:
-
-```sh
-xcodebuild build -project Noum.xcodeproj -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -configuration Debug
-```
-
-If the destination name is unavailable, inspect available simulators and use the current booted iPhone simulator.
-
-## Screenshot / QA sweep
-
-After build and focused tests:
-
-- run light screenshot sweep if the local screenshot skill is available
-- capture Home, Practice picker, Summary, Profile, League, Path, onboarding
-- test states:
-  - clean install / no profile
-  - beginner
-  - improving
-  - plateaued
-  - pressure-vulnerable
-  - rated vs unrated
-  - free vs premium
-  - AI configured vs unavailable
-  - Reduce Motion on
-  - Dynamic Type XL and accessibility 3XL
-  - mic granted/denied
-  - notifications denied/not determined/authorized
-
-## Red lines
-
-Do not ship:
-
-- fake progress, fake peers, fake peaks, fake loading, fake AI thinking
-- "replace a human coach" claims
-- unverified "you said..." quotes
-- first-rep celebration as if improvement occurred
-- score/XP celebration not backed by a real crossing
-- hearts/lives framing
-- punish-shame pressure outcomes
-- raw "the user..." coaching rationale in UI
-- empty clinical rubrics foregrounded as relationship
-- paywall before first felt value
-- hidden video/presence analysis without explicit consent
-
-## Final answer requirements reminder
-
-AGENTS.md asks final responses to include:
-
-- Implemented
-- Partially implemented
-- Blocked
-- Assumptions
-- Verification
-- Risks
-
-Be explicit when tests/build/screenshots were not run.
+Branch: **`ux-overhaul`** (off `main`). Status: **clean-builds + runs**; the four
+value screens are clean; the post-rep verdict is verified on-device. ~4 work items remain.
 
 ---
 
-## Update — Claude session (2026-06-07, continuing after Codex)
+## 0. TL;DR — current state
 
-Verified Codex's 179-file change **clean-builds** (BUILD SUCCEEDED, no errors) on the
-iPhone 17 simulator / Xcode 26.3, and the app launches + runs. The `SocialProfileView`
-deletion is safe because Codex extracted its live symbols into `SocialFriendSheets.swift`
-(that deletion broke the build in an earlier Claude session before the extraction).
-Home / Profile / Practice picker look strong (one coach hero / collapsed Profile /
-"Your next rep" Coach-Pick picker).
+- Codex did a large pass (179 files). A Claude session then **verified it actually
+  compiles + runs** (Codex couldn't build), fixed the top honesty gaps, and confirmed
+  the core value screen on the simulator.
+- **Done + verified:** reward ownership (celebration only on a real crossing), first-run
+  routes into the prescribed rep, daily-reminder loss-aversion removed, and the **post-rep
+  verdict renders correctly** (score → 2-sentence read → WIN with inline verified quote →
+  FIX + drill CTA → Pro upsell after value).
+- **Remaining (priority order):** proof/verdict CTA a11y ids · "Sudden Death"→"Pressure
+  Drill" literal rename + reconcile the dirty `Localizable.xcstrings` · Profile *disclosure*
+  redundancy cut · reduced-motion gates · **Ask Noum structured reply** (biggest/riskiest).
 
-### Done + committed this session (branch `ux-overhaul`)
-- **Reward ownership (Priority 1)** — `SummaryView` celebration now gates on a real
-  `SessionFinalizer` crossing via `SummaryView.shouldShowCelebration(hasMilestoneCrossing:score:xpEarned:)`,
-  NOT `score>=7 || xp>=100`. `SessionFinalizer.detectMilestone` emits nothing on rep 1
-  (count milestones start at 10, streak at 3, no PB on rep 1), so first-rep + score/XP
-  are excluded by construction. `RewardOwnershipTests` (passing) pins it. (commit `2b42a16`)
-- **First-run → prescribed rep (Priority 2)** — `CoachingOnboardingView` first-run
-  completion sets `DeepLinkRouter.shared.pending = noum://train` before `dismiss()`, so a
-  new user lands on the picker's Coach Pick, not a cold Home. Settings-edit still just
-  saves. ⚠️ Runtime landing is **logically** verified (the `noum://train`→picker route is
-  proven) but NOT screenshot-verified: the `UI_TESTING_ONBOARDING` harness binds the
-  onboarding cover's `isPresented` to a constant `true`, so it re-presents on dismiss.
-  Verify via the real first-run path (no profile, non-UI_TESTING). (commit `2b42a16`)
-- **Notification loss-aversion (Priority 6, partial)** — `NotificationCopy.dailyReminder`
-  no longer says "Hold your N-day streak" / "your streak is yours to keep"; now
-  invite-framed ("Keep your N-day streak going" / "N days of steady practice").
-  (commit `b2b4cb3`). `streakWarning` was already neutralized in the prior session.
+---
 
-### Still remaining (priority order)
-- **Proof/verdict safety (Priority 3)** — `PostRepVerdictCard` has a card-level a11y id
-  (`summary.postRepVerdict`) but its CTA buttons need stable identifiers; add integrated
-  proof **fail-path** tests (rejected AI quote / no transcript / short transcript →
-  deterministic fallback, never fabricate a "you said…").
-- **Pressure language (Priority 4)** — ~15 user-facing "Sudden Death" literals remain
-  (PathNode, PathProgressManager, WeakAreasCard, GoalJourneyEngine, SummaryView share line
-  ~2169, SuddenDeathHistoryExport, SuddenDeathDifficultyRunsView, DerivedReadsTrend,
-  ForwardPlanService). Rename to "Pressure Drill" (matches `suddenDeath.displayLabel`);
-  keep the enum `.suddenDeath`. ⚠️ The **uncommitted** `Noum/Resources/Localizable.xcstrings`
-  (−194/+93) is likely Codex's in-flight rename — REVIEW before committing (confirm es/fr
-  weren't dropped) or revert; the app builds with it.
-- **Profile disclosure (Priority 5)** — default Profile is clean; the disclosure is the
-  junk drawer. Cut the rating redundancy (`YourArcCard` + `PeakRatingWallCard` +
-  `ProgressionChartsCard` all retell the rating — keep one) and demote ModeMastery /
-  achievements / league / social / speak-offs. (`ProfileView.swift`: disclosure `:437`,
-  progression cards `:523-526`, `leaguePanel :541`, social/speak-off/friends `:1750-1996`.)
-- **Reduced-motion a11y (Priority 6)** — gate animations in CoachingOnboardingView,
-  `SummaryCards.HeroScoreCard`, ProfileView numeric transitions, PracticeModeSelectionView
-  selection, SessionHistoryView disclosure.
-- **Ask Noum structured reply (Iteration 6)** — still prose `ChatOutcome.reply(String)`.
-  Make it read→evidence→move; route every quote through `ProofMomentService`'s
-  verify-in-transcript guard with a TESTED fail path; structure only the post-rep summary
-  if the chat path can't guarantee the guard. Highest trust-risk — do last, feature-flagged.
+## 1. Mission + the shippable wedge
 
-### Verification tooling + discipline (use these)
-- **Binary mtime is the real build gate.** `xcodebuild` can exit 0 without relinking
+Owner: _"UX is the biggest killer — too much text, useless info, not enough felt value,
+not enough reason to return. Major overhaul. Eventually approach a human communications
+coach's value, without shallow gamification."_
+
+**Do NOT claim "replaces a human coach" in product copy/launch.** Long-term ambition only.
+The shippable wedge:
+
+> Coach-grade deliberate practice for high-stakes short speaking moments: one short rep,
+> one grounded read, one next move, durable memory, eventual real-world transfer proof.
+
+**The owner delegated every decision** — decide, implement, verify on the simulator, and
+continue. Don't stop to ask; push until done.
+
+The target loop: **Speak → one evidenced read → one prescribed next rep → real pattern
+movement → real-event prep/outcome → coach adapts.** The fix is overwhelmingly
+subtraction + hierarchy + making value felt, not new features.
+
+---
+
+## 2. ⚠️ Environment + build discipline (READ FIRST — decides what you can do)
+
+- **Building + simulator verification REQUIRE macOS + Xcode 26.3 (local).** If you run in
+  a Linux/cloud sandbox you **cannot build, run, or screenshot** — edit Swift only, and
+  **never claim a change works**; leave build/sim verification to a local run. (Codex's
+  pass shipped uncompiled; the Claude session caught that it nonetheless built.)
+- **Binary mtime is the real build gate.** `xcodebuild` can exit 0 **without relinking**
   (incremental no-op) AND without recompiling files that depend on deleted symbols — a
-  false green. Always confirm `stat -f %m .../Noum.app/Noum` advanced before installing;
-  clean-build risky/deletion changes. Build host must be macOS + Xcode 26.3.
-- **Force-render the post-rep Summary on the sim** via the DEBUG `noum://summary` deep
-  link (`ContentView.consumeDeepLink`, renders from the most-recent seeded session). It
+  *false green* that hides errors and installs stale binaries. **Always confirm the app
+  binary mtime advanced before trusting/installing**; use a **clean build** for risky or
+  deletion-heavy changes.
+- **See the post-rep Summary on the sim** via the DEBUG `noum://summary` deep link
+  (`ContentView.consumeDeepLink`, renders from the most-recent seeded session). It
   re-finalizes the session, so a celebration chain fires — tap through
-  **Session Complete → "View Summary" → "Continue"** to reach the verdict body. See
-  `ScreenshotTour.testCaptureSummary`. Multi-state capture: `UI_TESTING_SEED_PROFILE
-  <beginner|improvingIntermediate|plateauedAdvanced|pressureVulnerable|fillerFree>`.
-- `simctl erase` (not uninstall) for a true cold-start; app-group data survives uninstall.
+  **Session Complete → "View Summary" → "Continue"** to reach the verdict body. The driver
+  is `NoumUITests/ScreenshotTour.testCaptureSummary`.
+- **Multi-state capture:** `UI_TESTING_SEED_PROFILE
+  <beginner|improvingIntermediate|plateauedAdvanced|pressureVulnerable|fillerFree>`;
+  omit seed args for a true cold/empty first-run. `simctl erase` (NOT uninstall) for a
+  genuine cold-start — app-group data survives an app uninstall.
 
+---
+
+## 3. Git state
+
+- Branch `ux-overhaul`. **Not pushed this session** — confirm remote with `git status`.
+- **Codex base (verified to clean-build):** `60c2bb9`, `c245cd2`, `6ae2672`.
+- **Claude session commits (newest first):**
+  - `3a2ea56` test: testCaptureSummary taps through the celebration chain to the verdict
+  - `e8b413b` docs handoff update (now superseded by this file)
+  - `b2b4cb3` Iteration 2/6: remove loss-aversion from the daily reminder
+  - `2b42a16` Iteration 1+3: reward ownership + first-run routes into the prescribed rep
+- **Uncommitted (intentionally left):** `Noum/Resources/Localizable.xcstrings` (−194/+93,
+  likely Codex's in-flight pressure rename — **REVIEW before committing**, confirm es/fr
+  weren't dropped, or revert). Also a generated `.derived-data-log-*` (ignore/restore).
+
+---
+
+## 4. Done + verified this session
+
+- **Codex's 179-file pass clean-builds + runs.** The `SocialProfileView.swift` deletion is
+  safe because Codex extracted its live symbols into `SocialFriendSheets.swift` (that
+  deletion broke an earlier build before the extraction). Home / Profile / Practice-picker
+  look strong (one coach hero / collapsed Profile / "Your next rep" Coach-Pick picker).
+- **Reward ownership (Priority 1):** `SummaryView` celebration gates on a real
+  `SessionFinalizer` crossing via `SummaryView.shouldShowCelebration(hasMilestoneCrossing:score:xpEarned:)`,
+  NOT `score>=7 || xp>=100`. `detectMilestone` emits nothing on rep 1 (count milestones
+  start at 10, streak at 3, no PB on rep 1) → first-rep + score/XP excluded by construction.
+  `NoumTests/RewardOwnershipTests` passing.
+- **First-run → prescribed rep (Priority 2):** `CoachingOnboardingView` first-run completion
+  sets `DeepLinkRouter.shared.pending = noum://train` before `dismiss()` → new user lands on
+  the picker's Coach Pick, not a cold Home (Settings-edit still just saves). ⚠️ Runtime
+  landing is **logically** verified (the noum://train→picker route is proven) but NOT
+  screenshot-verified: the `UI_TESTING_ONBOARDING` harness binds the onboarding cover's
+  `isPresented` to a constant `true`, so it re-presents on dismiss. Verify via the real
+  first-run path (no profile, non-UI_TESTING) — e.g. add a test-only flag that drives the
+  NoumApp first-run cover.
+- **Notification loss-aversion (Priority 6, partial):** `NotificationCopy.dailyReminder` no
+  longer says "Hold your N-day streak"/"yours to keep" — now invite-framed. `streakWarning`
+  was neutralized in the prior session.
+- **Post-rep verdict VERIFIED on-device:** score ring + "Good control" + Fillers/Duration,
+  then **THE READ** (tight 2 sentences), **WIN** with the **inline transcript-verified proof
+  quote**, **FIX FIRST** + concrete move + "Start 45s drill", then "Ask Noum · PRO" upsell
+  *after* the free value. The read is no longer restated 3×. Iteration 1 complete.
+- **Proof honesty contract already tested:** `ProofMomentServiceTests.transcriptContainsRejectsFabrication`
+  (and siblings) pin that a quote not verbatim in the transcript is rejected → deterministic
+  fallback, never fabricated. So no extra proof-fail-path test is needed.
+
+---
+
+## 5. Remaining work (priority order, with pointers)
+
+1. **Proof/verdict CTA a11y ids (Priority 3).** `PostRepVerdictCard` has a card id
+   (`summary.postRepVerdict`) but its CTAs (Home/Retry/New/Share, the drill button) need
+   stable identifiers for UI tests. (The proof fail-path itself is already unit-tested.)
+2. **Pressure language (Priority 4).** ~15 user-facing "Sudden Death" literals remain —
+   `PathNode.swift` (203/205/206/315/316/318), `PathProgressManager.swift:288`,
+   `SuddenDeathDifficultyRunsView.swift` (75/101), `ForwardPlanService.swift:193`,
+   `SummaryView.swift:2169` (share), `WeakAreasCard.swift` (55/140), `GoalJourneyEngine.swift`
+   (227/243), `SuddenDeathHistoryExport.swift` (41-63), `DerivedReadsTrend.swift:316`.
+   Rename to "Pressure Drill" (matches `PracticeMode.suddenDeath.displayLabel`); keep the
+   enum `.suddenDeath` and persistence. Reword the awkward "Under pressure (Sudden Death)"
+   and "Pressure round. Sudden Death…" by hand. **Reconcile the dirty `Localizable.xcstrings`
+   in the same pass** (most of these literals are NOT localized struct params, so renaming
+   is safe; untranslated keys fall back to English, which is current behaviour).
+3. **Profile disclosure cut (Priority 5).** Default Profile is clean; the *disclosure* is the
+   junk drawer. In `ProfileView.swift`: cut the rating redundancy — `YourArcCard` +
+   `PeakRatingWallCard` + `ProgressionChartsCard` (lines ~523-525) all retell the rating;
+   keep ONE trajectory. Demote `ModeMasteryCard` (~526), achievements, and the
+   league/social/speak-off sections (~1750-1996). Keep: one rating trajectory, one coach
+   read/next move, growth library/review, the transfer loop. Don't add a "simple mode" toggle.
+4. **Reduced-motion gates (Priority 6).** Gate animations in `CoachingOnboardingView`,
+   `SummaryCards.HeroScoreCard`, `ProfileView` numeric transitions,
+   `PracticeModeSelectionView` selection, `SessionHistoryView` disclosure. Pattern used
+   elsewhere: `@Environment(\.accessibilityReduceMotion)` then skip the spring/particles
+   (keep haptic + sound).
+5. **Ask Noum structured reply (biggest value, highest risk — do LAST, feature-flagged).**
+   Still prose `ChatOutcome.reply(String)`. Make substantive turns read **read → evidence →
+   move**; route every quoted "you said…" through `ProofMomentService`'s verify-in-transcript
+   guard with a **tested fail path**; if the chat path can't guarantee the guard, structure
+   only the post-rep summary. Don't force structure on greetings. Live call: cut the 4-field
+   "COACHING READ" brief → one focus line / "Tap Talk".
+
+---
+
+## 6. Build / simulator recipe (macOS only)
+
+```bash
+xcrun simctl list devices booted            # this session used iPhone 17 (iOS 26.4)
+UDID=<booted-udid>
+
+# Build to repo-local DerivedData (install from HERE, not ~/Library/.../DerivedData/Noum-*):
+xcodebuild build -project Noum.xcodeproj -scheme Noum \
+  -destination "platform=iOS Simulator,id=$UDID" \
+  -derivedDataPath ./DerivedData/Noum -configuration Debug
+stat -f "%Sm %N" ./DerivedData/Noum/Build/Products/Debug-iphonesimulator/Noum.app/Noum  # mtime MUST advance
+
+# Render the verdict on the sim:
+xcrun simctl install $UDID ./DerivedData/Noum/Build/Products/Debug-iphonesimulator/Noum.app
+xcrun simctl launch --terminate-running-process $UDID com.jordancoaten.noum \
+  UI_TESTING UI_TESTING_SEED_FORCE -DeepLink noum://summary
+# (re-finalizes → tap Session Complete → View Summary → Continue to reach the verdict body)
+
+# Focused tests + screenshot tours:
+xcodebuild test ... -only-testing:NoumTests/RewardOwnershipTests
+xcodebuild test ... -only-testing:NoumUITests/ScreenshotTour/testCaptureSummary -resultBundlePath /tmp/x.xcresult
+xcrun xcresulttool export attachments --path /tmp/x.xcresult --output-path /tmp/x-att
+```
+
+Bundle id `com.jordancoaten.noum`; project `Noum.xcodeproj`, scheme `Noum`. Files under
+`Noum/` are an Xcode synchronized folder (add/delete just works); **root-level** files
+(`ProfileView.swift`, `RewardEngine.swift`, etc.) ARE in `project.pbxproj` — deleting them
+needs pbxproj surgery.
+
+Suggested focused suites (confirm names compile first): `RewardOwnershipTests`,
+`ProofMomentServiceTests`, `HomeSignalGateTests`, `FirstRunFrictionContractTests`,
+`PracticeModeRowExpansionTests`, `PostRepVerdictContentTests`, `ProfileCollapseContractTests`,
+`NotificationCopyEveningNudgeTests`.
+
+---
+
+## 7. Gotchas / verify-before-acting
+
+- **`SocialProfileView.swift` symbols are NOT dead** — they were extracted to
+  `SocialFriendSheets.swift`; don't reintroduce/duplicate. `AchievementsPage.swift` (root)
+  is **NOT dead** either (wired in `ProfileView`). Verify all symbols in a file, not just
+  the type name, before deleting.
+- **Several review "criticals" are artifacts, not bugs** — e.g. "Debug: Simulate Days"
+  panel is `AuthManager.isDeveloper`-gated (hidden from real users); "Platinum home behind
+  onboarding" was stale-sim capture contamination. Always check the finding against current
+  code / a clean (`simctl erase`) state before acting.
+- **First-run landing** can't be verified through `UI_TESTING_ONBOARDING` (cover re-presents).
+- **The dirty xcstrings** is the one thing to resolve carefully (review, don't blind-commit).
+
+---
+
+## 8. Red lines (do not ship)
+
+fake progress / fake peers / fake peaks / fake loading / fake AI thinking · "replace a
+human coach" claims · unverified "you said…" quotes · first-rep celebration as if
+improvement occurred · score/XP celebration not backed by a real crossing · hearts/lives
+framing · punish-shame pressure outcomes · raw "the user…" coaching rationale in UI · empty
+clinical rubrics foregrounded as relationship · paywall before first felt value · hidden
+video/presence analysis without explicit consent.
+
+---
+
+## 9. Deeper context (read as needed)
+
+- `docs/UX_VALUE_OVERHAUL_ROADMAP.md` — the 7-iteration plan (diagnosis, principles,
+  per-iteration changes/success/risk, cut list, owner decisions §12, visual-review triage §13).
+- `docs/UX_RENDERED_REVIEW.md` — the 3-lead (UX/QA/market) review of the real rendered screens.
+- `docs/OVERHAUL_HANDOVER.md` — earlier (pre-Codex) handover; mostly superseded by this file.
+- Market diff (still valid): Noum's edge is **evidence-led private coaching grounded in the
+  user's own speech + durable memory** — "Noum noticed the real thing I said, showed the
+  pattern moving, gave me the next rep." Competitors to beat on judgment-over-metrics:
+  Yoodli, Orai, Speeko, Poised, Vocal Image, BoldVoice. Avoid: metrics-without-judgment,
+  context-blind filler detection, generic repetition, cluttered AI surfaces, streak/hearts
+  gamification.
+
+---
+
+## 10. Final-response structure (per AGENTS.md / CLAUDE.md)
+
+End substantial responses with: **Implemented · Partially implemented · Blocked ·
+Assumptions · Verification · Risks.** Be explicit when build/tests/screenshots were not run.
