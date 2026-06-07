@@ -384,6 +384,23 @@ final class ScreenshotTour: XCTestCase {
         app.launch()
         _ = app.otherElements["home.screen"].waitForExistence(timeout: 10)
         Thread.sleep(forTimeInterval: 2.5) // deep-link routes Home -> Summary
+        // The force-hook re-finalizes the seeded session, which can fire a
+        // celebration/achievement overlay over the summary body. Dismiss the
+        // chain (Continue) so we capture the actual verdict, not the overlay.
+        // The force-hook re-finalizes the seeded session, firing the
+        // progression/celebration chain (Session Complete -> View Summary, then
+        // any PB / level-up Continue) over the verdict. Tap through it.
+        let dismissLabels = ["View Summary", "Continue", "Got it", "Done"]
+        for _ in 0..<5 {
+            var tapped = false
+            for label in dismissLabels {
+                let b = app.buttons[label]
+                if b.waitForExistence(timeout: 2) {
+                    b.tap(); Thread.sleep(forTimeInterval: 1.2); tapped = true; break
+                }
+            }
+            if !tapped { break }
+        }
         deepAttach(app, name: "S-summary-1top")
         app.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
         deepAttach(app, name: "S-summary-2mid")
