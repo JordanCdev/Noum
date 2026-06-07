@@ -1,0 +1,54 @@
+Attributes: Application, 0x119434b40, pid: 25678, label: 'Noum'
+Element subtree:
+ →Application, 0x119434b40, pid: 25678, label: 'Noum'
+    Window (Main), 0x119434c80, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x1194348c0, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x119434a00, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x119434dc0, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x119434f00, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x119435040, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'home.screen'
+                NavigationBar, 0x119435180, {{0.0, 62.0}, {402.0, 54.0}}, identifier: '_TtGC7SwiftUI32NavigationStackHosting'
+                  Button, 0x1194352c0, {{16.0, 62.0}, {44.0, 44.0}}, identifier: 'BackButton', label: 'Back'
+                Other, 0x119435400, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x119435540, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x119435680, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x1194357c0, {{0.0, 0.0}, {402.0, 874.0}}
+                        ScrollView, 0x119435900, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'practiceModes.screen'
+                          Other, 0x119435a40, {{0.0, 0.0}, {402.0, 874.0}}
+                            Other, 0x119435b80, {{0.0, 0.0}, {402.0, 170.8}}
+                          Other, 0x119435cc0, {{0.0, 0.0}, {402.0, 874.0}}
+                          Other, 0x119435e00, {{0.0, 116.0}, {402.0, 568.3}}
+                            StaticText, 0x119435f40, {{20.0, 128.0}, {307.0, 64.3}}, label: 'Your next rep, One focused rep, then the read gets sharper.'
+                              StaticText, 0x119436080, {{20.0, 128.0}, {196.0, 38.3}}, label: 'Your next rep'
+                              StaticText, 0x1194361c0, {{20.0, 174.3}, {307.0, 18.0}}, label: 'One focused rep, then the read gets sharper.'
+                            Other, 0x119436300, {{20.0, 212.3}, {362.0, 388.0}}, identifier: 'practiceModes.recommendedHero'
+                              Image, 0x119436440, {{40.0, 232.3}, {52.0, 52.0}}, identifier: 'clock.fill', label: 'Clock'
+                              StaticText, 0x119436580, {{108.0, 232.3}, {77.3, 14.3}}, label: 'Coach pick'
+                              StaticText, 0x1194366c0, {{108.0, 252.7}, {153.7, 26.3}}, label: 'Timed Practice'
+                              StaticText, 0x119436800, {{116.0, 288.0}, {21.7, 12.0}}, label: 'Level 1, Drafting'
+                              StaticText, 0x119436940, {{141.7, 288.0}, {40.7, 12.0}}, label: 'Level 1, Drafting'
+                              StaticText, 0x119436a80, {{40.0, 319.0}, {318.0, 41.0}}, label: 'This was prescribed in the current case file, but Noum has not observed a followed rep yet.'
+                              StaticText, 0x119436bc0, {{40.0, 376.0}, {322.0, 34.0}}, label: 'Target:, 30s+'
+                                Image, 0x119436d00, {{53.0, 387.7}, {12.7, 12.7}}, identifier: 'target', label: 'target'
+                                StaticText, 0x119436e40, {{74.7, 387.0}, {43.3, 14.3}}, label: 'Target:'
+                                StaticText, 0x119436f80, {{126.0, 384.0}, {37.0, 18.0}}, label: '30s+'
+                              StaticText, 0x1194370c0, {{40.0, 418.0}, {322.0, 34.0}}, label: 'Focus:, Longer answer'
+                                Image, 0x119437200, {{53.3, 430.0}, {12.0, 12.0}}, identifier: 'viewfinder', label: 'Scan'
+                                StaticText, 0x119437340, {{74.7, 429.0}, {40.3, 14.3}}, label: 'Focus:'
+                                StaticText, 0x119437480, {{123.0, 426.0}, {105.3, 18.0}}, label: 'Longer answer'
+                              Button, 0x1194375c0, {{40.0, 468.0}, {322.0, 52.3}}, identifier: 'practiceModes.recommendedHero.begin', label: 'Begin · Timed Practice'
+                              Button, 0x119437700, {{40.0, 536.3}, {322.0, 44.0}}, identifier: 'practiceModes.recommendedHero.pickAnother', label: 'Pick another'
+                                Image, 0x119437840, {{145.3, 550.7}, {15.7, 15.7}}, identifier: 'arrow.down.circle.fill', label: 'Arrow Down Circle'
+                                StaticText, 0x119437980, {{168.2, 549.3}, {90.0, 18.0}}, label: 'Pick another'
+                            Button, 0x119437ac0, {{20.0, 620.3}, {362.0, 44.0}}, identifier: 'practiceModes.otherWays', label: 'Other ways to practice'
+                              StaticText, 0x119437c00, {{28.0, 632.2}, {184.0, 20.3}}, label: 'Other ways to practice'
+                              Image, 0x119437d40, {{351.7, 632.0}, {20.7, 20.7}}, identifier: 'chevron.down.circle.fill', label: 'Go Down'
+                Other, 0x119437e80, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x119438000, {{0.0, 0.0}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x119434b40, pid: 25678, label: 'Noum'
+Query chain:
+ →Find: Target Application 'com.jordancoaten.noum'
+  Output: {
+    Application, 0x119438140, pid: 25678, label: 'Noum'
+  }

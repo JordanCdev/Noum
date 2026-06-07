@@ -267,12 +267,12 @@ struct SettingsView: View {
             .accessibilityIdentifier("settings.advancedToggle")
 
             if advancedExpanded {
-                section(label: "Home reveal") { advancedHomeCard }
                 if aiUsageCardIsVisible {
                     section(label: "AI usage") { aiUsageCard }
                 }
 
                 if authManager.isDeveloper {
+                    section(label: "Home reveal") { advancedHomeCard }
                     section(label: "Developer tools") { transcriptionProviderCard }
                     section(label: "Diagnostics") { recommendationDiagnosticsCard }
                     section(label: "Seed data") { developerSeedCard }
@@ -285,9 +285,9 @@ struct SettingsView: View {
         cardContainer(spacing: Spacing.sm) {
             SettingsToggleRow(
                 title: "Show advanced home cards",
-                subtitle: "Skip the gradual reveal for active optional cards. Retired dashboard cards stay off Home.",
+                subtitle: "Developer inspection override. Normal accounts follow the signal-gated Home reveal.",
                 isOn: $showAllHomeCards,
-                accessibilityHint: "Shows active optional home cards immediately while keeping retired dashboard cards hidden."
+                accessibilityHint: "Shows active optional home cards immediately for developer accounts while keeping retired dashboard cards hidden."
             )
         }
     }

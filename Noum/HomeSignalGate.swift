@@ -32,9 +32,9 @@ struct HomeCardGate: Equatable {
 /// retired from Home; their underlying tools stay owned by their existing
 /// managers/routes.
 ///
-/// The whole gate is reversible by `practice.showAllHomeCards = true` —
-/// returning users who want the dense home get optional cards back from
-/// Settings, excluding surfaces intentionally retired from Home.
+/// The whole gate is reversible for developer inspection via
+/// `practice.showAllHomeCards = true`, excluding surfaces intentionally
+/// retired from Home. Normal user accounts always follow the signal gate.
 enum HomeSignalGate {
     /// Pure evaluation. Take primitives — no store handles — so this stays
     /// trivially testable. Call sites pass current store state in.
@@ -45,16 +45,19 @@ enum HomeSignalGate {
     ///   - hasUnlockedPathNode: true once PathProgressManager has at least
     ///     one persisted unlock.
     ///   - hasCoachingProfile: true once the user has set a voice goal.
-    ///   - showAllOverride: Settings escape hatch for active optional cards.
-    ///     Retired Home surfaces remain off even when this is true.
+    ///   - showAllOverride: Developer Settings escape hatch for active
+    ///     optional cards. Retired Home surfaces remain off even when true.
+    ///   - overrideEligible: True only for developer accounts. A stale
+    ///     stored override from a normal account must not bypass the gate.
     static func evaluate(
         sessionCount: Int,
         sessionsThisWeekCount: Int,
         hasUnlockedPathNode: Bool,
         hasCoachingProfile: Bool,
-        showAllOverride: Bool
+        showAllOverride: Bool,
+        overrideEligible: Bool
     ) -> HomeCardGate {
-        if showAllOverride { return .allVisible }
+        if showAllOverride && overrideEligible { return .allVisible }
         let hasCompletedRep = sessionCount >= 1
         return HomeCardGate(
             coachCard: true,

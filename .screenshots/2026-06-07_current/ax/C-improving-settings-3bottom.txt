@@ -1,0 +1,205 @@
+Attributes: Application, 0x119d0f200, pid: 27227, label: 'Noum'
+Element subtree:
+ →Application, 0x119d0f200, pid: 27227, label: 'Noum'
+    Window (Main), 0x119d0f340, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x119d0fc00, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x119d0fd40, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x119d0f840, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x119d0fac0, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x119d0f980, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'home.screen'
+                NavigationBar, 0x119d0f5c0, {{0.0, 62.0}, {402.0, 54.0}}, identifier: '_TtGC7SwiftUI32NavigationStackHosting'
+                  Button, 0x119d0f700, {{16.0, 62.0}, {44.0, 44.0}}, identifier: 'BackButton', label: 'Back'
+                  Other, 0x119d0f480, {{321.3, 66.0}, {60.7, 36.0}}, label: 'Done'
+                    Other, 0x119d0ef80, {{321.3, 66.0}, {60.7, 36.0}}
+                      Button, 0x119d0f0c0, {{321.3, 66.0}, {60.7, 36.0}}, label: 'Done'
+                Other, 0x119d0ebc0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x119d0ee40, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x119d0ed00, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x119d0e580, {{0.0, 0.0}, {402.0, 874.0}}
+                        ScrollView, 0x119d0ea80, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'settings.screen'
+                          Other, 0x119d0e940, {{0.0, -957.0}, {402.2, 3684.3}}
+                            Button, 0x119d0e800, {{20.2, -945.0}, {362.3, 124.0}}, identifier: 'settings.profileHero', label: 'Guest Speaker, Speaker 1'
+                              Image, 0x119d0e6c0, {{45.1, -919.9}, {73.9, 73.9}}, identifier: 'waveform', label: 'Noum coach, calm'
+                              StaticText, 0x119d0df40, {{140.0, -910.8}, {134.3, 24.0}}, label: 'Guest Speaker'
+                              Image, 0x119d0e440, {{153.5, -874.7}, {11.3, 13.7}}, identifier: 'sparkles', label: 'Sparkle'
+                              StaticText, 0x119d0e300, {{172.0, -875.2}, {58.7, 14.3}}, label: 'Speaker 1'
+                              Image, 0x119d0e1c0, {{353.5, -889.7}, {8.0, 13.7}}, identifier: 'chevron.right', label: 'Forward'
+                            StaticText, 0x119d0e080, {{24.0, -793.0}, {70.7, 21.7}}, label: 'Practice'
+                            StaticText, 0x119d0de00, {{24.0, -751.3}, {59.7, 12.0}}, label: 'DEFAULTS'
+                            Button, 0x119d0dcc0, {{40.2, -711.3}, {322.3, 76.3}}, label: 'Free difficulty'
+                              StaticText, 0x119d0d7c0, {{52.0, -699.3}, {31.7, 18.0}}, label: 'Free'
+                              StaticText, 0x119d0db80, {{52.0, -677.3}, {213.3, 30.3}}, label: 'No countdown. Start when ready and stop manually.'
+                              Image, 0x119d0da40, {{328.8, -683.3}, {20.0, 20.0}}, identifier: 'circle', label: 'circle'
+                            Button, 0x119d0d900, {{40.2, -627.0}, {322.3, 68.0}}, label: 'Easy difficulty', Selected
+                              StaticText, 0x119d0d680, {{52.0, -611.2}, {33.7, 18.0}}, label: 'Easy'
+                              StaticText, 0x119d0d2c0, {{52.0, -589.2}, {210.3, 14.3}}, label: '60 seconds to answer with structure.'
+                              Image, 0x119d0d540, {{328.8, -603.0}, {20.0, 20.0}}, identifier: 'checkmark.circle.fill', label: 'Selected', Selected
+                            Button, 0x119d0d400, {{40.2, -551.0}, {322.3, 68.0}}, label: 'Medium difficulty'
+                              StaticText, 0x119d0cdc0, {{52.0, -535.2}, {57.3, 18.0}}, label: 'Medium'
+                              StaticText, 0x119d0d180, {{52.0, -513.2}, {217.3, 14.3}}, label: '30 seconds to get to the point quickly.'
+                              Image, 0x119d0d040, {{328.8, -527.0}, {20.0, 20.0}}, identifier: 'circle', label: 'circle'
+                            Button, 0x119d0cf00, {{40.2, -475.0}, {322.3, 68.0}}, label: 'Hard difficulty'
+                              StaticText, 0x119d0ca00, {{52.0, -459.2}, {35.0, 18.0}}, label: 'Hard'
+                              StaticText, 0x119d0cc80, {{52.0, -437.2}, {232.7, 14.3}}, label: '15 seconds. Fast, concise, high pressure.'
+                              Image, 0x119d0cb40, {{328.8, -451.0}, {20.0, 20.0}}, identifier: 'circle', label: 'circle'
+                            Switch, 0x119d0c8c0, {{40.0, -370.8}, {322.5, 36.3}}, label: 'Voice cues', value: 1
+                              StaticText, 0x119d0c3c0, {{40.0, -370.8}, {77.3, 18.0}}, label: 'Voice cues'
+                              StaticText, 0x119d0c780, {{40.0, -348.8}, {214.0, 14.3}}, label: 'Read replies aloud during IM practice.'
+                              Switch, 0x119d0c640, {{301.3, -366.7}, {63.0, 28.0}}, value: 1
+                            Switch, 0x119d0c500, {{40.0, -298.3}, {322.5, 52.3}}, label: 'Real-time filler highlight', value: 0
+                              StaticText, 0x119d0c280, {{40.0, -298.3}, {171.7, 18.0}}, label: 'Real-time filler highlight'
+                              StaticText, 0x119d0c140, {{40.0, -276.3}, {253.3, 30.3}}, label: 'Plays a soft cue and pulse when a filler word is detected.'
+                              Switch, 0x119d0c000, {{301.3, -286.0}, {63.0, 28.0}}, value: 0
+                            Switch, 0x119cd5e00, {{40.0, -213.7}, {322.5, 52.3}}, label: 'Pressure mode', value: 0
+                              StaticText, 0x119cd5cc0, {{40.0, -213.7}, {107.7, 18.0}}, label: 'Pressure mode'
+                              StaticText, 0x119cd6080, {{40.0, -191.7}, {232.3, 30.3}}, label: 'One-take reps, shorter prep, and a rated finish across modes.'
+                              Switch, 0x119cd5f40, {{301.3, -201.3}, {63.0, 28.0}}, value: 0
+                            StaticText, 0x119cd5b80, {{24.0, -121.3}, {70.0, 12.0}}, label: 'DAILY GOAL'
+                            Other, 0x119cd6e40, {{40.2, -81.3}, {322.3, 42.0}}
+                              Button, 0x119cd6940, {{40.2, -81.3}, {102.0, 42.0}}, label: 'Daily goal 1 rep', Selected
+                              Button, 0x119cd6800, {{150.2, -81.3}, {102.0, 42.0}}, label: 'Daily goal 2 reps'
+                              Button, 0x119cd6a80, {{260.2, -81.3}, {102.3, 42.0}}, label: 'Daily goal 3 reps'
+                            StaticText, 0x119cd7340, {{24.0, 0.7}, {115.7, 12.0}}, label: 'COACHING PROFILE'
+                            Other, 0x119cd6f80, {{40.2, 40.7}, {322.3, 166.7}}
+                              StaticText, 0x119cd70c0, {{40.2, 40.7}, {157.0, 79.3}}, label: 'Context, Work conversations'
+                                StaticText, 0x119cd7200, {{52.0, 52.7}, {58.7, 13.3}}, label: 'Context'
+                                StaticText, 0x119cd6580, {{52.0, 70.0}, {100.3, 38.0}}, label: 'Work conversations'
+                              StaticText, 0x119cd75c0, {{205.2, 40.7}, {157.3, 79.3}}, label: 'Priority, Reduce filler words'
+                                StaticText, 0x119cd6d00, {{217.2, 52.7}, {57.7, 13.3}}, label: 'Priority'
+                                StaticText, 0x119cd7480, {{217.2, 70.0}, {79.7, 38.0}}, label: 'Reduce filler words'
+                              StaticText, 0x119cd7ac0, {{40.2, 128.0}, {157.0, 79.3}}, label: 'Challenge, I fall back on filler words'
+                                StaticText, 0x119cd7840, {{52.0, 140.0}, {73.3, 13.3}}, label: 'Challenge'
+                                StaticText, 0x119cd7980, {{52.0, 157.3}, {93.7, 38.0}}, label: 'I fall back on filler words'
+                              StaticText, 0x119cd7e80, {{205.2, 138.0}, {157.3, 59.3}}, label: 'Voice, Authoritative'
+                                StaticText, 0x119cd7700, {{217.2, 150.0}, {37.7, 13.3}}, label: 'Voice'
+                                StaticText, 0x119cd7d40, {{217.2, 167.3}, {92.7, 18.0}}, label: 'Authoritative'
+                            Button, 0x119cd66c0, {{40.2, 223.7}, {322.3, 44.0}}, label: 'Update coaching profile'
+                              Image, 0x119cd7c00, {{39.5, 237.3}, {19.3, 16.7}}, identifier: 'person.crop.circle.badge.checkmark', label: 'person.crop.circle.badge.checkmark'
+                              StaticText, 0x119cd6bc0, {{74.0, 236.7}, {171.3, 18.0}}, label: 'Update coaching profile'
+                              Image, 0x119cd6440, {{355.2, 240.3}, {6.7, 11.0}}, identifier: 'chevron.right', label: 'Forward'
+                            Button, 0x119cd5900, {{40.2, 283.7}, {322.3, 44.0}}, label: 'Upcoming moment'
+                              Image, 0x119cd6300, {{43.5, 297.7}, {19.3, 16.3}}, identifier: 'calendar.badge.clock', label: 'Date And Time'
+                              StaticText, 0x119cd61c0, {{74.0, 296.7}, {136.0, 18.0}}, label: 'Upcoming moment'
+                              Image, 0x119cd5a40, {{355.2, 300.3}, {6.7, 11.0}}, identifier: 'chevron.right', label: 'Forward'
+                            StaticText, 0x119cd57c0, {{24.0, 367.7}, {64.3, 12.0}}, label: 'LANGUAGE'
+                            Button, 0x119cd5540, {{40.2, 407.7}, {322.3, 44.0}}, label: 'Practice language'
+                              Image, 0x119cd5400, {{43.5, 422.0}, {15.3, 15.3}}, identifier: 'globe', label: 'Globe'
+                              StaticText, 0x119cd52c0, {{74.0, 420.7}, {128.7, 18.0}}, label: 'Practice language'
+                              StaticText, 0x119cd5680, {{269.0, 422.5}, {71.7, 14.3}}, label: 'English (US)'
+                              Image, 0x119f44000, {{355.2, 424.3}, {6.7, 11.0}}, identifier: 'chevron.right', label: 'Forward'
+                            StaticText, 0x119f44140, {{24.0, 491.7}, {115.3, 12.0}}, label: 'PRE-REP AMBIENCE'
+                            Button, 0x119f44280, {{40.2, 531.7}, {322.3, 44.0}}, label: 'Pre-rep ambience'
+                              Image, 0x119f443c0, {{42.8, 545.3}, {16.7, 16.7}}, identifier: 'speaker.slash', label: 'Mute'
+                              StaticText, 0x119f44500, {{74.0, 544.7}, {128.3, 18.0}}, label: 'Pre-rep ambience'
+                              StaticText, 0x119f44640, {{322.0, 546.5}, {18.7, 14.3}}, label: 'Off'
+                              Image, 0x119f44780, {{355.2, 548.3}, {6.7, 11.0}}, identifier: 'chevron.right', label: 'Forward'
+                            StaticText, 0x119f448c0, {{24.0, 623.7}, {110.0, 21.7}}, label: 'Notifications'
+                            StaticText, 0x119f44a00, {{24.0, 665.3}, {68.3, 12.0}}, label: 'REMINDERS'
+                            Switch, 0x119f44b40, {{40.0, 709.2}, {322.5, 36.3}}, label: 'Daily reminder', value: 0
+                              StaticText, 0x119f44c80, {{40.0, 709.2}, {104.0, 18.0}}, label: 'Daily reminder'
+                              StaticText, 0x119f44dc0, {{40.0, 731.2}, {234.0, 14.3}}, label: 'One short reminder at a time you choose.'
+                              Switch, 0x119f44f00, {{301.3, 713.3}, {63.0, 28.0}}, value: 0
+                            Switch, 0x119f45040, {{40.0, 781.7}, {322.5, 52.3}}, label: 'Evening practice nudge', value: 0
+                              StaticText, 0x119f45180, {{40.0, 781.7}, {168.0, 18.0}}, label: 'Evening practice nudge'
+                              StaticText, 0x119f452c0, {{40.0, 803.7}, {233.0, 30.3}}, label: 'A quiet reminder when you have a streak and haven't practiced today.'
+                              Switch, 0x119f45400, {{301.3, 794.0}, {63.0, 28.0}}, value: 0
+                            Switch, 0x119f45540, {{40.0, 866.3}, {322.5, 52.3}}, label: 'Weekly digest', value: 0
+                              StaticText, 0x119f45680, {{40.0, 866.3}, {100.7, 18.0}}, label: 'Weekly digest'
+                              StaticText, 0x119f457c0, {{40.0, 888.3}, {243.3, 30.3}}, label: 'Sunday evening: how the week landed and what's trending.'
+                              Switch, 0x119f45900, {{301.3, 878.7}, {63.0, 28.0}}, value: 0
+                            StaticText, 0x119f45a40, {{43.8, 947.7}, {318.5, 18.0}}, label: 'Notification access, Not requested'
+                              Image, 0x119f45b80, {{43.8, 948.7}, {14.7, 16.0}}, identifier: 'bell.fill', label: 'Notifications'
+                              StaticText, 0x119f45cc0, {{74.0, 947.7}, {137.0, 18.0}}, label: 'Notification access'
+                              StaticText, 0x119f45e00, {{278.0, 949.5}, {84.3, 14.3}}, label: 'Not requested'
+                            Switch, 0x119f45f40, {{40.0, 1011.0}, {322.5, 52.3}}, label: 'Haptics', value: 1
+                              StaticText, 0x119f46080, {{40.0, 1011.0}, {55.0, 18.0}}, label: 'Haptics'
+                              StaticText, 0x119f461c0, {{40.0, 1033.0}, {240.3, 30.3}}, label: 'Subtle taps for streaks, level-ups, and rep transitions.'
+                              Switch, 0x119f46300, {{301.3, 1023.0}, {63.0, 28.0}}, value: 1
+                            StaticText, 0x119f46440, {{24.0, 1111.3}, {72.0, 21.7}}, label: 'Account'
+                            StaticText, 0x119f46580, {{24.0, 1153.0}, {88.3, 12.0}}, label: 'SUBSCRIPTION'
+                            StaticText, 0x119f466c0, {{42.5, 1193.0}, {254.8, 52.7}}, label: 'Noum is free to try, Pro unlocks Coach Mode, transcripts, analytics, and more.'
+                              Image, 0x119f46800, {{42.5, 1209.7}, {25.3, 19.3}}, identifier: 'crown.fill', label: 'crown.fill'
+                              StaticText, 0x119f46940, {{82.0, 1193.0}, {151.0, 20.3}}, label: 'Noum is free to try'
+                              StaticText, 0x119f46a80, {{82.0, 1215.3}, {215.3, 30.3}}, label: 'Pro unlocks Coach Mode, transcripts, analytics, and more.'
+                            Button, 0x119f46bc0, {{40.2, 1261.7}, {322.3, 52.3}}, label: 'See plans'
+                              Image, 0x119f46d00, {{148.8, 1280.0}, {19.7, 15.3}}, identifier: 'crown.fill', label: 'crown.fill'
+                              StaticText, 0x119f46e40, {{178.3, 1277.7}, {77.3, 20.3}}, label: 'See plans'
+                            Button, 0x119f46f80, {{138.5, 1343.0}, {125.7, 18.0}}, label: 'Restore purchase'
+                            StaticText, 0x119f470c0, {{24.0, 1414.0}, {96.0, 12.0}}, label: 'PRIVACY & DATA'
+                            StaticText, 0x119f47200, {{45.2, 1467.0}, {317.2, 18.0}}, label: 'Microphone access, Allowed'
+                              Image, 0x119f47340, {{45.2, 1467.7}, {11.7, 16.7}}, identifier: 'mic.fill', label: 'Microphone'
+                              StaticText, 0x119f47480, {{74.0, 1467.0}, {138.7, 18.0}}, label: 'Microphone access'
+                              StaticText, 0x119f475c0, {{315.7, 1468.8}, {46.7, 14.3}}, label: 'Allowed'
+                            Button, 0x119f47700, {{40.2, 1522.3}, {322.3, 44.0}}, label: 'Your data'
+                              Image, 0x119f47840, {{42.2, 1537.7}, {17.7, 13.0}}, identifier: 'tray.full.fill', label: 'Inbox Full'
+                              StaticText, 0x119f47980, {{74.0, 1535.3}, {68.3, 18.0}}, label: 'Your data'
+                              Image, 0x119f47ac0, {{355.2, 1538.7}, {6.7, 11.0}}, identifier: 'chevron.right', label: 'Forward'
+                            Button, 0x119f47c00, {{40.2, 1590.7}, {322.3, 44.0}}, label: 'Privacy policy'
+                              Image, 0x119f47d40, {{44.5, 1604.7}, {13.0, 16.0}}, identifier: 'doc.text.fill', label: 'Plain Text Document'
+                              StaticText, 0x119f47e80, {{74.0, 1603.7}, {99.7, 18.0}}, label: 'Privacy policy'
+                              Image, 0x119f4c000, {{355.2, 1607.0}, {6.7, 11.0}}, identifier: 'chevron.right', label: 'Forward'
+                            StaticText, 0x119f4c140, {{24.0, 1674.7}, {47.3, 12.0}}, label: 'SIGN-IN'
+                            StaticText, 0x119f4c280, {{40.0, 1727.7}, {322.3, 18.0}}, label: 'Signed in as, Guest Speaker'
+                              StaticText, 0x119f4c3c0, {{40.0, 1727.7}, {86.7, 18.0}}, label: 'Signed in as'
+                              StaticText, 0x119f4c500, {{276.0, 1729.5}, {86.3, 14.3}}, label: 'Guest Speaker'
+                            StaticText, 0x119f4c640, {{40.0, 1783.7}, {322.3, 18.0}}, label: 'Provider, Guest'
+                              StaticText, 0x119f4c780, {{40.0, 1783.7}, {60.3, 18.0}}, label: 'Provider'
+                              StaticText, 0x119f4c8c0, {{327.3, 1785.5}, {35.0, 14.3}}, label: 'Guest'
+                            Button, 0x119f4ca00, {{40.2, 1839.0}, {322.3, 44.0}}, label: 'Sign out'
+                              Image, 0x119f4cb40, {{44.2, 1854.0}, {14.0, 14.0}}, identifier: 'arrow.right.square', label: 'arrow.right.square'
+                              StaticText, 0x119f4cc80, {{74.0, 1852.0}, {59.0, 18.0}}, label: 'Sign out'
+                              Image, 0x119f4cdc0, {{355.2, 1855.3}, {6.7, 11.0}}, identifier: 'chevron.right', label: 'Forward'
+                            Button, 0x119f4cf00, {{40.2, 1895.0}, {322.3, 44.0}}, label: 'Delete account'
+                              Image, 0x119f4d040, {{43.8, 1908.3}, {14.7, 17.0}}, identifier: 'trash.fill', label: 'Trash'
+                              StaticText, 0x119f4d180, {{74.0, 1908.0}, {108.0, 18.0}}, label: 'Delete account'
+                              Image, 0x119f4d2c0, {{355.2, 1911.3}, {6.7, 11.0}}, identifier: 'chevron.right', label: 'Forward'
+                            StaticText, 0x119f4d400, {{24.0, 1979.0}, {41.0, 12.0}}, label: 'ABOUT'
+                            StaticText, 0x119f4d540, {{40.0, 2032.0}, {322.3, 18.0}}, label: 'Version, 1.1 (2)'
+                              StaticText, 0x119f4d680, {{40.0, 2032.0}, {53.7, 18.0}}, label: 'Version'
+                              StaticText, 0x119f4d7c0, {{326.7, 2033.8}, {35.7, 14.3}}, label: '1.1 (2)'
+                            Button, 0x119f4d900, {{40.2, 2087.3}, {322.3, 44.0}}, label: 'Copy diagnostic report'
+                              Image, 0x119f4da40, {{42.2, 2099.3}, {16.7, 20.0}}, identifier: 'doc.on.doc.fill', label: 'Copy'
+                              StaticText, 0x119f4db80, {{74.0, 2100.3}, {163.7, 18.0}}, label: 'Copy diagnostic report'
+                              Image, 0x119f4dcc0, {{355.2, 2104.0}, {6.7, 11.0}}, identifier: 'chevron.right', label: 'Forward'
+                            Button, 0x119f4de00, {{20.2, 2171.3}, {362.3, 44.0}}, identifier: 'settings.advancedToggle', label: 'Advanced settings'
+                              StaticText, 0x119f4df40, {{24.0, 2186.5}, {86.0, 21.7}}, label: 'Advanced'
+                              Image, 0x119f4e080, {{362.8, 2193.3}, {13.7, 8.0}}, identifier: 'chevron.up', label: 'Go Up'
+                            StaticText, 0x119f4e1c0, {{24.0, 2223.3}, {83.3, 12.0}}, label: 'HOME REVEAL'
+                            Switch, 0x119f4e300, {{40.0, 2263.3}, {322.5, 68.3}}, label: 'Show advanced home cards', value: 0
+                              StaticText, 0x119f4e440, {{40.0, 2263.3}, {200.0, 18.0}}, label: 'Show advanced home cards'
+                              StaticText, 0x119f4e580, {{40.0, 2285.3}, {238.0, 46.3}}, label: 'Skip the gradual reveal for active optional cards. Retired dashboard cards stay off Home.'
+                              Switch, 0x119f4e6c0, {{301.3, 2283.3}, {63.0, 28.0}}, value: 0
+                            StaticText, 0x119f4e800, {{24.0, 2359.7}, {55.3, 12.0}}, label: 'AI USAGE'
+                            StaticText, 0x119f4e940, {{40.0, 2399.7}, {322.3, 62.3}}, identifier: 'settings.aiUsage.card', label: 'Your coach note keeps coming after every rep. When the AI polish layer hits its budget for the day, the coach reads rule-based for the rest of the day — same content shape, just less personalised wording.'
+                            StaticText, 0x119f4ea80, {{40.0, 2478.0}, {322.3, 36.3}}, identifier: 'settings.aiUsage.card', label: 'Coach notes today: 0 of 12 used. 12 remaining. Resets at midnight.'
+                              StaticText, 0x119f4ebc0, {{40.0, 2478.0}, {133.7, 18.0}}, label: 'Coach notes today'
+                              StaticText, 0x119f4ed00, {{40.0, 2500.0}, {105.7, 14.3}}, label: 'Resets at midnight'
+                              StaticText, 0x119f4ee40, {{310.0, 2478.5}, {52.3, 18.0}}, label: '0 of 12'
+                              StaticText, 0x119f4ef80, {{278.0, 2500.5}, {84.3, 13.3}}, label: '12 REMAINING'
+                            StaticText, 0x119f4f0c0, {{40.0, 2546.7}, {322.3, 36.3}}, identifier: 'settings.aiUsage.card', label: 'Session debriefs: 1 of 20 used. 19 remaining. Resets July 1.'
+                              StaticText, 0x119f4f200, {{40.0, 2546.7}, {119.0, 18.0}}, label: 'Session debriefs'
+                              StaticText, 0x119f4f340, {{40.0, 2568.7}, {73.7, 14.3}}, label: 'Resets July 1'
+                              StaticText, 0x119f4f480, {{310.0, 2547.2}, {52.3, 18.0}}, label: '1 of 20'
+                              StaticText, 0x119f4f5c0, {{277.3, 2569.2}, {85.0, 13.3}}, label: '19 REMAINING'
+                            Button, 0x119f4f700, {{40.2, 2615.3}, {322.3, 44.0}}, identifier: 'settings.aiUsage.card', label: 'Pro gets 40/day · 100/month'
+                              Image, 0x119f4f840, {{42.2, 2629.7}, {19.7, 15.3}}, identifier: 'crown.fill', label: 'crown.fill'
+                              StaticText, 0x119f4f980, {{71.7, 2628.3}, {203.0, 18.0}}, label: 'Pro gets 40/day · 100/month'
+                          Other, 0x119f4fac0, {{0.0, 0.0}, {402.0, 874.0}}
+                            Other, 0x119f4fc00, {{0.0, 0.0}, {402.0, 170.8}}
+                          Other, 0x119f4fd40, {{0.0, 0.0}, {402.0, 874.0}}
+                            Other, 0x119f4fe80, {{0.0, 0.0}, {402.0, 170.8}}
+                              Image, 0x119f48000, {{-120.0, -166.0}, {642.0, 332.0}}, identifier: 'AdditionalDimmingOverlay'
+                              Other, 0x119f48140, {{0.0, 0.0}, {402.0, 170.8}}
+                                Other, 0x119f48280, {{0.0, 0.0}, {402.0, 170.8}}
+                              Other, 0x119f483c0, {{0.0, 0.0}, {402.0, 170.8}}
+                                Other, 0x119f48500, {{0.0, 0.0}, {402.0, 170.8}}
+                                Other, 0x119f48640, {{0.0, 0.0}, {402.0, 170.8}}
+                Other, 0x119f48780, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x119f488c0, {{0.0, 0.0}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x119d0f200, pid: 27227, label: 'Noum'
+Query chain:
+ →Find: Target Application 'com.jordancoaten.noum'
+  Output: {
+    Application, 0x119f48a00, pid: 27227, label: 'Noum'
+  }

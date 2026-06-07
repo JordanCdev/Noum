@@ -1,0 +1,107 @@
+Attributes: Application, 0x11a7dc3c0, pid: 27945, label: 'Noum'
+Element subtree:
+ →Application, 0x11a7dc3c0, pid: 27945, label: 'Noum'
+    Window (Main), 0x11a7dc140, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x11a7dc000, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x11a7dc280, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x11a7dc640, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x11a7dc780, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x11a7dc500, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'home.screen'
+                Other, 0x11a7dca00, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x11a7dc8c0, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x11a7dcb40, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x11a7dfd40, {{0.0, 0.0}, {402.0, 874.0}}
+                        Other, 0x11a7dfc00, {{0.0, 62.0}, {402.0, 778.0}}
+                        ScrollView, 0x11a7ddcc0, {{0.0, 0.0}, {402.0, 874.0}}
+                          Other, 0x11a7dfe80, {{0.0, -454.0}, {402.0, 1938.7}}
+                            StaticText, 0x11a7dee40, {{123.0, -418.0}, {156.0, 13.3}}, label: 'IMPROMPTU PRACTICE'
+                            StaticText, 0x11a7dd7c0, {{188.2, -363.2}, {25.7, 52.7}}, label: '7'
+                            StaticText, 0x11a7ddb80, {{192.0, -308.5}, {18.0, 14.3}}, label: '/10'
+                            Image, 0x11a7dd900, {{129.0, -248.0}, {14.7, 15.0}}, identifier: 'hand.thumbsup.fill', label: 'Like'
+                            StaticText, 0x11a7dd400, {{153.2, -252.7}, {121.7, 24.0}}, label: 'Good control'
+                            StaticText, 0x11a7dd680, {{111.3, -212.7}, {8.3, 20.3}}, label: '1'
+                            StaticText, 0x11a7dd540, {{270.8, -211.5}, {31.3, 20.3}}, label: '50s'
+                            StaticText, 0x11a7dd040, {{99.3, -188.3}, {32.3, 13.3}}, label: 'Fillers'
+                            StaticText, 0x11a7dd2c0, {{263.3, -187.2}, {46.3, 13.3}}, label: 'Duration'
+                            Image, 0x11a7dd180, {{108.3, -168.0}, {6.3, 7.7}}, identifier: 'arrow.up', label: 'Up'
+                            StaticText, 0x11a7dcc80, {{117.7, -171.0}, {6.0, 13.3}}, label: '1'
+                            Image, 0x11a7dcf00, {{258.3, -169.0}, {9.3, 9.3}}, identifier: 'checkmark.circle.fill', label: 'Selected', Selected
+                            StaticText, 0x11a7dcdc0, {{271.2, -169.8}, {44.3, 11.0}}, label: 'On target'
+                            Other, 0x11a7df980, {{15.5, -118.2}, {371.0, 729.0}}, identifier: 'summary.postRepVerdict', label: 'Coach verdict for this rep'
+                              Image, 0x11a7df840, {{34.0, -99.1}, {27.4, 24.4}}, identifier: 'waveform.badge.magnifyingglass', label: 'Noum coach, reading your session'
+                              StaticText, 0x11a7df700, {{64.0, -94.3}, {56.3, 15.3}}, label: 'THE READ'
+                              StaticText, 0x11a7df5c0, {{332.0, -95.7}, {27.0, 18.0}}, label: '7/10'
+                              StaticText, 0x11a7df480, {{34.0, -57.7}, {320.0, 82.0}}, label: 'The repeated 'Yeah' early on broke your recent streak of clean reps. We can explore how that hesitation felt as you searched for your next words.'
+                              Image, 0x11a7df340, {{35.0, 57.7}, {14.0, 14.0}}, identifier: 'checkmark.seal.fill', label: 'Verified', Selected
+                              StaticText, 0x11a7df200, {{56.0, 58.7}, {23.0, 12.0}}, label: 'Win'
+                              StaticText, 0x11a7df0c0, {{34.0, 80.7}, {308.3, 41.0}}, label: 'Sharing personal insight builds connection and fosters a trustworthy, natural tone.'
+                              StaticText, 0x11a7def80, {{44.0, 139.7}, {300.7, 41.0}}, label: '"the best conversations happen when both parties feel heard."'
+                              StaticText, 0x11a7ded00, {{34.0, 198.7}, {100.3, 18.0}}, label: 'Personal Insight'
+                              Image, 0x11a7debc0, {{35.0, 250.0}, {14.7, 14.7}}, identifier: 'scope', label: 'scope'
+                              StaticText, 0x11a7dea80, {{56.7, 251.3}, {51.7, 12.0}}, label: 'Fix first'
+                              StaticText, 0x11a7de940, {{34.0, 273.7}, {334.0, 82.0}}, label: 'Your answer stayed surface-level. One well-developed idea with a specific example beats three shallow points. These are the moves that build your warm voice.'
+                              Image, 0x11a7de800, {{45.0, 375.7}, {12.7, 12.7}}, identifier: 'arrow.right.circle.fill', label: 'Arrow Right Circle'
+                              StaticText, 0x11a7de6c0, {{66.7, 373.7}, {284.7, 53.3}}, label: 'Practice developing one idea fully before moving to the next. This is direct work on your warm voice.'
+                              StaticText, 0x11a7de580, {{34.0, 469.3}, {110.0, 20.7}}, label: 'The Story Entry'
+                              StaticText, 0x11a7de440, {{34.0, 500.0}, {312.0, 35.7}}, label: 'Open with "Last week..." or "I remember when..." — start with a story, not an opinion.'
+                              Button, 0x11a7de300, {{34.0, 545.7}, {334.0, 46.7}}, identifier: 'summary.postRepVerdict.startMiniDrill', label: 'Start 45s drill'
+                                Image, 0x11a7de1c0, {{144.0, 560.3}, {11.0, 17.7}}, identifier: 'bolt.fill', label: 'Flash'
+                                StaticText, 0x11a7de080, {{164.8, 558.7}, {95.3, 20.7}}, label: 'Start 45s drill'
+                            Button, 0x11a7ddf40, {{15.5, 625.8}, {371.0, 163.0}}, identifier: 'summary.talkToNoum.gated', label: 'Ask Noum. Want a coach's read on this rep?. Locked — Pro members unlock the coach thread for every rep.'
+                              Image, 0x11a7dde00, {{36.0, 648.3}, {22.0, 22.0}}, identifier: 'waveform', label: 'Noum coach'
+                              StaticText, 0x11a7dda40, {{74.0, 648.3}, {61.7, 12.0}}, label: 'ASK NOUM'
+                              Image, 0x11a71fac0, {{148.7, 650.3}, {6.0, 8.0}}, identifier: 'lock.fill', label: 'Lock'
+                              StaticText, 0x11a71ed00, {{158.7, 648.3}, {23.0, 12.0}}, label: 'PRO'
+                              StaticText, 0x11a71fc00, {{74.0, 666.3}, {228.3, 20.7}}, label: 'Want a coach's read on this rep?'
+                              StaticText, 0x11a71fd40, {{74.0, 691.0}, {276.0, 53.3}}, label: 'Pro members can open a coach thread about every rep, with quotes and metrics pre-loaded.'
+                              StaticText, 0x11a71fe80, {{74.0, 750.3}, {96.3, 18.0}}, label: 'Unlock with Pro'
+                              Image, 0x11a71f980, {{178.0, 753.3}, {8.7, 12.0}}, identifier: 'lock.fill', label: 'Lock'
+                            Button, 0x11a71f840, {{36.0, 824.3}, {330.0, 25.0}}, label: 'Session Details'
+                              Image, 0x11a71f700, {{37.3, 829.3}, {12.3, 15.0}}, identifier: 'doc.text.magnifyingglass', label: 'Search Document'
+                              StaticText, 0x11a71f5c0, {{57.3, 829.7}, {120.7, 14.3}}, label: 'SESSION DETAILS'
+                              Image, 0x11a71f480, {{358.3, 831.0}, {7.0, 12.0}}, identifier: 'collapsed'
+                            Button, 0x11a71f200, {{16.0, 881.3}, {370.0, 225.0}}, identifier: 'summary.lookingAhead.startCTA', label: 'Looking ahead. For your next session, try Ah-Counter. Best for real-time filler awareness and replacing verbal clutter with cleaner pauses. You've been away from the rhythm, so this drill reconnects the next rep to the communication goal you chose.'
+                              Image, 0x11a71f340, {{37.0, 902.3}, {12.7, 12.7}}, identifier: 'arrow.forward.circle', label: 'arrow.forward.circle'
+                              StaticText, 0x11a71ef80, {{58.7, 901.5}, {113.7, 14.3}}, label: 'LOOKING AHEAD'
+                              StaticText, 0x11a71ee40, {{36.0, 926.0}, {272.3, 18.0}}, label: 'For your next session, try Ah-Counter.'
+                              StaticText, 0x11a71f0c0, {{36.0, 954.0}, {311.7, 30.3}}, label: 'Best for real-time filler awareness and replacing verbal clutter with cleaner pauses.'
+                              StaticText, 0x109f47840, {{36.0, 994.3}, {315.3, 46.3}}, label: 'You've been away from the rhythm, so this drill reconnects the next rep to the communication goal you chose.'
+                              Button, 0x11a7d8000, {{36.0, 1054.7}, {154.7, 31.7}}, identifier: 'summary.lookingAhead.startCTA', label: 'Start Ah-Counter'
+                                Image, 0x11a7d8140, {{49.0, 1064.0}, {13.3, 13.3}}, identifier: 'arrow.forward.circle.fill', label: 'arrow.forward.circle.fill'
+                                StaticText, 0x11a7d8280, {{69.3, 1062.7}, {109.3, 15.7}}, label: 'Start Ah-Counter'
+                            Image, 0x11a7d83c0, {{37.3, 1144.7}, {11.3, 13.7}}, identifier: 'sparkles', label: 'Sparkle'
+                            StaticText, 0x11a7d8500, {{58.0, 1142.3}, {168.3, 18.0}}, label: 'Unlock deeper insights'
+                            Image, 0x11a7d8640, {{283.1, 1147.4}, {7.8, 7.8}}, identifier: 'sparkle', label: 'sparkle'
+                            Image, 0x11a7d8780, {{301.8, 1148.1}, {7.1, 6.8}}, identifier: 'star.fill', label: 'Favorite'
+                            Image, 0x11a7d88c0, {{319.2, 1146.9}, {8.8, 8.8}}, identifier: 'sparkle', label: 'sparkle'
+                            Image, 0x11a7d8a00, {{338.0, 1147.7}, {8.0, 7.7}}, identifier: 'star.fill', label: 'Favorite'
+                            Image, 0x11a7d8b40, {{355.5, 1146.5}, {9.6, 9.6}}, identifier: 'sparkle', label: 'sparkle'
+                            StaticText, 0x11a7d8c80, {{36.0, 1174.3}, {327.7, 46.3}}, label: 'Pro members get personalized coach reads, video body language analysis, trend tracking, and detailed drills after every session.'
+                            Image, 0x11a7d8dc0, {{37.3, 1236.0}, {10.7, 10.7}}, identifier: 'text.magnifyingglass', label: 'text.magnifyingglass'
+                            StaticText, 0x11a7d8f00, {{55.3, 1234.7}, {108.0, 13.3}}, label: 'Coach read preview'
+                            StaticText, 0x11a7d9040, {{46.0, 1266.0}, {282.7, 14.3}}, label: 'Your opening was strong — direct and grounded...'
+                            StaticText, 0x11a7d9180, {{46.0, 1284.3}, {273.3, 14.3}}, label: 'Filler pattern suggests rehearsal on transitions...'
+                            Button, 0x11a7d92c0, {{36.0, 1322.7}, {330.0, 42.0}}, label: 'See what Pro unlocks'
+                              StaticText, 0x11a7d9400, {{113.2, 1334.7}, {153.3, 18.0}}, label: 'See what Pro unlocks'
+                              Image, 0x11a7d9540, {{276.0, 1339.0}, {11.7, 9.7}}, identifier: 'arrow.right', label: 'Right'
+                        Button, 0x11a7d9680, {{16.0, 773.0}, {92.7, 55.0}}, label: 'Home'
+                          Image, 0x11a7d97c0, {{52.3, 782.3}, {20.0, 17.3}}, identifier: 'house.fill', label: 'Home'
+                          StaticText, 0x11a7d9900, {{46.4, 816.0}, {31.7, 12.0}}, label: 'Home'
+                        Button, 0x11a7d9a40, {{108.7, 773.0}, {92.3, 55.0}}, label: 'Retry'
+                          Image, 0x11a7d9b80, {{147.7, 782.3}, {14.3, 17.3}}, identifier: 'arrow.clockwise', label: 'Refresh'
+                          StaticText, 0x11a7d9cc0, {{138.4, 816.0}, {32.7, 12.0}}, label: 'Retry'
+                        Button, 0x11a7d9e00, {{201.0, 773.0}, {92.7, 55.0}}, label: 'New'
+                          Image, 0x11a7d9f40, {{239.7, 782.0}, {15.3, 18.3}}, identifier: 'sparkles', label: 'Sparkle'
+                          StaticText, 0x11a7da080, {{234.9, 816.0}, {24.7, 12.0}}, label: 'New'
+                        Button, 0x11a7da1c0, {{293.7, 773.0}, {92.3, 55.0}}, label: 'Share'
+                          Image, 0x11a7da300, {{332.3, 781.0}, {14.7, 20.0}}, identifier: 'square.and.arrow.up', label: 'Share'
+                          StaticText, 0x11a7da440, {{322.2, 816.0}, {35.0, 12.0}}, label: 'Share'
+                Other, 0x11a7da580, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x11a7da6c0, {{0.0, 0.0}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x11a7dc3c0, pid: 27945, label: 'Noum'
+Query chain:
+ →Find: Target Application 'com.jordancoaten.noum'
+  Output: {
+    Application, 0x11a7da800, pid: 27945, label: 'Noum'
+  }

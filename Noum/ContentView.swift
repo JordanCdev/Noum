@@ -207,8 +207,9 @@ struct ContentView: View {
     @StateObject private var deepLinkRouter = DeepLinkRouter.shared
     @StateObject private var league = LeagueManager.shared
     @StateObject private var ratingStore = RatingStore.shared
-    // M15 Phase 4 — Home discipline. Off by default; users who want every
-    // card from rep 1 can flip it in Settings → Practice.
+    // M15 Phase 4 — Home discipline. Off by default; developer accounts
+    // can flip it in Settings for inspection while normal users follow the
+    // signal gate.
     @AppStorage("practice.showAllHomeCards") private var showAllHomeCards: Bool = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedPracticeMode: PracticeMode = .timed
@@ -300,7 +301,7 @@ struct ContentView: View {
                             if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
                                 BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
                             }
-                            if showAllHomeCards {
+                            if showAllHomeCards && authManager.isDeveloper {
                                 secondaryDiscoveryCard.cardEntrance(3)
                             }
                         } else {
@@ -364,7 +365,7 @@ struct ContentView: View {
                             // Coach Card is the cold-start floor; the in-card
                             // coach-chat entry unlocks after one completed
                             // rep.
-                            // Reversible from Settings via
+                            // Reversible for developer inspection via
                             // `practice.showAllHomeCards`.
                             let gate = homeCardGate
                             // M14 redesign: HomeCoachCard replaces the old
@@ -723,8 +724,8 @@ struct ContentView: View {
     /// Read the live store state once per body invocation and produce the
     /// signal gate for Home. The Coach Card stays on at the floor; the rest
     /// unlock as signal accrues.
-    /// `showAllHomeCards` (Settings) reveals active optional cards; retired
-    /// Home surfaces stay off.
+    /// `showAllHomeCards` reveals active optional cards for developer
+    /// inspection only; retired Home surfaces stay off.
     private var homeCardGate: HomeCardGate {
         HomeSignalGate.evaluate(
             sessionCount: sessionStore.sessions.count,
@@ -733,7 +734,8 @@ struct ContentView: View {
             ),
             hasUnlockedPathNode: !pathProgress.completedNodes.isEmpty,
             hasCoachingProfile: coachingProfileStore.profile != nil,
-            showAllOverride: showAllHomeCards
+            showAllOverride: showAllHomeCards,
+            overrideEligible: authManager.isDeveloper
         )
     }
 

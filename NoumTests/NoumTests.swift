@@ -10117,8 +10117,8 @@ struct HomeAccessibilityModalGateTests {
 // MARK: - Home discipline (M15 Phase 4)
 
 /// Locks the contract that the signal-gated home holds back cards until
-/// the user has the signal to fill them — and that the Settings override
-/// fully reverses the gate.
+/// the user has the signal to fill them — and that the developer-only
+/// Settings override fully reverses the gate for inspection.
 struct HomeSignalGateTests {
     @Test func coldStartShowsOnlyFloorCards() {
         let gate = HomeSignalGate.evaluate(
@@ -10126,7 +10126,8 @@ struct HomeSignalGateTests {
             sessionsThisWeekCount: 0,
             hasUnlockedPathNode: false,
             hasCoachingProfile: false,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(gate.coachCard)
         #expect(!gate.utilityStrip)
@@ -10143,7 +10144,8 @@ struct HomeSignalGateTests {
             sessionsThisWeekCount: 1,
             hasUnlockedPathNode: false,
             hasCoachingProfile: false,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(!gate.utilityStrip)
         #expect(gate.askNoumShortcut)
@@ -10159,7 +10161,8 @@ struct HomeSignalGateTests {
             sessionsThisWeekCount: 3,
             hasUnlockedPathNode: false,
             hasCoachingProfile: false,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(gate.aiWeeklyInsight)
     }
@@ -10170,7 +10173,8 @@ struct HomeSignalGateTests {
             sessionsThisWeekCount: 0,
             hasUnlockedPathNode: false,
             hasCoachingProfile: true,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(!gate.journey, "Journey should not surface before one completed rep, even when a voice goal exists.")
     }
@@ -10181,26 +10185,44 @@ struct HomeSignalGateTests {
             sessionsThisWeekCount: 2,
             hasUnlockedPathNode: true,
             hasCoachingProfile: false,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(gate.journey)
     }
 
-    /// Reversibility contract — flipping the AppStorage escape hatch must
-    /// restore every active optional card regardless of signal. Surfaces
-    /// retired from Home stay retired.
-    @Test func showAllOverrideReturnsActiveOptionalCards() {
+    /// Reversibility contract — developer inspection can still restore
+    /// every active optional card regardless of signal. Surfaces retired
+    /// from Home stay retired.
+    @Test func developerShowAllOverrideReturnsActiveOptionalCards() {
         let gate = HomeSignalGate.evaluate(
             sessionCount: 0,
             sessionsThisWeekCount: 0,
             hasUnlockedPathNode: false,
             hasCoachingProfile: false,
-            showAllOverride: true
+            showAllOverride: true,
+            overrideEligible: true
         )
         #expect(gate == .allVisible)
         #expect(!gate.utilityStrip)
         #expect(!gate.dailyChallenge)
         #expect(!gate.voiceMetrics)
+    }
+
+    @Test func storedShowAllOverrideIsIgnoredForNormalAccounts() {
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: true,
+            overrideEligible: false
+        )
+        #expect(gate != .allVisible)
+        #expect(gate.coachCard)
+        #expect(!gate.askNoumShortcut)
+        #expect(!gate.journey)
+        #expect(!gate.aiWeeklyInsight)
     }
 
     @Test func weeklyCountUsesISOWeekBoundary() {
@@ -10227,7 +10249,8 @@ struct HomeSignalGateTests {
             sessionsThisWeekCount: 1,
             hasUnlockedPathNode: false,
             hasCoachingProfile: true,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(afterOneRepWithGoal.journey)
 
@@ -10236,7 +10259,8 @@ struct HomeSignalGateTests {
             sessionsThisWeekCount: 0,
             hasUnlockedPathNode: false,
             hasCoachingProfile: true,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(!coldWithGoal.journey, "Path must stay off the first screen until the user has one real rep.")
     }
@@ -10260,9 +10284,9 @@ struct AIWeeklyInsightPresentationTests {
 /// Edge cases on top of `HomeSignalGateTests`. The phase commit landed
 /// the happy-path coverage; these pin the contract at the corners where
 /// a future refactor is most likely to silently regress:
-///   • Override beats every signal-derived flag (not just when signals
-///     are zero) — a returning power-user with full signal must still
-///     get `.allVisible` exactly.
+///   • Developer override beats every signal-derived flag (not just when
+///     signals are zero) — a full-signal inspection state must still get
+///     `.allVisible` exactly.
 ///   • Empty-week boundary: `sessionsInCurrentISOWeek` on an empty
 ///     date list must return 0 (defensive against optionals collapsing
 ///     to `[]`).
@@ -10272,20 +10296,38 @@ struct AIWeeklyInsightPresentationTests {
 @MainActor
 struct HomeSignalGateEdgeTests {
 
-    @Test func overrideWinsEvenWhenSignalsAlreadyTrue() {
-        // Returning user with rich signal flips the toggle on. The
-        // override path should still hand back the canonical
-        // `.allVisible` value identically, so call sites that compare
-        // against `.allVisible` to short-circuit downstream gating stay
-        // correct.
+    @Test func developerOverrideWinsEvenWhenSignalsAlreadyTrue() {
+        // Developer with rich signal flips the inspection toggle on. The
+        // override path should still hand back the canonical `.allVisible`
+        // value identically, so call sites that compare against `.allVisible`
+        // to short-circuit downstream gating stay correct.
         let gate = HomeSignalGate.evaluate(
             sessionCount: 50,
             sessionsThisWeekCount: 12,
             hasUnlockedPathNode: true,
             hasCoachingProfile: true,
-            showAllOverride: true
+            showAllOverride: true,
+            overrideEligible: true
         )
         #expect(gate == .allVisible)
+    }
+
+    @Test func nonDeveloperOverrideDoesNotBypassRichSignalGate() {
+        // A normal account can carry a stale AppStorage value from a prior
+        // debug/dev session. It must still follow the signal gate instead
+        // of opening every active optional Home surface.
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 1,
+            sessionsThisWeekCount: 1,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: true,
+            overrideEligible: false
+        )
+        #expect(gate != .allVisible)
+        #expect(gate.askNoumShortcut)
+        #expect(!gate.journey)
+        #expect(!gate.aiWeeklyInsight)
     }
 
     @Test func emptyDateListReturnsZeroForCurrentWeek() {
@@ -10309,7 +10351,8 @@ struct HomeSignalGateEdgeTests {
                 sessionsThisWeekCount: 0,
                 hasUnlockedPathNode: false,
                 hasCoachingProfile: false,
-                showAllOverride: false
+                showAllOverride: false,
+                overrideEligible: false
             )
             #expect(gate.coachCard, "coachCard must be true at \(sessions) sessions")
         }
@@ -10321,7 +10364,8 @@ struct HomeSignalGateEdgeTests {
             sessionsThisWeekCount: 0,
             hasUnlockedPathNode: false,
             hasCoachingProfile: false,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(!cold.utilityStrip)
         #expect(!cold.askNoumShortcut)
@@ -10331,7 +10375,8 @@ struct HomeSignalGateEdgeTests {
             sessionsThisWeekCount: 1,
             hasUnlockedPathNode: false,
             hasCoachingProfile: false,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(!afterOneRep.utilityStrip)
         #expect(afterOneRep.askNoumShortcut)
@@ -10348,7 +10393,8 @@ struct HomeSignalGateEdgeTests {
             sessionsThisWeekCount: 0,
             hasUnlockedPathNode: true,
             hasCoachingProfile: false,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(pathOnly.journey)
 
@@ -10357,7 +10403,8 @@ struct HomeSignalGateEdgeTests {
             sessionsThisWeekCount: 0,
             hasUnlockedPathNode: false,
             hasCoachingProfile: true,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(goalOnly.journey)
 
@@ -10366,7 +10413,8 @@ struct HomeSignalGateEdgeTests {
             sessionsThisWeekCount: 0,
             hasUnlockedPathNode: false,
             hasCoachingProfile: false,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(!neither.journey, "Journey must stay gated when neither leg is satisfied")
     }
@@ -10380,7 +10428,8 @@ struct HomeSignalGateEdgeTests {
             sessionsThisWeekCount: 2,
             hasUnlockedPathNode: false,
             hasCoachingProfile: false,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(!twoSessions.aiWeeklyInsight, "Two sessions this week should not unlock the AI Weekly Insight card")
 
@@ -10389,7 +10438,8 @@ struct HomeSignalGateEdgeTests {
             sessionsThisWeekCount: 3,
             hasUnlockedPathNode: false,
             hasCoachingProfile: false,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(threeSessions.aiWeeklyInsight)
     }
@@ -10400,7 +10450,8 @@ struct HomeSignalGateEdgeTests {
             sessionsThisWeekCount: 5,
             hasUnlockedPathNode: true,
             hasCoachingProfile: true,
-            showAllOverride: false
+            showAllOverride: false,
+            overrideEligible: false
         )
         #expect(!established.dailyChallenge)
         #expect(!established.voiceMetrics)
@@ -10410,7 +10461,8 @@ struct HomeSignalGateEdgeTests {
             sessionsThisWeekCount: 5,
             hasUnlockedPathNode: true,
             hasCoachingProfile: true,
-            showAllOverride: true
+            showAllOverride: true,
+            overrideEligible: true
         )
         #expect(!override.dailyChallenge)
         #expect(!override.voiceMetrics)

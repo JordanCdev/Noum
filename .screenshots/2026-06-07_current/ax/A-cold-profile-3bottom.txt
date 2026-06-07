@@ -1,0 +1,87 @@
+Attributes: Application, 0x1178dc140, pid: 24893, label: 'Noum'
+Element subtree:
+ →Application, 0x1178dc140, pid: 24893, label: 'Noum'
+    Window (Main), 0x1178dc280, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x1178dcf00, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x1178dd040, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x1178dcb40, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x1178dcdc0, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x1178dcc80, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'home.screen'
+                NavigationBar, 0x1178dc8c0, {{0.0, 62.0}, {402.0, 54.0}}, identifier: 'Profile'
+                  Button, 0x1178dca00, {{16.0, 62.0}, {44.0, 44.0}}, identifier: 'BackButton', label: 'Back'
+                  StaticText, 0x1178dc640, {{175.0, 73.7}, {51.7, 20.7}}, label: 'Profile'
+                Other, 0x1178dc780, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x1178dc500, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x1178dc3c0, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x1178dc000, {{0.0, 0.0}, {402.0, 874.0}}
+                        ScrollView, 0x1178dd2c0, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'profile.screen'
+                          Other, 0x1178dd400, {{0.0, -279.3}, {402.0, 1119.3}}
+                            Image, 0x1178dd540, {{145.2, -233.7}, {111.7, 111.7}}, identifier: 'waveform', label: 'Noum coach, calm'
+                            StaticText, 0x1178dd680, {{125.7, -102.3}, {150.7, 26.3}}, label: 'Guest Speaker'
+                            StaticText, 0x1178dd7c0, {{109.2, -70.0}, {183.7, 18.0}}, label: 'Voice target: Authoritative'
+                            Button, 0x1178dd900, {{20.0, -16.0}, {362.0, 42.0}}, identifier: 'profile.upgradeCTA', label: 'Upgrade to Pro'
+                              Image, 0x1178dda40, {{41.3, -1.3}, {16.0, 12.7}}, identifier: 'crown.fill', label: 'crown.fill'
+                              StaticText, 0x1178ddb80, {{66.7, -4.0}, {108.3, 18.0}}, label: 'Upgrade to Pro'
+                              Image, 0x1178ddcc0, {{354.7, -0.3}, {6.7, 11.0}}, identifier: 'chevron.right', label: 'Forward'
+                            Image, 0x1178dde00, {{41.3, 65.3}, {13.3, 11.7}}, identifier: 'chart.line.uptrend.xyaxis', label: 'Chart Line'
+                            StaticText, 0x1178ddf40, {{64.0, 64.0}, {110.3, 14.3}}, label: 'SPEAKING RATING'
+                            StaticText, 0x1178de080, {{40.0, 94.3}, {83.7, 53.0}}, label: '612'
+                            Image, 0x1178de1c0, {{289.3, 117.0}, {8.0, 8.0}}, identifier: 'arrow.up.right', label: 'arrow.up.right'
+                            StaticText, 0x1178de300, {{302.7, 113.7}, {59.3, 14.3}}, label: 'Peak: 624'
+                            StaticText, 0x1178de440, {{270.7, 134.0}, {91.3, 13.3}}, label: '12 rated sessions'
+                            Image, 0x1178de580, {{41.3, 166.3}, {10.7, 8.7}}, identifier: 'arrow.right', label: 'Right'
+                            StaticText, 0x1178de6c0, {{59.3, 163.3}, {87.3, 14.3}}, label: 'Holding steady'
+                            StaticText, 0x1178de800, {{306.3, 163.3}, {55.7, 14.3}}, label: 'Peak 624'
+                            Image, 0x1178de940, {{40.7, 194.7}, {12.7, 12.7}}, identifier: 'checkmark.seal.fill', label: 'Verified', Selected
+                            StaticText, 0x1178dea80, {{60.0, 193.7}, {122.7, 14.3}}, label: 'Strengths: Directness'
+                            Image, 0x1178debc0, {{41.0, 226.0}, {11.3, 10.3}}, identifier: 'exclamationmark.triangle.fill', label: 'Warning'
+                            StaticText, 0x1178ded00, {{59.3, 224.0}, {213.7, 14.3}}, label: 'Working on: Filler words, Pace control'
+                            Other, 0x1178dee40, {{19.5, 275.8}, {363.0, 298.7}}, identifier: 'profile.coachRead'
+                              Image, 0x1178def80, {{41.3, 297.3}, {12.0, 12.0}}, identifier: 'sparkle.magnifyingglass', label: 'sparkle.magnifyingglass'
+                              StaticText, 0x1178df0c0, {{62.7, 297.3}, {75.0, 12.0}}, label: 'YOUR COACH'
+                              StaticText, 0x1178df200, {{289.3, 297.3}, {72.7, 12.0}}, label: 'STABLE READ'
+                              StaticText, 0x1178df340, {{40.0, 322.3}, {321.0, 61.7}}, label: 'Pace appears to be the highest-leverage focus because improving but still weak; keep checking against future reps.'
+                              Image, 0x1178df480, {{41.3, 400.0}, {10.3, 9.0}}, identifier: 'arrow.turn.down.right', label: 'arrow.turn.down.right'
+                              StaticText, 0x1178df5c0, {{61.0, 396.0}, {75.7, 18.0}}, label: 'Timed: 30s+'
+                              StaticText, 0x1178df700, {{52.0, 438.0}, {269.3, 35.7}}, label: 'You spoke from a real place. Warmth lives in specifics, not platitudes.'
+                              StaticText, 0x1178df840, {{52.0, 479.7}, {294.0, 30.3}}, label: '"In my experience, the best conversations happen when both parties feel heard"'
+                              Button, 0x1178df980, {{40.0, 534.0}, {188.0, 20.0}}, identifier: 'profile.askNoumLink', label: 'Ask Noum what to drill next. Opens the Ask Noum thread.'
+                                StaticText, 0x1178dfac0, {{40.0, 536.0}, {167.7, 18.0}}, label: 'Ask Noum what to drill next'
+                                Image, 0x1178dfc00, {{215.0, 540.0}, {11.7, 9.7}}, identifier: 'arrow.right', label: 'Right'
+                            StaticText, 0x1178dfd40, {{24.0, 592.0}, {58.0, 12.0}}, identifier: 'profile.evidenceHub', label: 'EVIDENCE'
+                            Other, 0x1178dfe80, {{19.5, 615.5}, {363.0, 131.0}}, identifier: 'profile.evidenceHub'
+                              Button, 0x10a672e40, {{19.5, 615.5}, {178.0, 131.0}}, identifier: 'profile.evidence.history', label: 'Review reps, 45 saved reps'
+                                Image, 0x10a672940, {{37.7, 635.3}, {17.0, 15.7}}, identifier: 'clock.arrow.circlepath', label: 'clock.arrow.circlepath'
+                                StaticText, 0x10a673c00, {{32.0, 666.0}, {74.0, 18.0}}, label: 'Review reps'
+                                StaticText, 0x10a673ac0, {{32.0, 692.0}, {71.7, 15.3}}, label: '45 saved reps'
+                              Button, 0x10a673200, {{204.5, 615.5}, {178.0, 131.0}}, identifier: 'profile.evidence.library', label: 'Growth library, 7 proof points'
+                                Image, 0x10a672f80, {{223.3, 637.3}, {17.7, 11.0}}, identifier: 'quote.opening', label: 'quote.opening'
+                                StaticText, 0x10a6730c0, {{217.0, 666.0}, {87.3, 18.0}}, label: 'Growth library'
+                                StaticText, 0x10a673480, {{217.0, 692.0}, {72.3, 15.3}}, label: '7 proof points'
+                            Button, 0x10a673340, {{20.0, 758.0}, {362.0, 42.0}}, identifier: 'profile.evidenceHub', label: 'Show supporting evidence'
+                              Image, 0x10a673700, {{38.0, 772.3}, {16.0, 13.7}}, identifier: 'slider.horizontal.3', label: 'Edit'
+                              StaticText, 0x10a6735c0, {{66.0, 770.0}, {164.3, 18.0}}, label: 'Show supporting evidence'
+                              StaticText, 0x10a673840, {{293.0, 773.0}, {50.3, 12.0}}, label: 'OPTIONAL'
+                              Image, 0x10a673980, {{354.7, 776.0}, {10.0, 6.0}}, identifier: 'chevron.down', label: 'Go Down'
+                          Other, 0x10a673e80, {{0.0, -0.0}, {402.0, 874.0}}
+                            Other, 0x10a673d40, {{0.0, 0.0}, {402.0, 170.8}}
+                          Other, 0x10a671b80, {{0.0, -0.0}, {402.0, 874.0}}
+                            Other, 0x10a672440, {{0.0, 0.0}, {402.0, 170.8}}
+                              Image, 0x10a671f40, {{-120.0, -166.0}, {642.0, 332.0}}, identifier: 'AdditionalDimmingOverlay'
+                              Other, 0x10a671e00, {{0.0, 0.0}, {402.0, 106.0}}
+                              Other, 0x10a671cc0, {{0.0, 0.0}, {402.0, 170.8}}
+                                Other, 0x10a6712c0, {{0.0, 0.0}, {402.0, 170.8}}
+                              Other, 0x10a671a40, {{0.0, 0.0}, {402.0, 170.8}}
+                                Other, 0x10a671540, {{0.0, 0.0}, {402.0, 170.8}}
+                              Other, 0x10a671400, {{0.0, 0.0}, {402.0, 170.8}}
+                                Other, 0x10a671040, {{0.0, 0.0}, {402.0, 170.8}}
+                                Other, 0x10a670f00, {{0.0, 0.0}, {402.0, 170.8}}
+                Other, 0x10a670dc0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x10a671180, {{0.0, 0.0}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x1178dc140, pid: 24893, label: 'Noum'
+Query chain:
+ →Find: Target Application 'com.jordancoaten.noum'
+  Output: {
+    Application, 0x10a672d00, pid: 24893, label: 'Noum'
+  }

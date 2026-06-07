@@ -1,0 +1,57 @@
+Attributes: Application, 0x1197d0500, pid: 26373, label: 'Noum'
+Element subtree:
+ →Application, 0x1197d0500, pid: 26373, label: 'Noum'
+    Window (Main), 0x1197d0780, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x1197d08c0, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x1197d0a00, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x1197d0640, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x1197d0140, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x1197d03c0, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'home.screen'
+                Other, 0x1197d0280, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x1197d0000, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x1197d0c80, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x1197d0dc0, {{0.0, 0.0}, {402.0, 874.0}}
+                        ScrollView, 0x1197d0f00, {{0.0, 0.0}, {402.0, 874.0}}
+                          Other, 0x1197d1040, {{0.0, 59.3}, {402.0, 698.7}}
+                            Other, 0x1197d1180, {{20.0, 95.0}, {362.0, 491.7}}, identifier: 'home.coachCard'
+                              Image, 0x1197d12c0, {{144.3, 134.1}, {113.5, 113.5}}, identifier: 'waveform.badge.magnifyingglass', label: 'Noum coach, reading your session'
+                              StaticText, 0x1197d1400, {{94.8, 270.3}, {212.3, 28.7}}, identifier: 'home.coachCard.title', label: 'Stay with the case.'
+                              StaticText, 0x1197d1540, {{52.0, 311.0}, {298.0, 61.7}}, identifier: 'home.coachCard.subtitle', label: 'This was prescribed in the current case file, but Noum has not observed a followed rep yet.'
+                              Image, 0x1197d1680, {{107.7, 397.0}, {11.0, 11.0}}, identifier: 'scope', label: 'Aligned with your authoritative voice.'
+                              StaticText, 0x1197d17c0, {{123.3, 395.7}, {171.7, 13.3}}, label: 'Aligned with your authoritative voice.'
+                              Button, 0x1197d1900, {{40.0, 424.0}, {322.0, 52.3}}, identifier: 'home.coachCard.begin', label: 'Begin · Timed'
+                              Button, 0x1197d1a40, {{39.5, 495.8}, {323.0, 71.3}}, identifier: 'home.coachCard.askNoum', label: 'Ask Noum. I read your recent reps first, then keep the answer focused.. Open the thread.'
+                                Image, 0x1197d1b80, {{61.7, 525.3}, {14.7, 12.3}}, identifier: 'message.fill', label: 'Message'
+                                StaticText, 0x1197d1cc0, {{94.0, 506.3}, {61.7, 18.0}}, label: 'Ask Noum'
+                                StaticText, 0x1197d1e00, {{94.0, 526.3}, {122.3, 30.3}}, label: 'I read your recent reps first, then keep the answer focused.'
+                                StaticText, 0x1197d1f40, {{244.0, 523.8}, {85.3, 15.3}}, label: 'Open the thread'
+                                Image, 0x1197d2080, {{341.3, 526.7}, {6.0, 10.0}}, identifier: 'chevron.right', label: 'Forward'
+                            Other, 0x1197d21c0, {{19.5, 600.2}, {363.0, 62.3}}, identifier: 'home.path', label: 'First lesson cleared. Mission 5 of 20. 1 more lesson practice pass from unlocked.'
+                              Button, 0x1197d2300, {{20.0, 600.7}, {362.0, 61.3}}, identifier: 'home.path.missionCounter-home.path.missionTitle', label: 'Path, Mission 5 of 20, First lesson cleared'
+                                Image, 0x1197d2440, {{36.0, 615.3}, {32.0, 32.0}}, identifier: 'map.fill', label: 'Show Map'
+                                StaticText, 0x1197d2580, {{84.0, 614.7}, {29.3, 12.0}}, label: 'PATH'
+                                StaticText, 0x1197d26c0, {{121.3, 612.7}, {78.0, 15.3}}, identifier: 'home.path.missionCounter', label: 'Mission 5 of 20'
+                                StaticText, 0x1197d2800, {{84.0, 632.0}, {120.0, 18.0}}, identifier: 'home.path.missionTitle', label: 'First lesson cleared'
+                                Image, 0x1197d2940, {{358.7, 626.0}, {6.7, 11.0}}, identifier: 'chevron.right', label: 'Forward'
+                        Other, 0x1197d2a80, {{13.5, 773.5}, {375.0, 57.0}}
+                          Button, 0x1197d2bc0, {{21.5, 781.5}, {84.7, 41.0}}, identifier: 'nav.practice', label: 'Open Train'
+                            Image, 0x1197d2d00, {{38.3, 796.7}, {18.3, 10.7}}, identifier: 'dumbbell.fill', label: 'dumbbell.fill'
+                            StaticText, 0x1197d2e40, {{63.6, 794.3}, {26.3, 15.3}}, label: 'Train'
+                          Button, 0x1197d2f80, {{113.2, 781.5}, {84.3, 41.0}}, identifier: 'nav.history', label: 'Open Review'
+                            Image, 0x1197d30c0, {{125.7, 796.0}, {15.7, 12.3}}, identifier: 'book.fill', label: 'Bookmark'
+                            StaticText, 0x1197d3200, {{149.6, 794.3}, {37.7, 15.3}}, label: 'Review'
+                          Button, 0x1197d3340, {{204.5, 781.5}, {84.7, 41.0}}, identifier: 'nav.social', label: 'Open Profile'
+                            Image, 0x1197d3480, {{221.0, 796.3}, {11.0, 11.7}}, identifier: 'person.fill', label: 'person.fill'
+                            StaticText, 0x1197d35c0, {{242.4, 794.3}, {34.7, 15.3}}, label: 'Profile'
+                          Button, 0x1197d3700, {{296.2, 781.5}, {84.3, 41.0}}, identifier: 'nav.settings', label: 'Open Settings'
+                            Image, 0x1197d3840, {{307.3, 796.0}, {13.7, 12.0}}, identifier: 'slider.horizontal.3', label: 'Edit'
+                            StaticText, 0x1197d3980, {{330.1, 794.7}, {42.7, 14.7}}, label: 'Settings'
+                Other, 0x1197d3ac0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x1197d3c00, {{0.0, 0.0}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x1197d0500, pid: 26373, label: 'Noum'
+Query chain:
+ →Find: Target Application 'com.jordancoaten.noum'
+  Output: {
+    Application, 0x1197d0b40, pid: 26373, label: 'Noum'
+  }

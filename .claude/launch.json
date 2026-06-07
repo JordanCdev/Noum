@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Firebase Hosting",
+      "runtimeExecutable": "firebase",
+      "runtimeArgs": ["emulators:start", "--only", "hosting"],
+      "port": 5000
+    },
+    {
+      "name": "Firebase Functions",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "functions", "run", "serve"],
+      "port": 5001
+    },
+    {
+      "name": "Firebase Emulators (all)",
+      "runtimeExecutable": "firebase",
+      "runtimeArgs": ["emulators:start"],
+      "port": 4000
+    },
+    {
+      "name": "UI Comparison",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/jordan/src/GitHub/Noum/.screenshots/2026-06-07_mockups/preview/serve.js"],
+      "port": 4322
+    }
+  ]
+}
