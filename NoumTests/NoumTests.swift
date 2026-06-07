@@ -6857,6 +6857,19 @@ struct ProfileCollapseContractTests {
         }
     }
 
+    @Test func profileEvidenceHubDefaultsToProofThenHistoryRows() {
+        let hub = ProfileEvidenceHubPresentation.valueFirst
+
+        #expect(hub.linkOrder == [.growthLibrary, .history])
+        #expect(hub.usesCompactRows)
+    }
+
+    @Test func profileEvidenceHubDoesNotLeadWithDashboardChrome() {
+        let hub = ProfileEvidenceHubPresentation.valueFirst
+
+        #expect(!hub.showsDefaultHeader)
+    }
+
     @Test func identityHeroDoesNotExposeProgressCurrency() {
         let identity = ProfileIdentityPresentation.make(profile: nil)
 

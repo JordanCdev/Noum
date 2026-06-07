@@ -83,6 +83,23 @@ struct ProfileEvidenceDetailPlan: Equatable {
     }
 }
 
+enum ProfileEvidenceHubLink: String, Hashable {
+    case growthLibrary
+    case history
+}
+
+struct ProfileEvidenceHubPresentation: Equatable {
+    let linkOrder: [ProfileEvidenceHubLink]
+    let usesCompactRows: Bool
+    let showsDefaultHeader: Bool
+
+    static let valueFirst = ProfileEvidenceHubPresentation(
+        linkOrder: [.growthLibrary, .history],
+        usesCompactRows: true,
+        showsDefaultHeader: false
+    )
+}
+
 struct ProfileIdentityPresentation: Equatable {
     let subtitle: String
     let exposesProgressCurrency: Bool
@@ -644,34 +661,24 @@ struct ProfileView: View {
     }
 
     private var profileEvidenceHub: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack {
-                Text("Evidence")
-                    .font(Typography.micro.weight(.bold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(1.0)
-                Spacer()
+        let presentation = ProfileEvidenceHubPresentation.valueFirst
+        return VStack(alignment: .leading, spacing: Spacing.sm) {
+            if presentation.showsDefaultHeader {
+                HStack {
+                    Text("Evidence")
+                        .font(Typography.micro.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(1.0)
+                    Spacer()
+                }
+                .padding(.horizontal, 4)
             }
-            .padding(.horizontal, 4)
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                profileEvidenceLink(
-                    title: "Review reps",
-                    subtitle: historyLinkSubtitle,
-                    icon: "clock.arrow.circlepath",
-                    tint: AppColor.brandBlue,
-                    destination: .sessionHistory,
-                    identifier: "profile.evidence.history"
-                )
-                profileEvidenceLink(
-                    title: "Growth library",
-                    subtitle: growthLibrarySubtitle,
-                    icon: "quote.opening",
-                    tint: AppColor.pro,
-                    destination: .growthLibrary,
-                    identifier: "profile.evidence.library"
-                )
+            VStack(spacing: presentation.usesCompactRows ? 10 : Spacing.cardGap) {
+                ForEach(presentation.linkOrder, id: \.self) { link in
+                    profileEvidenceLink(for: link)
+                }
             }
 
             Button {
@@ -696,30 +703,18 @@ struct ProfileView: View {
 
     private var profileEvidenceToggleLabel: some View {
         HStack(spacing: 10) {
-            Image(systemName: "slider.horizontal.3")
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(AppColor.brandBlue)
             Text(showProfileEvidence ? "Hide supporting evidence" : "Show supporting evidence")
-                .font(Typography.caption.weight(.semibold))
-                .foregroundStyle(.primary)
-            Spacer()
-            Text("Optional")
-                .font(Typography.micro.weight(.semibold))
+                .font(Typography.captionSmall.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .textCase(.uppercase)
+            Spacer()
             Image(systemName: "chevron.down")
                 .font(Typography.captionSmall.weight(.bold))
                 .foregroundStyle(.tertiary)
                 .rotationEffect(.degrees(showProfileEvidence ? 180 : 0))
                 .animation(reduceMotion ? nil : .standardSpring, value: showProfileEvidence)
         }
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, 12)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .stroke(Color.black.opacity(0.05), lineWidth: 1)
-        )
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
         .contentShape(Rectangle())
     }
 
@@ -742,24 +737,33 @@ struct ProfileView: View {
         identifier: String
     ) -> some View {
         NavigationLink(value: destination) {
-            VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(tint)
-                    .frame(width: 30, height: 30)
-                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                Text(title)
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(Typography.captionSmall)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 42, height: 42)
+                    .background(tint.opacity(0.12), in: Circle())
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(Typography.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(Typography.captionSmall)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
             }
-            .frame(maxWidth: .infinity, minHeight: 106, alignment: .topLeading)
-            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 12)
             .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
@@ -770,17 +774,41 @@ struct ProfileView: View {
         .accessibilityIdentifier(identifier)
     }
 
+    @ViewBuilder
+    private func profileEvidenceLink(for link: ProfileEvidenceHubLink) -> some View {
+        switch link {
+        case .growthLibrary:
+            profileEvidenceLink(
+                title: "Growth library",
+                subtitle: growthLibrarySubtitle,
+                icon: "quote.opening",
+                tint: AppColor.positive,
+                destination: .growthLibrary,
+                identifier: "profile.evidence.library"
+            )
+        case .history:
+            profileEvidenceLink(
+                title: "History",
+                subtitle: historyLinkSubtitle,
+                icon: "clock.arrow.circlepath",
+                tint: .secondary,
+                destination: .sessionHistory,
+                identifier: "profile.evidence.history"
+            )
+        }
+    }
+
     private var historyLinkSubtitle: String {
         if sessions.isEmpty { return "Saved reps appear here" }
         let noun = sessions.count == 1 ? "saved rep" : "saved reps"
-        return "\(sessions.count) \(noun)"
+        return "\(sessions.count) \(noun) · trends over time"
     }
 
     private var growthLibrarySubtitle: String {
         let count = proofStore.records.count
-        if count == 0 { return "Proof appears after reps" }
-        let noun = count == 1 ? "proof point" : "proof points"
-        return "\(count) \(noun)"
+        if count == 0 { return "Proof moments appear after reps" }
+        let noun = count == 1 ? "proof moment" : "proof moments"
+        return "\(count) \(noun) · replay your best lines"
     }
 
     private var profileEvidenceDetails: some View {
