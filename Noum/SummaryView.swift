@@ -2571,6 +2571,15 @@ struct SummaryView: View {
     }
     // MARK: - Personal Best Celebration (Full-Screen Intermediary)
 
+    /// Honesty gate for the full post-rep celebration (Iteration 1 / reward
+    /// ownership). Returns true ONLY when SessionFinalizer detected a real
+    /// crossing. `score` and `xpEarned` are accepted but intentionally ignored
+    /// so a test can pin that neither a high score nor an XP threshold triggers
+    /// a celebration on its own (the prior `score>=7 || xp>=100` bug).
+    static func shouldShowCelebration(hasMilestoneCrossing: Bool, score: Int, xpEarned: Int) -> Bool {
+        hasMilestoneCrossing
+    }
+
     private func personalBestCelebration(milestone: MilestoneEvent) -> some View {
         PersonalBestCelebrationScreen(
             scoreValue: scoreValue,
@@ -2822,7 +2831,17 @@ struct SummaryView: View {
             }
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.35)) {
-                    celebrationVisible = scoreValue >= 7 || xpEarned >= 100
+                    // Reward ownership (Iteration 1): the full celebration fires
+                    // ONLY on a real crossing detected by SessionFinalizer (personal
+                    // best / level-up / streak / count milestone) — never on a score
+                    // or XP threshold, and never on the first rep (count milestones
+                    // start at 10, streak at 3, no PB on rep 1). The score-ring
+                    // count-up + haptic stays the honest per-rep beat.
+                    celebrationVisible = Self.shouldShowCelebration(
+                        hasMilestoneCrossing: result.milestone != nil,
+                        score: scoreValue,
+                        xpEarned: xpEarned
+                    )
                 }
             }
             try? await Task.sleep(for: .seconds(0.8))

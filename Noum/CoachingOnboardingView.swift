@@ -557,6 +557,13 @@ struct CoachingOnboardingView: View {
 
                 Button {
                     saveProfile()
+                    if !isEditingExistingProfile {
+                        // First-run: don't drop the brand-new user on a cold Home.
+                        // Route straight to their prescribed first rep (the picker
+                        // leads with the Coach Pick + Begin). Iteration 3 — first
+                        // felt value before Home. (Editing from Settings just saves.)
+                        DeepLinkRouter.shared.pending = URL(string: "noum://train")
+                    }
                     dismiss()
                 } label: {
                     HStack(spacing: Spacing.sm) {
