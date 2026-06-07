@@ -121,6 +121,29 @@ enum LeaguePlacementPresentation {
     }
 }
 
+enum LeagueActivityPresentation {
+    static func weeklyActivityValue(sessionCount: Int, dailyChallengeClaims: Int) -> String {
+        if sessionCount > 0 {
+            return "\(sessionCount) rep\(sessionCount == 1 ? "" : "s")"
+        }
+        if dailyChallengeClaims > 0 {
+            return dailyChallengeClaims == 1 ? "1 daily" : "\(dailyChallengeClaims) dailies"
+        }
+        return "—"
+    }
+
+    static func weeklySessionCount(from sessions: [PracticeSession], now: Date, calendar: Calendar = isoCalendar()) -> Int {
+        guard let week = calendar.dateInterval(of: .weekOfYear, for: now) else { return 0 }
+        return sessions.filter { week.contains($0.date) }.count
+    }
+
+    private static func isoCalendar() -> Calendar {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.firstWeekday = 2
+        return calendar
+    }
+}
+
 // MARK: - Tier Promotion
 
 /// Captures a tier-up event so the home screen can celebrate it on next
@@ -495,9 +518,11 @@ extension LeagueManager {
 enum PublicProfileBuilder {
     static func build(accountID: String, displayName: String) -> PublicProfileSnapshot {
         let rating = RatingStore.shared.rating
-        let calendar = Calendar.current
-        let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        let weeklyReps = PracticeSessionStore.shared.sessions.filter { $0.date >= weekAgo }.count
+        let now = Date()
+        let weeklyReps = LeagueActivityPresentation.weeklySessionCount(
+            from: PracticeSessionStore.shared.sessions,
+            now: now
+        )
         let streak = StreakFreezeManager.shared.currentStreak
         let tier = LeagueTier.tier(for: rating.overall)
 
@@ -510,7 +535,7 @@ enum PublicProfileBuilder {
             weeklyReps: weeklyReps,
             weeklyDelta: rating.weeklyDelta,
             leagueTier: rating.hasRatedEvidence ? tier.rawValue : nil,
-            updatedAt: Date()
+            updatedAt: now
         )
     }
 }

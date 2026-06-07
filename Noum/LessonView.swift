@@ -5,14 +5,14 @@ import SwiftUI
 //
 // Interactive step-by-step lesson runner.
 //
-// The shape mirrors a Duolingo lesson:
+// The shape is a compact teaching runner:
 // - Top: thin step-progress bar.
 // - Middle: the active step (concept / spot-it / apply).
 // - Bottom: a single primary CTA that adapts to the step
-//   ("Got it" → "Check" → "Speak now" → "Continue").
+//   ("Got it" -> "Check" -> "Speak now" -> "Continue").
 //
 // On completion, a `LessonOutcome` is produced and handed to `LessonStore`.
-// The store decides whether the crown level rises and surfaces the
+// The store decides whether practice-pass progress rises and surfaces the
 // celebration.
 
 @available(iOS 17.0, macOS 12.0, *)
@@ -686,16 +686,24 @@ struct LessonView: View {
         }
 
         if currentStep < lesson.steps.count - 1 {
-            withAnimation(.snappySpring) {
-                currentStep += 1
-                spotItSelection = nil
-                spotItRevealed = false
-                applyPhase = .ready
-                applyTranscript = ""
-                applyFindings = []
-            }
+            advanceStepState()
         } else {
             finishLesson()
+        }
+    }
+
+    private func advanceStepState() {
+        let update = {
+            currentStep += 1
+            spotItSelection = nil
+            spotItRevealed = false
+            applyPhase = .ready
+            applyTranscript = ""
+            applyFindings = []
+        }
+        if reduceMotion { update() }
+        else {
+            withAnimation(.snappySpring, update)
         }
     }
 
@@ -711,12 +719,15 @@ struct LessonView: View {
             stepResults: stepResults,
             xpEarned: xp
         )
-        // Apply mastery + XP.
+        // Apply mastery progress + XP accounting.
         lessonStore.apply(outcome: final)
         profileManager.addXP(xp)
 
-        withAnimation(.bouncySpring) {
-            didShowSummary = true
+        if reduceMotion { didShowSummary = true }
+        else {
+            withAnimation(.bouncySpring) {
+                didShowSummary = true
+            }
         }
     }
 
@@ -734,8 +745,7 @@ struct LessonView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            crownRow
-            xpRow
+            practicePassRow
 
             Spacer()
 
@@ -769,40 +779,20 @@ struct LessonView: View {
     }
 
     private var passedSubhead: String {
-        let crown = lessonStore.crownLevel(for: lesson.id)
-        if crown >= LessonStore.crownCap { return "You've mastered \(lesson.title)." }
-        if crown == 1 { return "First crown earned. Four more to master." }
-        return "\(crown) of 5 crowns on \(lesson.title)."
+        LessonProgressPresentation(completedPasses: lessonStore.practicePassCount(for: lesson.id))
+            .lessonSummaryLine(title: lesson.title)
     }
 
-    private var crownRow: some View {
-        HStack(spacing: 6) {
-            ForEach(0..<LessonStore.crownCap, id: \.self) { i in
-                Image(systemName: i < lessonStore.crownLevel(for: lesson.id) ? "crown.fill" : "crown")
+    private var practicePassRow: some View {
+        let progress = LessonProgressPresentation(completedPasses: lessonStore.practicePassCount(for: lesson.id))
+        return HStack(spacing: 6) {
+            ForEach(0..<LessonStore.masteryPassCap, id: \.self) { i in
+                Image(systemName: i < progress.completedPasses ? "checkmark.seal.fill" : "circle")
                     .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(i < lessonStore.crownLevel(for: lesson.id) ? AppColor.brandBlue : Color.secondary.opacity(0.35))
+                    .foregroundStyle(i < progress.completedPasses ? AppColor.brandBlue : Color.secondary.opacity(0.35))
             }
         }
-    }
-
-    private var xpRow: some View {
-        let outcome = LessonOutcome(lessonID: lesson.id, stepResults: stepResults, xpEarned: 0)
-        let xp = LessonXP.xp(for: outcome)
-        return HStack(spacing: 8) {
-            Image(systemName: "plus.circle.fill")
-                .foregroundStyle(AppColor.brandBlue)
-            Text("\(xp) XP")
-                .font(Typography.bigStat.monospacedDigit())
-                .foregroundStyle(AppColor.brandBlue)
-            if outcome.isPerfect {
-                Text("(perfect bonus +\(LessonXP.perfectBonus))")
-                    .font(Typography.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding(Spacing.md)
-        .background(AppColor.brandBlue.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .accessibilityLabel(progress.accessibilityLabel)
     }
 }
 

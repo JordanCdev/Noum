@@ -15,8 +15,8 @@ import GoogleSignIn
 #endif
 
 struct NoumApp: App {
-    @State private var showSplash = true
-    @StateObject private var onboardingHero = OnboardingHeroManager.shared
+    @StateObject private var firstRunOnboarding = FirstRunOnboardingManager.shared
+    @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var localeSettings = LocaleSettingsManager.shared
     @Environment(\.scenePhase) private var scenePhase
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
@@ -97,25 +97,16 @@ struct NoumApp: App {
 
     @ViewBuilder
     private var rootView: some View {
-        Group {
-            if showSplash && !isUITesting {
-                SplashScreenView()
-                    .onAppear {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                            withAnimation { showSplash = false }
-                        }
-                    }
-            } else {
-                ContentView()
-                    .fullScreenCover(isPresented: heroPresented) {
-                        // Manager persists the seen flag inside the view
-                        // when "Begin" or "Skip" is tapped; the published
-                        // change propagates back to `heroPresented` and
-                        // the cover dismisses automatically.
-                        OnboardingHeroView(onFinish: {})
-                    }
+        ContentView()
+            .fullScreenCover(
+                isPresented: firstRunOnboardingPresented,
+                onDismiss: {
+                    markFirstRunCompletedIfProfileExists()
+                }
+            ) {
+                CoachingOnboardingView()
+                    .interactiveDismissDisabled(true)
             }
-        }
         .preferredColorScheme(.light)
         // M3 typography redesign: default body text uses Manrope. Views can
         // override with the Figtree-backed `Typography.headline` /
@@ -154,24 +145,32 @@ struct NoumApp: App {
         }
     }
 
-    /// Drives the onboarding hero `fullScreenCover`. Presents only for
-    /// brand-new users who have never seen the hero on the current
-    /// account. UI testing bypasses the hero so the screenshot-tour
-    /// suite isn't blocked by it.
-    private var heroPresented: Binding<Bool> {
+    /// Drives the first-run coaching intake. UI testing bypasses it so the
+    /// screenshot-tour suite is not blocked; `UI_TESTING_ONBOARDING` still
+    /// opens the same view from `ContentView`.
+    private var firstRunOnboardingPresented: Binding<Bool> {
         Binding(
-            get: { !isUITesting && !onboardingHero.hasSeen },
+            get: {
+                FirstRunOnboardingGate.shouldPresent(
+                    hasCompletedFirstRun: firstRunOnboarding.hasSeen,
+                    hasCoachingProfile: coachingProfileStore.profile != nil,
+                    isUITesting: isUITesting
+                )
+            },
             set: { newValue in
                 if newValue == false {
-                    onboardingHero.markSeen()
+                    markFirstRunCompletedIfProfileExists()
                 }
             }
         )
     }
 
+    private func markFirstRunCompletedIfProfileExists() {
+        guard coachingProfileStore.profile != nil else { return }
+        firstRunOnboarding.markSeen()
+    }
+
     /// Routes an incoming `noum://` URL to the right surface.
-    /// - `noum://friend/<accountID>` — friend invite (handled from the
-    ///   profile/social route).
     /// - `noum://lesson/<id>` — open a specific lesson.
     /// - `noum://practice` — open the practice picker.
     /// Falls through to the default screen if the URL is unrecognised.

@@ -76,7 +76,7 @@ enum AppColor {
 
     /// Timed mode
     static let modeTimed = Color(red: 0.20, green: 0.47, blue: 0.96)
-    /// Sudden Death mode
+    /// Pressure Drill mode
     static let modeSuddenDeath = Color(red: 0.95, green: 0.55, blue: 0.15)
     /// Ah-Counter mode
     static let modeAhCounter = Color(red: 0.14, green: 0.60, blue: 0.44)
@@ -328,7 +328,7 @@ extension PracticeMode {
     var displayLabel: String {
         switch self {
         case .timed: return "Timed"
-        case .suddenDeath: return "Sudden Death"
+        case .suddenDeath: return "Pressure Drill"
         case .ahCounter: return "Ah-Counter"
         case .imConversation: return "IM Mode"
         }

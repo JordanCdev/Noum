@@ -29,6 +29,31 @@ enum PaceTrainingPhase: Equatable {
     case ended(PaceTrainingResult)
 }
 
+// MARK: - Conversational Pace Band
+
+enum ConversationalPaceBand {
+    static let targetWPM: Double = 130
+    static let toleranceWPM: Double = 20
+
+    static var minWPM: Double { targetWPM - toleranceWPM }
+    static var maxWPM: Double { targetWPM + toleranceWPM }
+    static var minDisplayWPM: Int { Int(minWPM) }
+    static var maxDisplayWPM: Int { Int(maxWPM) }
+    static var displayRange: String { "\(minDisplayWPM)–\(maxDisplayWPM)" }
+
+    static func contains(_ wpm: Double) -> Bool {
+        wpm >= minWPM && wpm <= maxWPM
+    }
+
+    static func contains(_ wpm: Int) -> Bool {
+        contains(Double(wpm))
+    }
+
+    static func distanceFromTarget(_ wpm: Double) -> Double {
+        abs(wpm - targetWPM)
+    }
+}
+
 // MARK: - Result
 
 struct PaceTrainingResult: Equatable {
@@ -94,8 +119,8 @@ struct PaceTrainingResult: Equatable {
         let mid = wpmSamples.count / 2
         let half = first ? Array(wpmSamples.prefix(mid)) : Array(wpmSamples.suffix(from: mid))
         guard !half.isEmpty else { return nil }
-        let zoneMin = targetWPM - 20
-        let zoneMax = targetWPM + 20
+        let zoneMin = targetWPM - ConversationalPaceBand.toleranceWPM
+        let zoneMax = targetWPM + ConversationalPaceBand.toleranceWPM
         let inZone = half.filter { $0 >= zoneMin && $0 <= zoneMax }.count
         return Double(inZone) / Double(half.count)
     }
@@ -120,8 +145,8 @@ final class PaceTrainingEngine: ObservableObject {
 
     // MARK: Configuration
 
-    nonisolated static let defaultTargetWPM: Double = 130
-    nonisolated static let zoneWidth: Double = 20
+    nonisolated static let defaultTargetWPM: Double = ConversationalPaceBand.targetWPM
+    nonisolated static let zoneWidth: Double = ConversationalPaceBand.toleranceWPM
     nonisolated static let drillDuration: TimeInterval = 75
 
     // MARK: Published State

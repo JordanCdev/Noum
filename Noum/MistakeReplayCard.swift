@@ -1,13 +1,13 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
-// MARK: - Mistake Replay Card
+// MARK: - Recent Rep Review Card
 //
-// "Fix what you got wrong last time" — a Duolingo-style review surface that
-// lifts 3–5 specific past sessions where the user struggled into one card,
+// Targeted review surface that lifts 3-5 specific past sessions where the
+// user had useful friction into one card,
 // each with a one-tap CTA back into the same mode. Distinct from
 // `WeakAreasCard`, which surfaces durable patterns; this one surfaces
-// individual bad reps.
+// individual reps worth revisiting.
 //
 // Sourcing rules (in priority order):
 //   1. Sessions with score <= 5 in the last 14 days
@@ -18,20 +18,45 @@ import SwiftUI
 // to replay — no fake content, no encouraging-but-empty state.
 //
 // CTA behavior:
-//   The "try again" button pushes the matching mode destination
+//   The action button pushes the matching mode destination
 //   (`.timedPractice`, `.suddenDeathPractice`, `.ahCounterPractice`).
-//   Re-launching with the EXACT same prompt is not currently supported —
+//   Re-launching with the exact same prompt is not currently supported -
 //   the prompt source-of-truth is internal `@State` inside
 //   `TimedPracticeView`. The user sees the prompt text on this card for
-//   context, and lands on a fresh prompt picker in the mode. This keeps
+//   context, and lands on a fresh mode entry point. This keeps
 //   the architecture clean and avoids a parallel routing surface.
+
+enum RecentRepReviewCopy {
+    static let header = "Review recent reps"
+    static let action = "Practice this mode"
+}
 
 @available(iOS 17.0, macOS 12.0, *)
 struct MistakeReplayCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @ObservedObject var sessionStore: PracticeSessionStore
     let onReplay: (AppDestination) -> Void
 
     @State private var hasAppeared = false
+
+    static func hasReviewRows(in sessions: [PracticeSession], now: Date = Date()) -> Bool {
+        let cutoff14 = now.addingTimeInterval(-14 * 24 * 3600)
+        let cutoff7  = now.addingTimeInterval(-7  * 24 * 3600)
+        return sessions.contains { session in
+            if session.date >= cutoff14 {
+                if let score = session.score, score <= 5 { return true }
+                if session.fillerWordCount >= 6 { return true }
+            }
+            if session.date >= cutoff7,
+               session.mode == .suddenDeath,
+               let rounds = Self.roundsSurvived(in: session),
+               rounds <= 2 {
+                return true
+            }
+            return false
+        }
+    }
 
     // MARK: - Replay row model
 
@@ -53,7 +78,8 @@ struct MistakeReplayCard: View {
         var collected: [ReplayRow] = []
         var seenIDs = Set<UUID>()
 
-        // Newest-first iteration so coach lines reflect "most recent" mistakes.
+        // Newest-first iteration so coach lines reflect the most recent
+        // review-worthy reps.
         let recent = sessionStore.sessions.sorted { $0.date > $1.date }
 
         // 1. Low-score reps (priority 0)
@@ -134,7 +160,12 @@ struct MistakeReplayCard: View {
             .scaleEffect(hasAppeared ? 1 : 0.97)
             .opacity(hasAppeared ? 1 : 0)
             .onAppear {
-                withAnimation(.standardSpring.delay(0.04)) { hasAppeared = true }
+                guard !hasAppeared else { return }
+                if reduceMotion {
+                    hasAppeared = true
+                } else {
+                    withAnimation(.standardSpring.delay(0.04)) { hasAppeared = true }
+                }
             }
             .accessibilityIdentifier("mistakeReplayCard")
         }
@@ -147,7 +178,7 @@ struct MistakeReplayCard: View {
             Image(systemName: "arrow.uturn.backward.circle.fill")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(AppColor.brandBlue)
-            Text("Replay your misses")
+            Text(RecentRepReviewCopy.header)
                 .font(Typography.micro)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
@@ -203,7 +234,7 @@ struct MistakeReplayCard: View {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.right.circle.fill")
                             .font(.caption2.weight(.bold))
-                        Text("Try this prompt again")
+                        Text(RecentRepReviewCopy.action)
                             .font(Typography.caption.weight(.semibold))
                     }
                     .foregroundStyle(tint)
@@ -217,7 +248,7 @@ struct MistakeReplayCard: View {
             .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text("\(row.coachLine). \(metricsAccessibilityText(for: row.session)). Try this prompt again."))
+        .accessibilityLabel(Text("\(row.coachLine). \(metricsAccessibilityText(for: row.session)). \(RecentRepReviewCopy.action)."))
     }
 
     // MARK: - Metrics line
@@ -303,24 +334,24 @@ struct MistakeReplayCard: View {
     private func lowScoreLine(for session: PracticeSession, score: Int) -> String {
         let when = relativeWhen(session.date)
         switch session.mode {
-        case .timed:        return "Low-score timed rep · \(when)"
-        case .suddenDeath:  return "Pressure rep slipped · \(when)"
-        case .ahCounter:    return "Rough Ah-Counter rep · \(when)"
-        case .imConversation: return "IM rep stalled · \(when)"
+        case .timed:        return "Timed rep to revisit · \(when)"
+        case .suddenDeath:  return "Pressure rep to revisit · \(when)"
+        case .ahCounter:    return "Ah-Counter rep to revisit · \(when)"
+        case .imConversation: return "IM rep to revisit · \(when)"
         }
     }
 
     private func fillerHeavyLine(for session: PracticeSession) -> String {
         let when = relativeWhen(session.date)
-        return "Filler-heavy rep · \(when)"
+        return "Filler pattern to revisit · \(when)"
     }
 
     private func suddenDeathEarlyLine(for session: PracticeSession, rounds: Int) -> String {
         let when = relativeWhen(session.date)
         if rounds <= 1 {
-            return "Out in round 1 · \(when)"
+            return "Round 1 pressure signal · \(when)"
         } else {
-            return "Out in round 2 · \(when)"
+            return "Round 2 pressure signal · \(when)"
         }
     }
 
@@ -356,6 +387,10 @@ struct MistakeReplayCard: View {
     /// formatted like "Survived N rounds". Parse that conservatively —
     /// if the format ever drifts, we just skip the row instead of guessing.
     private func roundsSurvived(in session: PracticeSession) -> Int? {
+        Self.roundsSurvived(in: session)
+    }
+
+    private static func roundsSurvived(in session: PracticeSession) -> Int? {
         guard session.mode == .suddenDeath else { return nil }
         guard let line = session.insights.first(where: { $0.lowercased().contains("survived") }) else {
             return nil

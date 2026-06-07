@@ -1,7 +1,7 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
-// MARK: - Speech Projects (Toastmasters-inspired) — picker view
+// MARK: - Speech Projects - picker view
 
 /// Browser for the curated set of structured speech projects. The user
 /// picks a project, reads its objectives, and lands on a Timed practice
@@ -73,7 +73,7 @@ struct SpeechProjectsView: View {
                 }
                 Spacer(minLength: 0)
             }
-            Text("Structured prepared speeches with concrete objectives. Inspired by Toastmasters Pathways.")
+            Text("Structured prepared speeches with concrete objectives, target length, and a clear coaching focus.")
                 .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

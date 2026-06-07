@@ -7,13 +7,96 @@ import SwiftUI
 
 struct LessonProgress: Codable, Equatable {
     let lessonID: String
-    /// 0–5. 0 = never attempted. 1 = first pass. 5 = mastered.
-    var crownLevel: Int
+    /// 0-5. 0 = never attempted. 1 = first pass. 5 = mastered.
+    var practicePassCount: Int
     var lastCompletedAt: Date?
     var totalAttempts: Int
 
+    init(
+        lessonID: String,
+        practicePassCount: Int,
+        lastCompletedAt: Date?,
+        totalAttempts: Int
+    ) {
+        self.lessonID = lessonID
+        self.practicePassCount = practicePassCount
+        self.lastCompletedAt = lastCompletedAt
+        self.totalAttempts = totalAttempts
+    }
+
     static func empty(lessonID: String) -> LessonProgress {
-        LessonProgress(lessonID: lessonID, crownLevel: 0, lastCompletedAt: nil, totalAttempts: 0)
+        LessonProgress(lessonID: lessonID, practicePassCount: 0, lastCompletedAt: nil, totalAttempts: 0)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case lessonID
+        case practicePassCount
+        case legacyCrownLevel = "crownLevel"
+        case lastCompletedAt
+        case totalAttempts
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        lessonID = try container.decode(String.self, forKey: .lessonID)
+        if let passCount = try container.decodeIfPresent(Int.self, forKey: .practicePassCount) {
+            practicePassCount = passCount
+        } else {
+            practicePassCount = try container.decodeIfPresent(Int.self, forKey: .legacyCrownLevel) ?? 0
+        }
+        lastCompletedAt = try container.decodeIfPresent(Date.self, forKey: .lastCompletedAt)
+        totalAttempts = try container.decodeIfPresent(Int.self, forKey: .totalAttempts) ?? 0
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(lessonID, forKey: .lessonID)
+        try container.encode(practicePassCount, forKey: .practicePassCount)
+        try container.encodeIfPresent(lastCompletedAt, forKey: .lastCompletedAt)
+        try container.encode(totalAttempts, forKey: .totalAttempts)
+    }
+}
+
+struct LessonProgressPresentation: Equatable {
+    static let masteryPassCap: Int = 5
+
+    let completedPasses: Int
+
+    init(completedPasses: Int) {
+        self.completedPasses = min(Self.masteryPassCap, max(0, completedPasses))
+    }
+
+    var fractionText: String {
+        "\(completedPasses)/\(Self.masteryPassCap)"
+    }
+
+    var accessibilityLabel: String {
+        "\(completedPasses) of \(Self.masteryPassCap) practice passes complete"
+    }
+
+    func lessonSummaryLine(title: String) -> String {
+        if completedPasses >= Self.masteryPassCap {
+            return "You've mastered \(title)."
+        }
+        if completedPasses == 1 {
+            return "First practice pass complete. Four more to master."
+        }
+        return "\(completedPasses) of \(Self.masteryPassCap) practice passes on \(title)."
+    }
+
+    func celebrationLine(for kind: LessonCelebration.Kind) -> String {
+        switch kind {
+        case .unlocked:
+            return "First practice pass complete. Four more to master."
+        case .levelUp:
+            return "\(completedPasses) of \(Self.masteryPassCap) practice passes."
+        case .mastered:
+            return "All five practice passes. The technique is yours."
+        }
+    }
+
+    static func aggregateValue(totalCompleted: Int, lessonCount: Int) -> String {
+        "\(totalCompleted)/\(lessonCount * masteryPassCap)"
     }
 }
 
@@ -21,8 +104,9 @@ struct LessonProgress: Codable, Equatable {
 
 #if canImport(SwiftUI)
 
-/// Per-account persistence for lesson outcomes. Owns the crown levels and
-/// the "you just unlocked / levelled up a lesson" celebration trigger.
+/// Per-account persistence for lesson outcomes. Owns lesson practice-pass
+/// progress and the "you just cleared / strengthened a lesson" celebration
+/// trigger.
 @MainActor
 @available(iOS 17.0, macOS 12.0, *)
 final class LessonStore: ObservableObject {
@@ -31,7 +115,7 @@ final class LessonStore: ObservableObject {
     @Published private(set) var progress: [String: LessonProgress] = [:]
     @Published private(set) var pendingCelebration: LessonCelebration?
 
-    static let crownCap: Int = 5
+    static let masteryPassCap: Int = LessonProgressPresentation.masteryPassCap
 
     private let storageKeyPrefix = "noum.lessons.progress."
 
@@ -45,53 +129,53 @@ final class LessonStore: ObservableObject {
         progress[lessonID] ?? .empty(lessonID: lessonID)
     }
 
-    func crownLevel(for lessonID: String) -> Int {
-        progress(for: lessonID).crownLevel
+    func practicePassCount(for lessonID: String) -> Int {
+        progress(for: lessonID).practicePassCount
     }
 
-    /// True when the user has at least one crown on this lesson.
-    func isUnlocked(_ lessonID: String) -> Bool {
-        crownLevel(for: lessonID) > 0
+    /// True when the user has at least one successful pass on this lesson.
+    func isCleared(_ lessonID: String) -> Bool {
+        practicePassCount(for: lessonID) > 0
     }
 
-    /// Total crowns earned across all lessons. Used as a top-line stat
-    /// alongside XP / rank.
-    var totalCrowns: Int {
-        progress.values.map(\.crownLevel).reduce(0, +)
+    /// Total successful passes across all lessons. Used as a curriculum
+    /// progress signal alongside real practice history.
+    var totalPracticePasses: Int {
+        progress.values.map(\.practicePassCount).reduce(0, +)
     }
 
     /// "Your next lesson" recommendation. Logic:
-    /// 1. Lessons never opened (crown 0) — pick first by catalog order.
-    /// 2. Otherwise — lowest crown that hasn't hit the cap, ties broken
+    /// 1. Lessons never opened (0 passes) — pick first by catalog order.
+    /// 2. Otherwise — lowest pass count that hasn't hit the cap, ties broken
     ///    by catalog order (so the user works the curriculum).
     /// 3. Returns nil only when every lesson is mastered.
     var nextRecommendedLesson: Lesson? {
-        let untouched = LessonsCatalog.all.first(where: { crownLevel(for: $0.id) == 0 })
+        let untouched = LessonsCatalog.all.first(where: { practicePassCount(for: $0.id) == 0 })
         if let untouched { return untouched }
         return LessonsCatalog.all
-            .filter { crownLevel(for: $0.id) < Self.crownCap }
-            .min(by: { crownLevel(for: $0.id) < crownLevel(for: $1.id) })
+            .filter { practicePassCount(for: $0.id) < Self.masteryPassCap }
+            .min(by: { practicePassCount(for: $0.id) < practicePassCount(for: $1.id) })
     }
 
-    /// Apply a lesson outcome. Raises crown level if passed. Fires a
-    /// celebration the first time a lesson is unlocked or when a level-up
+    /// Apply a lesson outcome. Raises practice-pass progress if passed. Fires
+    /// a celebration the first time a lesson is cleared or when progress
     /// crosses a milestone (1, 3, 5).
     func apply(outcome: LessonOutcome) {
         var current = progress(for: outcome.lessonID)
-        let priorCrown = current.crownLevel
+        let priorPassCount = current.practicePassCount
         current.totalAttempts += 1
         current.lastCompletedAt = Date()
 
         if outcome.passed {
-            current.crownLevel = min(Self.crownCap, current.crownLevel + 1)
+            current.practicePassCount = min(Self.masteryPassCap, current.practicePassCount + 1)
         }
 
         progress[outcome.lessonID] = current
         persist()
 
-        let didLevelUp = current.crownLevel > priorCrown
-        let didUnlock = priorCrown == 0 && current.crownLevel > 0
-        let didMaster = current.crownLevel == Self.crownCap && priorCrown != Self.crownCap
+        let didLevelUp = current.practicePassCount > priorPassCount
+        let didUnlock = priorPassCount == 0 && current.practicePassCount > 0
+        let didMaster = current.practicePassCount == Self.masteryPassCap && priorPassCount != Self.masteryPassCap
 
         guard didLevelUp else { return }
 
@@ -103,7 +187,7 @@ final class LessonStore: ObservableObject {
         pendingCelebration = LessonCelebration(
             lessonID: outcome.lessonID,
             kind: kind,
-            crownLevel: current.crownLevel
+            practicePassCount: current.practicePassCount
         )
     }
 
@@ -147,17 +231,17 @@ final class LessonStore: ObservableObject {
 struct LessonCelebration: Equatable {
     let lessonID: String
     let kind: Kind
-    let crownLevel: Int
+    let practicePassCount: Int
 
     enum Kind {
-        case unlocked   // first crown earned
-        case levelUp    // 2nd, 3rd, 4th crown
-        case mastered   // 5th crown — the cap
+        case unlocked
+        case levelUp
+        case mastered
 
         var headline: String {
             switch self {
             case .unlocked: return "Lesson cleared"
-            case .levelUp:  return "Crown earned"
+            case .levelUp:  return "Practice pass added"
             case .mastered: return "Lesson mastered"
             }
         }

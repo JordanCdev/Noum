@@ -3053,8 +3053,8 @@ private func emptyProgressInput(sessions: [PracticeSession] = []) -> PathProgres
         baseline: .empty,
         rating: .initial,
         modeMastery: [:],
-        totalLessonCrowns: 0,
-        maxLessonCrown: 0,
+        totalLessonPasses: 0,
+        maxLessonPassCount: 0,
         now: Date()
     )
 }
@@ -6634,6 +6634,39 @@ struct PeakGlowGatingTests {
         #expect(!store.pendingPeakGlow,
                 "The default 400 starting line must not trigger a personal-best glow.")
     }
+
+    @Test func homePeakGlowCopyAvoidsOverclaimAndAmbiguousDeltaAtAllTimeMark() {
+        let presentation = HomePeakGlowPresentation.make(
+            weekPeak: 740,
+            current: 740,
+            allTime: 740
+        )
+        let combined = ([presentation.headline, presentation.body] + presentation.stats.flatMap { [$0.value, $0.label] })
+            .joined(separator: " ")
+
+        #expect(presentation.headline == "You moved your rating mark.")
+        #expect(presentation.stats == [.init(value: "740", label: "This week's peak")])
+        #expect(!combined.localizedCaseInsensitiveContains("highest rating"))
+        #expect(!combined.localizedCaseInsensitiveContains("new high"))
+        #expect(!combined.localizedCaseInsensitiveContains("+0"))
+        #expect(!combined.localizedCaseInsensitiveContains("vs all-time"))
+        #expect(!combined.localizedCaseInsensitiveContains("to all-time"))
+    }
+
+    @Test func homePeakGlowCopyUsesSinglePlainAllTimeGapWhenBelowAllTime() {
+        let presentation = HomePeakGlowPresentation.make(
+            weekPeak: 728,
+            current: 728,
+            allTime: 740
+        )
+
+        #expect(presentation.headline == "You raised this week's rating mark.")
+        #expect(presentation.body == "728 is this week's best. All-time is 740.")
+        #expect(presentation.stats == [
+            .init(value: "728", label: "This week's peak"),
+            .init(value: "12", label: "off all-time")
+        ])
+    }
 }
 
 struct BelievableProgressZeroDataTests {
@@ -6683,6 +6716,161 @@ struct BelievableProgressZeroDataTests {
         #expect(title.contains(tier.title))
         #expect(subtitle.contains("rating"))
         #expect(LeaguePlacementPresentation.ratingValue(for: rated) == "\(rated.overall)")
+    }
+
+    @Test func friendLeaderboardSelfRowDoesNotInventDefaultRating() {
+        #expect(FriendLeaderboardSelfRowPresentation.ratingValue(for: .initial) == nil)
+    }
+
+    @Test func friendLeaderboardSelfRowUsesRatingAfterRatedEvidence() {
+        let rated = RatingEngine.processRatedSession(
+            rating: .initial,
+            sessionScore: 8,
+            sessionId: UUID(),
+            pressureLevel: .elevated
+        )
+
+        #expect(FriendLeaderboardSelfRowPresentation.ratingValue(for: rated) == rated.overall)
+    }
+
+    @Test func leagueWeeklyActivityShowsRepsBeforeDailyClaims() {
+        #expect(LeagueActivityPresentation.weeklyActivityValue(sessionCount: 2, dailyChallengeClaims: 3) == "2 reps")
+        #expect(LeagueActivityPresentation.weeklyActivityValue(sessionCount: 1, dailyChallengeClaims: 0) == "1 rep")
+    }
+
+    @Test func leagueWeeklyActivityCanShowDailyPresenceWithoutReps() {
+        #expect(LeagueActivityPresentation.weeklyActivityValue(sessionCount: 0, dailyChallengeClaims: 1) == "1 daily")
+        #expect(LeagueActivityPresentation.weeklyActivityValue(sessionCount: 0, dailyChallengeClaims: 2) == "2 dailies")
+        #expect(LeagueActivityPresentation.weeklyActivityValue(sessionCount: 0, dailyChallengeClaims: 0) == "—")
+    }
+
+    @Test func leagueWeeklySessionCountUsesCurrentISOWeek() {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.firstWeekday = 2
+        let now = Date(timeIntervalSince1970: 1_782_950_400) // 2026-06-28 00:00:00 UTC
+        let currentWeek = calendar.date(byAdding: .day, value: -1, to: now)!
+        let previousWeek = calendar.date(byAdding: .day, value: -7, to: now)!
+        let sessions = [
+            makePracticeSession(date: currentWeek),
+            makePracticeSession(date: previousWeek)
+        ]
+
+        #expect(LeagueActivityPresentation.weeklySessionCount(from: sessions, now: now, calendar: calendar) == 1)
+    }
+}
+
+struct ProfileCollapseContractTests {
+
+    private func makeProfile(
+        effectiveVoice: SpeakingStyleGoal = .warm,
+        chosenVoice: SpeakingStyleGoal? = nil
+    ) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: effectiveVoice,
+            styleReference: "",
+            coachingBrief: "Brief.",
+            motivationWhyNow: "",
+            successVision: "",
+            chosenStyleGoal: chosenVoice
+        )
+    }
+
+    @Test func zeroEvidenceProfileDoesNotRenderProgressHero() {
+        let plan = ProfileDefaultSurfacePlan.make(hasProgressEvidence: false)
+
+        #expect(plan.surfaces == [.identity, .coachRead, .evidenceHub])
+        #expect(plan.defaultSectionCount == 3)
+        #expect(plan.ratingSurfaceCount == 0)
+    }
+
+    @Test func ratedProfileKeepsExactlyOneProgressSurface() {
+        let plan = ProfileDefaultSurfacePlan.make(hasProgressEvidence: true)
+
+        #expect(plan.surfaces == [.identity, .progressHero, .coachRead, .evidenceHub])
+        #expect(plan.defaultSectionCount == 4)
+        #expect(plan.ratingSurfaceCount == 1)
+    }
+
+    @Test func identityHeroDoesNotExposeProgressCurrency() {
+        let identity = ProfileIdentityPresentation.make(profile: nil)
+
+        #expect(identity.subtitle == "Speaking profile")
+        #expect(!identity.exposesProgressCurrency)
+        #expect(!identity.subtitle.localizedCaseInsensitiveContains("XP"))
+        #expect(!identity.subtitle.localizedCaseInsensitiveContains("level"))
+    }
+
+    @Test func identitySubtitleUsesOnlyExplicitVoiceChoice() {
+        let unchosen = ProfileIdentityPresentation.make(
+            profile: makeProfile(effectiveVoice: .authoritative, chosenVoice: nil)
+        )
+        let chosen = ProfileIdentityPresentation.make(
+            profile: makeProfile(effectiveVoice: .authoritative, chosenVoice: .authoritative)
+        )
+
+        #expect(unchosen.subtitle == "Speaking profile")
+        #expect(chosen.subtitle == "Voice target: Authoritative")
+    }
+
+    @Test func coachReadColdStartIsHonestAndActionable() {
+        let content = ProfileCoachReadContent.make(
+            sessionCount: 0,
+            plan: nil,
+            memory: nil,
+            proof: nil
+        )
+
+        #expect(content.label == "EARLY READ")
+        #expect(content.read.contains("One short rep"))
+        #expect(content.nextMove.contains("Complete one short rep"))
+        #expect(content.proofClaim == nil)
+        #expect(content.proofQuote == nil)
+        #expect(!content.read.localizedCaseInsensitiveContains("highest rating"))
+        #expect(!content.read.localizedCaseInsensitiveContains("30 days"))
+    }
+
+    @Test func coachReadCarriesOneVerifiedProofPointWhenAvailable() {
+        let plan = CoachingPlan(
+            strongestMode: .timed,
+            currentFocus: "Focus on deliberate openings.",
+            suggestedDrill: "Timed Practice on Medium will help you hold the opening line.",
+            encouragement: "Your recent sessions are steady.",
+            hiddenBaseline: HiddenBaseline(
+                averageFillers: 2,
+                averageDuration: 45,
+                averageWordsPerMinute: 132,
+                currentIdentity: "Controlled"
+            )
+        )
+        let proof = ProofMomentRecord(
+            sessionID: UUID(),
+            proof: ProofMoment(
+                quote: "we will focus on three priorities",
+                technique: "Structured Claim",
+                claim: "You gave the listener a clean frame.",
+                sessionDate: Date(),
+                isAIBacked: false,
+                generatedAt: Date()
+            )
+        )
+
+        let content = ProfileCoachReadContent.make(
+            sessionCount: 5,
+            plan: plan,
+            memory: nil,
+            proof: proof
+        )
+
+        #expect(content.label == "FORMING READ")
+        #expect(content.read == "Your recent sessions are steady.")
+        #expect(content.nextMove == "Timed Practice on Medium will help you hold the opening line.")
+        #expect(content.proofClaim == "You gave the listener a clean frame.")
+        #expect(content.proofQuote == "we will focus on three priorities")
     }
 }
 
@@ -6784,6 +6972,36 @@ struct HomeAskNoumEvidenceCopyTests {
 
         #expect(line.contains("recent reps"))
         #expect(!line.localizedCaseInsensitiveContains("30 days"))
+    }
+}
+
+struct HomeCoachAskNoumShortcutTests {
+
+    @Test func shortcutReusesEvidenceScaledCopy() {
+        #expect(HomeCoachAskNoumShortcut.body(sessionCount: 1) == HomeAskNoumEvidenceCopy.line(sessionCount: 1))
+        #expect(HomeCoachAskNoumShortcut.body(sessionCount: 2).contains("without overcalling"))
+        #expect(HomeCoachAskNoumShortcut.body(sessionCount: 8).contains("recent reps"))
+    }
+
+    @Test func shortcutLivesInsideCoachCardContract() {
+        #expect(HomeCoachAskNoumShortcut.title == "Ask Noum")
+        #expect(HomeCoachAskNoumShortcut.actionTitle == "Open the thread")
+        #expect(HomeCoachAskNoumShortcut.accessibilityIdentifier == "home.coachCard.askNoum")
+        #expect(HomeCoachAskNoumShortcut.accessibilityIdentifier.hasPrefix("home.coachCard."))
+    }
+
+    @Test func shortcutCopyAvoidsPromoLanguageAndFakeUrgency() {
+        let joined = [
+            HomeCoachAskNoumShortcut.title,
+            HomeCoachAskNoumShortcut.actionTitle,
+            HomeCoachAskNoumShortcut.body(sessionCount: 1)
+        ]
+        .joined(separator: " ")
+        .lowercased()
+
+        #expect(!joined.contains("promo"))
+        #expect(!joined.contains("streak"))
+        #expect(!joined.contains("30 days"))
     }
 }
 
@@ -7118,6 +7336,28 @@ struct DailyChallengeTileCountdownTests {
         #expect(DailyChallengeTile.expiryCountdownText(minutesRemaining: 47)  == "47m before midnight")
         #expect(DailyChallengeTile.expiryCountdownText(minutesRemaining: 1)   == "Under a minute")
         #expect(DailyChallengeTile.expiryCountdownText(minutesRemaining: 0)   == "Under a minute")
+    }
+
+    @Test func readyHeadlineDoesNotLeadWithXP() {
+        let copy = DailyChallengeTile.headlineCopy(
+            state: .readyToClaim,
+            anchor: .zeroFillers,
+            repsToday: 1,
+            goalReps: 1
+        )
+
+        #expect(copy == "Clean rep logged. Tap to claim.")
+        #expect(!copy.localizedCaseInsensitiveContains("XP"))
+    }
+
+    @Test func rowAccessibilityDoesNotAdvertiseXP() {
+        let ready = DailyChallengeTile.rowAccessibilityLabel(kind: .zeroFillers, claimed: false, ready: true)
+        let locked = DailyChallengeTile.rowAccessibilityLabel(kind: .zeroFillers, claimed: false, ready: false)
+
+        #expect(ready == "Zero-filler rep. Ready to claim.")
+        #expect(!ready.localizedCaseInsensitiveContains("XP"))
+        #expect(!locked.localizedCaseInsensitiveContains("XP"))
+        #expect(!locked.localizedCaseInsensitiveContains("worth"))
     }
 }
 
@@ -9362,6 +9602,153 @@ struct PracticeModeRowExpansionTests {
     }
 }
 
+struct PracticeModePrescriptionCopyTests {
+
+    @Test func beginLabelCarriesOnePrimaryAction() {
+        let label = PracticeModePrescriptionCopy.beginLabel(for: "Timed Practice")
+
+        #expect(label == "Begin \u{00B7} Timed Practice")
+        #expect(!label.localizedCaseInsensitiveContains("start now"))
+        #expect(!label.contains("!"))
+    }
+
+    @Test func sectionTitlesDemoteTheCatalog() {
+        #expect(PracticeModePrescriptionCopy.heroEyebrow == "Coach pick")
+        #expect(PracticeModePrescriptionCopy.alternateSectionTitle == "Other ways to practice")
+        #expect(PracticeModePrescriptionCopy.escapeLabel() == "Pick another")
+    }
+
+    @Test func prescriptionCopyAvoidsUrgencyAndFanfare() {
+        let copy = [
+            PracticeModePrescriptionCopy.heroEyebrow,
+            PracticeModePrescriptionCopy.alternateSectionTitle,
+            PracticeModePrescriptionCopy.escapeLabel(),
+            PracticeModePrescriptionCopy.beginLabel(for: PracticeMode.suddenDeath.displayLabel)
+        ].joined(separator: " ")
+        let banned = ["!", "hurry", "now", "crush", "nailed", "perfect"]
+
+        for word in banned {
+            #expect(!copy.localizedCaseInsensitiveContains(word), "Prescription copy should not contain \(word)")
+        }
+    }
+
+    @Test func pressureModeDisplayNameAvoidsPunitiveFraming() {
+        #expect(PracticeMode.suddenDeath.displayLabel == "Pressure Drill")
+        #expect(!PracticeMode.suddenDeath.displayLabel.localizedCaseInsensitiveContains("death"))
+    }
+
+    @Test func pressureModeRequiresRatedEvidenceInPicker() {
+        #expect(!PracticeModeAvailability.isUnlocked(.suddenDeath, rating: .initial))
+        #expect(PracticeModeAvailability.isUnlocked(.timed, rating: .initial))
+
+        let rated = RatingEngine.processRatedSession(
+            rating: .initial,
+            sessionScore: 8,
+            sessionId: UUID(),
+            pressureLevel: .elevated
+        )
+
+        #expect(PracticeModeAvailability.isUnlocked(.suddenDeath, rating: rated))
+        #expect(PracticeModePrescriptionCopy.pressureLockedHint == "Run one rated rep before Pressure Drill.")
+    }
+}
+
+struct FirstRunFrictionContractTests {
+
+    @Test func onboardingProfileRevealIsImmediateNotFakeProcessing() {
+        #expect(OnboardingCompletionTiming.profileRevealDelay >= 0)
+        #expect(OnboardingCompletionTiming.profileRevealDelay <= 0.5)
+    }
+
+    @Test func firstRunGatePresentsCoachingIntakeForTrueColdStart() {
+        #expect(FirstRunOnboardingGate.shouldPresent(
+            hasCompletedFirstRun: false,
+            hasCoachingProfile: false,
+            isUITesting: false
+        ))
+    }
+
+    @Test func firstRunGateStaysClosedForProfileCompletedOrUITesting() {
+        #expect(!FirstRunOnboardingGate.shouldPresent(
+            hasCompletedFirstRun: true,
+            hasCoachingProfile: false,
+            isUITesting: false
+        ))
+        #expect(!FirstRunOnboardingGate.shouldPresent(
+            hasCompletedFirstRun: false,
+            hasCoachingProfile: true,
+            isUITesting: false
+        ))
+        #expect(!FirstRunOnboardingGate.shouldPresent(
+            hasCompletedFirstRun: false,
+            hasCoachingProfile: false,
+            isUITesting: true
+        ))
+    }
+}
+
+struct HomeBottomShortcutContractTests {
+
+    @Test func shortcutsPreservePrimaryDestinations() {
+        let destinations = HomeBottomShortcut.all.map(\.destination)
+
+        #expect(destinations == [
+            .practiceSelection,
+            .sessionHistory,
+            .socialProfile,
+            .settings
+        ])
+    }
+
+    @Test func shortcutsPreserveUITourIdentifiers() {
+        let ids = HomeBottomShortcut.all.map(\.accessibilityIdentifier)
+
+        #expect(ids == [
+            "nav.practice",
+            "nav.history",
+            "nav.social",
+            "nav.settings"
+        ])
+        #expect(Set(ids).count == ids.count)
+    }
+
+    @Test func shortcutCopyDoesNotPretendToBeTabs() {
+        let copy = HomeBottomShortcut.all
+            .flatMap { [$0.title, $0.accessibilityLabel, $0.id] }
+            .joined(separator: " ")
+            .lowercased()
+
+        #expect(!copy.contains("tab"))
+        #expect(!copy.contains("selected"))
+        #expect(!copy.contains("active"))
+    }
+}
+
+struct HomeAccessibilityModalGateTests {
+
+    @Test func quietHomeDoesNotSuppressItself() {
+        let gate = HomeAccessibilityModalGate()
+
+        #expect(!gate.suppressesUnderlyingHome)
+    }
+
+    @Test func anyPresentedSurfaceSuppressesUnderlyingHome() {
+        let cases: [HomeAccessibilityModalGate] = [
+            HomeAccessibilityModalGate(onboardingPresented: true),
+            HomeAccessibilityModalGate(leaguePromotionPresented: true),
+            HomeAccessibilityModalGate(dailyGoalCelebrationPresented: true),
+            HomeAccessibilityModalGate(pathCelebrationPresented: true),
+            HomeAccessibilityModalGate(goalRefreshPresented: true),
+            HomeAccessibilityModalGate(notificationPromptPresented: true),
+            HomeAccessibilityModalGate(bigMomentIntakePresented: true)
+        ]
+
+        for gate in cases {
+            #expect(gate.suppressesUnderlyingHome)
+        }
+    }
+}
+
 // MARK: - Home discipline (M15 Phase 4)
 
 /// Locks the contract that the signal-gated home holds back cards until
@@ -9377,15 +9764,15 @@ struct HomeSignalGateTests {
             showAllOverride: false
         )
         #expect(gate.coachCard)
-        #expect(gate.utilityStrip)
-        #expect(gate.askNoumPromo)
+        #expect(!gate.utilityStrip)
+        #expect(!gate.askNoumShortcut)
         #expect(!gate.dailyChallenge)
         #expect(!gate.voiceMetrics)
         #expect(!gate.aiWeeklyInsight)
         #expect(!gate.journey)
     }
 
-    @Test func firstSessionUnlocksDailyChallengeAndVoiceMetrics() {
+    @Test func firstSessionUnlocksCoachChatButKeepsDashboardCardsOff() {
         let gate = HomeSignalGate.evaluate(
             sessionCount: 1,
             sessionsThisWeekCount: 1,
@@ -9393,8 +9780,10 @@ struct HomeSignalGateTests {
             hasCoachingProfile: false,
             showAllOverride: false
         )
-        #expect(gate.dailyChallenge)
-        #expect(gate.voiceMetrics)
+        #expect(!gate.utilityStrip)
+        #expect(gate.askNoumShortcut)
+        #expect(!gate.dailyChallenge)
+        #expect(!gate.voiceMetrics)
         // Weekly insight stays gated until session 3 this week.
         #expect(!gate.aiWeeklyInsight)
     }
@@ -9410,7 +9799,7 @@ struct HomeSignalGateTests {
         #expect(gate.aiWeeklyInsight)
     }
 
-    @Test func goalSetStateUnlocksJourney() {
+    @Test func goalSetStateWaitsForOneRepBeforeJourney() {
         let gate = HomeSignalGate.evaluate(
             sessionCount: 0,
             sessionsThisWeekCount: 0,
@@ -9418,7 +9807,7 @@ struct HomeSignalGateTests {
             hasCoachingProfile: true,
             showAllOverride: false
         )
-        #expect(gate.journey, "Journey card should surface once a voice goal is captured, even before any rep.")
+        #expect(!gate.journey, "Journey should not surface before one completed rep, even when a voice goal exists.")
     }
 
     @Test func unlockedPathNodeUnlocksJourney() {
@@ -9433,9 +9822,9 @@ struct HomeSignalGateTests {
     }
 
     /// Reversibility contract — flipping the AppStorage escape hatch must
-    /// restore every card regardless of signal. Returning power-users who
-    /// don't want the gradual reveal get the dense home back.
-    @Test func showAllOverrideReturnsEveryCard() {
+    /// restore every active optional card regardless of signal. Surfaces
+    /// retired from Home stay retired.
+    @Test func showAllOverrideReturnsActiveOptionalCards() {
         let gate = HomeSignalGate.evaluate(
             sessionCount: 0,
             sessionsThisWeekCount: 0,
@@ -9444,6 +9833,9 @@ struct HomeSignalGateTests {
             showAllOverride: true
         )
         #expect(gate == .allVisible)
+        #expect(!gate.utilityStrip)
+        #expect(!gate.dailyChallenge)
+        #expect(!gate.voiceMetrics)
     }
 
     @Test func weeklyCountUsesISOWeekBoundary() {
@@ -9462,6 +9854,19 @@ struct HomeSignalGateTests {
             now: now
         )
         #expect(count == 2)
+    }
+}
+
+struct AIWeeklyInsightPresentationTests {
+    @Test func requestsOnlyWhenThereIsSessionEvidence() {
+        #expect(!AIWeeklyInsightPresentation.shouldRequestInsight(weeklyReps: 0, totalSessions: 0))
+        #expect(AIWeeklyInsightPresentation.shouldRequestInsight(weeklyReps: 1, totalSessions: 1))
+        #expect(AIWeeklyInsightPresentation.shouldRequestInsight(weeklyReps: 0, totalSessions: 8))
+    }
+
+    @Test func cardDoesNotRenderBeforeServiceResultExists() {
+        #expect(!AIWeeklyInsightPresentation.shouldRenderCard(weeklyReps: 3, totalSessions: 3, hasInsight: false))
+        #expect(AIWeeklyInsightPresentation.shouldRenderCard(weeklyReps: 3, totalSessions: 3, hasInsight: true))
     }
 }
 
@@ -9509,12 +9914,10 @@ struct HomeSignalGateEdgeTests {
         #expect(count == 0)
     }
 
-    @Test func floorCardsNeverDependOnSignal() {
-        // Coach + UtilityStrip + AskNoum promo are the cold-start floor.
-        // Re-asserted as a separate contract because they're the only
-        // three cards the cold-start home shows, and a future "hide
-        // everything until session 1" refactor would silently break
-        // the empty-state read.
+    @Test func coachCardNeverDependsOnSignal() {
+        // Coach Card is the cold-start floor. Re-asserted as a separate
+        // contract so a future "hide everything until session 1" refactor
+        // cannot silently break the empty-state read.
         for sessions in [0, 1, 5, 25] {
             let gate = HomeSignalGate.evaluate(
                 sessionCount: sessions,
@@ -9524,9 +9927,29 @@ struct HomeSignalGateEdgeTests {
                 showAllOverride: false
             )
             #expect(gate.coachCard, "coachCard must be true at \(sessions) sessions")
-            #expect(gate.utilityStrip, "utilityStrip must be true at \(sessions) sessions")
-            #expect(gate.askNoumPromo, "askNoumPromo must be true at \(sessions) sessions")
         }
+    }
+
+    @Test func utilityStripRetiredWhileAskNoumUnlocksAfterOneRep() {
+        let cold = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: false
+        )
+        #expect(!cold.utilityStrip)
+        #expect(!cold.askNoumShortcut)
+
+        let afterOneRep = HomeSignalGate.evaluate(
+            sessionCount: 1,
+            sessionsThisWeekCount: 1,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: false
+        )
+        #expect(!afterOneRep.utilityStrip)
+        #expect(afterOneRep.askNoumShortcut)
     }
 
     @Test func journeyUnlockSatisfiedByEitherCondition() {
@@ -9536,7 +9959,7 @@ struct HomeSignalGateEdgeTests {
         // so a refactor that accidentally tightens it to `AND` fails
         // the contract regardless of which leg gets dropped first.
         let pathOnly = HomeSignalGate.evaluate(
-            sessionCount: 0,
+            sessionCount: 1,
             sessionsThisWeekCount: 0,
             hasUnlockedPathNode: true,
             hasCoachingProfile: false,
@@ -9545,7 +9968,7 @@ struct HomeSignalGateEdgeTests {
         #expect(pathOnly.journey)
 
         let goalOnly = HomeSignalGate.evaluate(
-            sessionCount: 0,
+            sessionCount: 1,
             sessionsThisWeekCount: 0,
             hasUnlockedPathNode: false,
             hasCoachingProfile: true,
@@ -9584,6 +10007,32 @@ struct HomeSignalGateEdgeTests {
             showAllOverride: false
         )
         #expect(threeSessions.aiWeeklyInsight)
+    }
+
+    @Test func retiredDashboardCardsStayOffEvenBehindOverride() {
+        let established = HomeSignalGate.evaluate(
+            sessionCount: 50,
+            sessionsThisWeekCount: 5,
+            hasUnlockedPathNode: true,
+            hasCoachingProfile: true,
+            showAllOverride: false
+        )
+        #expect(!established.dailyChallenge)
+        #expect(!established.voiceMetrics)
+
+        let override = HomeSignalGate.evaluate(
+            sessionCount: 50,
+            sessionsThisWeekCount: 5,
+            hasUnlockedPathNode: true,
+            hasCoachingProfile: true,
+            showAllOverride: true
+        )
+        #expect(!override.dailyChallenge)
+        #expect(!override.voiceMetrics)
+        #expect(!override.utilityStrip)
+        #expect(override.journey)
+        #expect(override.askNoumShortcut)
+        #expect(override.aiWeeklyInsight)
     }
 }
 
@@ -10888,6 +11337,166 @@ struct CoachContextBuilderChipParserTests {
 // branch — silent paths (minimal effort, empty signals), ordering,
 // the 3-bullet cap, dedup against the leverage line, and the headroom
 // gates that decide whether eloquence/AI/pace bullets land.
+
+struct PostRepVerdictContentTests {
+
+    private func coachNote(
+        momentum: String = "The opener landed cleanly.",
+        leverage: String = "The middle section drifted.",
+        nextStep: String = "Pause before the second point, then name the decision."
+    ) -> CoachNote {
+        CoachNote(momentum: momentum, leverage: leverage, nextStep: nextStep)
+    }
+
+    private func postRepNote(isAIBacked: Bool = false) -> PostRepCoachNote {
+        PostRepCoachNote(
+            sessionID: UUID(),
+            voice: nil,
+            noteText: "Your first sentence gave the listener a real handle. The next gain is holding that structure through point two.",
+            isAIBacked: isAIBacked,
+            generatedAt: Date()
+        )
+    }
+
+    @Test func verifiedProofBecomesTheLeadWin() {
+        let proof = ProofMoment(
+            quote: "we will focus on three priorities",
+            technique: "Structured Claim",
+            claim: "You gave the listener a clean frame.",
+            sessionDate: Date(),
+            isAIBacked: false,
+            generatedAt: Date()
+        )
+        let fallback = WhatYouDidWellCard.Bullet(
+            id: "momentum",
+            icon: "arrow.up.right",
+            iconTint: AppColor.positive,
+            headline: "Fallback win.",
+            evidence: nil
+        )
+
+        let content = PostRepVerdictContent.make(
+            note: postRepNote(),
+            coachNote: coachNote(),
+            winBullets: [fallback],
+            fixBullets: [],
+            proof: proof,
+            isMinimalEffort: false
+        )
+
+        #expect(content.win?.headline == "You gave the listener a clean frame.")
+        #expect(content.win?.quote == "we will focus on three priorities")
+        #expect(content.win?.support == "Structured Claim")
+    }
+
+    @Test func missingProofFallsBackToFirstHonestWinBullet() {
+        let bullet = WhatYouDidWellCard.Bullet(
+            id: "category-Opening",
+            icon: "checkmark.circle.fill",
+            iconTint: AppColor.positive,
+            headline: "Opening felt solid.",
+            evidence: .text("Confident first sentence, no preamble.")
+        )
+
+        let content = PostRepVerdictContent.make(
+            note: postRepNote(),
+            coachNote: coachNote(),
+            winBullets: [bullet],
+            fixBullets: [],
+            proof: nil,
+            isMinimalEffort: false
+        )
+
+        #expect(content.win?.headline == "Opening felt solid.")
+        #expect(content.win?.support == "Confident first sentence, no preamble.")
+        #expect(content.win?.quote == nil)
+    }
+
+    @Test func fixCarriesTheConcreteNextMoveInline() {
+        let fix = WhatToImproveCard.Bullet(
+            id: "leverage",
+            icon: "scope",
+            iconTint: AppColor.caution,
+            headline: "The middle section drifted.",
+            evidence: .nextStep("Pause before point two.")
+        )
+
+        let content = PostRepVerdictContent.make(
+            note: postRepNote(),
+            coachNote: coachNote(nextStep: "Pause before the second point, then name the decision."),
+            winBullets: [],
+            fixBullets: [fix],
+            proof: nil,
+            isMinimalEffort: false
+        )
+
+        #expect(content.fix?.headline == "The middle section drifted.")
+        #expect(content.fix?.nextMove == "Pause before the second point, then name the decision.")
+        #expect(content.fix?.evidence == nil)
+    }
+
+    @Test func fillerEvidenceStaysVisibleWithoutExpansion() {
+        let fix = WhatToImproveCard.Bullet(
+            id: "filler",
+            icon: "waveform.path",
+            iconTint: AppColor.warning,
+            headline: "Fillers clustered — 5 across this rep.",
+            evidence: .fillerChips([("like", 3), ("um", 2)])
+        )
+
+        let content = PostRepVerdictContent.make(
+            note: postRepNote(),
+            coachNote: coachNote(),
+            winBullets: [],
+            fixBullets: [fix],
+            proof: nil,
+            isMinimalEffort: false
+        )
+
+        #expect(content.fix?.evidence == .fillerChips([
+            .init(word: "like", count: 3),
+            .init(word: "um", count: 2)
+        ]))
+    }
+
+    @Test func minimalEffortKeepsReadButSuppressesWinAndFix() {
+        let content = PostRepVerdictContent.make(
+            note: nil,
+            coachNote: coachNote(momentum: "Brief rep.", leverage: "Not enough signal yet.", nextStep: ""),
+            winBullets: [],
+            fixBullets: [],
+            proof: nil,
+            isMinimalEffort: true
+        )
+
+        #expect(content.readText == "Brief rep. Not enough signal yet.")
+        #expect(content.thinEvidenceCopy == "Early read: one longer rep will sharpen the diagnosis.")
+        #expect(content.win == nil)
+        #expect(content.fix == nil)
+    }
+
+    @Test func ruleBasedProvenanceSurvivesTheCollapse() {
+        let ruleBased = PostRepVerdictContent.make(
+            note: postRepNote(isAIBacked: false),
+            coachNote: coachNote(),
+            winBullets: [],
+            fixBullets: [],
+            proof: nil,
+            isMinimalEffort: false
+        )
+        let aiBacked = PostRepVerdictContent.make(
+            note: postRepNote(isAIBacked: true),
+            coachNote: coachNote(),
+            winBullets: [],
+            fixBullets: [],
+            proof: nil,
+            isMinimalEffort: false
+        )
+
+        #expect(ruleBased.provenanceLabel == "RULE-BASED")
+        #expect(aiBacked.provenanceLabel == nil)
+    }
+}
 
 struct WhatYouDidWellBulletSelectorTests {
 
@@ -16359,6 +16968,51 @@ struct SessionIntentEngineTests {
     }
 }
 
+// MARK: - Revamp — Session intent prompt eligibility
+
+struct SessionIntentPromptPolicyTests {
+
+    @Test func coldStartDoesNotShowPrompt() {
+        #expect(!SessionIntentPromptPolicy.shouldPresent(
+            completedSessionCount: 0,
+            hasPendingIntent: false,
+            hasPromptedThisVisit: false
+        ))
+    }
+
+    @Test func oneCompletedRepStillDoesNotShowPrompt() {
+        #expect(!SessionIntentPromptPolicy.shouldPresent(
+            completedSessionCount: 1,
+            hasPendingIntent: false,
+            hasPromptedThisVisit: false
+        ))
+    }
+
+    @Test func twoCompletedRepsCanShowPrompt() {
+        #expect(SessionIntentPromptPolicy.shouldPresent(
+            completedSessionCount: 2,
+            hasPendingIntent: false,
+            hasPromptedThisVisit: false
+        ))
+    }
+
+    @Test func pendingIntentSuppressesPrompt() {
+        #expect(!SessionIntentPromptPolicy.shouldPresent(
+            completedSessionCount: SessionIntentPromptPolicy.minimumCompletedSessions,
+            hasPendingIntent: true,
+            hasPromptedThisVisit: false
+        ))
+    }
+
+    @Test func alreadyPromptedVisitSuppressesPrompt() {
+        #expect(!SessionIntentPromptPolicy.shouldPresent(
+            completedSessionCount: SessionIntentPromptPolicy.minimumCompletedSessions,
+            hasPendingIntent: false,
+            hasPromptedThisVisit: true
+        ))
+    }
+}
+
 // MARK: - M21 — SessionIntentStore lifecycle
 
 @MainActor
@@ -16708,6 +17362,198 @@ struct PaywallFeatureAccuracyTests {
         #expect(manager.asyncChallengeLimit == 1, "Free tier gets 1 async challenge slot")
         manager.upgradeToPremium()
         #expect(manager.asyncChallengeLimit == .max, "Pro tier gets unlimited async challenge slots")
+    }
+}
+
+@Suite("AsyncChallengeHonestyTests")
+struct AsyncChallengeHonestyTests {
+    private let creatorID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+    private let opponentID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func challenge(
+        creatorScore: Int? = nil,
+        opponentScore: Int? = nil,
+        expiresAt: Date? = nil,
+        creatorAccountID: String? = nil,
+        opponentAccountID: String? = nil
+    ) -> AsyncChallenge {
+        AsyncChallenge(
+            id: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
+            prompt: "Give a concise project update.",
+            createdAt: now,
+            expiresAt: expiresAt ?? now.addingTimeInterval(72 * 60 * 60),
+            creatorID: creatorID,
+            creatorName: "You",
+            creatorAccountID: creatorAccountID,
+            opponentID: opponentID,
+            opponentName: "Ari",
+            opponentAccountID: opponentAccountID,
+            creatorScore: creatorScore,
+            creatorDuration: creatorScore == nil ? nil : 42,
+            creatorSummary: creatorScore == nil ? nil : "Clearer opening.",
+            opponentScore: opponentScore,
+            opponentDuration: opponentScore == nil ? nil : 39,
+            opponentSummary: opponentScore == nil ? nil : "Good pace.",
+            creatorReaction: nil,
+            opponentReaction: nil
+        )
+    }
+
+    @Test func singleSidedCreatorScoreStaysWaitingWithoutResult() {
+        let challenge = challenge(creatorScore: 82)
+
+        #expect(challenge.status(forUser: creatorID) == .waitingForOpponent)
+        #expect(challenge.status(forUser: opponentID) == .yourTurn)
+        #expect(challenge.result(forUser: creatorID) == nil)
+        #expect(challenge.result(forUser: opponentID) == nil)
+        #expect(challenge.opponentScore == nil)
+    }
+
+    @Test func accountIDsDrivePerspectiveWhenPresent() {
+        let challenge = challenge(
+            creatorScore: 82,
+            creatorAccountID: "firebase-creator",
+            opponentAccountID: "firebase-opponent"
+        )
+
+        #expect(challenge.status(forParticipantID: "firebase-creator") == .waitingForOpponent)
+        #expect(challenge.status(forParticipantID: "firebase-opponent") == .yourTurn)
+        #expect(challenge.opponentName(forParticipantID: "firebase-creator") == "Ari")
+        #expect(challenge.opponentName(forParticipantID: "firebase-opponent") == "You")
+    }
+
+    @Test func participantIndexIncludesAccountIDsAndLegacyUUIDs() {
+        let challenge = challenge(
+            creatorAccountID: "firebase-creator",
+            opponentAccountID: "firebase-opponent"
+        )
+
+        #expect(challenge.participantIDs.contains("firebase-creator"))
+        #expect(challenge.participantIDs.contains("firebase-opponent"))
+        #expect(challenge.participantIDs.contains(creatorID.uuidString))
+        #expect(challenge.participantIDs.contains(opponentID.uuidString))
+    }
+
+    @Test func singleSidedOpponentScoreStaysYourTurnWithoutResult() {
+        let challenge = challenge(opponentScore: 76)
+
+        #expect(challenge.status(forUser: creatorID) == .yourTurn)
+        #expect(challenge.status(forUser: opponentID) == .waitingForOpponent)
+        #expect(challenge.result(forUser: creatorID) == nil)
+        #expect(challenge.result(forUser: opponentID) == nil)
+        #expect(challenge.creatorScore == nil)
+    }
+
+    @Test func bothScoresAreRequiredBeforeWinnerExists() {
+        let challenge = challenge(creatorScore: 82, opponentScore: 76)
+
+        #expect(challenge.status(forUser: creatorID) == .complete)
+        #expect(challenge.status(forUser: opponentID) == .complete)
+        #expect(challenge.result(forUser: creatorID) == .won)
+        #expect(challenge.result(forUser: opponentID) == .lost)
+    }
+
+    @Test func expiredSingleSidedChallengeDoesNotInventOpponentScore() {
+        let challenge = challenge(
+            creatorScore: 82,
+            expiresAt: Date(timeIntervalSince1970: 0)
+        )
+
+        #expect(challenge.status(forUser: creatorID) == .expired)
+        #expect(challenge.status(forUser: opponentID) == .expired)
+        #expect(challenge.result(forUser: creatorID) == nil)
+        #expect(challenge.opponentScore == nil)
+    }
+
+    @Test func codableRoundTripPreservesMissingOpponentScoreAsNil() throws {
+        let encoded = try JSONEncoder().encode(challenge(creatorScore: 82))
+        let decoded = try JSONDecoder().decode(AsyncChallenge.self, from: encoded)
+
+        #expect(decoded.creatorScore == 82)
+        #expect(decoded.opponentScore == nil)
+        #expect(decoded.result(forUser: creatorID) == nil)
+    }
+
+    @Test func codableRoundTripPreservesAccountParticipantIDs() throws {
+        let encoded = try JSONEncoder().encode(
+            challenge(
+                creatorAccountID: "firebase-creator",
+                opponentAccountID: "firebase-opponent"
+            )
+        )
+        let decoded = try JSONDecoder().decode(AsyncChallenge.self, from: encoded)
+
+        #expect(decoded.creatorParticipantID == "firebase-creator")
+        #expect(decoded.opponentParticipantID == "firebase-opponent")
+    }
+
+    @Test func legacyDecodeWithoutAccountIDsFallsBackToUUIDParticipants() throws {
+        let legacy = """
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "prompt": "Give a concise project update.",
+          "createdAt": \(now.timeIntervalSinceReferenceDate),
+          "expiresAt": \(now.addingTimeInterval(72 * 60 * 60).timeIntervalSinceReferenceDate),
+          "creatorID": "\(creatorID.uuidString)",
+          "creatorName": "You",
+          "opponentID": "\(opponentID.uuidString)",
+          "opponentName": "Ari"
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(AsyncChallenge.self, from: Data(legacy.utf8))
+
+        #expect(decoded.creatorParticipantID == creatorID.uuidString)
+        #expect(decoded.opponentParticipantID == opponentID.uuidString)
+    }
+}
+
+@Suite("SpeakOffConnectionCopyTests")
+struct SpeakOffConnectionCopyTests {
+    @Test func unlinkedFriendNoticeDoesNotClaimSimulation() {
+        let notice = SpeakOffConnectionCopy.unlinkedFriendsNotice.lowercased()
+
+        #expect(!notice.contains("simulated"))
+        #expect(!notice.contains("simulator"))
+        #expect(!notice.contains("fake"))
+        #expect(notice.contains("linked"))
+        #expect(notice.contains("invite"))
+    }
+}
+
+@Suite("SpeakOffFriendEligibilityTests")
+struct SpeakOffFriendEligibilityTests {
+    @Test func manualFriendsAreNotEligibleForScoredSpeakOffs() {
+        let manual = NoumFriend(
+            id: UUID(),
+            displayName: "Manual Friend",
+            addedAt: Date(),
+            addedVia: .manual
+        )
+        let linked = NoumFriend(
+            id: UUID(),
+            displayName: "Linked Friend",
+            addedAt: Date(),
+            addedVia: .invite,
+            accountID: "linked-account"
+        )
+
+        let eligible = SpeakOffFriendEligibility.linkedFriends(from: [manual, linked])
+
+        #expect(eligible.map(\.displayName) == ["Linked Friend"])
+    }
+
+    @Test func blankAccountIDsAreTreatedAsUnlinked() {
+        let blank = NoumFriend(
+            id: UUID(),
+            displayName: "Blank",
+            addedAt: Date(),
+            addedVia: .invite,
+            accountID: "   "
+        )
+
+        #expect(SpeakOffFriendEligibility.isLinked(blank) == false)
     }
 }
 
@@ -21083,6 +21929,86 @@ struct IMHistoryExportTests {
     }
 }
 
+struct SessionHistoryRowPreviewTests {
+
+    @Test func transcriptOnlyFallbackDoesNotExposeRawTranscript() {
+        let session = PracticeSession(
+            transcript: "fuck this is private transcript content that should not sit in a history row",
+            fillerWordCount: 2,
+            duration: 45,
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            mode: .timed,
+            score: 6
+        )
+
+        let preview = SessionHistoryRowPreview.text(for: session) ?? ""
+
+        #expect(preview == "Timed read: 6/10 · 2 fillers")
+        #expect(!preview.contains("private transcript content"))
+        #expect(!preview.lowercased().contains("fuck"))
+    }
+
+    @Test func coachSummaryWinsOverTranscriptFallback() {
+        let session = PracticeSession(
+            transcript: "private transcript words",
+            fillerWordCount: 1,
+            duration: 30,
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            mode: .ahCounter,
+            score: 8,
+            coachSummary: "Cleaner opening; keep the pause before sentence two."
+        )
+
+        #expect(SessionHistoryRowPreview.text(for: session) == "Cleaner opening; keep the pause before sentence two.")
+    }
+
+    @Test func unscoredFallbackStaysFactual() {
+        let session = PracticeSession(
+            transcript: "legacy private transcript",
+            fillerWordCount: 0,
+            duration: 42,
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            mode: .ahCounter
+        )
+
+        #expect(SessionHistoryRowPreview.text(for: session) == "Ah-Counter rep saved · 42s")
+    }
+
+    @Test func detailFocusLabelDoesNotExposeXP() {
+        let session = PracticeSession(
+            transcript: "short difficult rep",
+            fillerWordCount: 3,
+            duration: 39.6,
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            mode: .timed,
+            score: 2,
+            xpEarned: 20
+        )
+
+        let label = SessionHistoryDetailPresentation.focusLabel(for: session)
+
+        #expect(label == "40s")
+        #expect(!label.localizedCaseInsensitiveContains("XP"))
+    }
+
+    @Test func detailFocusLabelPrefersDeclaredIntent() {
+        let session = PracticeSession(
+            transcript: "practice with a declared focus",
+            fillerWordCount: 1,
+            duration: 64,
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            mode: .timed,
+            xpEarned: 80,
+            intentLabel: "Tighten structure"
+        )
+
+        let label = SessionHistoryDetailPresentation.focusLabel(for: session)
+
+        #expect(label == "Tighten structure")
+        #expect(!label.localizedCaseInsensitiveContains("XP"))
+    }
+}
+
 // MARK: - WPM zone band ratio + label contracts
 //
 // The zone band on `TimedHistoryBreakdownCard` is a visual restatement
@@ -21092,11 +22018,11 @@ struct IMHistoryExportTests {
 struct TimedHistoryZoneBandContractTests {
 
     @Test func zoneRangeConstantsLockedToWPMEvaluatorTimedBand() {
-        // The card subtitle quotes the same band the engine uses to
-        // score Timed reps (130–160 WPM per WPMEvaluator). A future
-        // engine-side tweak should fail this contract on purpose.
-        #expect(TimedHistorySummary.zoneMinWPM == 130)
-        #expect(TimedHistorySummary.zoneMaxWPM == 160)
+        // The card subtitle quotes the same shared conversational band
+        // used by pace training and coach feedback. A future engine-side
+        // tweak should fail this contract on purpose.
+        #expect(TimedHistorySummary.zoneMinWPM == 110)
+        #expect(TimedHistorySummary.zoneMaxWPM == 150)
         #expect(TimedHistorySummary.zoneMinWPM < TimedHistorySummary.zoneMaxWPM)
     }
 
@@ -26439,7 +27365,7 @@ struct SuddenDeathGamePointsTests {
     // MARK: Quality multipliers — Pace Control
 
     @Test func paceControlAppliesInIdealRange() {
-        // WPM 120–160 with ≥ 30 total words → ×1.10
+        // WPM inside the shared conversational band with ≥ 30 words → ×1.10
         let result = makeResult(roundsSurvived: 2, totalFillers: 1, totalWords: 40, wordCountsByRound: [20, 20], sessionWPM: 130)
         let labels = result.computedMultipliers.map(\.label)
         #expect(labels.contains("Pace Control"))
@@ -26568,6 +27494,16 @@ struct PaceTrainingEngineTests {
     @Test @MainActor func engineDefaultsToFreestyle() {
         let engine = PaceTrainingEngine()
         #expect(engine.subMode == .freestyle)
+    }
+
+    @Test func conversationalPaceBandIsSharedTarget() {
+        #expect(ConversationalPaceBand.targetWPM == 130)
+        #expect(ConversationalPaceBand.toleranceWPM == 20)
+        #expect(ConversationalPaceBand.minDisplayWPM == 110)
+        #expect(ConversationalPaceBand.maxDisplayWPM == 150)
+        #expect(ConversationalPaceBand.displayRange == "110–150")
+        #expect(ConversationalPaceBand.contains(130))
+        #expect(!ConversationalPaceBand.contains(151))
     }
 
     @Test @MainActor func engineDefaultTargetWPM() {
@@ -27555,7 +28491,7 @@ struct SummaryLookingAheadRouterTests {
 // surface: the default-nil closure (so the existing voice-alignment
 // tests + every other LookingAheadCard call site stay byte-for-byte
 // unchanged), the predicate the body uses to gate CTA rendering, and
-// the per-mode label copy ("Start Timed" / "Start Sudden Death" / etc.)
+// the per-mode label copy ("Start Timed" / "Start Pressure Drill" / etc.)
 // so a future PracticeMode rename can never silently break the CTA
 // label without a failing test.
 
@@ -27688,7 +28624,6 @@ struct HeroScoreCardToneDrillRibbonContractTests {
             fillerDelta: nil,
             effectiveDuration: 30,
             durationAssessment: .onTarget,
-            xpEarned: 50,
             celebrationVisible: false
         )
         #expect(!card.shouldShowToneDrillResolvedRibbon, "Default card must not render the SOLVED ribbon.")
@@ -27712,7 +28647,6 @@ struct HeroScoreCardToneDrillRibbonContractTests {
             fillerDelta: nil,
             effectiveDuration: 60,
             durationAssessment: .onTarget,
-            xpEarned: 50,
             celebrationVisible: false,
             toneDrillResolvedRibbon: HeroScoreCard.ToneDrillResolvedRibbon(
                 scenarioTitle: "Difficult Conversation",
@@ -27746,7 +28680,6 @@ struct HeroScoreCardToneDrillRibbonContractTests {
                     fillerDelta: nil,
                     effectiveDuration: 45,
                     durationAssessment: .onTarget,
-                    xpEarned: 50,
                     celebrationVisible: false,
                     toneDrillResolvedRibbon: HeroScoreCard.ToneDrillResolvedRibbon(
                         scenarioTitle: scenario,
@@ -27791,7 +28724,6 @@ struct HeroScoreCardToneDrillRibbonContractTests {
                 fillerDelta: nil,
                 effectiveDuration: 45,
                 durationAssessment: .onTarget,
-                xpEarned: 50,
                 celebrationVisible: false,
                 toneDrillResolvedRibbon: HeroScoreCard.ToneDrillResolvedRibbon(
                     scenarioTitle: scenario,
@@ -27827,7 +28759,6 @@ struct HeroScoreCardToneDrillRibbonContractTests {
             fillerDelta: nil,
             effectiveDuration: 30,
             durationAssessment: .onTarget,
-            xpEarned: 50,
             celebrationVisible: false,
             toneDrillResolvedRibbon: nil
         )
@@ -29624,6 +30555,7 @@ struct AskNoumModeSuggestionTests {
     @Test func detectsExplicitModes() {
         #expect(AskNoumModeSuggestion.detect(in: "Do an Ah-Counter round next, target under 4 fillers.") == .ahCounterPractice)
         #expect(AskNoumModeSuggestion.detect(in: "Try a Sudden Death round to test composure.") == .suddenDeathPractice)
+        #expect(AskNoumModeSuggestion.detect(in: "Try a Pressure Drill round to test composure.") == .suddenDeathPractice)
         #expect(AskNoumModeSuggestion.detect(in: "Run a difficult conversation rep next.") == .imPractice(scenario: nil, tone: nil))
         #expect(AskNoumModeSuggestion.detect(in: "Warm up with a Timed rep first.") == .timedPractice)
     }
@@ -29653,7 +30585,7 @@ struct AskNoumModeSuggestionTests {
     @Test func labelsAreActionShaped() {
         #expect(AskNoumModeSuggestion.label(for: .timedPractice) == "Start a Timed rep")
         #expect(AskNoumModeSuggestion.label(for: .ahCounterPractice) == "Start an Ah-Counter round")
-        #expect(AskNoumModeSuggestion.label(for: .suddenDeathPractice).contains("Sudden Death"))
+        #expect(AskNoumModeSuggestion.label(for: .suddenDeathPractice) == "Try a Pressure Drill round")
         #expect(AskNoumModeSuggestion.label(for: .imPractice(scenario: nil, tone: nil)).contains("conversation"))
     }
 }
@@ -37619,5 +38551,111 @@ struct GoalProposalChipCatalogTests {
             #expect(chips.allSatisfy { !$0.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
             #expect(Set(chips.map { $0.id }).count == chips.count)
         }
+    }
+}
+
+@Suite("LessonProgressPresentationTests")
+struct LessonProgressPresentationTests {
+    @Test func presentationClampsAndUsesPracticePassLanguage() {
+        let low = LessonProgressPresentation(completedPasses: -2)
+        let high = LessonProgressPresentation(completedPasses: 99)
+
+        #expect(low.completedPasses == 0)
+        #expect(high.completedPasses == LessonProgressPresentation.masteryPassCap)
+        #expect(high.fractionText == "5/5")
+        #expect(high.accessibilityLabel == "5 of 5 practice passes complete")
+    }
+
+    @Test func lessonSummaryAvoidsLegacyRewardLanguage() {
+        let summary = LessonProgressPresentation(completedPasses: 2)
+            .lessonSummaryLine(title: "Rule of Three")
+
+        #expect(summary == "2 of 5 practice passes on Rule of Three.")
+        #expect(!summary.localizedCaseInsensitiveContains("crown"))
+        #expect(!summary.localizedCaseInsensitiveContains("XP"))
+    }
+
+    @Test func legacyProgressFieldStillDecodes() throws {
+        let data = #"{"lessonID":"rule_of_three","crownLevel":3,"totalAttempts":4}"#
+            .data(using: .utf8)!
+
+        let progress = try JSONDecoder().decode(LessonProgress.self, from: data)
+
+        #expect(progress.lessonID == "rule_of_three")
+        #expect(progress.practicePassCount == 3)
+        #expect(progress.totalAttempts == 4)
+    }
+
+    @Test func progressEncodesNewPracticePassFieldOnly() throws {
+        let progress = LessonProgress(
+            lessonID: "rule_of_three",
+            practicePassCount: 3,
+            lastCompletedAt: nil,
+            totalAttempts: 4
+        )
+
+        let data = try JSONEncoder().encode(progress)
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        #expect(object["practicePassCount"] as? Int == 3)
+        #expect(object["crownLevel"] == nil)
+    }
+}
+
+@Suite("ReviewSurfaceCopyTests")
+struct ReviewSurfaceCopyTests {
+    @Test func recentRepReviewCopyDoesNotPromisePromptReplay() {
+        #expect(RecentRepReviewCopy.header == "Review recent reps")
+        #expect(RecentRepReviewCopy.action == "Practice this mode")
+        #expect(!RecentRepReviewCopy.action.localizedCaseInsensitiveContains("prompt again"))
+    }
+
+    @Test func targetedPracticeHeaderAvoidsPunitiveLanguage() {
+        let header = TargetedPracticeCopy.header
+        #expect(header == "Targeted practice")
+        #expect(!header.localizedCaseInsensitiveContains("mistake"))
+        #expect(!header.localizedCaseInsensitiveContains("fix"))
+    }
+
+    @Test func recentRepReviewSignalRequiresRealFriction() {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let ordinary = reviewSignalSession(date: now, score: 8, fillers: 1, mode: .timed)
+
+        #expect(MistakeReplayCard.hasReviewRows(in: [ordinary], now: now) == false)
+    }
+
+    @Test func recentRepReviewSignalFindsLowScoreHighFillerAndEarlyPressure() {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let lowScore = reviewSignalSession(date: now, score: 5, fillers: 1, mode: .timed)
+        let highFiller = reviewSignalSession(date: now, score: 8, fillers: 6, mode: .ahCounter)
+        let earlyPressure = reviewSignalSession(
+            date: now,
+            score: 7,
+            fillers: 1,
+            mode: .suddenDeath,
+            insights: ["Survived 2 rounds"]
+        )
+
+        #expect(MistakeReplayCard.hasReviewRows(in: [lowScore], now: now) == true)
+        #expect(MistakeReplayCard.hasReviewRows(in: [highFiller], now: now) == true)
+        #expect(MistakeReplayCard.hasReviewRows(in: [earlyPressure], now: now) == true)
+    }
+
+    private func reviewSignalSession(
+        date: Date,
+        score: Int?,
+        fillers: Int,
+        mode: PracticeMode,
+        insights: [String] = []
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "test transcript with enough ordinary words for a saved rep",
+            fillerWordCount: fillers,
+            duration: 60,
+            date: date,
+            mode: mode,
+            score: score,
+            insights: insights
+        )
     }
 }

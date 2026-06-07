@@ -130,33 +130,6 @@ final class FriendsManager: ObservableObject {
         addFriend(friend)
     }
 
-    /// Consume a `noum://friend/<accountID>` invite URL. Adds the friend
-    /// with a placeholder display name (the inviter's account ID is the
-    /// only identity carried in the URL) and refreshes peer stats so the
-    /// friend's rating + streak appear on the leaderboard. Returns the
-    /// added friend, or nil if the URL was malformed or the friend was
-    /// already in the list.
-    @discardableResult
-    func acceptInvite(from url: URL) -> NoumFriend? {
-        guard url.scheme == "noum",
-              url.host == "friend" else { return nil }
-        let accountID = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard !accountID.isEmpty else { return nil }
-        if let existing = friends.first(where: { $0.accountID == accountID }) {
-            return existing
-        }
-        let friend = NoumFriend(
-            id: UUID(),
-            displayName: "Speaker \(accountID.prefix(4))",
-            addedAt: Date(),
-            addedVia: .qrCode,
-            accountID: accountID
-        )
-        addFriend(friend)
-        Task { await refreshPeerStats(force: true) }
-        return friend
-    }
-
     func removeFriend(id: UUID) {
         friends.removeAll { $0.id == id }
         persist()

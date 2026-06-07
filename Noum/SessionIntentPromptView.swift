@@ -3,10 +3,11 @@ import SwiftUI
 
 // MARK: - Session Intent Prompt
 //
-// "Today's focus?" — the pre-rep question a £130/hr coach asks every
-// session. Renders as a `.sheet` over the practice mode's setup phase
-// (TimedPracticeView / SuddenDeathPracticeView) and is built to come
-// and go in under 2 seconds without blocking the rep.
+// "Today's focus?" — the earned pre-rep question a coach asks once
+// Noum has enough completed reps to make the prompt useful. Renders as
+// a `.sheet` over the practice mode's setup phase (TimedPracticeView /
+// SuddenDeathPracticeView) and is built to come and go in under 2
+// seconds without blocking the rep.
 //
 // UX contract:
 //   • 1 tap to commit — chip buttons commit immediately, no separate

@@ -38,14 +38,14 @@ struct PathProgressInput {
     let baseline: CommunicationBaseline
     let rating: SpeakingRating
     let modeMastery: [PracticeMode: ModeMasterySnapshot]
-    /// Total lesson crowns the user has earned (sum across the catalog).
+    /// Total lesson practice passes the user has completed (sum across the catalog).
     /// Surfaces lesson progress as a path-progression signal — completing
     /// lessons should move the user up the path, not just sit in a
     /// parallel curriculum.
-    let totalLessonCrowns: Int
-    /// Highest crown level the user has reached on any single lesson.
+    let totalLessonPasses: Int
+    /// Highest practice-pass count the user has reached on any single lesson.
     /// Used by "master a lesson" path nodes.
-    let maxLessonCrown: Int
+    let maxLessonPassCount: Int
     let now: Date
 
     var sessionCount: Int { sessions.count }
@@ -77,7 +77,7 @@ enum PathNodeCriterion {
     case modeMasteryAnyLevel(Int)
     case distinctPracticeDays(Int)
     case cleanRunsInWindow(_ count: Int, minScore: Int)
-    case totalLessonCrowns(Int)
+    case totalLessonPasses(Int)
     case anyLessonMastered
     /// User has held a single silent pause of at least `seconds` in any
     /// session. "Silent" = the pause was unfilled (no disfluency inside it).
@@ -126,10 +126,10 @@ enum PathNodeCriterion {
                 $0.fillerWordCount == 0 && ($0.score ?? 0) >= minScore
             }.count
             return clamp(qualifying, count)
-        case .totalLessonCrowns(let target):
-            return clamp(input.totalLessonCrowns, target)
+        case .totalLessonPasses(let target):
+            return clamp(input.totalLessonPasses, target)
         case .anyLessonMastered:
-            return input.maxLessonCrown >= 5 ? 1.0 : Double(input.maxLessonCrown) / 5.0
+            return input.maxLessonPassCount >= 5 ? 1.0 : Double(input.maxLessonPassCount) / 5.0
         case .heldSilentPause(let target):
             // Best longest-pause across sessions where the pause was
             // unfilled (filledRatio == 0). Sessions whose longest pause
@@ -229,13 +229,13 @@ enum PathNodeRegistry {
                 order: 4,
                 tier: .bronze,
                 title: "First lesson cleared",
-                detail: "Earn your first lesson crown.",
-                coachLine: "Lessons teach the technique. One crown means you've built the recognition.",
+                detail: "Complete your first lesson practice pass.",
+                coachLine: "Lessons teach the technique. One pass means you've built the recognition.",
                 actionLabel: "Open lessons",
                 actionDestination: .lessons,
                 symbolName: "books.vertical.fill"
             ),
-            .totalLessonCrowns(1)
+            .totalLessonPasses(1)
         ),
         (
             PathNode(
@@ -382,14 +382,14 @@ enum PathNodeRegistry {
                 id: "five_lesson_crowns",
                 order: 15,
                 tier: .platinum,
-                title: "Five crowns earned",
-                detail: "Earn five crowns across the lessons catalog.",
-                coachLine: "Five crowns means the techniques aren't theoretical anymore — they're moves you've practiced.",
+                title: "Five lesson passes",
+                detail: "Complete five practice passes across the lessons catalog.",
+                coachLine: "Five passes means the techniques aren't theoretical anymore — they're moves you've practiced.",
                 actionLabel: "Open lessons",
                 actionDestination: .lessons,
-                symbolName: "crown.fill"
+                symbolName: "checkmark.seal.fill"
             ),
-            .totalLessonCrowns(5)
+            .totalLessonPasses(5)
         ),
         (
             PathNode(
@@ -401,7 +401,7 @@ enum PathNodeRegistry {
                 coachLine: "Thirty days of returns is a real practice, not a streak hack.",
                 actionLabel: "Open practice",
                 actionDestination: .practiceSelection,
-                symbolName: "crown.fill"
+                symbolName: "calendar.badge.checkmark"
             ),
             .distinctPracticeDays(30)
         ),
@@ -411,8 +411,8 @@ enum PathNodeRegistry {
                 order: 17,
                 tier: .diamond,
                 title: "Master a lesson",
-                detail: "Take any lesson to its fifth crown.",
-                coachLine: "Mastery is the same five-crown bar Duolingo uses. It's earned, not given.",
+                detail: "Take any lesson through five successful practice passes.",
+                coachLine: "Mastery means the move has survived repetition, not just recognition.",
                 actionLabel: "Open lessons",
                 actionDestination: .lessons,
                 symbolName: "rosette"

@@ -1,11 +1,10 @@
 import Foundation
 
-// MARK: - Speech Projects (Toastmasters-inspired)
+// MARK: - Speech Projects
 //
-// Toastmasters' Pathways Learning Experience structures prepared speeches
-// around explicit objectives — Ice Breaker, Vocal Variety, Body Language,
-// Connect with Storytelling, Persuasive Speaking. Each project has a
-// duration target (typically 5–7 min), a focus, and a scoring rubric.
+// Prepared speeches are structured around explicit objectives: opener,
+// movement, vocal variety, storytelling, and persuasion. Each project has a
+// duration target, a focus, and a scoring rubric.
 //
 // `SpeechProject` is the curated equivalent. Each project ships:
 // - a clear focus

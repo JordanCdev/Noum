@@ -652,7 +652,7 @@ enum DrillCatalog {
             constraint: "Speak at a deliberate, even pace throughout. No speeding up, no slowing down.",
             coachingPrinciple: "Consistent pace signals control and composure.",
             format: .miniDrill,
-            successDescription: "WPM within 110–150 range"
+            successDescription: "WPM within \(ConversationalPaceBand.displayRange) range"
         ),
         DrillVariation(
             id: "pace.slowStart",
@@ -661,7 +661,7 @@ enum DrillCatalog {
             constraint: "Deliberately slow your first 10 seconds to half your normal speed.",
             coachingPrinciple: "A slow start anchors calm for the rest of the answer.",
             format: .miniDrill,
-            successDescription: "Pace below 150 WPM"
+            successDescription: "Pace below \(ConversationalPaceBand.maxDisplayWPM) WPM"
         ),
         DrillVariation(
             id: "pace.pausePunctuation",
@@ -670,7 +670,7 @@ enum DrillCatalog {
             constraint: "Pause for one full second after every period. Let each sentence land.",
             coachingPrinciple: "Pauses between sentences naturally regulate pace.",
             format: .miniDrill,
-            successDescription: "WPM within 110–150 range"
+            successDescription: "WPM within \(ConversationalPaceBand.displayRange) range"
         ),
         DrillVariation(
             id: "pace.speedCheck",
@@ -679,7 +679,7 @@ enum DrillCatalog {
             constraint: "Halfway through your answer, consciously check your pace and adjust.",
             coachingPrinciple: "Self-monitoring builds the habit of pace awareness.",
             format: .miniDrill,
-            successDescription: "WPM within 110–150 range"
+            successDescription: "WPM within \(ConversationalPaceBand.displayRange) range"
         ),
         DrillVariation(
             id: "pace.conversationalGear",
@@ -688,13 +688,13 @@ enum DrillCatalog {
             constraint: "Speak as if explaining something to a friend over coffee. Natural, unhurried.",
             coachingPrinciple: "Conversational pace is the most persuasive pace.",
             format: .miniDrill,
-            successDescription: "WPM within 110–150 range"
+            successDescription: "WPM within \(ConversationalPaceBand.displayRange) range"
         ),
         DrillVariation(
             id: "pace.beatTheBrake",
             skillArea: .paceControl,
             title: "Beat the Brake",
-            constraint: "Keep your pace between 110–140 WPM. The gauge turns red if you drift.",
+            constraint: "Keep your pace between \(ConversationalPaceBand.displayRange) WPM. The gauge turns red if you drift.",
             coachingPrinciple: "Controlled pace is the foundation of clear communication.",
             format: .miniDrill,
             successDescription: "60%+ time in the zone"

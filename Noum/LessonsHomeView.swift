@@ -3,9 +3,9 @@ import SwiftUI
 
 // MARK: - Lessons Home (catalog browser)
 //
-// Curriculum surface. Lists every lesson with its current crown level so
-// the user can see where they have progress, where they have headroom,
-// and which technique is next on the path.
+// Curriculum surface. Lists every lesson with its current practice-pass
+// progress so the user can see where they have progress, where they have
+// headroom, and which technique is next on the path.
 
 @available(iOS 17.0, macOS 12.0, *)
 struct LessonsHomeView: View {
@@ -64,7 +64,7 @@ struct LessonsHomeView: View {
             Text("Lessons")
                 .font(Typography.screenTitle)
                 .foregroundStyle(.primary)
-            Text("Short, focused lessons that teach a single move. Concept, then spot it, then say it. Each pass earns a crown.")
+            Text("Short, focused lessons that teach a single move. Concept, then spot it, then say it. Each pass strengthens the technique.")
                 .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -74,19 +74,19 @@ struct LessonsHomeView: View {
 
     // MARK: - First-time empty state
 
-    /// Renders only on the very first visit — when no crowns have been earned
+    /// Renders only on the very first visit - when no practice passes exist
     /// and no lesson has ever been opened. Once a single attempt has happened
     /// (pass or fail), the catalog stands on its own.
     private var showsFirstTimeEmptyState: Bool {
         let everAttempted = lessonStore.progress.values.contains { $0.totalAttempts > 0 || $0.lastCompletedAt != nil }
-        return lessonStore.totalCrowns == 0 && !everAttempted
+        return lessonStore.totalPracticePasses == 0 && !everAttempted
     }
 
     private var firstTimeEmptyState: some View {
         let recommended = lessonStore.nextRecommendedLesson ?? LessonsCatalog.all.first
         return EmptyStateView(
             symbol: "books.vertical.fill",
-            title: "Earn your first crown",
+            title: "Clear your first lesson",
             body: "Each lesson teaches one move. Concept, then spot it, then say it.",
             tint: AppColor.brandBlue,
             cta: recommended.map { lesson in
@@ -123,13 +123,15 @@ struct LessonsHomeView: View {
     // MARK: - Summary strip
 
     private var summaryStrip: some View {
-        let totalCrowns = lessonStore.totalCrowns
-        let crownsPossible = LessonsCatalog.all.count * LessonStore.crownCap
+        let totalPasses = lessonStore.totalPracticePasses
         return HStack(spacing: 10) {
             summaryPill(
-                title: "Crowns",
-                value: "\(totalCrowns)/\(crownsPossible)",
-                icon: "crown.fill",
+                title: "Passes",
+                value: LessonProgressPresentation.aggregateValue(
+                    totalCompleted: totalPasses,
+                    lessonCount: LessonsCatalog.all.count
+                ),
+                icon: "checkmark.seal.fill",
                 tint: AppColor.brandBlue
             )
             summaryPill(
@@ -214,7 +216,7 @@ struct LessonsHomeView: View {
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    crownRow(crowns: lessonStore.crownLevel(for: lesson.id))
+                    practicePassRow(completedPasses: lessonStore.practicePassCount(for: lesson.id))
                         .padding(.top, 2)
                 }
 
@@ -236,14 +238,16 @@ struct LessonsHomeView: View {
         .accessibilityIdentifier("lessons.row.\(lesson.id)")
     }
 
-    private func crownRow(crowns: Int) -> some View {
-        HStack(spacing: 4) {
-            ForEach(0..<LessonStore.crownCap, id: \.self) { i in
-                Image(systemName: i < crowns ? "crown.fill" : "crown")
+    private func practicePassRow(completedPasses: Int) -> some View {
+        let progress = LessonProgressPresentation(completedPasses: completedPasses)
+        return HStack(spacing: 4) {
+            ForEach(0..<LessonStore.masteryPassCap, id: \.self) { i in
+                Image(systemName: i < progress.completedPasses ? "checkmark.seal.fill" : "circle")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(i < crowns ? AppColor.brandBlue : Color.secondary.opacity(0.3))
+                    .foregroundStyle(i < progress.completedPasses ? AppColor.brandBlue : Color.secondary.opacity(0.3))
             }
         }
+        .accessibilityLabel(progress.accessibilityLabel)
     }
 }
 
@@ -251,6 +255,8 @@ struct LessonsHomeView: View {
 
 @available(iOS 17.0, macOS 12.0, *)
 struct LessonCelebrationOverlay: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let celebration: LessonCelebration
     let lesson: Lesson
     let onDismiss: () -> Void
@@ -287,18 +293,19 @@ struct LessonCelebrationOverlay: View {
                         .font(Typography.cardTitle)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.center)
-                    Text(crownLine)
+                    Text(progressLine)
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 HStack(spacing: 6) {
-                    ForEach(0..<LessonStore.crownCap, id: \.self) { i in
-                        Image(systemName: i < celebration.crownLevel ? "crown.fill" : "crown")
+                    ForEach(0..<LessonStore.masteryPassCap, id: \.self) { i in
+                        Image(systemName: i < celebration.practicePassCount ? "checkmark.seal.fill" : "circle")
                             .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(i < celebration.crownLevel ? AppColor.brandBlue : Color.secondary.opacity(0.3))
+                            .foregroundStyle(i < celebration.practicePassCount ? AppColor.brandBlue : Color.secondary.opacity(0.3))
                     }
                 }
+                .accessibilityLabel(LessonProgressPresentation(completedPasses: celebration.practicePassCount).accessibilityLabel)
 
                 Button(action: onDismiss) {
                     Text("Continue")
@@ -324,21 +331,19 @@ struct LessonCelebrationOverlay: View {
         }
         .onAppear {
             CoachHaptic.trendBreakthrough()
+            guard !reduceMotion else {
+                hasAppeared = true
+                return
+            }
             withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
                 hasAppeared = true
             }
         }
     }
 
-    private var crownLine: String {
-        switch celebration.kind {
-        case .unlocked:
-            return "First crown earned. Four more to master."
-        case .levelUp:
-            return "\(celebration.crownLevel) of \(LessonStore.crownCap) crowns."
-        case .mastered:
-            return "All five crowns. The technique is yours."
-        }
+    private var progressLine: String {
+        LessonProgressPresentation(completedPasses: celebration.practicePassCount)
+            .celebrationLine(for: celebration.kind)
     }
 }
 
@@ -356,7 +361,7 @@ struct LessonCelebrationOverlay: View {
         celebration: LessonCelebration(
             lessonID: LessonsCatalog.ruleOfThree.id,
             kind: .unlocked,
-            crownLevel: 1
+            practicePassCount: 1
         ),
         lesson: LessonsCatalog.ruleOfThree,
         onDismiss: {}

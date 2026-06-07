@@ -3,10 +3,10 @@ import SwiftUI
 
 // MARK: - AI Weekly Insight Card
 //
-// Replaces the templated `WeeklyDigestCard` on home with an AI-driven
-// narrative coaching read of the user's last 7 days. Falls back to a
-// template-derived insight when no provider is configured — the card
-// always renders something useful, the AI version is just sharper.
+// Replaces the templated `WeeklyDigestCard` on home with a narrative
+// coaching read of the user's last 7 days. Falls back through
+// `AIInsightsService` when no provider is configured. The view does not
+// render placeholder insight copy while that service result is pending.
 //
 // Layout:
 // - Headline (Figtree, large)
@@ -16,8 +16,20 @@ import SwiftUI
 // - "Coach mark" — small chip showing whether this is AI- or
 //   template-generated. Honest signal so we never overclaim.
 
+enum AIWeeklyInsightPresentation {
+    static func shouldRequestInsight(weeklyReps: Int, totalSessions: Int) -> Bool {
+        weeklyReps > 0 || totalSessions > 0
+    }
+
+    static func shouldRenderCard(weeklyReps: Int, totalSessions: Int, hasInsight: Bool) -> Bool {
+        shouldRequestInsight(weeklyReps: weeklyReps, totalSessions: totalSessions) && hasInsight
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct AIWeeklyInsightCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @ObservedObject var sessionStore: PracticeSessionStore
     @ObservedObject var ratingStore: RatingStore
     @ObservedObject var clutchWordStore: ClutchWordStore
@@ -32,6 +44,7 @@ struct AIWeeklyInsightCard: View {
     @State private var focusShift: FocusShiftEvent?
     @State private var isRefreshing = false
     @State private var hasAppeared = false
+    @State private var didRequestInitialInsight = false
 
     /// Chapter eyebrow for the headline. Mirrors the Home journey
     /// card's "Chapter · <tier>" — the chapter the user is *currently
@@ -55,30 +68,46 @@ struct AIWeeklyInsightCard: View {
     }
 
     var body: some View {
-        if weeklyReps == 0 && sessionStore.sessions.isEmpty {
+        let shouldRequest = AIWeeklyInsightPresentation.shouldRequestInsight(
+            weeklyReps: weeklyReps,
+            totalSessions: sessionStore.sessions.count
+        )
+        if !shouldRequest {
             EmptyView()
+        } else if let insight {
+            cardShell(insight: insight)
         } else {
-            cardContent
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Spacing.lg)
-                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                        .stroke(Color.white.opacity(0.72), lineWidth: 1)
-                )
-                .scaleEffect(hasAppeared ? 1 : 0.97)
-                .opacity(hasAppeared ? 1 : 0)
-                .onAppear {
-                    withAnimation(.standardSpring.delay(0.05)) { hasAppeared = true }
-                    Task { await refresh() }
-                }
-                .accessibilityElement(children: .contain)
+            Color.clear
+                .frame(height: 0)
+                .accessibilityHidden(true)
+                .task { await requestInitialInsightIfNeeded() }
         }
     }
 
+    private func cardShell(insight: AIInsight) -> some View {
+        cardContent(insight: insight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Spacing.lg)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
+            )
+            .scaleEffect(reduceMotion || hasAppeared ? 1 : 0.97)
+            .opacity(hasAppeared ? 1 : 0)
+            .onAppear {
+                guard !hasAppeared else { return }
+                if reduceMotion {
+                    hasAppeared = true
+                } else {
+                    withAnimation(.standardSpring.delay(0.05)) { hasAppeared = true }
+                }
+            }
+            .accessibilityElement(children: .contain)
+    }
+
     @ViewBuilder
-    private var cardContent: some View {
-        let insight = insight ?? AIInsight.placeholder
+    private func cardContent(insight: AIInsight) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             header(insight: insight)
             // Focus shift notice — one-sentence adaptation signal when
@@ -217,7 +246,7 @@ struct AIWeeklyInsightCard: View {
                 Image(systemName: isRefreshing ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.clockwise")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
-                    .modifier(RefreshSpinModifier(isActive: isRefreshing))
+                    .modifier(RefreshSpinModifier(isActive: isRefreshing, reduceMotion: reduceMotion))
             }
         }
         .accessibilityLabel("Refresh weekly insight")
@@ -253,6 +282,12 @@ struct AIWeeklyInsightCard: View {
     }
 
     // MARK: - Refresh
+
+    private func requestInitialInsightIfNeeded() async {
+        guard !didRequestInitialInsight else { return }
+        didRequestInitialInsight = true
+        await refresh()
+    }
 
     private func refresh(force: Bool = false) async {
         let calendar = Calendar.current
@@ -328,12 +363,16 @@ struct AIWeeklyInsightCard: View {
         }
 
         await MainActor.run {
-            withAnimation(.standardSpring) {
+            let apply = {
                 self.insight = next
                 self.proof = nextProof
                 if nextFocusShift != nil {
                     self.focusShift = nextFocusShift
                 }
+            }
+            if reduceMotion { apply() }
+            else {
+                withAnimation(.standardSpring, apply)
             }
             self.isRefreshing = false
         }
@@ -348,10 +387,13 @@ struct AIWeeklyInsightCard: View {
 @available(iOS 17.0, *)
 private struct RefreshSpinModifier: ViewModifier {
     let isActive: Bool
+    let reduceMotion: Bool
     @State private var angle: Double = 0
 
     func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
+        if reduceMotion {
+            content
+        } else if #available(iOS 18.0, *) {
             content.symbolEffect(.rotate, options: .repeating, isActive: isActive)
         } else {
             content

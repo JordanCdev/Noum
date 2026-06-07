@@ -2,9 +2,8 @@ import Foundation
 
 // MARK: - Lesson Model
 //
-// "Duolingo for communication" — short, technique-focused lessons that
-// teach a single rhetorical or delivery move. Each lesson is 3 progressive
-// steps:
+// Short, technique-focused lessons that teach a single rhetorical or delivery
+// move. Each lesson is 3 progressive steps:
 //
 //  1. **Concept** — read what the technique is and why it works.
 //  2. **Spot it** — multiple-choice: identify the technique in candidate
@@ -12,8 +11,9 @@ import Foundation
 //  3. **Apply** — speak a 30–45s answer using the technique. The
 //     `EloquenceEngine` validates that the user actually used it.
 //
-// Mastery is tracked per-lesson, 0–5 crowns. Each pass through all steps
-// raises the crown by 1, capped at 5. Crowns persist per-account.
+// Mastery is tracked per-lesson as 0–5 practice passes. Each successful pass
+// through all steps raises the count by 1, capped at 5. Progress persists
+// per-account.
 
 struct Lesson: Identifiable, Hashable {
     let id: String
@@ -72,7 +72,8 @@ struct Lesson: Identifiable, Hashable {
 // MARK: - Lesson Outcome
 
 /// Result of one full pass through a lesson. Used by `LessonStore` to
-/// raise crown level and by the celebration overlay to render the unlock.
+/// raise practice-pass progress and by the celebration overlay to render
+/// the cleared/mastered moment.
 struct LessonOutcome: Equatable {
     let lessonID: String
     let stepResults: [StepResult]

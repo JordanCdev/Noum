@@ -5,9 +5,8 @@ import SwiftUI
 
 // MARK: - Notification Pre-Prompt
 //
-// Soft-sell sheet shown BEFORE iOS's hard authorization dialog. Pattern lifted
-// from Duolingo's public retention research: a tasteful in-app screen that
-// frames the value of notifications lifts opt-in vs. cold-prompting.
+// Soft-sell sheet shown before iOS's hard authorization dialog. It frames the
+// concrete value of notifications before the system prompt appears.
 //
 // Trigger: after the user's *first* finished rep (sessionCount == 1). Not
 // during onboarding — we want them to have felt the product first.

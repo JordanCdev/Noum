@@ -479,12 +479,12 @@ struct PathNodeCelebration: View {
             return "Mastery \(level) in \(modeNameForMastery(criterion: criterion, default: mode)). You earned this."
         case .modeMasteryAnyLevel(let level):
             return "Mastery \(level) across modes. You earned this."
-        case .totalLessonCrowns:
-            let crowns = LessonStore.shared.totalCrowns
-            let unit = crowns == 1 ? "crown" : "crowns"
-            return "\(crowns) \(unit) earned. You earned this."
+        case .totalLessonPasses:
+            let passes = LessonStore.shared.totalPracticePasses
+            let unit = passes == 1 ? "practice pass" : "practice passes"
+            return "\(passes) \(unit) complete. You earned this."
         case .anyLessonMastered:
-            return "A lesson taken to its fifth crown. You earned this."
+            return "A lesson taken through five practice passes. You earned this."
         case .heldSilentPause:
             if let m = lastSession?.pauseMetrics, m.longestSeconds > 0 {
                 return "\(secondsLabel(m.longestSeconds)) silent pause. You earned this."

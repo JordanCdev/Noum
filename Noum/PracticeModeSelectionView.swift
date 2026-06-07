@@ -32,7 +32,7 @@ struct PracticeModeExpansionCopy {
         case .suddenDeath:
             return PracticeModeExpansionCopy(
                 pressureType: "Hard clock. One filler ends the rep.",
-                surfaces: "What you reach for when there's no safety net.",
+                surfaces: "How composure holds when the margin is narrow.",
                 repLength: "30–90s rep."
             )
         case .ahCounter:
@@ -51,6 +51,27 @@ struct PracticeModeExpansionCopy {
     }
 }
 
+struct PracticeModePrescriptionCopy {
+    static let heroEyebrow = "Coach pick"
+    static let alternateSectionTitle = "Other ways to practice"
+    static let pressureLockedHint = "Run one rated rep before Pressure Drill."
+
+    static func beginLabel(for title: String) -> String {
+        "Begin \u{00B7} \(title)"
+    }
+
+    static func escapeLabel() -> String {
+        "Pick another"
+    }
+}
+
+struct PracticeModeAvailability: Equatable {
+    static func isUnlocked(_ mode: PracticeMode, rating: SpeakingRating) -> Bool {
+        guard mode == .suddenDeath else { return true }
+        return rating.hasRatedEvidence
+    }
+}
+
 #if canImport(SwiftUI)
 @available(iOS 17.0, macOS 12.0, *)
 struct PracticeModeSelectionView: View {
@@ -58,6 +79,7 @@ struct PracticeModeSelectionView: View {
     @Binding var navigationPath: NavigationPath
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
+    @StateObject private var ratingStore = RatingStore.shared
     @StateObject private var hapticsSettings = HapticsSettings.shared
     @StateObject private var masteryStore = ModeMasteryStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
@@ -87,6 +109,7 @@ struct PracticeModeSelectionView: View {
     /// Set semantics so multiple rows can stay expanded if the user opens
     /// several — explore-then-commit, not modal "one at a time".
     @State private var expandedModes: Set<PracticeMode> = []
+    @State private var showOtherWays: Bool = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private struct CrutchOption {
@@ -133,8 +156,8 @@ struct PracticeModeSelectionView: View {
             ),
             ModeOption(
                 mode: .suddenDeath,
-                title: "Sudden Death",
-                subtitle: "Stay alive without a single filler word.",
+                title: PracticeMode.suddenDeath.displayLabel,
+                subtitle: "A hard clock with zero filler tolerance.",
                 systemImage: "bolt.fill",
                 tint: AppColor.modeSuddenDeath,
                 recommendedReason: "Sharpens composure under live pressure."
@@ -160,7 +183,19 @@ struct PracticeModeSelectionView: View {
     }
 
     private var recommendedMode: PracticeMode {
-        cachedRecommendedMode ?? .timed
+        let candidate = cachedRecommendedMode ?? .timed
+        guard PracticeModeAvailability.isUnlocked(candidate, rating: ratingStore.rating) else {
+            return .timed
+        }
+        return candidate
+    }
+
+    private var recommendedOption: ModeOption {
+        options.first(where: { $0.mode == recommendedMode }) ?? options[0]
+    }
+
+    private var alternateOptions: [ModeOption] {
+        options.filter { $0.mode != recommendedOption.mode }
     }
 
     private var primaryOption: ModeOption {
@@ -170,13 +205,23 @@ struct PracticeModeSelectionView: View {
     private var activeStartTitle: String {
         if paceSelected { return paceOption.title }
         if crutchSelected { return crutchOption.title }
+        if !PracticeModeAvailability.isUnlocked(selectedMode, rating: ratingStore.rating) {
+            return PracticeMode.timed.displayLabel
+        }
         return primaryOption.title
     }
 
     private var activeStartTint: Color {
         if paceSelected { return paceOption.tint }
         if crutchSelected { return crutchOption.tint }
+        if !PracticeModeAvailability.isUnlocked(selectedMode, rating: ratingStore.rating) {
+            return AppColor.modeTimed
+        }
         return primaryOption.tint
+    }
+
+    private var showsFloatingStartCTA: Bool {
+        crutchSelected || paceSelected || selectedMode != recommendedMode
     }
 
     // MARK: - Body
@@ -189,36 +234,34 @@ struct PracticeModeSelectionView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
                     headerCopy
+                    recommendedRepHero
 
-                    VStack(spacing: Spacing.cardGap) {
-                        ForEach(options) { option in
-                            modeCard(option)
-                        }
-                        crutchCard
-                        paceCard
-                        lessonsCard
-                        speechProjectsCard
-                    }
+                    otherWaysSection
                 }
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.top, Spacing.sm)
-                // Bottom inset clears the floating Start CTA so the last
-                // mode tile (Speech Projects) doesn't bleed under it. The
-                // CTA is ~64pt tall with its own internal padding; leaving
-                // 96pt here gives a clean visual gap at rest.
-                .padding(.bottom, 96)
+                // Bottom inset clears the floating Start CTA when the user
+                // opens alternate choices. At rest, the recommendation hero
+                // owns the only Begin button so the picker does not show two
+                // competing primary actions.
+                .padding(.bottom, showsFloatingStartCTA ? 96 : Spacing.lg)
             }
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("practiceModes.screen")
         .safeAreaInset(edge: .bottom) {
-            startCTA
+            if showsFloatingStartCTA {
+                startCTA
+            }
         }
         .task {
             computeRecommendation()
             if options.contains(where: { $0.mode == recommendedMode }) {
                 selectedMode = recommendedMode
+            }
+            if !PracticeModeAvailability.isUnlocked(selectedMode, rating: ratingStore.rating) {
+                selectedMode = .timed
             }
             // Defensive: clear any stale Quick Start flag from a prior
             // arm-then-back-out so the next "Begin" tap doesn't get
@@ -226,6 +269,138 @@ struct PracticeModeSelectionView: View {
             PracticeModeQuickStart.clear()
             PracticeModeQuickStart.clearCrutch()
         }
+    }
+
+    // MARK: - Recommended Rep
+
+    private var recommendedRepHero: some View {
+        let option = recommendedOption
+        let reason = cachedRecommendedReason ?? option.recommendedReason
+        let snapshot = masteryStore.snapshot(for: option.mode)
+        return VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                modeIcon(option)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(PracticeModePrescriptionCopy.heroEyebrow)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(option.tint)
+                        .textCase(.uppercase)
+
+                    Text(option.title)
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if snapshot.sessionsLogged > 0 {
+                        ModeMasteryBadge(snapshot: snapshot)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Text(reason)
+                .font(Typography.body)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(option.subtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: option.title), tint: option.tint) {
+                selectedMode = option.mode
+                crutchSelected = false
+                paceSelected = false
+                navigationPath.append(appDestination(for: option.mode))
+            }
+            .accessibilityIdentifier("practiceModes.recommendedHero.begin")
+
+            Button {
+                animateMode {
+                    showOtherWays = true
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.subheadline.weight(.bold))
+                    Text(PracticeModePrescriptionCopy.escapeLabel())
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(option.tint)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("practiceModes.recommendedHero.pickAnother")
+            .accessibilityHint("Shows the other practice modes.")
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(modeCardBackground(option, isRecommended: true, isSelected: true))
+        .shadow(color: option.tint.opacity(0.16), radius: 22, y: 10)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("practiceModes.recommendedHero")
+    }
+
+    private var otherWaysSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            sectionToggleButton(
+                title: PracticeModePrescriptionCopy.alternateSectionTitle,
+                isExpanded: showOtherWays,
+                accessibilityID: "practiceModes.otherWays"
+            ) {
+                showOtherWays.toggle()
+            }
+
+            if showOtherWays {
+                VStack(spacing: Spacing.cardGap) {
+                    ForEach(alternateOptions) { option in
+                        modeCard(option)
+                    }
+                    crutchCard
+                    paceCard
+                }
+                .transition(reduceMotion
+                    ? .opacity
+                    : .opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func sectionToggleButton(
+        title: String,
+        isExpanded: Bool,
+        accessibilityID: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            animateMode {
+                action()
+            }
+        } label: {
+            HStack(spacing: Spacing.sm) {
+                Text(title)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.primary)
+
+                Spacer(minLength: 0)
+
+                Image(systemName: isExpanded ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, Spacing.xs)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityID)
+        .accessibilityLabel(title)
+        .accessibilityHint(isExpanded ? "Collapses this section." : "Expands this section.")
     }
 
     // MARK: - Header
@@ -237,11 +412,11 @@ struct PracticeModeSelectionView: View {
             // moment), not a settings-list title. The richer 32pt
             // rounded weight is the single biggest signal that the
             // surface below is a curation, not a list.
-            Text("Pick your next rep")
+            Text("Your next rep")
                 .font(.system(size: 32, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
 
-            Text("Each mode trains a different kind of pressure.")
+            Text("One focused rep, then the read gets sharper.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -256,9 +431,11 @@ struct PracticeModeSelectionView: View {
         let isSelected = !crutchSelected && !paceSelected && selectedMode == option.mode
         let isRecommended = option.mode == recommendedMode
         let isExpanded = expandedModes.contains(option.mode)
+        let isLocked = !PracticeModeAvailability.isUnlocked(option.mode, rating: ratingStore.rating)
 
         return VStack(spacing: 0) {
             Button {
+                guard !isLocked else { return }
                 animateMode {
                     selectedMode = option.mode
                     crutchSelected = false
@@ -316,6 +493,13 @@ struct PracticeModeSelectionView: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .multilineTextAlignment(.leading)
 
+                        if isLocked {
+                            Label(PracticeModePrescriptionCopy.pressureLockedHint, systemImage: "lock.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(option.tint)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
                         if isRecommended {
                             Text(cachedRecommendedReason ?? option.recommendedReason)
                                 .font(.caption.weight(.semibold))
@@ -326,9 +510,9 @@ struct PracticeModeSelectionView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    Image(systemName: isLocked ? "lock.fill" : isSelected ? "checkmark.circle.fill" : "circle")
                         .font(.title3)
-                        .foregroundStyle(isSelected ? option.tint : Color.secondary.opacity(0.4))
+                        .foregroundStyle(isLocked ? Color.secondary.opacity(0.45) : isSelected ? option.tint : Color.secondary.opacity(0.4))
                         .accessibilityHidden(true)
                 }
                 .padding(Spacing.lg)
@@ -337,7 +521,7 @@ struct PracticeModeSelectionView: View {
             .buttonStyle(.pressable)
             .accessibilityIdentifier("practiceMode.\(option.mode.rawValue)")
             .accessibilityLabel(accessibilityLabel(option, isRecommended: isRecommended))
-            .accessibilityHint(option.subtitle)
+            .accessibilityHint(isLocked ? PracticeModePrescriptionCopy.pressureLockedHint : option.subtitle)
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             .overlay(alignment: .topTrailing) {
                 expandToggleButton(for: option, isExpanded: isExpanded)
@@ -409,6 +593,7 @@ struct PracticeModeSelectionView: View {
     /// bottom of this block — see `quickStartButton` for the rationale.
     private func modeExpandedSection(_ option: ModeOption) -> some View {
         let copy = PracticeModeExpansionCopy.copy(for: option.mode)
+        let isLocked = !PracticeModeAvailability.isUnlocked(option.mode, rating: ratingStore.rating)
         return VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(alignment: .top, spacing: Spacing.md) {
                 NoumCharacter.Inline(
@@ -440,7 +625,11 @@ struct PracticeModeSelectionView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("What this trains. \(copy.pressureType) \(copy.surfaces) \(copy.repLength)")
 
-            quickStartButton(for: option)
+            if isLocked {
+                lockedQuickStartHint(tint: option.tint)
+            } else {
+                quickStartButton(for: option)
+            }
         }
         .padding(.top, Spacing.md)
         .overlay(alignment: .top) {
@@ -486,13 +675,31 @@ struct PracticeModeSelectionView: View {
         .accessibilityHint("Begins a \(option.title) rep with default settings, no setup screen.")
     }
 
+    private func lockedQuickStartHint(tint: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "lock.fill")
+                .font(.footnote.weight(.bold))
+            Text(PracticeModePrescriptionCopy.pressureLockedHint)
+                .font(.subheadline.weight(.semibold))
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .background(tint.opacity(0.08), in: Capsule())
+        .overlay(
+            Capsule().strokeBorder(tint.opacity(0.16), lineWidth: 1)
+        )
+        .accessibilityIdentifier("practiceMode.suddenDeath.lockedHint")
+    }
+
     /// Per-mode CTA copy. "Start now" is the shared verb; the mode
     /// name is appended so accessibility users hear which rep they're
     /// about to launch when scanning the picker linearly.
     private func quickStartLabel(for mode: PracticeMode) -> String {
         switch mode {
         case .timed: return "Start now \u{00B7} Timed"
-        case .suddenDeath: return "Start now \u{00B7} Sudden Death"
+        case .suddenDeath: return "Start now \u{00B7} \(PracticeMode.suddenDeath.displayLabel)"
         case .ahCounter: return "Start now \u{00B7} Ah-Counter"
         case .imConversation: return "Start now \u{00B7} IM Mode"
         }
@@ -811,143 +1018,12 @@ struct PracticeModeSelectionView: View {
         .accessibilityHint("Begins a Pace Training drill.")
     }
 
-    // MARK: - Lessons Card
-
-    /// Tappable entry point to the lessons catalog. Lessons teach a
-    /// single technique (rule of three, anaphora, pause-instead-of-filler)
-    /// in three short steps with engine-validated practice.
-    private var lessonsCard: some View {
-        Button {
-            CoachHaptic.selectionTap()
-            navigationPath.append(AppDestination.lessons)
-        } label: {
-            HStack(alignment: .top, spacing: Spacing.md) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                        .fill(AppColor.brandBlue.opacity(0.14))
-                        .frame(width: 52, height: 52)
-                    Image(systemName: "books.vertical.fill")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(AppColor.brandBlue)
-                }
-                .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Text("Lessons")
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.primary)
-                        crownChip
-                        Spacer(minLength: 0)
-                    }
-                    Text("Learn one technique at a time. Concept, then spot it, then say it. Earn crowns by repeat practice.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Image(systemName: "chevron.right")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
-            }
-            .padding(Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.pressable)
-        .accessibilityIdentifier("practiceMode.lessons")
-        .accessibilityLabel("Lessons")
-        .accessibilityHint("Open the lessons catalog.")
-    }
-
-    /// Small crown count chip — shows the user's running total of crowns
-    /// when they have any. Hides at zero to keep the card uncluttered for
-    /// first-time users.
-    @ViewBuilder
-    private var crownChip: some View {
-        let total = LessonStore.shared.totalCrowns
-        if total > 0 {
-            HStack(spacing: 3) {
-                Image(systemName: "crown.fill")
-                    .font(.caption2.weight(.bold))
-                Text("\(total)")
-                    .font(.caption2.weight(.bold).monospacedDigit())
-            }
-            .foregroundStyle(AppColor.brandBlue)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
-        }
-    }
-
-    // MARK: - Speech Projects Card
-
-    /// Tappable entry point to the structured speech-project catalog.
-    /// Visually distinct from the four mode cards — projects are
-    /// curated and prepared, not impromptu reps.
-    private var speechProjectsCard: some View {
-        Button {
-            CoachHaptic.selectionTap()
-            navigationPath.append(AppDestination.speechProjects)
-        } label: {
-            HStack(alignment: .top, spacing: Spacing.md) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                        .fill(AppColor.pro.opacity(0.14))
-                        .frame(width: 52, height: 52)
-                    Image(systemName: "graduationcap.fill")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(AppColor.pro)
-                }
-                .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Text("Speech projects")
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.primary)
-                        Spacer(minLength: 0)
-                    }
-                    Text("Toastmasters-inspired prepared speeches with concrete objectives — Ice Breaker, Vocal Variety, Persuasive, Storytelling.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Image(systemName: "chevron.right")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
-            }
-            .padding(Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.pressable)
-        .accessibilityIdentifier("practiceMode.speechProjects")
-        .accessibilityLabel("Speech projects")
-        .accessibilityHint("Browse structured prepared speeches with objectives.")
-    }
-
     // MARK: - Bottom CTA
 
     private var startCTA: some View {
         let title = activeStartTitle
         let tint = activeStartTint
-        // Match the Coach Card's Begin pattern — "Begin · Sudden Death"
+        // Match the Coach Card's Begin pattern — "Begin · Pressure Drill"
         // reads as a calm, premium action and keeps the mode name in
         // Title Case rather than mashing it into a lowercase sentence.
         // U+00B7 (middle dot) is the same separator the Coach Card uses.
@@ -957,6 +1033,9 @@ struct PracticeModeSelectionView: View {
                 navigationPath.append(AppDestination.paceTrainingPractice)
             } else if crutchSelected {
                 navigationPath.append(AppDestination.cutTheCrutchPractice)
+            } else if !PracticeModeAvailability.isUnlocked(selectedMode, rating: ratingStore.rating) {
+                selectedMode = .timed
+                navigationPath.append(AppDestination.timedPractice)
             } else {
                 navigationPath.append(appDestination(for: selectedMode))
             }
@@ -1133,7 +1212,7 @@ struct PracticeModeSelectionView: View {
 }
 
 @available(iOS 17.0, *)
-#Preview("Mode picker — Sudden Death selected") {
+#Preview("Mode picker — Pressure Drill selected") {
     NavigationStack {
         PracticeModeSelectionView(
             selectedMode: .constant(.suddenDeath),

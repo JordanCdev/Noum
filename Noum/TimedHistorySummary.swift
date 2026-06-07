@@ -10,9 +10,8 @@ import Foundation
 //
 // Timed is the mode where the user's job is "answer this prompt
 // inside the bell" — so the per-mode signal is delivery quality:
-// score, pace (WPM), and whether the rep landed inside the WPM zone
-// the engine defines for the mode (130–160 WPM per
-// `Noum/Noum/WPMEvaluator.swift` Timed band). No per-difficulty
+// score, pace (WPM), and whether the rep landed inside the shared
+// conversational pace band. No per-difficulty
 // breakdown because difficulty isn't persisted on `PracticeSession`;
 // the score the evaluator emits already reflects difficulty (the
 // duration assessment + xpMultiplier are folded into it). What the
@@ -39,8 +38,8 @@ struct TimedHistorySummaryStats: Equatable {
     /// count and measurable duration. Rounded to nearest integer.
     /// `nil` when no rep has measurable pace.
     let averageWPM: Int?
-    /// Number of reps whose `wordsPerMinute` lands in the Timed zone
-    /// (130–160 WPM, matching `WPMEvaluator` Timed band). Useful as a
+    /// Number of reps whose `wordsPerMinute` lands in the shared
+    /// conversational pace band. Useful as a
     /// "delivery on-rails" signal without leaking the evaluator's
     /// internal scoring weights.
     let inZoneRepCount: Int
@@ -96,13 +95,13 @@ struct TimedHistorySummaryStats: Equatable {
 @available(iOS 17.0, *)
 enum TimedHistorySummary {
 
-    /// The WPM band the engine treats as "Timed zone" — sourced from
-    /// `WPMEvaluator` (see `docs/CURRENT_STATE.md` "Speech & feedback"
-    /// section). Exposed here as a constant pair so the in-zone
+    /// The WPM band the engine treats as "Timed zone" — the same
+    /// conversational pace band used by pace training and coach
+    /// feedback. Exposed here as a constant pair so the in-zone
     /// counter and the test contract can reference the same range
     /// without re-declaring magic numbers.
-    static let zoneMinWPM: Int = 130
-    static let zoneMaxWPM: Int = 160
+    static let zoneMinWPM: Int = ConversationalPaceBand.minDisplayWPM
+    static let zoneMaxWPM: Int = ConversationalPaceBand.maxDisplayWPM
 
     /// Produce the summary stats from a list of `PracticeSession`
     /// rows. Callers pass already-filtered Timed sessions; defensive

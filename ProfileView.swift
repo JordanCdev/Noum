@@ -15,6 +15,105 @@ import CoreImage.CIFilterBuiltins
 
 // MARK: - Profile View (Unified Profile + Rank + Social)
 
+enum ProfileDefaultSurface: String, Equatable {
+    case identity
+    case progressHero
+    case coachRead
+    case evidenceHub
+}
+
+struct ProfileDefaultSurfacePlan: Equatable {
+    let surfaces: [ProfileDefaultSurface]
+
+    static func make(hasProgressEvidence: Bool) -> ProfileDefaultSurfacePlan {
+        var surfaces: [ProfileDefaultSurface] = [.identity]
+        if hasProgressEvidence {
+            surfaces.append(.progressHero)
+        }
+        surfaces.append(contentsOf: [.coachRead, .evidenceHub])
+        return ProfileDefaultSurfacePlan(surfaces: surfaces)
+    }
+
+    var defaultSectionCount: Int { surfaces.count }
+
+    var ratingSurfaceCount: Int {
+        surfaces.filter { $0 == .progressHero }.count
+    }
+}
+
+struct ProfileIdentityPresentation: Equatable {
+    let subtitle: String
+    let exposesProgressCurrency: Bool
+
+    static func make(profile: CoachingProfile?) -> ProfileIdentityPresentation {
+        let subtitle: String
+        if let voice = profile?.chosenStyleGoal {
+            subtitle = "Voice target: \(voice.title)"
+        } else {
+            subtitle = "Speaking profile"
+        }
+        return ProfileIdentityPresentation(
+            subtitle: subtitle,
+            exposesProgressCurrency: false
+        )
+    }
+}
+
+struct ProfileCoachReadContent: Equatable {
+    let label: String
+    let read: String
+    let nextMove: String
+    let proofClaim: String?
+    let proofQuote: String?
+    let isThinEvidence: Bool
+
+    static func make(
+        sessionCount: Int,
+        plan: CoachingPlan?,
+        memory: CoachMemory?,
+        proof: ProofMomentRecord?
+    ) -> ProfileCoachReadContent {
+        let confidence = memory?.evidenceConfidence ?? BaselineConfidence.from(sessionCount: sessionCount)
+        let isThin = confidence < .tentative
+        let read: String
+        if let hypothesis = bounded(memory?.workingHypothesis), confidence >= .tentative {
+            read = hypothesis
+        } else if sessionCount == 0 {
+            read = "One short rep gives Noum something real to read."
+        } else if let focus = bounded(plan?.currentFocus), isThin {
+            read = "Early read: \(focus)"
+        } else if let encouragement = bounded(plan?.encouragement) {
+            read = encouragement
+        } else {
+            read = "A few more reps will turn this into a sharper read."
+        }
+
+        let nextMove: String
+        if let intervention = memory?.activeIntervention {
+            let focus = bounded(intervention.target) ?? bounded(intervention.focus) ?? intervention.title
+            nextMove = "\(intervention.mode.displayLabel): \(focus)"
+        } else if let suggestedDrill = bounded(plan?.suggestedDrill) {
+            nextMove = suggestedDrill
+        } else {
+            nextMove = "Complete one short rep to set your starting line."
+        }
+
+        return ProfileCoachReadContent(
+            label: isThin ? "EARLY READ" : "\(confidence.label.uppercased()) READ",
+            read: read,
+            nextMove: nextMove,
+            proofClaim: bounded(proof?.proof.claim),
+            proofQuote: bounded(proof?.proof.quote),
+            isThinEvidence: isThin
+        )
+    }
+
+    private static func bounded(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 @available(iOS 17.0, *)
 struct ProfileView: View {
     @StateObject private var profile = ProfileManager.shared
@@ -40,8 +139,8 @@ struct ProfileView: View {
 
     @State private var showAchievementsTree = false
     @State private var showPaywall = false
+    @State private var showProfileEvidence = false
     @State private var showAddFriendManual = false
-    @State private var showScanner = false
     @State private var selectedAsyncChallenge: AsyncChallenge?
     @State private var showChallengePickFriend = false
     @Environment(\.openURL) private var openURL
@@ -76,12 +175,20 @@ struct ProfileView: View {
     }
 
     /// True when there's at least one friend and none of them carry an
-    /// `accountID` — i.e. every challenge with this user's friends is
-    /// going to use the local simulator.
-    private var hasOnlyLegacyFriends: Bool {
+    /// `accountID`, so scored peer comparison cannot honestly resolve from
+    /// backend participant evidence yet.
+    private var hasOnlyUnlinkedFriends: Bool {
         let list = friends.friends
         guard !list.isEmpty else { return false }
         return list.allSatisfy { $0.accountID == nil }
+    }
+
+    private var linkedSpeakOffFriends: [NoumFriend] {
+        SpeakOffFriendEligibility.linkedFriends(from: friends.friends)
+    }
+
+    private var canStartSpeakOff: Bool {
+        !linkedSpeakOffFriends.isEmpty
     }
 
     /// One captured free-text reflection — the user's own words from the
@@ -151,22 +258,19 @@ struct ProfileView: View {
         return genericRead
     }
 
+    private var hasProgressEvidence: Bool {
+        ratingStore.rating.hasRatedEvidence || baselineStore.baseline.overallConfidence >= .tentative
+    }
+
+    private var defaultSurfacePlan: ProfileDefaultSurfacePlan {
+        ProfileDefaultSurfacePlan.make(hasProgressEvidence: hasProgressEvidence)
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 18) {
-                // M14: cluster the 14 sections into four named groups so
-                // the Profile reads as "identity → progression → coaching
-                // → community" instead of a 14-card stack. Same surfaces,
-                // intentional structure. Cluster labels use the same
-                // micro-eyebrow treatment as the rest of the app
-                // (Typography.micro, uppercase, tracking 0.8) so they
-                // disappear into the rhythm without dominating.
+                let surfacePlan = defaultSurfacePlan
 
-                // Identity + adjacent upgrade ask. The upgrade button used
-                // to live inside the identity card, conflating "who you
-                // are" with "buy". It now sits as its own slim surface
-                // immediately below, separated by `Spacing.cardGap` so it
-                // reads as a companion CTA rather than a screen-stack peer.
                 VStack(spacing: Spacing.cardGap) {
                     identityHeader
                     if !premium.isPremium {
@@ -174,54 +278,12 @@ struct ProfileView: View {
                     }
                 }
 
-                speakingRatingCard
+                if surfacePlan.surfaces.contains(.progressHero) {
+                    speakingRatingCard
+                }
 
-                // M16: slim entry-link to the full peak-rating wall.
-                // The compact `PeakRatingWallCard` below (in the
-                // Progression cluster) still summarises the three
-                // framings inline; this link opens the dedicated screen
-                // with sparklines + league-bucket comparison without
-                // restructuring any existing card.
-                peakRatingWallLink
-
-                // M15 Phase 5: ambient "Insights banked" chip. Derived
-                // straight off `ProofMomentStore.shared.records` — no
-                // new state, no new persistence. Hidden when the
-                // archive is empty so the surface stays silent until
-                // the coach has actually banked something.
-                insightsBankedChip
-
-                // M14: "Your Arc" — horizontal timeline that makes the
-                // user's progression LEGIBLE (Day 1 → Today → Next mission
-                // → Next chapter). Sits between the rating card and the
-                // Progression cluster so the reader's eye walks from
-                // "current standing" → "where this is going" before the
-                // analytics surfaces below explain how.
-                YourArcCard()
-
-                clusterHeader("Progression")
-                PeakRatingWallCard()
-                ProgressionChartsCard(sessionStore: sessionStore)
-                ModeMasteryCard()
-                suddenDeathHistoryShareRow
-                achievementsPanel
-
-                clusterHeader("Coaching")
-                coachingDirectionCard
-                weeklyCheckInCard
-                caseReviewCard
-                deliveryProfileCard
-                coachParityReadinessCard
-                speechPatternsCard
-                skillProgressPanel
-                activeChallengePanel
-                feedbackInboxCard
-
-                clusterHeader("Community")
-                leaguePanel
-                socialSection
-
-                statsRow
+                profileCoachReadCard
+                profileEvidenceHub
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
@@ -257,6 +319,231 @@ struct ProfileView: View {
         }
     }
 
+    // MARK: - Collapsed Profile
+
+    private var profileCoachReadCard: some View {
+        let content = ProfileCoachReadContent.make(
+            sessionCount: sessions.count,
+            plan: CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile),
+            memory: coachMemoryStore.currentMemory,
+            proof: proofStore.recent(limit: 1).first
+        )
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.pro)
+                Text("Your coach")
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                Spacer()
+                Text(content.label)
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(content.isThinEvidence ? AppColor.caution : AppColor.pro)
+                    .textCase(.uppercase)
+                    .tracking(0.7)
+            }
+
+            Text(content.read)
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "arrow.turn.down.right")
+                    .font(Typography.captionSmall.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .padding(.top, 3)
+                Text(content.nextMove)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let proofClaim = content.proofClaim {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(proofClaim)
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    if let quote = content.proofQuote {
+                        Text("\"\(quote)\"")
+                            .font(Typography.captionSmall)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    AppColor.pro.opacity(0.07),
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .stroke(AppColor.pro.opacity(0.16), lineWidth: 1)
+                )
+            }
+
+            if coachingProfileStore.profile != nil {
+                askNoumProfileLink
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(AppColor.pro.opacity(0.12), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("profile.coachRead")
+    }
+
+    private var profileEvidenceHub: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack {
+                Text("Evidence")
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(1.0)
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                profileEvidenceLink(
+                    title: "Review reps",
+                    subtitle: historyLinkSubtitle,
+                    icon: "clock.arrow.circlepath",
+                    tint: AppColor.brandBlue,
+                    destination: .sessionHistory,
+                    identifier: "profile.evidence.history"
+                )
+                profileEvidenceLink(
+                    title: "Growth library",
+                    subtitle: growthLibrarySubtitle,
+                    icon: "quote.opening",
+                    tint: AppColor.pro,
+                    destination: .growthLibrary,
+                    identifier: "profile.evidence.library"
+                )
+            }
+
+            DisclosureGroup(isExpanded: $showProfileEvidence) {
+                profileEvidenceDetails
+                    .padding(.top, Spacing.sm)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(AppColor.brandBlue)
+                    Text("Show stats and community")
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Text("Optional")
+                        .font(Typography.micro.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, 12)
+                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                )
+            }
+            .tint(AppColor.brandBlue)
+        }
+        .accessibilityIdentifier("profile.evidenceHub")
+    }
+
+    private func profileEvidenceLink(
+        title: String,
+        subtitle: String,
+        icon: String,
+        tint: Color,
+        destination: AppDestination,
+        identifier: String
+    ) -> some View {
+        NavigationLink(value: destination) {
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: icon)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(tint)
+                    .frame(width: 30, height: 30)
+                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                Text(title)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 106, alignment: .topLeading)
+            .padding(12)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                    .stroke(tint.opacity(0.12), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private var historyLinkSubtitle: String {
+        if sessions.isEmpty { return "Saved reps appear here" }
+        let noun = sessions.count == 1 ? "saved rep" : "saved reps"
+        return "\(sessions.count) \(noun)"
+    }
+
+    private var growthLibrarySubtitle: String {
+        let count = proofStore.records.count
+        if count == 0 { return "Proof appears after reps" }
+        let noun = count == 1 ? "proof point" : "proof points"
+        return "\(count) \(noun)"
+    }
+
+    private var profileEvidenceDetails: some View {
+        VStack(spacing: Spacing.cardGap) {
+            clusterHeader("Progression details")
+            rankPanel
+            peakRatingWallLink
+            insightsBankedChip
+            YourArcCard()
+            PeakRatingWallCard()
+            ProgressionChartsCard(sessionStore: sessionStore)
+            ModeMasteryCard()
+            suddenDeathHistoryShareRow
+            achievementsPanel
+
+            clusterHeader("Coaching evidence")
+            coachingDirectionCard
+            weeklyCheckInCard
+            caseReviewCard
+            deliveryProfileCard
+            speechPatternsCard
+            skillProgressPanel
+            activeChallengePanel
+            feedbackInboxCard
+
+            clusterHeader("Community")
+            leaguePanel
+            socialSection
+            statsRow
+        }
+    }
+
     // MARK: - Identity Header
 
     private var identityHeader: some View {
@@ -270,6 +557,8 @@ struct ProfileView: View {
                 size: 90
             )
             .padding(.bottom, -8)
+
+            let identity = ProfileIdentityPresentation.make(profile: coachingProfileStore.profile)
 
             VStack(spacing: 6) {
                 HStack(spacing: 8) {
@@ -286,47 +575,19 @@ struct ProfileView: View {
                     }
                 }
 
-                Text(profile.levelTitle)
+                Text(identity.subtitle)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
             }
-
-            // Progress to next level — merged in from the old `rankPanel`
-            // so identity + progression read as one surface, not two
-            // adjacent cards saying nearly the same thing.
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text(profile.nextRankTitle)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(profile.levelProgressLabel)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(AppColor.brandBlue)
-                }
-
-                ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: AppColor.brandBlue)
-
-                HStack(alignment: .firstTextBaseline) {
-                    Text("\(profile.xp) XP")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(AppColor.brandBlue)
-                        .contentTransition(.numericText())
-                        .animation(.standardSpring, value: profile.xp)
-                    Spacer()
-                    Text("\(ProfileManager.xpNeededToNextLevel(forXP: profile.xp)) to level up")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, 20)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 22)
         // Identity hero — Pro-purple as the ambient brand register, matching
-        // the HomeCoachCard treatment. Profile's hero now carries the same
-        // brand presence as Home's hero: character + name + level live on
-        // a card that visibly belongs to the product, not a generic surface.
+        // the HomeCoachCard treatment. The default surface stays about the
+        // speaker and their chosen voice; XP/level detail lives behind the
+        // evidence disclosure so it does not compete with Speaking Rating.
         .background(identityHeroBackground)
         .shadow(color: AppColor.pro.opacity(0.18), radius: 22, x: 0, y: 10)
     }
@@ -1003,24 +1264,6 @@ struct ProfileView: View {
         WeeklyCheckInCard(store: coachCheckInStore)
     }
 
-    /// F5: "How well Noum knows you" — the honest per-user readiness read across
-    /// the 7 coaching-loop stages. Shown once there's at least some forming or
-    /// earned signal (a fully-thin card on a brand-new account would just read
-    /// as noise). Validation is capped at "forming" by design.
-    @ViewBuilder
-    private var coachParityReadinessCard: some View {
-        let readiness = CoachParityReadiness.build(
-            memory: coachMemoryStore.currentMemory,
-            sessionCount: sessions.count,
-            recommendationOutcomeCount: RecommendationLearningStore.shared.outcomes.count,
-            transferReportCount: BigMomentStore.shared.outcomeReports.count,
-            checkInCount: coachCheckInStore.checkIns.count
-        )
-        if readiness.earnedCount > 0 || readiness.stages.contains(where: { $0.status == .forming }) {
-            CoachParityReadinessCard(readiness: readiness)
-        }
-    }
-
     /// M20: Forward Plan card inside the Coaching Direction card. Pure
     /// resolver decides which state to render — see
     /// `CoachingPlanCardVisibility` for the four-state contract.
@@ -1519,11 +1762,7 @@ struct ProfileView: View {
                     .font(.headline)
                 Spacer()
                 Button {
-                    if friends.friends.isEmpty {
-                        showAddFriendManual = true
-                    } else {
-                        showChallengePickFriend = true
-                    }
+                    presentSpeakOffPickerIfAvailable()
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "plus")
@@ -1536,13 +1775,17 @@ struct ProfileView: View {
                     .padding(.vertical, 6)
                     .background(Color.teal, in: Capsule())
                 }
+                .disabled(!canStartSpeakOff)
+                .opacity(canStartSpeakOff ? 1 : 0.45)
             }
 
-            Text("Challenge a friend to the same prompt. Both speak, then compare scores.")
+            Text(canStartSpeakOff
+                 ? "Challenge a linked friend to the same prompt. Both speak, then compare scores."
+                 : "Scored speak-offs unlock when a friend is linked to a Noum account.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            if hasOnlyLegacyFriends {
-                Text("Practice mode — opponent scores are simulated for friends without a linked account.")
+            if hasOnlyUnlinkedFriends {
+                Text(SpeakOffConnectionCopy.unlinkedFriendsNotice)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -1559,11 +1802,7 @@ struct ProfileView: View {
                         .foregroundStyle(.secondary)
 
                     Button {
-                        if friends.friends.isEmpty {
-                            showAddFriendManual = true
-                        } else {
-                            showChallengePickFriend = true
-                        }
+                        presentSpeakOffPickerIfAvailable()
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "bolt.fill")
@@ -1576,6 +1815,8 @@ struct ProfileView: View {
                         .padding(.vertical, 10)
                         .background(Color.teal, in: Capsule())
                     }
+                    .disabled(!canStartSpeakOff)
+                    .opacity(canStartSpeakOff ? 1 : 0.45)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
@@ -1594,9 +1835,9 @@ struct ProfileView: View {
     }
 
     private func asyncChallengeRow(_ challenge: AsyncChallenge) -> some View {
-        let userID = UUID(uuidString: authManager.currentAccountID ?? "") ?? UUID()
-        let status = challenge.status(forUser: userID)
-        let friendName = challenge.opponentName(forUser: userID)
+        let participantID = authManager.currentAccountID ?? ""
+        let status = challenge.status(forParticipantID: participantID)
+        let friendName = challenge.opponentName(forParticipantID: participantID)
 
         return Button {
             selectedAsyncChallenge = challenge
@@ -1627,7 +1868,7 @@ struct ProfileView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
-                    if let result = challenge.result(forUser: userID) {
+                    if let result = challenge.result(forParticipantID: participantID) {
                         HStack(spacing: 4) {
                             Image(systemName: result.icon)
                                 .font(.caption2)
@@ -1640,6 +1881,11 @@ struct ProfileView: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    private func presentSpeakOffPickerIfAvailable() {
+        guard canStartSpeakOff else { return }
+        showChallengePickFriend = true
     }
 
     private var friendsSection: some View {
@@ -1717,7 +1963,11 @@ struct ProfileView: View {
                         Spacer()
 
                         Button {
-                            challenges.createAsyncChallenge(opponentID: friend.id, opponentName: friend.displayName)
+                            challenges.createAsyncChallenge(
+                                opponentID: friend.id,
+                                opponentName: friend.displayName,
+                                opponentAccountID: friend.accountID
+                            )
                         } label: {
                             Image(systemName: "bolt.fill")
                                 .font(.caption)
@@ -1748,7 +1998,7 @@ struct ProfileView: View {
             Text("Invite Friends")
                 .font(.headline)
 
-            Text("Share your invite link and practice together.")
+            Text("Share Noum with someone you want to practice with.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -1758,7 +2008,7 @@ struct ProfileView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "square.and.arrow.up")
                         .font(.caption)
-                    Text("Share Invite Link")
+                    Text("Share Noum")
                         .font(.subheadline.weight(.semibold))
                 }
                 .foregroundStyle(.white)
@@ -1778,7 +2028,7 @@ struct ProfileView: View {
     private func shareInviteLink() {
         let url = "https://apps.apple.com/app/noum/id6740486498"
         let activityVC = UIActivityViewController(
-            activityItems: ["Practice speaking with me on Noum — it's like a gym for your voice.", URL(string: url)!],
+            activityItems: ["Practice speaking with me on Noum. It is like a gym for your voice.", URL(string: url)!],
             applicationActivities: nil
         )
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,

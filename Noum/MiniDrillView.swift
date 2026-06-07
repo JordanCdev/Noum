@@ -376,7 +376,7 @@ struct MiniDrillView: View {
         case .openingStrength, .closingStrength:
             return wordCount >= 10 && duration >= 10
         case .paceControl:
-            return wpm >= 100 && wpm <= 160
+            return ConversationalPaceBand.contains(wpm)
         case .structure:
             return wordCount >= 30 && duration >= 20
         case .answerDevelopment:

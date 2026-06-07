@@ -19,6 +19,47 @@ private struct HomeScrollOffsetKey: PreferenceKey {
     }
 }
 
+struct HomePeakGlowPresentation: Equatable {
+    struct Stat: Equatable {
+        let value: String
+        let label: String
+    }
+
+    let headline: String
+    let body: String
+    let stats: [Stat]
+
+    static func make(weekPeak: Int, current: Int, allTime: Int) -> HomePeakGlowPresentation {
+        let peak = max(0, weekPeak)
+        let currentRating = max(0, current)
+        let allTimePeak = max(0, allTime)
+
+        let body: String
+        if currentRating < peak {
+            body = "\(peak) is this week's best. Your current rating is \(currentRating)."
+        } else if allTimePeak > peak {
+            body = "\(peak) is this week's best. All-time is \(allTimePeak)."
+        } else {
+            body = "\(peak) is now your recorded high."
+        }
+
+        var stats = [
+            Stat(value: "\(peak)", label: "This week's peak")
+        ]
+        if allTimePeak > peak {
+            stats.append(Stat(value: "\(allTimePeak - peak)", label: "off all-time"))
+        }
+
+        return HomePeakGlowPresentation(
+            headline: allTimePeak > peak
+                ? "You raised this week's rating mark."
+                : "You moved your rating mark.",
+            body: body,
+            stats: stats
+        )
+    }
+}
+
 // Home-only time-of-day ambient. The four buckets shift the canvas
 // gradient softly through the day: warm-light mornings → cool airy
 // middays → richer purple-pink evenings → deeper-saturated nights.
@@ -68,6 +109,81 @@ enum HomeAskNoumEvidenceCopy {
         default:
             return "I read your recent reps first, then keep the answer focused."
         }
+    }
+}
+
+struct HomeBottomShortcut: Identifiable, Equatable {
+    enum Accent: String, Equatable {
+        case practice
+        case review
+        case profile
+        case settings
+    }
+
+    let id: String
+    let title: String
+    let systemImage: String
+    let destination: AppDestination
+    let accessibilityIdentifier: String
+    let accent: Accent
+
+    var accessibilityLabel: String {
+        "Open \(title)"
+    }
+
+    static let all: [HomeBottomShortcut] = [
+        HomeBottomShortcut(
+            id: "train",
+            title: "Train",
+            systemImage: "dumbbell.fill",
+            destination: .practiceSelection,
+            accessibilityIdentifier: "nav.practice",
+            accent: .practice
+        ),
+        HomeBottomShortcut(
+            id: "review",
+            title: "Review",
+            systemImage: "book.fill",
+            destination: .sessionHistory,
+            accessibilityIdentifier: "nav.history",
+            accent: .review
+        ),
+        HomeBottomShortcut(
+            id: "profile",
+            title: "Profile",
+            systemImage: "person.fill",
+            destination: .socialProfile,
+            accessibilityIdentifier: "nav.social",
+            accent: .profile
+        ),
+        HomeBottomShortcut(
+            id: "settings",
+            title: "Settings",
+            systemImage: "slider.horizontal.3",
+            destination: .settings,
+            accessibilityIdentifier: "nav.settings",
+            accent: .settings
+        )
+    ]
+}
+
+struct HomeAccessibilityModalGate: Equatable {
+    var onboardingPresented = false
+    var leaguePromotionPresented = false
+    var dailyGoalCelebrationPresented = false
+    var pathCelebrationPresented = false
+    var goalRefreshPresented = false
+    var notificationPromptPresented = false
+    var bigMomentIntakePresented = false
+
+    var suppressesUnderlyingHome: Bool {
+        onboardingPresented
+        || leaguePromotionPresented
+        || dailyGoalCelebrationPresented
+        || pathCelebrationPresented
+        || goalRefreshPresented
+        || notificationPromptPresented
+        || bigMomentIntakePresented
     }
 }
 
@@ -137,6 +253,18 @@ struct ContentView: View {
         let averageScore: Double
     }
 
+    private var homeAccessibilityIsSuppressed: Bool {
+        HomeAccessibilityModalGate(
+            onboardingPresented: isOnboardingUITesting,
+            leaguePromotionPresented: league.pendingPromotion != nil,
+            dailyGoalCelebrationPresented: showDailyGoalCelebration,
+            pathCelebrationPresented: pendingPathCelebration != nil,
+            goalRefreshPresented: goalRefresh.shouldPresent,
+            notificationPromptPresented: notificationPrePrompt.pendingPrompt,
+            bigMomentIntakePresented: showBigMomentIntake
+        ).suppressesUnderlyingHome
+    }
+
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ZStack {
@@ -157,51 +285,37 @@ struct ContentView: View {
                         if sessionStore.sessions.isEmpty {
                             // Empty-state — use the same coach-first floor as
                             // the signal-gated populated home. First screen:
-                            // coach presence, quiet status, Ask Noum access.
-                            // Daily/progression surfaces unlock after signal
-                            // instead of reading like a habit dashboard before
-                            // the user has completed a rep.
+                            // coach presence + Begin. Status, Ask Noum and
+                            // progression surfaces unlock after signal instead
+                            // of reading like a habit dashboard before the
+                            // user has completed a rep.
                             let gate = homeCardGate
                             if gate.coachCard {
                                 HomeCoachCard(
                                     navigationPath: $navigationPath,
-                                    scrollOffset: homeScrollOffset
+                                    scrollOffset: homeScrollOffset,
+                                    showsAskNoumShortcut: gate.askNoumShortcut
                                 ).cardEntrance(0)
                             }
                             if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
                                 BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
                             }
-                            if gate.utilityStrip {
-                                HomeUtilityStrip(navigationPath: $navigationPath).cardEntrance(1)
-                            }
-                            if gate.askNoumPromo {
-                                askNoumPromoCard.cardEntrance(2)
-                            }
                             if showAllHomeCards {
                                 secondaryDiscoveryCard.cardEntrance(3)
                             }
                         } else {
-                            // Populated home — editorial pass (M14).
+                            // Populated home — coach-led revamp.
                             //
-                            // Reduced from 11 cards to 6. Each remaining
-                            // card earns its place; nothing is duplicated.
-                            // Path promotion (M14 next-move pass) lifts the
-                            // journey card from slot 5 (bottom) to slot 3
-                            // — the Path is "next move," not "weekly recap."
-                            //
+                            // Default stack:
                             //  1. HomeCoachCard — coach voice, primary CTA.
-                            //  2. HomeUtilityStrip — streak + word of day.
-                            //  3. journeyPreviewCard — second hero, mission
-                            //     framing toward the next path node.
-                            //  4. DailyChallengeTile — daily-open mechanic
-                            //     with an inline "N of M reps today" header
-                            //     so we don't need a separate DailyGoalCard.
-                            //  5. AIWeeklyInsightCard — differentiator;
-                            //     keeps the narrative-coaching feel.
+                            //  2. journeyPreviewCard — next path move.
+                            //  3. AIWeeklyInsightCard — only after three
+                            //     current-week reps.
                             //
                             // Removed and where the surface still lives:
-                            //  • DailyGoalCard — rep counter folded into
-                            //    the DailyChallengeTile header.
+                            //  • DailyGoalCard / DailyChallengeTile —
+                            //    attendance work stays in League and
+                            //    notifications, not Home.
                             //  • streakCard — already in the hero chip.
                             //  • nextLessonCard — reachable via Path /
                             //    Review.
@@ -209,6 +323,8 @@ struct ContentView: View {
                             //    lives on Profile.
                             //  • suggestedPracticeCard — duplicated the
                             //    quickStartCard's primary intent.
+                            //  • VoiceMetricsCard — raw diagnostics live on
+                            //    Profile/History, not the coach-led Home.
                             // Premium personal-best anchor — M14 demotion:
                             // this is no longer the always-on top card
                             // whenever there happens to be a current-week
@@ -244,9 +360,10 @@ struct ContentView: View {
                                         }
                                     }
                             }
-                            // M15 Phase 4 — signal-gated composition. Coach
-                            // Card + UtilityStrip + Ask Noum are the cold-
-                            // start floor; the rest unlock as signal accrues.
+                            // M15 Phase 4 — signal-gated composition. The
+                            // Coach Card is the cold-start floor; the in-card
+                            // coach-chat entry unlocks after one completed
+                            // rep.
                             // Reversible from Settings via
                             // `practice.showAllHomeCards`.
                             let gate = homeCardGate
@@ -260,18 +377,12 @@ struct ContentView: View {
                             if gate.coachCard {
                                 HomeCoachCard(
                                     navigationPath: $navigationPath,
-                                    scrollOffset: homeScrollOffset
+                                    scrollOffset: homeScrollOffset,
+                                    showsAskNoumShortcut: gate.askNoumShortcut
                                 ).cardEntrance(0)
                             }
                             if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
                                 BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
-                            }
-                            // HomeUtilityStrip is the thin status row beneath
-                            // the Coach Card: streak + word of the day as a
-                            // single low-emphasis pair, replacing what used
-                            // to need its own WordOfTheDayTile card.
-                            if gate.utilityStrip {
-                                HomeUtilityStrip(navigationPath: $navigationPath).cardEntrance(1)
                             }
                             // Path Journey — promoted to slot 3 as a second
                             // hero. The Path is the gameplay loop; "next
@@ -281,24 +392,6 @@ struct ContentView: View {
                             // (Chapter <tier> · Mission X of N · node title).
                             if gate.journey {
                                 journeyPreviewCard.cardEntrance(2)
-                            }
-                            if gate.askNoumPromo {
-                                askNoumPromoCard.cardEntrance(3)
-                            }
-                            if gate.dailyChallenge {
-                                DailyChallengeTile().cardEntrance(4)
-                            }
-                            // M14 — VoiceMetricsCard promotes Pause + Word-
-                            // choice from optional post-session surfaces to a
-                            // first-class Home read. VISION.md called these
-                            // the next-most-differentiating signals after
-                            // fillers and pace. The card collapses entirely
-                            // when neither dimension has enough qualifying
-                            // baseline data, so cold-start users see nothing
-                            // here — not a placeholder.
-                            if gate.voiceMetrics {
-                                VoiceMetricsCard(navigationPath: $navigationPath)
-                                    .cardEntrance(5)
                             }
                             if gate.aiWeeklyInsight {
                                 AIWeeklyInsightCard(
@@ -313,14 +406,14 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, Spacing.screenH)
                     // Generous top padding so when the user scrolls up, the
-                    // utility strip / first card doesn't render UNDER the
+                    // first card doesn't render UNDER the
                     // dynamic island. The home hides its nav bar, so iOS
                     // doesn't apply a scroll-edge blur — content sits flat
                     // against the status bar by default. The extra padding
                     // ensures scrolled content stays below the island.
                     .padding(.top, Spacing.lg + Spacing.xs)
                     // Generous bottom inset so the last card never sits
-                    // under the floating bottom-nav pill. The pill lives
+                    // under the floating shortcut dock. The dock lives
                     // in `safeAreaInset(edge: .bottom)` further below; if
                     // we trim this any tighter the populated home's
                     // bottom card gets clipped on first paint.
@@ -333,7 +426,7 @@ struct ContentView: View {
                 homeScrollOffset = value
             }
             .safeAreaInset(edge: .bottom) {
-                bottomNavigation
+                bottomShortcutDock
             }
             .navigationDestination(for: AppDestination.self) { destination in
                 switch destination {
@@ -435,6 +528,7 @@ struct ContentView: View {
             }
         }
         .accessibilityIdentifier("home.screen")
+        .accessibilityHidden(homeAccessibilityIsSuppressed)
         .fullScreenCover(
             isPresented: .init(
                 get: { isOnboardingUITesting },
@@ -629,9 +723,10 @@ struct ContentView: View {
     // MARK: - M15 Phase 4 — Home card gate
 
     /// Read the live store state once per body invocation and produce the
-    /// signal gate for the populated home. Coach + UtilityStrip + Ask Noum
-    /// stay on at the floor; the rest unlock as signal accrues.
-    /// `showAllHomeCards` (Settings) flips every flag true regardless.
+    /// signal gate for Home. The Coach Card stays on at the floor; the rest
+    /// unlock as signal accrues.
+    /// `showAllHomeCards` (Settings) reveals active optional cards; retired
+    /// Home surfaces stay off.
     private var homeCardGate: HomeCardGate {
         HomeSignalGate.evaluate(
             sessionCount: sessionStore.sessions.count,
@@ -657,31 +752,17 @@ struct ContentView: View {
 
     private var personalBestHeroCard: some View {
         let rating = ratingStore.rating
-        let peak = rating.weekPeakRating
-        let current = rating.overall
-        let allTime = rating.peakRating
-        let headline = peak >= allTime
-            ? "Your highest rating yet."
-            : "A new high for this week."
-        let body: String = {
-            let diff = peak - current
-            if diff > 0 {
-                return "You held \(peak) earlier this week — \(diff) above where you sit now."
-            }
-            return "You're sitting at this week's peak. Hold it through one more rep."
-        }()
-        let diff = peak - allTime
-        let diffValue = diff >= 0 ? "+\(diff)" : "\(diff)"
-        let diffLabel = diff >= 0 ? "vs all-time" : "to all-time"
+        let presentation = HomePeakGlowPresentation.make(
+            weekPeak: rating.weekPeakRating,
+            current: rating.overall,
+            allTime: rating.peakRating
+        )
 
         return PersonalBestHeroCard(
             kicker: "Personal best · this week",
-            headline: headline,
-            body: body,
-            stats: [
-                .init(value: "\(peak)", label: "Peak this week"),
-                .init(value: diffValue, label: diffLabel)
-            ],
+            headline: presentation.headline,
+            body: presentation.body,
+            stats: presentation.stats.map { .init(value: $0.value, label: $0.label) },
             ctaTitle: "See your peaks",
             ctaAction: {
                 navigationPath.append(AppDestination.socialProfile)
@@ -700,7 +781,7 @@ struct ContentView: View {
             discoveryRow(
                 icon: "books.vertical.fill",
                 title: "Bite-sized lessons",
-                subtitle: "Three steps. Two minutes. Earn a crown.",
+                subtitle: "Three steps. Two minutes. Practice one move.",
                 tint: AppColor.brandBlue,
                 destination: .lessons,
                 accessibilityID: "home.discovery.lessons"
@@ -768,12 +849,12 @@ struct ContentView: View {
 
     /// "Your next lesson" home card. Picks the lesson the user should
     /// work on next from `LessonStore.nextRecommendedLesson`. Shows the
-    /// crown progress on the picked lesson + a one-tap CTA that opens
+    /// practice-pass progress on the picked lesson + a one-tap CTA that opens
     /// the lesson directly. Hides itself when every lesson is mastered.
     @ViewBuilder
     private var nextLessonCard: some View {
         if let lesson = LessonStore.shared.nextRecommendedLesson {
-            let crowns = LessonStore.shared.crownLevel(for: lesson.id)
+            let passCount = LessonStore.shared.practicePassCount(for: lesson.id)
             Button {
                 navigationPath.append(AppDestination.lesson(id: lesson.id))
             } label: {
@@ -788,7 +869,7 @@ struct ContentView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(crowns == 0 ? "Next lesson" : "Earn another crown")
+                        Text(passCount == 0 ? "Next lesson" : "Strengthen lesson")
                             .font(Typography.micro)
                             .foregroundStyle(AppColor.brandBlue)
                             .textCase(.uppercase)
@@ -802,7 +883,7 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
-                        crownPips(crowns: crowns)
+                        practicePassPips(completedPasses: passCount)
                             .padding(.top, 2)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -824,14 +905,16 @@ struct ContentView: View {
         }
     }
 
-    private func crownPips(crowns: Int) -> some View {
-        HStack(spacing: 3) {
-            ForEach(0..<LessonStore.crownCap, id: \.self) { i in
-                Image(systemName: i < crowns ? "crown.fill" : "crown")
+    private func practicePassPips(completedPasses: Int) -> some View {
+        let progress = LessonProgressPresentation(completedPasses: completedPasses)
+        return HStack(spacing: 3) {
+            ForEach(0..<LessonStore.masteryPassCap, id: \.self) { i in
+                Image(systemName: i < progress.completedPasses ? "checkmark.seal.fill" : "circle")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(i < crowns ? AppColor.brandBlue : Color.secondary.opacity(0.30))
+                    .foregroundStyle(i < progress.completedPasses ? AppColor.brandBlue : Color.secondary.opacity(0.30))
             }
         }
+        .accessibilityLabel(progress.accessibilityLabel)
     }
 
     // MARK: - Quick Start
@@ -1191,133 +1274,6 @@ struct ContentView: View {
         .accessibilityLabel(Text("\(titleLine). \(missionLine). \(gatingLine)"))
     }
 
-    /// Ask Noum promo card — Home entry into the persistent coaching
-    /// chat. Brand-purple ambient (matches the Ask Noum surface's
-    /// register, distinct from the brand-blue journey card) + an
-    /// inline NoumCharacter so the entry signals "the coach is here,
-    /// tap to talk." Reads:
-    ///   • Eyebrow: ASK NOUM · <Voice>
-    ///   • Headline: a voice-specific one-liner
-    ///   • CTA: "Open the thread →"
-    /// Tap opens `AppDestination.askNoum`. No CTA copy lives in this
-    /// card itself — the chat view's empty state carries the starter
-    /// prompts, so this card just establishes "your coach is here."
-    private var askNoumPromoCard: some View {
-        let voice = coachingProfileStore.profile?.speakingStyleGoal
-        let voiceTitle = voice?.title ?? "your coach"
-        let stage = ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
-        let headline = askNoumPromoHeadline(for: voice)
-        let body = askNoumPromoBody(for: voice)
-        return Button {
-            navigationPath.append(AppDestination.askNoum)
-        } label: {
-            HStack(alignment: .top, spacing: Spacing.md) {
-                NoumCharacter(
-                    mood: .calm,
-                    tint: AppColor.pro,
-                    size: 64,
-                    stage: stage
-                )
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Ask Noum \u{00B7} \(voiceTitle)")
-                        .font(Typography.micro.weight(.bold))
-                        .foregroundStyle(AppColor.pro)
-                        .textCase(.uppercase)
-                        .tracking(0.8)
-                    Text(headline)
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(body)
-                        .font(Typography.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 6) {
-                        Text("Open the thread")
-                            .font(Typography.caption.weight(.semibold))
-                            .foregroundStyle(AppColor.pro)
-                        Image(systemName: "arrow.right")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(AppColor.pro)
-                    }
-                    .padding(.top, 2)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(Spacing.lg)
-            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-        }
-        .buttonStyle(.pressable)
-        .background(askNoumPromoBackground)
-        .shadow(color: AppColor.pro.opacity(0.14), radius: 18, x: 0, y: 8)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("Ask Noum. \(headline). \(body). Open the thread."))
-        .accessibilityIdentifier("home.askNoum")
-    }
-
-    private func askNoumPromoHeadline(for voice: SpeakingStyleGoal?) -> String {
-        switch voice {
-        case .authoritative: return "What's your move this week?"
-        case .warm: return "How did your reps feel this week?"
-        case .concise: return "Sharpen something — fast."
-        case .persuasive: return "Got an argument to land?"
-        case .executive: return "Brief me. Or ask for one."
-        case .storytelling: return "Where's your next chapter?"
-        case .none: return "Talk to your coach."
-        }
-    }
-
-    private func askNoumPromoBody(for voice: SpeakingStyleGoal?) -> String {
-        let evidenceLine = askNoumEvidenceLine(sessionCount: sessionStore.sessions.count)
-        switch voice {
-        case .authoritative:
-            return "Plan a pitch, get a verdict on this week, or ask why a number moved. \(evidenceLine)"
-        case .warm:
-            return "Bring me a real conversation you're prepping. I'll help you find the moves that read as warmer."
-        case .concise:
-            return "Short questions, short answers. \(evidenceLine)"
-        case .persuasive:
-            return "Tell me what you're trying to convince someone of. I'll work backward to the move."
-        case .executive:
-            return "Top-line first. Got a read-out on the calendar? I'll prep you."
-        case .storytelling:
-            return sessionStore.sessions.count >= 3
-                ? "I can use the pattern from your last few reps. Tell me what's next."
-                : "Give me a few reps and I'll help turn them into a clearer story."
-        case .none:
-            return "Ask me anything about your speaking practice. \(evidenceLine)"
-        }
-    }
-
-    private func askNoumEvidenceLine(sessionCount: Int) -> String {
-        HomeAskNoumEvidenceCopy.line(sessionCount: sessionCount)
-    }
-
-    /// Hero card background for the Ask Noum promo. Brand-purple
-    /// ambient with a soft radial highlight from top-leading so the
-    /// card has the same "alive" depth as the Coach Card + journey
-    /// card without competing with their blue/orange palette.
-    @ViewBuilder
-    private var askNoumPromoBackground: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .fill(AppColor.cardBackground)
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .fill(
-                    RadialGradient(
-                        colors: [AppColor.pro.opacity(0.18), AppColor.pro.opacity(0.04), .clear],
-                        center: .topLeading,
-                        startRadius: 8,
-                        endRadius: 260
-                    )
-                )
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .stroke(AppColor.pro.opacity(0.22), lineWidth: 1)
-        }
-    }
-
     /// "Mission X of N" framing line. For the cleared state we celebrate
     /// the achievement without inventing a fake counter.
     private func journeyMissionLine(for status: PathNodeStatus?) -> String {
@@ -1444,40 +1400,22 @@ struct ContentView: View {
         return "You're holding \(tier.title). +\(toGo) rating to \(nextTier.title)."
     }
 
-    private var bottomNavigation: some View {
-        HStack(spacing: 10) {
-            Group {
-                Button { navigationPath.append(AppDestination.practiceSelection) } label: {
-                    navItem(title: "Train", systemImage: "dumbbell.fill", accent: .blue)
+    private var bottomShortcutDock: some View {
+        HStack(spacing: 8) {
+            ForEach(HomeBottomShortcut.all) { shortcut in
+                Button {
+                    navigationPath.append(shortcut.destination)
+                } label: {
+                    shortcutItem(shortcut)
                 }
-                .buttonStyle(NavTabButtonStyle(accent: .blue, reduceMotion: reduceMotion))
-                .accessibilityIdentifier("nav.practice")
-
-                Button { navigationPath.append(AppDestination.sessionHistory) } label: {
-                    navItem(title: "Review", systemImage: "book.fill", accent: .orange)
-                }
-                .buttonStyle(NavTabButtonStyle(accent: .orange, reduceMotion: reduceMotion))
-                .accessibilityIdentifier("nav.history")
-
-                Button { navigationPath.append(AppDestination.socialProfile) } label: {
-                    navItem(title: "Profile", systemImage: "person.fill", accent: .purple)
-                }
-                .buttonStyle(NavTabButtonStyle(accent: .purple, reduceMotion: reduceMotion))
-                .accessibilityIdentifier("nav.social")
-
-                Button { navigationPath.append(AppDestination.settings) } label: {
-                    navItem(title: "Settings", systemImage: "slider.horizontal.3", accent: .green)
-                }
-                .buttonStyle(NavTabButtonStyle(accent: .green, reduceMotion: reduceMotion))
-                .accessibilityIdentifier("nav.settings")
+                .buttonStyle(ShortcutDockButtonStyle(reduceMotion: reduceMotion))
+                .accessibilityIdentifier(shortcut.accessibilityIdentifier)
+                .accessibilityLabel(shortcut.accessibilityLabel)
             }
         }
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, 12)
-        // Pro-purple ambient register sits BEHIND the material so the
-        // floating-glass feel is preserved but the pill carries the
-        // brand. Tinted shadow underneath puts the elevation in the
-        // same hue.
+        .padding(8)
+        // Each control pushes into the existing navigation stack and carries no
+        // active-section state.
         .background(
             ZStack {
                 LinearGradient(
@@ -1491,10 +1429,10 @@ struct ContentView: View {
                 )
                 Rectangle().fill(.regularMaterial)
             }
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         )
         .overlay(
-            Capsule()
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(
                     LinearGradient(
                         colors: [Color.white.opacity(0.70), AppColor.pro.opacity(0.18)],
@@ -1505,9 +1443,10 @@ struct ContentView: View {
                 )
         )
         .shadow(color: AppColor.pro.opacity(0.12), radius: 16, x: 0, y: 8)
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 14)
         .padding(.top, 8)
         .padding(.bottom, 10)
+        .accessibilityIdentifier("home.shortcutDock")
     }
 
     private func suggestionLink(
@@ -1600,23 +1539,39 @@ struct ContentView: View {
         .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
-    private func navItem(title: String, systemImage: String, accent: Color) -> some View {
-        VStack(spacing: 7) {
-            ZStack {
-                Circle()
-                    .fill(accent.opacity(0.12))
-                    .frame(width: 36, height: 36)
-                Image(systemName: systemImage)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(accent)
-            }
-            Text(title)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .textCase(.uppercase)
-                .tracking(0.9)
-                .foregroundStyle(accent.opacity(0.85))
+    private func shortcutItem(_ shortcut: HomeBottomShortcut) -> some View {
+        let accent = shortcutAccent(shortcut.accent)
+        return HStack(spacing: 6) {
+            Image(systemName: shortcut.systemImage)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(accent)
+                .frame(width: 20, height: 20)
+
+            Text(shortcut.title)
+                .font(Typography.captionSmall)
+                .foregroundStyle(.primary.opacity(0.82))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 40)
+        .padding(.horizontal, 7)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .fill(accent.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(accent.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private func shortcutAccent(_ accent: HomeBottomShortcut.Accent) -> Color {
+        switch accent {
+        case .practice: return .blue
+        case .review: return .orange
+        case .profile: return .purple
+        case .settings: return .green
+        }
     }
 
     private var primarySuggestion: PracticeSuggestion {
@@ -1941,12 +1896,6 @@ struct ContentView: View {
             navigationPath.append(AppDestination.lessons)
         case "bigmoment":
             showBigMomentIntake = true
-        case "friend":
-            // Add the inviter as a friend immediately, then surface the
-            // profile so the user sees the new entry. `acceptInvite`
-            // is idempotent — re-scanning the same URL is a no-op.
-            FriendsManager.shared.acceptInvite(from: url)
-            navigationPath.append(AppDestination.socialProfile)
 #if DEBUG
         case "summary":
             // Test-only: render the post-rep Summary for the most-recent
@@ -2332,19 +2281,13 @@ struct ContentView: View {
 
 }
 
-/// Press-feedback style for bottom-nav tabs — tint behind the label +
-/// 0.97 scale + slight opacity on press. Reduced-motion users keep the
-/// state change but skip the animated transition and scale.
-private struct NavTabButtonStyle: ButtonStyle {
-    let accent: Color
+/// Press-feedback style for Home's shortcut dock. Reduced-motion users keep
+/// the opacity change but skip animated scale.
+private struct ShortcutDockButtonStyle: ButtonStyle {
     let reduceMotion: Bool
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(
-                Capsule()
-                    .fill(accent.opacity(configuration.isPressed ? 0.14 : 0))
-            )
             .scaleEffect(reduceMotion ? 1.0 : (configuration.isPressed ? 0.97 : 1.0))
             .opacity(configuration.isPressed ? 0.92 : 1.0)
             .animation(reduceMotion ? nil : .snappySpring, value: configuration.isPressed)

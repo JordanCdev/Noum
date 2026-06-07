@@ -70,7 +70,7 @@ This plan converts the audit into four phases of concrete work. The app has stro
 | # | Issue | Fix | Owner |
 |---|-------|-----|-------|
 | 3.1 | Auto-retention for old sessions | Add optional 12-month auto-delete for sessions. Default: off. Surface in Settings. | iOS + Backend |
-| 3.2 | Rotating invite codes | Replace `noum://friend/{UUID}` QR codes with rotating, expiring invite tokens. | iOS + Backend |
+| 3.2 | Rotating invite codes | If QR or link-based friend invites return, use rotating, expiring invite tokens instead of persistent account UUIDs. | iOS + Backend |
 | 3.3 | Encrypted local storage for transcripts | Move transcript storage from UserDefaults to an encrypted file (e.g., CryptoKit AES-GCM wrapping a Keychain-derived key). | iOS |
 | 3.4 | Granular cloud sync controls | Let users opt out of syncing transcripts to cloud while keeping metrics sync. | iOS + Backend |
 | 3.5 | Age gate or parental controls | If the app attracts younger users, consider a lightweight age gate. | Product |
@@ -749,7 +749,7 @@ Based on the audit, fill out App Store Connect as follows:
 | Camera | "Noum uses the camera to record your practice sessions so you can review your delivery." | OK |
 | Photo Library (Add) | "Noum saves your session recordings to the Photos library so you can review and share them." | OK |
 | Contacts | "Noum checks your contacts to help you find friends who also use the app." | OK |
-| Location | "Noum uses your rough location to match the sky and light on your speaking path to local sunrise and sunset times." | **Review** — vague. Consider: "Noum uses your approximate location to find nearby speaking clubs and personalize the visual journey." |
+| Location | "Noum uses your approximate location only when you search for nearby speaking clubs." | Current copy matches the only user-initiated location flow. Path daylight visuals use timezone fallback and must not trigger an OS prompt. |
 
 ### Privacy Policy
 

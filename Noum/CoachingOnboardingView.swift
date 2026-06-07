@@ -4,8 +4,7 @@ import SwiftUI
 private enum OnboardingStage: Int, CaseIterable {
     // Three load-bearing questions only. Free-text fields (goal text,
     // why-now, success vision) are captured *after* the first rep via
-    // contextual prompts — Duolingo doesn't ask for an essay before
-    // letting you start, neither do we.
+    // contextual prompts so the user speaks before doing reflective setup.
     case context
     case challenge
     case style
@@ -33,6 +32,10 @@ private enum OnboardingScreen: Equatable {
     case summary
 }
 
+enum OnboardingCompletionTiming {
+    static let profileRevealDelay: Double = 0.35
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct CoachingOnboardingView: View {
     @Environment(\.dismiss) private var dismiss
@@ -50,24 +53,13 @@ struct CoachingOnboardingView: View {
     @State private var whyNow = ""
     @State private var successVision = ""
     @State private var isSaving = false
-    @State private var processingMessageIndex = 0
-    @State private var processingRingProgress: CGFloat = 0
-    @State private var showWelcome = false
     @State private var showProfileCard = false
-    @State private var processingCircleScale: CGFloat = 1.0
     @State private var isEditingExistingProfile = false
     @State private var editorOverlayField: InputField? = nil
     @State private var editorOverlayText = ""
     @FocusState private var focusedField: InputField?
     @FocusState private var overlayEditorFocused: Bool
     @Namespace private var headerNamespace
-
-    private let processingMessages = [
-        "Reading your answers...",
-        "Mapping your speaking style...",
-        "Tuning coaching to your goals...",
-        "Building your profile..."
-    ]
 
     private enum InputField: Hashable {
         case goal
@@ -420,94 +412,53 @@ struct CoachingOnboardingView: View {
             } else {
                 Spacer()
 
-                if showWelcome {
-                    // Welcome / completion state (brief, transitions to profile card)
-                    VStack(spacing: 24) {
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            AppColor.brandBlue,
-                                            Color(red: 0.33, green: 0.70, blue: 1.00)
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 120, height: 120)
-                                .shadow(color: AppColor.brandBlue.opacity(0.3), radius: 30, y: 10)
-
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 44, weight: .bold))
-                                .foregroundStyle(.white)
-                        }
-                        .transition(.scale(scale: 0.5).combined(with: .opacity))
-
-                        VStack(spacing: 8) {
-                            Text(isEditingExistingProfile ? "Profile updated." : "Welcome to Noum.")
-                                .font(Typography.screenTitle)
-                                .foregroundStyle(AppColor.textPrimary)
-
-                            Text(isEditingExistingProfile
-                                ? "Your coaching is now recalibrated."
-                                : "Your coaching journey starts now.")
-                                .font(.headline.weight(.medium))
-                                .foregroundStyle(AppColor.textSecondary)
-                        }
-                        .transition(.opacity.combined(with: .offset(y: 16)))
-                    }
+                completionState
                     .padding(.horizontal, 40)
-                } else {
-                    // Processing state
-                    VStack(spacing: 36) {
-                        ZStack {
-                            Circle()
-                                .stroke(Color(red: 0.88, green: 0.91, blue: 0.96), lineWidth: 8)
-                                .frame(width: 100, height: 100)
-
-                            Circle()
-                                .trim(from: 0, to: processingRingProgress)
-                                .stroke(
-                                    AngularGradient(
-                                        colors: [
-                                            Color(red: 1.00, green: 0.79, blue: 0.42),
-                                            AppColor.brandBlue,
-                                            Color(red: 0.33, green: 0.70, blue: 1.00)
-                                        ],
-                                        center: .center
-                                    ),
-                                    style: StrokeStyle(lineWidth: 8, lineCap: .round)
-                                )
-                                .frame(width: 100, height: 100)
-                                .rotationEffect(.degrees(-90))
-
-                            Image(systemName: "waveform")
-                                .font(.system(size: 28, weight: .medium))
-                                .foregroundStyle(AppColor.brandBlue)
-                                .symbolEffect(.variableColor.iterative, options: .repeating, value: processingMessageIndex)
-                        }
-                        .scaleEffect(processingCircleScale)
-
-                        Text(processingMessages[processingMessageIndex])
-                            .font(.system(size: 20, weight: .semibold, design: .rounded))
-                            .foregroundStyle(AppColor.textSecondary)
-                            .multilineTextAlignment(.center)
-                            .id(processingMessageIndex)
-                            .transition(.asymmetric(
-                                insertion: .opacity.combined(with: .offset(y: 10)),
-                                removal: .opacity.combined(with: .offset(y: -10))
-                            ))
-                    }
-                    .padding(.horizontal, 40)
-                }
 
                 Spacer()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
-            startProcessingAnimation()
+            startCompletionReveal()
+        }
+    }
+
+    private var completionState: some View {
+        VStack(spacing: 24) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                AppColor.brandBlue,
+                                Color(red: 0.33, green: 0.70, blue: 1.00)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 120, height: 120)
+                    .shadow(color: AppColor.brandBlue.opacity(0.3), radius: 30, y: 10)
+
+                Image(systemName: "checkmark")
+                    .font(.system(size: 44, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .transition(.scale(scale: 0.5).combined(with: .opacity))
+
+            VStack(spacing: 8) {
+                Text(isEditingExistingProfile ? "Profile updated." : "Welcome to Noum.")
+                    .font(Typography.screenTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+
+                Text(isEditingExistingProfile
+                    ? "Your coaching is now recalibrated."
+                    : "Your coaching journey starts now.")
+                    .font(.headline.weight(.medium))
+                    .foregroundStyle(AppColor.textSecondary)
+            }
+            .transition(.opacity.combined(with: .offset(y: 16)))
         }
     }
 
@@ -693,33 +644,9 @@ struct CoachingOnboardingView: View {
         )
     }
 
-    private func startProcessingAnimation() {
-        let messageCount = processingMessages.count
-        let processingDuration: Double = 12.0
-        let intervalPerMessage = processingDuration / Double(messageCount)
-
-        withAnimation(.linear(duration: processingDuration)) {
-            processingRingProgress = 1.0
-        }
-
-        for i in 1..<messageCount {
-            let delay = intervalPerMessage * Double(i)
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                withAnimation(.easeInOut(duration: 0.35)) {
-                    processingMessageIndex = i
-                }
-            }
-        }
-
-        // Transition to welcome
-        DispatchQueue.main.asyncAfter(deadline: .now() + processingDuration) {
-            withAnimation(.standardSpring) {
-                showWelcome = true
-            }
-        }
-
-        // After a brief welcome moment, reveal the interactive profile card
-        DispatchQueue.main.asyncAfter(deadline: .now() + processingDuration + 2.0) {
+    private func startCompletionReveal() {
+        guard !showProfileCard else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + OnboardingCompletionTiming.profileRevealDelay) {
             withAnimation(.standardSpring) {
                 showProfileCard = true
             }

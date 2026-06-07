@@ -16,7 +16,6 @@ struct HeroScoreCard: View {
     let fillerDelta: Int?
     let effectiveDuration: TimeInterval
     let durationAssessment: DurationAssessment
-    let xpEarned: Int
     let celebrationVisible: Bool
 
     /// Optional IM tone-drill SOLVED ribbon. When non-nil, the card
@@ -143,7 +142,6 @@ struct HeroScoreCard: View {
             HStack(spacing: 20) {
                 StatPill(label: "Fillers", value: "\(effectiveFillerCount)", delta: fillerDelta, tint: fillerTint, invertDelta: true)
                 DurationAssessmentPill(effectiveDuration: effectiveDuration, durationAssessment: durationAssessment)
-                StatPill(label: "XP", value: "+\(xpEarned)", delta: nil, tint: .orange, invertDelta: false)
             }
         }
         .frame(maxWidth: .infinity)
@@ -915,7 +913,6 @@ struct IMVerdictCard: View {
     let headline: String
     let effectiveFillerCount: Int
     let effectiveDuration: TimeInterval
-    let xpEarned: Int
     let imConversationDetails: IMConversationDetails?
 
     var body: some View {
@@ -978,9 +975,6 @@ struct IMVerdictCard: View {
                 Label("\(userTurns) turns", systemImage: "bubble.left.and.bubble.right")
                 Label("\(Int(effectiveDuration))s", systemImage: "clock")
                 Label("\(effectiveFillerCount) fillers", systemImage: "waveform.path")
-                Spacer()
-                Text("+\(xpEarned) XP")
-                    .foregroundStyle(.orange)
             }
             .font(.caption2.weight(.medium))
             .foregroundStyle(.secondary)

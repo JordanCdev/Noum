@@ -416,8 +416,8 @@ struct PressureSessionResult: Equatable {
             result.append(("Vocal Variety", 1.15))
         }
 
-        // Pace Control: session WPM in the ideal 120–160 range
-        if sessionWPM >= 120 && sessionWPM <= 160 && totalWords >= 30 {
+        // Pace Control: session WPM in the shared conversational band.
+        if ConversationalPaceBand.contains(sessionWPM) && totalWords >= 30 {
             result.append(("Pace Control", 1.10))
         }
 

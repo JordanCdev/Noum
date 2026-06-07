@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 #endif
 
-// MARK: - Challenge Model (daily/weekly/streak/social)
+// MARK: - Challenge Model (daily/weekly/streak; social is legacy)
 
 struct SpeakingChallenge2: Codable, Identifiable, Equatable {
     let id: UUID
@@ -87,8 +87,10 @@ struct AsyncChallenge: Codable, Identifiable, Equatable {
     // Participants
     let creatorID: UUID
     let creatorName: String
+    var creatorAccountID: String? = nil
     let opponentID: UUID
     let opponentName: String
+    var opponentAccountID: String? = nil
 
     // Results
     var creatorScore: Int?
@@ -118,10 +120,30 @@ struct AsyncChallenge: Codable, Identifiable, Equatable {
     var creatorHasPlayed: Bool { creatorScore != nil }
     var opponentHasPlayed: Bool { opponentScore != nil }
     var bothHavePlayed: Bool { creatorHasPlayed && opponentHasPlayed }
+    var creatorParticipantID: String {
+        guard let creatorAccountID, !creatorAccountID.isEmpty else { return creatorID.uuidString }
+        return creatorAccountID
+    }
+    var opponentParticipantID: String {
+        guard let opponentAccountID, !opponentAccountID.isEmpty else { return opponentID.uuidString }
+        return opponentAccountID
+    }
+    var participantIDs: [String] {
+        [creatorParticipantID, opponentParticipantID, creatorID.uuidString, opponentID.uuidString]
+            .reduce(into: [String]()) { ids, id in
+                guard !ids.contains(id) else { return }
+                ids.append(id)
+            }
+    }
 
     /// Status from the perspective of a given user ID
     func status(forUser userID: UUID) -> Status {
-        let isCreator = userID == creatorID
+        status(forParticipantID: userID.uuidString)
+    }
+
+    /// Status from the perspective of a durable account or legacy UUID ID.
+    func status(forParticipantID participantID: String) -> Status {
+        let isCreator = isCreatorPerspective(participantID: participantID)
         let myPlayed = isCreator ? creatorHasPlayed : opponentHasPlayed
         let theirPlayed = isCreator ? opponentHasPlayed : creatorHasPlayed
 
@@ -162,13 +184,23 @@ struct AsyncChallenge: Codable, Identifiable, Equatable {
 
     /// Get the friend's name from the perspective of a given user
     func opponentName(forUser userID: UUID) -> String {
-        userID == creatorID ? opponentName : creatorName
+        opponentName(forParticipantID: userID.uuidString)
+    }
+
+    /// Get the friend's name from the perspective of a durable account or legacy UUID ID.
+    func opponentName(forParticipantID participantID: String) -> String {
+        isCreatorPerspective(participantID: participantID) ? opponentName : creatorName
     }
 
     /// Get the winner from the perspective of the user
     func result(forUser userID: UUID) -> ChallengeResult? {
+        result(forParticipantID: userID.uuidString)
+    }
+
+    /// Get the winner from the perspective of a durable account or legacy UUID ID.
+    func result(forParticipantID participantID: String) -> ChallengeResult? {
         guard let cs = creatorScore, let os = opponentScore else { return nil }
-        let isCreator = userID == creatorID
+        let isCreator = isCreatorPerspective(participantID: participantID)
         let myScore = isCreator ? cs : os
         let theirScore = isCreator ? os : cs
         if myScore > theirScore { return .won }
@@ -194,6 +226,12 @@ struct AsyncChallenge: Codable, Identifiable, Equatable {
             case .tied: return "equal.circle.fill"
             }
         }
+    }
+
+    func isCreatorPerspective(participantID: String) -> Bool {
+        if participantID == creatorParticipantID || participantID == creatorID.uuidString { return true }
+        if participantID == opponentParticipantID || participantID == opponentID.uuidString { return false }
+        return true
     }
 }
 
@@ -233,6 +271,10 @@ final class ChallengesManager: ObservableObject {
         return UUID()
     }
 
+    private var currentParticipantID: String {
+        KeychainHelper.load(key: "NoumAccountID") ?? currentUserID.uuidString
+    }
+
     private var currentUserName: String {
         AuthManager.shared.currentAccountName ?? "You"
     }
@@ -265,27 +307,12 @@ final class ChallengesManager: ObservableObject {
         persistCompleted()
     }
 
-    func recordSocialAction() {
-        for index in activeChallenges.indices {
-            var challenge = activeChallenges[index]
-            guard challenge.category == .social && !challenge.isCompleted else { continue }
-
-            challenge.current += 1
-            if challenge.current >= challenge.goal {
-                challenge.isCompleted = true
-                completedChallenges.insert(challenge, at: 0)
-            }
-            activeChallenges[index] = challenge
-        }
-
-        persistActive()
-        persistCompleted()
-    }
-
     // MARK: - Challenge Generation
 
     private func refreshChallengesIfNeeded() {
-        activeChallenges.removeAll { $0.isExpired && !$0.isCompleted }
+        activeChallenges.removeAll { challenge in
+            challenge.category == .social || (challenge.isExpired && !challenge.isCompleted)
+        }
 
         let activeCategories = Set(activeChallenges.filter { !$0.isCompleted }.map(\.category))
 
@@ -297,9 +324,6 @@ final class ChallengesManager: ObservableObject {
         }
         if !activeCategories.contains(.streak) {
             activeChallenges.append(generateChallenge(category: .streak))
-        }
-        if !activeCategories.contains(.social) {
-            activeChallenges.append(generateChallenge(category: .social))
         }
 
         persistActive()
@@ -351,7 +375,7 @@ final class ChallengesManager: ObservableObject {
 
         case .social:
             return SpeakingChallenge2(
-                id: UUID(), title: "Grow Your Circle", description: "Add a friend to your speaking network",
+                id: UUID(), title: "Linked Speak-off", description: "Complete a scored speak-off with a linked Noum friend",
                 category: .social, goal: 1, current: 0,
                 reward: .init(xp: 75, badge: "person.2.fill"),
                 startDate: now, endDate: calendar.date(byAdding: .day, value: 14, to: now)!,
@@ -366,16 +390,20 @@ final class ChallengesManager: ObservableObject {
     /// The challenge is mirrored to the backend so the opponent can pick it
     /// up on their device.
     @discardableResult
-    func createAsyncChallenge(opponentID: UUID, opponentName: String) -> AsyncChallenge {
+    func createAsyncChallenge(opponentID: UUID, opponentName: String, opponentAccountID: String? = nil) -> AsyncChallenge {
+        let creatorID = currentUserID
+        let creatorAccountID = KeychainHelper.load(key: "NoumAccountID") ?? creatorID.uuidString
         let challenge = AsyncChallenge(
             id: UUID(),
             prompt: PracticeTopics.random(),
             createdAt: Date(),
             expiresAt: Calendar.current.date(byAdding: .day, value: 3, to: Date())!,
-            creatorID: currentUserID,
+            creatorID: creatorID,
             creatorName: currentUserName,
+            creatorAccountID: creatorAccountID,
             opponentID: opponentID,
-            opponentName: opponentName
+            opponentName: opponentName,
+            opponentAccountID: opponentAccountID
         )
         asyncChallenges.insert(challenge, at: 0)
         persistAsync()
@@ -385,15 +413,11 @@ final class ChallengesManager: ObservableObject {
 
     /// Record the current user's score after completing an async challenge.
     /// Writes the local cache and pushes the slice the user is allowed to
-    /// edit (their own fields) to the backend. If the opponent isn't a
-    /// backend-addressable account (legacy friends with no `accountID`)
-    /// the local simulator fills the other side after a short delay so
-    /// the challenge can complete instead of hanging in "Waiting...".
-    /// `refreshFromBackend()` overwrites any simulated value if a real
-    /// opponent submission arrives later.
+    /// edit (their own fields) to the backend. The other side stays nil until
+    /// a real opponent submission arrives through `refreshFromBackend()`.
     func recordAsyncResult(challengeID: UUID, score: Int, duration: TimeInterval, summary: String?) {
         guard let index = asyncChallenges.firstIndex(where: { $0.id == challengeID }) else { return }
-        let isCreator = asyncChallenges[index].creatorID == currentUserID
+        let isCreator = asyncChallenges[index].isCreatorPerspective(participantID: currentParticipantID)
 
         if isCreator {
             asyncChallenges[index].creatorScore = score
@@ -409,16 +433,15 @@ final class ChallengesManager: ObservableObject {
         persistAsync()
         Task { await BackendSyncManager.shared.syncAsyncChallenge(updated) }
 
-        // No opponent fabrication: when the opponent isn't backend-addressable
-        // yet, the challenge stays honestly pending until real Firestore data
-        // arrives via refreshFromBackend(). (Removed the simulated dice-roll
-        // that scored a real rep against Int.random — an honesty leak.)
+        // No opponent fabrication: a real rep must never be resolved against a
+        // generated opponent score. The challenge stays honestly pending until
+        // real Firestore data arrives via refreshFromBackend().
     }
 
     /// Add a reaction to a completed challenge. Synced server-side.
     func addReaction(challengeID: UUID, reaction: AsyncChallenge.Reaction) {
         guard let index = asyncChallenges.firstIndex(where: { $0.id == challengeID }) else { return }
-        let isCreator = asyncChallenges[index].creatorID == currentUserID
+        let isCreator = asyncChallenges[index].isCreatorPerspective(participantID: currentParticipantID)
 
         if isCreator {
             asyncChallenges[index].creatorReaction = reaction
@@ -430,23 +453,11 @@ final class ChallengesManager: ObservableObject {
         Task { await BackendSyncManager.shared.syncAsyncChallenge(updated) }
     }
 
-    /// True when the other party in the challenge has a known account ID
-    /// recorded against the friend graph, i.e. a real backend roundtrip is
-    /// possible. Until friends are routinely added by accountID this will
-    /// be false for most challenges, so the simulator carries the v1.
-    private func isOpponentBackendAddressable(challenge: AsyncChallenge) -> Bool {
-        let myID = currentUserID
-        let theirLocalID = (challenge.creatorID == myID) ? challenge.opponentID : challenge.creatorID
-        return FriendsManager.shared.friends.contains { friend in
-            friend.id == theirLocalID && friend.accountID != nil
-        }
-    }
-
     /// Pull challenges where the current user is a participant. Used at
     /// app launch and when the social profile screen appears, so the
     /// opponent's submission and reactions show up without a round-trip.
     func refreshFromBackend() async {
-        let participantID = currentUserID.uuidString
+        let participantID = currentParticipantID
         let remote = await BackendSyncManager.shared.fetchAsyncChallenges(forParticipant: participantID)
         guard !remote.isEmpty else { return }
 
@@ -481,9 +492,9 @@ final class ChallengesManager: ObservableObject {
 
     /// Challenges waiting for the current user's response
     var pendingAsyncChallenges: [AsyncChallenge] {
-        let uid = currentUserID
+        let participantID = currentParticipantID
         return asyncChallenges.filter {
-            let status = $0.status(forUser: uid)
+            let status = $0.status(forParticipantID: participantID)
             return status == .pending || status == .yourTurn
         }
     }

@@ -597,6 +597,7 @@ class AuthManager: ObservableObject {
         Task { @MainActor in
             await Task.yield()
             CoachingProfileStore.shared.reloadForCurrentAccount()
+            FirstRunOnboardingManager.shared.reloadForCurrentAccount()
             PracticeSessionStore.shared.reloadForCurrentAccount()
             ProfileManager.shared.reloadForCurrentAccount()
             IMRelationshipStore.shared.reloadForCurrentAccount()

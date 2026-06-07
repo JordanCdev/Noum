@@ -447,7 +447,7 @@ enum TrendAnalyzer {
         // Final fallback: use current session metrics
         if let snapshot = currentSessionSnapshot {
             if snapshot.fillerCount >= 3 { return .fillerReduction }
-            if snapshot.wpm > 160 { return .paceControl }
+            if snapshot.wpm > ConversationalPaceBand.maxWPM { return .paceControl }
             if snapshot.duration < 15 { return .answerDevelopment }
         }
 
@@ -544,22 +544,22 @@ enum TrendAnalyzer {
         let olderAvg = olderWPMs.average
 
         let level: SkillLevel
-        if recentAvg >= 110 && recentAvg <= 150 { level = .strong }
-        else if recentAvg >= 100 && recentAvg <= 160 { level = .solid }
+        if ConversationalPaceBand.contains(recentAvg) { level = .strong }
+        else if recentAvg >= ConversationalPaceBand.minWPM - 10 && recentAvg <= ConversationalPaceBand.maxWPM + 10 { level = .solid }
         else if recentAvg >= 90 && recentAvg <= 170 { level = .developing }
         else { level = .weak }
 
         let direction: TrendDirection
         if window.count < 3 {
             direction = .stable
-        } else if level == .weak && olderAvg >= 100 && olderAvg <= 160 {
+        } else if level == .weak && olderAvg >= ConversationalPaceBand.minWPM - 10 && olderAvg <= ConversationalPaceBand.maxWPM + 10 {
             direction = .newIssue
         } else if abs(recentAvg - olderAvg) < 10 {
             direction = .stable
         } else {
-            // Is it getting closer to the ideal range (120-140)?
-            let recentDistFromIdeal = abs(recentAvg - 130)
-            let olderDistFromIdeal = abs(olderAvg - 130)
+            // Is it getting closer to the shared conversational target?
+            let recentDistFromIdeal = ConversationalPaceBand.distanceFromTarget(recentAvg)
+            let olderDistFromIdeal = ConversationalPaceBand.distanceFromTarget(olderAvg)
             direction = recentDistFromIdeal < olderDistFromIdeal ? .improving : .declining
         }
 

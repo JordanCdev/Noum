@@ -13,6 +13,12 @@ import SwiftUI
 ///   `FriendsManager.refreshPeerStats()` which reads `profiles_public/{id}`.
 ///   Friends added before M2 (no `accountID`) render with an "Awaiting sync"
 ///   tag and a one-line explainer card so the empty state is honest.
+struct FriendLeaderboardSelfRowPresentation: Equatable {
+    static func ratingValue(for rating: SpeakingRating) -> Int? {
+        rating.hasRatedEvidence ? rating.overall : nil
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct FriendLeaderboardView: View {
     @Environment(\.dismiss) private var dismiss
@@ -69,7 +75,7 @@ struct FriendLeaderboardView: View {
                 .font(Typography.bigStat)
                 .foregroundStyle(.primary)
 
-            Text("Sorted by speaking rating. Streaks and reps shown alongside.")
+            Text("Sorted by speaking rating when ratings are available. Reps shown alongside.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -191,7 +197,7 @@ struct FriendLeaderboardView: View {
                 }
             }
         } else {
-            Text("Awaiting sync")
+            Text(row.placeholderText)
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.tertiary)
         }
@@ -219,7 +225,7 @@ struct FriendLeaderboardView: View {
                     .textCase(.uppercase)
                     .tracking(0.6)
             }
-            Text("Friends added before peer sync shipped don't have an account link. Re-add them via QR code so their stats can show up here.")
+            Text("Friends without a linked account stay as local practice contacts. Their stats appear only after linked invites are available.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -254,8 +260,12 @@ struct FriendLeaderboardView: View {
             var parts: [String] = ["Rank \(rank)", displayName]
             if let rating { parts.append("Rating \(rating)") }
             if let streak, streak > 0 { parts.append("Streak \(streak) days") }
-            if rating == nil { parts.append("Awaiting sync") }
+            if rating == nil { parts.append(placeholderText) }
             return parts.joined(separator: ", ")
+        }
+
+        var placeholderText: String {
+            isCurrentUser ? "Awaiting rating" : "Awaiting sync"
         }
     }
 
@@ -275,7 +285,7 @@ struct FriendLeaderboardView: View {
                 id: authManager.currentAccountID ?? "self",
                 displayName: myName.isEmpty ? "You" : myName,
                 initials: myInitials,
-                rating: ratingStore.rating.overall,
+                rating: FriendLeaderboardSelfRowPresentation.ratingValue(for: ratingStore.rating),
                 streak: streakFreeze.currentStreak,
                 repsThisWeek: myRepsThisWeek,
                 isCurrentUser: true

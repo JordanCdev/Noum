@@ -7,16 +7,83 @@ import SwiftUI
 
 // MARK: - Session History View (Redesigned)
 
+struct SessionHistoryRowPreview: Equatable {
+    static func text(for session: PracticeSession) -> String? {
+        if let summary = clean(session.coachSummary) { return summary }
+        if let outcome = clean(session.imConversationDetails?.outcome?.summary) { return outcome }
+        return factualFallback(for: session)
+    }
+
+    private static func factualFallback(for session: PracticeSession) -> String? {
+        let mode = modeLabel(for: session.mode)
+        if let score = session.score {
+            return "\(mode) read: \(score)/10 · \(session.fillerWordCount) fillers"
+        }
+
+        let seconds = Int(session.duration.rounded())
+        if seconds > 0 {
+            return "\(mode) rep saved · \(seconds)s"
+        }
+
+        return "\(mode) rep saved"
+    }
+
+    private static func clean(_ text: String?) -> String? {
+        guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
+    }
+
+    private static func modeLabel(for mode: PracticeMode) -> String {
+        switch mode {
+        case .timed: return "Timed"
+        case .suddenDeath: return "Sudden Death"
+        case .ahCounter: return "Ah-Counter"
+        case .imConversation: return "IM Mode"
+        }
+    }
+}
+
+struct SessionHistoryDetailPresentation: Equatable {
+    static func focusLabel(for session: PracticeSession) -> String {
+        if session.imConversationDetails != nil {
+            return "Next Rep"
+        }
+        if let intent = clean(session.intentLabel) {
+            return intent
+        }
+        return durationLabel(for: session)
+    }
+
+    static func durationLabel(for session: PracticeSession) -> String {
+        "\(max(0, Int(session.duration.rounded())))s"
+    }
+
+    private static func clean(_ text: String?) -> String? {
+        guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
+    }
+}
+
 struct SessionHistoryView: View {
 
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var suddenDeathRunHistoryStore = SuddenDeathRunHistoryStore.shared
+    @StateObject private var baselineStore = BaselineStore.shared
+    @StateObject private var clutchWordStore = ClutchWordStore.shared
+    @StateObject private var ratingStore = RatingStore.shared
     @State private var selectedModeFilter: PracticeMode? = nil
     @State private var sessionToDelete: PracticeSession?
     @State private var showTrends = false
     @Binding var navigationPath: NavigationPath
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(navigationPath: Binding<NavigationPath>) {
         self._navigationPath = navigationPath
@@ -73,29 +140,13 @@ struct SessionHistoryView: View {
         }
     }
 
-    /// Representative tint for the MistakeReplay hero halo. Mirrors the
-    /// MistakeReplayCard's own sourcing priority (low-score ≤5 in 14d,
-    /// then high-filler ≥6 in 14d) so the halo color matches the mode
-    /// the user is most likely about to replay. Falls back to brandBlue
-    /// when nothing qualifies (the card itself renders EmptyView in that
-    /// case, so the halo is invisible anyway).
-    private var mistakeReplayHaloTint: Color {
-        let now = Date()
-        let cutoff14 = now.addingTimeInterval(-14 * 24 * 3600)
-        let recent = sessions
-        if let lowScore = recent.first(where: { session in
-            guard session.date >= cutoff14 else { return false }
-            guard let score = session.score else { return false }
-            return score <= 5
-        }) {
-            return AppColor.tint(for: lowScore.mode)
-        }
-        if let highFiller = recent.first(where: { session in
-            session.date >= cutoff14 && session.fillerWordCount >= 6
-        }) {
-            return AppColor.tint(for: highFiller.mode)
-        }
-        return AppColor.brandBlue
+    private var hasReviewSignals: Bool {
+        MistakeReplayCard.hasReviewRows(in: sessions)
+        || WeakAreasCard.hasTargets(
+            baseline: baselineStore.baseline,
+            topClutchWords: clutchWordStore.topClutchWords,
+            rating: ratingStore.rating
+        )
     }
 
     // MARK: - Body
@@ -109,171 +160,30 @@ struct SessionHistoryView: View {
             } else {
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: 0) {
-
-                        // --- Summary Strip ---
-                        summaryStrip
+                        historyLeadLine
                             .padding(.horizontal, Spacing.screenH)
                             .padding(.top, 8)
-                            .padding(.bottom, 20)
-
-                        // --- Trends (collapsible) ---
-                        trendsSection
-                            .padding(.horizontal, Spacing.screenH)
-                            .padding(.bottom, 20)
-
-                        // --- Replay misses (specific past sessions) ---
-                        // Hero halo + tinted shadow draw the eye; the tint
-                        // is the mode of the next session likely to be
-                        // replayed (matches `MistakeReplayCard`'s own
-                        // sourcing priority).
-                        MistakeReplayCard(sessionStore: sessionStore) { destination in
-                            navigationPath.append(destination)
-                        }
-                        .background(heroHalo(tint: mistakeReplayHaloTint))
-                        .shadow(color: mistakeReplayHaloTint.opacity(0.16), radius: 16, x: 0, y: 8)
-                        .padding(.horizontal, Spacing.screenH)
-                        .padding(.bottom, 20)
-
-                        // --- Mistakes to fix (Duolingo-style review surface) ---
-                        // Brand-blue halo: this card surfaces durable
-                        // analytics-level weaknesses, so it lives in the
-                        // analytics/rating register.
-                        WeakAreasCard(sessionStore: sessionStore) { target in
-                            navigationPath.append(target.destination)
-                        }
-                        .background(heroHalo(tint: AppColor.brandBlue))
-                        .shadow(color: AppColor.brandBlue.opacity(0.14), radius: 16, x: 0, y: 8)
-                        .padding(.horizontal, Spacing.screenH)
-                        .padding(.bottom, 20)
+                            .padding(.bottom, 12)
 
                         // --- Mode Filter ---
                         modeFilterChips
                             .padding(.bottom, 12)
 
-                        // --- Sudden Death history breakdown ---
-                        // Surfaces the per-difficulty track record (best,
-                        // avg, clean) on the Sudden Death filter so the
-                        // engine's honest data lives in the History
-                        // surface, not only on the per-run Result screen.
-                        // Self-hides on cold start (no SD runs yet) and
-                        // when any other filter is selected.
-                        if selectedModeFilter == .suddenDeath {
-                            SuddenDeathHistoryBreakdownCard(
-                                runs: suddenDeathRunHistoryStore.runs,
-                                onSelectDifficulty: { difficulty in
-                                    navigationPath.append(
-                                        AppDestination.suddenDeathDifficultyDetail(difficulty: difficulty)
-                                    )
-                                }
-                            )
-                            .padding(.horizontal, Spacing.screenH)
-                            .padding(.bottom, 16)
-                        }
-
-                        // --- Ah-Counter history breakdown ---
-                        // Same shape as the SD breakdown, sourced from the
-                        // generic PracticeSession store (Ah-Counter doesn't
-                        // have an engine-specific run store; the filler-rate
-                        // signal lives on each PracticeSession row already).
-                        // Tapping the "cleanest rep" cell pushes the session
-                        // detail view — same destination as the row tap.
-                        if selectedModeFilter == .ahCounter {
-                            AhCounterHistoryBreakdownCard(
-                                sessions: filteredSessions,
-                                onSelectCleanestRep: { sessionID in
-                                    navigationPath.append(
-                                        AppDestination.sessionDetail(sessionID: sessionID)
-                                    )
-                                }
-                            )
-                            .padding(.horizontal, Spacing.screenH)
-                            .padding(.bottom, 16)
-                        }
-
-                        // --- Timed history breakdown ---
-                        // Per-mode track record for Timed. Surfaces average
-                        // score + in-zone count + average WPM + best rep
-                        // with a 7-day vs prior-7-day trend chip. Self-hides
-                        // on cold start. Tapping the "best rep" cell pushes
-                        // the session detail view.
-                        if selectedModeFilter == .timed {
-                            TimedHistoryBreakdownCard(
-                                sessions: filteredSessions,
-                                onSelectBestRep: { sessionID in
-                                    navigationPath.append(
-                                        AppDestination.sessionDetail(sessionID: sessionID)
-                                    )
-                                }
-                            )
-                            .padding(.horizontal, Spacing.screenH)
-                            .padding(.bottom, 16)
-                        }
-
-                        // --- IM history breakdown ---
-                        // Per-scenario track record across the four built-in
-                        // IM setups. Reads from the conversation metadata
-                        // on each PracticeSession (no new store) so a user
-                        // who's been working "Difficult Conversation" can
-                        // see their trust + tension trend without leaving
-                        // History. Self-hides until at least one rep has
-                        // recorded scenario metadata.
-                        if selectedModeFilter == .imConversation {
-                            IMHistoryBreakdownCard(
-                                sessions: filteredSessions,
-                                onSelectScenario: { scenario in
-                                    navigationPath.append(
-                                        AppDestination.imScenarioDetail(scenario: scenario)
-                                    )
-                                }
-                            )
-                            .padding(.horizontal, Spacing.screenH)
-                            .padding(.bottom, 16)
-                        }
+                        modeBreakdownSection
 
                         // --- Section Header ---
                         // Sentence-case cardTitle + hairline divider. Reads as
                         // a premium app sentence, not a wireframe label.
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(sectionTitle)
-                                .font(Typography.cardTitle)
-                                .foregroundStyle(.primary)
-                            Rectangle()
-                                .fill(AppColor.subtleBorder)
-                                .frame(height: 1)
-                        }
-                        .padding(.horizontal, Spacing.screenH)
-                        .padding(.bottom, 12)
+                        sessionListHeader
 
                         // --- Session List ---
-                        if filteredSessions.isEmpty {
-                            emptyFilterState
-                                .padding(.horizontal, Spacing.screenH)
-                        } else {
-                            ForEach(filteredSessions) { session in
-                                NavigationLink {
-                                    SessionHistoryDetailView(
-                                        session: session,
-                                        insights: CoachingPlanner.sessionInsights(
-                                            for: session,
-                                            comparedTo: sessions,
-                                            profile: coachingProfileStore.profile
-                                        )
-                                    )
-                                } label: {
-                                    sessionRow(session)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityIdentifier("history.row.\(session.id.uuidString)")
-                                .contextMenu {
-                                    Button(role: .destructive) {
-                                        sessionToDelete = session
-                                    } label: {
-                                        Label("Delete Session", systemImage: "trash")
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, Spacing.screenH)
-                        }
+                        sessionListSection
+
+                        reviewSignalsSection
+                            .padding(.top, 12)
+
+                        historyOverviewSection
+                            .padding(.top, 4)
 
                         Spacer(minLength: 40)
                     }
@@ -305,6 +215,169 @@ struct SessionHistoryView: View {
     }
 
     // MARK: - Summary Strip
+
+    private var historyLeadLine: some View {
+        Text(historyLeadSummary)
+            .font(Typography.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("history.leadSummary")
+    }
+
+    private var historyLeadSummary: String {
+        var parts = ["\(totalSessions) session\(totalSessions == 1 ? "" : "s") saved"]
+        if averageScoreText != "--" {
+            parts.append("\(averageScoreText) avg score")
+        }
+        parts.append("\(strongestModeText) strongest")
+        return parts.joined(separator: " · ")
+    }
+
+    private var historyOverviewSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("History overview")
+                .font(Typography.micro)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.8)
+                .padding(.horizontal, Spacing.screenH)
+
+            summaryStrip
+                .padding(.horizontal, Spacing.screenH)
+
+            trendsSection
+                .padding(.horizontal, Spacing.screenH)
+        }
+        .padding(.bottom, 20)
+    }
+
+    @ViewBuilder
+    private var reviewSignalsSection: some View {
+        if hasReviewSignals {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Text("Worth a replay")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                    .padding(.horizontal, Spacing.screenH)
+
+                MistakeReplayCard(sessionStore: sessionStore) { destination in
+                    navigationPath.append(destination)
+                }
+                .padding(.horizontal, Spacing.screenH)
+
+                WeakAreasCard(sessionStore: sessionStore) { target in
+                    navigationPath.append(target.destination)
+                }
+                .padding(.horizontal, Spacing.screenH)
+            }
+            .padding(.bottom, 20)
+        }
+    }
+
+    @ViewBuilder
+    private var modeBreakdownSection: some View {
+        // Mode-specific track records stay close to the selected filter, but
+        // below the lead summary so saved reps remain the primary surface.
+        if selectedModeFilter == .suddenDeath {
+            SuddenDeathHistoryBreakdownCard(
+                runs: suddenDeathRunHistoryStore.runs,
+                onSelectDifficulty: { difficulty in
+                    navigationPath.append(
+                        AppDestination.suddenDeathDifficultyDetail(difficulty: difficulty)
+                    )
+                }
+            )
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.bottom, 16)
+        }
+
+        if selectedModeFilter == .ahCounter {
+            AhCounterHistoryBreakdownCard(
+                sessions: filteredSessions,
+                onSelectCleanestRep: { sessionID in
+                    navigationPath.append(
+                        AppDestination.sessionDetail(sessionID: sessionID)
+                    )
+                }
+            )
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.bottom, 16)
+        }
+
+        if selectedModeFilter == .timed {
+            TimedHistoryBreakdownCard(
+                sessions: filteredSessions,
+                onSelectBestRep: { sessionID in
+                    navigationPath.append(
+                        AppDestination.sessionDetail(sessionID: sessionID)
+                    )
+                }
+            )
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.bottom, 16)
+        }
+
+        if selectedModeFilter == .imConversation {
+            IMHistoryBreakdownCard(
+                sessions: filteredSessions,
+                onSelectScenario: { scenario in
+                    navigationPath.append(
+                        AppDestination.imScenarioDetail(scenario: scenario)
+                    )
+                }
+            )
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.bottom, 16)
+        }
+    }
+
+    private var sessionListHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(sectionTitle)
+                .font(Typography.cardTitle)
+                .foregroundStyle(.primary)
+            Rectangle()
+                .fill(AppColor.subtleBorder)
+                .frame(height: 1)
+        }
+        .padding(.horizontal, Spacing.screenH)
+        .padding(.bottom, 12)
+    }
+
+    @ViewBuilder
+    private var sessionListSection: some View {
+        if filteredSessions.isEmpty {
+            emptyFilterState
+                .padding(.horizontal, Spacing.screenH)
+        } else {
+            ForEach(filteredSessions) { session in
+                NavigationLink {
+                    SessionHistoryDetailView(
+                        session: session,
+                        insights: CoachingPlanner.sessionInsights(
+                            for: session,
+                            comparedTo: sessions,
+                            profile: coachingProfileStore.profile
+                        )
+                    )
+                } label: {
+                    sessionRow(session)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("history.row.\(session.id.uuidString)")
+                .contextMenu {
+                    Button(role: .destructive) {
+                        sessionToDelete = session
+                    } label: {
+                        Label("Delete Session", systemImage: "trash")
+                    }
+                }
+            }
+            .padding(.horizontal, Spacing.screenH)
+        }
+    }
 
     private var summaryStrip: some View {
         HStack(spacing: 0) {
@@ -341,24 +414,6 @@ struct SessionHistoryView: View {
         }
     }
 
-    /// Tinted ambient halo + soft shadow used to lift the Replay / Mistakes
-    /// cards into hero treatment without modifying their internals. The
-    /// halo bleeds beyond the card edges via negative padding so the
-    /// glow reads outside the card's own opaque cardBackground.
-    private func heroHalo(tint: Color) -> some View {
-        RoundedRectangle(cornerRadius: CornerRadius.large + 4, style: .continuous)
-            .fill(
-                RadialGradient(
-                    colors: [tint.opacity(0.18), tint.opacity(0.04), Color.clear],
-                    center: UnitPoint(x: 0.5, y: 0.0),
-                    startRadius: 0,
-                    endRadius: 320
-                )
-            )
-            .blur(radius: 10)
-            .padding(-10)
-    }
-
     private func statPill(value: String, label: String, tint: Color) -> some View {
         VStack(spacing: 4) {
             Text(value)
@@ -378,7 +433,11 @@ struct SessionHistoryView: View {
     private var trendsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(.easeInOut(duration: 0.25)) { showTrends.toggle() }
+                if reduceMotion {
+                    showTrends.toggle()
+                } else {
+                    withAnimation(.easeInOut(duration: 0.25)) { showTrends.toggle() }
+                }
             } label: {
                 HStack {
                     Text("Progress Trends")
@@ -446,7 +505,11 @@ struct SessionHistoryView: View {
 
     private func filterChip(label: String, mode: PracticeMode?) -> some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) { selectedModeFilter = mode }
+            if reduceMotion {
+                selectedModeFilter = mode
+            } else {
+                withAnimation(.easeInOut(duration: 0.2)) { selectedModeFilter = mode }
+            }
         } label: {
             Text(label)
                 .font(.caption.weight(.semibold))
@@ -559,10 +622,7 @@ struct SessionHistoryView: View {
     // MARK: - Helpers
 
     private func sessionOneLiner(for session: PracticeSession) -> String? {
-        if let summary = session.coachSummary, !summary.isEmpty { return summary }
-        if let outcome = session.imConversationDetails?.outcome?.summary, !outcome.isEmpty { return outcome }
-        let trimmed = session.transcript.prefix(80)
-        return trimmed.isEmpty ? nil : String(trimmed)
+        SessionHistoryRowPreview.text(for: session)
     }
 
     private func modeLabel(for mode: PracticeMode) -> String {
@@ -736,7 +796,7 @@ struct SessionHistoryDetailView: View {
 
             HStack(spacing: 10) {
                 detailMetric(title: "Score", value: session.score.map { "\($0)/10" } ?? "Pending", tint: .green)
-                detailMetric(title: "Focus", value: focusLabel, tint: .blue)
+                detailMetric(title: "Focus", value: SessionHistoryDetailPresentation.focusLabel(for: session), tint: .blue)
                 detailMetric(title: "Mode", value: modeLabel, tint: AppColor.tint(for: session.mode))
             }
         }
@@ -846,7 +906,7 @@ struct SessionHistoryDetailView: View {
             HStack(spacing: 10) {
                 detailMetric(title: "Fillers", value: "\(session.fillerWordCount)", tint: .red)
                 detailMetric(title: "WPM", value: "\(session.wordsPerMinute)", tint: .indigo)
-                detailMetric(title: "XP", value: session.xpEarned.map(String.init) ?? "Pending", tint: .orange)
+                detailMetric(title: "Duration", value: SessionHistoryDetailPresentation.durationLabel(for: session), tint: .blue)
             }
         }
         .padding(Spacing.lg)
@@ -1028,16 +1088,6 @@ struct SessionHistoryDetailView: View {
             return firstInsight
         }
         return "Focus on saying one clear thing cleanly before adding more detail."
-    }
-
-    private var focusLabel: String {
-        if session.imConversationDetails != nil {
-            return "Next Rep"
-        }
-        if let xpEarned = session.xpEarned {
-            return "+\(xpEarned) XP"
-        }
-        return "\(Int(session.duration))s"
     }
 
     private func detailMetric(title: String, value: String, tint: Color) -> some View {

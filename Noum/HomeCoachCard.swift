@@ -14,6 +14,17 @@ import SwiftUI
 // coaching logic.
 
 @available(iOS 17.0, macOS 12.0, *)
+struct HomeCoachAskNoumShortcut: Equatable {
+    static let title = "Ask Noum"
+    static let actionTitle = "Open the thread"
+    static let accessibilityIdentifier = "home.coachCard.askNoum"
+
+    static func body(sessionCount: Int) -> String {
+        HomeAskNoumEvidenceCopy.line(sessionCount: sessionCount)
+    }
+}
+
+@available(iOS 17.0, macOS 12.0, *)
 struct HomeCoachCard: View {
 
     @Binding var navigationPath: NavigationPath
@@ -24,6 +35,7 @@ struct HomeCoachCard: View {
     /// moves. Default `0` keeps preview + non-scroll call sites
     /// compiling unchanged. Pinned to zero under reduce-motion.
     var scrollOffset: CGFloat = 0
+    var showsAskNoumShortcut: Bool = false
 
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
@@ -120,6 +132,10 @@ struct HomeCoachCard: View {
                 beginRecommendedRep()
             }
             .accessibilityIdentifier("home.coachCard.begin")
+
+            if showsAskNoumShortcut {
+                askNoumShortcutCTA
+            }
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.lg)
@@ -136,7 +152,7 @@ struct HomeCoachCard: View {
         .accessibilityIdentifier("home.coachCard")
     }
 
-    /// Label for the Begin CTA — "Begin · Sudden Death" pattern carries
+    /// Label for the Begin CTA — "Begin · Pressure Drill" pattern carries
     /// the mode info that used to live in the micro-label row. One row
     /// fewer on Home; user still knows exactly what they're starting.
     /// Maps live scroll offset (±120pt) to a ±5pt opposite-direction
@@ -158,7 +174,7 @@ struct HomeCoachCard: View {
         let modeName: String
         switch recommendedMode {
         case .timed:          modeName = "Timed"
-        case .suddenDeath:    modeName = "Sudden Death"
+        case .suddenDeath:    modeName = PracticeMode.suddenDeath.displayLabel
         case .ahCounter:      modeName = "Ah-Counter"
         case .imConversation: modeName = "IM"
         }
@@ -501,6 +517,65 @@ struct HomeCoachCard: View {
         .padding(.top, Spacing.xs)
         .accessibilityIdentifier("home.coachCard.prepSession")
         .accessibilityLabel(Text("Prepare for your \(moment.category.displayName), \(days) day\(days == 1 ? "" : "s") away"))
+    }
+
+    /// Secondary Ask Noum entry folded into the coach hero. This replaces
+    /// the standalone Home promo card so the home feed has one coach
+    /// surface, one primary rep action, and one quieter way to ask a
+    /// follow-up after there is evidence to discuss.
+    @ViewBuilder
+    private var askNoumShortcutCTA: some View {
+        let body = HomeCoachAskNoumShortcut.body(sessionCount: sessionStore.sessions.count)
+        Button {
+            navigationPath.append(AppDestination.askNoum)
+        } label: {
+            HStack(alignment: .center, spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(AppColor.pro.opacity(0.12))
+                        .frame(width: 30, height: 30)
+                    Image(systemName: "message.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(AppColor.pro)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(HomeCoachAskNoumShortcut.title)
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(body)
+                        .font(Typography.captionSmall)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 4)
+                Text(HomeCoachAskNoumShortcut.actionTitle)
+                    .font(Typography.captionSmall.weight(.semibold))
+                    .foregroundStyle(AppColor.pro)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(AppColor.pro)
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                AppColor.pro.opacity(0.07),
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                    .stroke(AppColor.pro.opacity(0.18), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.top, Spacing.xs)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("\(HomeCoachAskNoumShortcut.title). \(body). \(HomeCoachAskNoumShortcut.actionTitle)."))
+        .accessibilityIdentifier(HomeCoachAskNoumShortcut.accessibilityIdentifier)
     }
 
     /// Countdown copy for the Big Moment subtitle.

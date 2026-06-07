@@ -4964,14 +4964,14 @@ enum DrillEngine {
             )
         }
 
-        // 4. Rushed pace (>160 WPM) → slow open
-        if wpm > 160 {
+        // 4. Rushed pace above the shared band → slow open
+        if wpm > ConversationalPaceBand.maxWPM {
             return DrillRecommendation(
                 type: .slowOpen,
                 title: "Slow Your Start",
                 reason: "Your pace hit \(Int(wpm)) WPM — noticeably fast. Speed undermines clarity even when the content is strong.",
                 constraint: "Deliberately slow your first two sentences. Count one beat between them.",
-                successGoal: "Pace below 150 WPM",
+                successGoal: "Pace inside \(ConversationalPaceBand.displayRange) WPM",
                 icon: "hare.fill",
                 tint: .orange
             )
@@ -5029,14 +5029,14 @@ enum DrillEngine {
             )
         }
 
-        // 9. Too slow (<100 WPM, duration ≥15s)
-        if wpm > 0 && wpm < 100 && duration >= 15 {
+        // 9. Too slow below the shared band, duration ≥15s
+        if wpm > 0 && wpm < ConversationalPaceBand.minWPM && duration >= 15 {
             return DrillRecommendation(
                 type: .paceSetter,
                 title: "Find Your Flow",
                 reason: "Your pace was \(Int(wpm)) WPM — quite slow. Hesitation can make you sound uncertain.",
                 constraint: "Commit to each sentence before starting it, then deliver at conversational speed — no long pauses mid-thought.",
-                successGoal: "Pace above 110 WPM",
+                successGoal: "Pace inside \(ConversationalPaceBand.displayRange) WPM",
                 icon: "metronome.fill",
                 tint: .blue
             )
@@ -6311,20 +6311,21 @@ enum PracticeEvaluator {
         )
     }
 
-    /// Pace scoring bands recalibrated for honest assessment — typical
-    /// confident conversational speech is 130–160 WPM, and anything under
-    /// 100 WPM is genuinely halting/disfluent rather than "controlled and
-    /// calm." Old bands (70–95 WPM = 0.72 "Measured") were too generous.
-    /// Now: only 130–160 WPM gets full credit; 100–130 is acceptable;
-    /// below 100 is honestly poor; above 175 is rushed.
+    /// Pace scoring bands recalibrated for honest assessment. The full-credit
+    /// zone is the shared conversational pace band; anything under 100 WPM is
+    /// genuinely halting/disfluent rather than "controlled and calm." Old
+    /// bands (70–95 WPM = 0.72 "Measured") were too generous.
     private static func paceScore(for wordsPerMinute: Double, wordCount: Int) -> Double {
         guard wordCount >= 6 else { return 0.15 }
         switch wordsPerMinute {
         case ..<70:           return 0.10  // halting, often disfluent
         case 70..<100:        return 0.35  // slow, hesitant
-        case 100..<130:       return 0.70  // deliberate but acceptable
-        case 130..<160:       return 1.00  // target — confident conversational
-        case 160..<180:       return 0.78  // edges fast
+        case 100..<ConversationalPaceBand.minWPM:
+            return 0.70  // deliberate but acceptable
+        case ConversationalPaceBand.minWPM...ConversationalPaceBand.maxWPM:
+            return 1.00  // target — clear conversational pace
+        case ConversationalPaceBand.maxWPM..<180:
+            return 0.78  // edges fast
         case 180..<200:       return 0.50  // rushed
         default:              return 0.25  // unintelligibly fast
         }
@@ -6342,14 +6343,14 @@ enum PracticeEvaluator {
 
         switch wordsPerMinute {
         case ..<70:
-            return PaceSnapshot(wordsPerMinute: rounded, label: "Halting", coachNote: "Your pace was below 70 WPM — that's slow enough to feel disfluent to a listener. Aim for 130–160 WPM with deliberate pauses, not pauses inside sentences.")
+            return PaceSnapshot(wordsPerMinute: rounded, label: "Halting", coachNote: "Your pace was below 70 WPM — that's slow enough to feel disfluent to a listener. Aim for \(ConversationalPaceBand.minDisplayWPM)–\(ConversationalPaceBand.maxDisplayWPM) WPM with deliberate pauses, not pauses inside sentences.")
         case 70..<100:
             return PaceSnapshot(wordsPerMinute: rounded, label: "Hesitant", coachNote: "Your pace is well below conversational speed. Push the engine harder — start the next answer with the strongest opening line you have, then let momentum carry you.")
-        case 100..<130:
+        case 100..<ConversationalPaceBand.minWPM:
             return PaceSnapshot(wordsPerMinute: rounded, label: "Deliberate", coachNote: "Your pace is steady but slower than a confident conversational rhythm. Lean a touch faster on the connective material; reserve slowness for the points that need weight.")
-        case 130..<160:
+        case ConversationalPaceBand.minWPM...ConversationalPaceBand.maxWPM:
             return PaceSnapshot(wordsPerMinute: rounded, label: "Confident", coachNote: "Your pace is in the target range for clear, confident speech.")
-        case 160..<180:
+        case ConversationalPaceBand.maxWPM..<180:
             return PaceSnapshot(wordsPerMinute: rounded, label: "Quick", coachNote: "Your pace is edging fast. Create a little more space between points so authority can come through.")
         case 180..<200:
             return PaceSnapshot(wordsPerMinute: rounded, label: "Rushed", coachNote: "Your pace is rushing the message. Slow the opening and finish each sentence before moving on.")
@@ -10500,8 +10501,8 @@ struct AICoachService: AICoachServicing {
 
     /// A delivery strength grounded in the metrics vs the confidence-gated
     /// baseline — never invented. Priority: fillers at/below baseline, then a
-    /// pace in the 100-160 band, then a clean zero-filler rep, then a steady
-    /// fallback that asserts nothing it cannot support.
+    /// pace in the shared conversational band, then a clean zero-filler rep,
+    /// then a steady fallback that asserts nothing it cannot support.
     private nonisolated static func deliveryStrength(input: AICoachSessionInput) -> String {
         if let baselineFiller = input.baselineFillerRate, baselineFiller > 0 {
             let minutes = max(input.duration / 60.0, 0.0001)
@@ -10510,7 +10511,7 @@ struct AICoachService: AICoachServicing {
                 return "Your filler rate sat at or below your usual — the discipline is holding."
             }
         }
-        if input.wordsPerMinute >= 100 && input.wordsPerMinute <= 160 {
+        if ConversationalPaceBand.contains(input.wordsPerMinute) {
             return "Your pace stayed in a listenable band — easy to follow, no rush."
         }
         if input.fillerCount == 0 {

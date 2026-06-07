@@ -95,10 +95,10 @@ The app does **not** use Firebase Analytics, Crashlytics, or any third-party ana
 
 | Field | Example | Collected Where | Purpose | Required? | Storage | Processor | Retention | Deletion | Sensitivity |
 |-------|---------|----------------|---------|-----------|---------|-----------|-----------|----------|-------------|
-| Friend Display Name | "Alex" | Manual entry or contacts import | Social features | Optional | UserDefaults (`NoumFriendsList`) | **Local only** — not synced to backend | Indefinite | Manual removal | Low |
-| Friend Phone Number | "+1-555-0123" | Contacts framework | Friend identification | Optional | UserDefaults (`NoumFriendsList`) | **Local only** | Indefinite | Manual removal | **Medium-High** |
+| Friend Display Name | "Alex" | Manual entry | Local practice contacts | Optional | UserDefaults (`NoumFriendsList`) | **Local only** — not synced to backend | Indefinite | Manual removal | Low |
+| Friend Phone Number | N/A | Legacy contact import removed | Not collected by current friend UI | No | N/A | N/A | N/A | N/A | N/A |
 | Friend UUID | Generated UUID | Friend add flow | Link challenges | Automatic | UserDefaults | Local only | With friend record | On removal | Low |
-| Add Method | "contacts" / "qrCode" | Friend add flow | Attribution | Automatic | UserDefaults | Local only | With friend record | On removal | None |
+| Add Method | "manual" / legacy "contacts" / legacy "qrCode" | Friend add flow | Attribution | Automatic | UserDefaults | Local only | With friend record | On removal | None |
 | Async Challenge Data | {prompt, scores, reactions} | Challenge creation | Social speak-offs | Optional | UserDefaults (`NoumAsyncChallenges`) | **Local only** (MVP — designed for future sync) | Indefinite | Manual | Low |
 
 ### 2.7 Contacts Access
@@ -112,7 +112,7 @@ The app does **not** use Firebase Analytics, Crashlytics, or any third-party ana
 
 | Field | Example | Collected Where | Purpose | Required? | Storage | Processor | Retention | Deletion | Sensitivity |
 |-------|---------|----------------|---------|-----------|---------|-----------|-----------|----------|-------------|
-| Approximate Location (coordinate) | 51.5074, -0.1278 | CoreLocation (When In Use) | Find nearby speaking clubs; daylight calculation for path UI | Optional (user-initiated for clubs) | **Memory only** — not persisted or synced | Apple MapKit (local search), Open-Meteo (geocoding) | Transient | Automatic | Medium |
+| Approximate Location (coordinate) | 51.5074, -0.1278 | CoreLocation (When In Use) | Find nearby speaking clubs after a user-initiated search | Optional (user-initiated for clubs) | **Memory only** — not persisted or synced | Apple MapKit (local search/geocoding) | Transient | Automatic | Medium |
 
 ### 2.9 Device & App Metadata
 
@@ -513,8 +513,8 @@ Session data (including full transcripts) is stored indefinitely until the user 
 **R10. Recommendation learning data could reveal behavioral patterns**
 The recommendation system tracks what was suggested, whether the user followed it, and performance deltas. While individually low-sensitivity, in aggregate this creates a detailed behavioral profile. Ensure this is disclosed and included in data export.
 
-**R11. QR code exposes account UUID**
-The friend QR code format `noum://friend/{UUID}` exposes the user's account UUID. While UUIDs are not directly PII, they are persistent identifiers. Consider using rotating or expiring invite codes instead.
+**R11. Invite identifiers must not expose account UUIDs**
+The legacy friend QR surface was removed during the profile consolidation work. If QR or link-based invites return, they should use rotating or expiring invite tokens rather than exposing persistent account UUIDs.
 
 **R12. Firebase Firestore security rules unverified**
 The audit cannot verify server-side Firestore security rules. Ensure that:

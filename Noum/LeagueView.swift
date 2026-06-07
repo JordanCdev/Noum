@@ -8,6 +8,7 @@ struct LeagueView: View {
     @StateObject private var ratingStore = RatingStore.shared
     @StateObject private var streakFreeze = StreakFreezeManager.shared
     @StateObject private var authManager = AuthManager.shared
+    @StateObject private var sessionStore = PracticeSessionStore.shared
 
     var body: some View {
         ZStack {
@@ -125,7 +126,7 @@ struct LeagueView: View {
                 Divider().frame(height: 28)
                 metricColumn(label: "Streak", value: streakValue, icon: "flame.fill")
                 Divider().frame(height: 28)
-                metricColumn(label: "This week", value: weeklyDeltaCopy, icon: "chart.line.uptrend.xyaxis")
+                metricColumn(label: "This week", value: weeklyActivityCopy, icon: "chart.line.uptrend.xyaxis")
             }
         }
         .padding(Spacing.md)
@@ -183,11 +184,14 @@ struct LeagueView: View {
         return "\(s)d"
     }
 
-    private var weeklyDeltaCopy: String {
-        let delta = ratingStore.rating.weeklyDelta
-        if delta > 0 { return "+\(delta)" }
-        if delta < 0 { return "\(delta)" }
-        return "—"
+    private var weeklyActivityCopy: String {
+        LeagueActivityPresentation.weeklyActivityValue(
+            sessionCount: LeagueActivityPresentation.weeklySessionCount(
+                from: sessionStore.sessions,
+                now: Date()
+            ),
+            dailyChallengeClaims: league.weeklyDailyChallengeCompletions
+        )
     }
 
     // MARK: - Members

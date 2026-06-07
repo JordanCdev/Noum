@@ -8,7 +8,9 @@ import SwiftUI
 //   • SF Symbol + title + subtitle (compact, two-line max).
 //   • State indicator on the right: "Claim" (when readyToClaim), check (when
 //     claimed), or muted state (still locked / not yet satisfied).
-//   • Tapping a "Claim" row fires the claim() and shows the XP gain.
+//   • Tapping a "Claim" row fires the claim() and shows a restrained
+//     confirmation. XP is still credited by `DailyChallengesManager`, but
+//     Home copy frames the move, not the currency.
 //
 // Visual rhythm: brand-blue ready state, brand-gray locked, soft-fade past
 // 9pm to communicate "today is winding down" without scolding the user.
@@ -162,7 +164,7 @@ struct DailyChallengeTile: View {
 
     /// State enum derived from the manager — no new state storage, just
     /// a single switch the copy helper can read.
-    fileprivate enum HeadlineState {
+    enum HeadlineState {
         case cold              // no rep today, nothing ready
         case inProgress        // at least one rep, no challenge ready yet
         case readyToClaim      // at least one challenge satisfied, not claimed
@@ -181,7 +183,7 @@ struct DailyChallengeTile: View {
     /// Pure copy helper — easy to test, easy to localize later. State
     /// drives shape; the anchor challenge contributes the concrete noun
     /// (the 3-second pause, the zero-filler rep, etc.).
-    fileprivate static func headlineCopy(
+    static func headlineCopy(
         state: HeadlineState,
         anchor: DailyChallengeKind?,
         repsToday: Int,
@@ -198,7 +200,7 @@ struct DailyChallengeTile: View {
             guard let kind = anchor else {
                 return "Today's mission is logged. Tap to claim."
             }
-            return "\(kind.claimedNoun.capitalizedFirst) logged. Tap to claim — +\(kind.xpReward) XP."
+            return "\(kind.claimedNoun.capitalizedFirst) logged. Tap to claim."
         case .claimed:
             let extra = max(0, repsToday - goalReps)
             if let kind = anchor, extra > 0 {
@@ -430,11 +432,11 @@ struct DailyChallengeTile: View {
                     .foregroundStyle(AppColor.brandBlue)
                     .transition(.scale(scale: 0.6).combined(with: .opacity))
             } else if ready {
-                ClaimReadyPill(kind: kind, reduceMotion: reduceMotion)
+                ClaimReadyPill(reduceMotion: reduceMotion)
                     .transition(.opacity)
             } else {
-                Text("+\(kind.xpReward) XP")
-                    .font(Typography.micro.weight(.semibold))
+                Image(systemName: "circle")
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.tertiary)
                     .transition(.opacity)
             }
@@ -451,9 +453,13 @@ struct DailyChallengeTile: View {
     }
 
     private func rowAccessibilityLabel(kind: DailyChallengeKind, claimed: Bool, ready: Bool) -> String {
+        Self.rowAccessibilityLabel(kind: kind, claimed: claimed, ready: ready)
+    }
+
+    static func rowAccessibilityLabel(kind: DailyChallengeKind, claimed: Bool, ready: Bool) -> String {
         if claimed { return "\(kind.title). Claimed." }
-        if ready { return "\(kind.title). Ready to claim, \(kind.xpReward) XP." }
-        return "\(kind.title). \(kind.subtitle) Worth \(kind.xpReward) XP."
+        if ready { return "\(kind.title). Ready to claim." }
+        return "\(kind.title). \(kind.subtitle)"
     }
 
     // MARK: - Background
@@ -477,7 +483,7 @@ struct DailyChallengeTile: View {
         HStack(spacing: 8) {
             Image(systemName: "sparkles")
                 .font(.system(size: 13, weight: .bold))
-            Text("+\(kind.xpReward) XP — \(kind.title)")
+            Text("Claimed — \(kind.title)")
                 .font(Typography.caption.weight(.bold))
         }
         .foregroundStyle(.white)
@@ -499,14 +505,13 @@ struct DailyChallengeTile: View {
 
 @available(iOS 17.0, macOS 12.0, *)
 private struct ClaimReadyPill: View {
-    let kind: DailyChallengeKind
     let reduceMotion: Bool
 
     @State private var pulsing = false
 
     var body: some View {
         HStack(spacing: 4) {
-            Text("Claim +\(kind.xpReward)")
+            Text("Claim")
                 .font(Typography.micro.weight(.bold))
             Image(systemName: "arrow.right")
                 .font(.system(size: 10, weight: .heavy))

@@ -40,6 +40,7 @@ struct SuddenDeathPracticeView: View {
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var baselineStore = BaselineStore.shared
+    @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var engine = PressureTimerEngine()
     // M21: Session Intent prompt — sheet-driven, one-shot per
     // entry-to-setup. Same wiring as TimedPracticeView so the chip
@@ -215,10 +216,15 @@ struct SuddenDeathPracticeView: View {
             // and starts the automatic pressure ramp.
             if engine.phase == .setup, PracticeModeQuickStart.consume(for: .suddenDeath) {
                 beginSession()
-            } else if engine.phase == .setup, !intentPromptShownThisVisit,
-                      sessionIntentStore.pendingIntent == nil {
-                // M21: surface the focus prompt at most once per visit.
-                // Skipped on Quick Start (the user already committed).
+            } else if engine.phase == .setup,
+                      SessionIntentPromptPolicy.shouldPresent(
+                        completedSessionCount: sessionStore.sessions.count,
+                        hasPendingIntent: sessionIntentStore.pendingIntent != nil,
+                        hasPromptedThisVisit: intentPromptShownThisVisit
+                      ) {
+                // M21/MRevamp: surface the focus prompt only after Noum
+                // has enough completed reps to make the question useful.
+                // Quick Start remains a direct launch.
                 intentPromptShownThisVisit = true
                 showIntentPrompt = true
             }

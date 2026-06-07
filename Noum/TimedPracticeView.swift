@@ -560,6 +560,7 @@ struct TimedPracticeView: View {
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var baselineStore = BaselineStore.shared
+    @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var premium = PremiumManager.shared
     // M21: Session Intent prompt — sheet-driven, one-shot per
     // entry-to-setup. `forwardPlanStore` + `sessionIntentStore` are
@@ -791,13 +792,16 @@ struct TimedPracticeView: View {
             // not their preferences.
             if phase == .setup, PracticeModeQuickStart.consume(for: .timed) {
                 beginSession()
-            } else if phase == .setup, !intentPromptShownThisVisit,
-                      sessionIntentStore.pendingIntent == nil {
-                // M21: surface the focus prompt at most once per visit.
-                // Skipped on Quick Start (the user already committed to
-                // launching) and on returns from a started rep (the
-                // pending intent has already been consumed or the user
-                // already declined this visit).
+            } else if phase == .setup,
+                      SessionIntentPromptPolicy.shouldPresent(
+                        completedSessionCount: sessionStore.sessions.count,
+                        hasPendingIntent: sessionIntentStore.pendingIntent != nil,
+                        hasPromptedThisVisit: intentPromptShownThisVisit
+                      ) {
+                // M21/MRevamp: surface the focus prompt only after Noum
+                // has enough completed reps to make a pre-rep focus feel
+                // earned. Quick Start stays one tap, and returning from a
+                // declined prompt stays quiet for this visit.
                 intentPromptShownThisVisit = true
                 showIntentPrompt = true
             }

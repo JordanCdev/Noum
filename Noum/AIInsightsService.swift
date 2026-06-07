@@ -45,15 +45,6 @@ struct AIInsight: Codable, Equatable {
     let isAIBacked: Bool          // false ⇒ template fallback was used
     let generatedAt: Date
 
-    static let placeholder = AIInsight(
-        kind: .weeklyNarrative,
-        headline: "Your week starts here",
-        body: "Run a few sessions to give the coach something to say.",
-        evidence: [],
-        action: nil,
-        isAIBacked: false,
-        generatedAt: Date()
-    )
 }
 
 // MARK: - Inputs

@@ -402,7 +402,7 @@ private extension BackendSyncManager {
             )
             for document in documents {
                 let data = document.data()
-                let creatorIDString = data["creatorID"] as? String
+                let creatorIDString = data["creatorAccountID"] as? String ?? data["creatorID"] as? String
                 let isCreator = creatorIDString == accountID
                 let nullifiedFields: [String: Any] = isCreator
                     ? [
@@ -577,7 +577,7 @@ private extension BackendSyncManager {
         do {
             var data = try encodeDocument(challenge)
             // Index field so query-by-participant works without a composite index.
-            data["participantIDs"] = [challenge.creatorID.uuidString, challenge.opponentID.uuidString]
+            data["participantIDs"] = challenge.participantIDs
             try await setDocument(
                 Firestore.firestore().collection("challenges").document(challenge.id.uuidString),
                 data: data,

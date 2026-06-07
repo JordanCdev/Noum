@@ -239,11 +239,11 @@ Anyone who picks up the phone can read this. Coaching profiles may contain sensi
 | File | Lines | Change |
 |------|-------|--------|
 | `FriendsManager.swift` | 11 | Remove `phoneNumber` property |
-| `SocialProfileView.swift` | ~835–838, ~1374–1396 | Stop passing phone numbers from CNContact to NoumFriend |
+| Legacy contact import surface | Removed | Do not restore CNContact phone-number ingestion without an explicit privacy design |
 
 #### Implementation Steps
 1. Remove `var phoneNumber: String?` from `NoumFriend` struct (line 11)
-2. In `SocialProfileView.swift`, update the contact-to-friend mapping to not include phone numbers
+2. Keep friend import flows from collecting phone numbers unless contact matching is redesigned with explicit consent and purpose
 3. Existing stored data: add a migration or just ignore (Codable will decode old data without the field thanks to the optional)
 
 #### Claude Can Help With

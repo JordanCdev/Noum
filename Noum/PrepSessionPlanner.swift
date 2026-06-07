@@ -5,7 +5,7 @@ import Foundation
 // A real coach's highest-value session is the one right before the
 // Big Moment — a mock interview, a presentation rehearsal, a
 // difficult-conversation simulation. Noum has the practice modes
-// (Timed, Sudden Death, IM); M23 frames a session as a rehearsal
+// (Timed, Pressure Drill, IM); M23 frames a session as a rehearsal
 // for a specific upcoming event.
 //
 // The planner is a pure-function decision maker. Given a BigMoment +
@@ -141,7 +141,7 @@ enum PrepSessionPlanner {
             ),
             PrepRepStep(
                 mode: .suddenDeath,
-                displayLabel: "Pressure round · Sudden Death",
+                displayLabel: "Pressure round · Pressure Drill",
                 rationale: "Composure under fire. One filler ends the round — exactly the stakes you'll feel."
             ),
             PrepRepStep(

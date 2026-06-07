@@ -117,3 +117,23 @@ enum SessionIntentEngine {
         return out
     }
 }
+
+// MARK: - Session Intent Prompt Policy
+//
+// The intent sheet is useful once Noum has a small amount of memory.
+// Before that it competes with the first-value loop by asking the user
+// to configure a rep before the app has proven it can coach one.
+enum SessionIntentPromptPolicy {
+    static let minimumCompletedSessions = 2
+
+    static func shouldPresent(
+        completedSessionCount: Int,
+        hasPendingIntent: Bool,
+        hasPromptedThisVisit: Bool
+    ) -> Bool {
+        guard completedSessionCount >= minimumCompletedSessions else { return false }
+        guard !hasPendingIntent else { return false }
+        guard !hasPromptedThisVisit else { return false }
+        return true
+    }
+}

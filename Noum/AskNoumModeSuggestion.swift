@@ -10,7 +10,7 @@ import Foundation
 //   • a small set of high-confidence delivery-skill phrases map to their
 //     natural mode (Timed, where you'd work pitch/variety/pacing),
 //   • anything ambiguous returns nil → NO card. Better none than a wrong
-//     launch (a card that says "Sudden Death" when the coach meant a calm
+//     launch (a card that says "Pressure Drill" when the coach meant a calm
 //     conversation rep erodes trust fast).
 // Pure + fully unit-testable; no SwiftUI, no model call.
 enum AskNoumModeSuggestion {
@@ -26,7 +26,7 @@ enum AskNoumModeSuggestion {
             || t.contains("filler-count drill") || t.contains("filler count drill") {
             return .ahCounterPractice
         }
-        if t.contains("sudden death") {
+        if t.contains("sudden death") || t.contains("pressure drill") {
             return .suddenDeathPractice
         }
         if t.contains("difficult conversation") || t.contains("im mode")
@@ -55,7 +55,7 @@ enum AskNoumModeSuggestion {
     static func label(for destination: AppDestination) -> String {
         switch destination {
         case .timedPractice:       return "Start a Timed rep"
-        case .suddenDeathPractice: return "Try a Sudden Death round"
+        case .suddenDeathPractice: return "Try a Pressure Drill round"
         case .ahCounterPractice:   return "Start an Ah-Counter round"
         case .imPractice:          return "Open a conversation rep"
         default:                   return "Start this exercise"

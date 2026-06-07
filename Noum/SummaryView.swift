@@ -116,7 +116,6 @@ struct SummaryView: View {
     @State private var miniDrillAwardedXP: Int = 0
     @State private var miniDrillXPBreakdown: DrillXPEngine.Breakdown?
     @State private var showSecondaryDetails = false
-    @State private var nextAction: NextAction?
     @State private var coachNoteRevealed = false
     @State private var enhancedCoachNote: CoachNote?
     @State private var eloquenceFindings: [EloquenceFinding] = []
@@ -259,6 +258,46 @@ struct SummaryView: View {
             drillHistory: DrillHistoryStore.shared.entries,
             styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title,
             promptRelevance: promptRelevanceRead
+        )
+    }
+
+    private var currentPostRepCoachNote: PostRepCoachNote? {
+        guard let sessionID = sessionStore.sessions.first?.id else { return nil }
+        return postRepCoachNoteStore.note(for: sessionID)
+    }
+
+    private var postRepWinBullets: [WhatYouDidWellCard.Bullet] {
+        WhatYouDidWellCard.computeBullets(
+            coachNote: coachNote,
+            feedbackCategories: feedbackCategories,
+            eloquenceFindings: eloquenceFindings,
+            aiFeedback: aiFeedback,
+            isMinimalEffort: isMinimalEffort
+        )
+    }
+
+    private var postRepFixBullets: [WhatToImproveCard.Bullet] {
+        WhatToImproveCard.computeBullets(
+            coachNote: coachNote,
+            feedbackCategories: feedbackCategories,
+            aiFeedback: aiFeedback,
+            transcriptText: transcriptText,
+            effectiveFillerCount: effectiveFillerCount,
+            effectiveDuration: effectiveDuration,
+            transcriptWordCount: transcriptWordCount,
+            isMinimalEffort: isMinimalEffort,
+            customFillerWords: ClutchWordStore.shared.customFillerWords
+        )
+    }
+
+    private var postRepVerdictContent: PostRepVerdictContent {
+        PostRepVerdictContent.make(
+            note: currentPostRepCoachNote,
+            coachNote: coachNote,
+            winBullets: postRepWinBullets,
+            fixBullets: postRepFixBullets,
+            proof: personalBestProof,
+            isMinimalEffort: isMinimalEffort
         )
     }
 
@@ -611,7 +650,6 @@ struct SummaryView: View {
                                 headline: headline,
                                 effectiveFillerCount: effectiveFillerCount,
                                 effectiveDuration: effectiveDuration,
-                                xpEarned: xpEarned,
                                 imConversationDetails: imConversationDetails
                             )
                             IMReadCard(
@@ -692,61 +730,23 @@ struct SummaryView: View {
                                     fillerDelta: fillerDelta,
                                     effectiveDuration: effectiveDuration,
                                     durationAssessment: durationAssessment,
-                                    xpEarned: xpEarned,
                                     celebrationVisible: celebrationVisible,
                                     toneDrillResolvedRibbon: heroToneDrillResolvedRibbon
                                 )
                             }
-                            // M24 Track 1 — the coach turning toward the user
-                            // and saying "here's what I just saw" in their
-                            // chosen voice. Lands between the score (what
-                            // happened) and the wins/improvements (the
-                            // breakdown). Renders only when a note exists
-                            // for the most-recent session — `PracticeSession-
-                            // Finalizer` writes one immediately so the card
-                            // is populated on the first paint cycle.
-                            if let sessionID = sessionStore.sessions.first?.id,
-                               let coachNote = postRepCoachNoteStore.note(for: sessionID) {
-                                CoachReadCard(
-                                    note: coachNote,
-                                    session: sessionStore.sessions.first,
-                                    recentSessions: Array(sessionStore.sessions.prefix(5))
-                                )
-                            }
-                            // Observational hero block — replaces the
-                            // previous 5-card stack (SkillLevelUp loop +
-                            // AISessionDebrief + CoachNote + YourNextMove).
-                            // SkillLevelUps now play as a pre-summary
-                            // celebration (see PreSummaryCelebration).
-                            // AISessionDebrief + CoachNoteCard remain
-                            // reachable inside the Details disclosure.
-                            WhatYouDidWellCard(
-                                coachNote: coachNote,
-                                feedbackCategories: feedbackCategories,
-                                eloquenceFindings: eloquenceFindings,
-                                aiFeedback: aiFeedback,
-                                isMinimalEffort: isMinimalEffort,
-                                intentFocus: sessionStore.sessions.first?.intentFocus,
-                                proof: personalBestProof
-                            )
-                            WhatToImproveCard(
-                                coachNote: coachNote,
-                                feedbackCategories: feedbackCategories,
-                                aiFeedback: aiFeedback,
-                                transcriptText: transcriptText,
-                                effectiveFillerCount: effectiveFillerCount,
-                                effectiveDuration: effectiveDuration,
-                                transcriptWordCount: transcriptWordCount,
-                                isMinimalEffort: isMinimalEffort,
-                                intentFocus: sessionStore.sessions.first?.intentFocus
-                            )
-                            YourNextMoveCard(
+                            // Iteration 1 value overhaul: one evidenced
+                            // verdict card replaces the repeated CoachRead
+                            // + Win + Fix + NextMove stack. The underlying
+                            // selectors stay the same; only the hierarchy
+                            // changes so the user sees read, proof, fix,
+                            // and action without expanding anything.
+                            PostRepVerdictCard(
+                                content: postRepVerdictContent,
+                                scoreValue: scoreValue,
+                                scoreAccent: scoreAccent,
                                 drill: drillRecommendationV2,
                                 legacyDrill: drillRecommendation,
-                                aiFeedback: aiFeedback,
-                                nextAction: nextAction,
                                 onStartMiniDrill: { drill in
-                                    print("[QuickDrill] Trigger: \(drill.title) | skill=\(drill.skillArea) | format=\(drill.format)")
                                     activeMiniDrill = drill
                                 },
                                 onStartDrill: onStartDrill
@@ -1043,9 +1043,6 @@ struct SummaryView: View {
             .padding(Spacing.lg)
             .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
             .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
-
-            // XP Progress
-            xpProgressCard
 
             // Quiet "what to do next session" hint — only shown when the
             // recommended mode is different from the one just finished and
@@ -1481,7 +1478,7 @@ struct SummaryView: View {
         }
 
         // Rushed pace
-        if wpm > 160 {
+        if wpm > Int(ConversationalPaceBand.maxWPM) {
             return FreeInsight(
                 icon: "hare.fill",
                 tint: .orange,
@@ -1501,7 +1498,7 @@ struct SummaryView: View {
         }
 
         // Very slow pace
-        if wpm > 0 && wpm < 100 && dur >= 15 {
+        if wpm > 0 && wpm < Int(ConversationalPaceBand.minWPM) && dur >= 15 {
             return FreeInsight(
                 icon: "tortoise.fill",
                 tint: .blue,
@@ -1997,7 +1994,6 @@ struct SummaryView: View {
                         sessionComparisonCard(comparison)
                     }
 
-                    xpProgressCard
                     retentionCard
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -2101,32 +2097,6 @@ struct SummaryView: View {
             voice: coachingProfileStore.profile?.speakingStyleGoal,
             reflectionPattern: coachMemoryStore.currentMemory?.reflectionPattern
         )
-    }
-
-    // MARK: - XP Progress Card
-
-    private var xpProgressCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(currentLevel)
-                Spacer()
-                Text(nextLevel)
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-
-            ShimmerProgressBar(progress: progress, tint: AppColor.brandBlue)
-
-            HStack {
-                Text("\(displayedXP) XP")
-                Spacer()
-                Text("\(xpToNext) to level up")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-        .padding(16)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
     // MARK: - Retention Card
@@ -2809,7 +2779,6 @@ struct SummaryView: View {
 
         progressionDeltas = result.achievementDeltas
         progressionNewUnlocks = result.newUnlocks
-        nextAction = result.nextAction
         enhancedCoachNote = result.coachNote
         eloquenceFindings = result.eloquenceFindings
 

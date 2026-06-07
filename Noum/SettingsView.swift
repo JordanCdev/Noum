@@ -116,9 +116,6 @@ struct SettingsView: View {
 
                     clusterHeader("Account")
                     section(label: "Subscription") { subscriptionCard }
-                    if aiUsageCardIsVisible {
-                        section(label: "AI usage") { aiUsageCard }
-                    }
                     section(label: "Privacy & data") { privacyCard }
                     section(label: "Sign-in") { accountCard }
 
@@ -271,6 +268,9 @@ struct SettingsView: View {
 
             if advancedExpanded {
                 section(label: "Home reveal") { advancedHomeCard }
+                if aiUsageCardIsVisible {
+                    section(label: "AI usage") { aiUsageCard }
+                }
 
                 if authManager.isDeveloper {
                     section(label: "Developer tools") { transcriptionProviderCard }
@@ -284,10 +284,10 @@ struct SettingsView: View {
     private var advancedHomeCard: some View {
         cardContainer(spacing: Spacing.sm) {
             SettingsToggleRow(
-                title: "Show every home card",
-                subtitle: "Skip the gradual reveal. The home shows the full stack from rep 1, before there's signal to fill it.",
+                title: "Show advanced home cards",
+                subtitle: "Skip the gradual reveal for active optional cards. Retired dashboard cards stay off Home.",
                 isOn: $showAllHomeCards,
-                accessibilityHint: "Turns off the signal-gated home and shows every card immediately."
+                accessibilityHint: "Shows active optional home cards immediately while keeping retired dashboard cards hidden."
             )
         }
     }
@@ -439,11 +439,6 @@ struct SettingsView: View {
 
     private var practiceCard: some View {
         cardContainer(spacing: Spacing.md) {
-            Text("Choose the default difficulty for Timed practice. Voice cues and live filler highlighting follow what you set here.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
             VStack(spacing: Spacing.xs) {
                 ForEach(TimedPracticeDifficulty.allCases) { difficulty in
                     difficultyOption(difficulty)
@@ -485,11 +480,6 @@ struct SettingsView: View {
 
     private var dailyGoalCard: some View {
         cardContainer(spacing: Spacing.sm) {
-            Text("How many reps count as today's done. One is enough — picking more is a stretch goal.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
             HStack(spacing: Spacing.xs) {
                 ForEach(dailyGoal.minGoalReps...dailyGoal.maxGoalReps, id: \.self) { value in
                     goalChip(value)
@@ -705,21 +695,6 @@ struct SettingsView: View {
                     }
                 ),
                 accessibilityHint: "A short weekly summary every Sunday."
-            )
-
-            Divider()
-
-            // Legacy follow-up (kept for backward compatibility)
-            SettingsToggleRow(
-                title: "Post-session follow-up",
-                subtitle: "A short reminder tied to your last rep, 18 hours after a session.",
-                isOn: Binding(
-                    get: { notificationManager.isEnabled },
-                    set: { newValue in
-                        Task { await notificationManager.updateEnabled(newValue) }
-                    }
-                ),
-                accessibilityHint: "Sends a follow-up reminder eighteen hours after each session."
             )
 
             SettingsStatusRow(

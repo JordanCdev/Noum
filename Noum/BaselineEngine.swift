@@ -1200,7 +1200,7 @@ enum BaselineEngine {
         if baseline.fillerRate.isReliable && baseline.fillerRate.value < 1.5 {
             strengths.append("Filler control")
         }
-        if baseline.pace.isReliable && baseline.pace.value >= 110 && baseline.pace.value <= 150 {
+        if baseline.pace.isReliable && ConversationalPaceBand.contains(baseline.pace.value) {
             strengths.append("Pace control")
         }
         if baseline.hedgingRate.isReliable && baseline.hedgingRate.value < 1.0 {

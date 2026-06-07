@@ -200,16 +200,16 @@ final class PathProgressManager: ObservableObject {
 
     private func makeInput() -> PathProgressInput {
         let lessonStore = LessonStore.shared
-        let totalCrowns = lessonStore.totalCrowns
-        let maxCrown = lessonStore.progress.values.map(\.crownLevel).max() ?? 0
+        let totalPasses = lessonStore.totalPracticePasses
+        let maxPassCount = lessonStore.progress.values.map(\.practicePassCount).max() ?? 0
         return PathProgressInput(
             sessions: PracticeSessionStore.shared.sessions,
             currentStreak: StreakFreezeManager.shared.currentStreak,
             baseline: BaselineStore.shared.baseline,
             rating: RatingStore.shared.rating,
             modeMastery: ModeMasteryStore.shared.snapshots,
-            totalLessonCrowns: totalCrowns,
-            maxLessonCrown: maxCrown,
+            totalLessonPasses: totalPasses,
+            maxLessonPassCount: maxPassCount,
             now: Date()
         )
     }
@@ -305,17 +305,17 @@ enum GatingPhrase {
             if remaining == 0 { return readyLine }
             let unit = remaining == 1 ? "clean rep" : "clean reps"
             return "\(remaining) more \(unit) (\(minScore)/10+) in seven days from unlocked."
-        case .totalLessonCrowns(let target):
-            let remaining = max(0, target - input.totalLessonCrowns)
+        case .totalLessonPasses(let target):
+            let remaining = max(0, target - input.totalLessonPasses)
             if remaining == 0 { return readyLine }
-            let unit = remaining == 1 ? "crown" : "crowns"
+            let unit = remaining == 1 ? "practice pass" : "practice passes"
             return "\(remaining) more lesson \(unit) from unlocked."
         case .anyLessonMastered:
-            let crown = input.maxLessonCrown
-            if crown >= 5 { return readyLine }
-            let remaining = 5 - crown
-            let unit = remaining == 1 ? "crown" : "crowns"
-            return "Your highest lesson is at crown \(crown)/5. \(remaining) more \(unit) on it unlocks mastery."
+            let passCount = input.maxLessonPassCount
+            if passCount >= LessonProgressPresentation.masteryPassCap { return readyLine }
+            let remaining = LessonProgressPresentation.masteryPassCap - passCount
+            let unit = remaining == 1 ? "practice pass" : "practice passes"
+            return "Your highest lesson is at \(passCount)/\(LessonProgressPresentation.masteryPassCap) passes. \(remaining) more \(unit) on it unlocks mastery."
         case .heldSilentPause(let target):
             let bestSilent = input.sessions
                 .compactMap { s -> Double? in

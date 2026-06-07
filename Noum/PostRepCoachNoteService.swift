@@ -536,7 +536,7 @@ actor PostRepCoachNoteService {
     ///
     /// 1. Filler count vs baseline → "Three fillers — half your usual."
     /// 2. Score band → "Clean read — that was an 8."
-    /// 3. Pace outside 100-160 → "Pace ran 180 WPM — leaner is louder."
+    /// 3. Pace outside the shared conversational band → "Pace ran 180 WPM — leaner is louder."
     /// 4. Duration < 20s → "Short rep, but the structure was clean."
     /// 5. Fallback → "Steady delivery. The fundamentals held."
     ///

@@ -277,7 +277,7 @@ enum VerdictEngine {
         if fillerCount == 0 && !strengths.contains(where: { $0.contains("filler") }) {
             strengths.append("Zero filler words — clean delivery.")
         }
-        if wpm >= 110 && wpm <= 150 && !strengths.contains(where: { $0.contains("pace") }) {
+        if ConversationalPaceBand.contains(wpm) && !strengths.contains(where: { $0.contains("pace") }) {
             strengths.append("Natural, well-controlled pace.")
         }
 
@@ -369,13 +369,13 @@ enum VerdictEngine {
     }
 
     private static func paceLeverage(wpm: Double, sensitivity: FeedbackSensitivity) -> String {
-        if wpm > 170 {
+        if wpm > ConversationalPaceBand.maxWPM + 20 {
             return "Your pace hit \(Int(wpm)) WPM — noticeably fast. Speed can undermine clarity even when content is strong."
-        } else if wpm > 150 {
+        } else if wpm > ConversationalPaceBand.maxWPM {
             return "Your pace was a bit quick at \(Int(wpm)) WPM. Slowing your start can bring the whole answer into a more natural range."
-        } else if wpm < 90 {
+        } else if wpm < ConversationalPaceBand.minWPM - 20 {
             return "Your pace was \(Int(wpm)) WPM — quite measured. A slightly quicker conversational pace can help your delivery feel more natural."
-        } else if wpm < 110 {
+        } else if wpm < ConversationalPaceBand.minWPM {
             return "Your pace was a touch slow at \(Int(wpm)) WPM. Committing to each sentence before starting it can help maintain flow."
         }
         return "Your pace could be more consistent. Aim for a natural conversational rhythm."
@@ -764,9 +764,9 @@ enum VerdictEngine {
             return "Your close trailed off rather than ending with conviction. The last sentence is what listeners walk away repeating — make it land."
 
         case .paceControl:
-            if wpm > 160 {
+            if wpm > ConversationalPaceBand.maxWPM {
                 return "Your pace hit \(Int(wpm)) WPM — faster than conversational. Slowing down makes you sound more in control."
-            } else if wpm < 100 && duration >= 15 {
+            } else if wpm < ConversationalPaceBand.minWPM && duration >= 15 {
                 return "Your pace was \(Int(wpm)) WPM — hesitant delivery can undermine strong content."
             }
             return "Your pace wasn't in the natural conversational range. Steady rhythm signals confidence."
@@ -975,8 +975,8 @@ enum DrillEngineV2 {
     ) -> SkillArea? {
         if fillerCount >= 5 { return .fillerReduction }
         if duration < 15 { return .answerDevelopment }
-        if wpm > 160 { return .paceControl }
-        if wpm > 0 && wpm < 100 && duration >= 15 { return .paceControl }
+        if wpm > ConversationalPaceBand.maxWPM { return .paceControl }
+        if wpm > 0 && wpm < ConversationalPaceBand.minWPM && duration >= 15 { return .paceControl }
         if categoryRatings["Opening"] == "Could improve" { return .openingStrength }
         if categoryRatings["Structure"] == "Could improve" { return .structure }
         if categoryRatings["Close"] == "Could improve" { return .closingStrength }
@@ -996,12 +996,12 @@ enum DrillEngineV2 {
     ) -> SkillArea {
         if fillerCount >= 5 { return .fillerReduction }
         if duration < 15 { return .answerDevelopment }
-        if wpm > 160 { return .paceControl }
+        if wpm > ConversationalPaceBand.maxWPM { return .paceControl }
         if fillerCount >= 2 { return .fillerReduction }
         if categoryRatings["Opening"] == "Could improve" { return .openingStrength }
         if categoryRatings["Structure"] == "Could improve" { return .structure }
         if categoryRatings["Close"] == "Could improve" { return .closingStrength }
-        if wpm > 0 && wpm < 100 && duration >= 15 { return .paceControl }
+        if wpm > 0 && wpm < ConversationalPaceBand.minWPM && duration >= 15 { return .paceControl }
         if categoryRatings["Depth"] == "Could improve" { return .answerDevelopment }
         // No clear session signal. Prefer the user's stated voice goal over the
         // generic .confidence / .structure defaults — keeps day-one users with

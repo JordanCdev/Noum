@@ -3,9 +3,8 @@ import SwiftUI
 
 // MARK: - Weak Areas Card
 //
-// "Mistakes to fix" — Duolingo-style review surface that lifts the user's
-// top blockers into one tappable card with a one-tap CTA into a drill that
-// targets the weakness.
+// Targeted-practice surface that lifts the user's top blockers into one
+// tappable card with a one-tap CTA into a drill that targets the signal.
 //
 // Inputs come from already-computed sources:
 //  - `BaselineEngine.persistentBlockers` — the durable weaknesses
@@ -14,8 +13,14 @@ import SwiftUI
 //
 // No new tracking. No new state owners.
 
+enum TargetedPracticeCopy {
+    static let header = "Targeted practice"
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct WeakAreasCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @ObservedObject var sessionStore: PracticeSessionStore
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var clutchWordStore = ClutchWordStore.shared
@@ -23,6 +28,16 @@ struct WeakAreasCard: View {
     let onStartDrill: (DrillTarget) -> Void
 
     @State private var hasAppeared = false
+
+    static func hasTargets(
+        baseline: CommunicationBaseline,
+        topClutchWords: [ClutchWordEntry],
+        rating: SpeakingRating
+    ) -> Bool {
+        !baseline.persistentBlockers.isEmpty
+        || topClutchWords.first != nil
+        || rating.weeklyDelta < -10
+    }
 
     enum DrillTarget {
         case fillerControl
@@ -72,7 +87,7 @@ struct WeakAreasCard: View {
         }
     }
 
-    /// One-row weakness model. The view stays simple — derive the rows
+    /// One-row practice-target model. The view stays simple — derive the rows
     /// from the existing engines, render, hand back a target on tap.
     private struct WeakRow: Identifiable {
         let id = UUID()
@@ -104,7 +119,7 @@ struct WeakAreasCard: View {
             }
             out.append(WeakRow(
                 title: blocker.capitalized,
-                detail: "Comes up in your last few reps. Drilling it directly is the fastest path.",
+                detail: "Shows up in recent reps. A direct drill gives the signal a cleaner next read.",
                 target: target
             ))
         }
@@ -122,7 +137,7 @@ struct WeakAreasCard: View {
         if ratingStore.rating.weeklyDelta < -10 {
             out.append(WeakRow(
                 title: "Pressure caught you this week",
-                detail: "Rating dipped \(ratingStore.rating.weeklyDelta) points. The fix is a calmer Sudden Death rep, not more reps.",
+                detail: "Rating dipped \(ratingStore.rating.weeklyDelta) points. A calmer Sudden Death rep is the better next target.",
                 target: .pressure
             ))
         }
@@ -151,7 +166,12 @@ struct WeakAreasCard: View {
             .scaleEffect(hasAppeared ? 1 : 0.97)
             .opacity(hasAppeared ? 1 : 0)
             .onAppear {
-                withAnimation(.standardSpring.delay(0.05)) { hasAppeared = true }
+                guard !hasAppeared else { return }
+                if reduceMotion {
+                    hasAppeared = true
+                } else {
+                    withAnimation(.standardSpring.delay(0.05)) { hasAppeared = true }
+                }
             }
         }
     }
@@ -161,7 +181,7 @@ struct WeakAreasCard: View {
             Image(systemName: "scope")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(AppColor.brandBlue)
-            Text("Mistakes to fix")
+            Text(TargetedPracticeCopy.header)
                 .font(Typography.micro)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
