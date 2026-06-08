@@ -154,7 +154,7 @@ struct AchievementsTreeView: View {
                     .font(Typography.cardTitle.monospacedDigit())
                     .foregroundStyle(AppColor.textPrimary)
                 Text("of \(totalCount)")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(Typography.captionSmall)
                     .foregroundStyle(AppColor.textSecondary)
             }
         }

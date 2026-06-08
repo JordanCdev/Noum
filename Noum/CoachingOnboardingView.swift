@@ -192,17 +192,17 @@ struct CoachingOnboardingView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Coaching Profile")
-                        .font(.caption.weight(.bold))
+                        .font(Typography.caption)
                         .foregroundStyle(Color.white.opacity(0.74))
                         .textCase(.uppercase)
 
                     Text("Build a coaching profile that actually changes how you sound.")
-                        .font(.system(size: 31, weight: .bold, design: .rounded))
+                        .font(Typography.figtree(size: 31, weight: .bold, relativeTo: .title))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text("Noum will shape drills, prompts, and reminders around what matters in real conversations.")
-                        .font(.headline.weight(.medium))
+                        .font(Typography.headline.weight(.medium))
                         .foregroundStyle(Color.white.opacity(0.84))
                         .fixedSize(horizontal: false, vertical: true)
                 }

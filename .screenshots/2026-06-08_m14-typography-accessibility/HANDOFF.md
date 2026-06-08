@@ -17,6 +17,7 @@ capturing PNGs.
 - `Noum/PathJourneyView.swift` / `Noum/ModeMasteryViews.swift` — journey/mode-mastery headings, pill values, and small mastery badges moved onto `Typography`.
 - `Noum/AhCounterView.swift` / `Noum/PaceTrainingView.swift` / `Noum/CutTheCrutchView.swift` — static mode headers and result copy moved onto `Typography`; live counters/timers intentionally left fixed for separate layout review.
 - `Noum/MiniDrillResultView.swift` / `Noum/PathNodeCelebration.swift` / `Noum/PremiumManager.swift` — result/completion/Pro upsell copy moved onto `Typography`.
+- `Noum/SpeakingRankView.swift` / `Noum/TierPromotionOverlay.swift` / `Noum/SkillProgressView.swift` / `Noum/FeedbackViews.swift` / `Noum/CoachingOnboardingView.swift` / `Noum/AchievementsTreeView.swift` — static profile, progress, onboarding, and review-stat labels moved onto `Typography`.
 - `docs/CURRENT_STATE.md` — Dynamic Type status corrected so remaining `.system(size:)` call sites are not incorrectly marked complete/intentional.
 
 ## Screenshots
@@ -46,6 +47,7 @@ called complete.
 - Path Journey and Mode Mastery cards.
 - Ah-Counter, Pace Training, and Cut the Crutch setup/result screens.
 - Mini-drill result, path-node celebration, and Pro upsell.
+- Speaking Rank/Profile, tier promotion overlay, skill-progress badges, review-stat badges, Coaching Profile onboarding, and Achievements Tree count label.
 
 ## For next run
 - **If cloud**: continue code-only typography audit in non-modal surfaces.

@@ -78,7 +78,7 @@ struct TierPromotionOverlay: View {
                         .textCase(.uppercase)
                         .tracking(1.0)
                     Text(promotion.newTier.title.uppercased() + " LEAGUE")
-                        .font(.system(size: 36, weight: .black, design: .rounded))
+                        .font(Typography.figtree(size: 36, weight: .black, relativeTo: .largeTitle))
                         .foregroundStyle(.white)
                         .kerning(1.4)
                     Text(coachLine)

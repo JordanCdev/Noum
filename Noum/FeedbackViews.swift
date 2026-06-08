@@ -620,10 +620,10 @@ struct FeedbackReviewScreen: View {
     private func reviewStatBadge(value: String, label: String, tint: Color) -> some View {
         VStack(spacing: 3) {
             Text(value)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(Typography.cardLabel)
                 .foregroundStyle(tint)
             Text(label)
-                .font(.system(size: 10, weight: .medium))
+                .font(Typography.manrope(size: 10, weight: .medium, relativeTo: .caption2))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)

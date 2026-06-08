@@ -47,7 +47,7 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
-2026-06-08 ~17:14 continuation (local Codex run, real toolchain):
+2026-06-08 ~17:18 continuation (local Codex run, real toolchain):
 
 - Started the next M14 launch-readiness pass after the coach-parity
   scorecard cleanup by tightening Dynamic-Type coverage on high-traffic text
@@ -68,6 +68,11 @@ hearts/lives framing, or "replaces a human coach" claims.
   headline, and the `PremiumManager` Pro upsell title/body. Live
   countdowns, timers, WPM readouts, score digits, and rank numbers remain
   intentionally deferred for separate layout review.
+- Added a fourth safe batch for static profile/progress/onboarding copy:
+  `SpeakingRankView` headings/labels, `TierPromotionOverlay` league title,
+  `SkillProgressView` direction labels, `FeedbackViews` review-stat badges,
+  `CoachingOnboardingView` intro hero copy, and `AchievementsTreeView` count
+  label. Step counters, score values, and icon glyph fonts remain deferred.
 - Left fixed icon glyphs and fixed-format counters alone. The remaining
   `.system(size:)` inventory is mixed, not complete: some entries are
   intentional icons/counters/share-card/decoration; other legacy text in
@@ -81,12 +86,14 @@ hearts/lives framing, or "replaces a human coach" claims.
   and queued login/Home/Settings/Big Moment intake, practice picker, session
   focus, IM setup/ending, Path Journey, and Mode Mastery for visual
   verification. The same handoff now also queues Ah-Counter, Pace Training,
-  Cut the Crutch, mini-drill result, path-node celebration, and the Pro upsell.
+  Cut the Crutch, mini-drill result, path-node celebration, the Pro upsell,
+  Speaking Rank/Profile, tier promotion, skill-progress badges, review-stat
+  badges, Coaching Profile onboarding, and Achievements Tree.
 - Verified with `git diff --check` and `xcodebuild test -scheme Noum
   -destination 'platform=iOS Simulator,name=iPhone 17'
   -only-testing:NoumTests/ScoreCalibrationTests`: `TEST SUCCEEDED`. Result
   bundle:
-  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_17-13-09-+0100.xcresult`.
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_17-16-50-+0100.xcresult`.
 
 Files touched this continuation: `Noum/LoginView.swift`,
 `Noum/HomeCoachCard.swift`, `Noum/SettingsView.swift`, `Noum/SettingsRow.swift`,
@@ -96,6 +103,9 @@ Files touched this continuation: `Noum/LoginView.swift`,
 `Noum/AhCounterView.swift`, `Noum/PaceTrainingView.swift`,
 `Noum/CutTheCrutchView.swift`, `Noum/MiniDrillResultView.swift`,
 `Noum/PathNodeCelebration.swift`, `Noum/PremiumManager.swift`,
+`Noum/SpeakingRankView.swift`, `Noum/TierPromotionOverlay.swift`,
+`Noum/SkillProgressView.swift`, `Noum/FeedbackViews.swift`,
+`Noum/CoachingOnboardingView.swift`, `Noum/AchievementsTreeView.swift`,
 `docs/CURRENT_STATE.md`,
 `.screenshots/2026-06-08_m14-typography-accessibility/HANDOFF.md`,
 `handover.md`.

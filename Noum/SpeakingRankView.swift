@@ -108,12 +108,12 @@ struct SpeakingRankView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(rankTitle)
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .font(Typography.screenTitle)
                     Text(rankDescriptor)
-                        .font(.caption.weight(.semibold))
+                        .font(Typography.caption)
                         .foregroundStyle(rankTint)
                     Text(primaryInsight)
-                        .font(.subheadline)
+                        .font(Typography.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -123,11 +123,11 @@ struct SpeakingRankView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text(nextRankTitle)
-                        .font(.caption.weight(.semibold))
+                        .font(Typography.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
                     Text(levelProgressLabel)
-                        .font(.caption.weight(.semibold))
+                        .font(Typography.caption)
                         .foregroundStyle(AppColor.brandBlue)
                 }
 
@@ -135,10 +135,10 @@ struct SpeakingRankView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("\(profile.xp) XP total")
-                        .font(.subheadline.weight(.bold))
+                        .font(Typography.subheadline.weight(.bold))
                         .foregroundStyle(AppColor.brandBlue)
                     Text("\(ProfileManager.xpNeededToNextLevel(forXP: profile.xp)) XP to level up")
-                        .font(.caption)
+                        .font(Typography.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -154,7 +154,7 @@ struct SpeakingRankView: View {
     private var performancePanel: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Performance Snapshot")
-                .font(.title3.weight(.bold))
+                .font(Typography.cardTitle)
 
             LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
                 statCard(title: "Sessions", value: "\(sessions.count)", tint: .blue)
@@ -170,7 +170,7 @@ struct SpeakingRankView: View {
     private var activeChallengePanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Current Challenge")
-                .font(.title3.weight(.bold))
+                .font(Typography.cardTitle)
 
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "bolt.fill")

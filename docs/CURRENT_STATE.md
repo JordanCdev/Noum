@@ -1163,7 +1163,10 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   IM conversation setup/ending copy, Path Journey headings/pill values, and
   Mode Mastery headers/badges, Ah-Counter / Pace Training / Cut the Crutch
   static mode headers and result copy, mini-drill result copy, Path mission
-  completion headline, and the Pro upsell title/body onto `Typography`.
+  completion headline, the Pro upsell title/body, Speaking Rank profile
+  labels/headings, Tier Promotion league title, Skill Progress direction
+  badges, review-stat badges, Coaching Profile onboarding hero copy, and
+  Achievements Tree count label onto `Typography`.
   Remaining `.system(size:)`
   call sites are mixed: some are intentional fixed-format surfaces
   (bitmap share cards rendered through `ImageRenderer`, compact

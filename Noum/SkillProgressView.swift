@@ -108,7 +108,7 @@ struct SkillProgressView: View {
                     Image(systemName: "arrow.up.right")
                         .font(.system(size: 8, weight: .bold))
                     Text("Improving")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
                 }
                 .foregroundStyle(AppColor.positive)
             case .declining:
@@ -116,7 +116,7 @@ struct SkillProgressView: View {
                     Image(systemName: "arrow.down.right")
                         .font(.system(size: 8, weight: .bold))
                     Text("Slipping")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
                 }
                 .foregroundStyle(AppColor.caution)
             case .newIssue:
@@ -124,7 +124,7 @@ struct SkillProgressView: View {
                     Image(systemName: "exclamationmark")
                         .font(.system(size: 8, weight: .bold))
                     Text("New")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
                 }
                 .foregroundStyle(AppColor.warning)
             case .resolved:
@@ -132,7 +132,7 @@ struct SkillProgressView: View {
                     Image(systemName: "checkmark")
                         .font(.system(size: 8, weight: .bold))
                     Text("Resolved")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
                 }
                 .foregroundStyle(AppColor.positive)
             case .stable:
