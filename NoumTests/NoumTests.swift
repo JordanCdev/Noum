@@ -10319,6 +10319,11 @@ struct HomeBottomShortcutContractTests {
 
 struct HomeAccessibilityModalGateTests {
 
+    @Test func navigationStackUsesHomeIdentifierOnlyAtRoot() {
+        #expect(ContentView.navigationStackAccessibilityIdentifier(pathIsEmpty: true) == "home.screen")
+        #expect(ContentView.navigationStackAccessibilityIdentifier(pathIsEmpty: false) == "app.navigationStack")
+    }
+
     @Test func quietHomeDoesNotSuppressItself() {
         let gate = HomeAccessibilityModalGate()
 

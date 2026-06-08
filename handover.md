@@ -47,6 +47,25 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~15:17 continuation (local Codex run, real toolchain):
+
+- Fixed the stale root accessibility landmark from `ContentView`: the persistent
+  `NavigationStack` now reports `home.screen` only when the path is empty and
+  switches to neutral `app.navigationStack` for pushed destinations. Destination
+  views keep their own existing root identifiers (`practiceModes.screen`,
+  `history.screen`, `profile.screen`, `settings.screen`, etc.), so UI tests and
+  VoiceOver no longer see a Home root on every deep-linked screen.
+- Added a focused Home accessibility contract test to keep the Home identifier
+  root-only.
+- Verified with `git diff --check` and `xcodebuild test -scheme Noum
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/HomeAccessibilityModalGateTests`: `TEST SUCCEEDED`.
+  Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_15-13-27-+0100.xcresult`.
+
+Files touched this continuation: `Noum/ContentView.swift`,
+`NoumTests/NoumTests.swift`, `handover.md`.
+
 2026-06-08 ~15:10 continuation (local Codex run, real toolchain):
 
 - Surfaced the existing `CoachParityReadiness` spine on Profile as a compact

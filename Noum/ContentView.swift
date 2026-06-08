@@ -228,6 +228,10 @@ struct ContentView: View {
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isOnboardingUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_ONBOARDING")
     private let launchedWithDeepLink = ProcessInfo.processInfo.arguments.contains("-DeepLink")
+
+    static func navigationStackAccessibilityIdentifier(pathIsEmpty: Bool) -> String {
+        pathIsEmpty ? "home.screen" : "app.navigationStack"
+    }
     private let aiHomeRecommendationService: AIHomeRecommendationServicing = AIHomeRecommendationService()
 
     private struct PracticeSuggestion {
@@ -501,7 +505,7 @@ struct ContentView: View {
                 }
             }
         }
-        .accessibilityIdentifier("home.screen")
+        .accessibilityIdentifier(Self.navigationStackAccessibilityIdentifier(pathIsEmpty: navigationPath.isEmpty))
         .accessibilityHidden(homeAccessibilityIsSuppressed)
         .fullScreenCover(
             isPresented: .init(
