@@ -74,10 +74,10 @@ struct SessionIntentPromptView: View {
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             Text("Today's focus?")
-                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .font(Typography.figtree(size: 24, weight: .bold, relativeTo: .title2))
                 .foregroundStyle(.primary)
             Text("Pick one — your coach will reference it after the rep.")
-                .font(.subheadline)
+                .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

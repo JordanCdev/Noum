@@ -56,9 +56,9 @@ struct PathJourneyView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Your journey")
-                                .font(.system(size: 30, weight: .bold, design: .rounded))
+                                .font(Typography.screenTitle)
                             Text(snapshot.summaryLine)
-                                .font(.subheadline)
+                                .font(Typography.subheadline)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                         }
@@ -145,7 +145,7 @@ struct PathJourneyView: View {
 
             HStack(spacing: 12) {
                 Text("\(isDebugActive ? Int(debugDayOverride) : Int(snapshot.revealProgress * 21))")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(Typography.figtreeNumeric(size: 28, relativeTo: .title))
                     .foregroundStyle(.primary)
                     .frame(width: 80, alignment: .leading)
 
@@ -212,7 +212,7 @@ struct PathJourneyView: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Text(value)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(Typography.cardLabel)
                     .foregroundStyle(accent.opacity(0.92))
             }
         }
@@ -337,7 +337,7 @@ struct PathJourneyView: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Skill milestones")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(Typography.headline)
                     .foregroundStyle(.primary)
                 Spacer()
                 Text("\(unlockedCount) of \(totalCount)")

@@ -63,11 +63,11 @@ struct ModeMasteryCard: View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("MODE MASTERY")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .font(Typography.micro)
                     .tracking(0.8)
                     .foregroundStyle(.secondary)
                 Text("Where your reps live")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(Typography.headline)
                     .foregroundStyle(.primary)
             }
             Spacer(minLength: 0)
@@ -196,11 +196,11 @@ struct ModeMasteryBadge: View {
     var body: some View {
         HStack(spacing: 4) {
             Text("Lv \(snapshot.level)")
-                .font(.system(size: 10, weight: .heavy, design: .rounded))
+                .font(Typography.figtree(size: 10, weight: .heavy, relativeTo: .caption2))
                 .tracking(0.4)
             if !snapshot.title.isEmpty {
                 Text(snapshot.title)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(Typography.figtree(size: 10, weight: .semibold, relativeTo: .caption2))
                     .lineLimit(1)
             }
         }

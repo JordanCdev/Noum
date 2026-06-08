@@ -12,6 +12,9 @@ capturing PNGs.
 - `Noum/HomeCoachCard.swift` — Home coach card title migrated to a Dynamic-Type-aware Figtree builder.
 - `Noum/SettingsView.swift` / `Noum/SettingsRow.swift` — Settings cluster headers, advanced disclosure title, micro labels, and toggle row labels moved onto `Typography`.
 - `Noum/BigMomentIntakeView.swift` — real-world moment intake header, subcopy, and category text moved onto `Typography`.
+- `Noum/PracticeModeSelectionView.swift` / `Noum/SessionIntentPromptView.swift` — practice picker and session-focus prompt headers/subcopy moved onto `Typography`.
+- `Noum/IMPracticeView.swift` — IM setup and ending-state copy moved onto `Typography`.
+- `Noum/PathJourneyView.swift` / `Noum/ModeMasteryViews.swift` — journey/mode-mastery headings, pill values, and small mastery badges moved onto `Typography`.
 - `docs/CURRENT_STATE.md` — Dynamic Type status corrected so remaining `.system(size:)` call sites are not incorrectly marked complete/intentional.
 
 ## Screenshots
@@ -36,6 +39,9 @@ called complete.
 - Home coach card title.
 - Settings top/mid/advanced disclosure.
 - Big Moment intake sheet.
+- Practice picker and session-focus sheet.
+- IM conversation setup and ending states.
+- Path Journey and Mode Mastery cards.
 
 ## For next run
 - **If cloud**: continue code-only typography audit in non-modal surfaces.

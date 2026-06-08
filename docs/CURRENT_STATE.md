@@ -1158,8 +1158,10 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   `PersonalBestHeroCard`) migrated off ad-hoc `.system(size:)` onto the
   catalog or `Typography.figtreeNumeric(...)`. A 2026-06-08 local
   continuation also migrated the first-run login hero/buttons, Home coach
-  card title, Settings cluster/micro/toggle labels, and Big Moment intake
-  header/category text onto `Typography`. Remaining `.system(size:)`
+  card title, Settings cluster/micro/toggle labels, Big Moment intake
+  header/category text, practice-mode picker header, session-focus prompt,
+  IM conversation setup/ending copy, Path Journey headings/pill values, and
+  Mode Mastery headers/badges onto `Typography`. Remaining `.system(size:)`
   call sites are mixed: some are intentional fixed-format surfaces
   (bitmap share cards rendered through `ImageRenderer`, compact
   achievement/progress badges, score/counter readouts, SF Symbol icons, and

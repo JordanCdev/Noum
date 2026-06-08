@@ -463,11 +463,11 @@ struct PracticeModeSelectionView: View {
             // rounded weight is the single biggest signal that the
             // surface below is a curation, not a list.
             Text("Your next rep")
-                .font(.system(size: 32, weight: .bold, design: .rounded))
+                .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
                 .foregroundStyle(.primary)
 
             Text("One focused rep, then the read gets sharper.")
-                .font(.subheadline)
+                .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

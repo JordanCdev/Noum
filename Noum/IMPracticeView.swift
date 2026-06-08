@@ -315,9 +315,9 @@ struct IMPracticeView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(isSessionActive ? resolvedScenario.title : "Choose a conversation")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .font(Typography.screenTitle)
                 Text(isSessionActive ? "Target tone: \(resolvedTargetTone.title)" : "Pick a scenario, then shape the tone.")
-                    .font(.subheadline)
+                    .font(Typography.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
@@ -621,10 +621,10 @@ struct IMPracticeView: View {
             if evaluationFailed {
                 VStack(spacing: 12) {
                     Text("Couldn't finish")
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .font(Typography.figtree(size: 26, weight: .bold, relativeTo: .title2))
 
                     Text("Something went wrong building your feedback. You can try again or skip to the home screen.")
-                        .font(.subheadline)
+                        .font(Typography.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
@@ -654,10 +654,10 @@ struct IMPracticeView: View {
             } else {
                 VStack(spacing: 12) {
                     Text("Wrapping up")
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .font(Typography.figtree(size: 26, weight: .bold, relativeTo: .title2))
 
                     Text(endingStageMessage)
-                        .font(.subheadline)
+                        .font(Typography.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
