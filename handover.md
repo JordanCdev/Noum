@@ -47,6 +47,34 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~15:28 continuation (local Codex run, real toolchain):
+
+- Closed the `IM-TONE` scorecard gap without adding a new grader, store, or
+  route. `IMToneMatcher.score` now uses bounded per-tone positive and
+  contradictory lexical profiles instead of one keyword per tone, preserving the
+  existing `>= 7` "tone landed" threshold while letting real commitment offset
+  one soft hedge.
+- `IMHistorySummary.matches` now delegates to the shared matcher for free-form
+  evaluator tone labels: aliases such as "steady and composed" can satisfy
+  Calm, while negated or contradictory reads such as "not confident" or "calm
+  but rushed" do not inflate the hit rate.
+- Updated the IM scenario detail documentation and
+  `docs/COACH_REPLACEMENT_SCORECARD.md` so the backlog no longer describes the
+  old substring-only matcher as remaining.
+- Verified with `git diff --check` and `xcodebuild test -scheme Noum
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/IMScenarioToneMatchStatsTests
+  -only-testing:NoumTests/IMToneMatcherContractTests
+  -only-testing:NoumTests/IMToneDrillSignalTests
+  -only-testing:NoumTests/IMConversationEvaluationContractTests`: `TEST
+  SUCCEEDED`. Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_15-34-04-+0100.xcresult`.
+
+Files touched this continuation: `Noum/PracticeSupport.swift`,
+`Noum/IMHistorySummary.swift`, `Noum/IMScenarioDetailView.swift`,
+`NoumTests/NoumTests.swift`, `docs/COACH_REPLACEMENT_SCORECARD.md`,
+`handover.md`.
+
 2026-06-08 ~15:22 continuation (local Codex run, real toolchain):
 
 - Tightened Home celebration motion: `loadPathCelebrationProof()` now respects

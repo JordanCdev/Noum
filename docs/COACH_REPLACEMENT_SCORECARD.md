@@ -69,7 +69,7 @@ Legend: **shipped-strong** = built and verified · **shipped (this run)** = move
 | COHERENCE: Single coherent coach read / voice / case across every surface | shipped-strong | One `promptAnswerVerdict` + one `CoachPersona` + byte-identical `AICoachFeedback` schema across surfaces; tested |
 | SUBSTRATE: Bounded, decode-safe, defaulted types + unit-tested deterministic seams | shipped-strong | ~1530 `@Test` cases; optional/defaulted fields with custom `init(from:)`; per-initiative suites |
 | IM-SUBSTANCE: IM role-play grader contract (locale gate + grounded fallback + grounding gate) | **shipped (this run)** | **slice-2 / initiative #11** — `IMConversationEvaluationService` rebuilt fallback-first; 5 gated throw sites removed; deterministic read reuses `IMToneMatcher`/`IMUserMessageAnalyzer`/`IMConversationOutcomeResolver` |
-| IM-TONE: `IMToneMatcher.score` + `IMHistorySummary.matches` (multi-signal vs single-keyword) | shipped-partial | Each tone is one substring check; `matches()` is exact-title substring |
+| IM-TONE: `IMToneMatcher.score` + `IMHistorySummary.matches` (multi-signal vs single-keyword) | **shipped (local continuation)** | Live/fallback tone score now uses per-tone positive + contradictory lexical profiles; history matching recognizes evaluator aliases while blocking negated/contradictory readouts |
 | ARGUMENT-LOGIC: claim→evidence→warrant detection as a real deterministic signal | absent | `StyleTrait` / `evaluationHint` are descriptive label strings with no consumers; no detector |
 | CONCISION-OF-MEANING: deterministic meaning-density / answer-arrival signal | shipped-partial | Length proxy replaced by overlap (#8); no meaning-density metric; concision carried by LLM prompts + word-count heuristics |
 | AI-CHAT-FALLBACK: `AICoachChatService` deterministic reply fallback | shipped-partial | Locale gate + rich context, but no deterministic reply on `.network`/`.empty`/`.noProvider`; chat dead-ends offline |
@@ -106,7 +106,6 @@ Sequenced roughly by coaching leverage. Each is statically buildable against the
 - **ARGUMENT-LOGIC** — a real deterministic claim→evidence→warrant signal with consumers.
 - **CONCISION-OF-MEANING** — a deterministic meaning-density / answer-arrival metric.
 - **AI-CHAT-FALLBACK** — a deterministic reply for `AICoachChatService` on `.network`/`.empty`/`.noProvider` (chat still dead-ends offline).
-- **IM-TONE** — multi-signal `IMToneMatcher.score` + `IMHistorySummary.matches` (each is a single substring check today).
 - **Lower-leverage contract completions** — `AIHomeRecommendationService`, `VideoAnalysisService`, `PressureFollowUpService` (each ungated/throwing but mostly absorbed by deterministic fallbacks).
 - **VALIDATE-1 depth pass** — move the new compiled fixture substrate out of the inline test file into standalone fixture data with expert-baseline slots, leak guards, and CI reporting. The first six Ask Noum fixtures now exist; they are not yet an expert-calibrated eval harness.
 - **Doc-only cleanups** from verification (zero behavioral impact): transposed `PromptAnswerVerdict` doc-comments (`PracticeSupport.swift:5561-5574`); stale sibling-service line refs in the IM-grader comments; optional hardening of the `.divergent` double-guard (`CoachContextBuilder.swift:2374-2377`).

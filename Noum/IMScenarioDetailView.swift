@@ -309,12 +309,12 @@ struct IMScenarioDetailView: View {
 
     /// Per-scenario tone-match strip — a small chip row for the last
     /// 5 reps that recorded an `actualTone` reading + a "matched X of
-    /// Y" ratio. The matcher is case-insensitive substring containment
-    /// of the target tone's title in the engine's `actualTone`
-    /// readout (e.g., target "Confident" matches an `actualTone` of
-    /// "warmly confident"). Honest data: a rep with `actualTone ==
-    /// nil` is excluded from the denominator — missing data isn't a
-    /// miss. Self-hides when `evaluatedCount == 0`.
+    /// Y" ratio. The matcher uses shared tone-label evidence, so
+    /// aliases can count ("steady and composed" for Calm) but negated
+    /// or contradictory reads do not ("not confident", "calm but
+    /// rushed"). Honest data: a rep with `actualTone == nil` is
+    /// excluded from the denominator — missing data isn't a miss.
+    /// Self-hides when `evaluatedCount == 0`.
     private var toneMatchCard: some View {
         let stats = toneMatchStats
         return VStack(alignment: .leading, spacing: 10) {

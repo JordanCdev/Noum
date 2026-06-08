@@ -236,12 +236,12 @@ enum IMHistorySummary {
     // strip on `IMScenarioDetailView` and any test fixture read the
     // same matcher; the matcher itself is also testable.
     //
-    // Match logic: case-insensitive substring containment of the
-    // target tone's English title (e.g., "confident") inside the
-    // lowercased `actualTone` string. This is the same shape the
-    // server-side evaluator uses when producing the `actualTone`
-    // readout, so the match rate is honest about what the engine
-    // observed — not an interpretation the user has to read between.
+    // Match logic: shared `IMToneMatcher` label evidence. The matcher
+    // recognizes tone aliases ("steady and composed" can satisfy Calm)
+    // while blocking negated or contradictory labels ("not confident",
+    // "calm but rushed"). This keeps the rate honest about what the
+    // engine observed without treating a free-form wording difference
+    // as a miss.
     //
     // Defensive contracts (locked by `IMScenarioToneMatchStatsTests`):
     //   • filters to `.imConversation` internally
@@ -308,15 +308,12 @@ enum IMHistorySummary {
     }
 
     /// Exposed as a pure static for testability — the matcher rule the
-    /// chart strip relies on. Case-insensitive substring containment
-    /// of the target tone's English title in `actualTone`. Whitespace
-    /// is trimmed; empty `actualTone` is always a non-match (the test
-    /// fixtures exercise it, but the higher-level helper filters those
-    /// out first so the visual strip doesn't render a fabricated cell).
+    /// chart strip relies on. Empty `actualTone` is always a non-match
+    /// (the test fixtures exercise it, but the higher-level helper
+    /// filters those out first so the visual strip doesn't render a
+    /// fabricated cell).
     static func matches(targetTone: IMTargetTone, actualTone: String) -> Bool {
-        let trimmed = actualTone.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        return trimmed.lowercased().contains(targetTone.title.lowercased())
+        IMToneMatcher.matchesActualTone(targetTone: targetTone, actualTone: actualTone)
     }
 
     // MARK: - Per-scenario relational trend (trust + tension direction)

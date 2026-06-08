@@ -23266,12 +23266,26 @@ struct IMScenarioToneMatchStatsTests {
     }
 
     @Test func toneMatchSubstringContainment() {
-        // The evaluator often qualifies the tone ("warmly confident",
-        // "a bit too concise"). Substring containment is the right
-        // rule so the matcher reads the tone the way a human coach
-        // would describe it.
+        // The evaluator often qualifies the tone ("warmly confident").
+        // A direct title hit still counts when it is not contradicted.
         #expect(IMHistorySummary.matches(targetTone: .confident, actualTone: "warmly confident"))
         #expect(!IMHistorySummary.matches(targetTone: .warm, actualTone: "professional and clipped"))
+    }
+
+    @Test func toneMatchRecognizesEvaluatorAliasesBeyondTitleSubstring() {
+        #expect(IMHistorySummary.matches(targetTone: .calm, actualTone: "steady and composed"))
+        #expect(IMHistorySummary.matches(targetTone: .warm, actualTone: "appreciative and collaborative"))
+        #expect(IMHistorySummary.matches(targetTone: .professional, actualTone: "polished and structured"))
+        #expect(IMHistorySummary.matches(targetTone: .assertive, actualTone: "firm and direct"))
+        #expect(IMHistorySummary.matches(targetTone: .concise, actualTone: "brief and focused"))
+    }
+
+    @Test func toneMatchRejectsNegatedOrContradictoryReadouts() {
+        #expect(!IMHistorySummary.matches(targetTone: .confident, actualTone: "not confident yet"))
+        #expect(!IMHistorySummary.matches(targetTone: .calm, actualTone: "calm but rushed"))
+        #expect(!IMHistorySummary.matches(targetTone: .assertive, actualTone: "assertive but aggressive"))
+        #expect(!IMHistorySummary.matches(targetTone: .warm, actualTone: "warm but distant"))
+        #expect(!IMHistorySummary.matches(targetTone: .professional, actualTone: "professional but scattered"))
     }
 
     @Test func toneMatchEmptyActualNeverMatches() {
@@ -23319,6 +23333,18 @@ struct IMScenarioToneMatchStatsTests {
         #expect(stats.matchRate == 0.67)
     }
 
+    @Test func toneMatchStatsRateUsesAliasMatcher() {
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "steady and composed", daysOffset: -1),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm but rushed", daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -3)
+        ]
+        let stats = IMHistorySummary.toneMatchStats(from: sessions, scenario: .difficultConversation)
+        #expect(stats.evaluatedCount == 3)
+        #expect(stats.matchCount == 1)
+        #expect(stats.matchRate == 0.33)
+    }
+
     @Test func toneMatchStatsIgnoresNonIMSessions() {
         let sessions = [
             imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1),
@@ -23334,6 +23360,38 @@ struct IMScenarioToneMatchStatsTests {
         let stats = IMHistorySummary.toneMatchStats(from: sessions, scenario: .networking)
         #expect(stats.evaluatedCount == 1)
         #expect(stats.matchCount == 1)
+    }
+}
+
+struct IMToneMatcherContractTests {
+
+    @Test func scoreRewardsMultiplePositiveSignals() {
+        let transcript = "I recommend we move forward. I can own the decision and report the result by Friday."
+        #expect(IMToneMatcher.score(for: .confident, transcript: transcript) >= 8)
+        #expect(IMToneMatcher.score(for: .professional, transcript: transcript) >= 8)
+    }
+
+    @Test func scoreLetsCommitmentOffsetOneSoftHedge() {
+        let transcript = "I think I can own the next step and I will send the proposal today."
+        #expect(IMToneMatcher.score(for: .confident, transcript: transcript) >= 7)
+    }
+
+    @Test func scoreNormalizesCommonContractions() {
+        #expect(IMToneMatcher.score(for: .confident, transcript: "I'm confident this is the right next step.") >= 8)
+        #expect(IMToneMatcher.score(for: .assertive, transcript: "Let's set the decision today; I can't keep this open.") >= 8)
+    }
+
+    @Test func scorePenalizesContradictorySofteningOrEscalation() {
+        #expect(IMToneMatcher.score(for: .assertive, transcript: "Sorry, maybe we could do that if that is okay.") <= 5)
+        #expect(IMToneMatcher.score(for: .calm, transcript: "I just hate how urgent this is, and you always make it worse.") <= 5)
+    }
+
+    @Test func conciseScoreReadsLengthAndRambleSignals() {
+        let concise = "Bottom line: approve the proposal, then I will send next steps."
+        let rambling = String(repeating: "I mean basically kind of this needs a bit more context ", count: 8)
+
+        #expect(IMToneMatcher.score(for: .concise, transcript: concise) >= 8)
+        #expect(IMToneMatcher.score(for: .concise, transcript: rambling) <= 5)
     }
 }
 

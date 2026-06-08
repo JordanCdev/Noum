@@ -1551,20 +1551,197 @@ enum IMTurnStateBalancer {
 
 enum IMToneMatcher {
     static func score(for tone: IMTargetTone, transcript: String) -> Int {
-        let lower = transcript.lowercased()
+        let text = ToneText(transcript)
+        guard text.hasWords else { return 5 }
+
         switch tone {
         case .confident:
-            return lower.contains("i think") ? 6 : 8
+            return phraseScore(
+                text: text,
+                positive: [
+                    "i can", "i will", "i know", "i recommend", "my view",
+                    "i am confident", "i'm confident", "i led", "i built",
+                    "i handled", "the result"
+                ],
+                negative: [
+                    "i think", "maybe", "kind of", "sort of", "not sure",
+                    "i guess", "probably", "hopefully"
+                ]
+            )
         case .warm:
-            return lower.contains("thanks") || lower.contains("love") || lower.contains("glad") ? 8 : 6
+            return phraseScore(
+                text: text,
+                positive: [
+                    "thanks", "thank you", "appreciate", "glad", "happy",
+                    "understand", "hear you", "curious", "love", "good to"
+                ],
+                negative: [
+                    "whatever", "fine", "obviously", "as i said", "not my problem",
+                    "you need to"
+                ]
+            )
         case .concise:
-            return transcript.split(separator: " ").count < 45 ? 8 : 6
+            return conciseScore(text)
         case .assertive:
-            return lower.contains("i need") || lower.contains("i want") ? 8 : 6
+            return phraseScore(
+                text: text,
+                positive: [
+                    "i need", "i want", "i recommend", "i will", "i am going to",
+                    "i'm going to", "my boundary", "the decision", "i cannot",
+                    "i can't", "i can", "we need", "let's"
+                ],
+                negative: [
+                    "sorry", "maybe", "if that is okay", "i guess", "just",
+                    "i do not know", "i don't know", "whatever", "you always",
+                    "you never"
+                ]
+            )
         case .calm:
-            return lower.contains("just") || lower.contains("sorry") ? 6 : 8
+            return phraseScore(
+                text: text,
+                positive: [
+                    "steady", "slow down", "take a breath", "pause",
+                    "understand", "hear you", "one step", "walk through"
+                ],
+                negative: [
+                    "just", "sorry", "panic", "angry", "frustrated", "hate",
+                    "whatever", "you always", "you never", "urgent", "asap"
+                ]
+            )
         case .professional:
-            return lower.contains("like") || lower.contains("literally") ? 6 : 8
+            return phraseScore(
+                text: text,
+                positive: [
+                    "next steps", "follow up", "align", "recommend", "timeline",
+                    "priority", "proposal", "decision", "scope", "clarify"
+                ],
+                negative: [
+                    "like", "literally", "kinda", "sort of", "whatever",
+                    "lol", "omg", "fuck", "shit"
+                ]
+            )
+        }
+    }
+
+    static func matchesActualTone(targetTone: IMTargetTone, actualTone: String) -> Bool {
+        let text = ToneText(actualTone)
+        guard text.hasWords else { return false }
+
+        let aliases = actualToneAliases(for: targetTone)
+        guard aliases.contains(where: { text.contains($0) }) else { return false }
+        guard !aliases.contains(where: { aliasIsNegated($0, in: text) }) else { return false }
+
+        return !blockingActualToneDescriptors(for: targetTone).contains { text.contains($0) }
+    }
+
+    private static func phraseScore(text: ToneText, positive: [String], negative: [String]) -> Int {
+        let positiveHits = positive.filter { text.contains($0) }.count
+        let negativeHits = negative.filter { text.contains($0) }.count
+        return clamp(7 + min(2, positiveHits) - min(3, negativeHits))
+    }
+
+    private static func conciseScore(_ text: ToneText) -> Int {
+        let base: Int
+        switch text.wordCount {
+        case 0:
+            return 5
+        case ...35:
+            base = 8
+        case 36...55:
+            base = 7
+        case 56...85:
+            base = 6
+        default:
+            base = 5
+        }
+
+        let structureHits = [
+            "bottom line", "in short", "first", "second", "the point",
+            "my recommendation"
+        ].filter { text.contains($0) }.count
+        let rambleHits = [
+            "basically", "kind of", "sort of", "i guess", "i mean",
+            "to be honest", "long story short"
+        ].filter { text.contains($0) }.count
+
+        return clamp(base + min(1, structureHits) - min(2, rambleHits))
+    }
+
+    private static func actualToneAliases(for tone: IMTargetTone) -> [String] {
+        switch tone {
+        case .confident:
+            return ["confident", "assured", "self assured", "certain", "decisive", "convincing"]
+        case .warm:
+            return ["warm", "friendly", "open", "human", "collaborative", "approachable", "appreciative", "empathetic"]
+        case .concise:
+            return ["concise", "brief", "focused", "tight", "to the point", "succinct"]
+        case .assertive:
+            return ["assertive", "firm", "direct", "clear boundary", "decisive"]
+        case .calm:
+            return ["calm", "steady", "composed", "measured", "grounded", "patient", "settled"]
+        case .professional:
+            return ["professional", "polished", "structured", "workplace ready", "work ready", "businesslike"]
+        }
+    }
+
+    private static func blockingActualToneDescriptors(for tone: IMTargetTone) -> [String] {
+        switch tone {
+        case .confident:
+            return ["shaky", "uncertain", "hesitant", "tentative", "guarded", "nervous"]
+        case .warm:
+            return ["cold", "dismissive", "distant", "flat", "transactional"]
+        case .concise:
+            return ["rambling", "wordy", "meandering", "overexplained", "over explaining"]
+        case .assertive:
+            return ["soft", "passive", "apologetic", "aggressive", "hostile"]
+        case .calm:
+            return ["tense", "rushed", "frantic", "agitated", "defensive", "sharp"]
+        case .professional:
+            return ["casual", "scattered", "vague", "messy", "sloppy", "informal", "unprofessional"]
+        }
+    }
+
+    private static func aliasIsNegated(_ alias: String, in text: ToneText) -> Bool {
+        [
+            "not", "not very", "not quite", "less", "barely",
+            "without", "missing", "lacks", "needs more", "too", "overly"
+        ].contains { prefix in
+            text.contains("\(prefix) \(alias)")
+        }
+    }
+
+    private static func clamp(_ value: Int) -> Int {
+        min(10, max(1, value))
+    }
+
+    private struct ToneText {
+        let words: [String]
+        let normalized: String
+
+        init(_ raw: String) {
+            let folded = raw
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                .lowercased()
+            words = folded
+                .split { !$0.isLetter && !$0.isNumber }
+                .map(String.init)
+            normalized = words.joined(separator: " ")
+        }
+
+        var hasWords: Bool { !words.isEmpty }
+        var wordCount: Int { words.count }
+
+        func contains(_ phrase: String) -> Bool {
+            let phraseWords = phrase
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                .lowercased()
+                .split { !$0.isLetter && !$0.isNumber }
+                .map(String.init)
+            guard !phraseWords.isEmpty else { return false }
+            if phraseWords.count == 1 {
+                return words.contains(phraseWords[0])
+            }
+            return normalized.contains(phraseWords.joined(separator: " "))
         }
     }
 }
@@ -9798,21 +9975,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
     }
 
     private func toneMatchScore(for tone: IMTargetTone, transcript: String) -> Int {
-        let lower = transcript.lowercased()
-        switch tone {
-        case .confident:
-            return lower.contains("i think") ? 6 : 8
-        case .warm:
-            return lower.contains("thanks") || lower.contains("love") || lower.contains("glad") ? 8 : 6
-        case .concise:
-            return transcript.split(separator: " ").count < 45 ? 8 : 6
-        case .assertive:
-            return lower.contains("i need") || lower.contains("i want") ? 8 : 6
-        case .calm:
-            return lower.contains("just") || lower.contains("sorry") ? 6 : 8
-        case .professional:
-            return lower.contains("like") || lower.contains("literally") ? 6 : 8
-        }
+        IMToneMatcher.score(for: tone, transcript: transcript)
     }
 
     private func inferredTone(from transcript: String, paceLabel: String) -> String {
