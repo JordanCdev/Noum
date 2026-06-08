@@ -2938,6 +2938,182 @@ struct RecommendationBiasCopyContractTests {
     }
 }
 
+struct AIHomeRecommendationContractTests {
+
+    @Test func matchingPreferredModeIsAcceptedAndTrimmed() {
+        let normalized = AIHomeRecommendationContract.normalized(
+            recommendation(
+                title: " Build one clean rep ",
+                recommendedMode: " timed ",
+                recommendedTone: "calm",
+                recommendedScenario: "networking",
+                modeBenefit: ""
+            ),
+            input: input(mode: .timed)
+        )
+
+        #expect(normalized?.title == "Build one clean rep")
+        #expect(normalized?.recommendedMode == PracticeMode.timed.rawValue)
+        #expect(normalized?.recommendedTone == nil)
+        #expect(normalized?.recommendedScenario == nil)
+        #expect(normalized?.modeBenefit == "Best for clean structure.")
+    }
+
+    @Test func modeDriftFromDeterministicBlueprintIsRejected() {
+        let normalized = AIHomeRecommendationContract.normalized(
+            recommendation(recommendedMode: PracticeMode.suddenDeath.rawValue),
+            input: input(mode: .timed)
+        )
+
+        #expect(normalized == nil)
+    }
+
+    @Test func preferredIMSetupMustMatchExactly() {
+        let matching = AIHomeRecommendationContract.normalized(
+            recommendation(
+                recommendedMode: PracticeMode.imConversation.rawValue,
+                recommendedTone: IMTargetTone.calm.rawValue,
+                recommendedScenario: IMConversationScenario.difficultConversation.rawValue
+            ),
+            input: input(
+                mode: .imConversation,
+                tone: .calm,
+                scenario: .difficultConversation
+            )
+        )
+
+        let wrongTone = AIHomeRecommendationContract.normalized(
+            recommendation(
+                recommendedMode: PracticeMode.imConversation.rawValue,
+                recommendedTone: IMTargetTone.warm.rawValue,
+                recommendedScenario: IMConversationScenario.difficultConversation.rawValue
+            ),
+            input: input(
+                mode: .imConversation,
+                tone: .calm,
+                scenario: .difficultConversation
+            )
+        )
+
+        #expect(matching?.recommendedTone == IMTargetTone.calm.rawValue)
+        #expect(matching?.recommendedScenario == IMConversationScenario.difficultConversation.rawValue)
+        #expect(wrongTone == nil)
+    }
+
+    @Test func validIMSetupCanPassWhenNoSpecificSetupWasPreferred() {
+        let normalized = AIHomeRecommendationContract.normalized(
+            recommendation(
+                recommendedMode: PracticeMode.imConversation.rawValue,
+                recommendedTone: IMTargetTone.warm.rawValue,
+                recommendedScenario: IMConversationScenario.socialCatchUp.rawValue
+            ),
+            input: input(mode: .imConversation)
+        )
+
+        #expect(normalized?.recommendedTone == IMTargetTone.warm.rawValue)
+        #expect(normalized?.recommendedScenario == IMConversationScenario.socialCatchUp.rawValue)
+    }
+
+    @Test func invalidIMSetupIsRejected() {
+        let normalized = AIHomeRecommendationContract.normalized(
+            recommendation(
+                recommendedMode: PracticeMode.imConversation.rawValue,
+                recommendedTone: "cheery",
+                recommendedScenario: IMConversationScenario.socialCatchUp.rawValue
+            ),
+            input: input(mode: .imConversation)
+        )
+
+        #expect(normalized == nil)
+    }
+
+    @Test func emptyVisibleCopyIsRejected() {
+        let normalized = AIHomeRecommendationContract.normalized(
+            recommendation(focus: " "),
+            input: input(mode: .timed)
+        )
+
+        #expect(normalized == nil)
+    }
+
+    @Test func copyIsBoundedToShortHomeCardFields() {
+        let longDetail = Array(repeating: "word", count: 40).joined(separator: " ")
+        let normalized = AIHomeRecommendationContract.normalized(
+            recommendation(detail: longDetail),
+            input: input(mode: .timed)
+        )
+
+        #expect(normalized?.detail.split(whereSeparator: \.isWhitespace).count == 28)
+    }
+
+    @Test func chirpyOrThirdPersonCopyIsRejected() {
+        let chirpy = AIHomeRecommendationContract.normalized(
+            recommendation(title: "Let's practice now!"),
+            input: input(mode: .timed)
+        )
+        let thirdPerson = AIHomeRecommendationContract.normalized(
+            recommendation(detail: "The user needs a cleaner opening."),
+            input: input(mode: .timed)
+        )
+
+        #expect(chirpy == nil)
+        #expect(thirdPerson == nil)
+    }
+
+    private func input(
+        mode: PracticeMode,
+        tone: IMTargetTone? = nil,
+        scenario: IMConversationScenario? = nil
+    ) -> AIHomeRecommendationInput {
+        AIHomeRecommendationInput(
+            recentSessionSummary: "Timed | score 7/10 | 1 filler",
+            averageFillers: 1,
+            averageDuration: 42,
+            averageWordsPerMinute: 142,
+            fillerTrendDelta: 0,
+            durationTrendDelta: 0,
+            paceTrendDelta: 0,
+            averageWordCount: 96,
+            strongestMode: nil,
+            currentIdentity: "structured speaker",
+            currentIdentityEvidence: "clear opening",
+            styleAlignmentScore: 0.7,
+            sessionStreak: 2,
+            daysSinceLastSession: 0,
+            preferredModeBias: mode.rawValue,
+            preferredToneBias: tone?.rawValue ?? "",
+            preferredScenarioBias: scenario?.rawValue ?? "",
+            modeBenefitBias: "Best for clean structure."
+        )
+    }
+
+    private func recommendation(
+        title: String = "Build the next clean rep",
+        detail: String = "Your recent reps need one cleaner opening before more pressure.",
+        focus: String = "Structured delivery",
+        target: String = "One complete answer",
+        recommendedMode: String = PracticeMode.timed.rawValue,
+        recommendedTone: String? = nil,
+        recommendedScenario: String? = nil,
+        modeBenefit: String = "Best for building structure.",
+        whyMode: String = "Timed practice gives you room to finish the thought.",
+        whyNow: String = "Your latest reps still need a steadier baseline."
+    ) -> AIHomeRecommendation {
+        AIHomeRecommendation(
+            title: title,
+            detail: detail,
+            focus: focus,
+            target: target,
+            recommendedMode: recommendedMode,
+            recommendedTone: recommendedTone,
+            recommendedScenario: recommendedScenario,
+            modeBenefit: modeBenefit,
+            whyMode: whyMode,
+            whyNow: whyNow
+        )
+    }
+}
+
 struct PressureFollowUpTemplateTests {
 
     @Test func templateFallbackNeverReturnsEmpty() {

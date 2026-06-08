@@ -8507,6 +8507,139 @@ struct AIHomeRecommendationInput {
     let modeBenefitBias: String
 }
 
+enum AIHomeRecommendationContract {
+    static func normalized(
+        _ recommendation: AIHomeRecommendation,
+        input: AIHomeRecommendationInput
+    ) -> AIHomeRecommendation? {
+        let modeID = normalizedID(recommendation.recommendedMode)
+        guard let mode = PracticeMode(rawValue: modeID) else { return nil }
+
+        if let preferredMode = preferredMode(from: input),
+           preferredMode != mode {
+            return nil
+        }
+
+        let toneID = normalizedOptionalID(recommendation.recommendedTone)
+        let scenarioID = normalizedOptionalID(recommendation.recommendedScenario)
+        let normalizedTone: String?
+        let normalizedScenario: String?
+
+        if mode == .imConversation {
+            guard let setup = normalizedIMSetup(
+                toneID: toneID,
+                scenarioID: scenarioID,
+                input: input
+            ) else {
+                return nil
+            }
+            normalizedTone = setup.tone
+            normalizedScenario = setup.scenario
+        } else {
+            normalizedTone = nil
+            normalizedScenario = nil
+        }
+
+        guard let title = boundedCopy(recommendation.title, wordLimit: 8),
+              let detail = boundedCopy(recommendation.detail, wordLimit: 28),
+              let focus = boundedCopy(recommendation.focus, wordLimit: 6),
+              let target = boundedCopy(recommendation.target, wordLimit: 8),
+              let whyMode = boundedCopy(recommendation.whyMode, wordLimit: 28),
+              let whyNow = boundedCopy(recommendation.whyNow, wordLimit: 28) else {
+            return nil
+        }
+
+        let modeBenefitCandidate = recommendation.modeBenefit
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let modeBenefitSource = modeBenefitCandidate.isEmpty
+            ? input.modeBenefitBias
+            : modeBenefitCandidate
+        guard let modeBenefit = boundedCopy(modeBenefitSource, wordLimit: 28) else {
+            return nil
+        }
+
+        return AIHomeRecommendation(
+            title: title,
+            detail: detail,
+            focus: focus,
+            target: target,
+            recommendedMode: mode.rawValue,
+            recommendedTone: normalizedTone,
+            recommendedScenario: normalizedScenario,
+            modeBenefit: modeBenefit,
+            whyMode: whyMode,
+            whyNow: whyNow
+        )
+    }
+
+    private static func normalizedIMSetup(
+        toneID: String?,
+        scenarioID: String?,
+        input: AIHomeRecommendationInput
+    ) -> (tone: String?, scenario: String?)? {
+        let preferredTone = normalizedOptionalID(input.preferredToneBias)
+        let preferredScenario = normalizedOptionalID(input.preferredScenarioBias)
+
+        if let preferredTone {
+            guard toneID == preferredTone,
+                  IMTargetTone(rawValue: preferredTone) != nil else {
+                return nil
+            }
+        } else if let toneID, IMTargetTone(rawValue: toneID) == nil {
+            return nil
+        }
+
+        if let preferredScenario {
+            guard scenarioID == preferredScenario,
+                  IMConversationScenario(rawValue: preferredScenario) != nil else {
+                return nil
+            }
+        } else if let scenarioID, IMConversationScenario(rawValue: scenarioID) == nil {
+            return nil
+        }
+
+        return (
+            tone: preferredTone ?? toneID,
+            scenario: preferredScenario ?? scenarioID
+        )
+    }
+
+    private static func preferredMode(from input: AIHomeRecommendationInput) -> PracticeMode? {
+        PracticeMode(rawValue: normalizedID(input.preferredModeBias))
+    }
+
+    private static func normalizedID(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func normalizedOptionalID(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = normalizedID(value)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func boundedCopy(_ value: String, wordLimit: Int) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, passesCoachVoiceContract(trimmed) else {
+            return nil
+        }
+        return trimmed.truncatedToWordLimit(wordLimit)
+    }
+
+    private static func passesCoachVoiceContract(_ value: String) -> Bool {
+        let lowercased = value.lowercased()
+        guard !value.contains("!"),
+              !lowercased.contains("let's"),
+              !lowercased.contains("great job"),
+              !lowercased.contains("the user"),
+              !lowercased.contains("they need"),
+              !lowercased.contains("their ") else {
+            return false
+        }
+        return true
+    }
+}
+
 struct PracticeModePlaybookEntry {
     let mode: PracticeMode
     let benefit: String
@@ -11145,8 +11278,14 @@ struct AIHomeRecommendationService: AIHomeRecommendationServicing {
         }
 
         let recommendation = try JSONDecoder().decode(AIHomeRecommendation.self, from: jsonData)
+        guard let normalizedRecommendation = AIHomeRecommendationContract.normalized(
+            recommendation,
+            input: input
+        ) else {
+            throw AICoachError.invalidResponse
+        }
         settings.recordAnalysis()
-        return recommendation
+        return normalizedRecommendation
     }
 
     private var systemPrompt: String {
@@ -11154,6 +11293,8 @@ struct AIHomeRecommendationService: AIHomeRecommendationServicing {
         You are the intelligence behind a premium communication coaching app.
         Recommend the single best next speaking drill for the user based on recent performance.
         Be specific, coach-like, and adaptive. Do not sound generic.
+        The rule-based preferred mode, tone, and scenario fields in the user prompt are binding. Do not choose a different mode.
+        If the preferred mode is imConversation and a preferred tone/scenario are supplied, return those exact enum identifiers.
         Return JSON only with keys: title, detail, focus, target, recommendedMode, recommendedTone, recommendedScenario, modeBenefit, whyMode, whyNow.
         recommendedMode must be one of: timed, suddenDeath, ahCounter, imConversation.
         recommendedTone must be one of: confident, warm, concise, assertive, calm, professional, or an empty string if not relevant.
@@ -11187,10 +11328,10 @@ struct AIHomeRecommendationService: AIHomeRecommendationServicing {
         Style alignment score: \(String(format: "%.2f", input.styleAlignmentScore))
         Session streak in days: \(input.sessionStreak)
         Days since last session: \(input.daysSinceLastSession)
-        Rule-based preferred mode bias: \(input.preferredModeBias)
-        Rule-based preferred tone bias: \(input.preferredToneBias)
-        Rule-based preferred scenario bias: \(input.preferredScenarioBias)
-        Defined mode benefit bias: \(input.modeBenefitBias)
+        Binding preferred mode: \(input.preferredModeBias)
+        Binding preferred tone: \(input.preferredToneBias)
+        Binding preferred scenario: \(input.preferredScenarioBias)
+        Defined mode benefit to preserve: \(input.modeBenefitBias)
         Speaker context: \(profile?.speakingContext.title ?? "unknown")
         Speaker priority: \(profile?.primaryGoal.title ?? "unknown")
         Speaker challenge: \(profile?.biggestChallenge.title ?? "unknown")

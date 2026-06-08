@@ -47,6 +47,41 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~16:26 continuation (local Codex run, real toolchain):
+
+- Closed the `AI-HOME-REC` contract-completion row without moving the Home
+  recommendation owner. `RecommendationBiasEngine` / `RecommendationBiasContext`
+  still decide the next mode, focus, target, IM tone, and IM scenario; the live
+  AI layer is now only allowed to rewrite bounded Home-card copy over that
+  deterministic prescription.
+- Added `AIHomeRecommendationContract.normalized(...)` in `PracticeSupport.swift`.
+  Provider JSON must parse to a valid `PracticeMode`, match the binding
+  preferred mode from `AIHomeRecommendationInput`, match any binding IM tone /
+  scenario exactly, and carry non-empty restrained copy. Non-IM recommendations
+  drop stray IM metadata; missing `modeBenefit` falls back to the deterministic
+  mode-benefit bias. Invalid output throws `AICoachError.invalidResponse`, which
+  preserves Home's existing deterministic fallback path.
+- Tightened the `AIHomeRecommendationService` prompt wording from soft
+  "rule-based bias" language to binding preferred mode/tone/scenario fields.
+  The service validates decoded provider JSON before recording analysis or
+  caching/rendering it.
+- Added `AIHomeRecommendationContractTests` for mode drift, preferred IM setup
+  drift, valid optional IM setup, invalid IM setup, empty visible copy, copy word
+  bounds, brand-voice rejection, non-IM metadata cleanup, and deterministic
+  `modeBenefit` fallback. Updated `docs/COACH_REPLACEMENT_SCORECARD.md` so
+  `AI-HOME-REC` is shipped and removed from the lower-leverage backlog.
+- Verified with `git diff --check` and `xcodebuild test -scheme Noum
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/AIHomeRecommendationContractTests
+  -only-testing:NoumTests/RecommendationBiasCopyContractTests
+  -only-testing:NoumTests/RecommendationBiasContextBuilderTests`:
+  `TEST SUCCEEDED`. Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_16-22-49-+0100.xcresult`.
+
+Files touched this continuation: `Noum/PracticeSupport.swift`,
+`NoumTests/NoumTests.swift`, `docs/COACH_REPLACEMENT_SCORECARD.md`,
+`handover.md`.
+
 2026-06-08 ~16:18 continuation (local Codex run, real toolchain):
 
 - Closed the `EXERCISE-5` remainder through the existing framework-drill system
