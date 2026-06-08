@@ -110,6 +110,21 @@ never been touched on a real device this milestone series.
 - [ ] Streak warning fires evening-before a break (set device clock
       forward to test).
 
+## Simulator regression gates
+
+- [x] 2026-06-08 — `xcodebuild test -scheme Noum -destination
+      'platform=iOS Simulator,name=iPhone 17'
+      -only-testing:NoumUITests/NoumUITests/testHomeScreenAndPrimaryNavigation
+      -only-testing:NoumUITests/NoumUITests/testPracticeModesOpenAvailableScreens
+      -only-testing:NoumUITests/NoumUITests/testOnboardingFlowSmoke`:
+      `TEST SUCCEEDED`. Result bundle:
+      `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_17-31-39-+0100.xcresult`.
+- [x] 2026-06-08 — `xcodebuild test -scheme Noum -destination
+      'platform=iOS Simulator,name=iPhone 17'
+      -only-testing:NoumUITests/ScreenshotTour/testCaptureAdvancementSurfaces`:
+      `TEST SUCCEEDED`. Result bundle:
+      `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_17-35-42-+0100.xcresult`.
+
 ## Widgets
 
 - [ ] Add the streak widget to the home screen.
@@ -122,10 +137,6 @@ never been touched on a real device this milestone series.
 These are documented in `docs/CURRENT_STATE.md` and the brutally-honest
 grade card. Don't gate the build on them:
 
-- 4 UI tests fail (`testHomeScreenAndPrimaryNavigation`,
-  `testPracticeModesOpenAvailableScreens`, `testOnboardingFlowSmoke`,
-  `ScreenshotTour.testCaptureAdvancementSurfaces`). Seed injection
-  + query patterns need rework. Tracked.
 - `NoumWatch` target detached from the iOS scheme until the
   watchOS 26.2 simulator runtime is installed locally.
 - Hardcoded English strings remain across most views — only

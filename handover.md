@@ -47,6 +47,35 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~17:41 continuation (local Codex run, M14 UI QA):
+
+- Verified the stale `docs/TESTFLIGHT_QA.md` UI-test known issue is no longer
+  true on the current branch. The three named UI smoke tests passed on the
+  booted `iPhone 17` simulator:
+  `testHomeScreenAndPrimaryNavigation`, `testPracticeModesOpenAvailableScreens`,
+  and `testOnboardingFlowSmoke`.
+- Verified the fourth stale-listed item,
+  `ScreenshotTour.testCaptureAdvancementSurfaces`, also passes. The detailed
+  tour took 257.676s and completed with `TEST SUCCEEDED`.
+- Updated `docs/TESTFLIGHT_QA.md` to move those checks into "Simulator
+  regression gates" with exact result bundles, and removed the old "4 UI tests
+  fail" known-issue bullet. Hardware-only gates still stand.
+
+Verification this continuation:
+
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumUITests/NoumUITests/testHomeScreenAndPrimaryNavigation
+  -only-testing:NoumUITests/NoumUITests/testPracticeModesOpenAvailableScreens
+  -only-testing:NoumUITests/NoumUITests/testOnboardingFlowSmoke`: `TEST
+  SUCCEEDED`. Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_17-31-39-+0100.xcresult`.
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumUITests/ScreenshotTour/testCaptureAdvancementSurfaces`:
+  `TEST SUCCEEDED`. Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_17-35-42-+0100.xcresult`.
+
+Files touched this continuation: `docs/TESTFLIGHT_QA.md`, `handover.md`.
+
 2026-06-08 ~17:30 continuation (local Codex run, screenshot workflow):
 
 - Fixed the active `.agents/skills/noum-screenshots/SKILL.md` path drift that
