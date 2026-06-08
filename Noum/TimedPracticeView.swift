@@ -905,7 +905,7 @@ struct TimedPracticeView: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Impromptu")
-                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                            .font(Typography.figtree(size: 34, weight: .bold, relativeTo: .largeTitle))
                             .foregroundStyle(.primary)
                         Text("Pick a theme. Think fast. Speak well.")
                             .font(.body)
@@ -1133,7 +1133,7 @@ struct TimedPracticeView: View {
                     HStack(spacing: 4) {
                         if mode == .coach && !premium.canUseCoachMode {
                             Text("PRO")
-                                .font(.system(size: 9, weight: .heavy))
+                                .font(Typography.figtree(size: 9, weight: .heavy, relativeTo: .caption2))
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 2)

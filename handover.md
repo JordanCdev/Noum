@@ -47,6 +47,29 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~18:27 continuation (local Codex run, Timed setup typography):
+
+- Continued the Dynamic Type audit on `TimedPracticeView`. The setup title
+  (`Impromptu`) now uses `Typography.figtree(..., relativeTo: .largeTitle)`,
+  and the Coach-mode `PRO` badge uses `Typography.figtree(..., relativeTo:
+  .caption2)`.
+- Left the large timer/countdown values, camera `REC` label, filler counter,
+  `LIVE` marker, elapsed-time string, highlighted transcript, and monospaced
+  helper labels as fixed-format live controls. Those need a separate visual
+  layout review rather than a blind typography migration.
+
+Verification this continuation:
+
+- `git diff --check`: passed.
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:NoumTests/ScoreCalibrationTests`:
+  `TEST SUCCEEDED`. Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_18-25-27-+0100.xcresult`.
+
+Files touched this continuation: `Noum/TimedPracticeView.swift`,
+`docs/CURRENT_STATE.md`,
+`.screenshots/2026-06-08_m14-typography-accessibility/HANDOFF.md`,
+`handover.md`.
+
 2026-06-08 ~18:24 continuation (local Codex run, SummaryCards typography):
 
 - Continued the Dynamic Type audit on the post-rep summary surface.

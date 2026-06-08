@@ -1185,8 +1185,11 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   passed and the exported PNG attachments were spot-checked at default
   text size. A subsequent SummaryCards pass moved the score/points
   numerals and compact duration/drill/confidence badge copy off fixed
-  `.system(size:)` text onto `Typography` builders. Large Dynamic Type and
-  real-device overlay QA remain open.
+  `.system(size:)` text onto `Typography` builders. A Timed practice setup
+  pass moved the `Impromptu` setup title and Coach-mode `PRO` badge onto
+  `Typography`, leaving live timers/countdowns/REC/filler counters and the
+  camera transcript overlay as fixed-format live controls for a separate
+  layout review. Large Dynamic Type and real-device overlay QA remain open.
   Remaining `.system(size:)`
   call sites are mixed: some are intentional fixed-format surfaces
   (bitmap share cards rendered through `ImageRenderer`, compact
