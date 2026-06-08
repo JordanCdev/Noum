@@ -47,6 +47,42 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~15:56 continuation (local Codex run, real toolchain):
+
+- Closed `OBSERVE+ADAPT-2` through the existing recommendation owners rather
+  than adding a new planner. `RecommendationAdaptationAnalyzer` now exposes
+  `confidentlyReplaces(mode:in:)` as the shared predicate for deterministic
+  recommendation selection.
+- `RecommendationBiasContextBuilder.context(...)` accepts defaulted
+  `recommendationOutcomes` and threads the existing
+  `RecommendationLearningStore` ledger into `RecommendationBiasEngine` for
+  Home, the mode picker, and summary "Looking ahead".
+- `RecommendationBiasEngine` now biases cold-start / goal-biased visible
+  blueprints away from a mode only when the mode-level verdict is confident
+  `.replace`; empty ledgers, thin evidence, and `.vary` remain inert. Active
+  case-file interventions and IM tone-drill interventions still keep
+  precedence.
+- Added `.adaptationBias` as a blueprint source and updated Home so cached/live
+  AI home recommendations cannot override the deterministic course-change.
+  Home's AI cache key now includes the deterministic blueprint key, so stale
+  AI rows cannot survive a ledger-driven switch.
+- Updated `docs/COACH_REPLACEMENT_SCORECARD.md`: `OBSERVE+ADAPT-2` is now
+  shipped-strong and removed from the code-tickable backlog.
+- Verified with `git diff --check` before tests and `xcodebuild test -scheme
+  Noum -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/NextActionEngineTests
+  -only-testing:NoumTests/RecommendationBiasContextBuilderTests
+  -only-testing:NoumTests/RecommendationAdaptationAnalyzerTests
+  -only-testing:NoumTests/RecommendationBiasCopyContractTests`: `TEST
+  SUCCEEDED`. Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_15-53-02-+0100.xcresult`.
+
+Files touched this continuation: `Noum/ContentView.swift`,
+`Noum/HomeCoachCard.swift`, `Noum/NextActionEngine.swift`,
+`Noum/PracticeModeSelectionView.swift`, `Noum/PracticeSupport.swift`,
+`Noum/SummaryView.swift`, `NoumTests/NoumTests.swift`,
+`docs/COACH_REPLACEMENT_SCORECARD.md`, `handover.md`.
+
 2026-06-08 ~15:40 continuation (local Codex run, real toolchain):
 
 - Refreshed stale rows in `docs/COACH_REPLACEMENT_SCORECARD.md` after checking

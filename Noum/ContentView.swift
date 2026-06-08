@@ -1043,11 +1043,13 @@ struct ContentView: View {
 
     private var effectiveSuggestion: PracticeSuggestion {
         let bias = recommendationBiasBlueprint
-        if bias.source == .caseIntervention {
+        if bias.source == .caseIntervention || bias.source == .adaptationBias {
             return normalizedSuggestion(
                 suggestion(
                     from: bias,
-                    title: "Continue the current intervention"
+                    title: bias.source == .caseIntervention
+                        ? "Continue the current intervention"
+                        : defaultSuggestionTitle(for: bias)
                 )
             )
         }
@@ -1078,6 +1080,7 @@ struct ContentView: View {
             daysSinceLastSession: daysSinceLastSession,
             coachMemory: coachMemoryStore.currentMemory,
             imAvailable: IMModeAvailability.isAvailable,
+            recommendationOutcomes: recommendationLearningStore.outcomes,
             summaryStyle: .detailed
         )
     }
@@ -1250,7 +1253,15 @@ struct ContentView: View {
         } else {
             caseKey = "no-case"
         }
-        return "homeRecommendation.\(profileKey).\(caseKey).\(recent)"
+        let bias = recommendationBiasBlueprint
+        let biasKey = [
+            bias.recommendedMode.rawValue,
+            bias.recommendedTone?.rawValue ?? "",
+            bias.recommendedScenario?.rawValue ?? "",
+            bias.focus,
+            bias.target
+        ].joined(separator: "-")
+        return "homeRecommendation.\(profileKey).\(caseKey).\(biasKey).\(recent)"
     }
 
     /// Load the proof moment for the active path celebration. Picks
@@ -1295,7 +1306,7 @@ struct ContentView: View {
         let context = recommendationBiasContext
         let bias = context.blueprint
 
-        if bias.source == .caseIntervention {
+        if bias.source == .caseIntervention || bias.source == .adaptationBias {
             aiRecommendation = nil
             return
         }

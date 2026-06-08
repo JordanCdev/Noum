@@ -789,6 +789,7 @@ struct HomeCoachCard: View {
             daysSinceLastSession: daysSinceLastSession,
             coachMemory: coachMemoryStore.currentMemory,
             imAvailable: IMModeAvailability.isAvailable,
+            recommendationOutcomes: recommendationLearningStore.outcomes,
             summaryStyle: .compact
         ).blueprint
     }

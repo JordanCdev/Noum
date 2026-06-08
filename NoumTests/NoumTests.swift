@@ -10212,6 +10212,82 @@ struct RecommendationBiasContextBuilderTests {
         #expect(aiInput.strongestMode == context.plan?.strongestMode)
     }
 
+    @Test func emptyOrThinLedgerKeepsGoalBiasedMode() {
+        let profile = sampleProfile()
+        let input = RecommendationBiasContextBuilder.input(
+            profile: profile,
+            sessions: [],
+            plan: nil,
+            sessionStreak: 0,
+            daysSinceLastSession: 0
+        )
+
+        let empty = RecommendationBiasEngine.blueprint(
+            profile: profile,
+            input: input,
+            plan: nil,
+            recommendationOutcomes: []
+        )
+        #expect(empty.recommendedMode == .timed)
+        #expect(empty.source == .goalBias)
+
+        let thin = RecommendationBiasEngine.blueprint(
+            profile: profile,
+            input: input,
+            plan: nil,
+            recommendationOutcomes: unfavorableLedger(mode: .timed, count: 3)
+        )
+        #expect(thin.recommendedMode == .timed)
+        #expect(thin.source == .goalBias)
+        #expect(!thin.whyNow.contains("trended down alongside"))
+    }
+
+    @Test func confidentReplaceBiasesGoalModeToNextCandidate() {
+        let profile = sampleProfile()
+        let input = RecommendationBiasContextBuilder.input(
+            profile: profile,
+            sessions: [],
+            plan: nil,
+            sessionStreak: 0,
+            daysSinceLastSession: 0
+        )
+
+        let adapted = RecommendationBiasEngine.blueprint(
+            profile: profile,
+            input: input,
+            plan: nil,
+            recommendationOutcomes: unfavorableLedger(mode: .timed, count: 6)
+        )
+
+        #expect(RecommendationAdaptationAnalyzer.confidentlyReplaces(
+            mode: .timed,
+            in: unfavorableLedger(mode: .timed, count: 6)
+        ))
+        #expect(adapted.recommendedMode == .imConversation)
+        #expect(adapted.source == .adaptationBias)
+        #expect(adapted.recommendedScenario == .workUpdate)
+        #expect(adapted.recommendedTone == .professional)
+        #expect(adapted.whyNow.contains("trended down alongside"))
+        #expect(adapted.whyNow.contains(PracticeMode.timed.displayLabel))
+        #expect(adapted.whyNow.contains(PracticeMode.imConversation.displayLabel))
+    }
+
+    @Test func contextBuilderThreadsRecommendationOutcomesIntoBlueprint() {
+        let adapted = RecommendationBiasContextBuilder.context(
+            profile: sampleProfile(),
+            sessions: [],
+            sessionStreak: 0,
+            daysSinceLastSession: 0,
+            coachMemory: nil,
+            imAvailable: false,
+            recommendationOutcomes: unfavorableLedger(mode: .timed, count: 6),
+            summaryStyle: .compact
+        )
+
+        #expect(adapted.blueprint.recommendedMode == .imConversation)
+        #expect(adapted.blueprint.whyNow.contains("trended down alongside"))
+    }
+
     private func sampleProfile() -> CoachingProfile {
         CoachingProfile(
             speakingContext: .work,
@@ -10243,6 +10319,26 @@ struct RecommendationBiasContextBuilderTests {
         session.mode = mode
         session.score = score
         return session
+    }
+
+    private func unfavorableLedger(mode: PracticeMode, count: Int) -> [RecommendationOutcome] {
+        (0..<count).map { i in
+            RecommendationOutcome(
+                id: UUID(),
+                fingerprint: "\(mode.rawValue)|structured-delivery",
+                title: "\(mode.displayLabel) Practice",
+                focus: "Structured delivery",
+                target: "One complete rep",
+                mode: mode,
+                sessionID: UUID(),
+                followed: true,
+                completedAt: Date(timeIntervalSince1970: 1_000 + Double(i)),
+                scoreDelta: -0.9,
+                hasComparableScore: true,
+                fillerDelta: 0,
+                durationDelta: 0
+            )
+        }
     }
 }
 

@@ -7493,6 +7493,14 @@ enum RecommendationAdaptationAnalyzer {
         resolve(mode: mode, focus: nil, matchFocus: false, in: outcomes)?.verdict
     }
 
+    /// Shared selection predicate for deterministic recommendation surfaces.
+    /// Only the strongest mode-level verdict biases selection: `.replace` with
+    /// `.confident` evidence. Empty/thin ledgers and `.vary` remain no-ops.
+    static func confidentlyReplaces(mode: PracticeMode, in outcomes: [RecommendationOutcome]) -> Bool {
+        let verdict = adaptationVerdict(mode: mode, in: outcomes)
+        return verdict?.action == .replace && verdict?.confidence == .confident
+    }
+
     /// One association-only rationale line for the INTERVENTION RESPONSE block.
     /// `nil` on cold start OR below the movement floor (silence is the honest
     /// output below the floor — never a placeholder).
@@ -8510,6 +8518,7 @@ enum RecommendationBlueprintSource: Equatable {
     case goalBias
     case imToneDrill
     case caseIntervention
+    case adaptationBias
 
     var trackingLabel: String {
         switch self {
@@ -8517,6 +8526,7 @@ enum RecommendationBlueprintSource: Equatable {
         case .goalBias: return "goalBias"
         case .imToneDrill: return "imToneDrill"
         case .caseIntervention: return "caseIntervention"
+        case .adaptationBias: return "adaptationBias"
         }
     }
 }
@@ -8587,6 +8597,7 @@ enum RecommendationBiasContextBuilder {
         daysSinceLastSession: Int,
         coachMemory: CoachMemory?,
         imAvailable: Bool,
+        recommendationOutcomes: [RecommendationOutcome] = [],
         summaryStyle: RecommendationSessionSummaryStyle = .detailed,
         preferredModeBias: String = "",
         preferredToneBias: String = "",
@@ -8612,7 +8623,8 @@ enum RecommendationBiasContextBuilder {
             input: input,
             plan: plan,
             imToneSignal: imToneSignal,
-            coachMemory: coachMemory
+            coachMemory: coachMemory,
+            recommendationOutcomes: recommendationOutcomes
         )
         return RecommendationBiasContext(
             input: input,
@@ -8839,7 +8851,8 @@ enum RecommendationBiasEngine {
         input: AIHomeRecommendationInput,
         plan: CoachingPlan?,
         imToneSignal: IMToneDrillSignal? = nil,
-        coachMemory: CoachMemory? = nil
+        coachMemory: CoachMemory? = nil,
+        recommendationOutcomes: [RecommendationOutcome] = []
     ) -> RecommendationBiasBlueprint {
         // The durable case file is the professional-coach layer: if the
         // coach has prescribed an intervention and has not yet gathered
@@ -8870,7 +8883,12 @@ enum RecommendationBiasEngine {
         }
 
         guard let profile else {
-            let mode: PracticeMode = input.averageFillers >= 4 ? .ahCounter : (input.averageDuration < 20 ? .timed : .suddenDeath)
+            let defaultMode: PracticeMode = input.averageFillers >= 4 ? .ahCounter : (input.averageDuration < 20 ? .timed : .suddenDeath)
+            let modeRead = adaptedMode(
+                from: [defaultMode, .timed, .ahCounter, .suddenDeath, .imConversation],
+                recommendationOutcomes: recommendationOutcomes
+            )
+            let mode = modeRead.mode
             return RecommendationBiasBlueprint(
                 recommendedMode: mode,
                 recommendedTone: nil,
@@ -8879,21 +8897,28 @@ enum RecommendationBiasEngine {
                 target: mode == .ahCounter ? "Cut fillers by 1" : "One complete rep",
                 modeBenefit: playbookEntry(for: mode).benefit,
                 whyMode: playbookEntry(for: mode).bestFor,
-                whyNow: input.daysSinceLastSession > 2 ? "The fastest win is getting back into a clean practice rhythm." : "Your recent sessions still need a steadier baseline.",
+                whyNow: adaptationWhyNow(replacedMode: modeRead.replacedMode, selectedMode: mode)
+                    ?? (input.daysSinceLastSession > 2 ? "The fastest win is getting back into a clean practice rhythm." : "Your recent sessions still need a steadier baseline."),
                 suggestedTimedDifficulty: nil,
                 suggestedTheme: .all,
-                source: .coldStart
+                source: modeRead.replacedMode == nil ? .coldStart : .adaptationBias
             )
         }
 
         let tone = recommendedTone(for: profile)
         let scenario = recommendedScenario(for: profile)
         let priorities = prioritizedModes(for: profile)
-        let mode = preferredMode(from: priorities, strongestMode: plan?.strongestMode)
+        let modeRead = preferredMode(
+            from: priorities,
+            strongestMode: plan?.strongestMode,
+            recommendationOutcomes: recommendationOutcomes
+        )
+        let mode = modeRead.mode
         let benefit = playbookEntry(for: mode)
         let target = target(for: mode, profile: profile, input: input)
         let focus = focus(for: mode, profile: profile)
-        let whyNow = whyNow(for: mode, profile: profile, input: input)
+        let whyNow = adaptationWhyNow(replacedMode: modeRead.replacedMode, selectedMode: mode)
+            ?? whyNow(for: mode, profile: profile, input: input)
         let difficulty = mode == .timed ? suggestedTimedDifficulty(for: profile) : nil
         let theme = suggestedTheme(for: profile)
 
@@ -8908,7 +8933,7 @@ enum RecommendationBiasEngine {
             whyNow: whyNow,
             suggestedTimedDifficulty: difficulty,
             suggestedTheme: theme,
-            source: .goalBias
+            source: modeRead.replacedMode == nil ? .goalBias : .adaptationBias
         )
     }
 
@@ -9112,12 +9137,47 @@ enum RecommendationBiasEngine {
         }
     }
 
-    private static func preferredMode(from priorities: [PracticeMode], strongestMode: PracticeMode?) -> PracticeMode {
-        guard let first = priorities.first else { return .timed }
+    private static func preferredMode(
+        from priorities: [PracticeMode],
+        strongestMode: PracticeMode?,
+        recommendationOutcomes: [RecommendationOutcome]
+    ) -> (mode: PracticeMode, replacedMode: PracticeMode?) {
+        guard let first = priorities.first else { return (.timed, nil) }
+        let ordered: [PracticeMode]
         if strongestMode == first, priorities.count > 1 {
-            return priorities[1]
+            ordered = Array(priorities.dropFirst()) + [first]
+        } else {
+            ordered = priorities
         }
-        return first
+        return adaptedMode(from: ordered, recommendationOutcomes: recommendationOutcomes)
+    }
+
+    private static func adaptedMode(
+        from candidates: [PracticeMode],
+        recommendationOutcomes: [RecommendationOutcome]
+    ) -> (mode: PracticeMode, replacedMode: PracticeMode?) {
+        let ordered = deduplicated(candidates)
+        let fallback = ordered.first ?? .timed
+        guard RecommendationAdaptationAnalyzer.confidentlyReplaces(mode: fallback, in: recommendationOutcomes),
+              let replacement = ordered.dropFirst().first(where: {
+                  !RecommendationAdaptationAnalyzer.confidentlyReplaces(mode: $0, in: recommendationOutcomes)
+              }) else {
+            return (fallback, nil)
+        }
+        return (replacement, fallback)
+    }
+
+    private static func deduplicated(_ modes: [PracticeMode]) -> [PracticeMode] {
+        var result: [PracticeMode] = []
+        for mode in modes where !result.contains(mode) {
+            result.append(mode)
+        }
+        return result
+    }
+
+    private static func adaptationWhyNow(replacedMode: PracticeMode?, selectedMode: PracticeMode) -> String? {
+        guard let replacedMode else { return nil }
+        return "Across enough followed \(replacedMode.displayLabel) reps, your metric has trended down alongside that mode, so this switches to \(selectedMode.displayLabel) while keeping the same coaching goal."
     }
 
     private static func recommendedTone(for profile: CoachingProfile) -> IMTargetTone {

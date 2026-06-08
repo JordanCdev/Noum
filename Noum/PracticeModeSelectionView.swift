@@ -1132,6 +1132,7 @@ struct PracticeModeSelectionView: View {
             daysSinceLastSession: daysSinceLastSession,
             coachMemory: coachMemoryStore.currentMemory,
             imAvailable: IMModeAvailability.isAvailable,
+            recommendationOutcomes: recommendationLearningStore.outcomes,
             summaryStyle: .compact
         )
         let blueprint = visibleBlueprint(from: context.blueprint)

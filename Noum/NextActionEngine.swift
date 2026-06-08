@@ -252,8 +252,10 @@ enum NextActionEngine {
     /// return `false`. Only a confident `.replace` — the one verdict that says a
     /// mode's metric has trended down across the window — ever biases selection.
     private static func confidentReplace(forMode mode: PracticeMode, input: NextActionInput) -> Bool {
-        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: mode, in: input.recommendationOutcomes)
-        return verdict?.action == .replace && verdict?.confidence == .confident
+        RecommendationAdaptationAnalyzer.confidentlyReplaces(
+            mode: mode,
+            in: input.recommendationOutcomes
+        )
     }
 
     /// Whether a Priority-6 reinforcement should be deferred because the outcome
@@ -501,4 +503,3 @@ enum NextActionEngine {
         return nil
     }
 }
-

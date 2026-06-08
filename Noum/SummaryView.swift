@@ -69,6 +69,7 @@ struct SummaryView: View {
     @StateObject private var skillProgression = SkillProgressionStore.shared
     @StateObject private var postRepCoachNoteStore = PostRepCoachNoteStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
+    @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @State private var showPaywall = false
     @State private var displayedXP: Int = 0
     @State private var progress: Double = 0
@@ -394,7 +395,8 @@ struct SummaryView: View {
             ),
             plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile),
             imToneSignal: imToneDrillSignal,
-            coachMemory: coachMemoryStore.currentMemory
+            coachMemory: coachMemoryStore.currentMemory,
+            recommendationOutcomes: recommendationLearningStore.outcomes
         )
     }
 
