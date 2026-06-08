@@ -10324,6 +10324,11 @@ struct HomeAccessibilityModalGateTests {
         #expect(ContentView.navigationStackAccessibilityIdentifier(pathIsEmpty: false) == "app.navigationStack")
     }
 
+    @Test func pathCelebrationProofAnimationRespectsReduceMotion() {
+        #expect(ContentView.shouldAnimatePathCelebrationProof(reduceMotion: false))
+        #expect(!ContentView.shouldAnimatePathCelebrationProof(reduceMotion: true))
+    }
+
     @Test func quietHomeDoesNotSuppressItself() {
         let gate = HomeAccessibilityModalGate()
 

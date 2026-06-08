@@ -232,6 +232,10 @@ struct ContentView: View {
     static func navigationStackAccessibilityIdentifier(pathIsEmpty: Bool) -> String {
         pathIsEmpty ? "home.screen" : "app.navigationStack"
     }
+
+    static func shouldAnimatePathCelebrationProof(reduceMotion: Bool) -> Bool {
+        !reduceMotion
+    }
     private let aiHomeRecommendationService: AIHomeRecommendationServicing = AIHomeRecommendationService()
 
     private struct PracticeSuggestion {
@@ -1277,7 +1281,11 @@ struct ContentView: View {
         )
         let proof = await ProofMomentService.shared.proof(for: input)
         await MainActor.run {
-            withAnimation(.standardSpring) {
+            if Self.shouldAnimatePathCelebrationProof(reduceMotion: reduceMotion) {
+                withAnimation(.standardSpring) {
+                    pathCelebrationProof = proof
+                }
+            } else {
                 pathCelebrationProof = proof
             }
         }

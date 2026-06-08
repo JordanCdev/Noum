@@ -47,6 +47,22 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~15:22 continuation (local Codex run, real toolchain):
+
+- Tightened Home celebration motion: `loadPathCelebrationProof()` now respects
+  Reduce Motion when the async proof row lands, setting the proof immediately
+  instead of always using `.standardSpring`.
+- Added the pure `ContentView.shouldAnimatePathCelebrationProof(reduceMotion:)`
+  contract to keep the branch testable.
+- Verified with `git diff --check` and `xcodebuild test -scheme Noum
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/HomeAccessibilityModalGateTests`: `TEST SUCCEEDED`.
+  Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_15-18-32-+0100.xcresult`.
+
+Files touched this continuation: `Noum/ContentView.swift`,
+`NoumTests/NoumTests.swift`, `handover.md`.
+
 2026-06-08 ~15:17 continuation (local Codex run, real toolchain):
 
 - Fixed the stale root accessibility landmark from `ContentView`: the persistent
