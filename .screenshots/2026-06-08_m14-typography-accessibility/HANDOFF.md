@@ -1,11 +1,13 @@
 # Run: 2026-06-08 · branch:ux-overhaul · HEAD 0a9a0df · M14 typography accessibility pass
 
 ## Mode
-off
+not captured
 
-Mode source note: `.Codex/skills/noum-screenshots/.mode` was missing in this
-workspace, so this run followed the skill's minimal-handoff path instead of
-capturing PNGs.
+Mode source note: the active skill instructions pointed at the missing
+`.Codex/skills/noum-screenshots/.mode` path during this run, so it followed
+the minimal-handoff path instead of capturing PNGs. The real repo mode files
+exist at `.agents/skills/noum-screenshots/.mode` and
+`.claude/skills/noum-screenshots/.mode`; both currently read `light`.
 
 ## Changes shipped (this run)
 - `Noum/LoginView.swift` — first-run app name, hero headline, hero subcopy, Google fallback button, and guest button migrated from fixed `.system(size:)` text fonts to `Typography`.
@@ -30,7 +32,7 @@ sites still need surface-by-surface review before Dynamic Type coverage can be
 called complete.
 
 ## Next steps to reach desired state
-1. Recreate `.Codex/skills/noum-screenshots/.mode` with `light` or `detailed`, then capture login/Home/Settings/Big Moment intake after this typography pass.
+1. Run the corrected `.agents`/`.claude` screenshot workflow in `light` or `detailed` mode, then capture login/Home/Settings/Big Moment intake after this typography pass.
 2. Continue auditing legacy `.system(size:)` text in practice, summary, lessons, and celebration surfaces, preserving intentional fixed icon/counter/share-card uses.
 
 ## Regressions checked

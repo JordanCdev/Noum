@@ -54,11 +54,12 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   routing via `-DeepLink <noum://...>` launch arg lets `simctl launch
   --terminate-running-process` drive nav without iOS's "Open in Noum?"
   confirmation blocking headless capture.
-- **Screenshot + handoff workflow:** `noum-screenshots` skill at
-  `.claude/skills/noum-screenshots/` with three modes (off/light/
-  detailed) stored in a `.mode` file. Light = 5 tab tops via
-  `-DeepLink` (~30s); detailed = 27-shot tour via
-  `xcodebuild test -only-testing:NoumUITests/ScreenshotTour/...` (~3min).
+- **Screenshot + handoff workflow:** `noum-screenshots` skill copies
+  live at `.agents/skills/noum-screenshots/` (Codex skill body) and
+  `.claude/skills/noum-screenshots/` (SessionEnd hook target), each
+  with a `.mode` file (`off`/`light`/`detailed`). Light = 5 tab tops
+  via `-DeepLink` (~30s); detailed = 27-shot tour via `xcodebuild
+  test -only-testing:NoumUITests/ScreenshotTour/...` (~3min).
   `SessionEnd` hook in `.claude/settings.json` auto-runs light at
   session end. HANDOFF.md files commit to git (cross-machine
   protocol); PNGs are gitignored (local artifact).

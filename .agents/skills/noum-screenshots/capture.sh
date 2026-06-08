@@ -54,7 +54,7 @@ folder, that one has the actual session context — this folder is just the
 "latest visual state" snapshot for cloud routines.
 
 ## Mode
-\`$MODE\` (read from \`.claude/skills/noum-screenshots/.mode\`)
+\`$MODE\` (read from \`.agents/skills/noum-screenshots/.mode\`)
 
 ## Screenshots
 - \`01_home_top.png\` — Home tab

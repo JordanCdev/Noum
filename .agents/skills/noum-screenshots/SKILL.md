@@ -9,7 +9,7 @@ Capture a coherent set of Noum app screenshots and write a `HANDOFF.md` to `.scr
 
 ## Mode toggle
 
-The current mode lives at `.Codex/skills/noum-screenshots/.mode` — a single-line file containing `off`, `light`, or `detailed`.
+The current mode lives at `.agents/skills/noum-screenshots/.mode` — a single-line file containing `off`, `light`, or `detailed`.
 
 When the user says "screenshots off" / "screenshots light" / "screenshots detailed" (or any clear variant), update the file with the `Write` tool and confirm in one sentence. The new mode applies to the *next* invocation; don't re-run the sweep immediately unless asked.
 
@@ -19,7 +19,7 @@ This skill requires the macOS iOS Simulator. **If running on Linux (cloud routin
 
 ## Local workflow
 
-1. **Read mode** from `.Codex/skills/noum-screenshots/.mode`. If `off`, skip to step 6 (write minimal HANDOFF only). Otherwise continue.
+1. **Read mode** from `.agents/skills/noum-screenshots/.mode`. If `off`, skip to step 6 (write minimal HANDOFF only). Otherwise continue.
 
 2. **Verify capability**:
    - `xcrun simctl list devices booted` — confirm iPhone 17 (iOS 26.4) is booted. If nothing booted, run `xcrun simctl boot "iPhone 17"` then `open -a Simulator`.
