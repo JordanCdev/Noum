@@ -100,7 +100,7 @@ struct LoginView: View {
         VStack(alignment: .leading, spacing: 20) {
             // App name
             Text("noum")
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(Typography.headline)
                 .foregroundStyle(Color.white.opacity(0.5))
                 .tracking(4)
                 .textCase(.uppercase)
@@ -108,12 +108,12 @@ struct LoginView: View {
             // Main headline
             VStack(alignment: .leading, spacing: 12) {
                 Text("Speak with\nmore clarity.")
-                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .font(Typography.hero)
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text("Practice out loud. Get real-time coaching.\nSound like the person you want to be.")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(Typography.subheadline)
                     .foregroundStyle(Color.white.opacity(0.6))
                     .fixedSize(horizontal: false, vertical: true)
                     .lineSpacing(3)
@@ -174,7 +174,7 @@ struct LoginView: View {
             authManager.startGoogleSignIn()
         } label: {
             Text("Continue with Google")
-                .font(.system(size: 17, weight: .semibold))
+                .font(Typography.subheadline.weight(.semibold))
                 .foregroundStyle(AppColor.textPrimary)
                 .frame(maxWidth: .infinity, minHeight: 54)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
@@ -188,7 +188,7 @@ struct LoginView: View {
             authManager.startAnonymousSession()
         } label: {
             Text("Try without an account")
-                .font(.system(size: 15, weight: .medium))
+                .font(Typography.body.weight(.medium))
                 .foregroundStyle(Color.white.opacity(0.55))
         }
         .buttonStyle(.plain)

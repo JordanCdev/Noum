@@ -4,7 +4,8 @@ import SwiftUI
 // MARK: - Section Micro-Label
 
 /// Uppercase tracked micro-label rendered above each card group.
-/// Matches the existing pattern at `ContentView.swift:526–530`.
+/// Uses the canonical `Typography.micro` role so Settings labels inherit the
+/// app-wide Dynamic Type contract.
 ///
 /// M13: takes `LocalizedStringKey` so callers passing string literals
 /// (`"Practice"`) get auto-translated through the app's
@@ -20,7 +21,7 @@ struct SettingsSectionLabel: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .font(Typography.micro)
             .foregroundStyle(.secondary)
             .textCase(.uppercase)
             .tracking(0.8)
@@ -48,11 +49,11 @@ struct SettingsToggleRow: View {
         Toggle(isOn: $isOn) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(Typography.subheadline.weight(.semibold))
                     .foregroundStyle(isDisabled ? Color.secondary : Color.primary)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(Typography.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

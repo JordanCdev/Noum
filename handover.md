@@ -47,6 +47,39 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~17:08 continuation (local Codex run, real toolchain):
+
+- Started the next M14 launch-readiness pass after the coach-parity
+  scorecard cleanup by tightening Dynamic-Type coverage on high-traffic text
+  surfaces.
+- Migrated first-run login text (`noum` label, hero headline/subcopy, Google
+  fallback button, guest button), Home coach card title, Settings cluster /
+  Advanced / micro / toggle labels, and Big Moment intake header/category text
+  off fixed `.system(size:)` fonts and onto `Typography` roles or
+  Dynamic-Type-aware `Typography.figtree(...)` builders.
+- Left fixed icon glyphs and fixed-format counters alone. The remaining
+  `.system(size:)` inventory is mixed, not complete: some entries are
+  intentional icons/counters/share-card/decoration; other legacy text in
+  practice, summary, lesson, and celebration surfaces still needs
+  surface-by-surface review.
+- Corrected the Dynamic Type note in `docs/CURRENT_STATE.md` so follow-on work
+  does not inherit a false "all remaining call sites are intentional" signal.
+- Invoked the local screenshot workflow because UI changed. The expected mode
+  file `.Codex/skills/noum-screenshots/.mode` was missing, so this run wrote a
+  minimal `.screenshots/2026-06-08_m14-typography-accessibility/HANDOFF.md`
+  and queued login/Home/Settings/Big Moment intake for visual verification.
+- Verified with `git diff --check` and `xcodebuild test -scheme Noum
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/ScoreCalibrationTests`: `TEST SUCCEEDED`. Result
+  bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_17-04-12-+0100.xcresult`.
+
+Files touched this continuation: `Noum/LoginView.swift`,
+`Noum/HomeCoachCard.swift`, `Noum/SettingsView.swift`, `Noum/SettingsRow.swift`,
+`Noum/BigMomentIntakeView.swift`, `docs/CURRENT_STATE.md`,
+`.screenshots/2026-06-08_m14-typography-accessibility/HANDOFF.md`,
+`handover.md`.
+
 2026-06-08 ~17:00 continuation (local Codex run, real toolchain):
 
 - Cleared the remaining low-severity scorecard cleanup row. The

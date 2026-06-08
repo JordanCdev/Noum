@@ -66,10 +66,10 @@ struct BigMomentIntakeView: View {
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             Text("What's coming up?")
-                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .font(Typography.figtree(size: 24, weight: .bold, relativeTo: .title2))
                 .foregroundStyle(.primary)
             Text("Name the moment so your coach can help you prepare for it.")
-                .font(.subheadline)
+                .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -100,7 +100,7 @@ struct BigMomentIntakeView: View {
                     .frame(width: 24)
 
                 Text(category.title)
-                    .font(.subheadline.weight(.medium))
+                    .font(Typography.subheadline.weight(.medium))
                     .foregroundStyle(isSelected ? .primary : .secondary)
 
                 Spacer()

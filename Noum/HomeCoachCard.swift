@@ -87,7 +87,7 @@ struct HomeCoachCard: View {
             // hierarchy. The earlier "one long coach sentence" pattern
             // read as a paragraph; this reads as a coach speaking.
             Text(coachTitle)
-                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .font(Typography.figtree(size: 24, weight: .bold, relativeTo: .title2))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)

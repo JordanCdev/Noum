@@ -248,7 +248,7 @@ struct SettingsView: View {
             } label: {
                 HStack(spacing: Spacing.sm) {
                     Text("Advanced")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(Typography.headline)
                         .foregroundStyle(.primary)
                     Spacer()
                     Image(systemName: advancedExpanded ? "chevron.up" : "chevron.down")
@@ -303,14 +303,14 @@ struct SettingsView: View {
     }
 
     /// Cluster header used to group related Settings sections into named
-    /// zones (Practice / Notifications / Account). 18pt SF Pro Rounded bold
-    /// matches the Advanced disclosure header so both read as part of the
-    /// same typographic system; per-section labels below stay on the
-    /// micro-uppercase + tracking-0.8 treatment via `SettingsSectionLabel`.
+    /// zones (Practice / Notifications / Account). Uses the same
+    /// Dynamic-Type-aware headline role as the Advanced disclosure header;
+    /// per-section labels below stay on the micro-uppercase + tracking-0.8
+    /// treatment via `SettingsSectionLabel`.
     private func clusterHeader(_ title: LocalizedStringKey) -> some View {
         HStack {
             Text(title)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(Typography.headline)
                 .foregroundStyle(.primary)
                 .accessibilityAddTraits(.isHeader)
             Spacer()

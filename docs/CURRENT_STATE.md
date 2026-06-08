@@ -1153,16 +1153,22 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   `manrope(...)` builders require the new argument so the contract is
   compiler-enforced. Hero surfaces (`SplashScreenView`, `ProfileView`
   rank panel + rating display + league panel + goal row + reflections
-  + active challenge, `SummaryView` transcript card, `FirstRepCelebration`
-  CTAs, `WordChoiceCard`, `PauseSummaryCard`, `PersonalBestHeroCard`)
-  migrated off ad-hoc `.system(size:)` onto the catalog or
-  `Typography.figtreeNumeric(...)`. Remaining `.system(size:)` call
-  sites are intentional: bitmap share card rendered via `ImageRenderer`
-  at a fixed 360pt frame (`SummaryView` lines 1860–2033), achievement
-  grid badges inside fixed 48pt cells (`ProfileView` 710, 720), and a
-  few decorative SF Symbol particles. A unit test
-  (`typographyRolesResolveToFonts`) locks the catalog contract so a
-  future refactor that drops `relativeTo:` fails the test suite.
+  + active challenge, `SummaryView` transcript card,
+  `FirstRepCelebration` CTAs, `WordChoiceCard`, `PauseSummaryCard`,
+  `PersonalBestHeroCard`) migrated off ad-hoc `.system(size:)` onto the
+  catalog or `Typography.figtreeNumeric(...)`. A 2026-06-08 local
+  continuation also migrated the first-run login hero/buttons, Home coach
+  card title, Settings cluster/micro/toggle labels, and Big Moment intake
+  header/category text onto `Typography`. Remaining `.system(size:)`
+  call sites are mixed: some are intentional fixed-format surfaces
+  (bitmap share cards rendered through `ImageRenderer`, compact
+  achievement/progress badges, score/counter readouts, SF Symbol icons, and
+  decorative particles), while other legacy text in practice, summary,
+  lessons, and celebration surfaces still needs surface-by-surface review.
+  Do not treat this migration as complete until those call sites are
+  audited. A unit test (`typographyRolesResolveToFonts`) locks the catalog
+  contract so a future refactor that drops `relativeTo:` fails the test
+  suite.
 - **Hosted privacy policy URL** — bundled `PrivacyPolicy.md` renders
   in-app via `PrivacyPolicyView`. App Store submission also requires
   a hosted public URL (Firebase Hosting or similar). Open.
