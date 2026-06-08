@@ -18547,6 +18547,110 @@ struct PracticeSessionIntentDecodingTests {
     }
 }
 
+struct FeedbackRatingDecodingTests {
+
+    @Test func decodesCanonicalAndProviderStyleRatings() throws {
+        let cases: [(String, FeedbackRating)] = [
+            ("Good", .good),
+            ("good", .good),
+            ("OK", .ok),
+            ("ok", .ok),
+            ("okay", .ok),
+            ("Could improve", .couldImprove),
+            ("couldImprove", .couldImprove),
+            ("could_improve", .couldImprove)
+        ]
+
+        for (raw, expected) in cases {
+            let data = "\"\(raw)\"".data(using: .utf8)!
+            let decoded = try JSONDecoder().decode(FeedbackRating.self, from: data)
+            #expect(decoded == expected, "\(raw) should decode as \(expected)")
+        }
+    }
+
+    @Test func encodesCanonicalDisplayRating() throws {
+        let data = try JSONEncoder().encode(FeedbackRating.couldImprove)
+        let encoded = String(data: data, encoding: .utf8)
+
+        #expect(encoded == "\"Could improve\"")
+    }
+}
+
+struct VideoAnalysisContractTests {
+
+    @Test func providerEligibilityRequiresVisionCapableProvider() {
+        #expect(VideoAnalysisContract.providerSupportsVision(.openAI))
+        #expect(VideoAnalysisContract.providerSupportsVision(.gemini))
+        #expect(!VideoAnalysisContract.providerSupportsVision(.deepSeek))
+        #expect(!VideoAnalysisContract.providerSupportsVision(.none))
+    }
+
+    @Test func localeEligibilityFollowsPracticeLocaleAISupport() {
+        #expect(VideoAnalysisContract.localeSupportsAI(.enUS))
+        #expect(!VideoAnalysisContract.localeSupportsAI(.esES))
+        #expect(!VideoAnalysisContract.localeSupportsAI(.frFR))
+    }
+
+    @Test func normalizedResultTrimsAndBoundsNotes() {
+        let longOverall = Array(repeating: "steady", count: 50).joined(separator: " ")
+        let normalized = VideoAnalysisContract.normalized(result(
+            postureNote: "  Shoulders stay open and stable on camera.  ",
+            overallNote: longOverall
+        ))
+
+        #expect(normalized?.postureNote == "Shoulders stay open and stable on camera.")
+        #expect(normalized?.overallNote.split(whereSeparator: \.isWhitespace).count == 42)
+    }
+
+    @Test func genericTextOnlyVideoReadIsRejected() {
+        let normalized = VideoAnalysisContract.normalized(result(
+            postureNote: "This is a generic video analysis based on common areas speakers should focus on."
+        ))
+
+        #expect(normalized == nil)
+    }
+
+    @Test func emptyVisualNoteIsRejected() {
+        let normalized = VideoAnalysisContract.normalized(result(eyeContactNote: " "))
+
+        #expect(normalized == nil)
+    }
+
+    @Test func aiSelfDisclosureIsRejected() {
+        let normalized = VideoAnalysisContract.normalized(result(
+            overallNote: "As an AI, I cannot see the frames, but posture is usually worth improving."
+        ))
+
+        #expect(normalized == nil)
+    }
+
+    private func result(
+        postureNote: String = "Shoulders stay open and stable on camera.",
+        eyeContactNote: String = "Eye line returns to the lens often enough.",
+        facialExpressionNote: String = "Expression reads engaged and calm.",
+        gestureNote: String = "Gestures look contained and deliberate.",
+        energyNote: String = "Upper-body energy stays present without rushing.",
+        presenceNote: String = "Presence reads steady and composed.",
+        overallNote: String = "Your visual delivery looks composed. Keep the eye line steadier on the next rep."
+    ) -> VideoAnalysisResult {
+        VideoAnalysisResult(
+            posture: .good,
+            postureNote: postureNote,
+            eyeContact: .ok,
+            eyeContactNote: eyeContactNote,
+            facialExpression: .good,
+            facialExpressionNote: facialExpressionNote,
+            gestureUse: .ok,
+            gestureNote: gestureNote,
+            energyConfidence: .good,
+            energyNote: energyNote,
+            presenceDelivery: .good,
+            presenceNote: presenceNote,
+            overallNote: overallNote
+        )
+    }
+}
+
 // MARK: - M20 Paywall Feature Accuracy Tests
 
 @Suite("PaywallFeatureAccuracy")

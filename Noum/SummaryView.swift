@@ -2995,11 +2995,15 @@ struct SummaryView: View {
             } catch {
                 await MainActor.run {
                     isAnalyzingVideo = false
-                    let desc = error.localizedDescription
-                    if desc.contains("API key") || desc.contains("apiKey") || desc.contains("configured") {
-                        aiError = "Add an AI API key in Settings to analyze video."
+                    if let videoError = error as? VideoAnalysisError {
+                        aiError = videoError.localizedDescription
                     } else {
-                        aiError = "Video analysis failed: \(desc)"
+                        let desc = error.localizedDescription
+                        if desc.contains("API key") || desc.contains("apiKey") || desc.contains("configured") {
+                            aiError = "Add an AI API key in Settings to analyze video."
+                        } else {
+                            aiError = "Video analysis failed: \(desc)"
+                        }
                     }
                 }
             }

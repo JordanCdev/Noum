@@ -47,6 +47,43 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~16:41 continuation (local Codex run, real toolchain):
+
+- Closed the `VIDEO-ANALYSIS` contract row while keeping the presence pillar's
+  felt-quality caveat human-gated. `VideoAnalysisService` still owns recording
+  analysis; this slice only tightened when live video reads are allowed and
+  what provider output may render.
+- Added `FeedbackRating` custom Codable support in `PracticeSupport.swift` so
+  provider-style rating labels (`good`, `OK`, `Could improve`, `couldImprove`)
+  decode into the canonical app enum while encoded results stay on the existing
+  display raw values.
+- Added pure `VideoAnalysisContract` plus `VideoAnalysisError`. Live video
+  analysis now requires `PracticeLocale.aiSupported`, rejects non-vision
+  providers (`deepSeek` included), throws a clear no-frame error when frame
+  extraction produces nothing usable, and normalizes provider results before
+  recording/rendering them. Empty visual notes, AI self-disclosure, text-only
+  generic analysis, and overlong notes are rejected.
+- Removed the old text-only video-analysis fallback and updated the video prompt
+  rating labels to the canonical display values. `SummaryView.analyzeVideo()`
+  now renders the new restrained video-specific errors instead of a raw generic
+  failure.
+- Added `FeedbackRatingDecodingTests` and `VideoAnalysisContractTests` for
+  rating alias decoding/encoding, provider eligibility, locale eligibility,
+  copy bounding, and generic/no-visual/self-disclosing output rejection. Updated
+  `docs/COACH_REPLACEMENT_SCORECARD.md` so `VideoAnalysisService` is no longer
+  listed as a code-tickable contract gap.
+- Verified with `git diff --check` and `xcodebuild test -scheme Noum
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/FeedbackRatingDecodingTests
+  -only-testing:NoumTests/VideoAnalysisContractTests
+  -only-testing:NoumTests/PaywallFeatureAccuracyTests`: `TEST SUCCEEDED`.
+  Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_16-36-58-+0100.xcresult`.
+
+Files touched this continuation: `Noum/PracticeSupport.swift`,
+`Noum/SummaryView.swift`, `NoumTests/NoumTests.swift`,
+`docs/COACH_REPLACEMENT_SCORECARD.md`, `handover.md`.
+
 2026-06-08 ~16:32 continuation (local Codex run, real toolchain):
 
 - Closed the `PRESSURE-FOLLOWUP` contract row without changing

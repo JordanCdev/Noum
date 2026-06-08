@@ -5265,6 +5265,29 @@ enum FeedbackRating: String, Codable, CaseIterable {
     case ok = "OK"
     case couldImprove = "Could improve"
 
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "good":
+            self = .good
+        case "ok", "okay":
+            self = .ok
+        case "couldimprove", "could_improve", "could improve":
+            self = .couldImprove
+        default:
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unknown feedback rating: \(value)"
+            )
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
     var tint: String {
         switch self {
         case .good: return "green"
@@ -5307,6 +5330,93 @@ struct VideoAnalysisResult: Codable {
     let presenceDelivery: FeedbackRating
     let presenceNote: String
     let overallNote: String
+}
+
+enum VideoAnalysisError: LocalizedError, Equatable {
+    case localeUnsupported
+    case providerNotVisionCapable
+    case noUsableFrames
+    case invalidProviderRead
+
+    var errorDescription: String? {
+        switch self {
+        case .localeUnsupported:
+            return "Video analysis is currently available only for English practice."
+        case .providerNotVisionCapable:
+            return "Video analysis requires a vision-capable AI provider."
+        case .noUsableFrames:
+            return "Noum could not extract usable frames from this recording."
+        case .invalidProviderRead:
+            return "The video analysis did not produce a usable visual read."
+        }
+    }
+}
+
+enum VideoAnalysisContract {
+    static func localeSupportsAI(_ locale: PracticeLocale) -> Bool {
+        locale.aiSupported
+    }
+
+    static func providerSupportsVision(_ provider: AIProvider) -> Bool {
+        switch provider {
+        case .openAI, .gemini:
+            return true
+        case .none, .deepSeek:
+            return false
+        }
+    }
+
+    static func normalized(_ result: VideoAnalysisResult) -> VideoAnalysisResult? {
+        guard let postureNote = boundedNote(result.postureNote, wordLimit: 18),
+              let eyeContactNote = boundedNote(result.eyeContactNote, wordLimit: 18),
+              let facialExpressionNote = boundedNote(result.facialExpressionNote, wordLimit: 18),
+              let gestureNote = boundedNote(result.gestureNote, wordLimit: 18),
+              let energyNote = boundedNote(result.energyNote, wordLimit: 18),
+              let presenceNote = boundedNote(result.presenceNote, wordLimit: 18),
+              let overallNote = boundedNote(result.overallNote, wordLimit: 42) else {
+            return nil
+        }
+
+        return VideoAnalysisResult(
+            posture: result.posture,
+            postureNote: postureNote,
+            eyeContact: result.eyeContact,
+            eyeContactNote: eyeContactNote,
+            facialExpression: result.facialExpression,
+            facialExpressionNote: facialExpressionNote,
+            gestureUse: result.gestureUse,
+            gestureNote: gestureNote,
+            energyConfidence: result.energyConfidence,
+            energyNote: energyNote,
+            presenceDelivery: result.presenceDelivery,
+            presenceNote: presenceNote,
+            overallNote: overallNote
+        )
+    }
+
+    private static func boundedNote(_ value: String, wordLimit: Int) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, passesVisualContract(trimmed) else {
+            return nil
+        }
+        return trimmed.truncatedToWordLimit(wordLimit)
+    }
+
+    private static func passesVisualContract(_ value: String) -> Bool {
+        let lowercased = value.lowercased()
+        guard !value.contains("!"),
+              !lowercased.contains("as an ai"),
+              !lowercased.contains("as a language model"),
+              !lowercased.contains("cannot see the frames"),
+              !lowercased.contains("can't see the frames"),
+              !lowercased.contains("without frames"),
+              !lowercased.contains("no frames"),
+              !lowercased.contains("generic video analysis"),
+              !lowercased.contains("common areas speakers") else {
+            return false
+        }
+        return true
+    }
 }
 
 struct PaceSnapshot {
@@ -11491,8 +11601,15 @@ final class VideoAnalysisService {
     private init() {}
 
     func analyzeRecording(at url: URL) async throws -> VideoAnalysisResult {
+        settings.resetIfNeeded()
+        guard VideoAnalysisContract.localeSupportsAI(LocaleSettingsManager.shared.current) else {
+            throw VideoAnalysisError.localeUnsupported
+        }
         guard let provider = settings.activeProvider else {
             throw AICoachError.missingAPIKey
+        }
+        guard VideoAnalysisContract.providerSupportsVision(provider) else {
+            throw VideoAnalysisError.providerNotVisionCapable
         }
         guard settings.canRequestAnalysis else {
             throw AICoachError.providerDisabled
@@ -11504,13 +11621,16 @@ final class VideoAnalysisService {
         // Extract frames from video
         let frames = try await extractFrames(from: url)
         guard !frames.isEmpty else {
-            throw AICoachError.invalidResponse
+            throw VideoAnalysisError.noUsableFrames
         }
 
         // Encode frames to base64 JPEG
         let base64Frames = frames.compactMap { image -> String? in
             guard let data = image.jpegData(compressionQuality: 0.6) else { return nil }
             return data.base64EncodedString()
+        }
+        guard !base64Frames.isEmpty else {
+            throw VideoAnalysisError.noUsableFrames
         }
 
         // Build API request based on provider
@@ -11521,15 +11641,17 @@ final class VideoAnalysisService {
         case .openAI:
             jsonData = try await callOpenAIVision(apiKey: apiKey, frames: base64Frames)
         case .deepSeek:
-            // DeepSeek doesn't support vision — fall back to text-only analysis prompt
-            jsonData = try await callTextOnlyAnalysis(provider: provider, apiKey: apiKey)
+            throw VideoAnalysisError.providerNotVisionCapable
         case .gemini:
             jsonData = try await callGeminiVision(apiKey: apiKey, frames: base64Frames)
         }
 
         let result = try JSONDecoder().decode(VideoAnalysisResult.self, from: jsonData)
+        guard let normalized = VideoAnalysisContract.normalized(result) else {
+            throw VideoAnalysisError.invalidProviderRead
+        }
         await MainActor.run { settings.recordAnalysis() }
-        return result
+        return normalized
     }
 
     // MARK: - Frame Extraction
@@ -11651,71 +11773,6 @@ final class VideoAnalysisService {
         return jsonData
     }
 
-    // MARK: - Text-Only Fallback (for providers without vision)
-
-    private func callTextOnlyAnalysis(provider: AIProvider, apiKey: String) async throws -> Data {
-        guard let endpoint = provider.endpoint else { throw AICoachError.providerDisabled }
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 60
-
-        let fallbackPrompt = """
-        I recorded a speaking practice session on video but cannot share the frames with you.
-        Please provide a balanced, generic video analysis based on common areas speakers should focus on.
-        Rate each dimension as "good", "ok", or "couldImprove" and provide brief, actionable notes.
-        """
-
-        switch provider {
-        case .none:
-            throw AICoachError.providerDisabled
-        case .openAI, .deepSeek:
-            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            let body = OpenAICompatibleChatRequest(
-                model: provider.model,
-                messages: [
-                    .init(role: "system", content: videoAnalysisSystemPrompt),
-                    .init(role: "user", content: fallbackPrompt)
-                ],
-                temperature: 0.3,
-                responseFormat: .jsonObject
-            )
-            request.httpBody = try JSONEncoder().encode(body)
-        case .gemini:
-            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
-            let body = GeminiGenerateContentRequest(
-                systemInstruction: .init(parts: [.init(text: videoAnalysisSystemPrompt)]),
-                contents: [.init(parts: [.init(text: fallbackPrompt)])],
-                generationConfig: .init(temperature: 0.3, responseMimeType: "application/json")
-            )
-            request.httpBody = try JSONEncoder().encode(body)
-        }
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw AICoachError.invalidResponse
-        }
-
-        switch provider {
-        case .none:
-            throw AICoachError.providerDisabled
-        case .openAI, .deepSeek:
-            let chatResponse = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
-            guard let content = chatResponse.choices.first?.message.content,
-                  let jsonData = content.data(using: .utf8) else {
-                throw AICoachError.invalidResponse
-            }
-            return jsonData
-        case .gemini:
-            let geminiResponse = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
-            guard let content = geminiResponse.candidates.first?.content.parts.compactMap(\.text).joined(),
-                  let jsonData = content.data(using: .utf8) else {
-                throw AICoachError.invalidResponse
-            }
-            return jsonData
-        }
-    }
-
     // MARK: - Prompts
 
     private var videoAnalysisSystemPrompt: String {
@@ -11725,7 +11782,7 @@ final class VideoAnalysisService {
         Return JSON only with these exact keys:
         posture, postureNote, eyeContact, eyeContactNote, facialExpression, facialExpressionNote,
         gestureUse, gestureNote, energyConfidence, energyNote, presenceDelivery, presenceNote, overallNote.
-        Rating values must be exactly one of: "good", "ok", "couldImprove".
+        Rating values must be exactly one of: "Good", "OK", "Could improve".
         Notes should be 1 sentence, specific, and actionable.
         overallNote should be 2 sentences summarizing the key strength and primary improvement area.
         Be encouraging but honest. Focus on what's observable.
