@@ -1173,13 +1173,17 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   completion headline, the Pro upsell title/body, Speaking Rank profile
   labels/headings, Tier Promotion league title, Skill Progress direction
   badges, review-stat badges, Coaching Profile onboarding hero copy, and
-  Achievements Tree count label onto `Typography`.
+  Achievements Tree count label onto `Typography`. A later 2026-06-08
+  continuation moved the personal-best celebration, level-up celebration,
+  achievement unlock celebration, and post-session progression overlay copy
+  onto `Typography` / `Typography.figtreeNumeric(...)`, leaving icon glyphs
+  and fixed-format live practice counters alone.
   Remaining `.system(size:)`
   call sites are mixed: some are intentional fixed-format surfaces
   (bitmap share cards rendered through `ImageRenderer`, compact
   achievement/progress badges, score/counter readouts, SF Symbol icons, and
-  decorative particles), while other legacy text in practice, summary,
-  lessons, and celebration surfaces still needs surface-by-surface review.
+  decorative particles), while other legacy text in practice, summary, and
+  lessons still needs surface-by-surface review.
   Do not treat this migration as complete until those call sites are
   audited. A unit test (`typographyRolesResolveToFonts`) locks the catalog
   contract so a future refactor that drops `relativeTo:` fails the test

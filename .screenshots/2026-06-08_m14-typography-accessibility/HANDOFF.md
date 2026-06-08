@@ -20,6 +20,7 @@ exist at `.agents/skills/noum-screenshots/.mode` and
 - `Noum/AhCounterView.swift` / `Noum/PaceTrainingView.swift` / `Noum/CutTheCrutchView.swift` — static mode headers and result copy moved onto `Typography`; live counters/timers intentionally left fixed for separate layout review.
 - `Noum/MiniDrillResultView.swift` / `Noum/PathNodeCelebration.swift` / `Noum/PremiumManager.swift` — result/completion/Pro upsell copy moved onto `Typography`.
 - `Noum/SpeakingRankView.swift` / `Noum/TierPromotionOverlay.swift` / `Noum/SkillProgressView.swift` / `Noum/FeedbackViews.swift` / `Noum/CoachingOnboardingView.swift` / `Noum/AchievementsTreeView.swift` — static profile, progress, onboarding, and review-stat labels moved onto `Typography`.
+- Later 2026-06-08 continuation: `Noum/CelebrationViews.swift` and `Noum/AchievementIconView.swift` moved personal-best, level-up, achievement-unlock, and post-session progression overlay copy onto `Typography` / `Typography.figtreeNumeric(...)`; icon glyphs and live practice counters remain intentionally separate.
 - `docs/CURRENT_STATE.md` — Dynamic Type status corrected so remaining `.system(size:)` call sites are not incorrectly marked complete/intentional.
 
 ## Screenshots
@@ -49,6 +50,7 @@ called complete.
 - Path Journey and Mode Mastery cards.
 - Ah-Counter, Pace Training, and Cut the Crutch setup/result screens.
 - Mini-drill result, path-node celebration, and Pro upsell.
+- Personal-best, level-up, achievement-unlock, and post-session progression overlays. Existing seeded screenshot routes suppress or do not force these overlays, so they need a targeted manual/dev-seed capture path before this item can be called visually complete.
 - Speaking Rank/Profile, tier promotion overlay, skill-progress badges, review-stat badges, Coaching Profile onboarding, and Achievements Tree count label.
 
 ## For next run

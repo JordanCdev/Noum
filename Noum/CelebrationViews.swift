@@ -80,27 +80,26 @@ struct PersonalBestCelebrationScreen: View {
                 // Title
                 VStack(spacing: 12) {
                     Text("NEW PERSONAL BEST")
-                        .font(.system(size: 14, weight: .heavy, design: .rounded))
-                        .tracking(3)
+                        .font(Typography.figtree(size: 14, weight: .heavy, relativeTo: .caption))
                         .foregroundStyle(scoreAccent)
                         .opacity(phase2 ? 1 : 0)
                         .offset(y: phase2 ? 0 : 20)
 
                     Text("\(scoreValue)/10")
-                        .font(.system(size: 64, weight: .bold, design: .rounded))
+                        .font(Typography.figtreeNumeric(size: 64, weight: .bold, relativeTo: .largeTitle))
                         .foregroundStyle(.white)
                         .opacity(phase2 ? 1 : 0)
                         .scaleEffect(phase2 ? 1.0 : 0.7)
 
                     Text(modeName)
-                        .font(.title3.weight(.semibold))
+                        .font(Typography.cardTitle)
                         .foregroundStyle(.white.opacity(0.7))
                         .opacity(phase2 ? 1 : 0)
                         .offset(y: phase2 ? 0 : 10)
 
                     if let previousBest {
                         Text(previousBest)
-                            .font(.subheadline)
+                            .font(Typography.subheadline)
                             .foregroundStyle(.white.opacity(0.4))
                             .opacity(phase2 ? 1 : 0)
                             .padding(.top, 4)
@@ -109,7 +108,7 @@ struct PersonalBestCelebrationScreen: View {
                     if let proof = proof {
                         VStack(spacing: 6) {
                             Text("\u{201C}\(proof.quote)\u{201D}")
-                                .font(.system(size: 16, weight: .regular, design: .default))
+                                .font(Typography.body)
                                 .italic()
                                 .foregroundStyle(.white.opacity(0.78))
                                 .multilineTextAlignment(.center)
@@ -117,8 +116,7 @@ struct PersonalBestCelebrationScreen: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.horizontal, 24)
                             Text(proof.technique.uppercased())
-                                .font(.system(size: 11, weight: .heavy, design: .rounded))
-                                .tracking(1.2)
+                                .font(Typography.figtree(size: 11, weight: .heavy, relativeTo: .caption2))
                                 .foregroundStyle(.white.opacity(0.55))
                         }
                         .opacity(phase2 ? 1 : 0)
@@ -133,7 +131,7 @@ struct PersonalBestCelebrationScreen: View {
                     onContinue()
                 } label: {
                     Text("View Results")
-                        .font(.headline.weight(.bold))
+                        .font(Typography.headline)
                         .foregroundStyle(.black)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
@@ -293,27 +291,26 @@ struct LevelUpCelebrationScreen: View {
                 // Text content
                 VStack(spacing: 14) {
                     Text("LEVEL UP")
-                        .font(.system(size: 14, weight: .heavy, design: .rounded))
-                        .tracking(4)
+                        .font(Typography.figtree(size: 14, weight: .heavy, relativeTo: .caption))
                         .foregroundStyle(levelTint)
                         .opacity(phase2 ? 1 : 0)
                         .offset(y: phase2 ? 0 : 20)
 
                     Text(newLevel)
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title2))
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
                         .opacity(phase2 ? 1 : 0)
                         .scaleEffect(phase2 ? 1.0 : 0.8)
 
                     Text("Previously: \(previousLevel)")
-                        .font(.subheadline)
+                        .font(Typography.subheadline)
                         .foregroundStyle(.white.opacity(0.4))
                         .opacity(phase2 ? 1 : 0)
                         .offset(y: phase2 ? 0 : 10)
 
                     Text("Keep practicing to reach the next rank")
-                        .font(.footnote)
+                        .font(Typography.captionSmall)
                         .foregroundStyle(.white.opacity(0.3))
                         .opacity(phase2 ? 1 : 0)
                         .padding(.top, 4)
@@ -326,7 +323,7 @@ struct LevelUpCelebrationScreen: View {
                     onContinue()
                 } label: {
                     Text("View Results")
-                        .font(.headline.weight(.bold))
+                        .font(Typography.headline)
                         .foregroundStyle(.black)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)

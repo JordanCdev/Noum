@@ -399,21 +399,20 @@ struct AchievementUnlockCelebration: View {
                 // Text content
                 VStack(spacing: 14) {
                     Text("ACHIEVEMENT UNLOCKED")
-                        .font(.system(size: 12, weight: .heavy, design: .rounded))
-                        .tracking(3)
+                        .font(Typography.figtree(size: 12, weight: .heavy, relativeTo: .caption))
                         .foregroundStyle(tier.track.accentGradient[0])
                         .opacity(phase2 ? 1 : 0)
                         .offset(y: phase2 ? 0 : 20)
 
                     Text(tier.title)
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .font(Typography.figtree(size: 28, weight: .bold, relativeTo: .title2))
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
                         .opacity(phase2 ? 1 : 0)
                         .scaleEffect(phase2 ? 1.0 : 0.85)
 
                     Text(tier.description)
-                        .font(.subheadline)
+                        .font(Typography.subheadline)
                         .foregroundStyle(.white.opacity(0.6))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
@@ -425,8 +424,7 @@ struct AchievementUnlockCelebration: View {
                         Image(systemName: tier.track.symbol)
                             .font(.caption2)
                         Text(tier.track.label.uppercased())
-                            .font(.system(size: 10, weight: .heavy))
-                            .tracking(1.5)
+                            .font(Typography.figtree(size: 10, weight: .heavy, relativeTo: .caption2))
                     }
                     .foregroundStyle(tier.track.tint)
                     .padding(.horizontal, 14)
@@ -569,19 +567,18 @@ struct PostSessionProgressionView: View {
                 .transition(.opacity)
                 .zIndex(10)
             } else {
-                // Game-style reward screen — concise, no scrolling if possible
+                // Reward screen — concise, no scrolling if possible
                 VStack(spacing: 0) {
                     Spacer()
 
                     // XP earned — big hero number
                     VStack(spacing: 6) {
                         Text("SESSION COMPLETE")
-                            .font(.system(size: 11, weight: .heavy, design: .rounded))
-                            .tracking(3)
+                            .font(Typography.figtree(size: 11, weight: .heavy, relativeTo: .caption2))
                             .foregroundStyle(.white.opacity(0.4))
 
                         Text("+\(xpEarned) XP")
-                            .font(.system(size: 52, weight: .bold, design: .rounded))
+                            .font(Typography.figtreeNumeric(size: 52, weight: .bold, relativeTo: .largeTitle))
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: [Color.orange, Color.yellow],
@@ -592,8 +589,7 @@ struct PostSessionProgressionView: View {
 
                         if didLevelUp {
                             Text("LEVEL UP → \(newLevel)")
-                                .font(.system(size: 12, weight: .heavy, design: .rounded))
-                                .tracking(1.5)
+                                .font(Typography.figtree(size: 12, weight: .heavy, relativeTo: .caption))
                                 .foregroundStyle(.purple)
                                 .padding(.top, 2)
                         }
@@ -623,11 +619,11 @@ struct PostSessionProgressionView: View {
 
                         HStack {
                             Text(newLevel)
-                                .font(.caption2.weight(.bold))
+                                .font(Typography.captionSmall.weight(.bold))
                                 .foregroundStyle(.white.opacity(0.6))
                             Spacer()
                             Text("\(ProfileManager.xpNeededToNextLevel(forXP: newXP)) XP to next level")
-                                .font(.caption2.weight(.medium))
+                                .font(Typography.captionSmall.weight(.medium))
                                 .foregroundStyle(.white.opacity(0.30))
                         }
                     }
@@ -655,7 +651,7 @@ struct PostSessionProgressionView: View {
                         onContinue()
                     } label: {
                         Text("View Summary")
-                            .font(.headline.weight(.bold))
+                            .font(Typography.headline)
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
@@ -696,16 +692,16 @@ struct PostSessionProgressionView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(delta.title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(Typography.caption.weight(.semibold))
                         .foregroundStyle(.white)
                     Spacer()
                     if delta.newProgress >= 1.0 {
                         Text("UNLOCKED")
-                            .font(.system(size: 9, weight: .heavy, design: .rounded))
+                            .font(Typography.figtree(size: 9, weight: .heavy, relativeTo: .caption2))
                             .foregroundStyle(.green)
                     } else {
                         Text(delta.progressLabel)
-                            .font(.caption2.weight(.semibold).monospacedDigit())
+                            .font(Typography.monoDigit(Typography.captionSmall.weight(.semibold)))
                             .foregroundStyle(.white.opacity(0.45))
                     }
                 }

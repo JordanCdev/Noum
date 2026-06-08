@@ -47,6 +47,36 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~17:55 continuation (local Codex run, celebration typography):
+
+- Continued the Dynamic Type / typography audit on celebration and progression
+  overlays. `Noum/CelebrationViews.swift` now uses `Typography` /
+  `Typography.figtreeNumeric(...)` for the personal-best and level-up overlay
+  copy, including proof quotes, technique labels, previous-best copy, and CTA
+  text.
+- `Noum/AchievementIconView.swift` now uses the same typography catalog for
+  achievement-unlock overlay copy, post-session progression hero XP, level-up
+  labels, XP-bar labels, progress-row labels, and the View Summary CTA. Fixed
+  SF Symbol glyphs, decorative particles, and live practice counters were left
+  alone.
+- Updated `docs/CURRENT_STATE.md` and the typography screenshot handoff so the
+  remaining Dynamic Type work no longer lists celebration surfaces as wholly
+  untouched. Visual QA is still pending for these overlays because the seeded
+  screenshot routes either suppress or do not force the generic
+  personal-best/level-up/progression screens.
+
+Verification this continuation:
+
+- `rg -n -U "Text\\([^\\n]*\\)\\n\\s*\\.font\\(\\.system\\(size:" Noum/CelebrationViews.swift Noum/AchievementIconView.swift`: no matches.
+- `git diff --check`: passed.
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:NoumTests/ScoreCalibrationTests`: `TEST SUCCEEDED`. Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_17-54-29-+0100.xcresult`.
+
+Files touched this continuation: `Noum/CelebrationViews.swift`,
+`Noum/AchievementIconView.swift`, `docs/CURRENT_STATE.md`,
+`.screenshots/2026-06-08_m14-typography-accessibility/HANDOFF.md`,
+`handover.md`.
+
 2026-06-08 ~17:50 continuation (local Codex run, stale-doc cleanup):
 
 - Corrected a stale M15 UI-test reliability note in `docs/CURRENT_STATE.md`
