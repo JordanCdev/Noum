@@ -16845,6 +16845,38 @@ struct StatedChallengeConcordanceTests {
         #expect(ctx.contains("do not silently switch the focus they stated"))
     }
 
+    @Test func divergentMemoryWithMissingStatedAreaAsksForClarification() {
+        let memory = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            evidenceCount: 12,
+            evidenceConfidence: .established,
+            voice: .concise,
+            currentLever: .fillerReduction,
+            currentLeverConfidence: .high,
+            currentLeverBasis: "declining trend",
+            goalFit: .offGoal,
+            statedChallengeConcordance: .divergent,
+            statedChallengeArea: nil,
+            strengths: [],
+            blockers: []
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: profile(challenge: .freezing),
+            baseline: baseline(qualifying: 12),
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: memory
+        )
+
+        #expect(ctx.contains("Stated-vs-measured:"))
+        #expect(ctx.contains("stored stated area is missing"))
+        #expect(ctx.contains("Ask a clarifying question before changing focus"))
+        #expect(!ctx.contains("came in wanting to work on"))
+    }
+
     @Test func agreeMemoryEmitsAffirmationNotQuestion() {
         let memory = CoachMemory(
             updatedAt: Date(timeIntervalSince1970: 1_000),

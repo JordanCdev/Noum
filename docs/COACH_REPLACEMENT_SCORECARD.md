@@ -106,9 +106,7 @@ New artifacts this run: `Noum/FrameworkDrillChecks.swift`; specs `docs/initiativ
 
 ## Remaining (code-tickable)
 
-Sequenced roughly by coaching leverage. Each is statically buildable against the existing owners on a future run; none requires a human to *write*.
-
-- **Doc-only cleanups** from verification (zero behavioral impact): transposed `PromptAnswerVerdict` doc-comments (`PracticeSupport.swift:5561-5574`); stale sibling-service line refs in the IM-grader comments; optional hardening of the `.divergent` double-guard (`CoachContextBuilder.swift:2374-2377`).
+No known scorecard-level code-tickable coach-parity backlog items remain after the local 2026-06-08 continuations. The prior low-severity cleanup notes were cleared locally: `PromptAnswerVerdict` comments match behavior, stale IM/Coach Read line-number comments were removed, and the `.divergent` stated-vs-measured context branch now asks a cautious clarification when the stored stated area is missing.
 
 ---
 

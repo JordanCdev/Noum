@@ -9956,7 +9956,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         context: IMSessionContext
     ) async throws -> IMConversationEvaluation {
         // Fallback-first + gated-accept (mirrors PostRepCoachNoteService.generate
-        // :369 and AICoachService.generateDeeperFeedback :9021). IM is the
+        // and AICoachService.generateDeeperFeedback). IM is the
         // highest-fidelity role-play surface and its grade drives the saved
         // score, the relationship state, and the next move — so a finished
         // conversation must NEVER dead-end with a thrown error. The deterministic
@@ -9978,7 +9978,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         )
 
         // Locale gate — the same one-liner the rest of PracticeSupport.swift
-        // uses (:9301). A Spanish/French IM rep gets the deterministic grounded
+        // uses for English-only AI coaching. A Spanish/French IM rep gets the deterministic grounded
         // read, not an English LLM grade that would be worse than the template.
         guard activeLocaleSupportsAI() else { return fallback }
 
@@ -10056,7 +10056,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
             let jsonData = try extractJSONData(from: data, provider: provider)
             let evaluation = try JSONDecoder().decode(IMConversationEvaluation.self, from: jsonData)
             // Grounding gate (mirrors PostRepCoachNoteService.engagesTranscript
-            // :1112 + AICoachService.engagesTranscript :9545): the headline +
+            // + AICoachService.engagesTranscript): the headline +
             // insights must actually engage a real turn from the conversation —
             // share a >= 4-char non-stop content word OR a >= 12-char verbatim
             // slice — else it's a generic grade dressed as a coach read and we
@@ -10086,7 +10086,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
     }
 
     /// Locale gate — `true` only when the active locale supports an English
-    /// coaching read (mirrors `AICoachService.activeLocaleSupportsAI` :9301 and
+    /// coaching read (mirrors `AICoachService.activeLocaleSupportsAI` and
     /// `PostRepCoachNoteService.activeLocaleSupportsAI`). On `false`,
     /// `evaluateConversation` returns the deterministic fallback rather than an
     /// English LLM grade. `IMConversationEvaluationService` is already
@@ -10334,8 +10334,8 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
     // MARK: - Deterministic fallback + grounding gate (pure, exposed for tests)
 
     /// Local content-word stop set for the IM grounding gate. Same established
-    /// local-set pattern as `PostRepCoachNoteService.engagementStopWords` :1089,
-    /// `AICoachService.engagementStopWords` :9313, and
+    /// local-set pattern as `PostRepCoachNoteService.engagementStopWords`,
+    /// `AICoachService.engagementStopWords`, and
     /// `PracticeEvaluator.relevanceStopWords` — those are private to their own
     /// types and cannot be reused cross-type. Tokens here don't count as
     /// "engaging the transcript", so a grade that only echoes filler words like
@@ -10352,8 +10352,8 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
 
     /// Pure deterministic IM conversation grade — the always-on path offline /
     /// non-English / no-provider, and the `fallback` every gated failure returns.
-    /// Mirrors `AICoachService.deterministicFeedback` :9341 and
-    /// `PostRepCoachNoteService.deterministicNote` :457. Built entirely from the
+    /// Mirrors `AICoachService.deterministicFeedback` and
+    /// `PostRepCoachNoteService.deterministicNote`. Built entirely from the
     /// inputs + the SAME IM analyzers the per-turn reads already use
     /// (`IMToneMatcher.score` for `toneMatch`, `IMUserMessageAnalyzer.analyze`
     /// for warmth/specificity/reciprocity/hostility/disengagement aggregated
@@ -10612,7 +10612,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
     }
 
     /// Deterministic `actualTone` read used by the fallback — mirrors the
-    /// instance `inferredTone(from:paceLabel:)` :8964 lexical rules without the
+    /// instance `inferredTone(from:paceLabel:)` lexical rules without the
     /// pace dependency (the fallback states tone from word choice only, never a
     /// fabricated pace claim).
     private nonisolated static func inferredToneStatic(from transcript: String) -> String {
@@ -10630,8 +10630,8 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
     }
 
     /// Grounding gate for the AI/backend grade (mirrors
-    /// `PostRepCoachNoteService.engagesTranscript` :1112 and
-    /// `AICoachService.engagesTranscript` :9545). True when the grade genuinely
+    /// `PostRepCoachNoteService.engagesTranscript` and
+    /// `AICoachService.engagesTranscript`). True when the grade genuinely
     /// engages a real turn from the conversation: the headline OR any insight
     /// shares a >= 4-char non-stop content word with the transcript, OR contains
     /// a >= 12-char verbatim slice of it (case-insensitive). Empty transcript ->
@@ -10688,7 +10688,7 @@ struct AICoachService: AICoachServicing {
         profile: CoachingProfile?,
         plan: CoachingPlan?
     ) async throws -> AICoachFeedback {
-        // Fallback-first (mirrors PostRepCoachNoteService.generate :369). The
+        // Fallback-first (mirrors PostRepCoachNoteService.generate). The
         // deterministic read is computed up front and returned on EVERY gated
         // failure instead of throwing — so a non-English rep, an offline rep,
         // a missing key, a malformed response, or an ungrounded AI read all
@@ -10704,7 +10704,7 @@ struct AICoachService: AICoachServicing {
         // deterministic grounded read, never English LLM coaching.
         guard activeLocaleSupportsAI() else { return fallback }
 
-        // Defense-in-depth: SummaryView already pre-checks <10 words (:2877),
+        // Defense-in-depth: SummaryView already pre-checks short transcripts,
         // but a thin transcript here returns the deterministic read rather
         // than throwing .transcriptTooShort.
         guard input.transcript.split(whereSeparator: \.isWhitespace).count >= Self.minimumTranscriptWordCount else {
@@ -10789,7 +10789,7 @@ struct AICoachService: AICoachServicing {
             // length. A policy-violating read falls back rather than rendering.
             guard Self.passesBrandVoiceContract(feedback) else { return fallback }
             // Transcript-grounding gate (mirrors PostRepCoachNoteService
-            // .engagesTranscript :1112 + GrammarFeedbackService's excerpt
+            // .engagesTranscript + GrammarFeedbackService's excerpt
             // check): keyImprovement OR revisedOpening must actually engage
             // the rep's words, else it's a generic read dressed as a coach
             // note and we return the deterministic fallback. Empty transcript
@@ -10882,8 +10882,8 @@ struct AICoachService: AICoachServicing {
         )
     }
 
-    /// Pure user-prompt builder (mirrors `PostRepCoachNoteService.userPrompt`
-    /// :1174). `nonisolated static` so the omit-when-empty / surface-when-
+    /// Pure user-prompt builder (mirrors `PostRepCoachNoteService.userPrompt`).
+    /// `nonisolated static` so the omit-when-empty / surface-when-
     /// present contract for THE QUESTION ASKED, the register line, the baseline
     /// deltas, and the RECENT REPS block is unit-tested without singletons.
     /// The singleton-dependent `baselineContext` is computed by the caller and
@@ -10997,8 +10997,8 @@ struct AICoachService: AICoachServicing {
     }
 
     /// Locale gate — `true` only when the active locale supports an English
-    /// coaching read (mirrors `PostRepCoachNoteService.activeLocaleSupportsAI`
-    /// :1394). On `false`, `generateDeeperFeedback` returns the deterministic
+    /// coaching read (mirrors `PostRepCoachNoteService.activeLocaleSupportsAI`).
+    /// On `false`, `generateDeeperFeedback` returns the deterministic
     /// fallback instead of English LLM coaching. `AICoachService` is already
     /// `@MainActor`, so this is a plain method, not an actor hop.
     private func activeLocaleSupportsAI() -> Bool {
@@ -11009,7 +11009,7 @@ struct AICoachService: AICoachServicing {
 
     /// Local content-word stop set for the transcript-grounding gate. Same
     /// established local-set pattern as `PostRepCoachNoteService
-    /// .engagementStopWords` :1089 and `PracticeEvaluator.relevanceStopWords`
+    /// .engagementStopWords` and `PracticeEvaluator.relevanceStopWords`
     /// — those are private to their own types and cannot be reused cross-type.
     /// Tokens here don't count as "engaging the transcript", so feedback that
     /// only shares filler words like "the"/"with" still falls back.
@@ -11025,7 +11025,7 @@ struct AICoachService: AICoachServicing {
 
     /// Pure deterministic Coach Read — the always-on path offline / non-English
     /// / no-provider, and the `fallback` every gated failure returns. Mirrors
-    /// `PostRepCoachNoteService.deterministicNote` :457. Built entirely from
+    /// `PostRepCoachNoteService.deterministicNote`. Built entirely from
     /// the input + `CoachPersona` (no singletons), so it is unit-testable and
     /// genuinely coach-grade rather than a stat-restate: it quotes the opener
     /// when one exists and states the SHARED answered/buried verdict
@@ -11126,7 +11126,7 @@ struct AICoachService: AICoachServicing {
     }
 
     /// Per-voice quoted-opener strength (mirrors
-    /// `PostRepCoachNoteService.openerAnchoredSentence` :1042).
+    /// `PostRepCoachNoteService.openerAnchoredSentence`).
     private nonisolated static func openerStrength(opener: String, persona: CoachPersona) -> String {
         let quoted = "'\(opener.trimmingCharacters(in: CharacterSet(charactersIn: ".'\"")))'"
         switch persona.voice {
@@ -11216,7 +11216,7 @@ struct AICoachService: AICoachServicing {
     /// True when every emitted text field honors the brand-voice contract:
     /// no exclamation marks, no chirpy filler ("Awesome"/"Great job"/"Let's"),
     /// bounded length. Mirrors `PostRepCoachNoteService.passesBrandVoiceContract`
-    /// :1070 applied across all four `AICoachFeedback` fields.
+    /// applied across all four `AICoachFeedback` fields.
     nonisolated static func passesBrandVoiceContract(_ feedback: AICoachFeedback) -> Bool {
         let fields = feedback.strengths + [feedback.keyImprovement, feedback.suggestedDrill]
         for field in fields {
@@ -11240,7 +11240,7 @@ struct AICoachService: AICoachServicing {
     }
 
     /// Transcript-grounding gate (mirrors `PostRepCoachNoteService
-    /// .engagesTranscript` :1112). True when the AI feedback genuinely engages
+    /// .engagesTranscript`). True when the AI feedback genuinely engages
     /// the rep's transcript: `keyImprovement` OR `revisedOpening` shares a
     /// >= 4-char non-stop content word with the transcript, OR contains a
     /// >= 12-char verbatim slice of it (case-insensitive). Empty transcript ->
@@ -11287,7 +11287,7 @@ struct AICoachService: AICoachServicing {
     /// Build the continuity summaries the Coach Read feeds into
     /// `recentSessionSummaries`: drop the current rep, take the next 3 prior
     /// reps, map each to the same "Mode | score X/10 | N fillers" shape the
-    /// session debrief renders (`AIInsightsService.userPrompt` :309). Pure over
+    /// session debrief renders (`AIInsightsService.userPrompt`). Pure over
     /// the inputs so the exclude-current-rep + bound-to-3 contract is tested
     /// without the View. Never invents — only describes real stored sessions.
     nonisolated static func recentSessionSummaries(

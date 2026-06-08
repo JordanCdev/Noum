@@ -47,6 +47,33 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~17:00 continuation (local Codex run, real toolchain):
+
+- Cleared the remaining low-severity scorecard cleanup row. The
+  `PromptAnswerVerdict` comments in current `PracticeSupport.swift` already
+  matched behavior, so no code edit was needed there.
+- Hardened `CoachContextBuilder.coachCaseFormulationLines(...)` for the
+  defensive `.divergent` concordance edge. If future persisted memory says
+  stated-vs-measured is divergent but `statedChallengeArea` is missing, the
+  context now asks a clarifying question before changing focus instead of
+  silently dropping the divergence line.
+- Added `StatedChallengeConcordanceTests.divergentMemoryWithMissingStatedAreaAsksForClarification`
+  to lock that behavior.
+- Removed stale numeric line references from IM conversation grading and Coach
+  Read comments in `PracticeSupport.swift`; these were comment-only cleanups.
+- Updated `docs/COACH_REPLACEMENT_SCORECARD.md` so no scorecard-level
+  code-tickable coach-parity backlog items remain. Human validation gates still
+  stand.
+- Verified with `git diff --check` and `xcodebuild test -scheme Noum
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/StatedChallengeConcordanceTests`: `TEST SUCCEEDED`.
+  Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_16-55-56-+0100.xcresult`.
+
+Files touched this continuation: `Noum/CoachContextBuilder.swift`,
+`Noum/PracticeSupport.swift`, `NoumTests/NoumTests.swift`,
+`docs/COACH_REPLACEMENT_SCORECARD.md`, `handover.md`.
+
 2026-06-08 ~16:52 continuation (local Codex run, real toolchain):
 
 - Closed the code-side `VALIDATE-1` depth pass as substrate only. This does

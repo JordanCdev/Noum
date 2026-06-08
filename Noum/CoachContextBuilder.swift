@@ -5209,6 +5209,8 @@ enum CoachContextBuilder {
             case .divergent:
                 if let statedArea = memory.statedChallengeArea, statedArea != currentLever {
                     lines.append("- Stated-vs-measured: the user came in wanting to work on \(statedArea.displayName), but the reps point more at \(currentLever.displayName). Ask which to anchor to — do not silently switch the focus they stated.")
+                } else if memory.statedChallengeArea == nil {
+                    lines.append("- Stated-vs-measured: the measured reps may diverge from the user's stated challenge, but the stored stated area is missing. Ask a clarifying question before changing focus.")
                 }
             case .agree:
                 lines.append("- Stated-vs-measured: the reps line up with the \(currentLever.displayName) challenge the user came in for; you can affirm that alignment.")
