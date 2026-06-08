@@ -26,10 +26,10 @@ Legend: **shipped-strong** = built and verified · **shipped (this run)** = move
 | REMEMBER-1: Durable evolving case file, rebuilt every finalize, injected every turn | shipped-strong | `CoachCaseFile` + `CoachMemory` rebuilt on finalize, user-confirmable, threaded via `CoachContextBuilder` |
 | REMEMBER-2: Hold the user's goal/voice register as the persistent coaching lens | shipped-strong | Single `CoachPersona` via `AIInsightsService.registerClause`, reused across note / debrief / Coach Read |
 | REMEMBER-3: Treat deep patterns as confirmable hypotheses, never asserted traits | shipped-strong | `workingHypothesis` + `CoachHypothesisAcknowledgement.appliesTo` snapshot guard; chip-row verdict carried into chat |
-| REMEMBER-4: Hold the upcoming real-world moment on the durable case spine | shipped-partial | `BigMoment` reaches per-turn context (`daysUntil`) but never `CoachCaseFile.build`. Roadmap initiative #2 |
+| REMEMBER-4: Hold the upcoming real-world moment on the durable case spine | shipped-strong | `CoachCaseFile.upcomingMomentLine` is threaded from `BigMomentStore.activeMoment` via `SessionFinalizer`; legacy decode safe |
 | PRESCRIBE-1: Named strategy + explicit rationale (a drill for a reason) | shipped-strong | `CoachIntervention` + `activeIntervention` builder + `interventionSummary` |
 | PRESCRIBE-2: Observable target + honest success bar stated before practice | shipped-strong | `observableTarget` + `successMeasureSummary` + `reviewDueAt` + `buildSuccessCriterion` |
-| PRESCRIBE-3: Ground the target/bar in the user's OWN baseline numbers | absent | `priorAverage` computed but never reaches `criterionSummary`; bar is a fixed switch. Roadmap initiative #5 |
+| PRESCRIBE-3: Ground the target/bar in the user's OWN baseline numbers | shipped-strong | `buildSuccessCriterion` feeds `priorAverage` into `criterionSummary` above the pre-window sample floor; below-floor copy stays generic |
 | OBSERVE+ADAPT-1: Compare across attempts → reinforce / vary / replace | shipped-strong | `RecommendationAdaptationAnalyzer` pure reducer, min-rep floors + bands; 22-case tests (initiative #1) |
 | OBSERVE+ADAPT-2: Feed the verdict back to bias the NEXT prescription | shipped-partial | Only Priority-6 reinforcement-deferral wired (`NextActionEngine`); broader P3/P7/P8/standardDrill bias unbuilt |
 | EXERCISE-1: Impromptu / Table-Topics (think + structure under a soft clock) | shipped-strong | `PracticeMode.timed` + `TimedPracticeView` + `.impromptu` / `.tableTopic` catalog |
@@ -44,21 +44,21 @@ Legend: **shipped-strong** = built and verified · **shipped (this run)** = move
 | SUBSTANCE-1: Did you answer the question? (prompt-aware relevance, single source) | shipped-strong | `promptRelevance` + `promptAnswerVerdict` single-sourced across 4 surfaces with evidence floors (initiative #8) |
 | SUBSTANCE-2: Lead with the point vs buried lede (positional) | **shipped (this run)** | **slice-1 / initiative #10** — verdict now compares `firstSentenceOverlap` vs whole-rep overlap; `.buried` = present-but-late; the false "arrived late" on a 0%-overlap rep is closed |
 | SUBSTANCE-3: Grounded, quoted, tailored feedback enforced by a post-hoc gate | shipped-strong | `engagesTranscript` gates in `PostRepCoachNoteService` + `AICoachService`; deterministic fallback |
-| SUBSTANCE-4: Comprehensive rubric reasons over the standing hypothesis + target | absent | `CoachMemory` / `workingHypothesis` / `activeIntervention` not yet threaded into `AICoachSessionInput`. Deferred in initiative #9 |
+| SUBSTANCE-4: Comprehensive rubric reasons over the standing hypothesis + target | shipped-strong | `AICoachSessionInput` carries standing hypothesis, target, success measure, and review cadence from `CoachCaseFile` |
 | DELIVERY-1: Filler-word reduction sensed and trended | shipped-strong | `BaselineEngine` `fillerRate` + per-rep rate + register-specific baselines; semantic-vs-filler guard |
 | DELIVERY-2: Pace + pace-variance sensed, baseline-calibrated | shipped-strong | `BaselineEngine` `pace` + `paceVariance`; `classifyPressure` fairness |
 | DELIVERY-3: Pitch / prosody (monotone) from on-device f0 | shipped-strong | `PitchAnalyzer` real autocorrelation f0; only `isReliable` sessions contribute |
 | DELIVERY-4: Vocal energy / dynamics sensed | shipped-strong | `VocalEnergyMetrics` real RMS-envelope; feeds `ComposureRead.Inputs` (M26 edits in-flight) |
 | DELIVERY-5: Pause usage sensed (filled vs silent, placement) | shipped-strong | `BaselineEngine` `pauseRate` + `pauseFilledRatio`; `landThePause` checkpoint drill |
 | DELIVERY-6: Composure + confidence-marker reads (multi-channel, honest about thin data) | shipped-strong | `ComposureRead` / `ConfidenceMarkerRead` fuse ≥2 channels (nil below), hedged readouts |
-| DELIVERY-7: ONE durable fused delivery read (clear vs polished/evasive/timid/detached) | absent | Channels sense+trend separately; no `fuseDeliveryRead` / `CoachDeliveryRead` on the case file. Roadmap initiative #3 |
+| DELIVERY-7: ONE durable fused delivery read (clear vs polished/evasive/timid/detached) | shipped-strong | `DerivedReadsTrendEngine.fusedDeliveryRead` persists on `CoachMemory` and is projected onto `CoachCaseFile.deliveryRead` with consistency floors |
 | MODEL-1: Show a stronger version anchored to the user's own words/voice | shipped-strong | `AIRewriteService` vocabulary-preservation + AI-tell jargon-drift rejection; `revisedOpening` |
 | MODEL-2: Explain WHY it's better and let the user push back | shipped-strong | `RevisedReadCard` + `shouldShowRevisedReadFollowUp`; chip-row verdict into every chat turn |
 | ROLE-PLAY-1: In-persona pressure + curveballs with sequenced difficulty | shipped-strong | `AINPCChatService` `escalationInstruction` by phase + Sudden Death ramp + STAY IN PERSONA |
 | ROLE-PLAY-2: Build confidence — fair pressure, never punish-shame under load | shipped-strong | Credit without intra-round interruption + never-punish-shame rule + `classifyPressure` fairness |
 | TRANSFER-1: Capture upcoming real moments and read them back into coaching | shipped-strong | `BigMomentStore` + `daysUntil` into context + prep-for-event chips |
 | TRANSFER-2: Capture how the moment went (outcome + perceived audience response) | shipped-strong | `ReportedMomentOutcome` + `ReportedAudienceResponse` + `CoachTransferReview` folds into the case |
-| TRANSFER-3: Aggregate outcomes across same-kind events into a tentative cross-event trend | absent | `recentOutcomeReports` returns a FLAT list emitted flat; no per-kind aggregation. Roadmap initiative #4 |
+| TRANSFER-3: Aggregate outcomes across same-kind events into a tentative cross-event trend | shipped-strong | `BigMomentTransferTrend` groups same-kind outcome reports after a 3-report floor; Profile surfaces the self-report-only trend |
 | HONESTY-1: Weak evidence → tentative; repeated patterns → stronger intervention | shipped-strong | Evidence floors everywhere (verdict nil below floor, adaptation min-rep floors, baseline gate) |
 | HONESTY-2: Association never causation; never overclaim a drill caused a change | shipped-strong | Adaptation phrased as association; transfer-line disclaimer; system-prompt rule 14 |
 | HONESTY-3: Deterministic grounded fallback for offline / non-English / no-provider | shipped-strong | `PostRepCoachNoteService` + `AICoachService` fallback-first; "Coach Read failed" unreachable on gated paths |
@@ -100,12 +100,7 @@ New artifacts this run: `Noum/FrameworkDrillChecks.swift`; specs `docs/initiativ
 
 Sequenced roughly by coaching leverage. Each is statically buildable against the existing owners on a future run; none requires a human to *write*.
 
-- **REMEMBER-4** — put `BigMoment` on `CoachCaseFile.build`, not just per-turn context. *(initiative #2)*
-- **PRESCRIBE-3** — feed `priorAverage` into `criterionSummary` so the success bar is grounded in the user's own numbers, not a fixed switch. *(initiative #5)*
 - **OBSERVE+ADAPT-2** — extend the adaptation verdict's influence beyond Priority-6 to P3/P7/P8/standardDrill prescription bias.
-- **DELIVERY-7** — one durable fused `CoachDeliveryRead` (clear vs polished/evasive/timid/detached) on the case file. *(initiative #3)*
-- **SUBSTANCE-4** — thread `CoachMemory` / `workingHypothesis` / `activeIntervention` into `AICoachSessionInput` so the rubric reasons over the standing hypothesis + target.
-- **TRANSFER-3** — aggregate reported outcomes per event-kind into a tentative cross-event trend. *(initiative #4)*
 - **EXERCISE-5 (remainder)** — AREA / Monroe's Sequence / claim-evidence-warrant scaffolds (PREP + the new STAR/claim-counter/pitch checks now exist).
 - **EXERCISE-7** — a structured reframing/bridging drill for hostile or curveball questions (hostility is currently only detected).
 - **ARGUMENT-LOGIC** — a real deterministic claim→evidence→warrant signal with consumers.

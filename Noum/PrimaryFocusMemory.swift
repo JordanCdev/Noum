@@ -829,11 +829,11 @@ struct CoachMemory: Codable, Equatable {
     // The single fused, DURABLE delivery read (#3) — how the recent rep SET
     // read on delivery (clear / timid / still forming), fused from the
     // existing per-rep reads by `DerivedReadsTrendEngine.fusedDeliveryRead`.
-    // A HYPOTHESIS about the reps, never a trait or diagnosis. Lives HERE on
-    // `CoachMemory` (not on `caseFile`) deliberately: the 5 post-hoc mutators
-    // rebuild `caseFile` WITHOUT session data and would wipe a read stored
-    // there, but they copy `CoachMemory` by value and never touch this field,
-    // so it survives them; `build` computes it from sessions and carries the
+    // A HYPOTHESIS about the reps, never a trait or diagnosis. `CoachMemory`
+    // remains the source of truth because the 5 post-hoc mutators rebuild
+    // `caseFile` WITHOUT session data; `CoachCaseFile.build(from:)` copies this
+    // durable read from memory into the case spine so the projection survives
+    // those rebuilds. `build` computes it from sessions and carries the
     // previous read forward across thin windows (mirrors `lastTransferReview`).
     // Optional for backward compat — memories persisted before this field
     // decode to nil via `decodeIfPresent`.
@@ -1004,6 +1004,12 @@ struct CoachCaseFile: Codable, Equatable {
     var reviewDueAt: Date?
     var subjectivePattern: String?
     var transferRead: String?
+    /// The single fused delivery read carried into the coach's durable case
+    /// spine. Copied from `CoachMemory.coachDeliveryRead` rather than
+    /// recomputed here so post-hoc case rebuilds preserve the characterized
+    /// read without needing raw sessions. Optional for decode safety and nil
+    /// below the delivery consistency floor.
+    var deliveryRead: CoachDeliveryRead? = nil
     /// The soonest upcoming real-world moment the user is preparing for, as a
     /// bounded one-line clause ("Preparing for: Q3 review (performance review),
     /// 5 days away."). Derived at the call site from `BigMomentStore` and
@@ -1027,12 +1033,14 @@ struct CoachCaseFile: Codable, Equatable {
         let reviewDueAt = memory.activeIntervention?.reviewDueAt
         let subjectivePattern = memory.reflectionPattern?.reportedLine
         let transferRead = memory.lastTransferReview?.reportedOutcomeLine
+        let deliveryRead = memory.coachDeliveryRead
 
         guard hypothesis != nil ||
                 focus != nil ||
                 activeIntervention != nil ||
                 subjectivePattern != nil ||
-                transferRead != nil else {
+                transferRead != nil ||
+                deliveryRead?.tentativeLine != nil else {
             return nil
         }
 
@@ -1048,6 +1056,7 @@ struct CoachCaseFile: Codable, Equatable {
             reviewDueAt: reviewDueAt,
             subjectivePattern: subjectivePattern,
             transferRead: transferRead,
+            deliveryRead: deliveryRead,
             upcomingMomentLine: upcomingMomentLine,
             nextMove: move,
             nextQuestion: nextQuestion(for: move)

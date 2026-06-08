@@ -47,6 +47,35 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~15:00 continuation (local Codex run, real toolchain):
+
+- Landed `DELIVERY-7` without adding a new analyzer, store, or route. The
+  existing `CoachMemory.coachDeliveryRead` remains the source of truth for the
+  fused delivery read; `CoachCaseFile.build(from:)` now copies a characterized
+  read into additive optional `CoachCaseFile.deliveryRead` so the durable case
+  spine carries delivery context across Ask Noum / case-file surfaces.
+- Delivery-only case files are now allowed when the read has a real
+  `tentativeLine`; `.forming` / thin delivery reads still suppress the line and
+  do not fabricate a case-file signal.
+- `CoachContextBuilder` now renders the delivery read inside
+  `COACH CASE FILE (durable strategy)` and suppresses the older duplicate
+  fused-read line in `DERIVED READ TRENDS` when the case file already carries
+  it. Legacy memories with `coachDeliveryRead` but no case-file projection
+  still fall back to the derived-trends line.
+- Updated `docs/COACH_REPLACEMENT_SCORECARD.md` so recently closed backlog
+  items no longer appear as absent.
+- Verified with `git diff --check` and `xcodebuild test -scheme Noum
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/FusedDeliveryReadTests
+  -only-testing:NoumTests/CoachContextBuilderTests
+  -only-testing:NoumTests/CoachMemoryEngineTests`: `TEST SUCCEEDED`. Result
+  bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_14-54-43-+0100.xcresult`.
+
+Files touched this continuation: `Noum/PrimaryFocusMemory.swift`,
+`Noum/CoachContextBuilder.swift`, `NoumTests/NoumTests.swift`,
+`docs/COACH_REPLACEMENT_SCORECARD.md`, `handover.md`.
+
 2026-06-08 ~14:50 continuation (local Codex run, real toolchain):
 
 - Pushed `ux-overhaul` to `origin` through `87fae03` before continuing.

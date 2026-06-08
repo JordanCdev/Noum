@@ -987,7 +987,10 @@ enum CoachContextBuilder {
         // HYPOTHESIS about the reps, never a trait/diagnosis — the copy itself
         // carries that hedge, and it leads the section because it is the
         // durable read the per-dimension trends below merely support.
-        let fusedDeliveryLine = coachMemory?.coachDeliveryRead?.tentativeLine
+        let caseFileDeliveryLine = coachMemory?.caseFile?.deliveryRead?.tentativeLine
+        let fusedDeliveryLine = caseFileDeliveryLine == nil
+            ? coachMemory?.coachDeliveryRead?.tentativeLine
+            : nil
         if fusedDeliveryLine != nil || !derivedTrends.isEmpty {
             lines.append("")
             lines.append("DERIVED READ TRENDS (recent vs prior window)")
@@ -5116,6 +5119,9 @@ enum CoachContextBuilder {
             lines.append("- Case focus: \(focus.displayName).")
         }
         lines.append("- Evidence: \(caseFile.evidenceSummary).")
+        if let delivery = caseFile.deliveryRead?.tentativeLine {
+            lines.append("- Delivery read: \(delivery)")
+        }
         if let active = caseFile.activeIntervention {
             lines.append("- Intervention: \(active).")
         }

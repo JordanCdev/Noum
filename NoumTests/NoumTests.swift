@@ -8529,6 +8529,11 @@ struct CoachContextBuilderTests {
             reviewDueAt: Date(timeIntervalSince1970: 1_000),
             subjectivePattern: "Across 3 of the last 4 reflections, the user reported nerves affected their delivery.",
             transferRead: "For presentation \"Board update\", the user reported it fell short; the room seemed unclear.",
+            deliveryRead: CoachDeliveryRead(
+                dominantPattern: .clear,
+                evidenceDepth: 5,
+                tentativeLine: "Across the last 5 reps the delivery has read as clear — composure holding and few tentative markers. A read of these reps, not a fixed trait."
+            ),
             nextMove: .reviewIntervention,
             nextQuestion: "Should the current intervention continue, adapt, or be replaced?"
         )
@@ -8556,6 +8561,8 @@ struct CoachContextBuilderTests {
 
         #expect(ctx.contains("COACH CASE FILE (durable strategy)"))
         #expect(ctx.contains("Case hypothesis: Closings may be the highest-leverage focus"))
+        #expect(ctx.contains("Delivery read: Across the last 5 reps the delivery has read as clear"))
+        #expect(ctx.contains("not a fixed trait"))
         #expect(ctx.contains("Next coach move: Review the intervention"))
         #expect(ctx.contains("Should the current intervention continue, adapt, or be replaced?"))
         #expect(ctx.contains("self-report, not diagnosis"))
@@ -15992,6 +15999,7 @@ struct CoachMemoryEngineTests {
         let decoded = try? decoder.decode(CoachCaseFile.self, from: data)
         #expect(decoded != nil)
         #expect(decoded?.upcomingMomentLine == nil)
+        #expect(decoded?.deliveryRead == nil)
         #expect(decoded?.nextMove == .followIntervention)
 
         // And a whole CoachMemory blob carrying such a legacy caseFile round-trips.
@@ -16017,6 +16025,7 @@ struct CoachMemoryEngineTests {
         let decodedMemory = try? decoder.decode(CoachMemory.self, from: memoryData)
         #expect(decodedMemory != nil)
         #expect(decodedMemory?.caseFile?.upcomingMomentLine == nil)
+        #expect(decodedMemory?.caseFile?.deliveryRead == nil)
     }
 }
 
@@ -32639,6 +32648,36 @@ struct FusedDeliveryReadTests {
         )
         #expect(memory?.coachDeliveryRead?.dominantPattern == .clear)
         #expect(memory?.coachDeliveryRead?.evidenceDepth == 5)
+        #expect(memory?.caseFile?.deliveryRead == memory?.coachDeliveryRead)
+        #expect(memory?.caseFile?.deliveryRead?.tentativeLine?.contains("not a fixed trait") == true)
+    }
+
+    @Test func caseFileBuildCarriesDeliveryReadAsDurableCaseSignal() throws {
+        let read = CoachDeliveryRead(
+            dominantPattern: .timid,
+            evidenceDepth: 5,
+            tentativeLine: "Across the last 5 reps the delivery has read as tentative — hedging and tentative markers landing relative to this user's own baseline. A hypothesis about these reps, not a label on the person."
+        )
+        let memory = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            goalFit: .noLever,
+            strengths: [],
+            blockers: [],
+            coachDeliveryRead: read
+        )
+
+        let caseFile = try #require(CoachCaseFile.build(
+            from: memory,
+            now: Date(timeIntervalSince1970: 1_100)
+        ))
+
+        #expect(caseFile.deliveryRead == read)
+        #expect(caseFile.hypothesis == nil)
+        #expect(caseFile.activeIntervention == nil)
+        #expect(caseFile.nextMove == .gatherEvidence)
+        #expect(caseFile.deliveryRead?.tentativeLine?.contains("not a label on the person") == true)
     }
 
     @Test func buildCarriesPreviousReadForwardOnThinWindow() throws {
