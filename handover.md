@@ -338,6 +338,8 @@ Completed in this session:
   succeeded. Used the separate `Noum-AIGuard` DerivedData path because the
   default repo-local `DerivedData/Noum` build database was locked by an earlier
   process; no cleanup or process kill was performed.
+- `xcodebuild test -project Noum.xcodeproj -scheme Noum -destination "platform=iOS Simulator,id=3D077053-2981-4C5D-819D-FF6F9BA8AD06" -derivedDataPath ./DerivedData/Noum-AIGuard -only-testing:NoumTests/PostRepCoachNoteServiceDeterministicTests -only-testing:NoumTests/PostRepCoachNoteToneTrajectoryTests -only-testing:NoumTests/PostRepCoachNoteToneResolvedTests`
+  succeeded after the AI note fabrication guard change.
 - `.agents/skills/noum-screenshots/capture.sh` captured five tab tops to
   `.screenshots/2026-06-08_autostop-de8ee0d-0006/`.
 - `.agents/skills/noum-screenshots/capture.sh` captured the 07:34 build's five
