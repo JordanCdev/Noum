@@ -20927,6 +20927,65 @@ struct AICoachChatDeterministicReplyTests {
         #expect(out.count <= 220)
         #expect(PostRepCoachNoteService.passesBrandVoiceContract(out))
     }
+
+    // --- Offline parity: the deterministic path is held to the SAME quality
+    // gate the live path uses (no second, looser standard offline). ---
+
+    /// The invariant that makes `deterministicReplyOutcome`'s safety net safe:
+    /// every line the controlled builder emits, across every handled cause ×
+    /// voice (with a rep and bare), is free of OBJECTIVE quality failures
+    /// (robotic / too long / defensive / menu / fabricated quote / overclaim).
+    /// A turn-contextual `.unanchoredCoaching` / `.missingPrescribedAction` on a
+    /// cold no-data line is allowed — there is genuinely no data to anchor to,
+    /// and that honest "run one more rep" line is the correct cold response.
+    @Test func deterministicLinesHaveNoObjectiveQualityFailure() {
+        let allowed: [CoachChatReplyQualityIssue] = [.unanchoredCoaching, .missingPrescribedAction]
+        let causes: [ChatFailure] = [.network, .noProvider, .localeUnsupported, .empty]
+        let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]
+        for cause in causes {
+            for voice in voices {
+                let withRep = ChatFallbackContext(
+                    voice: voice,
+                    recentTimedTranscript: answeredTranscript,
+                    recentTimedPrompt: prompt,
+                    successMeasure: "Hold filler under 4 per rep for 3 reps"
+                )
+                let bare = ChatFallbackContext(voice: voice)
+                for ctx in [withRep, bare] {
+                    let line = AICoachChatService.deterministicReply(failure: cause, context: ctx)
+                    if let issue = AICoachChatService.replyQualityIssue(in: line, latestUserTurn: nil) {
+                        #expect(allowed.contains(issue),
+                                "deterministic line hit an OBJECTIVE failure \(issue) for \(cause) / \(String(describing: voice)): \(line)")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Because every deterministic line clears the gate (above), the gated
+    /// wrapper used by the five offline return paths always hands back a real
+    /// coach bubble (`.deterministicReply`) and never silently degrades to the
+    /// `.empty` notice for normal contexts — the offline experience is preserved.
+    @Test func deterministicOutcomeEmitsCoachBubbleAcrossCausesAndVoices() {
+        let causes: [ChatFailure] = [.network, .noProvider, .localeUnsupported, .empty]
+        let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]
+        for cause in causes {
+            for voice in voices {
+                let ctx = ChatFallbackContext(
+                    voice: voice,
+                    recentTimedTranscript: answeredTranscript,
+                    recentTimedPrompt: prompt
+                )
+                let outcome = AICoachChatService.deterministicReplyOutcome(failure: cause, context: ctx)
+                switch outcome {
+                case .deterministicReply(let text):
+                    #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                case .reply, .failure:
+                    Issue.record("gated wrapper degraded a normal deterministic line for \(cause) / \(String(describing: voice))")
+                }
+            }
+        }
+    }
 }
 
 /// Ask Noum live-reply quality gate.
@@ -21091,6 +21150,97 @@ struct AICoachChatReplyQualityGateTests {
         )
 
         #expect(issue == nil)
+    }
+}
+
+/// Cross-surface fabricated-quote guard.
+///
+/// The live chat already routes "you said …" attributions through
+/// `ProofMomentService.transcriptContains`. These tests pin that the SAME guard
+/// now governs the two other AI prose surfaces that quote the user — the
+/// post-rep coach note and the sessionDebrief insight — so a fabricated quote
+/// cannot reach the user on any surface dressed as proof. The guard is exercised
+/// directly (the network paths in `generate()` / `insight()` need a provider);
+/// both call sites build the guard from the rep transcript exactly as below.
+struct CrossSurfaceQuoteFabricationGuardTests {
+
+    /// A coach note that ATTRIBUTES a quote the transcript never contained is
+    /// flagged — the note path falls back to the deterministic, non-quoting note.
+    @Test func noteWithFabricatedAttributedQuoteIsRejected() {
+        let transcript = "I opened with the company mission and then walked through the roadmap."
+        let guardContext = CoachChatQuoteGuardContext(transcripts: [transcript])
+        let note = "You said \"we crushed the quarterly target\" — strong, but next rep, land the point sooner."
+        #expect(AICoachChatService.containsUnverifiedQuotedUserSpeech(in: note, quoteGuard: guardContext))
+    }
+
+    /// A note quoting words the user ACTUALLY said (flexible match) is allowed.
+    @Test func noteWithVerifiedAttributedQuotePasses() {
+        let transcript = "I opened with the company mission and then walked through the roadmap."
+        let guardContext = CoachChatQuoteGuardContext(transcripts: [transcript])
+        let note = "You said \"the company mission\" up front, which framed the rest. Next rep, close with the same clarity."
+        #expect(!AICoachChatService.containsUnverifiedQuotedUserSpeech(in: note, quoteGuard: guardContext))
+    }
+
+    /// Prose that quotes WITHOUT a "you said …" attribution (e.g. naming a
+    /// technique) is not user-speech and is not falsely rejected.
+    @Test func proseQuotingWithoutAttributionIsNotFlagged() {
+        let transcript = "I rushed the close and forgot to pause."
+        let guardContext = CoachChatQuoteGuardContext(transcripts: [transcript])
+        let note = "The move is the \"land the pause\" drill: hold one beat before your final line."
+        #expect(!AICoachChatService.containsUnverifiedQuotedUserSpeech(in: note, quoteGuard: guardContext))
+    }
+
+    /// sessionDebrief headline+body assembly: an attributed quote absent from
+    /// the rep transcript is flagged, so the insight path uses its template.
+    @Test func insightProseWithFabricatedQuoteIsRejected() {
+        let transcript = "I think the timeline slipped a little but we recovered by Friday."
+        let guardContext = CoachChatQuoteGuardContext(transcripts: [transcript])
+        let prose = "Strong recovery\nYou said \"we hit every milestone on time\", which anchored your close."
+        #expect(AICoachChatService.containsUnverifiedQuotedUserSpeech(in: prose, quoteGuard: guardContext))
+    }
+
+    /// The production sessionDebrief helper applies the same guard to
+    /// headline+body and falls back when the quote cannot be verified.
+    @Test func insightHelperRejectsFabricatedAttributedQuote() {
+        let insight = AIInsight(
+            kind: .sessionDebrief,
+            headline: "Strong recovery",
+            body: "You said \"we hit every milestone on time\", which anchored your close.",
+            evidence: ["Recovered by Friday"],
+            action: "Close with the same structure.",
+            isAIBacked: true,
+            generatedAt: Date()
+        )
+        #expect(AIInsightsService.containsUnverifiedSessionDebriefQuote(
+            insight: insight,
+            transcript: "I think the timeline slipped a little but we recovered by Friday."
+        ))
+    }
+
+    /// Empty/silent sessionDebriefs have no source text, so attributed quotes
+    /// are rejected instead of passing because the transcript branch is absent.
+    @Test func insightHelperRejectsAttributedQuoteWhenTranscriptIsEmpty() {
+        let insight = AIInsight(
+            kind: .sessionDebrief,
+            headline: "That line landed",
+            body: "You said \"that landed perfectly\", so keep the same close.",
+            evidence: ["Transcript unavailable"],
+            action: "Repeat the close once.",
+            isAIBacked: true,
+            generatedAt: Date()
+        )
+        #expect(AIInsightsService.containsUnverifiedSessionDebriefQuote(
+            insight: insight,
+            transcript: ""
+        ))
+    }
+
+    /// On an empty transcript (IM / silent rep) there is nothing to verify
+    /// against, so any attributed quote is unverifiable → flagged → fallback.
+    @Test func attributedQuoteOnEmptyTranscriptIsRejected() {
+        let guardContext = CoachChatQuoteGuardContext(transcripts: [""])
+        let note = "You said \"that landed perfectly\" — keep that energy next time."
+        #expect(AICoachChatService.containsUnverifiedQuotedUserSpeech(in: note, quoteGuard: guardContext))
     }
 }
 

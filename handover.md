@@ -47,6 +47,39 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~08:45 continuation (autonomous `noum2` run, real toolchain):
+
+- Closed two trust seams a communications coach cannot have, both verified by
+  compile + test (not hand-traced):
+  - Offline Ask Noum replies now route through the SAME quality gate as live
+    replies via `AICoachChatService.deterministicReplyOutcome(...)`. The gate
+    blocks only objective failures (robotic / over-long / defensive / menu /
+    fabricated quote / overclaim); a turn-contextual no-anchor miss on a cold
+    no-data line is intentionally allowed (the honest "run one more rep" line).
+  - Every AI prose surface that quotes the user now routes attributed quotes
+    through `ProofMomentService.transcriptContains` (via
+    `CoachChatQuoteGuardContext`): added to `PostRepCoachNoteService.generate`
+    and `AIInsightsService.insight` (sessionDebrief), which previously had only
+    lexical / no quote verification. Unverifiable quote → deterministic
+    non-quoting fallback.
+- Added `CrossSurfaceQuoteFabricationGuardTests` + new
+  `AICoachChatDeterministicReplyTests` cases.
+- Verified: BUILD SUCCEEDED; 76/0 on the new+affected suites; 282/0 on a
+  regression slice across AICoachChat / PostRepCoachNote / AIInsights /
+  ProofMoment / CoachChatEvaluationFixture / BelievableProgressZeroData.
+- Ran a 10-agent evaluation workflow; full delta, competitor verdict, ranked
+  remaining backlog, and the honest human-gated limitations are in
+  `docs/UX_VALUE_OVERHAUL_SESSION_2026-06-08_CONTINUATION.md`. Next code-tickable
+  item with a complete authored spec: REMEMBER-4 (persist nearest upcoming
+  BigMoment on `CoachCaseFile`).
+- Note: Canva MCP is now connected in this environment (prior handover said it
+  was unavailable); Figma MCP available but allowance may still be exhausted.
+
+Files touched this continuation: `Noum/AICoachChatService.swift`,
+`Noum/AIInsightsService.swift`, `Noum/PostRepCoachNoteService.swift`,
+`NoumTests/NoumTests.swift`,
+`docs/UX_VALUE_OVERHAUL_SESSION_2026-06-08_CONTINUATION.md`, `handover.md`.
+
 2026-06-08 00:09 commit `a5c19d8`:
 
 - Tightened the League state owner so an unrated user has an empty league
@@ -74,9 +107,29 @@ hearts/lives framing, or "replaces a human coach" claims.
 - Added focused tests for the transfer threshold, same-kind grouping, context
   wording, and no objective-outcome claim.
 
+2026-06-08 08:35 continuation:
+
+- Tightened Iteration 6 trust hardening across AI prose surfaces. Ask Noum's
+  deterministic offline fallback now runs through the same `replyQualityIssue`
+  gate as live model replies before it renders as a coach bubble.
+- Extended the existing `CoachChatQuoteGuardContext` / `ProofMomentService`
+  transcript-verification contract to post-rep AI coach notes and
+  `AIInsightsService` session debriefs. Attributed "you said ..." quotes that
+  cannot be verified now fall back to deterministic non-quoting copy.
+- Added `AIInsightsService.containsUnverifiedSessionDebriefQuote(...)` so the
+  debrief network path and tests share the same rule. Empty/silent transcripts
+  are now treated as "no source to quote," so attributed quotes are rejected
+  instead of passing because the branch was skipped.
+- Added focused tests for deterministic offline parity, cross-surface fabricated
+  quote rejection, verified quote pass-through, non-attributed quoted technique
+  copy, and empty-transcript debrief rejection.
+
 Files touched across the recent handover work:
 
 - `Noum/BigMomentStore.swift`
+- `Noum/AICoachChatService.swift`
+- `Noum/AIInsightsService.swift`
+- `Noum/PostRepCoachNoteService.swift`
 - `Noum/CoachContextBuilder.swift`
 - `Noum/CoachReplyPipeline.swift`
 - `Noum/LeagueManager.swift`
@@ -145,6 +198,9 @@ Iteration 6 - Ask Noum quality:
 - Ask Noum now receives repeated transfer patterns when the user has at least 3
   same-kind real-world outcome reports. The line is self-report-only and cannot
   claim the app caused the result.
+- Quote fabrication guardrails now cover Ask Noum, post-rep coach notes, and
+  session debrief insights. Deterministic offline Ask Noum replies also clear
+  the live reply-quality gate before rendering.
 - Needs simulator/adversarial review across empty state, post-rep seed, weak
   evidence, pushback, and goal-change turns. A fabricated quote is the top trust
   failure; do not weaken `CoachChatQuoteGuardContext`.
@@ -278,6 +334,10 @@ Completed in this session:
   succeeded.
 - `xcodebuild test -project Noum.xcodeproj -scheme Noum -destination "platform=iOS Simulator,id=3D077053-2981-4C5D-819D-FF6F9BA8AD06" -derivedDataPath ./DerivedData/Noum -only-testing:NoumTests/BigMomentTransferStoreTests -only-testing:NoumTests/CoachContextBuilderBigMomentTests`
   succeeded.
+- `xcodebuild test -project Noum.xcodeproj -scheme Noum -destination "platform=iOS Simulator,id=3D077053-2981-4C5D-819D-FF6F9BA8AD06" -derivedDataPath ./DerivedData/Noum-AIGuard -only-testing:NoumTests/AICoachChatDeterministicReplyTests -only-testing:NoumTests/AICoachChatReplyQualityGateTests -only-testing:NoumTests/CrossSurfaceQuoteFabricationGuardTests -only-testing:NoumTests/AIInsightsPromptAnchorTests`
+  succeeded. Used the separate `Noum-AIGuard` DerivedData path because the
+  default repo-local `DerivedData/Noum` build database was locked by an earlier
+  process; no cleanup or process kill was performed.
 - `.agents/skills/noum-screenshots/capture.sh` captured five tab tops to
   `.screenshots/2026-06-08_autostop-de8ee0d-0006/`.
 - `.agents/skills/noum-screenshots/capture.sh` captured the 07:34 build's five

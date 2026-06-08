@@ -268,14 +268,14 @@ actor AICoachChatService {
             // No provider configured — the model can't be reached at all.
             // A real coach still answers, so hand back a grounded, in-voice
             // deterministic line rather than an error notice.
-            return .deterministicReply(Self.deterministicReply(failure: .noProvider, context: fallback))
+            return Self.deterministicReplyOutcome(failure: .noProvider, context: fallback)
         }
 
         // M13: AI surfaces are English-only. The deterministic fallback is
         // locale-agnostic English copy (layer-wide precedent), so a non-English
         // user still gets a useful coach line rather than a config notice.
         guard await activeLocaleSupportsAI() else {
-            return .deterministicReply(Self.deterministicReply(failure: .localeUnsupported, context: fallback))
+            return Self.deterministicReplyOutcome(failure: .localeUnsupported, context: fallback)
         }
 
         // Compose the system prompt — voice + context block.
@@ -301,7 +301,7 @@ actor AICoachChatService {
                 // Transport reached the server but it refused — treat as a
                 // network failure and answer deterministically (a coach who
                 // can't reach their notes still gives a useful read).
-                return .deterministicReply(Self.deterministicReply(failure: .network, context: fallback))
+                return Self.deterministicReplyOutcome(failure: .network, context: fallback, latestUserTurn: latestUserTurn)
             }
             if let text = extractText(from: data, provider: provider) {
                 if let issue = Self.replyQualityIssue(
@@ -321,7 +321,7 @@ actor AICoachChatService {
                     ) {
                         return .reply(repaired)
                     }
-                    return .deterministicReply(Self.deterministicReply(failure: .empty, context: fallback))
+                    return Self.deterministicReplyOutcome(failure: .empty, context: fallback, latestUserTurn: latestUserTurn)
                 }
                 return .reply(text)
             }
@@ -332,7 +332,7 @@ actor AICoachChatService {
         } catch {
             // Transport / encode failure — the model is unreachable. Answer
             // deterministically instead of dead-ending the user.
-            return .deterministicReply(Self.deterministicReply(failure: .network, context: fallback))
+            return Self.deterministicReplyOutcome(failure: .network, context: fallback, latestUserTurn: latestUserTurn)
         }
     }
 
@@ -754,6 +754,47 @@ actor AICoachChatService {
         // and `passesBrandVoiceContract` holds (it rejects > 220 chars).
         text = PostRepCoachNoteService.truncate(text, max: 220)
         return text
+    }
+
+    /// Build a deterministic fallback line AND hold it to the same quality bar
+    /// the live path enforces (`replyQualityIssue`). The deterministic builder
+    /// emits controlled, in-voice copy that should always clear the bar, so this
+    /// is a safety net rather than a routine rejection: if a future copy change
+    /// ever produced a robotic / over-long / bare line, the user gets the honest
+    /// `.empty` "try rephrasing" notice instead of a sub-bar substitute. This
+    /// keeps the offline path under the SAME contract as the live path — there is
+    /// no second, looser quality standard for when the model is unreachable.
+    ///
+    /// The deterministic builder never quotes raw user speech (it composes from
+    /// the shared verdict / delivery facts / standing-case copy), so no quote
+    /// guard is threaded; the turn-aware lexical checks are what matter here.
+    nonisolated static func deterministicReplyOutcome(
+        failure: ChatFailure,
+        context: ChatFallbackContext,
+        latestUserTurn: String? = nil
+    ) -> ChatOutcome {
+        let candidate = deterministicReply(failure: failure, context: context)
+        guard let issue = replyQualityIssue(in: candidate, latestUserTurn: latestUserTurn) else {
+            return .deterministicReply(candidate)
+        }
+        switch issue {
+        case .unanchoredCoaching, .missingPrescribedAction:
+            // Turn-contextual checks, NOT objective quality failures. When the
+            // model is unreachable AND there is no rep/case yet, the controlled
+            // builder's honest "run one more rep, I'll read it when I'm back"
+            // line genuinely cannot anchor to data that does not exist — that is
+            // the correct cold coach response, so these do not block the offline
+            // path (the live path, with real data + a real turn, still enforces
+            // them on model output).
+            return .deterministicReply(candidate)
+        case .tooLong, .roboticPhrase, .bareClarification, .defensiveProductLanguage,
+             .menuInsteadOfDecision, .missedTrustRepair, .overclaimsEvidence,
+             .unverifiedQuotedUserSpeech:
+            // Objective failures the deterministic builder must never produce on
+            // ANY path. If a future copy change ever did, the user gets the
+            // honest `.empty` notice instead of a sub-bar substitute.
+            return .failure(.empty)
+        }
     }
 
     /// The single body sentence. Priority:

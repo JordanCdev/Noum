@@ -514,6 +514,22 @@ actor PostRepCoachNoteService {
             guard Self.engagesTranscript(noteText, input: input) else {
                 return fallback
             }
+            // Fabrication gate: `engagesTranscript` proves the note TOUCHES the
+            // transcript (shared content word / verbatim slice), but it does not
+            // verify that an explicit "you said …" attribution quotes words the
+            // user actually spoke. Route any attributed quote through the same
+            // ProofMomentService-backed guard the live chat uses, so a fabricated
+            // quote can never reach the user dressed as proof. A note with no
+            // "you said …" attribution is unaffected; on an empty transcript
+            // (IM / silent rep) any attributed quote is unverifiable and is
+            // correctly rejected to the deterministic fallback.
+            let quoteGuard = CoachChatQuoteGuardContext(transcripts: [input.transcript])
+            guard !AICoachChatService.containsUnverifiedQuotedUserSpeech(
+                in: noteText,
+                quoteGuard: quoteGuard
+            ) else {
+                return fallback
+            }
             return PostRepCoachNote(
                 sessionID: input.sessionID,
                 voice: input.voice,

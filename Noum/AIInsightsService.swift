@@ -165,6 +165,25 @@ actor AIInsightsService {
                 return templated
             }
 
+            // Fabrication gate (sessionDebrief): the system prompt PUSHES the
+            // model to quote the user's words, which is exactly where a
+            // fabricated "you said ..." attribution would surface. Verify any
+            // attributed quote in the headline/body against the rep transcript
+            // using the same ProofMomentService-backed guard the live chat and
+            // post-rep note use. Verified against the FULL transcript (not the
+            // 900-char prompt cap) so a legitimate quote is never falsely
+            // rejected; an unverifiable quote -> deterministic, non-quoting
+            // template instead. An empty/silent rep has no source text, so any
+            // attributed quote is rejected rather than accepted by omission.
+            if input.kind == .sessionDebrief,
+               Self.containsUnverifiedSessionDebriefQuote(
+                insight: parsed,
+                transcript: input.focusSessions.first?.transcript
+               ) {
+                cache[cacheKey] = templated
+                return templated
+            }
+
             cache[cacheKey] = parsed
             return parsed
         } catch {
@@ -177,6 +196,18 @@ actor AIInsightsService {
     /// pull-to-refresh.
     func invalidate(for input: AIInsightInput) {
         cache.removeValue(forKey: cacheKey(for: input))
+    }
+
+    nonisolated static func containsUnverifiedSessionDebriefQuote(
+        insight: AIInsight,
+        transcript: String?
+    ) -> Bool {
+        let quoteGuard = CoachChatQuoteGuardContext(transcripts: [transcript])
+        let prose = insight.headline + "\n" + insight.body
+        return AICoachChatService.containsUnverifiedQuotedUserSpeech(
+            in: prose,
+            quoteGuard: quoteGuard
+        )
     }
 
     // MARK: - Provider plumbing
