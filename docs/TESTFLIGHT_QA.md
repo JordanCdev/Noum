@@ -113,6 +113,11 @@ never been touched on a real device this milestone series.
 ## Simulator regression gates
 
 - [x] 2026-06-08 — `xcodebuild test -scheme Noum -destination
+      'platform=iOS Simulator,name=iPhone 17' -only-testing:NoumTests`:
+      `TEST SUCCEEDED`. `xcresulttool` summary: 2,257 passed, 0 failed,
+      0 skipped. Result bundle:
+      `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_17-43-21-+0100.xcresult`.
+- [x] 2026-06-08 — `xcodebuild test -scheme Noum -destination
       'platform=iOS Simulator,name=iPhone 17'
       -only-testing:NoumUITests/NoumUITests/testHomeScreenAndPrimaryNavigation
       -only-testing:NoumUITests/NoumUITests/testPracticeModesOpenAvailableScreens

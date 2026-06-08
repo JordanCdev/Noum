@@ -47,6 +47,27 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~17:44 continuation (local Codex run, full unit QA):
+
+- Ran the full `NoumTests` target on the booted `iPhone 17` simulator after
+  the UI smoke/tour verification. The run exited 0 and the `xcresulttool`
+  summary reports 2,257 passed, 0 failed, 0 skipped.
+- Updated `docs/TESTFLIGHT_QA.md` so the simulator regression gate includes
+  the full unit target, not only the UI smoke/tour checks.
+- Residual launch blockers are unchanged: Firebase deploy is blocked in this
+  shell by missing Firebase CLI tooling; hosted privacy URL still needs live
+  deploy verification; StoreKit, Live Activity, widgets, notifications, audio
+  session, and account lifecycle remain real-device/TestFlight QA items.
+
+Verification this continuation:
+
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests`: `TEST SUCCEEDED`. `xcresulttool` summary:
+  2,257 passed, 0 failed, 0 skipped. Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_17-43-21-+0100.xcresult`.
+
+Files touched this continuation: `docs/TESTFLIGHT_QA.md`, `handover.md`.
+
 2026-06-08 ~17:41 continuation (local Codex run, M14 UI QA):
 
 - Verified the stale `docs/TESTFLIGHT_QA.md` UI-test known issue is no longer
