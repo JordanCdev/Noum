@@ -47,6 +47,25 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~17:22 continuation (local Codex run, Firebase launch gate):
+
+- Checked the M14 deploy path for the already-staged Firestore rules and
+  Firebase Hosting privacy page. `firebase.json` already points to
+  `firestore.rules`, `public/privacy.html`, and the `/privacy` rewrite, and
+  `NoumWebURLs.privacy` already targets `https://noum-d0b6f.web.app/privacy`.
+- Attempted the Firebase CLI path with `npx -y firebase-tools@latest --version`;
+  it failed because this Codex shell has Node but no `npm`, `npx`, or
+  `firebase` binary. Local checks showed `node` at
+  `/Applications/Codex.app/Contents/Resources/node`, no root Firebase CLI, and
+  no Firebase CLI under `functions/node_modules`.
+- Corrected `docs/CURRENT_STATE.md` so the hosted privacy URL is no longer
+  listed as simply open. The truthful state is: app/config/static pages are
+  staged; deploy remains blocked in this shell by missing Firebase CLI tooling
+  and still needs an authenticated `firebase deploy --only
+  firestore:rules,hosting --project noum-d0b6f`.
+
+Files touched this continuation: `docs/CURRENT_STATE.md`, `handover.md`.
+
 2026-06-08 ~17:18 continuation (local Codex run, real toolchain):
 
 - Started the next M14 launch-readiness pass after the coach-parity

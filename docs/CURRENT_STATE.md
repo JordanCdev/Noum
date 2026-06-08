@@ -1091,8 +1091,12 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   the `"firestore": {"rules": "firestore.rules"}` pointer block so
   `firebase deploy --only firestore:rules,hosting --project
   noum-d0b6f` is the literal one-shot command — no in-between edit.
-  Deploy itself still pending explicit greenlight (operational,
-  not engineering).
+  Deploy was attempted from the 2026-06-08 local Codex shell, but
+  this shell has Node only and no `npm`, `npx`, or `firebase` binary
+  (`npx -y firebase-tools@latest --version` returned
+  `zsh:1: command not found: npx`). Operational next step: run the
+  literal deploy command from an authenticated machine with Firebase
+  CLI, or add approved Firebase CLI tooling to this workspace.
 - **SpeakingRatingCard placeholder — resolved.** When
   `rating.ratingHistory` is empty `RatingHistoryChart` returns
   `EmptyView()` from the chart slot, collapsing it entirely. The
@@ -1177,9 +1181,14 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   audited. A unit test (`typographyRolesResolveToFonts`) locks the catalog
   contract so a future refactor that drops `relativeTo:` fails the test
   suite.
-- **Hosted privacy policy URL** — bundled `PrivacyPolicy.md` renders
-  in-app via `PrivacyPolicyView`. App Store submission also requires
-  a hosted public URL (Firebase Hosting or similar). Open.
+- **Firebase deploy tooling unavailable in this shell** —
+  `firestore.rules`, `public/privacy.html`, `public/index.html`, and
+  the `firebase.json` hosting/rules pointers are staged, but the local
+  Codex shell lacks `npm`, `npx`, and `firebase`, so Firestore rules
+  and Hosting could not be deployed here. Run
+  `firebase deploy --only firestore:rules,hosting --project noum-d0b6f`
+  from an authenticated Firebase CLI environment before treating M14
+  as launch-ready.
 
 ## Conventions to preserve
 
