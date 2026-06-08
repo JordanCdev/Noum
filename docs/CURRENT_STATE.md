@@ -1178,6 +1178,12 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   achievement unlock celebration, and post-session progression overlay copy
   onto `Typography` / `Typography.figtreeNumeric(...)`, leaving icon glyphs
   and fixed-format live practice counters alone.
+  A DEBUG-only `UI_TESTING_OVERLAY <kind>` root harness in `NoumApp`
+  now renders the real post-session progression, personal-best, level-up,
+  and achievement-unlock overlay views for `ScreenshotTour.
+  testCaptureCelebrationOverlays`; the corrected 2026-06-08 simulator run
+  passed and the exported PNG attachments were spot-checked at default
+  text size. Large Dynamic Type and real-device overlay QA remain open.
   Remaining `.system(size:)`
   call sites are mixed: some are intentional fixed-format surfaces
   (bitmap share cards rendered through `ImageRenderer`, compact

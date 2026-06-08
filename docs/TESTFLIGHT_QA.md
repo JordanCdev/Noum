@@ -135,6 +135,14 @@ never been touched on a real device this milestone series.
       -only-testing:NoumUITests/ScreenshotTour/testCaptureAdvancementSurfaces`:
       `TEST SUCCEEDED`. Result bundle:
       `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_17-35-42-+0100.xcresult`.
+- [x] 2026-06-08 — `xcodebuild test -scheme Noum -destination
+      'platform=iOS Simulator,name=iPhone 17'
+      -only-testing:NoumUITests/ScreenshotTour/testCaptureCelebrationOverlays`:
+      `TEST SUCCEEDED`. Result bundle:
+      `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_18-08-49-+0100.xcresult`.
+      Attachments were exported to `/tmp/noum-overlay-attachments-2` and
+      spot-checked for post-session progression, personal-best, level-up,
+      and achievement-unlock overlay rendering at default text size.
 
 ## Widgets
 

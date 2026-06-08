@@ -34,10 +34,11 @@ called complete.
 
 ## Next steps to reach desired state
 1. Run the corrected `.agents`/`.claude` screenshot workflow in `light` or `detailed` mode, then capture login/Home/Settings/Big Moment intake after this typography pass.
-2. Continue auditing legacy `.system(size:)` text in practice, summary, lessons, and celebration surfaces, preserving intentional fixed icon/counter/share-card uses.
+2. Continue auditing legacy `.system(size:)` text in practice, summary, and lessons, preserving intentional fixed icon/counter/share-card uses.
 
 ## Regressions checked
 - Simulator compile + focused tests passed via `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:NoumTests/ScoreCalibrationTests`.
+- A later targeted overlay pass added a DEBUG-only `UI_TESTING_OVERLAY <kind>` harness and passed `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:NoumUITests/ScreenshotTour/testCaptureCelebrationOverlays`. Corrected result bundle: `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_18-08-49-+0100.xcresult`. Exported attachments in `/tmp/noum-overlay-attachments-2` were spot-checked for post-session progression, personal-best, level-up, and achievement-unlock overlays at default text size.
 - `git diff --check` passed.
 
 ## Surfaces needing visual verification
@@ -50,7 +51,7 @@ called complete.
 - Path Journey and Mode Mastery cards.
 - Ah-Counter, Pace Training, and Cut the Crutch setup/result screens.
 - Mini-drill result, path-node celebration, and Pro upsell.
-- Personal-best, level-up, achievement-unlock, and post-session progression overlays. Existing seeded screenshot routes suppress or do not force these overlays, so they need a targeted manual/dev-seed capture path before this item can be called visually complete.
+- Personal-best, level-up, achievement-unlock, and post-session progression overlays now have a repeatable DEBUG screenshot harness and a default-text-size simulator spot-check. They still need large Dynamic Type and real-device QA before being called fully verified.
 - Speaking Rank/Profile, tier promotion overlay, skill-progress badges, review-stat badges, Coaching Profile onboarding, and Achievements Tree count label.
 
 ## For next run

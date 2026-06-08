@@ -47,6 +47,39 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~18:13 continuation (local Codex run, overlay screenshot harness):
+
+- Added a DEBUG-only `UI_TESTING_OVERLAY <kind>` root harness in
+  `NoumApp.swift` so UI tests can render the real post-session progression,
+  personal-best, level-up, and achievement-unlock overlay views directly.
+  The harness is argument-gated and excluded from Release builds.
+- Added `ScreenshotTour.testCaptureCelebrationOverlays` with four attachments:
+  `33-post-session-progression`, `34-personal-best-celebration`,
+  `35-level-up-celebration`, and `36-achievement-unlock-celebration`.
+- The first harness run exposed an invalid fixture: progression was seeded
+  with a new unlock, so the real progression view correctly showed the
+  achievement-unlock overlay first. The fixture was corrected to keep
+  progression and achievement-unlock as separate captures.
+- Updated `docs/TESTFLIGHT_QA.md`, `docs/CURRENT_STATE.md`, and the typography
+  screenshot handoff to record this as default-text-size simulator visual
+  evidence. Large Dynamic Type and real-device overlay QA remain open.
+
+Verification this continuation:
+
+- `git diff --check`: passed before the first UI-test run.
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:NoumUITests/ScreenshotTour/testCaptureCelebrationOverlays`:
+  first run `TEST SUCCEEDED`; result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_18-03-55-+0100.xcresult`.
+- Corrected run of the same command: `TEST SUCCEEDED`; result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_18-08-49-+0100.xcresult`.
+- `xcrun xcresulttool export attachments --path DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_18-08-49-+0100.xcresult --output-path /tmp/noum-overlay-attachments-2` exported four PNGs, and all four were visually spot-checked for nonblank rendering, fit, and visible CTAs at default text size.
+
+Files touched this continuation: `Noum/NoumApp.swift`,
+`NoumUITests/ScreenshotTour.swift`, `docs/TESTFLIGHT_QA.md`,
+`docs/CURRENT_STATE.md`,
+`.screenshots/2026-06-08_m14-typography-accessibility/HANDOFF.md`,
+`handover.md`.
+
 2026-06-08 ~18:01 continuation (local Codex run, Release simulator gate):
 
 - Ran a local Release simulator build for the `Noum` scheme on the booted

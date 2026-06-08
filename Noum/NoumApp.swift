@@ -148,6 +148,31 @@ struct NoumApp: App {
 
     @ViewBuilder
     private var rootContent: some View {
+        #if DEBUG
+        if let overlayHarness = OverlayScreenshotHarnessKind.requested() {
+            OverlayScreenshotHarnessView(kind: overlayHarness)
+        } else if isRealFirstRunUITesting && !uiTestingFirstRunCoverDismissed {
+            // UI-test-only proof path. Rendering onboarding as the temporary
+            // root avoids a presentation race where child Home sheets can win
+            // before the app-level first-run cover appears on reused sims.
+            CoachingOnboardingView {
+                uiTestingFirstRunCoverDismissed = true
+                markFirstRunCompletedIfProfileExists()
+            }
+            .interactiveDismissDisabled(true)
+        } else {
+            ContentView()
+                .fullScreenCover(
+                    isPresented: firstRunOnboardingPresented,
+                    onDismiss: {
+                        markFirstRunCompletedIfProfileExists()
+                    }
+                ) {
+                    CoachingOnboardingView()
+                        .interactiveDismissDisabled(true)
+                }
+        }
+        #else
         if isRealFirstRunUITesting && !uiTestingFirstRunCoverDismissed {
             // UI-test-only proof path. Rendering onboarding as the temporary
             // root avoids a presentation race where child Home sheets can win
@@ -169,6 +194,7 @@ struct NoumApp: App {
                         .interactiveDismissDisabled(true)
                 }
         }
+        #endif
     }
 
     /// Drives the first-run coaching intake. UI testing bypasses it so the
@@ -235,5 +261,102 @@ final class DeepLinkRouter: ObservableObject {
         }
     }
     private init() {}
+}
+
+// MARK: - UI-test overlay screenshot harness
+
+@available(iOS 17.0, macOS 12.0, *)
+enum OverlayScreenshotHarnessKind: String, CaseIterable {
+    case progression
+    case personalBest
+    case levelUp
+    case achievementUnlock
+
+    static func requested(arguments: [String] = ProcessInfo.processInfo.arguments) -> Self? {
+        guard let index = arguments.firstIndex(of: "UI_TESTING_OVERLAY"),
+              index + 1 < arguments.count else {
+            return nil
+        }
+        return Self(rawValue: arguments[index + 1])
+    }
+}
+
+@available(iOS 17.0, macOS 12.0, *)
+struct OverlayScreenshotHarnessView: View {
+    let kind: OverlayScreenshotHarnessKind
+
+    var body: some View {
+        ZStack {
+            switch kind {
+            case .progression:
+                PostSessionProgressionView(
+                    xpEarned: 86,
+                    previousXP: 1_280,
+                    newXP: 1_366,
+                    previousLevel: "Novice Speaker II",
+                    newLevel: "Novice Speaker II",
+                    achievementProgress: sampleProgressDeltas,
+                    newUnlocks: [],
+                    onContinue: {}
+                )
+            case .personalBest:
+                PersonalBestCelebrationScreen(
+                    scoreValue: 8,
+                    scoreAccent: AppColor.brandBlue,
+                    modeName: PracticeMode.timed.displayLabel,
+                    previousBest: "Previous best: 7/10",
+                    onContinue: {},
+                    proof: sampleProofMoment
+                )
+            case .levelUp:
+                LevelUpCelebrationScreen(
+                    newLevel: "Average Speaker I",
+                    previousLevel: "Novice Speaker IV",
+                    xpProgress: 0.32,
+                    onContinue: {}
+                )
+            case .achievementUnlock:
+                AchievementUnlockCelebration(
+                    tier: sampleAchievementTier,
+                    onContinue: {}
+                )
+            }
+        }
+        .accessibilityIdentifier("overlayHarness.\(kind.rawValue)")
+    }
+
+    private var sampleAchievementTier: AchievementTier {
+        AchievementStore.tier(for: "clarity_1") ?? AchievementStore.allTiers[0]
+    }
+
+    private var sampleProgressDeltas: [AchievementProgressDelta] {
+        [
+            AchievementProgressDelta(
+                id: "clarity_1",
+                title: "Clean Run",
+                previousProgress: 0.0,
+                newProgress: 1.0,
+                progressLabel: "1/1"
+            ),
+            AchievementProgressDelta(
+                id: "volume_10",
+                title: "Double Digits",
+                previousProgress: 0.8,
+                newProgress: 0.9,
+                progressLabel: "9/10"
+            )
+        ]
+    }
+
+    private var sampleProofMoment: ProofMoment {
+        ProofMoment(
+            quote: "We should decide the owner, the deadline, and the first customer impact.",
+            technique: "Clear structure",
+            claim: "That is the concise structure you have been building.",
+            sessionDate: Date(),
+            isAIBacked: false,
+            generatedAt: Date()
+        )
+    }
 }
 #endif

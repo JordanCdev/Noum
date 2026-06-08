@@ -231,6 +231,14 @@ final class ScreenshotTour: XCTestCase {
         )
     }
 
+    @MainActor
+    func testCaptureCelebrationOverlays() throws {
+        captureOverlayHarness(kind: "progression", name: "33-post-session-progression")
+        captureOverlayHarness(kind: "personalBest", name: "34-personal-best-celebration")
+        captureOverlayHarness(kind: "levelUp", name: "35-level-up-celebration")
+        captureOverlayHarness(kind: "achievementUnlock", name: "36-achievement-unlock-celebration")
+    }
+
     // MARK: - Helpers
 
     @MainActor
@@ -335,6 +343,22 @@ final class ScreenshotTour: XCTestCase {
                 }
             }
         }
+        app.terminate()
+    }
+
+    @MainActor
+    private func captureOverlayHarness(kind: String, name: String) {
+        let app = XCUIApplication()
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_OVERLAY", kind]
+        app.launch()
+        let harness = app.descendants(matching: .any)["overlayHarness.\(kind)"]
+        XCTAssertTrue(harness.waitForExistence(timeout: 5))
+        guard harness.exists else {
+            app.terminate()
+            return
+        }
+        Thread.sleep(forTimeInterval: 1.4)
+        attach(app, name: name)
         app.terminate()
     }
 
