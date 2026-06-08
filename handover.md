@@ -47,6 +47,32 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~15:40 continuation (local Codex run, real toolchain):
+
+- Refreshed stale rows in `docs/COACH_REPLACEMENT_SCORECARD.md` after checking
+  the current `ux-overhaul` code instead of treating old absent/partial rows as
+  live backlog. `ARGUMENT-LOGIC`, `CONCISION-OF-MEANING`, and `EXERCISE-7` are
+  now recorded as shipped-strong against existing deterministic owners and
+  consumers; `EXERCISE-5` now correctly lists PREP, claim/counter, and AREA as
+  present while keeping Monroe's Sequence and a dedicated guided CEW drill as
+  remaining.
+- Corrected the scorecard's old no-toolchain caveats from the prior generated
+  host. Local focused suites have run on the iPhone 17 simulator, but full-suite
+  breadth, device QA, live-key LLM quality, expert calibration, and longitudinal
+  user outcomes remain explicitly unclaimed.
+- Verified with `xcodebuild test -scheme Noum -destination 'platform=iOS
+  Simulator,name=iPhone 17' -only-testing:NoumTests/FrameworkDrillCheckTests
+  -only-testing:NoumTests/FrameworkDrillCatalogTests
+  -only-testing:NoumTests/FrameworkDrillCopyAndScoreTests
+  -only-testing:NoumTests/ArgumentLogicTests
+  -only-testing:NoumTests/ConcisionOfMeaningTests
+  -only-testing:NoumTests/TimedInsightArgumentConsumerTests`: `TEST SUCCEEDED`.
+  Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_15-39-38-+0100.xcresult`.
+
+Files touched this continuation: `docs/COACH_REPLACEMENT_SCORECARD.md`,
+`handover.md`.
+
 2026-06-08 ~15:28 continuation (local Codex run, real toolchain):
 
 - Closed the `IM-TONE` scorecard gap without adding a new grader, store, or
