@@ -112,6 +112,12 @@ never been touched on a real device this milestone series.
 
 ## Simulator regression gates
 
+- [x] 2026-06-08 — `xcodebuild build -scheme Noum -configuration
+      Release -destination 'platform=iOS Simulator,name=iPhone 17'`:
+      `BUILD SUCCEEDED`. Product:
+      `DerivedData/Noum/Build/Products/Release-iphonesimulator/Noum.app`.
+      This verifies the local Release simulator configuration only; it
+      does not replace device archive, signing, or TestFlight upload QA.
 - [x] 2026-06-08 — `xcodebuild test -scheme Noum -destination
       'platform=iOS Simulator,name=iPhone 17' -only-testing:NoumTests`:
       `TEST SUCCEEDED`. `xcresulttool` summary: 2,257 passed, 0 failed,

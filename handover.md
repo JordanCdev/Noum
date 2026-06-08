@@ -47,6 +47,22 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~18:01 continuation (local Codex run, Release simulator gate):
+
+- Ran a local Release simulator build for the `Noum` scheme on the booted
+  `iPhone 17` simulator. The build completed successfully and produced
+  `DerivedData/Noum/Build/Products/Release-iphonesimulator/Noum.app`.
+- Updated `docs/TESTFLIGHT_QA.md` so the simulator regression gates include
+  this Release configuration check. This does not close device archive,
+  signing, App Store Connect/TestFlight upload, or hardware-only QA.
+
+Verification this continuation:
+
+- `xcodebuild build -scheme Noum -configuration Release -destination
+  'platform=iOS Simulator,name=iPhone 17'`: `BUILD SUCCEEDED`.
+
+Files touched this continuation: `docs/TESTFLIGHT_QA.md`, `handover.md`.
+
 2026-06-08 ~17:55 continuation (local Codex run, celebration typography):
 
 - Continued the Dynamic Type / typography audit on celebration and progression
