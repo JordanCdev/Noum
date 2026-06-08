@@ -47,6 +47,35 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~14:50 continuation (local Codex run, real toolchain):
+
+- Pushed `ux-overhaul` to `origin` through `87fae03` before continuing.
+- Rechecked the roadmap backlog. `PRESCRIBE-3` is already present in code and
+  tests: `PrimaryFocusMemory.buildSuccessCriterion` grounds success-bar copy in
+  `priorAverage` once the pre-window sample floor is met, with tests for filler,
+  score, and below-floor generic copy.
+- Landed `SUBSTANCE-4` remainder for the post-rep AI Coach Read without adding a
+  new state owner. `AICoachSessionInput` now carries optional
+  `standingReviewDueAt` from `CoachCaseFile.reviewDueAt`; `SummaryView` threads
+  it from `CoachMemoryStore.currentMemory?.caseFile`; and
+  `AICoachService.userPrompt` renders `Review cadence: revisit by ...` inside
+  the existing `STANDING CASE` block only when the case file provides it.
+- Reused `CoachContextBuilder.caseReviewLabel` for the relative cadence wording
+  (`today`, `tomorrow`, `in N days`, overdue), making the helper internal rather
+  than duplicating date logic.
+- Updated `CoachReadParityTests` for defaulted legacy construction, nil
+  omission, standing-case inclusion, byte-identical all-nil prompt behavior,
+  fixed-calendar cadence labels, and the system prompt's review-cadence rubric.
+- Verified with `git diff --check` and `xcodebuild test -scheme Noum
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/CoachReadParityTests` after sandbox escalation:
+  `TEST SUCCEEDED`. Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_14-45-24-+0100.xcresult`.
+
+Files touched this continuation: `Noum/CoachContextBuilder.swift`,
+`Noum/PracticeSupport.swift`, `Noum/SummaryView.swift`,
+`NoumTests/NoumTests.swift`, `handover.md`.
+
 2026-06-08 ~11:20 continuation (local Codex run, real toolchain):
 
 - Committed the previously staged auto-stop screenshot handoff as `d110e50`

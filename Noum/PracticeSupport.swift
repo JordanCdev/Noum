@@ -8186,6 +8186,10 @@ struct AICoachSessionInput {
     /// What success on the standing intervention looks like (reused from
     /// `CoachCaseFile.successMeasure`). Nil when no active intervention.
     let standingSuccessMeasure: String?
+    /// The active case-file review cadence (reused from
+    /// `CoachCaseFile.reviewDueAt`). Nil when no active intervention or review
+    /// cadence exists; never synthesized from the current rep.
+    let standingReviewDueAt: Date?
 
     init(
         transcript: String,
@@ -8202,7 +8206,8 @@ struct AICoachSessionInput {
         baselinePaceWPM: Double? = nil,
         standingHypothesis: String? = nil,
         standingObservableTarget: String? = nil,
-        standingSuccessMeasure: String? = nil
+        standingSuccessMeasure: String? = nil,
+        standingReviewDueAt: Date? = nil
     ) {
         self.transcript = transcript
         self.mode = mode
@@ -8219,6 +8224,7 @@ struct AICoachSessionInput {
         self.standingHypothesis = standingHypothesis
         self.standingObservableTarget = standingObservableTarget
         self.standingSuccessMeasure = standingSuccessMeasure
+        self.standingReviewDueAt = standingReviewDueAt
     }
 }
 
@@ -10356,8 +10362,8 @@ struct AICoachService: AICoachServicing {
         4. Connect to prior reps only when genuinely true (continuity), e.g. \
         "second time the lede arrived late." Never invent past behavior.
         5. STANDING CASE. If a STANDING CASE is given, weigh this rep against \
-        that standing target/measure (the user's ongoing goal), not just this \
-        rep in isolation — but it is durable context, NOT this-rep evidence: \
+        that standing target/measure/review cadence (the user's ongoing goal), \
+        not just this rep in isolation — but it is durable context, NOT this-rep evidence: \
         treat it as the hypothesis you are testing, and never assert the \
         standing target was hit this rep unless the transcript shows it.
         6. Stats (score, filler count, pace) are CONTEXT, not the read.
@@ -10458,11 +10464,12 @@ struct AICoachService: AICoachServicing {
         }
 
         // STANDING CASE — the user's durable working hypothesis + active
-        // intervention target/measure (SUBSTANCE-4). Durable context the coach
-        // is carrying, NOT this-rep evidence: the rubric weighs the rep against
-        // this standing target but never asserts it was hit without transcript
-        // support. Each component is omitted when its source field is nil; the
-        // whole block is omitted when all three are absent (no placeholder).
+        // intervention target/measure/review cadence (SUBSTANCE-4). Durable
+        // context the coach is carrying, NOT this-rep evidence: the rubric
+        // weighs the rep against this standing target but never asserts it was
+        // hit without transcript support. Each component is omitted when its
+        // source field is nil; the whole block is omitted when all four are
+        // absent (no placeholder).
         var standingCaseLines: [String] = []
         if let hypothesis = input.standingHypothesis?.trimmingCharacters(in: .whitespacesAndNewlines),
            !hypothesis.isEmpty {
@@ -10475,6 +10482,9 @@ struct AICoachService: AICoachServicing {
         if let measure = input.standingSuccessMeasure?.trimmingCharacters(in: .whitespacesAndNewlines),
            !measure.isEmpty {
             standingCaseLines.append("Success measure: \(measure)")
+        }
+        if let due = input.standingReviewDueAt {
+            standingCaseLines.append("Review cadence: revisit by \(CoachContextBuilder.caseReviewLabel(for: due))")
         }
         if !standingCaseLines.isEmpty {
             lines.append("")

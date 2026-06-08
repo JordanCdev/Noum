@@ -2954,12 +2954,13 @@ struct SummaryView: View {
                     baselineFillerRate: baselineFiller,
                     baselinePaceWPM: baselinePace,
                     // STANDING CASE (SUBSTANCE-4) — the durable working
-                    // hypothesis + the already-built case-file target/measure
+                    // hypothesis + the already-built case-file target/measure/cadence
                     // (single source of truth: reuse caseFile.observableTarget/
-                    // successMeasure, never re-derive from activeIntervention).
+                    // successMeasure/reviewDueAt, never re-derive from activeIntervention).
                     standingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis,
                     standingObservableTarget: coachMemoryStore.currentMemory?.caseFile?.observableTarget,
-                    standingSuccessMeasure: coachMemoryStore.currentMemory?.caseFile?.successMeasure
+                    standingSuccessMeasure: coachMemoryStore.currentMemory?.caseFile?.successMeasure,
+                    standingReviewDueAt: coachMemoryStore.currentMemory?.caseFile?.reviewDueAt
                 ),
                 profile: coachingProfileStore.profile,
                 plan: plan

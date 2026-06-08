@@ -18926,7 +18926,8 @@ struct CoachReadParityTests {
         baselinePaceWPM: Double? = nil,
         standingHypothesis: String? = nil,
         standingObservableTarget: String? = nil,
-        standingSuccessMeasure: String? = nil
+        standingSuccessMeasure: String? = nil,
+        standingReviewDueAt: Date? = nil
     ) -> AICoachSessionInput {
         AICoachSessionInput(
             transcript: transcript,
@@ -18943,7 +18944,8 @@ struct CoachReadParityTests {
             baselinePaceWPM: baselinePaceWPM,
             standingHypothesis: standingHypothesis,
             standingObservableTarget: standingObservableTarget,
-            standingSuccessMeasure: standingSuccessMeasure
+            standingSuccessMeasure: standingSuccessMeasure,
+            standingReviewDueAt: standingReviewDueAt
         )
     }
 
@@ -19213,6 +19215,7 @@ struct CoachReadParityTests {
         #expect(input.standingHypothesis == nil)
         #expect(input.standingObservableTarget == nil)
         #expect(input.standingSuccessMeasure == nil)
+        #expect(input.standingReviewDueAt == nil)
     }
 
     // 12. The user prompt omits the question / continuity / baseline lines when
@@ -19229,11 +19232,12 @@ struct CoachReadParityTests {
         #expect(!user.contains("RECENT REPS"))
         #expect(!user.contains("Baseline filler rate:"))
         #expect(!user.contains("Baseline pace:"))
-        // No STANDING CASE block when all three standing fields are nil.
+        // No STANDING CASE block when all four standing fields are nil.
         #expect(!user.contains("STANDING CASE"))
         #expect(!user.contains("Working hypothesis:"))
         #expect(!user.contains("Observable target:"))
         #expect(!user.contains("Success measure:"))
+        #expect(!user.contains("Review cadence:"))
         // No stray blank-block artefact.
         #expect(!user.contains("\n\n\n"))
     }
@@ -19264,14 +19268,15 @@ struct CoachReadParityTests {
     }
 
     // 13b. (SUBSTANCE-4) The user prompt surfaces the STANDING CASE block with
-    //      the standing hypothesis / observable target / success measure when
-    //      those durable-context fields are present.
+    //      the standing hypothesis / observable target / success measure /
+    //      review cadence when those durable-context fields are present.
     @Test func userPromptSurfacesStandingCaseWhenPresent() {
         let input = makeInput(
             transcript: "Productivity is complicated.",
             standingHypothesis: "Leads strong but buries the ask under hedging.",
             standingObservableTarget: "State the ask in the first sentence.",
-            standingSuccessMeasure: "Ask lands in sentence one for 3 reps."
+            standingSuccessMeasure: "Ask lands in sentence one for 3 reps.",
+            standingReviewDueAt: Calendar.current.date(byAdding: .day, value: 2, to: Date())
         )
         let user = AICoachService.userPrompt(
             input: input, profile: nil, plan: nil, baselineContext: ""
@@ -19280,6 +19285,7 @@ struct CoachReadParityTests {
         #expect(user.contains("Working hypothesis: Leads strong but buries the ask under hedging."))
         #expect(user.contains("Observable target: State the ask in the first sentence."))
         #expect(user.contains("Success measure: Ask lands in sentence one for 3 reps."))
+        #expect(user.contains("Review cadence: revisit by"))
         // No stray blank-block artefact.
         #expect(!user.contains("\n\n\n"))
     }
@@ -19300,6 +19306,7 @@ struct CoachReadParityTests {
         #expect(user.contains("Working hypothesis: Tends to over-qualify before the point."))
         #expect(!user.contains("Observable target:"))
         #expect(!user.contains("Success measure:"))
+        #expect(!user.contains("Review cadence:"))
     }
 
     // 13d. (SUBSTANCE-4) Byte-identical omission: the user prompt with all
@@ -19312,7 +19319,8 @@ struct CoachReadParityTests {
             voice: .executive,
             standingHypothesis: nil,
             standingObservableTarget: nil,
-            standingSuccessMeasure: nil
+            standingSuccessMeasure: nil,
+            standingReviewDueAt: nil
         )
         let baseline = makeInput(
             transcript: "A grounded line about the topic.",
@@ -19328,13 +19336,40 @@ struct CoachReadParityTests {
         #expect(a == b)
     }
 
-    // 13e. (SUBSTANCE-4) The systemPrompt carries the standing-target rubric
+    // 13e. (SUBSTANCE-4) The AI coach read uses the same short relative
+    //      review-cadence language as the case-file context builder.
+    @Test func standingReviewCadenceUsesSharedRelativeCaseFileLanguage() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = calendar.date(from: DateComponents(
+            year: 2026, month: 6, day: 8, hour: 12
+        ))!
+
+        #expect(CoachContextBuilder.caseReviewLabel(for: now, now: now, calendar: calendar) == "today")
+        #expect(CoachContextBuilder.caseReviewLabel(
+            for: calendar.date(byAdding: .day, value: 1, to: now)!,
+            now: now,
+            calendar: calendar
+        ) == "tomorrow")
+        #expect(CoachContextBuilder.caseReviewLabel(
+            for: calendar.date(byAdding: .day, value: 3, to: now)!,
+            now: now,
+            calendar: calendar
+        ) == "in 3 days")
+        #expect(CoachContextBuilder.caseReviewLabel(
+            for: calendar.date(byAdding: .day, value: -1, to: now)!,
+            now: now,
+            calendar: calendar
+        ) == "now (review overdue)")
+    }
+
+    // 13f. (SUBSTANCE-4) The systemPrompt carries the standing-target rubric
     //      line that keeps the standing case as a hypothesis to test, never an
     //      assertion the target was hit this rep without transcript support.
     @Test func systemPromptCarriesStandingCaseRubricLine() {
         let prompt = AICoachService.systemPrompt(persona: CoachPersona.persona(for: .executive))
         #expect(prompt.contains("STANDING CASE. If a STANDING CASE is given"))
-        #expect(prompt.contains("weigh this rep against"))
+        #expect(prompt.contains("standing target/measure/review cadence"))
         #expect(prompt.contains("never assert the"))
         // The standing case is framed as a hypothesis to test, never causation.
         #expect(prompt.contains("treat it as the hypothesis you are testing"))

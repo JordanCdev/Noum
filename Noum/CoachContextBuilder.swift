@@ -5375,7 +5375,7 @@ enum CoachContextBuilder {
 
     /// Short, future-facing phrase for an intervention's review date so the
     /// coach can say "revisit by tomorrow" rather than read out a timestamp.
-    private static func caseReviewLabel(for date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+    static func caseReviewLabel(for date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
         let days = calendar.dateComponents(
             [.day],
             from: calendar.startOfDay(for: now),
