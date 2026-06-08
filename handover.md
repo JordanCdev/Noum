@@ -45,7 +45,9 @@ Existing patterns to preserve:
 Do not introduce new stores, duplicate routes, fake progress, fake loading,
 hearts/lives framing, or "replaces a human coach" claims.
 
-## What changed in this handover session
+## Recent handover work
+
+2026-06-08 00:09 commit `a5c19d8`:
 
 - Tightened the League state owner so an unrated user has an empty league
   bucket key. The UI already said placement was pending; now the backend-facing
@@ -58,14 +60,32 @@ hearts/lives framing, or "replaces a human coach" claims.
 - Verified the focused zero-data progress tests on the iPhone 17 simulator and
   captured a fresh light five-tab screenshot sweep.
 
-Files touched in this session:
+2026-06-08 07:30 continuation:
 
+- Added a pure `BigMomentTransferTrend` reducer on `BigMomentStore`. It groups
+  repeated real-world outcome reports by moment kind and only emits a pattern
+  after at least 3 same-kind reports.
+- Updated `CoachContextBuilder` so Ask Noum can see a tentative transfer pattern
+  before the latest two anecdotes, with explicit self-report / non-causation
+  guardrails.
+- Widened `CoachReplyPipeline`'s transfer snapshot from 2 reports to the
+  bounded outcome cap so the trend reducer has enough history without adding a
+  new store.
+- Added focused tests for the transfer threshold, same-kind grouping, context
+  wording, and no objective-outcome claim.
+
+Files touched across the recent handover work:
+
+- `Noum/BigMomentStore.swift`
+- `Noum/CoachContextBuilder.swift`
+- `Noum/CoachReplyPipeline.swift`
 - `Noum/LeagueManager.swift`
 - `Noum/LeagueView.swift`
 - `Noum/PeakRatingWallView.swift`
 - `NoumTests/NoumTests.swift`
 - `handover.md`
 - `.screenshots/2026-06-08_autostop-de8ee0d-0006/HANDOFF.md`
+- `.screenshots/2026-06-08_autostop-a5c19d8-0737/HANDOFF.md`
 
 Pre-existing dirty/generated changes at session start:
 
@@ -122,6 +142,9 @@ Iteration 5 - prescription / curriculum spine:
 Iteration 6 - Ask Noum quality:
 
 - Structured reply shape and quote guard exist.
+- Ask Noum now receives repeated transfer patterns when the user has at least 3
+  same-kind real-world outcome reports. The line is self-report-only and cannot
+  claim the app caused the result.
 - Needs simulator/adversarial review across empty state, post-rep seed, weak
   evidence, pushback, and goal-change turns. A fabricated quote is the top trust
   failure; do not weaken `CoachChatQuoteGuardContext`.
@@ -130,7 +153,9 @@ Iteration 7 - Profile / transfer:
 
 - Profile is collapsed by default: identity, optional rating hero when evidence
   exists, one coach read, evidence hub.
-- Transfer state is now surfaced compactly via `BigMomentStore`.
+- Transfer state is now surfaced compactly via `BigMomentStore`, and repeated
+  outcome reports can aggregate into a tentative same-kind transfer pattern for
+  the coach context.
 - Still needs visual review for Dynamic Type, VoiceOver, thin-data users, and
   whether the expanded evidence disclosure is still too dense.
 
@@ -143,7 +168,9 @@ What Noum now does credibly:
 - Tracks rating, baselines, trends, proof moments, coach memory, and big moments.
 - Prescribes one next rep from existing recommendation context.
 - Can quote verified user words and use them as proof.
-- Has a bounded case-file direction and avoids claiming validation/parity.
+- Has a bounded case-file direction, upcoming-moment awareness, delivery fusion,
+  reinforce/vary/replace adaptation, and tentative transfer patterns without
+  claiming validation/parity.
 
 Where a human coach is still ahead:
 
@@ -154,34 +181,38 @@ Where a human coach is still ahead:
   avoids, tests hypotheses live, and revises the read when the user disagrees.
 - Intervention quality: a human designs drills against the exact user, room,
   audience, stake, and deadline, not just the detected metric.
-- Adaptation: a human can say "this drill is not working for you" and change
-  course after watching the response. Noum has some loops, but the general
-  reinforce/vary/replace loop is still a roadmap item.
-- Transfer: a human follows up after the interview, board update, pitch, date,
-  conflict, or leadership conversation and updates the coaching plan from the
-  user's real outcome.
+- Adaptation: Noum now computes bounded reinforce/vary/replace signals from
+  followed reps, but a human still notices qualitative frustration, avoidance,
+  or confidence shifts while the drill is happening.
+- Transfer: Noum can remember upcoming moments and aggregate repeated
+  self-reported outcomes, but a human still follows up in richer context and can
+  challenge or reinterpret the user's read of the room.
 - Validation: a human coach has externally observable judgment. Noum still
   lacks expert-calibrated evaluation fixtures and longitudinal outcome proof.
 
 High-leverage next product moves:
 
-1. Close the general adaptation loop in `RecommendationLearningStore` /
-   `NextActionEngine`: reinforce, vary, or replace after enough followed reps.
-2. Persist the soonest upcoming `BigMoment` into `CoachCaseFile`.
-3. Fuse delivery reads into one careful, user-confirmable delivery hypothesis.
-4. Aggregate repeated Big Moment outcomes into tentative transfer trends.
-5. Build a version-controlled evaluation set and compare Noum reads to expert
+1. Build a version-controlled evaluation set and compare Noum reads to expert
    coach baselines. Label this "validation substrate", not validation.
+2. Run adversarial Ask Noum review over fabricated quote attempts, weak
+   evidence, goal changes, transfer claims, and user pushback.
+3. Prove the true cold-start loop end to end without UI injection: ask -> speak
+   -> first read in roughly 60 seconds.
+4. Continue reducing Profile/Settings density while preserving thin-data
+   self-suppression and evidence disclosure.
+5. Add real-user longitudinal outcome tracking before any parity claim.
 
-## Competitor delta, checked 2026-06-07
+## Competitor delta, checked 2026-06-08
 
 Sources:
 
 - Yoodli overview: https://support.yoodli.ai/en/articles/9550461-yoodli-overview
 - Yoodli roleplay platform: https://yoodli.ai/
+- Yoodli official information: https://yoodli.ai/info-for-ai
 - Orai homepage: https://orai.com/
 - Orai pricing / training plan: https://orai.com/pricing/
 - Speeko homepage: https://www.speeko.co/home
+- Speeko subscriptions: https://www.speeko.co/subscriptions
 - Speeko App Store: https://apps.apple.com/us/app/speeko-ai-for-public-speaking/id1071468459
 - Duolingo Video Call with Lily: https://blog.duolingo.com/video-call/
 - Duolingo Video Call with Falstaff: https://blog.duolingo.com/beginner-video-call-with-falstaff/
@@ -190,10 +221,12 @@ Sources:
 Yoodli:
 
 - Strength: strong roleplay surface for pitches, presentations, interviews,
-  sales calls, difficult conversations, and video-call coaching. Enterprise GTM
-  and team/coach workflows are ahead of Noum.
+  sales calls, difficult conversations, multi-persona panels, and video-call
+  coaching. Enterprise GTM, analytics, integrations, and team/coach workflows
+  are ahead of Noum.
 - Noum edge: iOS-native private coach identity, durable personal memory,
-  verified quote/proof moments, and a tighter pressure/filler coaching loop.
+  verified quote/proof moments, pressure/filler coaching, and a more intimate
+  single-player coach relationship.
 - Gap to close: Yoodli's roleplay breadth and call-context integration.
 
 Orai:
@@ -209,7 +242,8 @@ Speeko:
 
 - Strength: polished speech-style feedback across pace, tone, fillers,
   intonation, sentiment, talk time, word choice, virtual meetings, and voice
-  coach content.
+  coach content. Its pricing page also makes free/basic vs Pro value visible
+  with real-time guidance and premium exercises.
 - Noum edge: stronger coaching-memory ambition, pressure modes, verified proof,
   and personal case formulation.
 - Gap to close: Speeko's real-time "speaker coach when you need one" clarity
@@ -218,8 +252,8 @@ Speeko:
 Duolingo:
 
 - Strength: personality, retention design, path habit, and low-pressure AI
-  conversation practice through Lily/Falstaff. It makes speaking feel playful
-  and approachable.
+  conversation practice through Lily and the newer coached Falstaff calls. It
+  makes speaking feel playful, frequent, and approachable.
 - Noum edge: not language learning; Noum can specialize in professional and
   interpersonal communication under pressure, evidence-based coaching, and
   durable progress. That is a more valuable wedge if the trust bar is met.
@@ -242,8 +276,12 @@ Completed in this session:
 
 - `xcodebuild test -project Noum.xcodeproj -scheme Noum -destination "platform=iOS Simulator,id=3D077053-2981-4C5D-819D-FF6F9BA8AD06" -derivedDataPath ./DerivedData/Noum -only-testing:NoumTests/BelievableProgressZeroDataTests`
   succeeded.
+- `xcodebuild test -project Noum.xcodeproj -scheme Noum -destination "platform=iOS Simulator,id=3D077053-2981-4C5D-819D-FF6F9BA8AD06" -derivedDataPath ./DerivedData/Noum -only-testing:NoumTests/BigMomentTransferStoreTests -only-testing:NoumTests/CoachContextBuilderBigMomentTests`
+  succeeded.
 - `.agents/skills/noum-screenshots/capture.sh` captured five tab tops to
   `.screenshots/2026-06-08_autostop-de8ee0d-0006/`.
+- `.agents/skills/noum-screenshots/capture.sh` captured the 07:34 build's five
+  tab tops to `.screenshots/2026-06-08_autostop-a5c19d8-0737/`.
 - Screenshot PNGs were 1206 x 2622 and visually spot-checked for Home, Train,
   Review, Profile, and Settings.
 

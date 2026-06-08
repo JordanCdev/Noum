@@ -62,7 +62,7 @@ enum CoachReplyPipeline {
             pathGatingPhrase: PathProgressManager.shared.currentNodeGatingPhrase,
             recentProofs: recentProofs,
             bigMoment: BigMomentStore.shared.activeMoment,
-            recentMomentOutcomes: BigMomentStore.shared.recentOutcomeReports(limit: 2),
+            recentMomentOutcomes: BigMomentStore.shared.recentOutcomeReports(limit: BigMomentStore.outcomeReportCap),
             forwardPlan: ForwardPlanStore.shared.activePlan,
             latestRepNote: PostRepCoachNoteStore.shared.latestNote(),
             coachMemory: coachMemoryStore.currentMemory,

@@ -215,6 +215,75 @@ struct BigMomentOutcomeReport: Codable, Identifiable, Equatable {
     }
 }
 
+/// A bounded cross-event read over the user's own real-world outcome reports.
+/// This is not persisted and never claims objective transfer; it only gives the
+/// coach enough shape to ask a better follow-up after repeated similar moments.
+struct BigMomentTransferTrend: Equatable {
+    let category: BigMomentCategory
+    let reportCount: Int
+    let outcomeCounts: [ReportedMomentOutcome: Int]
+    let audienceCounts: [ReportedAudienceResponse: Int]
+    let drillTransferCounts: [ReportedDrillTransfer: Int]
+    let latestRecordedAt: Date
+
+    var contextLine: String {
+        var line = "Across the user's last \(reportCount) \(category.displayName) outcome reports, they reported \(Self.outcomeClause(outcomeCounts)); room read: \(Self.audienceClause(audienceCounts))."
+        if !drillTransferCounts.isEmpty {
+            line += " Prep transfer read: \(Self.drillTransferClause(drillTransferCounts))."
+        }
+        line += " Tentative self-report pattern only; not objective evidence or proof that training caused the result."
+        return line
+    }
+
+    private static func outcomeClause(_ counts: [ReportedMomentOutcome: Int]) -> String {
+        clause(
+            ordered: ReportedMomentOutcome.allCases,
+            counts: counts,
+            label: { $0.chipLabel.lowercased() }
+        )
+    }
+
+    private static func audienceClause(_ counts: [ReportedAudienceResponse: Int]) -> String {
+        clause(
+            ordered: ReportedAudienceResponse.allCases,
+            counts: counts,
+            label: { response in
+                switch response {
+                case .engaged: return "engaged"
+                case .unclear: return "hard to read"
+                case .resistant: return "resistant"
+                }
+            }
+        )
+    }
+
+    private static func drillTransferClause(_ counts: [ReportedDrillTransfer: Int]) -> String {
+        clause(
+            ordered: ReportedDrillTransfer.allCases,
+            counts: counts,
+            label: { transfer in
+                switch transfer {
+                case .transferred: return "prep carried"
+                case .partly: return "partly carried"
+                case .didNotTransfer: return "did not carry"
+                }
+            }
+        )
+    }
+
+    private static func clause<T: CaseIterable & Hashable>(
+        ordered: T.AllCases,
+        counts: [T: Int],
+        label: (T) -> String
+    ) -> String where T.AllCases: Sequence {
+        let parts = ordered.compactMap { item -> String? in
+            guard let count = counts[item], count > 0 else { return nil }
+            return "\(count) \(label(item))"
+        }
+        return parts.isEmpty ? "no clear pattern yet" : parts.joined(separator: ", ")
+    }
+}
+
 // MARK: - BigMomentStore
 
 @MainActor
@@ -316,6 +385,46 @@ final class BigMomentStore: ObservableObject {
     func recentOutcomeReports(limit: Int = 2) -> [BigMomentOutcomeReport] {
         guard limit > 0 else { return [] }
         return Array(outcomeReports.prefix(limit))
+    }
+
+    func transferTrends(
+        minimumReports: Int = 3,
+        maxReportsPerCategory: Int = 6,
+        limit: Int = 2
+    ) -> [BigMomentTransferTrend] {
+        Self.transferTrends(
+            from: outcomeReports,
+            minimumReports: minimumReports,
+            maxReportsPerCategory: maxReportsPerCategory,
+            limit: limit
+        )
+    }
+
+    nonisolated static func transferTrends(
+        from reports: [BigMomentOutcomeReport],
+        minimumReports: Int = 3,
+        maxReportsPerCategory: Int = 6,
+        limit: Int = 2
+    ) -> [BigMomentTransferTrend] {
+        guard minimumReports > 0, maxReportsPerCategory > 0, limit > 0 else { return [] }
+        let grouped = Dictionary(grouping: reports, by: \.category)
+
+        let trends = grouped.compactMap { category, group -> BigMomentTransferTrend? in
+            let bounded = Array(group.sorted { $0.recordedAt > $1.recordedAt }.prefix(maxReportsPerCategory))
+            guard bounded.count >= minimumReports,
+                  let latest = bounded.first?.recordedAt else { return nil }
+
+            return BigMomentTransferTrend(
+                category: category,
+                reportCount: bounded.count,
+                outcomeCounts: Dictionary(grouping: bounded, by: \.outcome).mapValues(\.count),
+                audienceCounts: Dictionary(grouping: bounded, by: \.audienceResponse).mapValues(\.count),
+                drillTransferCounts: Dictionary(grouping: bounded.compactMap(\.drillTransfer), by: { $0 }).mapValues(\.count),
+                latestRecordedAt: latest
+            )
+        }
+
+        return Array(trends.sorted { $0.latestRecordedAt > $1.latestRecordedAt }.prefix(limit))
     }
 
     @discardableResult

@@ -510,10 +510,13 @@ enum CoachContextBuilder {
         if !recentMomentOutcomes.isEmpty {
             lines.append("")
             lines.append("REAL-WORLD TRANSFER")
+            for trend in BigMomentStore.transferTrends(from: recentMomentOutcomes, minimumReports: 3, limit: 2) {
+                lines.append("- Transfer pattern: \(trend.contextLine)")
+            }
             for report in recentMomentOutcomes.prefix(2) {
                 lines.append("- \(report.coachContextLine)")
             }
-            lines.append("- These are the user's reported outcome and read of the room, not objective evidence or proof that training caused the result.")
+            lines.append("- These are the user's reported outcome and read of the room, not objective evidence or proof that training caused the result. Pattern lines require at least 3 reports of the same moment kind.")
         }
 
         // WEEKLY CHECK-IN (F1) — the user's own answers from the most-recent

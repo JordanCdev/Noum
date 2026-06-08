@@ -13379,6 +13379,22 @@ struct BigMomentDaysUntilTests {
 @Suite("BigMomentTransferStoreTests")
 struct BigMomentTransferStoreTests {
 
+    private func report(
+        category: BigMomentCategory,
+        outcome: ReportedMomentOutcome,
+        audienceResponse: ReportedAudienceResponse,
+        drillTransfer: ReportedDrillTransfer? = nil,
+        recordedAt: TimeInterval
+    ) -> BigMomentOutcomeReport {
+        BigMomentOutcomeReport(
+            moment: BigMoment(title: "\(category.title) \(Int(recordedAt))", category: category),
+            outcome: outcome,
+            audienceResponse: audienceResponse,
+            drillTransfer: drillTransfer,
+            recordedAt: Date(timeIntervalSince1970: recordedAt)
+        )
+    }
+
     @Test func elapsedMomentInvitesOutcomeThenPersistedReportClearsPrompt() {
         let suite = "big-moment-transfer-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -13428,6 +13444,39 @@ struct BigMomentTransferStoreTests {
         #expect(store.outcomeReports.count == BigMomentStore.outcomeReportCap)
         #expect(store.outcomeReports.first?.momentTitle == "Moment \(BigMomentStore.outcomeReportCap)")
         #expect(!store.outcomeReports.contains { $0.momentTitle == "Moment 0" })
+    }
+
+    @Test func transferTrendsRequireThreeSameKindReports() {
+        let reports = [
+            report(category: .presentation, outcome: .wentWell, audienceResponse: .engaged, recordedAt: 300),
+            report(category: .presentation, outcome: .mixed, audienceResponse: .unclear, recordedAt: 200),
+            report(category: .interview, outcome: .wentWell, audienceResponse: .engaged, recordedAt: 100),
+        ]
+
+        #expect(BigMomentStore.transferTrends(from: reports).isEmpty)
+    }
+
+    @Test func transferTrendsSummarizeRepeatedSameKindSelfReportsWithoutCausation() {
+        let reports = [
+            report(category: .presentation, outcome: .wentWell, audienceResponse: .engaged, drillTransfer: .transferred, recordedAt: 400),
+            report(category: .presentation, outcome: .wentWell, audienceResponse: .engaged, drillTransfer: .partly, recordedAt: 300),
+            report(category: .presentation, outcome: .mixed, audienceResponse: .unclear, drillTransfer: .partly, recordedAt: 200),
+            report(category: .interview, outcome: .fellShort, audienceResponse: .resistant, recordedAt: 100),
+        ]
+
+        let trend = BigMomentStore.transferTrends(from: reports).first
+        #expect(trend?.category == .presentation)
+        #expect(trend?.reportCount == 3)
+        let line = trend?.contextLine ?? ""
+        #expect(line.contains("last 3 presentation outcome reports"))
+        #expect(line.contains("2 went well"))
+        #expect(line.contains("1 mixed"))
+        #expect(line.contains("2 engaged"))
+        #expect(line.contains("1 hard to read"))
+        #expect(line.contains("1 prep carried"))
+        #expect(line.contains("2 partly carried"))
+        #expect(line.contains("Tentative self-report pattern only"))
+        #expect(line.contains("not objective evidence"))
     }
 }
 
@@ -13602,6 +13651,49 @@ struct CoachContextBuilderBigMomentTests {
         #expect(ctx.contains("the user reported it went well"))
         #expect(ctx.contains("audience or counterpart seemed engaged"))
         #expect(ctx.contains("not objective evidence"))
+    }
+
+    @Test func repeatedTransferOutcomesSurfaceTentativePatternWithThresholdGuard() {
+        let reports = [
+            BigMomentOutcomeReport(
+                moment: BigMoment(title: "Board update 3", category: .presentation),
+                outcome: .wentWell,
+                audienceResponse: .engaged,
+                drillTransfer: .transferred,
+                recordedAt: Date(timeIntervalSince1970: 300)
+            ),
+            BigMomentOutcomeReport(
+                moment: BigMoment(title: "Board update 2", category: .presentation),
+                outcome: .mixed,
+                audienceResponse: .unclear,
+                drillTransfer: .partly,
+                recordedAt: Date(timeIntervalSince1970: 200)
+            ),
+            BigMomentOutcomeReport(
+                moment: BigMoment(title: "Board update 1", category: .presentation),
+                outcome: .wentWell,
+                audienceResponse: .engaged,
+                drillTransfer: .partly,
+                recordedAt: Date(timeIntervalSince1970: 100)
+            ),
+        ]
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: makeProfile(),
+            baseline: makeBaseline(),
+            rating: makeRating(),
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentMomentOutcomes: reports
+        )
+
+        #expect(ctx.contains("Transfer pattern"))
+        #expect(ctx.contains("last 3 presentation outcome reports"))
+        #expect(ctx.contains("Tentative self-report pattern only"))
+        #expect(ctx.contains("Pattern lines require at least 3 reports of the same moment kind"))
+        #expect(ctx.contains("not objective evidence or proof that training caused the result"))
     }
 
     @Test func systemPromptDoesNotLetReportedTransferBecomeCausalProof() {
