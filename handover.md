@@ -63,11 +63,19 @@ hearts/lives framing, or "replaces a human coach" claims.
   does not waste time recreating a `.Codex` mode file. Both real mode files
   currently read `light`; screenshots still need a local sweep for the edited
   typography surfaces.
+- Ran the corrected `.agents` light screenshot workflow after booting the
+  `iPhone 17` simulator with CoreSimulator permissions. It produced
+  `.screenshots/2026-06-08_autostop-706269e-1727/` with five valid nonblank
+  1206x2622 PNGs and a committed HANDOFF. Spot-check found no catastrophic
+  blank/wrong-screen failure at default text size, but also confirmed the
+  current tab deep links are destination-oriented: Train, Review, Profile, and
+  Settings open with navigation chrome rather than bottom-tab-root chrome. The
+  light sweep is useful render evidence, not a full tab-root regression pass.
 
 Files touched this continuation: `.agents/skills/noum-screenshots/SKILL.md`,
 `.agents/skills/noum-screenshots/capture.sh`, `docs/CURRENT_STATE.md`,
 `.screenshots/2026-06-08_m14-typography-accessibility/HANDOFF.md`,
-`handover.md`.
+`.screenshots/2026-06-08_autostop-706269e-1727/HANDOFF.md`, `handover.md`.
 
 2026-06-08 ~17:22 continuation (local Codex run, Firebase launch gate):
 
