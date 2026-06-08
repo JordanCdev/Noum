@@ -87,7 +87,7 @@ struct HeroScoreCard: View {
 
                 VStack(spacing: 2) {
                     Text("\(scoreValue)")
-                        .font(.system(size: 44, weight: .bold, design: .rounded))
+                        .font(Typography.figtreeNumeric(size: 44, weight: .bold, relativeTo: .largeTitle))
                         .foregroundStyle(scoreAccent)
                     Text("/10")
                         .font(.caption.weight(.semibold))
@@ -196,9 +196,8 @@ struct SuddenDeathReviewCard: View {
 
             VStack(spacing: 2) {
                 Text(points.formatted())
-                    .font(.system(size: 44, weight: .black, design: .rounded))
+                    .font(Typography.figtreeNumeric(size: 44, weight: .black, relativeTo: .largeTitle))
                     .foregroundStyle(accent)
-                    .monospacedDigit()
                 Text("POINTS")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
@@ -299,7 +298,7 @@ struct DurationAssessmentPill: View {
                 Image(systemName: durationAssessment.icon)
                     .font(.system(size: 9, weight: .bold))
                 Text(durationAssessment.rawValue)
-                    .font(.system(size: 9, weight: .bold))
+                    .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
             }
             .foregroundStyle(durationAssessment.tint)
         }
@@ -459,7 +458,7 @@ struct YourNextMoveCard: View {
                 Spacer()
                 // Format badge
                 Text(drill.format == .miniDrill ? "Quick Drill" : "Full Retry")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
                     .foregroundStyle(drill.tint)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -931,7 +930,7 @@ struct IMVerdictCard: View {
                     .tracking(1.4)
                 Spacer()
                 Text(confidenceLabel.uppercased())
-                    .font(.system(size: 9, weight: .bold))
+                    .font(Typography.figtree(size: 9, weight: .bold, relativeTo: .caption2))
                     .foregroundStyle(scoreAccent.opacity(0.7))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)

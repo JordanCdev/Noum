@@ -47,6 +47,31 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~18:24 continuation (local Codex run, SummaryCards typography):
+
+- Continued the Dynamic Type audit on the post-rep summary surface.
+  `Noum/SummaryCards.swift` now uses `Typography.figtreeNumeric(...)`
+  for the hero score value and sudden-death points value, and
+  `Typography.figtree(..., relativeTo: .caption2)` for the compact
+  duration, next-move format, and IM confidence badges.
+- Left fixed SF Symbol sizing and other non-text layout markers alone.
+  `rg` now reports no `Text(...).font(.system(size: ...))` matches in
+  `SummaryCards.swift`.
+
+Verification this continuation:
+
+- `rg -n -U "Text\\([^\\n]*\\)\\n\\s*\\.font\\(\\.system\\(size:" Noum/SummaryCards.swift`:
+  no matches.
+- `git diff --check`: passed.
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:NoumTests/HeroScoreCardToneDrillRibbonContractTests -only-testing:NoumTests/LookingAheadCardStartCTAContractTests`:
+  `TEST SUCCEEDED`. Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_18-20-06-+0100.xcresult`.
+
+Files touched this continuation: `Noum/SummaryCards.swift`,
+`docs/CURRENT_STATE.md`,
+`.screenshots/2026-06-08_m14-typography-accessibility/HANDOFF.md`,
+`handover.md`.
+
 2026-06-08 ~18:18 continuation (local Codex run, post-harness Release gate):
 
 - Re-ran the local Release simulator build after commit `7715ae3`

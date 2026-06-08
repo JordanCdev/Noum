@@ -1183,7 +1183,10 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   and achievement-unlock overlay views for `ScreenshotTour.
   testCaptureCelebrationOverlays`; the corrected 2026-06-08 simulator run
   passed and the exported PNG attachments were spot-checked at default
-  text size. Large Dynamic Type and real-device overlay QA remain open.
+  text size. A subsequent SummaryCards pass moved the score/points
+  numerals and compact duration/drill/confidence badge copy off fixed
+  `.system(size:)` text onto `Typography` builders. Large Dynamic Type and
+  real-device overlay QA remain open.
   Remaining `.system(size:)`
   call sites are mixed: some are intentional fixed-format surfaces
   (bitmap share cards rendered through `ImageRenderer`, compact

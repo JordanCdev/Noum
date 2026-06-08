@@ -39,6 +39,7 @@ called complete.
 ## Regressions checked
 - Simulator compile + focused tests passed via `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:NoumTests/ScoreCalibrationTests`.
 - A later targeted overlay pass added a DEBUG-only `UI_TESTING_OVERLAY <kind>` harness and passed `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:NoumUITests/ScreenshotTour/testCaptureCelebrationOverlays`. Corrected result bundle: `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_18-08-49-+0100.xcresult`. Exported attachments in `/tmp/noum-overlay-attachments-2` were spot-checked for post-session progression, personal-best, level-up, and achievement-unlock overlays at default text size.
+- A later SummaryCards typography pass moved the hero score value, sudden-death points value, duration badge, next-move format badge, and IM confidence badge off fixed `.system(size:)` text. `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:NoumTests/HeroScoreCardToneDrillRibbonContractTests -only-testing:NoumTests/LookingAheadCardStartCTAContractTests`: `TEST SUCCEEDED`. Result bundle: `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_18-20-06-+0100.xcresult`.
 - `git diff --check` passed.
 
 ## Surfaces needing visual verification
@@ -50,7 +51,7 @@ called complete.
 - IM conversation setup and ending states.
 - Path Journey and Mode Mastery cards.
 - Ah-Counter, Pace Training, and Cut the Crutch setup/result screens.
-- Mini-drill result, path-node celebration, and Pro upsell.
+- Mini-drill result, path-node celebration, Pro upsell, and remaining SummaryView share-card-only text.
 - Personal-best, level-up, achievement-unlock, and post-session progression overlays now have a repeatable DEBUG screenshot harness and a default-text-size simulator spot-check. They still need large Dynamic Type and real-device QA before being called fully verified.
 - Speaking Rank/Profile, tier promotion overlay, skill-progress badges, review-stat badges, Coaching Profile onboarding, and Achievements Tree count label.
 
