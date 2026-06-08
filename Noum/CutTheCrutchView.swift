@@ -138,9 +138,9 @@ struct CutTheCrutchView: View {
 
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text("Cut the Crutch")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(Typography.bigStat)
                 Text("Speak for 60 seconds without using one specific word. Each use counts as a slip; three slips ends the rep.")
-                    .font(.subheadline)
+                    .font(Typography.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -154,20 +154,20 @@ struct CutTheCrutchView: View {
     private var wordCard: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             Text("Avoiding")
-                .font(.caption.weight(.bold))
+                .font(Typography.caption)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .tracking(0.8)
 
             HStack {
                 Text("\u{201C}\(engine.avoidedWord)\u{201D}")
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
                     .foregroundStyle(tint)
                 Spacer()
             }
 
             Text("Tap to change.")
-                .font(.caption)
+                .font(Typography.caption)
                 .foregroundStyle(.tertiary)
 
             FlowChips(words: wordOptions) { word in
@@ -484,10 +484,10 @@ struct CutTheCrutchView: View {
                     .font(.title2.weight(.bold))
                     .foregroundStyle(tint)
                 Text(result.verdictLabel)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(Typography.bigStat)
             }
             Text(verdictDetail(result))
-                .font(.subheadline)
+                .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

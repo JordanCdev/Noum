@@ -96,10 +96,10 @@ struct PaceTrainingView: View {
                             .font(.title2.weight(.bold))
                             .foregroundStyle(tint)
                         Text("Pace Training")
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .font(Typography.bigStat)
                     }
                     Text("Match the target speaking pace for 75 seconds.")
-                        .font(.subheadline)
+                        .font(Typography.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
@@ -400,11 +400,11 @@ struct PaceTrainingView: View {
                     .font(.title2.weight(.bold))
                     .foregroundStyle(tint)
                 Text(result.verdictLabel)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(Typography.bigStat)
             }
 
             Text(verdictDetail(result))
-                .font(.subheadline)
+                .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

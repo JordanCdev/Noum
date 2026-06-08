@@ -140,9 +140,9 @@ struct AhCounterView: View {
 
                         VStack(alignment: .leading, spacing: Spacing.xs) {
                             Text("Ah-Counter")
-                                .font(.system(size: 28, weight: .bold, design: .rounded))
+                                .font(Typography.bigStat)
                             Text("Track filler words live. Open-ended reps without a fixed countdown — speak freely while Noum listens.")
-                                .font(.subheadline)
+                                .font(Typography.subheadline)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }

@@ -210,11 +210,12 @@ struct PathNodeCelebration: View {
             .accessibilityLabel(accessibilityChapterCopy)
     }
 
-    /// "Mission complete." — display weight, 32pt rounded bold per spec.
-    /// Coach voice, no exclamation. Motion + sparkle carry the moment.
+    /// "Mission complete." — display weight, Dynamic-Type-aware rounded
+    /// treatment. Coach voice, no exclamation. Motion + sparkle carry the
+    /// moment.
     private var headline: some View {
         Text("Mission complete.")
-            .font(.system(size: 32, weight: .bold, design: .rounded))
+            .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
             .foregroundStyle(.white)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)

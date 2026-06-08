@@ -47,7 +47,7 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
-2026-06-08 ~17:10 continuation (local Codex run, real toolchain):
+2026-06-08 ~17:14 continuation (local Codex run, real toolchain):
 
 - Started the next M14 launch-readiness pass after the coach-parity
   scorecard cleanup by tightening Dynamic-Type coverage on high-traffic text
@@ -62,6 +62,12 @@ hearts/lives framing, or "replaces a human coach" claims.
   header/subcopy, `IMPracticeView` setup and ending-state copy,
   `PathJourneyView` title/subcopy/pill values/skill-milestone heading, and
   `ModeMasteryViews` headers and small mastery badges.
+- Added a third safe batch for static practice/result/upsell copy:
+  `AhCounterView`, `PaceTrainingView`, and `CutTheCrutchView` mode headers /
+  result copy, `MiniDrillResultView` result copy, `PathNodeCelebration`
+  headline, and the `PremiumManager` Pro upsell title/body. Live
+  countdowns, timers, WPM readouts, score digits, and rank numbers remain
+  intentionally deferred for separate layout review.
 - Left fixed icon glyphs and fixed-format counters alone. The remaining
   `.system(size:)` inventory is mixed, not complete: some entries are
   intentional icons/counters/share-card/decoration; other legacy text in
@@ -74,18 +80,22 @@ hearts/lives framing, or "replaces a human coach" claims.
   minimal `.screenshots/2026-06-08_m14-typography-accessibility/HANDOFF.md`
   and queued login/Home/Settings/Big Moment intake, practice picker, session
   focus, IM setup/ending, Path Journey, and Mode Mastery for visual
-  verification.
+  verification. The same handoff now also queues Ah-Counter, Pace Training,
+  Cut the Crutch, mini-drill result, path-node celebration, and the Pro upsell.
 - Verified with `git diff --check` and `xcodebuild test -scheme Noum
   -destination 'platform=iOS Simulator,name=iPhone 17'
   -only-testing:NoumTests/ScoreCalibrationTests`: `TEST SUCCEEDED`. Result
   bundle:
-  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_17-08-24-+0100.xcresult`.
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_17-13-09-+0100.xcresult`.
 
 Files touched this continuation: `Noum/LoginView.swift`,
 `Noum/HomeCoachCard.swift`, `Noum/SettingsView.swift`, `Noum/SettingsRow.swift`,
 `Noum/BigMomentIntakeView.swift`, `Noum/PracticeModeSelectionView.swift`,
 `Noum/SessionIntentPromptView.swift`, `Noum/IMPracticeView.swift`,
 `Noum/PathJourneyView.swift`, `Noum/ModeMasteryViews.swift`,
+`Noum/AhCounterView.swift`, `Noum/PaceTrainingView.swift`,
+`Noum/CutTheCrutchView.swift`, `Noum/MiniDrillResultView.swift`,
+`Noum/PathNodeCelebration.swift`, `Noum/PremiumManager.swift`,
 `docs/CURRENT_STATE.md`,
 `.screenshots/2026-06-08_m14-typography-accessibility/HANDOFF.md`,
 `handover.md`.

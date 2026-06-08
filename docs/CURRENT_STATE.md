@@ -1161,7 +1161,10 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   card title, Settings cluster/micro/toggle labels, Big Moment intake
   header/category text, practice-mode picker header, session-focus prompt,
   IM conversation setup/ending copy, Path Journey headings/pill values, and
-  Mode Mastery headers/badges onto `Typography`. Remaining `.system(size:)`
+  Mode Mastery headers/badges, Ah-Counter / Pace Training / Cut the Crutch
+  static mode headers and result copy, mini-drill result copy, Path mission
+  completion headline, and the Pro upsell title/body onto `Typography`.
+  Remaining `.system(size:)`
   call sites are mixed: some are intentional fixed-format surfaces
   (bitmap share cards rendered through `ImageRenderer`, compact
   achievement/progress badges, score/counter readouts, SF Symbol icons, and

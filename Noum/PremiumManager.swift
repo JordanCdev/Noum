@@ -334,11 +334,11 @@ struct PaywallView: View {
                                 .shadow(color: proColor.opacity(0.4), radius: 20, y: 8)
 
                             Text("Upgrade to Pro")
-                                .font(.system(size: 32, weight: .bold, design: .rounded))
+                                .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
                                 .foregroundStyle(.white)
 
                             Text("Unlock the full coaching experience")
-                                .font(.body)
+                                .font(Typography.body)
                                 .foregroundStyle(.white.opacity(0.6))
                         }
 

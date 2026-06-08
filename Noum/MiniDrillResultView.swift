@@ -48,15 +48,15 @@ struct MiniDrillResultView: View {
                 // Title + feedback — phase 2
                 VStack(spacing: 12) {
                     Text(DrillCompletionCopy.title(for: outcome))
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .font(Typography.figtree(size: 26, weight: .bold, relativeTo: .title2))
                         .foregroundStyle(.white)
 
                     Text(feedbackText)
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.75))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-                    .fixedSize(horizontal: false, vertical: true)
+                        .font(Typography.subheadline)
+                        .foregroundStyle(.white.opacity(0.75))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .opacity(phase >= 2 ? 1 : 0)
                 .offset(y: phase >= 2 ? 0 : 12)
