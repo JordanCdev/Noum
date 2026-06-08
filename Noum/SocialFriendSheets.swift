@@ -141,7 +141,7 @@ struct AsyncChallengeDetailSheet: View {
                 .lineLimit(1)
 
             Text("\(score)")
-                .font(.system(size: 32, weight: .bold, design: .rounded))
+                .font(Typography.figtreeNumeric(size: 32, weight: .bold, relativeTo: .title))
                 .foregroundStyle(score >= 70 ? .green : score >= 50 ? .orange : .red)
 
             if let dur = duration {

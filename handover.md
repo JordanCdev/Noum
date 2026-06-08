@@ -47,6 +47,38 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~18:36 continuation (local Codex run, ordinary badge typography):
+
+- Continued the Dynamic Type audit on ordinary numeric badges. The daily goal
+  ring count, feedback request preview score, friend challenge score, friend
+  leaderboard ranks/ratings, peak-rating wall ranks/ratings, league rating and
+  member row values, Coaching Profile onboarding step ring, Sudden Death
+  uncertain-fill indicator, and Sudden Death result points now use
+  `Typography.figtree(...)` / `Typography.figtreeNumeric(...)`.
+- Left live practice countdowns/timers/WPM/filler readouts, camera transcript
+  overlay text, and share-card bitmap text as fixed-format surfaces. Those need
+  visual review rather than blanket migration.
+
+Verification this continuation:
+
+- `git diff --check`: passed.
+- `rg -n -U "Text\\([^\\n]*\\)\\n\\s*\\.font\\(\\.system\\(size:" Noum --glob '*.swift'`:
+  remaining matches are limited to Timed live controls, share-card bitmap text,
+  SummaryView share-card text, Pace/Cut-the-Crutch/Sudden-Death/Mini/Ah live
+  counters and countdowns.
+- `xcodebuild build -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17'`:
+  `BUILD SUCCEEDED`. Product:
+  `DerivedData/Noum/Build/Products/Release-iphonesimulator/Noum.app`.
+
+Files touched this continuation: `Noum/DailyGoalRing.swift`,
+`Noum/FeedbackViews.swift`, `Noum/SocialFriendSheets.swift`,
+`Noum/FriendLeaderboardView.swift`, `Noum/PeakRatingWallView.swift`,
+`Noum/LeagueView.swift`, `Noum/CoachingOnboardingView.swift`,
+`Noum/SuddenDeathPracticeView.swift`, `Noum/SuddenDeathResultView.swift`,
+`docs/CURRENT_STATE.md`,
+`.screenshots/2026-06-08_m14-typography-accessibility/HANDOFF.md`,
+`handover.md`.
+
 2026-06-08 ~18:27 continuation (local Codex run, Timed setup typography):
 
 - Continued the Dynamic Type audit on `TimedPracticeView`. The setup title

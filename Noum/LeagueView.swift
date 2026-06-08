@@ -109,7 +109,7 @@ struct LeagueView: View {
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(LeaguePlacementPresentation.ratingValue(for: ratingStore.rating))
-                        .font(.system(size: 22, weight: .bold, design: .rounded).monospacedDigit())
+                        .font(Typography.figtreeNumeric(size: 22, weight: .bold, relativeTo: .title3))
                         .foregroundStyle(AppColor.brandBlue)
                     Text(ratingStore.rating.hasRatedEvidence ? "Rating" : "Not rated")
                         .font(.caption2.weight(.bold))
@@ -234,7 +234,7 @@ struct LeagueView: View {
     private func memberRow(rank: Int, member: PublicProfileSnapshot, isYou: Bool) -> some View {
         HStack(spacing: Spacing.sm) {
             Text("\(rank)")
-                .font(.system(size: 16, weight: .bold, design: .rounded).monospacedDigit())
+                .font(Typography.figtreeNumeric(size: 16, weight: .bold, relativeTo: .headline))
                 .foregroundStyle(rankTint(rank))
                 .frame(width: 24, alignment: .center)
 
@@ -273,7 +273,7 @@ struct LeagueView: View {
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(member.rating)")
-                    .font(.system(size: 18, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(Typography.figtreeNumeric(size: 18, weight: .bold, relativeTo: .headline))
                     .foregroundStyle(AppColor.brandBlue)
                 if member.currentStreak > 0 {
                     HStack(spacing: 3) {

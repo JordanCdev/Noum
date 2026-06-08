@@ -593,7 +593,7 @@ struct SuddenDeathPracticeView: View {
             // Uncertain filler "?" indicator
             if showUncertainIndicator {
                 Text("?")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(Typography.figtree(size: 14, weight: .bold, relativeTo: .caption))
                     .foregroundStyle(.orange.opacity(0.8))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)

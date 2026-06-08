@@ -69,7 +69,7 @@ struct DailyGoalCard: View {
                         .transition(.scale.combined(with: .opacity))
                 } else {
                     Text("\(manager.repsToday)")
-                        .font(.system(size: 18, weight: .bold, design: .rounded).monospacedDigit())
+                        .font(Typography.figtreeNumeric(size: 18, weight: .bold, relativeTo: .headline))
                         .foregroundStyle(AppColor.brandBlue)
                         .contentTransition(.numericText())
                         .animation(reduceMotion ? nil : .standardSpring, value: manager.repsToday)

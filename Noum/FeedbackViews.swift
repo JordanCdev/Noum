@@ -158,7 +158,7 @@ struct FeedbackRequestComposer: View {
                         .fill(previewAccent.opacity(0.12))
                         .frame(width: 56, height: 56)
                     Text("\(score)")
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .font(Typography.figtreeNumeric(size: 24, weight: .bold, relativeTo: .title2))
                         .foregroundStyle(previewAccent)
                 }
 

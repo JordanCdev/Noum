@@ -131,7 +131,7 @@ struct FriendLeaderboardView: View {
     private func rankRow(rank: Int, row: LeaderboardRow) -> some View {
         HStack(spacing: Spacing.sm) {
             Text("\(rank)")
-                .font(.system(size: 16, weight: .bold, design: .rounded).monospacedDigit())
+                .font(Typography.figtreeNumeric(size: 16, weight: .bold, relativeTo: .headline))
                 .foregroundStyle(.secondary)
                 .frame(width: 24, alignment: .center)
 
@@ -183,7 +183,7 @@ struct FriendLeaderboardView: View {
         if let rating = row.rating {
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(rating)")
-                    .font(.system(size: 18, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(Typography.figtreeNumeric(size: 18, weight: .bold, relativeTo: .headline))
                     .foregroundStyle(AppColor.brandBlue)
                 if let streak = row.streak, streak > 0 {
                     HStack(spacing: 3) {

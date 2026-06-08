@@ -943,7 +943,7 @@ struct CoachingOnboardingView: View {
                 .rotationEffect(.degrees(-90))
 
             Text("\(step == 0 ? 1 : step)")
-                .font(.system(size: compact ? 16 : 20, weight: .bold, design: .rounded))
+                .font(Typography.figtreeNumeric(size: compact ? 16 : 20, weight: .bold, relativeTo: compact ? .headline : .title3))
                 .foregroundStyle(.white)
         }
         .frame(width: size, height: size)

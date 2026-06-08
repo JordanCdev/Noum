@@ -207,7 +207,7 @@ struct PeakRatingWallView: View {
         let isYou = entry.accountID == authManager.currentAccountID
         return HStack(spacing: Spacing.sm) {
             Text("\(rank)")
-                .font(.system(size: 15, weight: .bold, design: .rounded).monospacedDigit())
+                .font(Typography.figtreeNumeric(size: 15, weight: .bold, relativeTo: .subheadline))
                 .foregroundStyle(rankTint(rank))
                 .frame(width: 22, alignment: .center)
 
@@ -243,7 +243,7 @@ struct PeakRatingWallView: View {
             Spacer(minLength: Spacing.xs)
 
             Text("\(Int(entry.peakRating))")
-                .font(.system(size: 18, weight: .bold, design: .rounded).monospacedDigit())
+                .font(Typography.figtreeNumeric(size: 18, weight: .bold, relativeTo: .headline))
                 .foregroundStyle(AppColor.brandBlue)
         }
         .frame(minHeight: 48)

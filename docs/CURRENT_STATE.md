@@ -1189,13 +1189,17 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   pass moved the `Impromptu` setup title and Coach-mode `PRO` badge onto
   `Typography`, leaving live timers/countdowns/REC/filler counters and the
   camera transcript overlay as fixed-format live controls for a separate
-  layout review. Large Dynamic Type and real-device overlay QA remain open.
+  layout review. A later ordinary-badge pass moved the daily goal ring count,
+  feedback preview score, friend challenge score, leaderboard/rating wall ranks
+  and ratings, league rating values, onboarding step ring, Sudden Death
+  uncertain-fill indicator, and Sudden Death result points onto `Typography`
+  builders. Large Dynamic Type and real-device overlay QA remain open.
   Remaining `.system(size:)`
   call sites are mixed: some are intentional fixed-format surfaces
-  (bitmap share cards rendered through `ImageRenderer`, compact
-  achievement/progress badges, score/counter readouts, SF Symbol icons, and
-  decorative particles), while other legacy text in practice, summary, and
-  lessons still needs surface-by-surface review.
+  (bitmap share cards rendered through `ImageRenderer`, live practice
+  countdowns/timers/WPM/filler readouts, camera overlay transcript text,
+  SF Symbol icons, and decorative particles), while other legacy text in
+  summary/share-card generation still needs surface-by-surface review.
   Do not treat this migration as complete until those call sites are
   audited. A unit test (`typographyRolesResolveToFonts`) locks the catalog
   contract so a future refactor that drops `relativeTo:` fails the test

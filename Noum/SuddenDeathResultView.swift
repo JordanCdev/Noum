@@ -143,9 +143,8 @@ struct SuddenDeathResultView: View {
     private var pointsHero: some View {
         VStack(spacing: 6) {
             Text("\(displayedPoints.formatted())")
-                .font(.system(size: 44, weight: .black, design: .rounded))
+                .font(Typography.figtreeNumeric(size: 44, weight: .black, relativeTo: .largeTitle))
                 .foregroundStyle(accentColor)
-                .monospacedDigit()
                 .contentTransition(.numericText())
             Text("pts")
                 .font(.subheadline.weight(.semibold))
