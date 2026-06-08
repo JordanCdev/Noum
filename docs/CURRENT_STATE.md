@@ -617,12 +617,14 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
     static `quoteFramingCopy` so it's testable without a View instance).
     Commit `409f4f2`.
   - M15 UI test reliability — `testHomeScreenAndPrimaryNavigation`
-    rewrote the journey-card assertion from tap-the-card to deep-link
-    via `noum://path`, mirroring `ScreenshotTour.launchSeededAt`. Test
-    now passes on a freshly-erased simulator. TODO left in-file: extend
-    `DevSeedData.injectProfile(.improvingIntermediate)` to populate
-    `CoachingProfileStore` so future gated-card tests can use tap-the-
-    card patterns again. Commit `bad4824`.
+    originally rewrote the journey-card assertion from tap-the-card to
+    deep-link via `noum://path`, mirroring
+    `ScreenshotTour.launchSeededAt`, so the test could pass on a
+    freshly-erased simulator. The later Growth Library seed-profile
+    pass closed that temporary gap: `DevSeedData.injectProfile` now
+    populates `CoachingProfileStore`, and the test again prefers the
+    tap-the-card path with the deep link retained only as a slow-sim
+    fallback. Commits `bad4824` and Growth Library seed-profile push.
   - M16 Peak-rating wall (VISION future-milestone #1) — new
     `PeakRatingWallView` with three sections (Best in week / Best ever /
     Best in your friends), per-section empty-state behaviour, sparkline

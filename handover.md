@@ -47,6 +47,24 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~17:50 continuation (local Codex run, stale-doc cleanup):
+
+- Corrected a stale M15 UI-test reliability note in `docs/CURRENT_STATE.md`
+  that still described `DevSeedData.injectProfile(.improvingIntermediate)` →
+  `CoachingProfileStore` seeding as a TODO. That gap was closed by the later
+  Growth Library seed-profile pass, and the current
+  `testHomeScreenAndPrimaryNavigation` now prefers tapping `home.path` with
+  `noum://path` retained only as a slow-simulator fallback.
+- This was doc-only; it preserves the historical reason for the temporary
+  deep-link fallback while preventing follow-on agents from treating closed
+  seed work as open launch debt.
+
+Verification this continuation:
+
+- `git diff --check`: passed.
+
+Files touched this continuation: `docs/CURRENT_STATE.md`, `handover.md`.
+
 2026-06-08 ~17:44 continuation (local Codex run, full unit QA):
 
 - Ran the full `NoumTests` target on the booted `iPhone 17` simulator after
