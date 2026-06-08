@@ -47,6 +47,7 @@ enum ProfileEvidenceDetailSurface: String, Equatable {
     case insightsBanked
     case pressureHistoryShare
     case coachingDirection
+    case coachLoopReadiness
     case weeklyCheckIn
     case caseReview
     case deliveryProfile
@@ -68,6 +69,7 @@ struct ProfileEvidenceDetailPlan: Equatable {
             .insightsBanked,
             .pressureHistoryShare,
             .coachingDirection,
+            .coachLoopReadiness,
             .caseReview,
             .deliveryProfile,
             .speechPatterns
@@ -170,6 +172,56 @@ struct ProfileCoachReadContent: Equatable {
     private static func bounded(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+struct ProfileCoachLoopReadinessContent: Equatable {
+    let title: String
+    let detail: String
+    let nextTitle: String?
+    let nextDetail: String?
+    let validationLine: String
+
+    static func make(readiness: CoachParityReadiness) -> ProfileCoachLoopReadinessContent? {
+        let coachingStages = readiness.stages.filter { $0.stage != .validation }
+        let earned = coachingStages.filter { $0.status == .earned }
+        let forming = coachingStages.filter { $0.status == .forming }
+
+        guard !earned.isEmpty || !forming.isEmpty else {
+            return nil
+        }
+
+        let title: String
+        if earned.isEmpty {
+            title = "The coaching loop is forming"
+        } else {
+            let noun = earned.count == 1 ? "stage has" : "stages have"
+            title = "\(earned.count) coaching \(noun) solid evidence"
+        }
+
+        let detail = stageLine(prefix: "Solid", stages: earned)
+            ?? stageLine(prefix: "Forming", stages: forming)
+            ?? "Noum is still gathering evidence from your reps and check-ins."
+
+        let next = coachingStages.first { $0.status == .thin }
+            ?? coachingStages.first { $0.status == .forming }
+        let nextTitle = next.map { "Next evidence: \($0.stage.title)" }
+        let nextDetail = next?.basis
+
+        return ProfileCoachLoopReadinessContent(
+            title: title,
+            detail: detail,
+            nextTitle: nextTitle,
+            nextDetail: nextDetail,
+            validationLine: "Validation stays open outside the app; real-world outcomes over time decide whether the coaching is working."
+        )
+    }
+
+    private static func stageLine(prefix: String, stages: [CoachParityReadiness.StageRead]) -> String? {
+        guard !stages.isEmpty else { return nil }
+        let names = stages.map(\.stage.title).prefix(3).joined(separator: ", ")
+        let suffix = stages.count > 3 ? " +\(stages.count - 3) more" : ""
+        return "\(prefix): \(names)\(suffix)."
     }
 }
 
@@ -313,6 +365,7 @@ struct ProfileView: View {
     @StateObject private var suddenDeathRunHistoryStore = SuddenDeathRunHistoryStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var coachCheckInStore = CoachCheckInStore.shared
+    @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
 
     @State private var showAchievementsTree = false
     @State private var showPaywall = false
@@ -447,6 +500,16 @@ struct ProfileView: View {
 
     private var evidenceDetailPlan: ProfileEvidenceDetailPlan {
         .valueFirst
+    }
+
+    private var coachLoopReadiness: CoachParityReadiness {
+        CoachParityReadiness.build(
+            memory: coachMemoryStore.currentMemory,
+            sessionCount: sessions.count,
+            recommendationOutcomeCount: recommendationLearningStore.outcomes.count,
+            transferReportCount: bigMomentStore.recentOutcomeReports(limit: BigMomentStore.outcomeReportCap).count,
+            checkInCount: coachCheckInStore.checkIns.count
+        )
     }
 
     var body: some View {
@@ -848,6 +911,9 @@ struct ProfileView: View {
             clusterHeader("Coaching evidence")
             if plan.surfaces.contains(.coachingDirection) {
                 coachingDirectionCard
+            }
+            if plan.surfaces.contains(.coachLoopReadiness) {
+                coachLoopReadinessCard
             }
             if plan.surfaces.contains(.weeklyCheckIn) {
                 weeklyCheckInCard
@@ -1632,6 +1698,58 @@ struct ProfileView: View {
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
         .accessibilityIdentifier("profile.evidence.coachingDirection")
+    }
+
+    @ViewBuilder
+    private var coachLoopReadinessCard: some View {
+        if let content = ProfileCoachLoopReadinessContent.make(readiness: coachLoopReadiness) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .font(Typography.caption.weight(.bold))
+                        .foregroundStyle(AppColor.pro)
+                    Text("Coach loop")
+                        .font(Typography.micro.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.8)
+                }
+
+                Text(content.title)
+                    .font(Typography.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(content.detail)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let nextTitle = content.nextTitle,
+                   let nextDetail = content.nextDetail {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(nextTitle)
+                            .font(Typography.captionSmall.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text(nextDetail)
+                            .font(Typography.captionSmall)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 2)
+                }
+
+                Text(content.validationLine)
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Spacing.lg)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("profile.evidence.coachLoop")
+        }
     }
 
     /// Compact read-only surface for the coaching case file — the

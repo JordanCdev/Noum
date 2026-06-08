@@ -6852,6 +6852,7 @@ struct ProfileCollapseContractTests {
             .insightsBanked,
             .pressureHistoryShare,
             .coachingDirection,
+            .coachLoopReadiness,
             .caseReview,
             .deliveryProfile,
             .speechPatterns
@@ -6960,6 +6961,91 @@ struct ProfileCollapseContractTests {
         #expect(content.nextMove == "Timed Practice on Medium will help you hold the opening line.")
         #expect(content.proofClaim == "You gave the listener a clean frame.")
         #expect(content.proofQuote == "we will focus on three priorities")
+    }
+
+    @Test func coachLoopReadinessSuppressesTrueColdStart() {
+        let readiness = CoachParityReadiness.build(
+            memory: nil,
+            sessionCount: 0,
+            recommendationOutcomeCount: 0,
+            transferReportCount: 0,
+            checkInCount: 0
+        )
+
+        let content = ProfileCoachLoopReadinessContent.make(readiness: readiness)
+
+        #expect(content == nil)
+    }
+
+    @Test func coachLoopReadinessSummarizesStagesWithoutMatrixOrParityClaim() {
+        let hypothesis = "Openings are the current lever."
+        let memory = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            evidenceCount: 8,
+            evidenceConfidence: .moderate,
+            currentLever: .openingStrength,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: hypothesis,
+            activeIntervention: CoachIntervention(
+                title: "Timed for a clean opening",
+                focus: "opening strength",
+                target: "Lead with the answer in sentence one",
+                mode: .timed,
+                prescribedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                lastObservedAt: nil,
+                followedRepCount: 1,
+                minimumFollowedRepsForReview: 2,
+                reviewStatus: .formingEvidence,
+                reviewBasis: "one followed rep so far"
+            )
+        )
+        let readiness = CoachParityReadiness.build(
+            memory: memory,
+            sessionCount: 8,
+            recommendationOutcomeCount: 1,
+            transferReportCount: 0,
+            checkInCount: 0
+        )
+
+        guard let content = ProfileCoachLoopReadinessContent.make(readiness: readiness) else {
+            Issue.record("Expected coach-loop readiness content once diagnosis evidence exists")
+            return
+        }
+
+        #expect(content.title.contains("coaching"))
+        #expect(content.detail.contains("Solid: Diagnosis"))
+        #expect(content.nextTitle?.contains("Next evidence") == true)
+        #expect(content.validationLine.localizedCaseInsensitiveContains("outside the app"))
+        let joined = [
+            content.title,
+            content.detail,
+            content.nextTitle,
+            content.nextDetail,
+            content.validationLine
+        ].compactMap { $0 }.joined(separator: " ").lowercased()
+        #expect(!joined.contains("coach-parity"))
+        #expect(!joined.contains("validated"))
+        #expect(!joined.contains("certified"))
+    }
+
+    @Test func coachLoopReadinessDoesNotCountValidationAsSolidStage() {
+        let readiness = CoachParityReadiness.build(
+            memory: nil,
+            sessionCount: 0,
+            recommendationOutcomeCount: 0,
+            transferReportCount: 4,
+            checkInCount: 0
+        )
+
+        guard let content = ProfileCoachLoopReadinessContent.make(readiness: readiness) else {
+            Issue.record("Expected transfer evidence to render readiness context without treating validation as solid")
+            return
+        }
+
+        #expect(!content.detail.contains("Validation"))
+        #expect(content.validationLine.localizedCaseInsensitiveContains("stays open"))
     }
 
     @Test func transferStatusPendingOutcomeBeatsActivePrep() {

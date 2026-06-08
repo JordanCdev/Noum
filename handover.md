@@ -47,6 +47,31 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~15:10 continuation (local Codex run, real toolchain):
+
+- Surfaced the existing `CoachParityReadiness` spine on Profile as a compact
+  "Coach loop" evidence card instead of reviving the old 7-row readiness
+  matrix/dashboard. The card appears inside the value-first evidence details
+  after coaching direction, reusing `CoachMemoryStore`, `PracticeSessionStore`,
+  `RecommendationLearningStore`, `BigMomentStore`, and `CoachCheckInStore` as
+  state owners.
+- Added `ProfileCoachLoopReadinessContent` so Profile copy is derived from the
+  pure readiness model: it summarizes solid or forming coach-loop stages,
+  names the next evidence gap, suppresses a true cold start, and keeps
+  validation explicitly outside the app rather than claiming parity.
+- Added Profile collapse contract coverage for cold start suppression, no
+  coach-parity/certified copy, and not counting validation as a solid coaching
+  stage.
+- Verified with `git diff --check` and `xcodebuild test -scheme Noum
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/ProfileCollapseContractTests
+  -only-testing:NoumTests/CoachParityReadinessTests`: `TEST SUCCEEDED`. Result
+  bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_15-05-48-+0100.xcresult`.
+
+Files touched this continuation: `ProfileView.swift`,
+`NoumTests/NoumTests.swift`, `handover.md`.
+
 2026-06-08 ~15:00 continuation (local Codex run, real toolchain):
 
 - Landed `DELIVERY-7` without adding a new analyzer, store, or route. The
