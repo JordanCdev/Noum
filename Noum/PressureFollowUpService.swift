@@ -2,6 +2,88 @@ import Foundation
 
 // MARK: - Pressure Follow-Up Service
 
+enum PressureFollowUpContract {
+    static func localeSupportsAI(_ locale: PracticeLocale) -> Bool {
+        locale.aiSupported
+    }
+
+    static func normalized(_ followUp: String, transcript: String) -> String? {
+        let candidate = followUp
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !candidate.isEmpty,
+              !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              passesToneContract(candidate) else {
+            return nil
+        }
+
+        let words = candidate.split(whereSeparator: \.isWhitespace)
+        guard words.count >= 4 else { return nil }
+        let bounded = words.prefix(15).joined(separator: " ")
+        guard engagesTranscript(bounded, transcript: transcript) else { return nil }
+        return bounded
+    }
+
+    private static func passesToneContract(_ value: String) -> Bool {
+        let lowercased = value.lowercased()
+        guard !value.contains("!"),
+              !lowercased.contains("stupid"),
+              !lowercased.contains("idiot"),
+              !lowercased.contains("ridiculous"),
+              !lowercased.contains("nonsense"),
+              !lowercased.contains("bad answer"),
+              !lowercased.contains("wrong again"),
+              !lowercased.contains("as an ai") else {
+            return false
+        }
+        return true
+    }
+
+    private static func engagesTranscript(_ followUp: String, transcript: String) -> Bool {
+        let lowerTranscript = transcript
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let lowerFollowUp = followUp.lowercased()
+
+        let transcriptWords = Set(contentWords(in: lowerTranscript))
+        let followUpWords = contentWords(in: lowerFollowUp)
+        if followUpWords.contains(where: { transcriptWords.contains($0) }) {
+            return true
+        }
+
+        let window = 12
+        let chars = Array(lowerTranscript)
+        guard chars.count >= window else { return false }
+        for start in 0...(chars.count - window) {
+            let slice = String(chars[start..<(start + window)])
+            if lowerFollowUp.contains(slice) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func contentWords(in text: String) -> [String] {
+        text
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+            .filter { $0.count >= 4 && !groundingStopWords.contains($0) }
+    }
+
+    private static let groundingStopWords: Set<String> = [
+        "about", "actual", "after", "again", "apply", "because", "being",
+        "break", "care", "challenge", "clarify", "could", "defend",
+        "differently", "disagrees", "does", "down", "elaborate", "example",
+        "explain", "follow", "give", "going", "happened", "important",
+        "interesting", "just", "matter", "mean", "more", "most", "next",
+        "part", "practice", "prompt", "reasoning", "said", "short", "should",
+        "someone", "speaker", "specific", "takeaway", "that", "their",
+        "there", "they", "think", "thinking", "through", "version", "walk",
+        "what", "when", "where", "which", "with", "would", "your"
+    ]
+}
+
 /// Generates intelligent NPC follow-up messages for Sudden Death pressure mode
 /// by calling the same Gemini API used by IM Mode.
 ///
@@ -22,6 +104,11 @@ final class PressureFollowUpService: PressureFollowUpProviding {
         round: Int,
         profile: CoachingProfile?
     ) async -> String {
+        guard PressureFollowUpContract.localeSupportsAI(LocaleSettingsManager.shared.current) else {
+            print("[PressureFollowUp] Locale does not support AI follow-ups, using template")
+            return PressureFollowUpTemplates.random()
+        }
+
         // Guard: need an AI provider
         guard let provider = settings.activeProvider,
               let apiKey = resolveAPIKey(for: provider),
@@ -40,7 +127,14 @@ final class PressureFollowUpService: PressureFollowUpProviding {
                 round: round,
                 profile: profile
             )
-            return followUp
+            guard let normalized = PressureFollowUpContract.normalized(
+                followUp,
+                transcript: userTranscript
+            ) else {
+                print("[PressureFollowUp] AI follow-up was ungrounded, using template")
+                return PressureFollowUpTemplates.random()
+            }
+            return normalized
         } catch {
             print("[PressureFollowUp] Gemini call failed: \(error.localizedDescription), using template")
             return PressureFollowUpTemplates.random()
@@ -185,10 +279,7 @@ final class PressureFollowUpService: PressureFollowUpProviding {
             throw FollowUpError.emptyResponse
         }
 
-        // Enforce word limit
-        let words = followUp.split(separator: " ")
-        let limited = words.prefix(20).joined(separator: " ")
-        return limited
+        return followUp
     }
 
     /// Handle markdown code fences and whitespace in JSON responses.

@@ -47,6 +47,38 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~16:32 continuation (local Codex run, real toolchain):
+
+- Closed the `PRESSURE-FOLLOWUP` contract row without changing
+  `PressureTimerEngine`'s round/state ownership. Sudden Death still uses
+  `PressureFollowUpProviding` and falls back to `PressureFollowUpTemplates`;
+  the live AI path now has to earn its slot.
+- Added pure `PressureFollowUpContract` in `PressureFollowUpService.swift`.
+  It gates live AI by `PracticeLocale.aiSupported`, normalizes whitespace,
+  caps accepted AI follow-ups at 15 words, rejects hostile/chirpy output, and
+  requires grounding against the user's prior turn via shared non-stop content
+  words or a 12-character verbatim slice. Empty transcripts and generic
+  "give me an example" style questions return nil.
+- `PressureFollowUpService.generateFollowUp(...)` now skips provider calls on
+  unsupported locales and validates decoded provider output before rendering it.
+  Invalid/ungrounded output uses the existing deterministic template fallback,
+  so the pressure round keeps moving without a generic English LLM question.
+- Added `PressureFollowUpContractTests` for locale eligibility, grounded
+  acceptance, word bounding, generic rejection, hostile rejection, empty
+  transcript rejection, and too-short rejection. Updated
+  `docs/COACH_REPLACEMENT_SCORECARD.md` so only `VideoAnalysisService` remains
+  in the lower-leverage contract backlog.
+- Verified with `git diff --check` and `xcodebuild test -scheme Noum
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/PressureFollowUpContractTests
+  -only-testing:NoumTests/PressureFollowUpTemplateTests`: `TEST SUCCEEDED`.
+  Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_16-29-25-+0100.xcresult`.
+
+Files touched this continuation: `Noum/PressureFollowUpService.swift`,
+`NoumTests/NoumTests.swift`, `docs/COACH_REPLACEMENT_SCORECARD.md`,
+`handover.md`.
+
 2026-06-08 ~16:26 continuation (local Codex run, real toolchain):
 
 - Closed the `AI-HOME-REC` contract-completion row without moving the Home

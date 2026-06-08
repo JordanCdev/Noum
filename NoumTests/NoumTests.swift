@@ -3124,6 +3124,50 @@ struct PressureFollowUpTemplateTests {
     }
 }
 
+struct PressureFollowUpContractTests {
+
+    @Test func localeEligibilityFollowsPracticeLocaleAISupport() {
+        #expect(PressureFollowUpContract.localeSupportsAI(.enUS))
+        #expect(!PressureFollowUpContract.localeSupportsAI(.esES))
+        #expect(!PressureFollowUpContract.localeSupportsAI(.frFR))
+    }
+
+    @Test func groundedFollowUpIsAcceptedAndBounded() {
+        let transcript = "Our onboarding checklist missed renewal timing and billing owners."
+        let followUp = "Which onboarding owner would you name first, and how would you prove renewal timing was fixed this week?"
+        let normalized = PressureFollowUpContract.normalized(followUp, transcript: transcript)
+
+        #expect(normalized?.contains("onboarding") == true)
+        #expect(normalized?.split(whereSeparator: \.isWhitespace).count == 15)
+    }
+
+    @Test func genericQuestionThatIgnoresTranscriptIsRejected() {
+        let transcript = "Our onboarding checklist missed renewal timing and billing owners."
+        let followUp = "Can you give me a specific example?"
+
+        #expect(PressureFollowUpContract.normalized(followUp, transcript: transcript) == nil)
+    }
+
+    @Test func hostileFollowUpIsRejectedEvenWhenGrounded() {
+        let transcript = "Our onboarding checklist missed renewal timing and billing owners."
+        let followUp = "Why was that stupid onboarding plan worth saying?"
+
+        #expect(PressureFollowUpContract.normalized(followUp, transcript: transcript) == nil)
+    }
+
+    @Test func emptyTranscriptCannotGroundAIOutput() {
+        let followUp = "Which onboarding owner would you name first?"
+
+        #expect(PressureFollowUpContract.normalized(followUp, transcript: " ") == nil)
+    }
+
+    @Test func tooShortFollowUpIsRejected() {
+        let transcript = "Our onboarding checklist missed renewal timing and billing owners."
+
+        #expect(PressureFollowUpContract.normalized("Why onboarding?", transcript: transcript) == nil)
+    }
+}
+
 // MARK: - Eloquence Engine
 
 struct EloquenceEngineTests {
