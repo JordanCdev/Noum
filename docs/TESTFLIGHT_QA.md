@@ -145,6 +145,12 @@ never been touched on a real device this milestone series.
       Attachments were exported to `/tmp/noum-overlay-attachments-2` and
       spot-checked for post-session progression, personal-best, level-up,
       and achievement-unlock overlay rendering at default text size.
+- [x] 2026-06-08 — light screenshot workflow rerun after the ordinary badge
+      typography pass. The app launched and produced five nonblank 1206x2622
+      captures in `.screenshots/2026-06-08_autostop-11a1401-1836/`, but all
+      five deep-link shots visually landed on the same Home/Train-like surface.
+      Do not treat this as per-tab visual QA; use the detailed tour or repair
+      the light capture route before relying on it for tab-specific evidence.
 
 ## Widgets
 

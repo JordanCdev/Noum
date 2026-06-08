@@ -47,6 +47,25 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~18:39 continuation (local Codex run, light screenshot caveat):
+
+- Booted the iPhone 17 simulator, installed
+  `DerivedData/Noum/Build/Products/Release-iphonesimulator/Noum.app`, and ran
+  `.agents/skills/noum-screenshots/capture.sh` in `light` mode after commit
+  `11a1401`.
+- The workflow generated `.screenshots/2026-06-08_autostop-11a1401-1836/`
+  with five 1206x2622 PNGs and a `HANDOFF.md`. All five PNGs were nonblank,
+  but visual spot-checking showed `home`, `train`, `review`, `profile`, and
+  `settings` all landed on the same Home/Train-like surface instead of distinct
+  tab roots.
+- Treat this as app launch/render evidence only. It does not close per-tab,
+  large Dynamic Type, or badge-surface visual QA; use the detailed UI test tour
+  or fix the light deep-link capture route before relying on light captures.
+
+Files touched this continuation:
+`.screenshots/2026-06-08_autostop-11a1401-1836/HANDOFF.md`,
+`docs/TESTFLIGHT_QA.md`, `handover.md`.
+
 2026-06-08 ~18:36 continuation (local Codex run, ordinary badge typography):
 
 - Continued the Dynamic Type audit on ordinary numeric badges. The daily goal

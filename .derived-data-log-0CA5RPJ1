@@ -2551,6 +2551,1810 @@
         "systemVersion" : "25E246",
         "xcodeVersion" : "17F5032f"
       }
+    },
+    {
+      "accessDate" : "2026-06-07T22:37:02Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-07T22:52:02Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-07T23:07:03Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-07T23:22:03Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-07T23:37:03Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-07T23:52:03Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T00:07:03Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T00:22:03Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T00:37:04Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T00:52:04Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T01:07:04Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T01:22:04Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T01:37:04Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T01:52:05Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T02:07:05Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T02:22:05Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T02:37:05Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T02:52:05Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T03:07:06Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T03:22:06Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T03:37:06Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T03:52:06Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T04:07:07Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T04:22:07Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T04:37:07Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T04:52:07Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T05:07:07Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T05:22:08Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T05:37:08Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T05:52:08Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T06:07:08Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T06:22:08Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T06:37:09Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T06:52:09Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T07:07:09Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T07:22:10Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T07:37:10Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T07:52:10Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T08:07:10Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T08:22:11Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T08:37:11Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T08:52:11Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T09:07:12Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T09:22:12Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T09:37:12Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T09:52:12Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T10:07:12Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T10:22:12Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T10:37:13Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T10:52:13Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T11:07:13Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T11:22:13Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T11:37:13Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T11:52:13Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T12:07:14Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T12:22:14Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T12:37:14Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T12:52:14Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T13:07:14Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T13:22:15Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T13:37:15Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T13:52:15Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T14:07:15Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T14:22:16Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T14:37:16Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T14:52:16Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T15:07:16Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T15:22:16Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T15:37:17Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T15:52:17Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T16:07:17Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T16:22:18Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T16:37:18Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T16:52:18Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T17:07:19Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T17:22:19Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T17:37:19Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T17:52:21Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T18:07:22Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T18:22:22Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T18:37:23Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
+    },
+    {
+      "accessDate" : "2026-06-08T18:52:23Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
     }
   ]
 }
