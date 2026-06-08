@@ -22069,31 +22069,8 @@ struct CrossSurfaceQuoteFabricationGuardTests {
 /// behavior before the product ships it.
 struct CoachChatEvaluationFixtureTests {
 
-    private enum EvalPillar: String, CaseIterable {
-        case diagnosis
-        case prescription
-        case adaptation
-        case transfer
-        case honesty
-        case validation
-    }
-
-    private struct EvalFixture {
-        let id: String
-        let pillar: EvalPillar
-        let profile: CoachingProfile?
-        let sessions: [PracticeSession]
-        let trends: [SkillTrend]
-        let latestUserTurn: String
-        let previousCoachReply: String?
-        let expectedContextNeedles: [String]
-        let referenceReply: String
-        let knownBadReply: String
-        let expectedBadIssue: CoachChatReplyQualityIssue
-    }
-
     @Test func fixtureIDsAreStableAndUnique() {
-        let ids = Self.fixtures.map(\.id)
+        let ids = CoachChatEvaluationCorpus.fixtures.map(\.id)
         #expect(Set(ids).count == ids.count)
         for id in ids {
             #expect(id.range(of: #"^[a-z0-9]+(-[a-z0-9]+)*$"#, options: .regularExpression) != nil,
@@ -22102,27 +22079,27 @@ struct CoachChatEvaluationFixtureTests {
     }
 
     @Test func fixturesCoverCoreCoachParityPillars() {
-        let covered = Set(Self.fixtures.map(\.pillar))
-        #expect(covered == Set(EvalPillar.allCases),
+        let covered = Set(CoachChatEvaluationCorpus.fixtures.map(\.pillar))
+        #expect(covered == Set(CoachChatEvaluationPillar.allCases),
                 "Fixtures should cover every core coach-parity evaluation pillar.")
     }
 
     @Test func fixturesBuildContextThroughCoachContextBuilder() {
-        for fixture in Self.fixtures {
-            let context = Self.renderedContext(for: fixture)
-            #expect(Self.contains(context, "PROFESSIONAL TURN CONTRACT"),
+        for fixture in CoachChatEvaluationCorpus.fixtures {
+            let context = CoachChatEvaluationCorpus.renderedContext(for: fixture)
+            #expect(CoachChatEvaluationCorpus.contains(context, "PROFESSIONAL TURN CONTRACT"),
                     "\(fixture.id) should carry the turn-level professional contract.")
-            #expect(Self.contains(context, "No broad menu"),
+            #expect(CoachChatEvaluationCorpus.contains(context, "No broad menu"),
                     "\(fixture.id) should instruct the coach to avoid broad menus.")
             for needle in fixture.expectedContextNeedles {
-                #expect(Self.contains(context, needle),
+                #expect(CoachChatEvaluationCorpus.contains(context, needle),
                         "\(fixture.id) missing expected context needle: \(needle)\n\(context)")
             }
         }
     }
 
     @Test func referenceSeniorRepliesPassTheProfessionalRubric() {
-        for fixture in Self.fixtures {
+        for fixture in CoachChatEvaluationCorpus.fixtures {
             let result = AICoachChatService.professionalCoachRubric(
                 reply: fixture.referenceReply,
                 latestUserTurn: fixture.latestUserTurn
@@ -22137,7 +22114,7 @@ struct CoachChatEvaluationFixtureTests {
     }
 
     @Test func knownBadRepliesFailForTheIntendedReason() {
-        for fixture in Self.fixtures {
+        for fixture in CoachChatEvaluationCorpus.fixtures {
             let issue = AICoachChatService.replyQualityIssue(
                 in: fixture.knownBadReply,
                 latestUserTurn: fixture.latestUserTurn
@@ -22157,7 +22134,7 @@ struct CoachChatEvaluationFixtureTests {
             "diagnosis"
         ]
 
-        for fixture in Self.fixtures {
+        for fixture in CoachChatEvaluationCorpus.fixtures {
             let lower = fixture.referenceReply.lowercased()
             for phrase in banned {
                 #expect(!lower.contains(phrase),
@@ -22166,251 +22143,30 @@ struct CoachChatEvaluationFixtureTests {
         }
     }
 
-    private static let fixtures: [EvalFixture] = [
-        EvalFixture(
-            id: "cold-start-interview-baseline",
-            pillar: .diagnosis,
-            profile: nil,
-            sessions: [],
-            trends: [],
-            latestUserTurn: "How do I get better before my interview?",
-            previousCoachReply: nil,
-            expectedContextNeedles: [
-                "No voice set yet",
-                "No rated sessions yet",
-                "Not enough data for a stable baseline yet"
-            ],
-            referenceReply: "I don't have rated sessions yet, so the honest move is one baseline rep. Record a 60-second interview answer, then review the first sentence for the point before polishing anything.",
-            knownBadReply: "Keep practicing and try to sound more confident.",
-            expectedBadIssue: .unanchoredCoaching
-        ),
-        EvalFixture(
-            id: "filler-pressure-prescription",
-            pillar: .prescription,
-            profile: Self.profile(voice: .concise, challenge: .fillerWords),
-            sessions: [
-                Self.session(
-                    id: "11111111-1111-1111-1111-111111111111",
-                    transcript: "I think the plan is strong, um, but I need the team to move faster before Friday.",
-                    fillerCount: 6,
-                    duration: 64,
-                    daysAgo: 1,
-                    mode: .timed,
-                    score: 6,
-                    prompt: "Give a concise team update."
-                )
-            ],
-            trends: [
-                SkillTrend(
-                    skillArea: .fillerReduction,
-                    direction: .declining,
-                    confidence: .high,
-                    windowSize: 5,
-                    currentLevel: .weak,
-                    recentDelta: "2 more fillers vs prior window"
-                )
-            ],
-            latestUserTurn: "How do I stop saying um under pressure?",
-            previousCoachReply: nil,
-            expectedContextNeedles: [
-                "RECENT (most-recent first)",
-                "6 fillers",
-                "TRENDS"
-            ],
-            referenceReply: "Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and cut every filler after that point.",
-            knownBadReply: "Based on your data, the key insight is reducing fillers.",
-            expectedBadIssue: .roboticPhrase("based on your data")
-        ),
-        EvalFixture(
-            id: "critique-trust-repair",
-            pillar: .adaptation,
-            profile: Self.profile(voice: .warm, challenge: .rambling),
-            sessions: [
-                Self.session(
-                    id: "22222222-2222-2222-2222-222222222222",
-                    transcript: "The point is that I can help the client, but I went too wide before saying it.",
-                    fillerCount: 1,
-                    duration: 58,
-                    daysAgo: 0,
-                    mode: .timed,
-                    score: 7,
-                    prompt: "Answer a client objection warmly."
-                )
-            ],
-            trends: [],
-            latestUserTurn: "This is robotic and too much writing.",
-            previousCoachReply: "Recent reps show a decline in scores, so you should optimize your communication plan.",
-            expectedContextNeedles: [
-                "repair trust first",
-                "specific friction",
-                "RECENT (most-recent first)"
-            ],
-            referenceReply: "Fair push: that read was too generic. The last rep gives enough signal; next rep, use one clean opener and stop after the point lands.",
-            knownBadReply: "Next rep, use one clean opener and stop after the point lands.",
-            expectedBadIssue: .missedTrustRepair
-        ),
-        EvalFixture(
-            id: "what-next-single-move",
-            pillar: .validation,
-            profile: Self.profile(voice: .executive, challenge: .rushing),
-            sessions: [
-                Self.session(
-                    id: "33333333-3333-3333-3333-333333333333",
-                    transcript: "We can keep the launch tight if we align scope now and make the decision before noon.",
-                    fillerCount: 0,
-                    duration: 42,
-                    daysAgo: 2,
-                    mode: .timed,
-                    score: 8,
-                    prompt: "Give an executive update."
-                )
-            ],
-            trends: [
-                SkillTrend(
-                    skillArea: .closingStrength,
-                    direction: .declining,
-                    confidence: .medium,
-                    windowSize: 4,
-                    currentLevel: .developing,
-                    recentDelta: "close lost force in recent reps"
-                )
-            ],
-            latestUserTurn: "What next?",
-            previousCoachReply: "Which direction would you prefer?",
-            expectedContextNeedles: [
-                "choose the highest-leverage next action",
-                "No broad menu",
-                "RECENT (most-recent first)"
-            ],
-            referenceReply: "The pattern I'd pick is the rushed close. Review the last transcript, rewrite only the final sentence, then run one rep with that close as the target.",
-            knownBadReply: "We can work on fillers or structure. What is your priority today?",
-            expectedBadIssue: .menuInsteadOfDecision
-        ),
-        EvalFixture(
-            id: "overclaim-hypothesis-boundary",
-            pillar: .honesty,
-            profile: Self.profile(voice: .authoritative, challenge: .freezing),
-            sessions: [
-                Self.session(
-                    id: "44444444-4444-4444-4444-444444444444",
-                    transcript: "I waited too long to state the recommendation, then gave the context after it.",
-                    fillerCount: 2,
-                    duration: 55,
-                    daysAgo: 1,
-                    mode: .timed,
-                    score: 6,
-                    prompt: "Make a recommendation under pressure."
-                )
-            ],
-            trends: [],
-            latestUserTurn: "Why did that answer land badly?",
-            previousCoachReply: nil,
-            expectedContextNeedles: [
-                "PROMPT RELEVANCE",
-                "ARGUMENT LOGIC",
-                "RECENT (most-recent first)",
-                "2 fillers"
-            ],
-            referenceReply: "From the transcript, I would treat it as a hypothesis: the point arrived late. Next rep, say the conclusion first, then add one reason.",
-            knownBadReply: "You are clearly evasive, and this proves you lack conviction.",
-            expectedBadIssue: .overclaimsEvidence
-        ),
-        EvalFixture(
-            id: "leadership-transfer-setup",
-            pillar: .transfer,
-            profile: Self.profile(voice: .executive, challenge: .rambling),
-            sessions: [
-                Self.session(
-                    id: "55555555-5555-5555-5555-555555555555",
-                    transcript: "The update is simple: customer onboarding is ahead, support volume is down, and I need approval on the rollout date.",
-                    fillerCount: 0,
-                    duration: 72,
-                    daysAgo: 3,
-                    mode: .timed,
-                    score: 8,
-                    prompt: "Give a leadership update."
-                )
-            ],
-            trends: [],
-            latestUserTurn: "I have a leadership update tomorrow, what should I practice?",
-            previousCoachReply: nil,
-            expectedContextNeedles: [
-                "Where they want to use this",
-                "RECENT (most-recent first)",
-                "0 fillers"
-            ],
-            referenceReply: "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
-            knownBadReply: "You should think about your audience and try to communicate clearly.",
-            expectedBadIssue: .unanchoredCoaching
-        )
-    ]
-
-    private static func renderedContext(for fixture: EvalFixture) -> String {
-        CoachContextBuilder.userContext(
-            profile: fixture.profile,
-            baseline: .empty,
-            rating: .initial,
-            sessions: fixture.sessions,
-            currentStreak: fixture.sessions.isEmpty ? 0 : 2,
-            pathStatus: nil,
-            pathGatingPhrase: nil,
-            trends: fixture.trends,
-            latestUserTurn: fixture.latestUserTurn,
-            previousCoachReply: fixture.previousCoachReply
-        )
+    @Test func expertBaselineSlotsAreExplicitAndPending() {
+        for fixture in CoachChatEvaluationCorpus.fixtures {
+            #expect(fixture.expertBaseline.status == .pendingExpertReview)
+            #expect(fixture.expertBaseline.baselineID == nil)
+            #expect(fixture.expertBaseline.coachSummary == nil)
+            #expect(fixture.expertBaseline.scoringRubricVersion == "coach-chat-eval-v1")
+        }
     }
 
-    private static func contains(_ haystack: String, _ needle: String) -> Bool {
-        haystack.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-    }
+    @Test func ciReportProjectionIsDeterministicAndMachineReadable() throws {
+        let first = CoachChatEvaluationCIReport.make(from: CoachChatEvaluationCorpus.fixtures)
+        let second = CoachChatEvaluationCIReport.make(from: CoachChatEvaluationCorpus.fixtures)
 
-    private static func profile(
-        voice: SpeakingStyleGoal,
-        challenge: SpeakingChallenge
-    ) -> CoachingProfile {
-        CoachingProfile(
-            speakingContext: .work,
-            primaryGoal: challenge.recommendedPriority,
-            confidenceLevel: .inconsistent,
-            biggestChallenge: challenge,
-            desiredOutcome: voice.recommendedOutcome,
-            speakingStyleGoal: voice,
-            styleReference: "",
-            coachingBrief: "I want senior coaching that makes my work communication sharper.",
-            motivationWhyNow: "There are higher-stakes conversations coming up.",
-            successVision: "I can land the point cleanly under pressure.",
-            chosenStyleGoal: voice
-        )
-    }
+        #expect(first == second)
+        #expect(first.schemaVersion == CoachChatEvaluationCorpus.reportSchemaVersion)
+        #expect(first.fixtureCount == CoachChatEvaluationCorpus.fixtures.count)
+        #expect(first.rows.allSatisfy { $0.referenceReplyPassesRubric })
+        #expect(first.rows.allSatisfy { $0.knownBadIssueMatched })
+        #expect(first.rows.allSatisfy { $0.expertBaselineStatus == "pendingExpertReview" })
 
-    private static func session(
-        id: String,
-        transcript: String,
-        fillerCount: Int,
-        duration: TimeInterval,
-        daysAgo: Int,
-        mode: PracticeMode,
-        score: Int,
-        prompt: String
-    ) -> PracticeSession {
-        let date = Calendar(identifier: .gregorian).date(
-            byAdding: .day,
-            value: -daysAgo,
-            to: Date(timeIntervalSince1970: 1_775_000_000)
-        ) ?? Date(timeIntervalSince1970: 1_775_000_000)
-
-        return PracticeSession(
-            id: UUID(uuidString: id) ?? UUID(),
-            transcript: transcript,
-            fillerWordCount: fillerCount,
-            duration: duration,
-            date: date,
-            mode: mode,
-            score: score,
-            prompt: prompt,
-            pressureLevel: .standard,
-            isRated: true
-        )
+        let encoded = try first.encodedSortedJSON()
+        #expect(encoded.contains(#""schemaVersion":"coach-chat-eval-report-v1""#))
+        #expect(encoded.contains(#""fixtureID":"cold-start-interview-baseline""#))
+        #expect(encoded.contains(#""referenceReplyPassesRubric":true"#))
     }
 }
 

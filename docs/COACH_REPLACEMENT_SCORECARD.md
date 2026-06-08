@@ -84,7 +84,7 @@ Legend: **shipped-strong** = built and verified · **shipped (this run)** = move
 | AI-HOME-REC: `AIHomeRecommendationService` contract completion | **shipped (local continuation)** | Live AI home copy is now a bounded rewrite over `RecommendationBiasEngine`: decoded JSON must honor the binding mode/tone/scenario biases, carry non-empty restrained copy, and normalize/drop invalid IM metadata before Home can cache/render it; invalid output falls back to the deterministic recommendation |
 | VIDEO-ANALYSIS: `VideoAnalysisService` contract completion | **shipped (local continuation)** | Video reads now require a locale-supported, vision-capable provider; text-only generic "video" analysis is rejected, ratings decode provider aliases safely, provider copy is bounded and screened before Summary renders it, and unsupported/no-frame/invalid reads surface clear restrained errors |
 | PRESSURE-FOLLOWUP: `PressureFollowUpService` locale gate + grounding | **shipped (local continuation)** | Sudden Death follow-ups now skip live AI on unsupported locales and accept provider output only if it is short, non-hostile, and grounded in the user's prior turn; otherwise the existing deterministic template path keeps the round moving |
-| VALIDATE-1: Version-controlled, leak-guarded evaluation fixture substrate | shipped-partial | `CoachChatEvaluationFixtureTests` adds six fixed Ask Noum eval fixtures through `CoachContextBuilder.userContext` + `AICoachChatService.professionalCoachRubric`; catches generic/robotic/menu/overclaim failures. Still needs standalone fixture files, expert baselines, and CI reporting. Roadmap initiative #7 |
+| VALIDATE-1: Version-controlled, leak-guarded evaluation fixture substrate | **shipped-substrate (local continuation)** | Six Ask Noum eval fixtures now live in standalone test-source corpus data, run through `CoachContextBuilder.userContext` + `AICoachChatService.professionalCoachRubric`, carry explicit pending expert-baseline slots, and expose a deterministic CI-report projection. This is still substrate only, not expert calibration |
 | VALIDATE-2: Expert-coach per-fixture baseline + scored Noum-vs-baseline comparison | human-gated | Requires an expert per-fixture baseline + pre-registered scored comparison |
 | VALIDATE-3: Longitudinal real-user outcome tracking proving durable improvement | human-gated | Requires real users over weeks |
 | VALIDATE-4: Felt response quality of live LLM reads | human-gated | On-device QA with real provider keys only |
@@ -108,7 +108,6 @@ New artifacts this run: `Noum/FrameworkDrillChecks.swift`; specs `docs/initiativ
 
 Sequenced roughly by coaching leverage. Each is statically buildable against the existing owners on a future run; none requires a human to *write*.
 
-- **VALIDATE-1 depth pass** — move the new compiled fixture substrate out of the inline test file into standalone fixture data with expert-baseline slots, leak guards, and CI reporting. The first six Ask Noum fixtures now exist; they are not yet an expert-calibrated eval harness.
 - **Doc-only cleanups** from verification (zero behavioral impact): transposed `PromptAnswerVerdict` doc-comments (`PracticeSupport.swift:5561-5574`); stale sibling-service line refs in the IM-grader comments; optional hardening of the `.divergent` double-guard (`CoachContextBuilder.swift:2374-2377`).
 
 ---

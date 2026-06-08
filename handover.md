@@ -47,6 +47,39 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~16:52 continuation (local Codex run, real toolchain):
+
+- Closed the code-side `VALIDATE-1` depth pass as substrate only. This does
+  not claim expert calibration, human-coach parity, or live LLM felt quality.
+- Moved the six Ask Noum evaluation fixtures out of the inline
+  `CoachChatEvaluationFixtureTests` block into the standalone synchronized test
+  source file `NoumTests/CoachChatEvaluationFixtures.swift`. The existing tests
+  still exercise the live `CoachContextBuilder.userContext` and
+  `AICoachChatService.professionalCoachRubric` paths.
+- Added explicit `CoachChatExpertBaselineSlot` metadata to every fixture. All
+  slots are deliberately `pendingExpertReview` with no baseline ID or coach
+  summary; `VALIDATE-2` remains the human/expert baseline comparison gate.
+- Added a deterministic `CoachChatEvaluationCIReport` projection over the same
+  fixtures. The report records fixture ID, pillar, pending expert-baseline
+  status, reference-reply rubric pass, known-bad issue match, and context-needle
+  count, and encodes to sorted JSON for future CI consumption.
+- Added tests that lock the expert-baseline slots as pending and verify the CI
+  report is deterministic, machine-readable, and still passing the senior-coach
+  rubric / known-bad issue checks.
+- First focused run failed at compile on Swift Testing macro expansion for
+  key-path `allSatisfy` predicates; fixed by using explicit non-throwing
+  closures. Rerun verified with `xcodebuild test -scheme Noum -destination
+  'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/CoachChatEvaluationFixtureTests
+  -only-testing:NoumTests/AICoachChatReplyQualityTests
+  -only-testing:NoumTests/AICoachChatDeterministicReplyTests`: `TEST
+  SUCCEEDED`. Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_16-48-10-+0100.xcresult`.
+
+Files touched this continuation: `NoumTests/CoachChatEvaluationFixtures.swift`,
+`NoumTests/NoumTests.swift`, `docs/COACH_REPLACEMENT_SCORECARD.md`,
+`handover.md`.
+
 2026-06-08 ~16:41 continuation (local Codex run, real toolchain):
 
 - Closed the `VIDEO-ANALYSIS` contract row while keeping the presence pillar's
