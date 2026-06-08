@@ -47,6 +47,24 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~18:18 continuation (local Codex run, post-harness Release gate):
+
+- Re-ran the local Release simulator build after commit `7715ae3`
+  introduced the DEBUG-only overlay screenshot harness in `NoumApp.swift`.
+  The build succeeded, proving the harness branch does not break the
+  Release simulator configuration.
+- Updated `docs/TESTFLIGHT_QA.md` to record the post-harness Release
+  compile evidence. This still does not replace device archive/signing,
+  TestFlight upload, or hardware-only QA.
+
+Verification this continuation:
+
+- `xcodebuild build -scheme Noum -configuration Release -destination 'platform=iOS Simulator,name=iPhone 17'`:
+  `BUILD SUCCEEDED`. Product:
+  `DerivedData/Noum/Build/Products/Release-iphonesimulator/Noum.app`.
+
+Files touched this continuation: `docs/TESTFLIGHT_QA.md`, `handover.md`.
+
 2026-06-08 ~18:13 continuation (local Codex run, overlay screenshot harness):
 
 - Added a DEBUG-only `UI_TESTING_OVERLAY <kind>` root harness in

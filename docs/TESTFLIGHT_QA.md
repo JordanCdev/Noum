@@ -116,8 +116,10 @@ never been touched on a real device this milestone series.
       Release -destination 'platform=iOS Simulator,name=iPhone 17'`:
       `BUILD SUCCEEDED`. Product:
       `DerivedData/Noum/Build/Products/Release-iphonesimulator/Noum.app`.
-      This verifies the local Release simulator configuration only; it
-      does not replace device archive, signing, or TestFlight upload QA.
+      Re-run after the DEBUG-only celebration overlay screenshot harness
+      landed in `7715ae3`: `BUILD SUCCEEDED`. This verifies the local
+      Release simulator configuration only; it does not replace device
+      archive, signing, or TestFlight upload QA.
 - [x] 2026-06-08 — `xcodebuild test -scheme Noum -destination
       'platform=iOS Simulator,name=iPhone 17' -only-testing:NoumTests`:
       `TEST SUCCEEDED`. `xcresulttool` summary: 2,257 passed, 0 failed,
