@@ -38938,13 +38938,14 @@ struct IMConversationEvaluationContractTests {
 /// Roots being guarded (see `AICoachChatService` header): a length-
 /// truncated completion (Gemini `finishReason == MAX_TOKENS`, OpenAI /
 /// DeepSeek `finish_reason == length`) is a guillotined sentence and
-/// must NOT be returned as a finished reply — `extractText` returns nil
-/// so `reply(...)` yields `.failure(.empty)`.
+/// must NOT be returned as a finished reply. Non-truncated empty /
+/// unparseable responses may use the grounded deterministic fallback, but
+/// truncation stays an honest `.failure(.empty)` notice.
 @Suite("AICoachTruncationGuardTests")
 struct AICoachTruncationGuardTests {
 
     // MARK: Stub builders — shaped exactly like the provider JSON the
-    // real `extractText` parses, so the gate is exercised on realistic
+    // real extractor parses, so the gate is exercised on realistic
     // objects (not hand-rolled finish-reason-only dicts).
 
     private func geminiObject(finishReason: String?, text: String = "A complete coach reply.") -> [String: Any] {
@@ -38961,6 +38962,10 @@ struct AICoachTruncationGuardTests {
         ]
         if let finishReason { choice["finish_reason"] = finishReason }
         return ["choices": [choice]]
+    }
+
+    private func data(_ object: [String: Any]) -> Data {
+        try! JSONSerialization.data(withJSONObject: object)
     }
 
     // MARK: Truncated completions are caught
@@ -39010,6 +39015,59 @@ struct AICoachTruncationGuardTests {
             responseObject: geminiObject(finishReason: nil), provider: .gemini))
         #expect(!AICoachChatService.isLengthTruncated(
             responseObject: openAIObject(finishReason: nil), provider: .openAI))
+    }
+
+    @Test func extractionReturnsTrimmedTextForCompleteResponses() {
+        #expect(AICoachChatService.extractReplyText(
+            from: data(openAIObject(finishReason: "stop", content: "  Hold the beat.  ")),
+            provider: .openAI
+        ) == .text("Hold the beat."))
+        #expect(AICoachChatService.extractReplyText(
+            from: data(geminiObject(finishReason: "STOP", text: "  Lead with the point.  ")),
+            provider: .gemini
+        ) == .text("Lead with the point."))
+    }
+
+    @Test func extractionSeparatesEmptyFromLengthTruncated() {
+        #expect(AICoachChatService.extractReplyText(
+            from: data(openAIObject(finishReason: "stop", content: "   ")),
+            provider: .openAI
+        ) == .empty)
+        #expect(AICoachChatService.extractReplyText(
+            from: data(geminiObject(finishReason: "MAX_TOKENS", text: "We are in a")),
+            provider: .gemini
+        ) == .lengthTruncated)
+        #expect(AICoachChatService.extractReplyText(
+            from: data(["unexpected": "shape"]),
+            provider: .openAI
+        ) == .empty)
+    }
+
+    @Test func missingExtractionOutcomeKeepsTruncationHonestButAnswersEmpty() {
+        let ctx = ChatFallbackContext(
+            recentTimedTranscript: "My biggest professional achievement was leading a team that shipped a payments platform under pressure and delivered ahead of schedule.",
+            recentTimedPrompt: "Describe your biggest professional achievement"
+        )
+
+        let emptyOutcome = AICoachChatService.outcomeForMissingExtractedReply(.empty, context: ctx)
+        switch emptyOutcome {
+        case .some(.deterministicReply(let text)):
+            #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        case .some(.reply), .some(.failure), nil:
+            Issue.record("non-truncated empty extraction should answer with a deterministic coach bubble")
+        }
+
+        let truncatedOutcome = AICoachChatService.outcomeForMissingExtractedReply(.lengthTruncated, context: ctx)
+        switch truncatedOutcome {
+        case .some(.failure(.empty)):
+            break
+        case .some(.reply), .some(.deterministicReply), .some(.failure), nil:
+            Issue.record("length-truncated extraction must remain the honest empty notice")
+        }
+
+        if AICoachChatService.outcomeForMissingExtractedReply(.text("Done."), context: ctx) != nil {
+            Issue.record("text extraction should not produce a missing-reply fallback outcome")
+        }
     }
 
     @Test func noneProviderIsNeverTruncated() {

@@ -28,12 +28,12 @@ import Foundation
 //     thinkingBudget 0) so the whole budget is visible text, and the cap
 //     is 800 (headroom over the 2-4 sentence contract, matching the
 //     never-truncating PostRepCoachNoteService which sets no cap).
-//   • Truncation-honest — `extractText` reads the provider finish reason
-//     (Gemini `finishReason`, OpenAI/DeepSeek `finish_reason`). A
-//     length-truncated completion (MAX_TOKENS / "length") is treated as
-//     `.empty` so the user sees the honest "try rephrasing" notice
-//     instead of a sentence that stops dead. Never commit a guillotined
-//     reply verbatim.
+//   • Truncation-honest — response extraction reads the provider finish
+//     reason (Gemini `finishReason`, OpenAI/DeepSeek `finish_reason`). A
+//     length-truncated completion (MAX_TOKENS / "length") stays an honest
+//     `.empty` notice instead of a sentence that stops dead. Other
+//     no-text responses use the grounded deterministic fallback rather than
+//     dead-ending the chat. Never commit a guillotined reply verbatim.
 //   • Failure-typed — `reply(...)` returns `ChatOutcome` so the store
 //     can route to per-cause copy (locale-block vs. network vs. no
 //     provider vs. empty) instead of one generic "couldn't reach my
@@ -49,9 +49,9 @@ enum ChatFailure: Equatable {
     case localeUnsupported
     /// Transport / HTTP / JSON-encode failure.
     case network
-    /// Request succeeded but the provider returned an empty / unparseable
-    /// completion. Distinct from `.network` because retrying the same
-    /// prompt won't help — rephrasing might.
+    /// A reply could not be safely committed: the provider returned a
+    /// length-truncated completion, or a deterministic substitute failed its
+    /// own quality gate. Distinct from `.network` because rephrasing might help.
     case empty
 }
 
@@ -61,16 +61,27 @@ enum ChatOutcome {
     /// A live, model-generated reply.
     case reply(String)
     /// A deterministic, grounded, in-voice coach reply assembled locally
-    /// when the model is unreachable (`.network` / `.noProvider`) or the
-    /// locale is unsupported (`.localeUnsupported`). A real coach always
-    /// responds, so these failure paths hand back a useful association-only
-    /// line instead of an error notice. Kept DISTINCT from `.reply` so the
-    /// spoken path stays silent (TTS needs the same network/provider that is
-    /// down) while the store still renders it as a real coach bubble — never
-    /// a system notice. Mirrors `AICoachService.deterministicFeedback` /
+    /// when the model is unreachable (`.network` / `.noProvider`), the
+    /// locale is unsupported (`.localeUnsupported`), or a successful provider
+    /// response contains no usable non-truncated text (`.empty`). A real coach
+    /// always responds, so these failure paths hand back a useful
+    /// association-only line instead of an error notice. Kept DISTINCT from
+    /// `.reply` so the spoken path stays silent (TTS needs the same
+    /// network/provider that is down) while the store still renders it as a
+    /// real coach bubble — never a system notice. Mirrors
+    /// `AICoachService.deterministicFeedback` /
     /// `PostRepCoachNoteService.deterministicNote`.
     case deterministicReply(String)
     case failure(ChatFailure)
+}
+
+/// Provider response extraction result for Ask Noum text replies. Kept typed
+/// so the service can preserve truncation honesty without treating every
+/// no-text response as a user-visible dead end.
+enum ChatExtractionResult: Equatable {
+    case text(String)
+    case empty
+    case lengthTruncated
 }
 
 /// Obvious ways a live Ask-Noum reply can fail the professional-coach contract.
@@ -244,12 +255,12 @@ actor AICoachChatService {
     private init() {}
 
     /// Send a turn to the model. Returns `.reply(text)` on a live success,
-    /// `.deterministicReply(text)` when the model is unreachable / the locale
-    /// is unsupported (a real coach always answers — see `ChatFallbackContext`),
-    /// or `.failure(cause)` on the one path where a canned line could mask a
-    /// real bug (`.empty`: the model WAS reached but returned nothing parseable
-    /// or was length-truncated — the user gets the honest "try rephrasing"
-    /// notice instead of substituted text). Total function — never throws.
+    /// `.deterministicReply(text)` when the model is unreachable, the locale is
+    /// unsupported, or the provider returns no usable non-truncated text (a real
+    /// coach always answers — see `ChatFallbackContext`), or `.failure(cause)`
+    /// when a reply would be unsafe to commit (`.empty`: length-truncated or the
+    /// deterministic substitute itself failed the quality gate). Total function
+    /// — never throws.
     ///
     /// `fallback` is the LAST, defaulted parameter (arg-order rule) so the
     /// single existing call site can opt in without reordering; with the
@@ -303,7 +314,9 @@ actor AICoachChatService {
                 // can't reach their notes still gives a useful read).
                 return Self.deterministicReplyOutcome(failure: .network, context: fallback, latestUserTurn: latestUserTurn)
             }
-            if let text = extractText(from: data, provider: provider) {
+            let extraction = Self.extractReplyText(from: data, provider: provider)
+            switch extraction {
+            case .text(let text):
                 if let issue = Self.replyQualityIssue(
                     in: text,
                     latestUserTurn: latestUserTurn,
@@ -324,11 +337,13 @@ actor AICoachChatService {
                     return Self.deterministicReplyOutcome(failure: .empty, context: fallback, latestUserTurn: latestUserTurn)
                 }
                 return .reply(text)
+            case .empty, .lengthTruncated:
+                return Self.outcomeForMissingExtractedReply(
+                    extraction,
+                    context: fallback,
+                    latestUserTurn: latestUserTurn
+                ) ?? .failure(.empty)
             }
-            // The model WAS reached but returned nothing parseable / was
-            // length-truncated. Keep the honest `.empty` notice — substituting
-            // a canned line here could mask a real truncation bug.
-            return .failure(.empty)
         } catch {
             // Transport / encode failure — the model is unreachable. Answer
             // deterministically instead of dead-ending the user.
@@ -688,7 +703,7 @@ actor AICoachChatService {
                 key: key,
                 body: body
             ),
-            let text = extractText(from: data, provider: provider),
+            case .text(let text) = Self.extractReplyText(from: data, provider: provider),
             Self.replyQualityIssue(
                 in: text,
                 latestUserTurn: messages.last(where: { $0.role == .user })?.text,
@@ -702,8 +717,9 @@ actor AICoachChatService {
     // MARK: - Deterministic offline fallback
     //
     // A real coach always responds. When the model is unreachable
-    // (`.network` / `.noProvider`) or the locale is unsupported
-    // (`.localeUnsupported`), this assembles a grounded, in-voice coach line
+    // (`.network` / `.noProvider`), the locale is unsupported
+    // (`.localeUnsupported`), or the provider returns no usable non-truncated
+    // text (`.empty`), this assembles a grounded, in-voice coach line
     // from the same rich context the LLM gets — the chosen voice's persona,
     // the SHARED prompt-answer verdict over the most-recent timed rep, and the
     // standing case (hypothesis / target / success measure). It mirrors
@@ -1029,7 +1045,7 @@ actor AICoachChatService {
 
     // MARK: - Response parsing
 
-    private func extractText(from data: Data, provider: AIProvider) -> String? {
+    static func extractReplyText(from data: Data, provider: AIProvider) -> ChatExtractionResult {
         switch provider {
         case .openAI, .deepSeek:
             guard
@@ -1038,15 +1054,15 @@ actor AICoachChatService {
                 let first = choices.first,
                 let message = first["message"] as? [String: Any],
                 let content = message["content"] as? String
-            else { return nil }
+            else { return .empty }
             // Truncation-honest: a completion the provider stopped for
-            // length is a guillotined sentence. Treat it as empty so the
+            // length is a guillotined sentence. Keep it distinct so the
             // store shows "try rephrasing" rather than a dead-stop reply.
             if Self.isLengthTruncated(responseObject: object, provider: provider) {
-                return nil
+                return .lengthTruncated
             }
             let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
+            return trimmed.isEmpty ? .empty : .text(trimmed)
         case .gemini:
             guard
                 let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -1054,17 +1070,35 @@ actor AICoachChatService {
                 let first = candidates.first,
                 let content = first["content"] as? [String: Any],
                 let parts = content["parts"] as? [[String: Any]]
-            else { return nil }
+            else { return .empty }
             if Self.isLengthTruncated(responseObject: object, provider: provider) {
-                return nil
+                return .lengthTruncated
             }
             let joined = parts
                 .compactMap { $0["text"] as? String }
                 .joined(separator: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return joined.isEmpty ? nil : joined
+            return joined.isEmpty ? .empty : .text(joined)
         case .none:
+            return .empty
+        }
+    }
+
+    /// Maps no-text extraction states into user-visible outcomes. A successful
+    /// provider response with no usable text gets the grounded deterministic
+    /// coach bubble; a length-truncated response remains an honest notice.
+    static func outcomeForMissingExtractedReply(
+        _ extraction: ChatExtractionResult,
+        context: ChatFallbackContext,
+        latestUserTurn: String? = nil
+    ) -> ChatOutcome? {
+        switch extraction {
+        case .text:
             return nil
+        case .empty:
+            return deterministicReplyOutcome(failure: .empty, context: context, latestUserTurn: latestUserTurn)
+        case .lengthTruncated:
+            return .failure(.empty)
         }
     }
 

@@ -47,6 +47,34 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~16:08 continuation (local Codex run, real toolchain):
+
+- Closed the stale `AI-CHAT-FALLBACK` backlog row without changing Ask Noum's
+  state owner or rendering path. `AICoachChatService` now parses provider text
+  through `ChatExtractionResult` so non-truncated empty / unparseable responses
+  can use the existing grounded deterministic coach bubble instead of a system
+  notice.
+- Preserved truncation honesty: provider output stopped by `MAX_TOKENS` /
+  `length` remains `.failure(.empty)`, so Noum still refuses to commit a
+  guillotined model sentence. The deterministic path continues to be
+  quality-gated by `deterministicReplyOutcome` before it reaches
+  `AskNoumStore`.
+- Updated `docs/COACH_REPLACEMENT_SCORECARD.md`: `AI-CHAT-FALLBACK` is now
+  shipped as a local continuation, with the length-truncation caveat kept
+  explicit.
+- Verified with `git diff --check` and `xcodebuild test -scheme Noum
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/AICoachTruncationGuardTests
+  -only-testing:NoumTests/AICoachChatDeterministicReplyTests
+  -only-testing:NoumTests/AskNoumStoreTests
+  -only-testing:NoumTests/AskNoumSpokenModeTests`: `TEST SUCCEEDED`. Result
+  bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_16-03-22-+0100.xcresult`.
+
+Files touched this continuation: `Noum/AICoachChatService.swift`,
+`NoumTests/NoumTests.swift`, `docs/COACH_REPLACEMENT_SCORECARD.md`,
+`handover.md`.
+
 2026-06-08 ~15:56 continuation (local Codex run, real toolchain):
 
 - Closed `OBSERVE+ADAPT-2` through the existing recommendation owners rather
