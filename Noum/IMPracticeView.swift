@@ -428,10 +428,12 @@ struct IMPracticeView: View {
                 }
             }
 
+            // One qualitative target chip only. Raw live Trust/Tension numbers
+            // were cut per the UX overhaul (metrics-without-judgment mid-rep);
+            // the conversation should be felt, not read off a gauge. The
+            // qualitative relationship read lives in `continuitySummary` below.
             HStack(spacing: 8) {
                 statusChip(title: "Tone", value: resolvedTargetTone.title, tint: .indigo)
-                statusChip(title: "Trust", value: "\(conversationState.normalizedTrust)", tint: .teal)
-                statusChip(title: "Tension", value: "\(conversationState.normalizedTension)", tint: .orange)
             }
 
             Text(relationshipProfile.continuitySummary)
