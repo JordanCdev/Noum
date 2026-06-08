@@ -85,6 +85,7 @@ struct LiveCoachCallView: View {
     }
 
     private var shouldShowCoachingBrief: Bool {
+        coachingFocusLine != nil &&
         !hasLiveExchange &&
         voiceInput.state != .recording &&
         !store.isAwaitingReply &&
@@ -202,85 +203,39 @@ struct LiveCoachCallView: View {
         }
     }
 
-    // MARK: - Coaching brief
+    // MARK: - Coaching focus line
+    //
+    // The live-call landing leads with the orb + "Tap Talk to begin" (stateLine).
+    // We add at most ONE supporting focus line — never the old four-field
+    // "COACHING READ" meta-brief (headline / current work / target / next move),
+    // which made the user read a clinical case sheet before saying a word and,
+    // on a cold start, surfaced an "I have nothing yet" version. When there is no
+    // earned focus, we show nothing and let "Tap Talk" carry the moment.
 
+    @ViewBuilder
     private var coachingBriefCard: some View {
-        let brief = liveCoachBrief
-        return VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(spacing: 8) {
-                Image(systemName: "target")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(AppColor.proLight)
-                Text("COACHING READ")
-                    .font(Typography.micro.weight(.bold))
-                    .tracking(1)
-                    .foregroundStyle(.white.opacity(0.58))
-            }
-
-            Text(brief.headline)
+        if let focus = coachingFocusLine {
+            Text(focus)
                 .font(Typography.headline)
-                .foregroundStyle(.white)
+                .foregroundStyle(.white.opacity(0.9))
+                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-
-            briefRow(label: "Current work", value: brief.currentWork)
-            briefRow(label: "Target", value: brief.target)
-            briefRow(label: "Next move", value: brief.nextMove)
-        }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(AppColor.pro.opacity(0.22), lineWidth: 1)
-        )
-        .padding(.top, Spacing.lg)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Coaching read. \(brief.headline) Current work: \(brief.currentWork). Target: \(brief.target). Next move: \(brief.nextMove).")
-        .accessibilityIdentifier("askNoum.live.coachBrief")
-    }
-
-    private func briefRow(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label.uppercased())
-                .font(Typography.micro.weight(.bold))
-                .tracking(0.8)
-                .foregroundStyle(.white.opacity(0.42))
-            Text(value)
-                .font(Typography.caption)
-                .foregroundStyle(.white.opacity(0.82))
-                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, Spacing.lg)
+                .transition(.opacity)
+                .accessibilityIdentifier("askNoum.live.coachBrief")
+                .accessibilityLabel("Coaching focus. \(focus)")
         }
     }
 
-    private var liveCoachBrief: LiveCoachBrief {
-        guard let caseFile = coachMemoryStore.currentMemory?.caseFile else {
-            let voiceLabel = voice?.title.lowercased() ?? "speaking"
-            return LiveCoachBrief(
-                headline: "I need one clean rep to sharpen the read.",
-                currentWork: "Establish a baseline for your \(voiceLabel) goal.",
-                target: "Speak naturally for one focused answer.",
-                nextMove: "Run one rep, then I can name the pattern with evidence."
-            )
-        }
-
-        let headline = bounded(caseFile.hypothesis)
-            ?? caseFile.focus.map { "The current lever is \($0.displayName.lowercased())." }
-            ?? "The case is forming from your recent reps."
-        let currentWork = bounded(caseFile.activeIntervention)
-            ?? caseFile.focus.map { "Build \($0.displayName.lowercased()) with the next clean rep." }
-            ?? "Gather another rep before strengthening the read."
-        let target = bounded(caseFile.observableTarget)
-            ?? bounded(caseFile.successMeasure)
-            ?? "Make the next rep observable enough to compare."
-        let nextMove = bounded(caseFile.nextMove.contextLabel)
-            ?? "Gather evidence"
-
-        return LiveCoachBrief(
-            headline: headline,
-            currentWork: currentWork,
-            target: target,
-            nextMove: nextMove
-        )
+    /// The single focus line for the live-call landing, or `nil` on a cold start
+    /// (no earned case file → no focus to name, so the landing stays "Tap Talk").
+    private var coachingFocusLine: String? {
+        guard let caseFile = coachMemoryStore.currentMemory?.caseFile else { return nil }
+        return bounded(caseFile.hypothesis)
+            ?? caseFile.focus.map { "Today's lever: \($0.displayName.lowercased())." }
+            ?? bounded(caseFile.activeIntervention)
     }
 
     private func bounded(_ value: String?, maximumLength: Int = 96) -> String? {
@@ -433,13 +388,6 @@ struct LiveCoachCallView: View {
         voiceSettings.askNoumSpokenRepliesEnabled.toggle()
         if !voiceSettings.askNoumSpokenRepliesEnabled { speaker.stop() }
     }
-}
-
-private struct LiveCoachBrief {
-    let headline: String
-    let currentWork: String
-    let target: String
-    let nextMove: String
 }
 
 #endif
