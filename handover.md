@@ -47,6 +47,31 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~11:20 continuation (local Codex run, real toolchain):
+
+- Committed the previously staged auto-stop screenshot handoff as `d110e50`
+  (`docs: record latest screenshot handoff`).
+- Checked REMEMBER-4 from this handover before editing; it is already present
+  in code (`CoachCaseFile.upcomingMomentLine`, `CoachMemoryEngine.build(...,
+  upcomingMoment:)`, `SessionFinalizer` threading, and B1 #2 tests).
+- Landed TRANSFER-3 on Profile without adding a new store or Home dashboard
+  card: `BigMomentTransferTrend` now owns short user-facing Profile copy, and
+  `ProfileTransferStatusContent` shows a "Transfer pattern" row once the
+  existing reducer crosses the 3-same-kind-report floor. Pending outcome
+  check-ins and active prep still take priority; a repeated pattern beats a
+  one-off latest outcome. Copy is self-report-only and avoids causal language.
+- Added focused Profile contract tests for the trend row and priority order.
+- Verified with `xcodebuild test -scheme Noum -destination 'platform=iOS
+  Simulator,name=iPhone 17' -only-testing:NoumTests/ProfileCollapseContractTests
+  -only-testing:NoumTests/BigMomentTransferStoreTests` after sandbox escalation:
+  `TEST SUCCEEDED`. Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_11-17-09-+0100.xcresult`.
+  `git diff --check` passed. App binary timestamp advanced to Jun 8 11:20:10
+  2026.
+
+Files touched this continuation: `Noum/BigMomentStore.swift`,
+`ProfileView.swift`, `NoumTests/NoumTests.swift`, `handover.md`.
+
 2026-06-08 ~08:45 continuation (autonomous `noum2` run, real toolchain):
 
 - Closed two trust seams a communications coach cannot have, both verified by
@@ -211,7 +236,9 @@ Iteration 7 - Profile / transfer:
   exists, one coach read, evidence hub.
 - Transfer state is now surfaced compactly via `BigMomentStore`, and repeated
   outcome reports can aggregate into a tentative same-kind transfer pattern for
-  the coach context.
+  the coach context. Profile now also surfaces that repeated transfer pattern
+  once the same-kind threshold is met, while keeping pending check-ins and
+  active prep ahead of it.
 - Still needs visual review for Dynamic Type, VoiceOver, thin-data users, and
   whether the expanded evidence disclosure is still too dense.
 

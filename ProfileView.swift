@@ -176,6 +176,7 @@ struct ProfileCoachReadContent: Equatable {
 enum ProfileTransferStatusKind: Equatable {
     case pendingOutcome
     case activePrep
+    case transferPattern
     case recentOutcome
 }
 
@@ -192,6 +193,7 @@ struct ProfileTransferStatusContent: Equatable {
         activeMoment: BigMoment?,
         pendingOutcomeMoment: BigMoment?,
         recentOutcome: BigMomentOutcomeReport?,
+        transferTrend: BigMomentTransferTrend? = nil,
         sessions: [PracticeSession],
         voice: SpeakingStyleGoal?
     ) -> ProfileTransferStatusContent? {
@@ -242,6 +244,18 @@ struct ProfileTransferStatusContent: Equatable {
                 actionTitle: "Prep now",
                 destination: .prepSession,
                 moment: activeMoment
+            )
+        }
+
+        if let transferTrend {
+            return ProfileTransferStatusContent(
+                kind: .transferPattern,
+                eyebrow: "Transfer pattern",
+                title: transferTrend.profileTitle,
+                detail: transferTrend.profileDetailLine,
+                actionTitle: nil,
+                destination: nil,
+                moment: nil
             )
         }
 
@@ -507,6 +521,7 @@ struct ProfileView: View {
             activeMoment: bigMomentStore.activeMoment,
             pendingOutcomeMoment: bigMomentStore.pendingOutcomeCheckInMoment,
             recentOutcome: bigMomentStore.recentOutcomeReports(limit: 1).first,
+            transferTrend: bigMomentStore.transferTrends(limit: 1).first,
             sessions: sessions,
             voice: coachingProfileStore.profile?.speakingStyleGoal
         )
@@ -656,6 +671,7 @@ struct ProfileView: View {
         switch kind {
         case .pendingOutcome: return "arrow.uturn.left.circle.fill"
         case .activePrep: return "flag.checkered.circle.fill"
+        case .transferPattern: return "chart.line.uptrend.xyaxis.circle.fill"
         case .recentOutcome: return "checkmark.seal.fill"
         }
     }

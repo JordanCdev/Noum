@@ -7067,6 +7067,96 @@ struct ProfileCollapseContractTests {
         #expect(status?.actionTitle == nil)
     }
 
+    @Test func transferStatusPatternBeatsSingleRecentOutcomeAfterThreshold() {
+        let now = Date()
+        let reports = [
+            BigMomentOutcomeReport(
+                moment: BigMoment(title: "Board update 3", category: .presentation),
+                outcome: .wentWell,
+                audienceResponse: .engaged,
+                drillTransfer: .transferred,
+                recordedAt: now
+            ),
+            BigMomentOutcomeReport(
+                moment: BigMoment(title: "Board update 2", category: .presentation),
+                outcome: .mixed,
+                audienceResponse: .unclear,
+                drillTransfer: .partly,
+                recordedAt: now.addingTimeInterval(-86_400)
+            ),
+            BigMomentOutcomeReport(
+                moment: BigMoment(title: "Board update 1", category: .presentation),
+                outcome: .wentWell,
+                audienceResponse: .engaged,
+                drillTransfer: .transferred,
+                recordedAt: now.addingTimeInterval(-172_800)
+            )
+        ]
+        let trend = BigMomentStore.transferTrends(from: reports, limit: 1).first
+
+        let status = ProfileTransferStatusContent.make(
+            activeMoment: nil,
+            pendingOutcomeMoment: nil,
+            recentOutcome: reports.first,
+            transferTrend: trend,
+            sessions: [],
+            voice: .executive
+        )
+
+        #expect(status?.kind == .transferPattern)
+        #expect(status?.eyebrow == "Transfer pattern")
+        #expect(status?.title == "3 presentation check-ins")
+        #expect(status?.detail.localizedCaseInsensitiveContains("you reported") == true)
+        #expect(status?.detail.localizedCaseInsensitiveContains("prep read") == true)
+        #expect(status?.detail.localizedCaseInsensitiveContains("self-report only") == true)
+        #expect(status?.detail.localizedCaseInsensitiveContains("caused") == false)
+        #expect(status?.detail.localizedCaseInsensitiveContains("proved") == false)
+        #expect(status?.actionTitle == nil)
+    }
+
+    @Test func transferStatusPendingOutcomeBeatsTransferPattern() {
+        let now = Date()
+        let pending = BigMoment(
+            title: "Client renewal",
+            date: Calendar.current.date(byAdding: .day, value: -1, to: now),
+            category: .conversation
+        )
+        let reports = [
+            BigMomentOutcomeReport(
+                moment: BigMoment(title: "Panel 3", category: .interview),
+                outcome: .wentWell,
+                audienceResponse: .engaged,
+                recordedAt: now
+            ),
+            BigMomentOutcomeReport(
+                moment: BigMoment(title: "Panel 2", category: .interview),
+                outcome: .wentWell,
+                audienceResponse: .engaged,
+                recordedAt: now.addingTimeInterval(-86_400)
+            ),
+            BigMomentOutcomeReport(
+                moment: BigMoment(title: "Panel 1", category: .interview),
+                outcome: .mixed,
+                audienceResponse: .unclear,
+                recordedAt: now.addingTimeInterval(-172_800)
+            )
+        ]
+        let trend = BigMomentStore.transferTrends(from: reports, limit: 1).first
+
+        let status = ProfileTransferStatusContent.make(
+            activeMoment: nil,
+            pendingOutcomeMoment: pending,
+            recentOutcome: reports.first,
+            transferTrend: trend,
+            sessions: [],
+            voice: .executive
+        )
+
+        #expect(status?.kind == .pendingOutcome)
+        #expect(status?.title.contains("Client renewal") == true)
+        #expect(status?.actionTitle == "Check in")
+    }
+
     @Test func transferStatusRendersNothingWithoutTransferEvidence() {
         let status = ProfileTransferStatusContent.make(
             activeMoment: nil,

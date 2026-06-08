@@ -235,6 +235,20 @@ struct BigMomentTransferTrend: Equatable {
         return line
     }
 
+    var profileTitle: String {
+        let noun = reportCount == 1 ? "check-in" : "check-ins"
+        return "\(reportCount) \(category.displayName) \(noun)"
+    }
+
+    var profileDetailLine: String {
+        var line = "You reported \(Self.outcomeClause(outcomeCounts)); room read: \(Self.audienceClause(audienceCounts))."
+        if !drillTransferCounts.isEmpty {
+            line += " Prep read: \(Self.drillTransferClause(drillTransferCounts))."
+        }
+        line += " Self-report only, not measured proof."
+        return line
+    }
+
     private static func outcomeClause(_ counts: [ReportedMomentOutcome: Int]) -> String {
         clause(
             ordered: ReportedMomentOutcome.allCases,
