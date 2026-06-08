@@ -115,6 +115,24 @@ enum DrillCompletionCopy {
             return "Both Sides"
         case .claimCounter(.oneSided):
             return "One Side So Far"
+        case .claimEvidenceWarrant(.complete):
+            return "Full CEW"
+        case .claimEvidenceWarrant(.missingEvidence):
+            return "Add Evidence"
+        case .claimEvidenceWarrant(.missingWarrant):
+            return "Add Warrant"
+        case .claimEvidenceWarrant(.assertionOnly):
+            return "Back the Claim"
+        case .monroeSequence(.complete):
+            return "Sequence Landed"
+        case .monroeSequence(.missingNeed):
+            return "Name the Need"
+        case .monroeSequence(.missingSolution):
+            return "Offer the Solution"
+        case .monroeSequence(.missingVisualization):
+            return "Show the Outcome"
+        case .monroeSequence(.missingAction):
+            return "Ask for Action"
         case .elevatorPitch(.landed):
             return "Pitch Landed"
         case .elevatorPitch(.overTime):
@@ -310,14 +328,14 @@ enum DrillCompletionCopy {
         return "\(steps)/4 steps — strengthen the close so the stack lands."
     }
 
-    /// Named-framework drill feedback (STAR turn / claim-counter / elevator
-    /// pitch / reframe-bridge / AREA). The structural counterpart to
+    /// Named-framework drill feedback (STAR turn / claim-counter / CEW /
+    /// Monroe / elevator pitch / reframe-bridge / AREA). The structural counterpart to
     /// `prepStackFeedback`: surfaces ONE constructive nudge keyed to the post-hoc
     /// `FrameworkDrillVerdict`. It is honest by construction:
     ///
-    /// - A positive verdict (`turnDetected` / `counterAcknowledged` / `landed` /
-    ///   `reframed` / `complete`) names what the framework move was and why it
-    ///   worked.
+    /// - A positive verdict (`turnDetected` / `counterAcknowledged` /
+    ///   `complete` / `landed` / `reframed`) names what the framework move was
+    ///   and why it worked.
     /// - A miss verdict frames the missing structural move as the next target —
     ///   never a verdict on whether the content was *right* (association, not
     ///   causation), and never punitive.
@@ -336,6 +354,24 @@ enum DrillCompletionCopy {
             return "You named the counter, then bridged back — that's what makes a case persuasive, not just stated."
         case .claimCounter(.oneSided):
             return "Strong claim. Next, acknowledge the best counter (\"Some would say…\") before bridging back — it makes the argument land harder."
+        case .claimEvidenceWarrant(.complete):
+            return "Claim, evidence, warrant — the point had proof and a so-what. That's a complete argument spine."
+        case .claimEvidenceWarrant(.missingEvidence):
+            return "You gave the claim and where it leads. Add evidence — one reason or example — so the warrant has something to stand on."
+        case .claimEvidenceWarrant(.missingWarrant):
+            return "You made the claim and backed it. Now add the warrant: what that evidence means for the listener."
+        case .claimEvidenceWarrant(.assertionOnly):
+            return "Clear claim. Now add evidence and a warrant — why it is true, then why that proof matters."
+        case .monroeSequence(.complete):
+            return "Need, solution, picture, action — the sequence earned the ask instead of jumping to it."
+        case .monroeSequence(.missingNeed):
+            return "Start by naming the need before the solution. Monroe works when the listener feels the stakes first."
+        case .monroeSequence(.missingSolution):
+            return "The need is there. Now offer the solution clearly before you ask them to picture the outcome."
+        case .monroeSequence(.missingVisualization):
+            return "Need and solution are set. Now show the better future — make them picture what changes if they say yes."
+        case .monroeSequence(.missingAction):
+            return "The sequence is nearly there. Close with one concrete action so the persuasion has somewhere to go."
         case .elevatorPitch(.landed):
             return "Named yourself and landed one hook inside the box. That's a pitch, not a ramble."
         case .elevatorPitch(.overTime):

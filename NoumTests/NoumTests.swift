@@ -308,12 +308,12 @@ struct DrillXPEngineTests {
 
 // MARK: - Framework Drill Check Tests
 //
-// Per-detector boundary tests for the deterministic named-framework drills
-// (STAR turn / claim-counter / elevator pitch). Every fixture is hand-traced
-// against the REAL `PracticeEvaluator.relevanceContentWords` stop set + the
-// named `FrameworkDrillChecks` constants so a threshold change breaks a test
-// rather than silently shifting a verdict. These cover the DETERMINISTIC seams
-// only — never live model output (there is none here; the detectors are pure).
+// Per-detector boundary tests for the deterministic named-framework drills.
+// Every fixture is hand-traced against the REAL
+// `PracticeEvaluator.relevanceContentWords` stop set + the named
+// `FrameworkDrillChecks` constants so a threshold change breaks a test rather
+// than silently shifting a verdict. These cover the DETERMINISTIC seams only —
+// never live model output (there is none here; the detectors are pure).
 
 struct FrameworkDrillCheckTests {
 
@@ -407,6 +407,69 @@ struct FrameworkDrillCheckTests {
     @Test func claimCounterBelowFloorIsTentative() {
         let t = "Remote work rules."
         #expect(FrameworkDrillChecks.claimCounter(transcript: t) == nil)
+    }
+
+    // MARK: Claim / Evidence / Warrant
+
+    @Test func cewFullChainCompletes() {
+        let t = "Remote work boosts output. The reason is fewer interruptions, which means deeper focus across the day."
+        #expect(FrameworkDrillChecks.claimEvidenceWarrant(transcript: t) == .complete)
+    }
+
+    @Test func cewEvidenceOnlyNeedsWarrant() {
+        let t = "We should raise the price because demand keeps climbing well past our current supply levels."
+        #expect(FrameworkDrillChecks.claimEvidenceWarrant(transcript: t) == .missingWarrant)
+    }
+
+    @Test func cewImplicationOnlyNeedsEvidence() {
+        let t = "We should raise the price, which means stronger margins and room to invest properly next year."
+        #expect(FrameworkDrillChecks.claimEvidenceWarrant(transcript: t) == .missingEvidence)
+    }
+
+    @Test func cewAssertionOnlyIsConstructiveMiss() {
+        let t = "Remote work clearly boosts output and keeps the whole team genuinely happier every single day."
+        #expect(FrameworkDrillChecks.claimEvidenceWarrant(transcript: t) == .assertionOnly)
+    }
+
+    @Test func cewBelowFloorIsTentative() {
+        #expect(FrameworkDrillChecks.claimEvidenceWarrant(transcript: "Yes, we should.") == nil)
+    }
+
+    // MARK: Monroe's Sequence
+
+    @Test func monroeOrderedSequenceCompletes() {
+        let t = "Imagine the hiring team losing top candidates today. The problem is our interview loop takes three weeks. My proposal is a two day decision sprint. Picture candidates getting clear answers while interest is high. Start by approving the pilot this week."
+        #expect(FrameworkDrillChecks.monroeSequence(transcript: t) == .complete)
+    }
+
+    @Test func monroeMissingNeedIsFirstMiss() {
+        let t = "Imagine the hiring team moving faster. My proposal is a two day decision sprint. Picture candidates getting clear answers while interest is high. Start by approving the pilot this week."
+        #expect(FrameworkDrillChecks.monroeSequence(transcript: t) == .missingNeed)
+    }
+
+    @Test func monroeMissingSolutionAfterNeed() {
+        let t = "Imagine the hiring team losing top candidates. The problem is our interview loop takes three weeks. Picture candidates getting clear answers while interest is high. Start by approving the pilot this week."
+        #expect(FrameworkDrillChecks.monroeSequence(transcript: t) == .missingSolution)
+    }
+
+    @Test func monroeMissingVisualizationAfterSolution() {
+        let t = "Imagine the hiring team losing top candidates today. The problem is our interview loop takes three weeks. My proposal is a two day decision sprint. Start by approving the pilot this week."
+        #expect(FrameworkDrillChecks.monroeSequence(transcript: t) == .missingVisualization)
+    }
+
+    @Test func monroeMissingActionAfterVisualization() {
+        let t = "Imagine the hiring team losing top candidates today. The problem is our interview loop takes three weeks. My proposal is a two day decision sprint. Picture candidates getting clear answers while interest is high."
+        #expect(FrameworkDrillChecks.monroeSequence(transcript: t) == .missingAction)
+    }
+
+    @Test func monroeOutOfOrderSolutionDoesNotSatisfySequence() {
+        let t = "My proposal is a two day decision sprint. The problem is our interview loop takes three weeks. Picture candidates getting clear answers while interest is high. Start by approving the pilot this week."
+        #expect(FrameworkDrillChecks.monroeSequence(transcript: t) == .missingSolution)
+    }
+
+    @Test func monroeBelowFloorIsTentative() {
+        let t = "Problem is. Solution is. Imagine. Start."
+        #expect(FrameworkDrillChecks.monroeSequence(transcript: t) == nil)
     }
 
     // MARK: Elevator pitch
@@ -570,6 +633,20 @@ struct FrameworkDrillCheckTests {
         )
         #expect(claim == .claimCounter(.counterAcknowledged))
 
+        let cew = FrameworkDrillVerdict.evaluate(
+            .claimEvidenceWarrant,
+            transcript: "Remote work boosts output. The reason is fewer interruptions, which means deeper focus across the day.",
+            duration: 30
+        )
+        #expect(cew == .claimEvidenceWarrant(.complete))
+
+        let monroe = FrameworkDrillVerdict.evaluate(
+            .monroeSequence,
+            transcript: "Imagine the hiring team losing top candidates today. The problem is our interview loop takes three weeks. My proposal is a two day decision sprint. Picture candidates getting clear answers while interest is high. Start by approving the pilot this week.",
+            duration: 45
+        )
+        #expect(monroe == .monroeSequence(.complete))
+
         let pitch = FrameworkDrillVerdict.evaluate(
             .elevatorPitch,
             transcript: "Hi, I'm Jordan and I build communication training tools for nervous speakers under pressure.",
@@ -597,10 +674,12 @@ struct FrameworkDrillCheckTests {
 
 struct FrameworkDrillCatalogTests {
 
-    @Test func threeFrameworkVariationsExistWithStableIds() {
+    @Test func frameworkVariationsExistWithStableIds() {
         let ids = Set(DrillCatalog.allVariations.map(\.id))
         #expect(ids.contains("story.starTurn"))
         #expect(ids.contains("structure.claimCounter"))
+        #expect(ids.contains("structure.claimEvidenceWarrant"))
+        #expect(ids.contains("structure.monroeSequence"))
         #expect(ids.contains("concise.elevatorPitch"))
         #expect(ids.contains("structure.bridgeReframe"))
         #expect(ids.contains("depth.areaAnswer"))
@@ -609,8 +688,9 @@ struct FrameworkDrillCatalogTests {
     @Test func frameworkVariationsCarryNamedTargetCopy() {
         // Rubric clause: each drill states its framework + observable target
         // BEFORE the rep (constraint + successDescription non-empty).
-        for id in ["story.starTurn", "structure.claimCounter", "concise.elevatorPitch",
-                   "structure.bridgeReframe", "depth.areaAnswer"] {
+        for id in ["story.starTurn", "structure.claimCounter", "structure.claimEvidenceWarrant",
+                   "structure.monroeSequence", "concise.elevatorPitch", "structure.bridgeReframe",
+                   "depth.areaAnswer"] {
             let v = DrillCatalog.allVariations.first { $0.id == id }!
             #expect(!v.constraint.isEmpty)
             #expect(!v.coachingPrinciple.isEmpty)
@@ -622,6 +702,8 @@ struct FrameworkDrillCatalogTests {
     @Test func frameworkVariationsMapToCorrectSkillAreas() {
         #expect(DrillCatalog.allVariations.first { $0.id == "story.starTurn" }!.skillArea == .answerDevelopment)
         #expect(DrillCatalog.allVariations.first { $0.id == "structure.claimCounter" }!.skillArea == .structure)
+        #expect(DrillCatalog.allVariations.first { $0.id == "structure.claimEvidenceWarrant" }!.skillArea == .structure)
+        #expect(DrillCatalog.allVariations.first { $0.id == "structure.monroeSequence" }!.skillArea == .structure)
         #expect(DrillCatalog.allVariations.first { $0.id == "concise.elevatorPitch" }!.skillArea == .conciseSpeaking)
         #expect(DrillCatalog.allVariations.first { $0.id == "structure.bridgeReframe" }!.skillArea == .structure)
         #expect(DrillCatalog.allVariations.first { $0.id == "depth.areaAnswer" }!.skillArea == .answerDevelopment)
@@ -630,6 +712,8 @@ struct FrameworkDrillCatalogTests {
     @Test func variationIdRoutesToFrameworkCheckType() {
         #expect(MiniDrillType.from(variationId: "story.starTurn") == .frameworkCheck)
         #expect(MiniDrillType.from(variationId: "structure.claimCounter") == .frameworkCheck)
+        #expect(MiniDrillType.from(variationId: "structure.claimEvidenceWarrant") == .frameworkCheck)
+        #expect(MiniDrillType.from(variationId: "structure.monroeSequence") == .frameworkCheck)
         #expect(MiniDrillType.from(variationId: "concise.elevatorPitch") == .frameworkCheck)
         #expect(MiniDrillType.from(variationId: "structure.bridgeReframe") == .frameworkCheck)
         #expect(MiniDrillType.from(variationId: "depth.areaAnswer") == .frameworkCheck)
@@ -641,6 +725,8 @@ struct FrameworkDrillCatalogTests {
     @Test func frameworkLookupResolvesAndDefaultsNil() {
         #expect(MiniDrillType.framework(for: "story.starTurn") == .starTurn)
         #expect(MiniDrillType.framework(for: "structure.claimCounter") == .claimCounter)
+        #expect(MiniDrillType.framework(for: "structure.claimEvidenceWarrant") == .claimEvidenceWarrant)
+        #expect(MiniDrillType.framework(for: "structure.monroeSequence") == .monroeSequence)
         #expect(MiniDrillType.framework(for: "concise.elevatorPitch") == .elevatorPitch)
         #expect(MiniDrillType.framework(for: "structure.bridgeReframe") == .bridgeReframe)
         #expect(MiniDrillType.framework(for: "depth.areaAnswer") == .areaAnswer)
@@ -748,6 +834,50 @@ struct FrameworkDrillCopyAndScoreTests {
 
     // MARK: Reframe / AREA copy + score-safety
 
+    @Test func cewAndMonroeCopyMatchesVerdictBand() {
+        let fullCEW = outcome(
+            variationId: "structure.claimEvidenceWarrant",
+            transcript: "Remote work boosts output. The reason is fewer interruptions, which means deeper focus across the day.",
+            duration: 30,
+            wordCount: 45,
+            succeeded: true
+        )
+        let missingWarrant = outcome(
+            variationId: "structure.claimEvidenceWarrant",
+            transcript: "We should raise the price because demand keeps climbing well past our current supply levels.",
+            duration: 30,
+            wordCount: 45,
+            succeeded: true
+        )
+        let fullMonroe = outcome(
+            variationId: "structure.monroeSequence",
+            transcript: "Imagine the hiring team losing top candidates today. The problem is our interview loop takes three weeks. My proposal is a two day decision sprint. Picture candidates getting clear answers while interest is high. Start by approving the pilot this week.",
+            duration: 45,
+            wordCount: 60,
+            succeeded: true
+        )
+        let missingAction = outcome(
+            variationId: "structure.monroeSequence",
+            transcript: "Imagine the hiring team losing top candidates today. The problem is our interview loop takes three weeks. My proposal is a two day decision sprint. Picture candidates getting clear answers while interest is high.",
+            duration: 45,
+            wordCount: 60,
+            succeeded: true
+        )
+
+        #expect(fullCEW.frameworkVerdict == .claimEvidenceWarrant(.complete))
+        #expect(missingWarrant.frameworkVerdict == .claimEvidenceWarrant(.missingWarrant))
+        #expect(fullMonroe.frameworkVerdict == .monroeSequence(.complete))
+        #expect(missingAction.frameworkVerdict == .monroeSequence(.missingAction))
+        #expect(DrillCompletionCopy.title(for: fullCEW) == "Full CEW")
+        #expect(DrillCompletionCopy.title(for: missingWarrant) == "Add Warrant")
+        #expect(DrillCompletionCopy.title(for: fullMonroe) == "Sequence Landed")
+        #expect(DrillCompletionCopy.title(for: missingAction) == "Ask for Action")
+        #expect(DrillCompletionCopy.frameworkFeedback(outcome: fullCEW).contains("Claim, evidence, warrant"))
+        #expect(DrillCompletionCopy.frameworkFeedback(outcome: missingWarrant).contains("warrant"))
+        #expect(DrillCompletionCopy.frameworkFeedback(outcome: fullMonroe).contains("Need, solution, picture, action"))
+        #expect(DrillCompletionCopy.frameworkFeedback(outcome: missingAction).contains("concrete action"))
+    }
+
     @Test func reframeCopyMatchesVerdictBand() {
         let reframed = outcome(
             variationId: "structure.bridgeReframe",
@@ -832,6 +962,42 @@ struct FrameworkDrillCopyAndScoreTests {
         #expect(areaComplete.frameworkVerdict == .areaAnswer(.complete))
         #expect(areaMissing.frameworkVerdict == .areaAnswer(.missingExample))
         #expect(DrillXPEngine.calculate(outcome: areaComplete) == DrillXPEngine.calculate(outcome: areaMissing))
+
+        let cewComplete = outcome(
+            variationId: "structure.claimEvidenceWarrant",
+            transcript: "Remote work boosts output. The reason is fewer interruptions, which means deeper focus across the day.",
+            duration: 30,
+            wordCount: 45,
+            succeeded: true
+        )
+        let cewMiss = outcome(
+            variationId: "structure.claimEvidenceWarrant",
+            transcript: "Remote work clearly boosts output and keeps the whole team genuinely happier every single day.",
+            duration: 30,
+            wordCount: 45,
+            succeeded: true
+        )
+        #expect(cewComplete.frameworkVerdict == .claimEvidenceWarrant(.complete))
+        #expect(cewMiss.frameworkVerdict == .claimEvidenceWarrant(.assertionOnly))
+        #expect(DrillXPEngine.calculate(outcome: cewComplete) == DrillXPEngine.calculate(outcome: cewMiss))
+
+        let monroeComplete = outcome(
+            variationId: "structure.monroeSequence",
+            transcript: "Imagine the hiring team losing top candidates today. The problem is our interview loop takes three weeks. My proposal is a two day decision sprint. Picture candidates getting clear answers while interest is high. Start by approving the pilot this week.",
+            duration: 30,
+            wordCount: 45,
+            succeeded: true
+        )
+        let monroeMiss = outcome(
+            variationId: "structure.monroeSequence",
+            transcript: "Imagine the hiring team losing top candidates today. The problem is our interview loop takes three weeks. My proposal is a two day decision sprint. Picture candidates getting clear answers while interest is high.",
+            duration: 30,
+            wordCount: 45,
+            succeeded: true
+        )
+        #expect(monroeComplete.frameworkVerdict == .monroeSequence(.complete))
+        #expect(monroeMiss.frameworkVerdict == .monroeSequence(.missingAction))
+        #expect(DrillXPEngine.calculate(outcome: monroeComplete) == DrillXPEngine.calculate(outcome: monroeMiss))
     }
 
     @Test func areaBelowFloorFeedbackFallsBackToSkillLine() {

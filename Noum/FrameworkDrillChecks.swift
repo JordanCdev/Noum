@@ -2,11 +2,13 @@ import Foundation
 
 // MARK: - Framework Drill Checks
 //
-// Deterministic, pure structural detectors for the three named-framework
+// Deterministic, pure structural detectors for the named-framework
 // deliberate-practice drills introduced in the Coach-Parity exercise library:
 //
 //   • STAR / narrative "turn"     (story.starTurn      — .answerDevelopment)
 //   • Persuasion claim / counter  (structure.claimCounter — .structure)
+//   • Claim / evidence / warrant  (structure.claimEvidenceWarrant — .structure)
+//   • Monroe's Sequence           (structure.monroeSequence — .structure)
 //   • Timed elevator pitch        (concise.elevatorPitch  — .conciseSpeaking)
 //   • Reframe / bridge (curveball)(structure.bridgeReframe — .structure)
 //   • AREA answer scaffold        (depth.areaAnswer    — .answerDevelopment)
@@ -97,6 +99,24 @@ enum FrameworkDrillChecks {
             if let r = padded.range(of: " \(phrase) ") {
                 let offset = padded.distance(from: padded.startIndex, to: r.lowerBound)
                 if best == nil || offset < best! { best = offset }
+            }
+        }
+        return best
+    }
+
+    /// First index after `lowerBound` at which any phrase appears as a whole
+    /// run. Used by ordered multi-beat frameworks such as Monroe's Sequence.
+    private static func firstIndex(of phrases: [String], after lowerBound: Int, in padded: String) -> Int? {
+        var best: Int? = nil
+        for phrase in phrases {
+            var searchStart = padded.startIndex
+            while let r = padded.range(of: " \(phrase) ", range: searchStart..<padded.endIndex) {
+                let offset = padded.distance(from: padded.startIndex, to: r.lowerBound)
+                if offset > lowerBound {
+                    if best == nil || offset < best! { best = offset }
+                    break
+                }
+                searchStart = r.upperBound
             }
         }
         return best
@@ -209,6 +229,118 @@ enum FrameworkDrillChecks {
             return .counterAcknowledged
         }
         return .oneSided
+    }
+
+    // MARK: - Claim / Evidence / Warrant
+
+    /// The result of the dedicated CEW drill. This deliberately delegates to
+    /// the shared `PracticeEvaluator.argumentStructure` read so the app has one
+    /// definition of claim / evidence / warrant across Timed insights, context,
+    /// and drills. "Warrant" maps to the existing implication / so-what marker:
+    /// the line that explains what the evidence means.
+    enum ClaimEvidenceWarrantVerdict: Equatable {
+        /// Claim + evidence + warrant / implication all present.
+        case complete
+        /// Claim + warrant present, but no evidence / reason marker.
+        case missingEvidence
+        /// Claim + evidence present, but no warrant / so-what marker.
+        case missingWarrant
+        /// A claim was made but neither backed nor carried forward.
+        case assertionOnly
+    }
+
+    /// Pure. Grade the CEW drill by reusing the shared argument-logic read.
+    ///
+    /// - `nil` below the shared argument evidence floor or when no lead claim
+    ///   exists, preserving the no-confident-negative-on-thin-data invariant.
+    /// - `.complete` when claim + evidence + warrant are all present.
+    /// - specific constructive misses for the partial spine.
+    static func claimEvidenceWarrant(transcript: String) -> ClaimEvidenceWarrantVerdict? {
+        let read = PracticeEvaluator.argumentStructure(transcript: transcript)
+        guard let verdict = PracticeEvaluator.argumentLogicVerdict(for: read) else { return nil }
+        switch verdict {
+        case .fullChain:
+            return .complete
+        case .claimWithSupport:
+            return read.hasEvidence ? .missingWarrant : .missingEvidence
+        case .assertionOnly:
+            return .assertionOnly
+        }
+    }
+
+    // MARK: - Monroe's Sequence
+
+    /// Monroe's motivated sequence: attention -> need -> satisfaction
+    /// (solution) -> visualization -> action. The detector enforces the order
+    /// because a persuasive sequence is not just five ingredients; the listener
+    /// has to feel the need before the solution, picture the better outcome,
+    /// then receive one concrete ask.
+    enum MonroeSequenceVerdict: Equatable {
+        case complete
+        case missingNeed
+        case missingSolution
+        case missingVisualization
+        case missingAction
+    }
+
+    /// Need / problem / stakes markers.
+    static let monroeNeedMarkers: [String] = [
+        "the problem", "problem is", "the challenge", "challenge is",
+        "the risk", "risk is", "the cost", "cost is", "what's at stake",
+        "what is at stake", "we need", "need to", "we're losing",
+        "we are losing", "pain point", "right now"
+    ]
+
+    /// Satisfaction / proposed solution markers.
+    static let monroeSolutionMarkers: [String] = [
+        "my proposal", "i propose", "we should", "the solution",
+        "solution is", "the fix", "fix is", "the answer", "answer is",
+        "what we do", "what we should do", "here's how", "here is how"
+    ]
+
+    /// Visualization markers — picture the better future or consequence.
+    static let monroeVisualizationMarkers: [String] = [
+        "imagine", "picture", "the result", "this means", "that means",
+        "which means", "so we can", "so that", "what this creates",
+        "in practice", "you'll see", "you will see", "that would"
+    ]
+
+    /// Action markers — one concrete ask / next step.
+    static let monroeActionMarkers: [String] = [
+        "start by", "the next step", "next step", "today", "this week",
+        "approve", "commit to", "choose", "sign up", "join", "act now",
+        "book", "schedule", "try it", "pilot", "vote"
+    ]
+
+    /// Pure. Grade Monroe's Sequence on ordered persuasive beats.
+    ///
+    /// Evidence floor: below the content-word floor, return `nil`. Above it,
+    /// return the first missing ordered beat. The attention beat is represented
+    /// by the lead carrying real content via the shared first-sentence rule; a
+    /// zero-content lead has no persuadable hook, so the first meaningful
+    /// failure is still `.missingNeed`.
+    static func monroeSequence(transcript: String) -> MonroeSequenceVerdict? {
+        guard contentWords(transcript).count >= minContentWordsForVerdict else { return nil }
+
+        let lead = PracticeEvaluator.relevanceFirstSentence(in: transcript)
+        let leadHasContent = !contentWords(lead).isEmpty
+        let padded = " \(normalised(transcript)) "
+        let start = -1
+
+        guard leadHasContent,
+              let needIndex = firstIndex(of: monroeNeedMarkers, after: start, in: padded) else {
+            return .missingNeed
+        }
+        guard let solutionIndex = firstIndex(of: monroeSolutionMarkers, after: needIndex, in: padded) else {
+            return .missingSolution
+        }
+        guard let visualizationIndex = firstIndex(of: monroeVisualizationMarkers, after: solutionIndex, in: padded) else {
+            return .missingVisualization
+        }
+        guard firstIndex(of: monroeActionMarkers, after: visualizationIndex, in: padded) != nil else {
+            return .missingAction
+        }
+        return .complete
     }
 
     // MARK: - Timed elevator pitch
@@ -365,9 +497,9 @@ enum FrameworkDrillChecks {
     /// Answer). Only asserted ABOVE the evidence floor; `nil` below it. AREA is
     /// the answer-development sibling of PREP: lead with the answer, justify it,
     /// ground it in one concrete example, then close by returning to the answer.
-    /// The shipped `structure.claimCounter` already covers claim-evidence-warrant
-    /// (its `coachingPrinciple` says so), so this scaffold is scoped to AREA only
-    /// — no near-duplicate CEW drill.
+    /// The dedicated `structure.claimEvidenceWarrant` drill owns the argument
+    /// spine. AREA remains scoped to answer development: lead, justify, ground,
+    /// and loop back.
     enum AreaVerdict: Equatable {
         /// All four AREA beats present: a lead answer, a reason marker, a
         /// concrete example, and a closing return to the answer.

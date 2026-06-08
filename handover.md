@@ -47,6 +47,37 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-08 ~16:18 continuation (local Codex run, real toolchain):
+
+- Closed the `EXERCISE-5` remainder through the existing framework-drill system
+  instead of creating a parallel exercise path. Added stable mini-drill IDs
+  `structure.claimEvidenceWarrant` and `structure.monroeSequence`, both routed
+  through `MiniDrillType.framework(for:)`, `FrameworkDrill`, and
+  `FrameworkDrillVerdict.evaluate`.
+- CEW deliberately reuses `PracticeEvaluator.argumentStructure` /
+  `argumentLogicVerdict`, so claim/evidence/warrant remains single-sourced
+  across Timed insights, coach context, and the new guided drill. Monroe's
+  Sequence adds an ordered deterministic detector over need -> solution ->
+  visualization -> action, with the same content-word floor / no-confident-thin
+  negative behavior as the other framework checks.
+- `DrillCompletionCopy` now has result titles and one-line constructive
+  feedback for CEW and Monroe. These verdicts remain copy-only: tests pin that
+  divergent structural outcomes do not change XP or success.
+- Updated `docs/COACH_REPLACEMENT_SCORECARD.md`: `EXERCISE-5` is now shipped as
+  a local continuation and removed from the code-tickable backlog.
+- Verified with `git diff --check` and `xcodebuild test -scheme Noum
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -only-testing:NoumTests/FrameworkDrillCheckTests
+  -only-testing:NoumTests/FrameworkDrillCatalogTests
+  -only-testing:NoumTests/FrameworkDrillCopyAndScoreTests
+  -only-testing:NoumTests/ArgumentLogicTests`: `TEST SUCCEEDED`. Result bundle:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.08_16-13-23-+0100.xcresult`.
+
+Files touched this continuation: `Noum/FrameworkDrillChecks.swift`,
+`Noum/DrillSystem.swift`, `Noum/MiniDrillView.swift`, `ReinforcementCopy.swift`,
+`NoumTests/NoumTests.swift`, `docs/COACH_REPLACEMENT_SCORECARD.md`,
+`handover.md`.
+
 2026-06-08 ~16:08 continuation (local Codex run, real toolchain):
 
 - Closed the stale `AI-CHAT-FALLBACK` backlog row without changing Ask Noum's

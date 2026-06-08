@@ -422,11 +422,14 @@ struct MiniDrillOutcome: Identifiable {
     var frameworkVerdict: FrameworkDrillVerdict?
 }
 
-/// A type-erased wrapper over the three per-framework verdicts so the result
-/// view holds one optional field rather than three. Bounded + `Equatable`.
+/// A type-erased wrapper over the per-framework verdicts so the result view
+/// holds one optional field rather than one field per framework. Bounded +
+/// `Equatable`.
 enum FrameworkDrillVerdict: Equatable {
     case star(FrameworkDrillChecks.StarTurnVerdict)
     case claimCounter(FrameworkDrillChecks.ClaimCounterVerdict)
+    case claimEvidenceWarrant(FrameworkDrillChecks.ClaimEvidenceWarrantVerdict)
+    case monroeSequence(FrameworkDrillChecks.MonroeSequenceVerdict)
     case elevatorPitch(FrameworkDrillChecks.ElevatorPitchVerdict)
     case bridgeReframe(FrameworkDrillChecks.BridgeReframeVerdict)
     case areaAnswer(FrameworkDrillChecks.AreaVerdict)
@@ -447,6 +450,10 @@ enum FrameworkDrillVerdict: Equatable {
             return FrameworkDrillChecks.starTurn(transcript: transcript).map(FrameworkDrillVerdict.star)
         case .claimCounter:
             return FrameworkDrillChecks.claimCounter(transcript: transcript).map(FrameworkDrillVerdict.claimCounter)
+        case .claimEvidenceWarrant:
+            return FrameworkDrillChecks.claimEvidenceWarrant(transcript: transcript).map(FrameworkDrillVerdict.claimEvidenceWarrant)
+        case .monroeSequence:
+            return FrameworkDrillChecks.monroeSequence(transcript: transcript).map(FrameworkDrillVerdict.monroeSequence)
         case .elevatorPitch:
             return FrameworkDrillChecks.elevatorPitch(transcript: transcript, duration: duration).map(FrameworkDrillVerdict.elevatorPitch)
         case .bridgeReframe:

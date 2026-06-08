@@ -271,11 +271,10 @@ enum MiniDrillType: String, Codable {
     case landThePause   // 3 checkpoint pauses
     case prepStack      // Guided 4-step PREP structure
     case frameworkCheck // Named-framework drill graded on its own structure
-                        // (STAR turn / claim-counter / elevator pitch) via the
-                        // deterministic `FrameworkDrillChecks` detectors. Runs
-                        // through the standard recording UI; the post-hoc
-                        // structural verdict surfaces in the result copy and
-                        // never moves the numeric outcome.
+                        // via the deterministic `FrameworkDrillChecks`
+                        // detectors. Runs through the standard recording UI;
+                        // the post-hoc structural verdict surfaces in the
+                        // result copy and never moves the numeric outcome.
 
     /// Map a variation ID to its drill type.
     static func from(variationId: String) -> MiniDrillType {
@@ -283,7 +282,8 @@ enum MiniDrillType: String, Codable {
         case "pace.beatTheBrake": return .beatTheBrake
         case "pause.landThePause": return .landThePause
         case "structure.prepStack": return .prepStack
-        case "story.starTurn", "structure.claimCounter", "concise.elevatorPitch",
+        case "story.starTurn", "structure.claimCounter", "structure.claimEvidenceWarrant",
+             "structure.monroeSequence", "concise.elevatorPitch",
              "structure.bridgeReframe", "depth.areaAnswer":
             return .frameworkCheck
         default: return .standard
@@ -297,6 +297,8 @@ enum MiniDrillType: String, Codable {
         switch variationId {
         case "story.starTurn": return .starTurn
         case "structure.claimCounter": return .claimCounter
+        case "structure.claimEvidenceWarrant": return .claimEvidenceWarrant
+        case "structure.monroeSequence": return .monroeSequence
         case "concise.elevatorPitch": return .elevatorPitch
         case "structure.bridgeReframe": return .bridgeReframe
         case "depth.areaAnswer": return .areaAnswer
@@ -305,12 +307,14 @@ enum MiniDrillType: String, Codable {
     }
 }
 
-/// The three named-framework drills graded by `FrameworkDrillChecks`. A bounded,
+/// The named-framework drills graded by `FrameworkDrillChecks`. A bounded,
 /// decode-safe enum so the routing has a single typed switch rather than string
 /// comparisons scattered across surfaces.
 enum FrameworkDrill: String, Codable {
     case starTurn       // STAR / narrative: setup -> turn -> takeaway
     case claimCounter   // Persuasion: claim, acknowledge counter, bridge back
+    case claimEvidenceWarrant // CEW: claim -> evidence -> warrant / so-what
+    case monroeSequence // Monroe: attention -> need -> solution -> picture -> action
     case elevatorPitch  // Timed self-intro: named self + single hook + time box
     case bridgeReframe  // Curveball: acknowledge fairly -> bridge to the priority
     case areaAnswer     // AREA: answer -> reason -> example -> answer (close loop)
@@ -757,6 +761,24 @@ enum DrillCatalog {
             coachingPrinciple: "Claim-evidence-warrant: acknowledging the counter before bridging back is what separates a persuasive case from a one-sided assertion.",
             format: .miniDrill,
             successDescription: "A counter acknowledged, then bridged back to your claim"
+        ),
+        DrillVariation(
+            id: "structure.claimEvidenceWarrant",
+            skillArea: .structure,
+            title: "Claim, Evidence, Warrant",
+            constraint: "Make one claim, back it with a reason or evidence (\"because…\"), then add the warrant: what that evidence means (\"which means…\", \"so the impact is…\").",
+            coachingPrinciple: "CEW gives an argument its backbone: point, proof, and the so-what that makes the proof matter.",
+            format: .miniDrill,
+            successDescription: "Claim, evidence, and warrant all present"
+        ),
+        DrillVariation(
+            id: "structure.monroeSequence",
+            skillArea: .structure,
+            title: "Monroe's Sequence",
+            constraint: "Persuade in order: attention, need, solution, picture the better outcome, then one concrete action.",
+            coachingPrinciple: "Monroe's Sequence works because it earns action: make them feel the need, see the solution, picture the outcome, then ask.",
+            format: .miniDrill,
+            successDescription: "Need, solution, visualization, and action in order"
         ),
         DrillVariation(
             id: "structure.bridgeReframe",
