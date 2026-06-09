@@ -12,15 +12,15 @@ body{background:radial-gradient(1500px 1000px at 50% -8%, #EAF0FF 0%, #E4E7F2 55
 .head .url{display:inline-block;margin-top:10px;font:700 12.5px/1 var(--text);color:var(--bl);background:rgba(51,120,245,.10);padding:7px 13px;border-radius:999px}
 .section{max-width:980px;margin:36px auto 0}
 .section>h2{font:700 13px/1 var(--rounded);letter-spacing:1.3px;text-transform:uppercase;color:#4A5060;text-align:center;margin-bottom:16px}
-.pair{display:flex;gap:18px;align-items:center;justify-content:center;flex-wrap:wrap}
+.pair{display:flex;gap:18px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
 .side{display:flex;flex-direction:column;align-items:center;gap:11px}
 .tag{font:700 11px/1 var(--text);letter-spacing:1px;text-transform:uppercase;padding:6px 13px;border-radius:999px}
 .tag-b{background:rgba(105,115,130,.16);color:#697382}
 .tag-a{background:linear-gradient(90deg,var(--bl),var(--vio));color:#fff;box-shadow:0 4px 12px rgba(106,77,245,.30)}
 .arrow{font:800 30px/1 var(--rounded);color:#AEB6C6}
-.device{width:392px;height:812px;border-radius:46px;overflow:hidden;position:relative;background:linear-gradient(170deg,#FAFBFF,#EEF2FF);box-shadow:0 34px 80px rgba(26,32,48,.22), 0 0 0 9px #0d1322, 0 0 0 10px #2a3142}
+.device{width:392px;min-height:812px;border-radius:46px;overflow:hidden;position:relative;background:linear-gradient(170deg,#FAFBFF,#EEF2FF);box-shadow:0 34px 80px rgba(26,32,48,.22), 0 0 0 9px #0d1322, 0 0 0 10px #2a3142}
 .device.shot{background:#fff}.device.shot img{width:100%;display:block}
-.pad{position:absolute;inset:0;padding:46px 14px 12px;display:flex;flex-direction:column}
+.pad{padding:46px 14px 16px;display:flex;flex-direction:column;min-height:812px}
 .pad>*{flex-shrink:0}
 .sb{position:absolute;top:19px;left:26px;right:26px;display:flex;justify-content:space-between;font:700 13px/1 var(--rounded);color:var(--ink)}
 .nav{display:flex;align-items:center;justify-content:space-between;height:32px;margin-bottom:9px}
@@ -37,6 +37,8 @@ body{background:radial-gradient(1500px 1000px at 50% -8%, #EAF0FF 0%, #E4E7F2 55
 .cta.blue{background:linear-gradient(180deg,var(--blL),var(--bl));color:#fff;box-shadow:0 10px 22px rgba(51,120,245,.36)}
 .cta.white{background:#fff;color:var(--bl);box-shadow:0 8px 20px rgba(11,30,66,.18)}
 .tri{font-size:12px}
+.botpanel{margin-top:auto;padding-top:14px}
+.ghost{display:block;width:100%;text-align:center;height:46px;line-height:43px;border-radius:999px;border:1.5px solid #DCE1EB;background:#fff;color:var(--ink2);font:700 14px/1 var(--rounded);margin-top:9px}
 .vhero{border-radius:26px;padding:18px 16px 14px;text-align:center;color:#fff;background:linear-gradient(150deg,#3B6EF5 0%,#6A4DF5 52%,#8B3DF5 100%);box-shadow:0 18px 36px rgba(106,77,245,.34);margin-bottom:10px;position:relative;overflow:hidden}
 .vhero::after{content:"";position:absolute;width:240px;height:240px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.20),transparent 70%);top:-90px;right:-70px}
 .ring{width:102px;height:102px;border-radius:50%;background:conic-gradient(from -90deg,#fff 0deg,#EAF0FF 252deg,rgba(255,255,255,.28) 252deg);display:grid;place-items:center;position:relative;margin:0 auto 8px;filter:drop-shadow(0 8px 16px rgba(0,0,0,.18))}
@@ -56,7 +58,7 @@ body{background:radial-gradient(1500px 1000px at 50% -8%, #EAF0FF 0%, #E4E7F2 55
 .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .mark{display:flex;align-items:center;gap:3px;height:26px}
 .mark i{width:4px;border-radius:3px;background:var(--bl)}.mark i:nth-child(1),.mark i:nth-child(5){height:9px}.mark i:nth-child(2),.mark i:nth-child(4){height:18px}.mark i:nth-child(3){height:26px}
-.daypill{padding:7px 13px;border-radius:999px;font:800 11px/1 var(--text);letter-spacing:.4px;background:linear-gradient(90deg,#FF8A3D,#FF6A3D);color:#fff;box-shadow:0 6px 14px rgba(255,106,61,.32)}
+.daypill{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:999px;font:800 11px/1 var(--text);letter-spacing:.4px;background:linear-gradient(90deg,#FF8A3D,#FF6A3D);color:#fff;box-shadow:0 6px 14px rgba(255,106,61,.32)}
 .greet{font:800 26px/1.05 var(--rounded);letter-spacing:-.4px;margin-bottom:14px}
 .chero{border-radius:26px;padding:22px 20px;color:#fff;background:linear-gradient(150deg,#2E7BF6 0%,#3BA1FF 55%,#16C7CE 100%);box-shadow:0 20px 42px rgba(33,140,220,.34);margin-bottom:12px;position:relative;overflow:hidden}
 .chero::after{content:"";position:absolute;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.22),transparent 70%);bottom:-110px;left:-50px}
@@ -89,12 +91,13 @@ body{background:radial-gradient(1500px 1000px at 50% -8%, #EAF0FF 0%, #E4E7F2 55
  <div class="arrow">→</div>
  <div class="side"><div class="tag tag-a">After · proposed</div>
   <div class="device"><div class="sb"><span>9:41</span><span>5G&nbsp;&nbsp;100%</span></div><div class="pad">
-   <div class="nav"><div class="back">‹</div><div class="navt">REP COMPLETE</div><div class="donb">Done</div></div>
+   <div class="nav"><div class="back">‹</div><div class="navt">REP COMPLETE</div><div style="width:32px"></div></div>
    <div class="vhero"><div class="ring"><div class="rc"><div class="num">7</div><div class="den">OUT OF 10</div></div></div><div class="htitle">Good control</div><div class="hsub">Clean and composed — one filler across a full 50-second answer.</div>
     <div class="chips"><div class="chip"><div class="v">1</div><div class="l">FILLERS</div></div><div class="chip"><div class="v">50s</div><div class="l">DURATION</div></div><div class="chip"><div class="v">138</div><div class="l">PACE</div></div></div></div>
    <div class="card"><div class="row"><span class="ico" style="background:linear-gradient(150deg,#3B82F6,#2E6BE0)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></span><div class="micro" style="color:var(--bl)">The read</div></div><div class="bodyt">The repeated “Yeah” early on broke a clean streak. We can explore how that hesitation felt while you searched for the next line.</div></div>
    <div class="tint win"><div class="row"><span class="ico" style="background:linear-gradient(150deg,#1FB877,#0E7E52)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><div class="micro" style="color:var(--grnD)">What you did well</div></div><div class="bodyt" style="font-weight:600">Sharing a personal insight makes your message relatable and easy to trust.</div><div class="quote"><div class="bar"></div><div class="q">“In my experience, the best conversations happen when both parties feel heard.”</div></div></div>
-   <div class="tint fix" style="margin-top:10px"><div class="row"><span class="ico" style="background:linear-gradient(150deg,#F2A33C,#D4781A)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V7"/><path d="m6 12 6-6 6 6"/></svg></span><div class="micro" style="color:var(--ambD)">Fix first</div></div><div class="bodyt">Your answer stayed surface-level. One idea developed with a specific example beats three shallow points.</div><div class="move" style="color:var(--ambD)">Next move · develop one idea fully before moving on.</div><div class="cta blue"><span class="tri">▶</span>Start 45-second drill</div></div>
+   <div class="tint fix" style="margin-top:10px"><div class="row"><span class="ico" style="background:linear-gradient(150deg,#F2A33C,#D4781A)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V7"/><path d="m6 12 6-6 6 6"/></svg></span><div class="micro" style="color:var(--ambD)">Fix first</div></div><div class="bodyt">Your answer stayed surface-level. One idea developed with a specific example beats three shallow points.</div><div class="move" style="color:var(--ambD)">Next move · develop one idea fully before moving on.</div></div>
+   <div class="botpanel"><div class="cta blue"><span class="tri">▶</span>Start 45-second drill</div><div class="ghost">Done</div></div>
   </div></div></div>
 </div></div>
 
@@ -103,7 +106,7 @@ body{background:radial-gradient(1500px 1000px at 50% -8%, #EAF0FF 0%, #E4E7F2 55
  <div class="arrow">→</div>
  <div class="side"><div class="tag tag-a">After · proposed</div>
   <div class="device"><div class="sb"><span>9:41</span><span>5G&nbsp;&nbsp;100%</span></div><div class="pad">
-   <div class="topbar"><div class="mark"><i></i><i></i><i></i><i></i><i></i></div><div class="daypill">🔥 Day 63</div></div>
+   <div class="topbar"><div class="mark"><i></i><i></i><i></i><i></i><i></i></div><div class="daypill"><svg width="12" height="12" viewBox="0 0 24 24" fill="#fff"><path d="M12 2s5 4 5 9a5 5 0 1 1-10 0c0-2 1-3 2-4 .5 1 1 1.5 2 1.5C10 6 12 4 12 2Z"/></svg>Day 63</div></div>
    <div class="greet">Hello, Jordan</div>
    <div class="chero"><div class="micro" style="color:rgba(255,255,255,.82)">Your coach · today</div><div class="htitle" style="margin-top:7px">Stay with the case.</div><div class="hsub" style="color:rgba(255,255,255,.9);margin-left:0;text-align:left">One focused rep moves your case file forward — built from your last 30 reps.</div><div style="margin-top:13px"><span class="glass"><span class="d"></span>Toward your concise voice</span></div><div class="cta white"><span class="tri">▶</span>Begin · Timed rep</div></div>
    <div class="lrow"><span class="ico" style="background:linear-gradient(150deg,#8B5CF6,#6A3DF5)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7a8.5 8.5 0 0 1-.9-3.8 8.4 8.4 0 0 1 8.5-8.5 8.4 8.4 0 0 1 8.5 8.5Z"/></svg></span><div class="lc"><div class="lt">Ask Noum</div><div class="ls">Your coach — reads your last 30 reps</div></div><div class="chev">›</div></div>

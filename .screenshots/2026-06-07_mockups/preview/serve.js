@@ -20,6 +20,7 @@ const TYPES = {
 };
 
 const server = http.createServer((req, res) => {
+  console.log(req.method, req.url);
   let p = decodeURIComponent((req.url || '/').split('?')[0]);
   if (p === '/' || p === '') p = '/index.html';
   const fp = path.join(ROOT, p);
@@ -37,7 +38,9 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+// No host arg => Node binds dual-stack (::) on macOS, so both
+// localhost->127.0.0.1 (IPv4) and localhost->::1 (IPv6) resolve.
+server.listen(PORT, () => {
   console.log('Local:   http://localhost:' + PORT + '/');
   console.log('ready - started server on http://localhost:' + PORT);
   console.log('Server listening on http://localhost:' + PORT);
