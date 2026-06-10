@@ -781,6 +781,17 @@ struct CoachMemory: Codable, Equatable {
     var workingHypothesis: String?
     var activeIntervention: CoachIntervention?
 
+    // When the coach started watching the CURRENT read — the durable age
+    // anchor behind "watching this across 9 reps over 3 weeks." Carried
+    // forward across rebuilds while the lever (the case the hypothesis is
+    // about) stays the same, even though the hypothesis PHRASING is
+    // rewritten every rebuild; reset when the lever shifts (a new case is
+    // a new watch — mirrors `focusShiftedAt`). Optional for backward
+    // compat: memories persisted before this field decode to nil, and the
+    // engine then claims age only from `previous.updatedAt` (never invents
+    // a longer watch than it can prove).
+    var hypothesisWatchStartedAt: Date?
+
     // The compact operating case a human coach would keep in their notes:
     // hypothesis, active intervention, evidence threshold, subjective pattern,
     // transfer read, and the next coaching move. Optional for backward compat.
@@ -874,6 +885,7 @@ struct CoachMemory: Codable, Equatable {
         planMode: PracticeMode? = nil,
         workingHypothesis: String? = nil,
         activeIntervention: CoachIntervention? = nil,
+        hypothesisWatchStartedAt: Date? = nil,
         caseFile: CoachCaseFile? = nil,
         hypothesisAcknowledgement: CoachHypothesisAcknowledgement? = nil,
         adaptationLog: [CoachCourseChange]? = nil,
@@ -910,6 +922,7 @@ struct CoachMemory: Codable, Equatable {
         self.planMode = planMode
         self.workingHypothesis = workingHypothesis
         self.activeIntervention = activeIntervention
+        self.hypothesisWatchStartedAt = hypothesisWatchStartedAt
         self.caseFile = caseFile
         self.hypothesisAcknowledgement = hypothesisAcknowledgement
         self.adaptationLog = adaptationLog
@@ -936,6 +949,7 @@ struct CoachMemory: Codable, Equatable {
         case strengths, blockers, lastIntentLabel
         case planWeekIndex, planFocus, planMode
         case workingHypothesis, activeIntervention
+        case hypothesisWatchStartedAt
         case caseFile
         case hypothesisAcknowledgement
         case adaptationLog
@@ -971,6 +985,7 @@ struct CoachMemory: Codable, Equatable {
         planMode = try c.decodeIfPresent(PracticeMode.self, forKey: .planMode)
         workingHypothesis = try c.decodeIfPresent(String.self, forKey: .workingHypothesis)
         activeIntervention = try c.decodeIfPresent(CoachIntervention.self, forKey: .activeIntervention)
+        hypothesisWatchStartedAt = try c.decodeIfPresent(Date.self, forKey: .hypothesisWatchStartedAt)
         caseFile = try c.decodeIfPresent(CoachCaseFile.self, forKey: .caseFile)
         hypothesisAcknowledgement = try c.decodeIfPresent(CoachHypothesisAcknowledgement.self, forKey: .hypothesisAcknowledgement)
         adaptationLog = try c.decodeIfPresent([CoachCourseChange].self, forKey: .adaptationLog)
@@ -1049,7 +1064,7 @@ struct CoachCaseFile: Codable, Equatable {
             updatedAt: now,
             hypothesis: hypothesis,
             focus: focus,
-            evidenceSummary: evidenceSummary(for: memory),
+            evidenceSummary: evidenceSummary(for: memory, now: now),
             activeIntervention: activeIntervention,
             observableTarget: observableTarget,
             successMeasure: successMeasure,
@@ -1132,13 +1147,88 @@ struct CoachCaseFile: Codable, Equatable {
         }
     }
 
-    private static func evidenceSummary(for memory: CoachMemory) -> String {
+    private static func evidenceSummary(for memory: CoachMemory, now: Date) -> String {
         let noun = memory.evidenceCount == 1 ? "signal" : "signals"
         var summary = "\(memory.evidenceConfidence.label) read across \(memory.evidenceCount) \(noun)"
+        // Evidence AGE — how long the current read has been watched. Only
+        // claimed when a hypothesis exists and its watch anchor proves a
+        // span (legacy memories without the anchor stay depth-only).
+        if memory.workingHypothesis != nil,
+           let span = watchSpanPhrase(from: memory.hypothesisWatchStartedAt, to: now) {
+            summary += ", watched \(span)"
+        }
         if let basis = bounded(memory.currentLeverBasis) {
             summary += "; basis: \(basis)"
         }
         return summary
+    }
+
+    // MARK: - Evidence age + depth (the felt-durability clause)
+
+    /// Coarse, honest phrasing of how long the current read has been
+    /// watched. Nil for no anchor, a future anchor, or a same-day watch —
+    /// the line never claims a span it can't prove. Pure function; calendar
+    /// is injectable so tests can pin phrasing without DST flakiness.
+    static func watchSpanPhrase(
+        from start: Date?,
+        to now: Date,
+        calendar: Calendar = .current
+    ) -> String? {
+        guard let start, start <= now else { return nil }
+        let days = calendar.dateComponents([.day], from: start, to: now).day ?? 0
+        switch days {
+        case ..<1: return nil
+        case 1: return "since yesterday"
+        case 2...6: return "over the past \(days) days"
+        case 7...13: return "over the past week"
+        case 14...59: return "over \(days / 7) weeks"
+        default: return "over \(days / 30) months"
+        }
+    }
+
+    /// The short depth+age clause — "9 reps over 3 weeks" — shared by the
+    /// Profile coach read and the post-rep note so every surface ages the
+    /// same watch identically. "Reps" is honest here: `evidenceCount` is
+    /// derived exclusively from session counts/trend windows.
+    static func evidenceDepthClause(
+        evidenceCount: Int,
+        watchingSince: Date?,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> String? {
+        guard evidenceCount > 0 else { return nil }
+        let noun = evidenceCount == 1 ? "rep" : "reps"
+        guard let span = watchSpanPhrase(from: watchingSince, to: now, calendar: calendar) else {
+            return "\(evidenceCount) \(noun)"
+        }
+        return "\(evidenceCount) \(noun) \(span)"
+    }
+
+    /// The full user-facing evidence line behind the working hypothesis.
+    /// Assured ("Watching this across …") only at or above the `.moderate`
+    /// evidence floor — the SAME floor at which `workingHypothesis` shifts
+    /// from "may be" to "appears to be" — and tentative below it, so weak
+    /// evidence always reads as a forming hypothesis, never a verdict.
+    static func evidenceDepthLine(
+        evidenceCount: Int,
+        confidence: BaselineConfidence,
+        watchingSince: Date?,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> String? {
+        guard let clause = evidenceDepthClause(
+            evidenceCount: evidenceCount,
+            watchingSince: watchingSince,
+            now: now,
+            calendar: calendar
+        ) else { return nil }
+        if confidence >= .moderate {
+            return "Watching this across \(clause)."
+        }
+        let hasSpan = watchSpanPhrase(from: watchingSince, to: now, calendar: calendar) != nil
+        return hasSpan
+            ? "Early read — \(clause); still forming."
+            : "Early read — \(clause) so far; still forming."
     }
 
     private static func interventionSummary(_ intervention: CoachIntervention) -> String {
@@ -1357,6 +1447,15 @@ enum CoachMemoryEngine {
             )
         )
         memory.adaptationLog = adaptationLog.isEmpty ? nil : adaptationLog
+        // Durable watch anchor — when the coach started watching the
+        // CURRENT read. Resolved BEFORE `CoachCaseFile.build` below so the
+        // case file's evidence summary can carry the watch age.
+        memory.hypothesisWatchStartedAt = hypothesisWatchStart(
+            hasHypothesis: newWorkingHypothesis != nil,
+            currentLever: currentLever,
+            previous: previous,
+            now: now
+        )
         // Carry the previous hypothesis acknowledgement forward only when
         // the freshly-built `workingHypothesis` matches the one the user
         // was acknowledging — same case-spine contract `successCriterion`
@@ -1617,6 +1716,33 @@ enum CoachMemoryEngine {
             trimmed = snapshot
         }
         return "user-tapped rejection of: \"\(trimmed)\""
+    }
+
+    /// Resolves the durable watch anchor for the working hypothesis — the
+    /// date the coach started watching the CURRENT case. Pure function,
+    /// internal so tests can lock the carry-forward contract directly:
+    ///
+    ///   • No hypothesis → nil (no watch to age).
+    ///   • Same lever as the previous memory → carry the previous anchor
+    ///     (the hypothesis PHRASING is rewritten every rebuild; the case
+    ///     it describes is the same watch).
+    ///   • Same lever, legacy previous memory without an anchor but WITH a
+    ///     hypothesis → claim age only from `previous.updatedAt` (the watch
+    ///     provably existed at least since then — never invent more).
+    ///   • Lever shifted, or first hypothesis → the watch starts now
+    ///     (mirrors `focusShiftedAt`).
+    static func hypothesisWatchStart(
+        hasHypothesis: Bool,
+        currentLever: SkillArea?,
+        previous: CoachMemory?,
+        now: Date
+    ) -> Date? {
+        guard hasHypothesis else { return nil }
+        if let previous, let lever = currentLever, previous.currentLever == lever {
+            if let carried = previous.hypothesisWatchStartedAt { return carried }
+            if previous.workingHypothesis != nil { return previous.updatedAt }
+        }
+        return now
     }
 
     private static func workingHypothesis(

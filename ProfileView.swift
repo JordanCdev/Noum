@@ -123,6 +123,12 @@ struct ProfileIdentityPresentation: Equatable {
 struct ProfileCoachReadContent: Equatable {
     let label: String
     let read: String
+    /// Evidence age + depth behind the hypothesis — "Watching this across
+    /// 9 reps over 3 weeks." (assured) or the hedged "Early read — …; still
+    /// forming." below the `.moderate` floor. Nil whenever the read shown
+    /// is not the durable hypothesis (cold start, thin evidence, plan
+    /// encouragement) so the card never ages a line that isn't the watch.
+    let evidenceLine: String?
     let nextMove: String
     let proofClaim: String?
     let proofQuote: String?
@@ -132,13 +138,21 @@ struct ProfileCoachReadContent: Equatable {
         sessionCount: Int,
         plan: CoachingPlan?,
         memory: CoachMemory?,
-        proof: ProofMomentRecord?
+        proof: ProofMomentRecord?,
+        now: Date = Date()
     ) -> ProfileCoachReadContent {
         let confidence = memory?.evidenceConfidence ?? BaselineConfidence.from(sessionCount: sessionCount)
         let isThin = confidence < .tentative
+        var evidenceLine: String?
         let read: String
-        if let hypothesis = bounded(memory?.workingHypothesis), confidence >= .tentative {
+        if let memory, let hypothesis = bounded(memory.workingHypothesis), confidence >= .tentative {
             read = hypothesis
+            evidenceLine = CoachCaseFile.evidenceDepthLine(
+                evidenceCount: memory.evidenceCount,
+                confidence: confidence,
+                watchingSince: memory.hypothesisWatchStartedAt,
+                now: now
+            )
         } else if sessionCount == 0 {
             read = "One short rep gives Noum something real to read."
         } else if let focus = bounded(plan?.currentFocus), isThin {
@@ -159,9 +173,16 @@ struct ProfileCoachReadContent: Equatable {
             nextMove = "Complete one short rep to set your starting line."
         }
 
+        // `.tentative.label` is already "Early read" — appending " READ"
+        // would render "EARLY READ READ", so both thin and tentative
+        // resolve to the same plain badge.
+        let label = (isThin || confidence == .tentative)
+            ? "EARLY READ"
+            : "\(confidence.label.uppercased()) READ"
         return ProfileCoachReadContent(
-            label: isThin ? "EARLY READ" : "\(confidence.label.uppercased()) READ",
+            label: label,
             read: read,
+            evidenceLine: evidenceLine,
             nextMove: nextMove,
             proofClaim: bounded(proof?.proof.claim),
             proofQuote: bounded(proof?.proof.quote),
@@ -673,6 +694,14 @@ struct ProfileView: View {
                 .font(Typography.body.weight(.semibold))
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if let evidenceLine = content.evidenceLine {
+                Text(evidenceLine)
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Evidence behind this read: \(evidenceLine)")
+            }
 
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "arrow.turn.down.right")

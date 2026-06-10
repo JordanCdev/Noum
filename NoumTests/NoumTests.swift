@@ -41186,3 +41186,474 @@ struct RetentionLoopDisplayedStreakTests {
         #expect(snapshot.activeChallenge.progressLabel == "0/2 days")
     }
 }
+
+// MARK: - C3-felt-memory — evidence age/depth behind the working hypothesis
+//
+// The coach's hypothesis should FEEL durable: "Watching this across 9 reps
+// over 3 weeks", not a line regenerated per rep. These tests lock the three
+// layers: (1) the pure span/depth phrasing on `CoachCaseFile` (one shared
+// implementation for Profile + post-rep note + chat case file), (2) the
+// `hypothesisWatchStartedAt` anchor's carry-forward contract on
+// `CoachMemoryEngine`, and (3) the tentative-below-the-floor invariant —
+// below `.moderate` (the same floor where `workingHypothesis` switches from
+// "may be" to "appears to be") every surface hedges, never asserts.
+
+struct HypothesisEvidenceDepthTests {
+
+    private var utc: Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        return cal
+    }
+
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func daysAgo(_ days: Double) -> Date {
+        now.addingTimeInterval(-days * 86_400)
+    }
+
+    // MARK: - watchSpanPhrase
+
+    @Test func spanPhraseIsNilWithoutProvableSpan() {
+        #expect(CoachCaseFile.watchSpanPhrase(from: nil, to: now, calendar: utc) == nil)
+        #expect(CoachCaseFile.watchSpanPhrase(from: daysAgo(0.5), to: now, calendar: utc) == nil)
+        // A future anchor must never produce a span (never invent age).
+        #expect(CoachCaseFile.watchSpanPhrase(from: daysAgo(-2), to: now, calendar: utc) == nil)
+    }
+
+    @Test func spanPhraseScalesHonestlyWithAge() {
+        #expect(CoachCaseFile.watchSpanPhrase(from: daysAgo(1), to: now, calendar: utc) == "since yesterday")
+        #expect(CoachCaseFile.watchSpanPhrase(from: daysAgo(4), to: now, calendar: utc) == "over the past 4 days")
+        #expect(CoachCaseFile.watchSpanPhrase(from: daysAgo(10), to: now, calendar: utc) == "over the past week")
+        #expect(CoachCaseFile.watchSpanPhrase(from: daysAgo(21), to: now, calendar: utc) == "over 3 weeks")
+        #expect(CoachCaseFile.watchSpanPhrase(from: daysAgo(70), to: now, calendar: utc) == "over 2 months")
+    }
+
+    // MARK: - evidenceDepthClause / evidenceDepthLine
+
+    @Test func depthClauseComposesRepsAndSpan() {
+        #expect(CoachCaseFile.evidenceDepthClause(
+            evidenceCount: 0, watchingSince: daysAgo(21), now: now, calendar: utc
+        ) == nil)
+        #expect(CoachCaseFile.evidenceDepthClause(
+            evidenceCount: 1, watchingSince: nil, now: now, calendar: utc
+        ) == "1 rep")
+        #expect(CoachCaseFile.evidenceDepthClause(
+            evidenceCount: 9, watchingSince: daysAgo(21), now: now, calendar: utc
+        ) == "9 reps over 3 weeks")
+    }
+
+    @Test func depthLineIsAssuredAtModerateFloor() {
+        let line = CoachCaseFile.evidenceDepthLine(
+            evidenceCount: 9,
+            confidence: .moderate,
+            watchingSince: daysAgo(21),
+            now: now,
+            calendar: utc
+        )
+        #expect(line == "Watching this across 9 reps over 3 weeks.")
+    }
+
+    @Test func depthLineHedgesBelowEvidenceFloor() {
+        let noSpan = CoachCaseFile.evidenceDepthLine(
+            evidenceCount: 4, confidence: .tentative,
+            watchingSince: nil, now: now, calendar: utc
+        )
+        #expect(noSpan == "Early read — 4 reps so far; still forming.")
+
+        let withSpan = CoachCaseFile.evidenceDepthLine(
+            evidenceCount: 4, confidence: .insufficient,
+            watchingSince: daysAgo(3), now: now, calendar: utc
+        )
+        #expect(withSpan == "Early read — 4 reps over the past 3 days; still forming.")
+
+        // Below the floor the assured framing must never leak through.
+        for line in [noSpan, withSpan] {
+            #expect(line?.contains("Watching this across") == false)
+        }
+        #expect(CoachCaseFile.evidenceDepthLine(
+            evidenceCount: 0, confidence: .moderate,
+            watchingSince: nil, now: now, calendar: utc
+        ) == nil)
+    }
+
+    // MARK: - hypothesisWatchStart carry-forward contract
+
+    private func previousMemory(
+        lever: SkillArea?,
+        hypothesis: String?,
+        anchor: Date?,
+        updatedAt: Date
+    ) -> CoachMemory {
+        CoachMemory(
+            updatedAt: updatedAt,
+            evidenceCount: 6,
+            evidenceConfidence: .moderate,
+            currentLever: lever,
+            goalFit: .noLever,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: hypothesis,
+            hypothesisWatchStartedAt: anchor
+        )
+    }
+
+    @Test func watchStartIsNilWithoutHypothesis() {
+        #expect(CoachMemoryEngine.hypothesisWatchStart(
+            hasHypothesis: false,
+            currentLever: .paceControl,
+            previous: previousMemory(lever: .paceControl, hypothesis: "x", anchor: daysAgo(10), updatedAt: daysAgo(2)),
+            now: now
+        ) == nil)
+    }
+
+    @Test func firstHypothesisStartsTheWatchNow() {
+        #expect(CoachMemoryEngine.hypothesisWatchStart(
+            hasHypothesis: true,
+            currentLever: .paceControl,
+            previous: nil,
+            now: now
+        ) == now)
+    }
+
+    @Test func sameLeverCarriesTheAnchorForward() {
+        let anchor = daysAgo(21)
+        #expect(CoachMemoryEngine.hypothesisWatchStart(
+            hasHypothesis: true,
+            currentLever: .paceControl,
+            previous: previousMemory(lever: .paceControl, hypothesis: "x", anchor: anchor, updatedAt: daysAgo(2)),
+            now: now
+        ) == anchor)
+    }
+
+    @Test func legacyPreviousWithoutAnchorClaimsOnlyUpdatedAt() {
+        // A memory persisted before the anchor existed: the watch provably
+        // existed at least since the previous rebuild — claim exactly that.
+        let updated = daysAgo(5)
+        #expect(CoachMemoryEngine.hypothesisWatchStart(
+            hasHypothesis: true,
+            currentLever: .paceControl,
+            previous: previousMemory(lever: .paceControl, hypothesis: "x", anchor: nil, updatedAt: updated),
+            now: now
+        ) == updated)
+    }
+
+    @Test func leverShiftResetsTheWatch() {
+        #expect(CoachMemoryEngine.hypothesisWatchStart(
+            hasHypothesis: true,
+            currentLever: .openingStrength,
+            previous: previousMemory(lever: .paceControl, hypothesis: "x", anchor: daysAgo(21), updatedAt: daysAgo(2)),
+            now: now
+        ) == now)
+    }
+
+    // MARK: - CoachMemory Codable backward compat
+
+    @Test func memoryRoundTripPreservesWatchAnchor() throws {
+        let anchor = daysAgo(21)
+        let memory = previousMemory(lever: .paceControl, hypothesis: "x", anchor: anchor, updatedAt: now)
+        let data = try JSONEncoder().encode(memory)
+        let decoded = try JSONDecoder().decode(CoachMemory.self, from: data)
+        #expect(decoded.hypothesisWatchStartedAt == anchor)
+    }
+
+    @Test func legacyBlobWithoutAnchorDecodesNil() throws {
+        let memory = previousMemory(lever: .paceControl, hypothesis: "x", anchor: daysAgo(21), updatedAt: now)
+        let data = try JSONEncoder().encode(memory)
+        var object = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        object.removeValue(forKey: "hypothesisWatchStartedAt")
+        let strippedData = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(CoachMemory.self, from: strippedData)
+        #expect(decoded.hypothesisWatchStartedAt == nil)
+    }
+
+    // MARK: - Case-file evidence summary carries the watch age
+
+    @Test func caseFileEvidenceSummaryCarriesWatchAge() throws {
+        // 21.5-day anchor: ≥ 21 complete days in any timezone/DST offset,
+        // since `evidenceSummary` uses Calendar.current internally.
+        var memory = previousMemory(
+            lever: .paceControl,
+            hypothesis: "Pace appears to be the highest-leverage focus because endings rush; keep checking against future reps.",
+            anchor: daysAgo(21.5),
+            updatedAt: now
+        )
+        memory.currentLeverBasis = "endings rush under pressure"
+        let caseFile = try #require(CoachCaseFile.build(from: memory, now: now))
+        #expect(caseFile.evidenceSummary.contains("watched over 3 weeks"))
+        #expect(caseFile.evidenceSummary.contains("basis: endings rush under pressure"))
+    }
+
+    @Test func caseFileEvidenceSummaryOmitsAgeWithoutHypothesis() throws {
+        var memory = previousMemory(lever: .paceControl, hypothesis: nil, anchor: nil, updatedAt: now)
+        memory.currentLeverBasis = "endings rush under pressure"
+        let caseFile = try #require(CoachCaseFile.build(from: memory, now: now))
+        #expect(!caseFile.evidenceSummary.contains("watched"))
+    }
+
+    // MARK: - ProfileCoachReadContent evidence line
+
+    @Test func profileReadCarriesAssuredEvidenceLine() {
+        let memory = CoachMemory(
+            updatedAt: now,
+            evidenceCount: 8,
+            evidenceConfidence: .moderate,
+            currentLever: .paceControl,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: "Pace appears to be the highest-leverage focus because endings rush; keep checking against future reps.",
+            hypothesisWatchStartedAt: daysAgo(21.5)
+        )
+        let content = ProfileCoachReadContent.make(
+            sessionCount: 8,
+            plan: nil,
+            memory: memory,
+            proof: nil,
+            now: now
+        )
+        #expect(content.label == "FORMING READ")
+        #expect(content.evidenceLine == "Watching this across 8 reps over 3 weeks.")
+    }
+
+    @Test func profileReadHedgesEvidenceLineBelowFloor() {
+        let memory = CoachMemory(
+            updatedAt: now,
+            evidenceCount: 4,
+            evidenceConfidence: .tentative,
+            currentLever: .paceControl,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: "Pace may be the highest-leverage focus because endings rush; verify over more reps.",
+            hypothesisWatchStartedAt: nil
+        )
+        let content = ProfileCoachReadContent.make(
+            sessionCount: 4,
+            plan: nil,
+            memory: memory,
+            proof: nil,
+            now: now
+        )
+        // Pins the label dedup fix too: `.tentative.label` is already
+        // "Early read", so the badge must read "EARLY READ", not
+        // "EARLY READ READ".
+        #expect(content.label == "EARLY READ")
+        #expect(content.evidenceLine == "Early read — 4 reps so far; still forming.")
+        #expect(content.evidenceLine?.contains("Watching this across") == false)
+    }
+
+    @Test func profileReadHasNoEvidenceLineWithoutHypothesis() {
+        let cold = ProfileCoachReadContent.make(
+            sessionCount: 0, plan: nil, memory: nil, proof: nil, now: now
+        )
+        #expect(cold.evidenceLine == nil)
+
+        let planOnly = ProfileCoachReadContent.make(
+            sessionCount: 5,
+            plan: CoachingPlan(
+                strongestMode: .timed,
+                currentFocus: "Focus on deliberate openings.",
+                suggestedDrill: "Timed Practice on Medium.",
+                encouragement: "Your recent sessions are steady.",
+                hiddenBaseline: HiddenBaseline(
+                    averageFillers: 2,
+                    averageDuration: 45,
+                    averageWordsPerMinute: 132,
+                    currentIdentity: "Controlled"
+                )
+            ),
+            memory: nil,
+            proof: nil,
+            now: now
+        )
+        #expect(planOnly.evidenceLine == nil)
+    }
+}
+
+// MARK: - C3-felt-memory — standing watch in the post-rep coach note
+
+struct PostRepStandingWatchTests {
+
+    private var utc: Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        return cal
+    }
+
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func daysAgo(_ days: Double) -> Date {
+        now.addingTimeInterval(-days * 86_400)
+    }
+
+    private func memory(
+        hypothesis: String? = "Pace appears to be the highest-leverage focus because endings rush; keep checking against future reps.",
+        confidence: BaselineConfidence = .moderate,
+        evidenceCount: Int = 9,
+        anchor: Date? = nil
+    ) -> CoachMemory {
+        CoachMemory(
+            updatedAt: now,
+            evidenceCount: evidenceCount,
+            evidenceConfidence: confidence,
+            currentLever: .paceControl,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: hypothesis,
+            hypothesisWatchStartedAt: anchor
+        )
+    }
+
+    private func input(
+        watch: PostRepStandingWatch,
+        bigMoment: BigMoment? = nil,
+        bigMomentDaysUntil: Int? = nil,
+        weeklyRepCount: Int = 0
+    ) -> PostRepCoachNoteInput {
+        PostRepCoachNoteInput(
+            sessionID: UUID(),
+            mode: .timed,
+            score: nil,
+            fillerCount: 0,
+            duration: 30,
+            wordCount: 10,
+            voice: nil,
+            intentLabel: nil,
+            baselineFillerRate: nil,
+            baselinePaceWPM: nil,
+            bigMoment: bigMoment,
+            bigMomentDaysUntil: bigMomentDaysUntil,
+            weeklyRepCount: weeklyRepCount,
+            standingHypothesis: watch.hypothesis,
+            standingFocusLabel: watch.focusLabel,
+            standingWatchClause: watch.clause,
+            standingWatchIsAssured: watch.isAssured
+        )
+    }
+
+    // MARK: - PostRepStandingWatch.make
+
+    @Test func makeIsEmptyWithoutMemoryOrHypothesis() {
+        let noMemory = PostRepStandingWatch.make(memory: nil, now: now, calendar: utc)
+        #expect(noMemory.hypothesis == nil)
+        #expect(noMemory.clause == nil)
+        #expect(!noMemory.isAssured)
+
+        let noHypothesis = PostRepStandingWatch.make(
+            memory: memory(hypothesis: nil), now: now, calendar: utc
+        )
+        #expect(noHypothesis.hypothesis == nil)
+        #expect(!noHypothesis.isAssured)
+    }
+
+    @Test func makeProjectsAssuredWatchFromMemory() {
+        let watch = PostRepStandingWatch.make(
+            memory: memory(anchor: daysAgo(21)), now: now, calendar: utc
+        )
+        #expect(watch.hypothesis?.isEmpty == false)
+        #expect(watch.focusLabel == "Pace")
+        #expect(watch.clause == "9 reps over 3 weeks")
+        #expect(watch.isAssured)
+    }
+
+    @Test func makeStaysTentativeBelowEvidenceFloor() {
+        let watch = PostRepStandingWatch.make(
+            memory: memory(confidence: .tentative, evidenceCount: 4),
+            now: now,
+            calendar: utc
+        )
+        #expect(watch.hypothesis?.isEmpty == false)
+        #expect(!watch.isAssured)
+    }
+
+    // MARK: - Deterministic note suffix
+
+    @Test func deterministicNoteCarriesAssuredStandingWatch() {
+        let watch = PostRepStandingWatch.make(
+            memory: memory(anchor: daysAgo(21)), now: now, calendar: utc
+        )
+        let note = PostRepCoachNoteService.deterministicNote(input: input(watch: watch))
+        #expect(note.noteText.contains("Still watching pace — 9 reps over 3 weeks."))
+        #expect(!note.noteText.contains("!"))
+    }
+
+    @Test func deterministicNoteStaysSilentBelowEvidenceFloor() {
+        // Weak evidence → softer feedback: the suffix never fires below
+        // the `.moderate` floor, so a 3-rep "watch" can't read as durable.
+        let watch = PostRepStandingWatch.make(
+            memory: memory(confidence: .tentative, evidenceCount: 4, anchor: daysAgo(2)),
+            now: now,
+            calendar: utc
+        )
+        let note = PostRepCoachNoteService.deterministicNote(input: input(watch: watch))
+        #expect(!note.noteText.lowercased().contains("watching"))
+    }
+
+    @Test func weeklyRhythmMilestoneOutranksStandingWatch() {
+        let watch = PostRepStandingWatch.make(
+            memory: memory(anchor: daysAgo(21)), now: now, calendar: utc
+        )
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: input(watch: watch, weeklyRepCount: 3)
+        )
+        #expect(note.noteText.contains("3 reps this week"))
+        #expect(!note.noteText.contains("9 reps over 3 weeks"))
+    }
+
+    @Test func standingWatchSuffixIsVoiceShapedAndBrandClean() {
+        for voice in SpeakingStyleGoal.allCases {
+            let suffix = PostRepCoachNoteService.standingWatchSuffix(
+                focusLabel: "Pace",
+                watchClause: "9 reps over 3 weeks",
+                isAssured: true,
+                persona: CoachPersona.persona(for: voice)
+            )
+            #expect(suffix?.contains("9 reps over 3 weeks") == true)
+            #expect(suffix?.contains("!") == false)
+            #expect(suffix?.lowercased().contains("let's") == false)
+        }
+        #expect(PostRepCoachNoteService.standingWatchSuffix(
+            focusLabel: "Pace",
+            watchClause: "9 reps over 3 weeks",
+            isAssured: false,
+            persona: CoachPersona.persona(for: nil)
+        ) == nil)
+    }
+
+    // MARK: - AI prompt block
+
+    @Test func userPromptCarriesStandingCoachRead() {
+        let watch = PostRepStandingWatch.make(
+            memory: memory(anchor: daysAgo(21)), now: now, calendar: utc
+        )
+        let prompt = PostRepCoachNoteService.userPrompt(from: input(watch: watch))
+        #expect(prompt.contains("STANDING COACH READ"))
+        #expect(prompt.contains("Working hypothesis: Pace appears to be"))
+        #expect(prompt.contains("watching this across 9 reps over 3 weeks."))
+        #expect(!prompt.contains("Frame any reference to this read as tentative"))
+    }
+
+    @Test func userPromptInstructsTentativeFramingBelowFloor() {
+        let watch = PostRepStandingWatch.make(
+            memory: memory(confidence: .tentative, evidenceCount: 4),
+            now: now,
+            calendar: utc
+        )
+        let prompt = PostRepCoachNoteService.userPrompt(from: input(watch: watch))
+        #expect(prompt.contains("STANDING COACH READ"))
+        #expect(prompt.contains("tentative"))
+        #expect(prompt.contains("never as established"))
+        #expect(!prompt.contains("watching this across"))
+    }
+
+    @Test func userPromptOmitsBlockWithoutHypothesis() {
+        let prompt = PostRepCoachNoteService.userPrompt(
+            from: input(watch: .empty)
+        )
+        #expect(!prompt.contains("STANDING COACH READ"))
+    }
+}

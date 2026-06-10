@@ -8131,6 +8131,14 @@ enum PracticeSessionFinalizer {
             forJustFinished: session, in: allSessions
         )
 
+        // C3-felt-memory: the standing watch — the durable hypothesis the
+        // coach is carrying plus the evidence age/depth behind it. Read from
+        // the CURRENT memory (the pre-rep read; the post-rep rebuild lands
+        // later), which is exactly the "standing" framing the note needs.
+        let standingWatch = PostRepStandingWatch.make(
+            memory: CoachMemoryStore.shared.currentMemory
+        )
+
         let input = PostRepCoachNoteInput(
             sessionID: session.id,
             mode: session.mode,
@@ -8159,7 +8167,11 @@ enum PracticeSessionFinalizer {
             imToneDrillToneTitle: imToneFields.toneTitle,
             imToneDrillResolved: imToneFields.resolved,
             imToneDrillResolvedScenarioTitle: imToneFields.resolvedScenarioTitle,
-            imToneDrillResolvedToneTitle: imToneFields.resolvedToneTitle
+            imToneDrillResolvedToneTitle: imToneFields.resolvedToneTitle,
+            standingHypothesis: standingWatch.hypothesis,
+            standingFocusLabel: standingWatch.focusLabel,
+            standingWatchClause: standingWatch.clause,
+            standingWatchIsAssured: standingWatch.isAssured
         )
 
         // Deterministic note lands synchronously so the Summary
@@ -8210,7 +8222,8 @@ enum PracticeSessionFinalizer {
         bigMoment: BigMoment?,
         bigMomentDaysUntil: Int?,
         recentSessionSummaries: [String] = [],
-        recentProofQuotes: [String] = []
+        recentProofQuotes: [String] = [],
+        standingWatch: PostRepStandingWatch = .empty
     ) -> PostRepCoachNoteInput {
         let baselineFillerRate: Double? = baseline.fillerRate.confidence == .insufficient
             ? nil : baseline.fillerRate.value
@@ -8232,7 +8245,11 @@ enum PracticeSessionFinalizer {
             transcript: session.transcript,
             prompt: session.prompt ?? "",
             recentSessionSummaries: recentSessionSummaries,
-            recentProofQuotes: recentProofQuotes
+            recentProofQuotes: recentProofQuotes,
+            standingHypothesis: standingWatch.hypothesis,
+            standingFocusLabel: standingWatch.focusLabel,
+            standingWatchClause: standingWatch.clause,
+            standingWatchIsAssured: standingWatch.isAssured
         )
     }
 
@@ -8259,7 +8276,10 @@ enum PracticeSessionFinalizer {
             newVoice: newVoice,
             baseline: baseline,
             bigMoment: bigMoment,
-            bigMomentDaysUntil: bigMomentDays
+            bigMomentDaysUntil: bigMomentDays,
+            standingWatch: PostRepStandingWatch.make(
+                memory: CoachMemoryStore.shared.currentMemory
+            )
         )
 
         // Deterministic note lands synchronously so the Ask Noum chat

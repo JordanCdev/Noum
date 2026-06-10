@@ -141,6 +141,29 @@ struct PostRepCoachNoteInput {
     /// committed tone. nil when `imToneDrillResolved` is nil.
     let imToneDrillResolvedToneTitle: String?
 
+    // MARK: - Standing watch (the durable hypothesis behind the case)
+    //
+    // C3-felt-memory: the coach's durable working hypothesis + the evidence
+    // age/depth behind it ("9 reps over 3 weeks"), threaded from
+    // `CoachMemoryStore.currentMemory` via `PostRepStandingWatch.make` at the
+    // finalize/regen call sites. Lets the short post-rep note close on the
+    // standing watch instead of a generic closing — the coach reminding the
+    // user what they have been watching, and for how long. All defaulted so
+    // every existing call site + test fixture compiles unchanged.
+
+    /// The standing working hypothesis (AI prompt only — too long for the
+    /// 200-char deterministic note). Nil when no durable read exists yet.
+    let standingHypothesis: String?
+    /// Display name of the lever the hypothesis is about (e.g. "Pacing").
+    let standingFocusLabel: String?
+    /// Short depth+age clause from `CoachCaseFile.evidenceDepthClause` —
+    /// "9 reps over 3 weeks". Nil when evidence count is zero.
+    let standingWatchClause: String?
+    /// True at or above the `.moderate` evidence floor. Below it the
+    /// deterministic suffix stays silent and the AI prompt instructs
+    /// tentative framing — weak evidence never reads as a verdict.
+    let standingWatchIsAssured: Bool
+
     init(
         sessionID: UUID,
         mode: PracticeMode,
@@ -169,7 +192,11 @@ struct PostRepCoachNoteInput {
         imToneDrillToneTitle: String? = nil,
         imToneDrillResolved: IMToneDrillResolved? = nil,
         imToneDrillResolvedScenarioTitle: String? = nil,
-        imToneDrillResolvedToneTitle: String? = nil
+        imToneDrillResolvedToneTitle: String? = nil,
+        standingHypothesis: String? = nil,
+        standingFocusLabel: String? = nil,
+        standingWatchClause: String? = nil,
+        standingWatchIsAssured: Bool = false
     ) {
         self.sessionID = sessionID
         self.mode = mode
@@ -199,6 +226,57 @@ struct PostRepCoachNoteInput {
         self.imToneDrillResolved = imToneDrillResolved
         self.imToneDrillResolvedScenarioTitle = imToneDrillResolvedScenarioTitle
         self.imToneDrillResolvedToneTitle = imToneDrillResolvedToneTitle
+        self.standingHypothesis = standingHypothesis
+        self.standingFocusLabel = standingFocusLabel
+        self.standingWatchClause = standingWatchClause
+        self.standingWatchIsAssured = standingWatchIsAssured
+    }
+}
+
+// MARK: - PostRepStandingWatch
+//
+// Pure projection of `CoachMemory`'s durable hypothesis + evidence age/depth
+// into the post-rep note's standing-watch input fields. Mirrors the
+// `MomentumSignals` shape: inputs in, fields out, no I/O — so the contract
+// (hypothesis required; clause from the shared `CoachCaseFile` helpers;
+// assured only at/above the `.moderate` floor) is testable without standing
+// up a real `CoachMemoryStore`.
+
+struct PostRepStandingWatch {
+    let hypothesis: String?
+    let focusLabel: String?
+    let clause: String?
+    let isAssured: Bool
+
+    static let empty = PostRepStandingWatch(
+        hypothesis: nil,
+        focusLabel: nil,
+        clause: nil,
+        isAssured: false
+    )
+
+    static func make(
+        memory: CoachMemory?,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> PostRepStandingWatch {
+        guard let memory,
+              let hypothesis = memory.workingHypothesis?
+                  .trimmingCharacters(in: .whitespacesAndNewlines),
+              !hypothesis.isEmpty else {
+            return .empty
+        }
+        return PostRepStandingWatch(
+            hypothesis: hypothesis,
+            focusLabel: memory.currentLever?.displayName,
+            clause: CoachCaseFile.evidenceDepthClause(
+                evidenceCount: memory.evidenceCount,
+                watchingSince: memory.hypothesisWatchStartedAt,
+                now: now,
+                calendar: calendar
+            ),
+            isAssured: memory.evidenceConfidence >= .moderate
+        )
     }
 }
 
@@ -567,9 +645,12 @@ actor PostRepCoachNoteService {
 
         let metric = metricSentence(for: input, persona: persona)
 
-        // Suffix priority: BigMoment > weekly rhythm > default closing.
-        // BigMoment anchors the user to their upcoming event; weekly rhythm
-        // reinforces cadence. Only one suffix fires.
+        // Suffix priority: BigMoment > weekly rhythm > standing watch >
+        // default closing. BigMoment anchors the user to their upcoming
+        // event; weekly rhythm reinforces cadence at its rare milestone
+        // counts; the standing watch replaces the GENERIC closing with the
+        // coach's durable thread ("the pacing watch holds — 9 reps over 3
+        // weeks") once the case has assured evidence. Only one suffix fires.
         let suffix: String = {
             if let days = input.bigMomentDaysUntil,
                let moment = input.bigMoment,
@@ -586,6 +667,14 @@ actor PostRepCoachNoteService {
                    persona: persona
                ) {
                 return rhythmSuffix
+            }
+            if let watchSuffix = standingWatchSuffix(
+                focusLabel: input.standingFocusLabel,
+                watchClause: input.standingWatchClause,
+                isAssured: input.standingWatchIsAssured,
+                persona: persona
+            ) {
+                return watchSuffix
             }
             return defaultClosing
         }()
@@ -1110,6 +1199,45 @@ actor PostRepCoachNoteService {
         }
     }
 
+    /// Standing-watch suffix — the coach naming the durable case and how
+    /// long it has been watched ("Still watching pacing — 9 reps over 3
+    /// weeks."). Fires ONLY at or above the `.moderate` evidence floor:
+    /// below it the deterministic note stays silent on the watch (weak
+    /// evidence → softer feedback; the hedged framing lives on the Profile
+    /// coach read and in the AI prompt's tentative instruction instead).
+    /// Pure observation of evidence depth/age — never a verdict on this
+    /// rep, never re-diagnoses.
+    nonisolated static func standingWatchSuffix(
+        focusLabel: String?,
+        watchClause: String?,
+        isAssured: Bool,
+        persona: CoachPersona
+    ) -> String? {
+        guard isAssured else { return nil }
+        guard let focus = focusLabel?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased(),
+              !focus.isEmpty,
+              let clause = watchClause?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !clause.isEmpty else { return nil }
+        switch persona.voice {
+        case .authoritative:
+            return "The \(focus) watch holds — \(clause)."
+        case .warm:
+            return "Still watching \(focus) with you — \(clause) now."
+        case .concise:
+            return "\(focus.capitalized) watch: \(clause)."
+        case .persuasive:
+            return "The \(focus) case keeps building — \(clause)."
+        case .executive:
+            return "\(focus.capitalized) watch ongoing — \(clause)."
+        case .storytelling:
+            return "The \(focus) thread is still running — \(clause)."
+        case .none:
+            return "Still watching \(focus) — \(clause)."
+        }
+    }
+
     /// Extract the user's opening phrase from their transcript. Returns
     /// the first sentence (up to 60 chars). Nil when transcript is empty
     /// or the opener is too short to quote meaningfully.
@@ -1381,6 +1509,29 @@ actor PostRepCoachNoteService {
             lines.append("")
             lines.append("MOMENTUM (cross-session trajectory — reference when it adds coaching value):")
             lines.append(contentsOf: momentumLines)
+        }
+
+        // STANDING COACH READ — the durable hypothesis the coach is already
+        // carrying, plus the evidence age/depth behind it. Mirrors the
+        // STANDING CASE block in the AI Coach Read prompt: durable context,
+        // not this-rep evidence. Below the evidence floor the model is
+        // explicitly instructed into tentative framing so a young watch is
+        // never quoted back as an established read.
+        if let hypothesis = input.standingHypothesis?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !hypothesis.isEmpty {
+            lines.append("")
+            lines.append("STANDING COACH READ (the durable case you are already watching — reference it as a continuing watch when it adds value; never as a verdict on this rep):")
+            lines.append("- Working hypothesis: \(Self.truncate(hypothesis, max: 200))")
+            if let clause = input.standingWatchClause, !clause.isEmpty {
+                if input.standingWatchIsAssured {
+                    lines.append("- Evidence depth: watching this across \(clause).")
+                } else {
+                    lines.append("- Evidence depth: early — \(clause) so far. Frame any reference to this read as tentative (\"may\", \"early read\"), never as established.")
+                }
+            } else if !input.standingWatchIsAssured {
+                lines.append("- Evidence depth: early. Frame any reference to this read as tentative, never as established.")
+            }
         }
 
         return lines.joined(separator: "\n")
