@@ -42291,3 +42291,70 @@ struct C5VoiceUnavailableNoticeTests {
         #expect(speaker.voiceUnavailableNotice == nil)
     }
 }
+
+// MARK: - C6: Big Moment intake restyle (prefill + per-type chip colours)
+
+// The intake sheet preselects the moment TYPE from what the coach already
+// knows — the active moment's own category on re-entry, else the stated
+// speaking context from onboarding — and NEVER invents a title or a date
+// (the resolver returns a category only, by construction). Chip colours
+// must stay pairwise distinct so every type reads as its own concept
+// (docs/UX_VISUAL_DIRECTION.md — semantic colour, consistently).
+
+@Suite("BigMomentIntakePrefillTests")
+struct BigMomentIntakePrefillTests {
+
+    private func profile(context: SpeakingContext) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: context,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .persuasive,
+            speakingStyleGoal: .concise,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    @Test func activeMomentCategoryWinsOverProfileHint() {
+        // Re-entry from Settings revisits the user's explicit prior choice —
+        // it beats any soft onboarding hint, even when they disagree.
+        let moment = BigMoment(title: "Team review", category: .review)
+        let resolved = BigMomentIntakePrefill.category(
+            activeMoment: moment,
+            profile: profile(context: .interviews)
+        )
+        #expect(resolved == .review)
+    }
+
+    @Test func statedContextMapsToMatchingType() {
+        #expect(BigMomentIntakePrefill.category(activeMoment: nil, profile: profile(context: .interviews)) == .interview)
+        #expect(BigMomentIntakePrefill.category(activeMoment: nil, profile: profile(context: .presentations)) == .presentation)
+        #expect(BigMomentIntakePrefill.category(activeMoment: nil, profile: profile(context: .work)) == .conversation)
+        #expect(BigMomentIntakePrefill.category(activeMoment: nil, profile: profile(context: .social)) == .conversation)
+    }
+
+    @Test func noSignalFallsBackToHistoricalDefault() {
+        // Nothing known → the pre-restyle default (.presentation), so the
+        // sheet behaves identically for a cold profile-less open.
+        #expect(BigMomentIntakePrefill.category(activeMoment: nil, profile: nil) == .presentation)
+    }
+
+    @Test func everyActiveMomentCategoryRoundTrips() {
+        // Whatever type the user saved is exactly what re-entry preselects.
+        for category in BigMomentCategory.allCases {
+            let moment = BigMoment(title: "x", category: category)
+            #expect(BigMomentIntakePrefill.category(activeMoment: moment, profile: nil) == category)
+        }
+    }
+
+    @Test func chipTintsArePairwiseDistinct() {
+        // "Distinct colour per type" — six categories, six colours. A Set
+        // collapse would mean two types share a chip colour.
+        let tints = Set(BigMomentCategory.allCases.map(\.chipTint))
+        #expect(tints.count == BigMomentCategory.allCases.count)
+    }
+}
