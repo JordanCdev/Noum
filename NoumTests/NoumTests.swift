@@ -7922,6 +7922,75 @@ struct HomeAskNoumEvidenceCopyTests {
     }
 }
 
+/// Day-0 seeded coach presence (coach-parity eval move 2). Pins the
+/// pure template contract: active only before rep 1, acknowledges the
+/// stated challenge/voice from ENUM-derived copy only (never quotes
+/// user-typed text), always invites exactly one rep for a real read,
+/// and never overclaims evidence it doesn't have.
+struct AskNoumDayZeroGreetingTests {
+
+    @Test func seededWindowEndsAtFirstRep() {
+        #expect(AskNoumDayZeroGreeting.isActive(sessionCount: 0))
+        #expect(!AskNoumDayZeroGreeting.isActive(sessionCount: 1))
+        #expect(!AskNoumDayZeroGreeting.isActive(sessionCount: 12))
+    }
+
+    @Test func greetingAcknowledgesEveryStatedChallenge() {
+        for challenge in SpeakingChallenge.allCases {
+            let line = AskNoumDayZeroGreeting.greeting(challenge: challenge, voice: nil)
+            #expect(line.contains(challenge.trainingFocusFragment))
+            #expect(line.contains("One short rep"))
+        }
+    }
+
+    @Test func greetingAcknowledgesChosenVoiceWithoutInventingOne() {
+        let withVoice = AskNoumDayZeroGreeting.greeting(challenge: .freezing, voice: .executive)
+        #expect(withVoice.contains(SpeakingStyleGoal.executive.coachingDescription))
+
+        let withoutVoice = AskNoumDayZeroGreeting.greeting(challenge: .freezing, voice: nil)
+        for voice in SpeakingStyleGoal.allCases {
+            #expect(!withoutVoice.contains(voice.coachingDescription))
+        }
+    }
+
+    @Test func greetingIsTotalAndStillInvitesARepWithoutAProfile() {
+        let line = AskNoumDayZeroGreeting.greeting(challenge: nil, voice: nil)
+        #expect(!line.isEmpty)
+        #expect(line.contains("One short rep"))
+    }
+
+    @Test func greetingNeverQuotesNeverExclaimsNeverOverclaims() {
+        var lines: [String] = [AskNoumDayZeroGreeting.greeting(challenge: nil, voice: nil)]
+        for challenge in SpeakingChallenge.allCases {
+            for voice in SpeakingStyleGoal.allCases {
+                lines.append(AskNoumDayZeroGreeting.greeting(challenge: challenge, voice: voice))
+            }
+        }
+        for line in lines {
+            #expect(!line.contains("\""), "Day-0 greeting must never quote — there is no transcript to quote from.")
+            #expect(!line.contains("!"))
+            #expect(!line.contains("Let's") && !line.contains("Let\u{2019}s"))
+            // Honest zero-evidence framing must survive every variant.
+            #expect(line.contains("I don't have a read on you yet"))
+        }
+    }
+
+    @Test func lockedComposerCopyIsPlainAndNonEmpty() {
+        #expect(!AskNoumDayZeroGreeting.headline.isEmpty)
+        #expect(!AskNoumDayZeroGreeting.firstRepCTATitle.isEmpty)
+        #expect(AskNoumDayZeroGreeting.inputLockedNote.contains("first rep"))
+        #expect(!AskNoumDayZeroGreeting.inputLockedNote.contains("!"))
+    }
+
+    @Test func challengeFragmentsAreCanonicalAndLowercase() {
+        for challenge in SpeakingChallenge.allCases {
+            let fragment = challenge.trainingFocusFragment
+            #expect(!fragment.isEmpty)
+            #expect(fragment == fragment.lowercased(), "Fragments are mid-sentence copy — lowercase by contract.")
+        }
+    }
+}
+
 struct HomeCoachAskNoumShortcutTests {
 
     @Test func shortcutReusesEvidenceScaledCopy() {
@@ -11120,6 +11189,80 @@ struct HomeSignalGateTests {
             overrideEligible: false
         )
         #expect(!coldWithGoal.journey, "Path must stay off the first screen until the user has one real rep.")
+    }
+}
+
+/// Day-0 Ask Noum unlock + plan-arc gating (coach-parity eval moves 2
+/// and 4). The coach-thread door opens once onboarding has produced a
+/// CoachingProfile — before rep 1 — while the plan arc (a coaching
+/// artifact, not cold-start furniture) still needs one completed rep.
+struct HomeSignalGateDayZeroAndPlanArcTests {
+
+    @Test func onboardedDayZeroUserGetsTheAskNoumDoor() {
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: true,
+            showAllOverride: false,
+            overrideEligible: false
+        )
+        #expect(gate.askNoumShortcut, "A finished onboarding must open the coach-thread door on day 0.")
+        // The rest of the cold-start floor is unchanged.
+        #expect(gate.coachCard)
+        #expect(!gate.journey)
+        #expect(!gate.aiWeeklyInsight)
+        #expect(!gate.streakStatus)
+    }
+
+    @Test func dayZeroWithoutProfileKeepsTheDoorClosed() {
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: false,
+            overrideEligible: false
+        )
+        #expect(!gate.askNoumShortcut, "No profile + no rep = nothing honest to seed; the shortcut stays hidden.")
+    }
+
+    @Test func planArcNeedsOneCompletedRepEvenWithProfile() {
+        let dayZero = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: true,
+            showAllOverride: false,
+            overrideEligible: false
+        )
+        #expect(!dayZero.planArc)
+
+        let afterOneRep = HomeSignalGate.evaluate(
+            sessionCount: 1,
+            sessionsThisWeekCount: 1,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: true,
+            showAllOverride: false,
+            overrideEligible: false
+        )
+        #expect(afterOneRep.planArc)
+    }
+
+    @Test func planArcDefaultsHiddenAndShowsUnderDeveloperOverride() {
+        // Default-parameter fail-quiet: a gate constructed without the
+        // field must hide the row, never fabricate it.
+        let bare = HomeCardGate(
+            coachCard: true,
+            utilityStrip: false,
+            journey: false,
+            askNoumShortcut: false,
+            dailyChallenge: false,
+            voiceMetrics: false,
+            aiWeeklyInsight: false
+        )
+        #expect(!bare.planArc)
+        #expect(HomeCardGate.allVisible.planArc)
     }
 }
 
@@ -18343,6 +18486,63 @@ struct CoachingPlanCardVisibilityTests {
         let state = CoachingPlanCardState.live(plan: plan, completed: 1)
         let label = CoachingPlanCardVisibility.ctaLabel(state: state, voice: .warm)
         #expect(label.isEmpty)
+    }
+}
+
+/// Home plan-arc line (coach-parity eval move 4): the compact "Week N of
+/// 4 — focus" line inside the coach hero. Pins the resolver contract —
+/// silent for hidden/prompt, calendar-projected week for live, and the
+/// shared voice-shaped regenerate copy for stale.
+struct HomePlanArcLineTests {
+
+    @Test func hiddenAndPromptStatesProduceNoLine() {
+        #expect(HomePlanArcLine.line(state: .hidden, voice: .warm) == nil)
+        #expect(HomePlanArcLine.line(state: .prompt, voice: .warm) == nil,
+                "Home never advertises a plan that doesn't exist — the pre-prompt stays on Profile.")
+    }
+
+    @Test func liveLineNamesWeekAndFocus() {
+        let cal = Calendar.current
+        let now = cal.startOfDay(for: Date())
+        let plan = makeForwardPlan(generatedAt: now)
+        let line = HomePlanArcLine.line(
+            state: .live(plan: plan, completed: 1),
+            voice: nil,
+            now: now,
+            calendar: cal
+        )
+        // Fixture weeks all carry `.fillerReduction` ("Filler Words").
+        #expect(line == "Week 1 of 4 \u{2014} filler words")
+    }
+
+    @Test func liveLineAdvancesWithTheCalendar() {
+        let cal = Calendar.current
+        let now = cal.startOfDay(for: Date())
+        guard let generated = cal.date(byAdding: .day, value: -8, to: now) else {
+            Issue.record("Could not derive generation date")
+            return
+        }
+        let plan = makeForwardPlan(generatedAt: generated)
+        let line = HomePlanArcLine.line(
+            state: .live(plan: plan, completed: 0),
+            voice: nil,
+            now: now,
+            calendar: cal
+        )
+        #expect(line?.hasPrefix("Week 2 of 4") == true)
+    }
+
+    @Test func staleLineReusesTheVoiceShapedRegenerateCopy() {
+        let plan = makeForwardPlan(bigMomentID: UUID())
+        let state = CoachingPlanCardState.stale(plan: plan, completed: 0)
+        let voices: [SpeakingStyleGoal?] = [.authoritative, .warm, .concise, .persuasive, .executive, .storytelling, nil]
+        for voice in voices {
+            let line = HomePlanArcLine.line(state: state, voice: voice)
+            #expect(line == CoachingPlanCardVisibility.ctaLabel(state: state, voice: voice),
+                    "Home and Profile must speak with one voice when the moment changed.")
+            #expect(line?.isEmpty == false)
+            #expect(line?.contains("!") != true)
+        }
     }
 }
 

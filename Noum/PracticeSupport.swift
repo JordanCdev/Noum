@@ -428,6 +428,21 @@ enum SpeakingChallenge: String, CaseIterable, Codable, Identifiable {
         case .rushing: return "What do you want to deliver with more control when pressure speeds you up?"
         }
     }
+
+    /// Coach-voice gerund fragment naming the training focus this challenge
+    /// maps to ("cleaning up filler words"). The ONE canonical phrasing for
+    /// every pre-evidence surface that acknowledges the user's stated
+    /// challenge (Home cold-start subtitle, Ask Noum day-0 greeting) so the
+    /// coach sounds like one person across surfaces. Enum-derived — never
+    /// quotes user-typed text (lock-screen-safety rule).
+    var trainingFocusFragment: String {
+        switch self {
+        case .fillerWords: return "cleaning up filler words"
+        case .rambling: return "tightening your structure"
+        case .freezing: return "thinking faster on the spot"
+        case .rushing: return "slowing down under pressure"
+        }
+    }
 }
 
 enum SpeakingOutcome: String, CaseIterable, Codable, Identifiable {

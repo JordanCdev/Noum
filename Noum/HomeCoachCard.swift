@@ -24,6 +24,45 @@ struct HomeCoachAskNoumShortcut: Equatable {
     }
 }
 
+// MARK: - Plan-arc line (coach-parity eval move 4)
+//
+// The 4-week forward plan already exists (`ForwardPlanService` /
+// `ForwardPlanStore`) but lived only on Profile + in the chat thread —
+// built but buried. This folds it into the coach hero as ONE compact
+// tappable line ("Week 2 of 4 — pauses") so today's prescription reads
+// as a step inside a visible arc, not an isolated tip. Pure copy
+// resolver, view-free, so the line contract is unit-testable.
+@available(iOS 17.0, macOS 12.0, *)
+enum HomePlanArcLine {
+
+    /// Line for the hero's plan-arc row, or nil when Home should stay
+    /// quiet. Reuses the existing `CoachingPlanCardState` contract:
+    ///   • `.hidden` / `.prompt` → nil. The "ask for a plan" pre-prompt
+    ///     stays a Profile surface — Home never advertises a plan that
+    ///     doesn't exist yet.
+    ///   • `.live` → "Week N of 4 — {focus}", the at-a-glance arc.
+    ///   • `.stale` → the same voice-shaped regenerate copy the Profile
+    ///     card uses (`CoachingPlanCardVisibility.ctaLabel`), so both
+    ///     surfaces speak with one voice when the Big Moment changed.
+    static func line(
+        state: CoachingPlanCardState,
+        voice: SpeakingStyleGoal?,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String? {
+        switch state {
+        case .hidden, .prompt:
+            return nil
+        case .live(let plan, _):
+            guard let week = plan.currentWeek(now: now, calendar: calendar) else { return nil }
+            return "Week \(week.weekIndex) of 4 \u{2014} \(week.focusSkillArea.displayName.lowercased())"
+        case .stale:
+            let label = CoachingPlanCardVisibility.ctaLabel(state: state, voice: voice)
+            return label.isEmpty ? nil : label
+        }
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct HomeCoachCard: View {
 
@@ -36,6 +75,10 @@ struct HomeCoachCard: View {
     /// compiling unchanged. Pinned to zero under reduce-motion.
     var scrollOffset: CGFloat = 0
     var showsAskNoumShortcut: Bool = false
+    /// Gate flag from `HomeSignalGate` (>= 1 completed rep). The row
+    /// additionally self-gates on an actual active plan via
+    /// `HomePlanArcLine` — both must hold before anything renders.
+    var showsPlanArc: Bool = false
 
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
@@ -43,6 +86,7 @@ struct HomeCoachCard: View {
     @StateObject private var streakFreeze = StreakFreezeManager.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
+    @StateObject private var forwardPlanStore = ForwardPlanStore.shared
     // Path progress drives the "Mission within reach" coach variant — when
     // the current path node is one rep / one score-point / one day from
     // unlocking, the coach voice points at it directly. Read-only.
@@ -134,6 +178,10 @@ struct HomeCoachCard: View {
                 beginRecommendedRep()
             }
             .accessibilityIdentifier("home.coachCard.begin")
+
+            if showsPlanArc {
+                planArcRow
+            }
 
             if showsAskNoumShortcut {
                 askNoumShortcutCTA
@@ -373,17 +421,11 @@ struct HomeCoachCard: View {
             // `firstSessionWelcomeMessage` carried so the first-impression
             // line names the user's own goal, not a generic banner.
             if let profile = coachingProfileStore.profile {
-                let challenge: String
-                switch profile.biggestChallenge {
-                case .fillerWords:
-                    challenge = "cleaning up filler words"
-                case .rambling:
-                    challenge = "tightening your structure"
-                case .freezing:
-                    challenge = "thinking faster on the spot"
-                case .rushing:
-                    challenge = "slowing down under pressure"
-                }
+                // Canonical fragment shared with the Ask Noum day-0
+                // greeting (`SpeakingChallenge.trainingFocusFragment`)
+                // so both pre-evidence surfaces acknowledge the stated
+                // challenge with one phrasing.
+                let challenge = profile.biggestChallenge.trainingFocusFragment
                 return "You want to work on \(challenge). One short rep sets your starting line."
             }
             return "One short rep sets your starting line."
@@ -480,10 +522,64 @@ struct HomeCoachCard: View {
         .accessibilityLabel(Text("Prepare for your \(moment.category.displayName), \(days) day\(days == 1 ? "" : "s") away"))
     }
 
+    /// Compact 4-week plan-arc line under the Begin CTA — today's rep
+    /// read as a step inside the visible program ("Week 2 of 4 — pauses").
+    /// Reuses the exact tap contract of Profile's `CoachingPlanCard`:
+    /// live → open the coach thread (the full plan lives there as a
+    /// coach turn); stale → regenerate around the changed moment, then
+    /// open the thread. Quiet register on purpose: one line, no box —
+    /// the hero keeps one primary action.
+    @ViewBuilder
+    private var planArcRow: some View {
+        let state = CoachingPlanCardVisibility.resolve(
+            plan: forwardPlanStore.activePlan,
+            profile: coachingProfileStore.profile,
+            sessions: sessionStore.sessions,
+            activeBigMomentID: bigMomentStore.activeMoment?.id
+        )
+        if let line = HomePlanArcLine.line(
+            state: state,
+            voice: coachingProfileStore.profile?.speakingStyleGoal
+        ) {
+            Button {
+                if case .stale = state {
+                    // Same contract as Profile's stale card: redraft
+                    // around the new moment, then land in the thread
+                    // where the fresh plan arrives as a coach turn.
+                    Task { await ForwardPlanCoordinator.generateAndAnnounce() }
+                }
+                navigationPath.append(AppDestination.askNoum)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .accessibilityHidden(true)
+                    Text(line)
+                        .font(Typography.captionSmall.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, Spacing.sm)
+                .frame(minHeight: 36)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Your four-week plan. \(line). Opens the coach thread."))
+            .accessibilityIdentifier("home.coachCard.planArc")
+        }
+    }
+
     /// Secondary Ask Noum entry folded into the coach hero. This replaces
     /// the standalone Home promo card so the home feed has one coach
     /// surface, one primary rep action, and one quieter way to ask a
-    /// follow-up after there is evidence to discuss.
+    /// follow-up — seeded from the stated goal on day 0, evidence-backed
+    /// from rep 1.
     @ViewBuilder
     private var askNoumShortcutCTA: some View {
         let body = HomeCoachAskNoumShortcut.body(sessionCount: sessionStore.sessions.count)

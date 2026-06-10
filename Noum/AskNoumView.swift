@@ -123,6 +123,68 @@ enum AskNoumSpokenMode {
     }
 }
 
+// MARK: - Day-0 seeded coach presence (coach-parity eval move 2)
+//
+// Before the first completed rep the coach has a stated goal (the
+// CoachingProfile from onboarding) but ZERO evidence. The old behavior
+// locked the thread door until rep 1 — the coach couldn't be talked to
+// exactly when a first-timer was deciding whether to trust the product.
+// This opens the door with an honest seeded presence instead of a fake
+// conversation:
+//
+//   • The greeting is a PURE deterministic template from enum-derived
+//     profile fields — no LLM call, no fabricated read, and never a
+//     verbatim quote of user-typed text (lock-screen-safety rule).
+//   • The composer is replaced by a "run your first rep" CTA + a plain
+//     one-line reason. Full coach replies stay gated on rep 1 because
+//     a reply with zero reps would be a guess wearing a coach voice.
+//
+// Pure + view-free so the gate and the template are unit-testable.
+@available(iOS 17.0, macOS 12.0, *)
+enum AskNoumDayZeroGreeting {
+
+    /// True before the user's FIRST completed rep — the window where the
+    /// thread is seeded/read-only.
+    static func isActive(sessionCount: Int) -> Bool {
+        sessionCount < 1
+    }
+
+    /// Deterministic seeded greeting. Acknowledges the stated challenge
+    /// and/or chosen voice using enum-derived copy only, states plainly
+    /// that there is no read yet (weak evidence → soft language), and
+    /// invites ONE rep for a real read. Total — every input combination
+    /// returns a non-empty, non-overclaiming line.
+    static func greeting(
+        challenge: SpeakingChallenge?,
+        voice: SpeakingStyleGoal?
+    ) -> String {
+        let evidenceInvite = "I don't have a read on you yet \u{2014} I coach from what I actually hear, not from a form. One short rep gives me real evidence, and I'll come back with the first lever worth training."
+        let acknowledgement: String?
+        switch (challenge, voice) {
+        case let (challenge?, voice?):
+            acknowledgement = "You want to work on \(challenge.trainingFocusFragment) and to \(voice.coachingDescription)."
+        case let (challenge?, nil):
+            acknowledgement = "You want to work on \(challenge.trainingFocusFragment)."
+        case let (nil, voice?):
+            acknowledgement = "You want to \(voice.coachingDescription)."
+        case (nil, nil):
+            acknowledgement = nil
+        }
+        guard let acknowledgement else { return evidenceInvite }
+        return acknowledgement + " " + evidenceInvite
+    }
+
+    /// Headline over the seeded greeting card.
+    static let headline = "Before rep one."
+
+    /// Title for the first-rep CTA that stands in for the composer.
+    static let firstRepCTATitle = "Run your first rep"
+
+    /// One-line honest reason the composer is not there yet. Plain
+    /// statement, no countdown, no shame.
+    static let inputLockedNote = "The full thread opens after your first rep \u{2014} so my answers come from evidence, not guesses."
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct AskNoumView: View {
     @StateObject private var store = AskNoumStore.shared
@@ -221,6 +283,14 @@ struct AskNoumView: View {
         // actually picks a voice, and the coach offers to set one instead of
         // inventing "authoritative."
         coachingProfileStore.profile?.chosenStyleGoal
+    }
+
+    /// True before the first completed rep — the seeded/read-only window.
+    /// While active the empty state shows the deterministic day-0 greeting
+    /// and the composer is replaced by a first-rep CTA (full replies stay
+    /// gated on rep 1; see `AskNoumDayZeroGreeting`).
+    private var isDayZero: Bool {
+        AskNoumDayZeroGreeting.isActive(sessionCount: sessionStore.sessions.count)
     }
 
     /// True once the thread has scrolled up past a small threshold. Collapses
@@ -387,7 +457,14 @@ struct AskNoumView: View {
                         }
                     }
                 }
-                inputArea
+                if isDayZero {
+                    // Day-0: the composer is honestly absent, not greyed.
+                    // One CTA toward the rep that earns the first real
+                    // reply, with the reason in plain words above it.
+                    dayZeroFooter
+                } else {
+                    inputArea
+                }
             }
         }
         .navigationTitle("")
@@ -598,7 +675,55 @@ struct AskNoumView: View {
 
     // MARK: - Empty state (starter prompts)
 
+    @ViewBuilder
     private var emptyState: some View {
+        if isDayZero {
+            // Seeded day-0 presence — deterministic greeting only. No
+            // starter prompts (they dispatch LLM replies, which stay
+            // gated on rep 1) and no AI starter generation task.
+            dayZeroIntroCard
+        } else {
+            standardEmptyState
+        }
+    }
+
+    /// Day-0 seeded greeting card. Same chrome as the standard empty
+    /// state so the surface reads as the same coach, one day earlier.
+    /// Copy is the pure `AskNoumDayZeroGreeting` template — enum-derived
+    /// acknowledgement of the stated goal/challenge plus the one-rep
+    /// invite. The matching CTA lives in `dayZeroFooter`, where the
+    /// composer would otherwise be.
+    private var dayZeroIntroCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text(AskNoumDayZeroGreeting.headline)
+                .font(Typography.cardTitle)
+                .foregroundStyle(.primary)
+            Text(AskNoumDayZeroGreeting.greeting(
+                challenge: coachingProfileStore.profile?.biggestChallenge,
+                voice: voice
+            ))
+            .font(Typography.body)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [AppColor.pro.opacity(0.06), AppColor.cardBackground],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.pro.opacity(0.20), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("askNoum.dayZeroIntro")
+    }
+
+    private var standardEmptyState: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(emptyStateHeadline)
@@ -636,6 +761,53 @@ struct AskNoumView: View {
         .task(id: starterSignature) {
             await requestAIStartersIfNeeded()
         }
+    }
+
+    // MARK: - Day-0 footer (stands in for the composer)
+
+    /// Replaces the input bar before rep 1. A plain one-line reason +
+    /// ONE CTA that routes into the same recommended first rep the Home
+    /// hero's Begin button starts — not a dead/disabled composer.
+    private var dayZeroFooter: some View {
+        VStack(spacing: Spacing.sm) {
+            Text(AskNoumDayZeroGreeting.inputLockedNote)
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            PrimaryCTA(AskNoumDayZeroGreeting.firstRepCTATitle, icon: "play.fill", tint: AppColor.pro) {
+                beginFirstRep()
+            }
+            .accessibilityIdentifier("askNoum.dayZeroBegin")
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(.ultraThinMaterial)
+        .accessibilityIdentifier("askNoum.dayZeroFooter")
+    }
+
+    /// Route into the recommended first rep — the same blueprint +
+    /// router pair `HomeCoachCard.beginRecommendedRep` uses, so the
+    /// coach's "run one rep" invite lands in the exact rep the Home
+    /// hero would start. No new routing logic.
+    private func beginFirstRep() {
+        CoachHaptic.selectionTap()
+        let blueprint = RecommendationBiasContextBuilder.context(
+            profile: coachingProfileStore.profile,
+            sessions: sessionStore.sessions,
+            sessionStreak: streakFreezeManager.currentStreak,
+            daysSinceLastSession: 0,
+            coachMemory: coachMemoryStore.currentMemory,
+            imAvailable: IMModeAvailability.isAvailable,
+            recommendationOutcomes: recommendationLearningStore.outcomes,
+            summaryStyle: .compact
+        ).blueprint
+        navigationPath.append(
+            SummaryLookingAheadRouter.destination(
+                for: blueprint,
+                imAvailable: IMModeAvailability.isAvailable
+            )
+        )
     }
 
     private var emptyStateHeadline: String {
@@ -2104,6 +2276,11 @@ struct AskNoumView: View {
     /// commits). A nil result clears any stale pending intent so a non-goal
     /// turn collapses a card the user neither confirmed nor declined.
     private func send(_ text: String, detectIntent: Bool = true) {
+        // Day-0 invariant: full replies stay gated on rep 1. The UI never
+        // offers a dispatch path while `isDayZero` (no composer, no starter
+        // chips), so this guard is belt-and-braces — it keeps the invariant
+        // true even if a future surface wires a send into the seeded window.
+        guard !isDayZero else { return }
         // S5 — barge-in: a new user turn supersedes the prior coach reply, so
         // stop any audio still playing from it before we dispatch. The reply
         // that lands for THIS turn will start its own clip via `runReply`. This

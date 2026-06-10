@@ -295,16 +295,20 @@ struct ContentView: View {
                         if sessionStore.sessions.isEmpty {
                             // Empty-state — use the same coach-first floor as
                             // the signal-gated populated home. First screen:
-                            // coach presence + Begin. Status, Ask Noum and
-                            // progression surfaces unlock after signal instead
-                            // of reading like a habit dashboard before the
-                            // user has completed a rep.
+                            // coach presence + Begin. Status and progression
+                            // surfaces unlock after signal instead of reading
+                            // like a habit dashboard before the user has
+                            // completed a rep. The Ask Noum shortcut alone
+                            // opens on day 0 once onboarding produced a
+                            // profile — the thread is seeded/read-only until
+                            // rep 1 (HomeSignalGate / AskNoumDayZeroGreeting).
                             let gate = homeCardGate
                             if gate.coachCard {
                                 HomeCoachCard(
                                     navigationPath: $navigationPath,
                                     scrollOffset: homeScrollOffset,
-                                    showsAskNoumShortcut: gate.askNoumShortcut
+                                    showsAskNoumShortcut: gate.askNoumShortcut,
+                                    showsPlanArc: gate.planArc
                                 ).cardEntrance(0)
                             }
                             if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
@@ -380,7 +384,8 @@ struct ContentView: View {
                                 HomeCoachCard(
                                     navigationPath: $navigationPath,
                                     scrollOffset: homeScrollOffset,
-                                    showsAskNoumShortcut: gate.askNoumShortcut
+                                    showsAskNoumShortcut: gate.askNoumShortcut,
+                                    showsPlanArc: gate.planArc
                                 ).cardEntrance(0)
                             }
                             // Quiet streak status — the ONE status line the

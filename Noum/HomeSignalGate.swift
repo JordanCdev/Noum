@@ -16,6 +16,13 @@ struct HomeCardGate: Equatable {
     /// never a pressure anchor. Defaults false so older call sites that
     /// don't pass `streakDays` fail quiet (hidden), never fabricated.
     var streakStatus: Bool = false
+    /// Compact 4-week plan-arc line inside the coach hero ("Week 2 of 4
+    /// — pauses"). Needs >= 1 completed rep — a forward plan is a
+    /// coaching artifact, not cold-start furniture. The line itself
+    /// additionally self-gates on an actual `ForwardPlanStore.activePlan`
+    /// existing (see `HomePlanArcLine`). Defaults false so older call
+    /// sites fail quiet (hidden), never fabricated.
+    var planArc: Bool = false
 
     static let allVisible = HomeCardGate(
         coachCard: true,
@@ -25,18 +32,23 @@ struct HomeCardGate: Equatable {
         dailyChallenge: false,
         voiceMetrics: false,
         aiWeeklyInsight: true,
-        streakStatus: true
+        streakStatus: true,
+        planArc: true
     )
 }
 
 /// Signal-gated Home composition for M15 Phase 4.
 ///
 /// Cards aren't deleted — noisy dashboard cards stay behind the explicit
-/// Settings override. The Coach Card is the cold-start floor; the in-card
-/// Ask Noum shortcut, Journey and the AI Weekly Insight unlock as signal
-/// accrues. The former utility, daily challenge and metrics cards are
-/// retired from Home; their underlying tools stay owned by their existing
-/// managers/routes.
+/// Settings override. The Coach Card is the cold-start floor; Journey,
+/// the plan arc and the AI Weekly Insight unlock as signal accrues. The
+/// in-card Ask Noum shortcut opens on day 0 once onboarding has produced
+/// a CoachingProfile (coach-parity eval move 2: the "coach knows you"
+/// door must not be locked exactly when a first-timer is deciding to
+/// trust the product) — the thread itself stays seeded/read-only until
+/// rep 1 (see `AskNoumDayZeroGreeting`). The former utility, daily
+/// challenge and metrics cards are retired from Home; their underlying
+/// tools stay owned by their existing managers/routes.
 ///
 /// The whole gate is reversible for developer inspection via
 /// `practice.showAllHomeCards = true`, excluding surfaces intentionally
@@ -76,11 +88,19 @@ enum HomeSignalGate {
             coachCard: true,
             utilityStrip: false,
             journey: hasCompletedRep && (hasUnlockedPathNode || hasCoachingProfile),
-            askNoumShortcut: hasCompletedRep,
+            // Day-0 unlock: a finished onboarding (CoachingProfile exists)
+            // opens the coach thread door before rep 1. The thread is
+            // seeded/read-only at 0 reps — full replies still need real
+            // evidence — but the door itself must not be locked while a
+            // first-timer decides whether to trust the coach. Without a
+            // profile AND without a rep there is nothing honest to seed,
+            // so the shortcut stays hidden.
+            askNoumShortcut: hasCompletedRep || hasCoachingProfile,
             dailyChallenge: false,
             voiceMetrics: false,
             aiWeeklyInsight: sessionsThisWeekCount >= 3,
-            streakStatus: hasCompletedRep && streakDays >= 2
+            streakStatus: hasCompletedRep && streakDays >= 2,
+            planArc: hasCompletedRep
         )
     }
 
