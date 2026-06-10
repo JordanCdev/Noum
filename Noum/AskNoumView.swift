@@ -1885,33 +1885,68 @@ struct AskNoumView: View {
         // orb earns its keep. The card spans full width, flush to the
         // container's leading edge, so the ack / follow-up / proposal rows
         // below align to it without the old 34pt inset.
+        //
+        // HONEST OFFLINE STATE (A3): a `.deterministicReply` (model
+        // unreachable) carries `isOffline`. It is a real, useful coach line —
+        // it still shows — but it is NOT the intelligent live coach, so it must
+        // never wear the brand-purple live treatment. Offline rows get a quiet
+        // "Offline — reconnect for a full read" marker + a neutral grey stroke
+        // and slightly muted text, so the user can trust that the purple-stroke
+        // bubbles are the live coach and this one is the local stand-in.
         VStack(alignment: .leading, spacing: 4) {
             if message.isPending {
                 pendingDots
                     .padding(.vertical, 4)
             } else {
+                if message.isOffline {
+                    offlineMarker
+                }
                 // Living-coach-presence: the just-landed reply reveals word by
                 // word (see `revealingMessageID`); every other row shows its
                 // full text. The accessibility label always reads the COMPLETE
                 // reply so VoiceOver is never handed a half-written sentence.
                 Text(message.id == revealingMessageID ? revealedText : message.text)
                     .font(Typography.body)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(message.isOffline ? .secondary : .primary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Noum: \(message.text)")
+                    .accessibilityLabel(
+                        message.isOffline
+                            ? "Noum, offline reply: \(message.text)"
+                            : "Noum: \(message.text)"
+                    )
             }
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            AppColor.cardBackground,
+            message.isOffline ? AppColor.innerSurface : AppColor.cardBackground,
             in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
         )
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(AppColor.pro.opacity(0.10), lineWidth: 1)
+                .stroke(
+                    message.isOffline ? AppColor.subtleBorder : AppColor.pro.opacity(0.10),
+                    lineWidth: 1
+                )
         )
+    }
+
+    /// Quiet "offline" chip shown above a `.deterministicReply`'s text. Honest
+    /// states invariant: this row is the local stand-in, not the live coach, so
+    /// it says so plainly — and stays useful (the grounded line still renders
+    /// below). Uses neutral tokens only; never the brand-purple live treatment.
+    private var offlineMarker: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "wifi.slash")
+                .font(Typography.micro.weight(.semibold))
+            Text("Offline \u{2014} reconnect for a full read")
+                .font(Typography.micro.weight(.semibold))
+                .tracking(0.3)
+        }
+        .foregroundStyle(AppColor.textSecondary)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Offline reply. Reconnect for a full read from your coach.")
     }
 
     private func noticeBubble(message: CoachMessage) -> some View {

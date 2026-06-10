@@ -46,19 +46,52 @@ struct CoachMessage: Identifiable, Codable, Equatable {
     /// True while the model is generating the reply. Only ever true for
     /// `.coach` rows; the UI renders a typing-style placeholder for these.
     var isPending: Bool
+    /// True ONLY for a `.coach` row hydrated from a `.deterministicReply` —
+    /// the grounded OFFLINE line built locally when the live model was
+    /// unreachable / unsupported. It is a real, useful coach line, but it is
+    /// NOT the intelligent live coach, so the UI must render it visibly
+    /// distinct (a quiet "offline" marker + de-emphasised styling) and never
+    /// in the brand-purple live-coach treatment. Honest-states invariant: a
+    /// fallback must never impersonate a live coach reply.
+    ///
+    /// Kept as a flag on the EXISTING `.coach` role (rather than a new role)
+    /// so every chip / word-reveal / continuation call site that keys off
+    /// `role == .coach` keeps working unchanged — only the bubble's visual
+    /// treatment branches on this flag.
+    var isOffline: Bool
 
     init(
         id: UUID = UUID(),
         role: CoachMessageRole,
         text: String,
         createdAt: Date = Date(),
-        isPending: Bool = false
+        isPending: Bool = false,
+        isOffline: Bool = false
     ) {
         self.id = id
         self.role = role
         self.text = text
         self.createdAt = createdAt
         self.isPending = isPending
+        self.isOffline = isOffline
+    }
+
+    // Custom decoder so threads persisted BEFORE `isOffline` existed still
+    // load — the synthesised `Decodable` would fail on the missing key. Old
+    // rows decode as not-offline (the conservative default: an unknown
+    // historical row reads as a normal coach bubble, never falsely "offline").
+    private enum CodingKeys: String, CodingKey {
+        case id, role, text, createdAt, isPending, isOffline
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.role = try c.decode(CoachMessageRole.self, forKey: .role)
+        self.text = try c.decode(String.self, forKey: .text)
+        self.createdAt = try c.decode(Date.self, forKey: .createdAt)
+        self.isPending = try c.decodeIfPresent(Bool.self, forKey: .isPending) ?? false
+        self.isOffline = try c.decodeIfPresent(Bool.self, forKey: .isOffline) ?? false
     }
 }
 
@@ -176,7 +209,12 @@ final class AskNoumStore: ObservableObject {
             // them differently — see `AskNoumSpokenMode.spokenRoute` — a
             // canned line speaks only in the on-device system voice, never
             // the cloud coach voice, so it can't be mistaken for the live
-            // coach.)
+            // coach.) The VISIBLE bubble must honour the same honesty: a
+            // `.deterministicReply` carries `isOffline = true` so the row
+            // renders with a quiet "offline" marker + de-emphasised styling
+            // and never the brand-purple live-coach treatment.
+            let isOffline: Bool
+            if case .deterministicReply = outcome { isOffline = true } else { isOffline = false }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
                 // Defensive: neither path should hand us empty content (a live
@@ -190,7 +228,8 @@ final class AskNoumStore: ObservableObject {
                     role: .coach,
                     text: trimmed,
                     createdAt: messages[idx].createdAt,
-                    isPending: false
+                    isPending: false,
+                    isOffline: isOffline
                 )
             }
         case .failure(let failure):

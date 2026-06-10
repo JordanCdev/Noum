@@ -233,6 +233,13 @@ struct ChatFallbackContext: Equatable {
     /// Whole-words-per-minute on that rep (0 when unknown) — a delivery fact
     /// the fallback may state when the substance verdict is below its floor.
     var recentWordsPerMinute: Int
+    /// Whole-word COUNT on that rep (0 when unknown). The delivery-fact branch
+    /// is gated on this clearing the SAME evidence floor `PracticeEvaluator`'s
+    /// own pace label uses (`>= 6` words). A degenerate near-empty rep
+    /// (e.g. 1 word over a full duration) yields a nonsensical "pace ran slow
+    /// at 1 WPM" line otherwise — the chat fallback must refuse to judge pace
+    /// on too little content, exactly as `paceSnapshot` does.
+    var recentTimedWordCount: Int
     /// Filler-word COUNT on that rep (not a rate) — a delivery fact only.
     var recentFillerCount: Int
     /// The standing working hypothesis, already bounded/summarized on the
@@ -255,6 +262,7 @@ struct ChatFallbackContext: Equatable {
         recentTimedTranscript: String? = nil,
         recentTimedPrompt: String? = nil,
         recentWordsPerMinute: Int = 0,
+        recentTimedWordCount: Int = 0,
         recentFillerCount: Int = 0,
         hypothesis: String? = nil,
         observableTarget: String? = nil,
@@ -266,6 +274,7 @@ struct ChatFallbackContext: Equatable {
         self.recentTimedTranscript = recentTimedTranscript
         self.recentTimedPrompt = recentTimedPrompt
         self.recentWordsPerMinute = recentWordsPerMinute
+        self.recentTimedWordCount = recentTimedWordCount
         self.recentFillerCount = recentFillerCount
         self.hypothesis = hypothesis
         self.observableTarget = observableTarget
@@ -873,10 +882,26 @@ actor AICoachChatService {
         }
     }
 
+    /// Evidence floor for stating a pace FACT in the offline fallback. Mirrors
+    /// the `wordCount >= 6` floor `PracticeEvaluator.paceSnapshot` uses to refuse
+    /// a pace label — below it the pace number is meaningless (1 word / 60s
+    /// rounds to 1 WPM), so the chat fallback must not assert one.
+    nonisolated static let minWordsForPaceFact = 6
+
+    /// A believable conversational-speech band. Even when the word-count floor
+    /// is met, a WPM outside human speaking range (a sensor glitch, a clipped
+    /// duration) must never be stated as a fact. The window is deliberately wide
+    /// — it only rejects values that are physically implausible for connected
+    /// speech, leaving the slow/fast COACHING bands (`< 95`, `> 170`) intact.
+    nonisolated static func isSanePaceFact(_ wpm: Int) -> Bool {
+        (40...260).contains(wpm)
+    }
+
     /// The single body sentence. Priority:
     /// 1. Substance verdict over the most-recent timed rep, when above floor.
     /// 2. A delivery FACT (pace / fillers) when present but the verdict is below
-    ///    floor — never a substance claim.
+    ///    floor — never a substance claim, and never a pace number below the
+    ///    word-count floor or outside a believable speaking range.
     /// 3. A case-advancing reflection when there's no rep to read.
     /// 4. A steady in-voice fallback that asserts nothing it cannot support.
     private nonisolated static func bodySentence(
@@ -897,11 +922,25 @@ actor AICoachChatService {
         }
 
         // 2) Delivery fact (no substance claim). Pace band first, then fillers.
-        if context.recentWordsPerMinute > 170 {
-            return "On your last timed rep the pace ran fast at \(context.recentWordsPerMinute) WPM, so add a beat between points and each one gets room to land."
-        }
-        if context.recentWordsPerMinute > 0 && context.recentWordsPerMinute < 95 {
-            return "On your last timed rep the pace ran slow at \(context.recentWordsPerMinute) WPM, so lift the energy a touch and the line carries."
+        //
+        // GATE: only judge pace when the rep cleared the SAME evidence floor
+        // `PracticeEvaluator.paceSnapshot` uses to refuse a pace label
+        // (`wordCount >= 6`). A degenerate near-empty rep (1 word over a full
+        // minute → round(1.0) = 1 WPM) would otherwise emit "pace ran slow at
+        // 1 WPM" — a nonsensical number stated with false confidence. Below the
+        // floor the pace is simply unknown, so we omit the number entirely and
+        // fall through to the filler fact / case line / steady fallback. A
+        // 0-valued `recentTimedWordCount` (unknown rep length) is treated as
+        // below-floor for the same reason.
+        let paceJudgeable = context.recentTimedWordCount >= Self.minWordsForPaceFact
+            && Self.isSanePaceFact(context.recentWordsPerMinute)
+        if paceJudgeable {
+            if context.recentWordsPerMinute > 170 {
+                return "On your last timed rep the pace ran fast at \(context.recentWordsPerMinute) WPM, so add a beat between points and each one gets room to land."
+            }
+            if context.recentWordsPerMinute < 95 {
+                return "On your last timed rep the pace ran slow at \(context.recentWordsPerMinute) WPM, so lift the energy a touch and the line carries."
+            }
         }
         if context.recentFillerCount >= 4 {
             return "Fillers crept into your last timed rep, so try a deliberate pause where one wants to go — silence reads as composure."

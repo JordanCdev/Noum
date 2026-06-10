@@ -10155,6 +10155,66 @@ struct AskNoumStoreTests {
         #expect(!store.isAwaitingReply)
     }
 
+    /// A3 — honest OFFLINE marker. A `.deterministicReply` hydrates as a real
+    /// coach bubble (role `.coach`, useful text) BUT carries `isOffline = true`
+    /// so the UI renders it visibly distinct and never as the live coach. The
+    /// flag is the whole contract: same role (so chips/reveal keep working),
+    /// distinct truth (so the bubble can't impersonate the intelligent coach).
+    @Test func deterministicReplyIsFlaggedOffline() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("How did my last rep go?")
+        store.completeCoachTurn(
+            id: ids.coachID,
+            outcome: .deterministicReply("Here's what stood out: run one more rep when you're ready.")
+        )
+        #expect(store.messages[1].role == .coach)
+        #expect(store.messages[1].isOffline == true)
+    }
+
+    /// A3 — a LIVE `.reply` is NOT offline: it must render in the full
+    /// live-coach treatment, so the flag stays false. This is the other half of
+    /// the honesty contract — only the local stand-in is marked.
+    @Test func liveReplyIsNotFlaggedOffline() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("How did my last rep go?")
+        store.completeCoachTurn(id: ids.coachID, outcome: .reply("Lead with the point next time and the rest follows."))
+        #expect(store.messages[1].role == .coach)
+        #expect(store.messages[1].isOffline == false)
+    }
+
+    /// A3 — `injectCoachTurn` (Forward Plan / generated artifacts) is a real
+    /// coach turn, NOT an offline fallback, so it is never flagged offline.
+    @Test func injectedCoachTurnIsNotOffline() {
+        let store = freshStore()
+        let id = store.injectCoachTurn("Here is your four-week forward plan.")
+        #expect(id != nil)
+        #expect(store.messages.last?.isOffline == false)
+    }
+
+    /// A3 — back-compat: a thread persisted BEFORE `isOffline` existed (its JSON
+    /// has no `isOffline` key) must still decode, with the field defaulting to
+    /// false (the conservative read: an unknown historical row is a normal coach
+    /// bubble, never falsely "offline").
+    @Test func coachMessageDecodesLegacyJSONWithoutIsOfflineKey() throws {
+        let legacy = """
+        {"id":"\(UUID().uuidString)","role":"coach","text":"Older reply.","createdAt":0,"isPending":false}
+        """.data(using: .utf8)!
+        let decoder = JSONDecoder()
+        let msg = try decoder.decode(CoachMessage.self, from: legacy)
+        #expect(msg.role == .coach)
+        #expect(msg.text == "Older reply.")
+        #expect(msg.isOffline == false)
+    }
+
+    /// A3 — round-trip: an offline-flagged message survives encode → decode.
+    @Test func coachMessageOfflineFlagRoundTrips() throws {
+        let original = CoachMessage(role: .coach, text: "Offline line.", isOffline: true)
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(CoachMessage.self, from: data)
+        #expect(decoded.isOffline == true)
+        #expect(decoded.text == "Offline line.")
+    }
+
     /// A1 — defensive: a `.deterministicReply` with all-whitespace text still
     /// must not leave a blank coach bubble. The builder is total + always
     /// non-empty, but the store must not depend on that, so an empty
@@ -22494,9 +22554,6 @@ struct AICoachChatDeterministicReplyTests {
     /// neither answered nor buried. (>= 12 transcript words.)
     private let partialTranscript = "I think the weather today is quite pleasant and I enjoyed a long walk in the park near my house this morning."
 
-    /// Below the evidence floor: < 12 transcript words → no verdict.
-    private let thinTranscript = "Hello there friend."
-
     /// The per-voice persona reflection lead the line must open with.
     private func lead(for voice: SpeakingStyleGoal?) -> String {
         CoachPersona.persona(for: voice).reflectionLead
@@ -22538,14 +22595,18 @@ struct AICoachChatDeterministicReplyTests {
         #expect(out.contains("didn't clearly lead"))
     }
 
-    /// Below the substance floor (thin transcript) → NO substance verdict; the
-    /// line states a delivery FACT instead. A fast pace surfaces the WPM fact.
-    @Test func belowFloorEmitsDeliveryFactNotSubstanceClaim() {
+    /// Below the SUBSTANCE floor (thin transcript, no prompt-relevance verdict)
+    /// but ABOVE the pace-fact word-count floor → NO substance verdict; the line
+    /// states a delivery FACT instead. A fast pace surfaces the WPM fact. The
+    /// transcript here is short on prompt-relevant content (so no substance
+    /// verdict) but long enough (>= 6 words) that a pace fact is honest.
+    @Test func belowSubstanceFloorEmitsDeliveryFactNotSubstanceClaim() {
         let ctx = ChatFallbackContext(
             voice: .warm,
-            recentTimedTranscript: thinTranscript,
+            recentTimedTranscript: "well I am not really sure where to begin honestly",
             recentTimedPrompt: prompt,
-            recentWordsPerMinute: 180
+            recentWordsPerMinute: 180,
+            recentTimedWordCount: 10
         )
         let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
         #expect(out.contains("180 WPM"))
@@ -22553,6 +22614,77 @@ struct AICoachChatDeterministicReplyTests {
         #expect(!out.contains("led with the point"))
         #expect(!out.contains("arrived late"))
         #expect(!out.contains("didn't clearly lead"))
+    }
+
+    /// A2 — REGRESSION GUARD: a degenerate near-empty rep (1 word over a full
+    /// minute → round(1.0) = 1 WPM) must NEVER produce "pace ran slow at 1 WPM."
+    /// Below the word-count floor the pace is unknown, so the line omits the
+    /// number entirely and falls through (here: to the steady in-voice line,
+    /// since there's no other fact). The owner's screen recording caught exactly
+    /// this fabrication.
+    @Test func degenerateOneWordRepNeverStatesNonsenseWPM() {
+        let ctx = ChatFallbackContext(
+            voice: .warm,
+            recentTimedTranscript: "Hi.",
+            recentTimedPrompt: prompt,
+            recentWordsPerMinute: 1,
+            recentTimedWordCount: 1
+        )
+        let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
+        #expect(!out.contains("1 WPM"))
+        #expect(!out.contains("WPM"), "no pace fact may be stated below the word-count floor: \(out)")
+        #expect(!out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        #expect(PostRepCoachNoteService.passesBrandVoiceContract(out))
+    }
+
+    /// A2 — boundary: exactly at the word-count floor (6 words) with a SANE WPM,
+    /// the pace fact IS stated; one word below it (5) the fact is suppressed.
+    @Test func paceFactGatedExactlyAtWordCountFloor() {
+        let aboveFloor = ChatFallbackContext(
+            voice: .concise,
+            recentTimedTranscript: "one two three four five six",
+            recentWordsPerMinute: 80,
+            recentTimedWordCount: 6
+        )
+        let aboveOut = AICoachChatService.deterministicReply(failure: .network, context: aboveFloor)
+        #expect(aboveOut.contains("80 WPM"))
+
+        let belowFloor = ChatFallbackContext(
+            voice: .concise,
+            recentTimedTranscript: "one two three four five",
+            recentWordsPerMinute: 80,
+            recentTimedWordCount: 5
+        )
+        let belowOut = AICoachChatService.deterministicReply(failure: .network, context: belowFloor)
+        #expect(!belowOut.contains("WPM"))
+    }
+
+    /// A2 — even ABOVE the word-count floor, a physically implausible WPM (a
+    /// sensor glitch / clipped duration) is never stated as a fact. 9 WPM and
+    /// 600 WPM both fall outside the believable speaking band and are omitted.
+    @Test func insaneWPMNeverStatedEvenAboveWordFloor() {
+        for absurd in [9, 600] {
+            let ctx = ChatFallbackContext(
+                voice: .authoritative,
+                recentTimedTranscript: "one two three four five six seven eight",
+                recentWordsPerMinute: absurd,
+                recentTimedWordCount: 8
+            )
+            let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
+            #expect(!out.contains("\(absurd) WPM"), "absurd \(absurd) WPM must not be stated: \(out)")
+            #expect(!out.contains("WPM"))
+        }
+    }
+
+    /// A2 — the sane-pace predicate is the single source of truth for the band.
+    @Test func sanePaceFactPredicateBoundaries() {
+        #expect(AICoachChatService.isSanePaceFact(40))
+        #expect(AICoachChatService.isSanePaceFact(260))
+        #expect(AICoachChatService.isSanePaceFact(140))
+        #expect(!AICoachChatService.isSanePaceFact(39))
+        #expect(!AICoachChatService.isSanePaceFact(261))
+        #expect(!AICoachChatService.isSanePaceFact(1))
+        #expect(!AICoachChatService.isSanePaceFact(0))
     }
 
     /// The fallback NEVER reproduces the transcript text — it states the

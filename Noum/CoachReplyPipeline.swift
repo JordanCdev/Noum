@@ -84,15 +84,23 @@ enum CoachReplyPipeline {
         // grounded, in-voice reply rather than an error notice.
         let voice = profileStore.profile?.chosenStyleGoal
         let recentTimed = sessionStore.sessions.last(where: { $0.mode == .timed })
-        let recentTimedWPM: Int = recentTimed.map {
-            PracticeEvaluator.paceSnapshot(forTranscript: $0.transcript, duration: $0.duration).wordsPerMinute
-        } ?? 0
+        // Word count + WPM as one unit. The fallback gates the pace fact on the
+        // count clearing the same evidence floor `paceSnapshot` uses; a sub-floor
+        // rep (e.g. 1 word over a full minute → 1 WPM) must not surface a pace
+        // number. We pass 0 for the WPM when the count is below the floor so a
+        // stale/degenerate rep can never leak a nonsensical value downstream.
+        let recentTimedWordCount: Int = recentTimed?.wordCount ?? 0
+        let recentTimedWPM: Int = {
+            guard let recentTimed, recentTimedWordCount >= AICoachChatService.minWordsForPaceFact else { return 0 }
+            return PracticeEvaluator.paceSnapshot(forTranscript: recentTimed.transcript, duration: recentTimed.duration).wordsPerMinute
+        }()
         let fallbackCaseFile = coachMemoryStore.currentMemory?.caseFile
         let fallbackContext = ChatFallbackContext(
             voice: voice,
             recentTimedTranscript: recentTimed?.transcript,
             recentTimedPrompt: recentTimed?.prompt,
             recentWordsPerMinute: recentTimedWPM,
+            recentTimedWordCount: recentTimedWordCount,
             recentFillerCount: recentTimed?.fillerWordCount ?? 0,
             hypothesis: fallbackCaseFile?.hypothesis,
             observableTarget: fallbackCaseFile?.observableTarget,

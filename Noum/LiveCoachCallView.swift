@@ -140,6 +140,16 @@ struct LiveCoachCallView: View {
         return store.messages.last(where: { $0.role == .coach && !$0.isPending })?.text
     }
 
+    /// True when the latest coach turn being captioned is the OFFLINE
+    /// deterministic stand-in (model unreachable). Honest states invariant
+    /// (A3): the live-call caption must mark it the same way the chat bubble
+    /// does, never passing the local line off as the live coach. Only relevant
+    /// when we're showing the coach's turn, not the user's live words.
+    private var captionIsOffline: Bool {
+        guard voiceInput.state != .recording else { return false }
+        return store.messages.last(where: { $0.role == .coach && !$0.isPending })?.isOffline ?? false
+    }
+
     private var captionSpeaker: String {
         voiceInput.state == .recording ? "YOU" : "NOUM"
     }
@@ -259,14 +269,29 @@ struct LiveCoachCallView: View {
     private var captionArea: some View {
         if let caption, !caption.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
-                Text(captionSpeaker)
-                    .font(Typography.micro.weight(.bold))
-                    .tracking(1)
-                    .foregroundStyle(.white.opacity(0.4))
+                HStack(spacing: 6) {
+                    Text(captionSpeaker)
+                        .font(Typography.micro.weight(.bold))
+                        .tracking(1)
+                        .foregroundStyle(.white.opacity(0.4))
+                    // A3: the offline stand-in is marked in the live caption too,
+                    // so the local line is never read as the live coach speaking.
+                    if captionIsOffline {
+                        HStack(spacing: 4) {
+                            Image(systemName: "wifi.slash")
+                            Text("OFFLINE")
+                        }
+                        .font(Typography.micro.weight(.bold))
+                        .tracking(1)
+                        .foregroundStyle(.white.opacity(0.4))
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Offline reply. Reconnect for a full read from your coach.")
+                    }
+                }
                 ScrollView {
                     Text(caption)
                         .font(Typography.body)
-                        .foregroundStyle(.white.opacity(0.92))
+                        .foregroundStyle(.white.opacity(captionIsOffline ? 0.72 : 0.92))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
