@@ -101,9 +101,12 @@ enum HomeAskNoumEvidenceCopy {
     static func line(sessionCount: Int) -> String {
         switch sessionCount {
         case ..<1:
-            return "Give me one rep and I'll name the first lever worth training."
+            // Cold start, lowest patience: lead with the benefit and make the
+            // depth curve legible so a new user sees the coach sharpens with
+            // evidence — without claiming history it doesn't have.
+            return "Give me one rep and I'll name the first lever worth training. A few more, and I'll name your core move."
         case 1:
-            return "I have one rep, so I'll keep the read light and concrete."
+            return "I have one rep, so I'll keep the read light and concrete — then sharpen it as you stack more."
         case 2:
             return "I have two reps, so I'll compare carefully without overcalling a pattern."
         default:
