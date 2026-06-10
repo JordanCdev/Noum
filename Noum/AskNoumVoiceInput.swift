@@ -470,6 +470,11 @@ final class AskNoumVoiceInput: ObservableObject {
         do {
             engine.prepare()
             try engine.start()
+            // Second live recorder in the app — the interaction sound
+            // engine must know speech capture is active so cues never
+            // bleed into the call's microphone (mirrors the rep recorder
+            // in SpeechRecognizerViewModel).
+            InteractionSoundEngine.noteRecordingActive(true)
         } catch {
             inputNode.removeTap(onBus: 0)
             Task { try? await session.endAudio() }
@@ -575,6 +580,8 @@ final class AskNoumVoiceInput: ObservableObject {
         do {
             engine.prepare()
             try engine.start()
+            // Same recording-active contract as the cloud path above.
+            InteractionSoundEngine.noteRecordingActive(true)
         } catch {
             inputNode.removeTap(onBus: 0)
             request = nil
@@ -634,6 +641,7 @@ final class AskNoumVoiceInput: ObservableObject {
             engine.inputNode.removeTap(onBus: 0)
         }
         audioEngine = nil
+        InteractionSoundEngine.noteRecordingActive(false)
         #endif
     }
 

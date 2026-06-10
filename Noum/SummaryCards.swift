@@ -113,6 +113,10 @@ struct HeroScoreCard: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Score \(scoreValue) out of 10")
             .onAppear(perform: revealScore)
+            // Settle-beat hygiene: if the user leaves before the ring
+            // settles, the pending haptic+thump must not fire over the
+            // next screen.
+            .onDisappear { settleWork?.cancel(); settleWork = nil }
             // Defensive: the score is static in every current flow (the
             // summary payload is pushed only after analysis resolves), but
             // if it ever changes post-reveal, snap silently — a stale
@@ -216,11 +220,20 @@ struct HeroScoreCard: View {
             revealedScore = scoreValue
             ringFill = target
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Animation.scoreRevealDuration) {
+        let work = DispatchWorkItem {
             CoachHaptic.scoreReveal()
             InteractionSoundEngine.cue(.verdictReveal)
         }
+        settleWork = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Animation.scoreRevealDuration,
+            execute: work
+        )
     }
+
+    /// Pending settle-frame beat — cancelled in `onDisappear` so the
+    /// haptic/sound can never fire after the card is gone.
+    @State private var settleWork: DispatchWorkItem?
 }
 
 // MARK: - Sudden Death Review Card

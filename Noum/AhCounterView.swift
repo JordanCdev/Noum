@@ -300,7 +300,7 @@ struct AhCounterView: View {
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.top, Spacing.md)
                 .padding(.bottom, 90)
-                .animation(.easeInOut(duration: 0.35), value: speechVM.isRecording)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.35), value: speechVM.isRecording)
             }
             .safeAreaInset(edge: .bottom) {
                 Group {

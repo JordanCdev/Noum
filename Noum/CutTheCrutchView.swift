@@ -384,7 +384,10 @@ struct CutTheCrutchView: View {
                     .foregroundStyle(.tertiary)
                     .italic()
             } else {
-                Text(highlightedTranscript)
+                // Live surface: calm the red filler marks to the dim
+                // neutral register (A3 rule — mid-rep is never alarmed).
+                // The summary's red ledger reads the raw value untouched.
+                Text(LiveTranscriptStyle.calmed(highlightedTranscript))
                     .font(.body)
                     .fixedSize(horizontal: false, vertical: true)
             }

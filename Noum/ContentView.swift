@@ -215,14 +215,15 @@ private struct HomeStreakStatusLine: View {
         // frame — a same-pass animated write would coalesce into a no-op.
         if HomeStreakStatusCopy.line(days: days - 1) != nil {
             displayedDays = days - 1
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Animation.streakPopDelay + 0.15) {
                 withAnimation(.standardSpring) { displayedDays = days }
             }
         }
         // Pop starts as the card-entrance settle finishes; one beat, then
-        // the flame returns to rest.
-        withAnimation(.bouncySpring.delay(0.4)) { flamePop = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
+        // the flame returns to rest. All three beats key off
+        // `streakPopDelay` so the channels can't drift apart.
+        withAnimation(.bouncySpring.delay(Animation.streakPopDelay)) { flamePop = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Animation.streakPopDelay + 0.7) {
             withAnimation(.standardSpring) { flamePop = false }
         }
     }

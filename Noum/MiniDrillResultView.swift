@@ -152,7 +152,13 @@ struct MiniDrillResultView: View {
 
     // MARK: - Animation Sequence
 
+    /// One-shot: onAppear can re-fire on sheet/navigation round-trips and
+    /// the 5-phase entrance + drill-complete cue must not replay.
+    @State private var hasRunEntrance = false
+
     private func runEntrance() {
+        guard !hasRunEntrance else { return }
+        hasRunEntrance = true
         // Phase 1: Icon (0s) — the drill verdict resolves here, so the
         // soft brush lands with the icon pop (the haptic verdict already
         // fired at stop in `MiniDrillView.finishDrill`). Success is the
