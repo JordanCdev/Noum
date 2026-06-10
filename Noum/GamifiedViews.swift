@@ -64,10 +64,14 @@ struct PulseBadge: View {
     let systemImage: String
     let tint: Color
     var animated: Bool = true
+    // Repeating ambient pulse must respect Reduce Motion at the component
+    // level so every call site is covered — the badge renders its static
+    // form when the setting is on.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
-            if animated {
+            if animated && !reduceMotion {
                 TimelineView(.animation(minimumInterval: 1 / 18.0)) { timeline in
                     let phase = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.8) / 1.8
                     let scale = 0.92 + (sin(phase * .pi * 2) + 1) * 0.06

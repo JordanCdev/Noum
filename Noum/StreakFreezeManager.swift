@@ -26,9 +26,13 @@ import UserNotifications
 ///   simply don't have one until next ISO week starts.
 ///
 /// The manager is the source of truth for the **displayed streak** — i.e. the
-/// streak the user sees, with freezes applied. Direct calls to
-/// `PracticeSession.calculateStreak` still work for raw history and don't
-/// need to change.
+/// streak the user sees, with freezes applied. Every user-facing streak
+/// number (Home status line, Profile stat, streak milestones, achievement
+/// progress, retention challenge labels, personal bests) MUST read
+/// `currentStreak` here. `PracticeSession.calculateStreak` is the raw
+/// history calc and is reserved for model inputs only (baseline pressure
+/// classification, NextAction heuristics) — never for a number the user
+/// reads, or the streak looks like a bug the first time a freeze fires.
 @MainActor
 @available(iOS 17.0, macOS 12.0, *)
 final class StreakFreezeManager: ObservableObject {

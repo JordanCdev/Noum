@@ -70,6 +70,7 @@ struct SummaryView: View {
     @StateObject private var postRepCoachNoteStore = PostRepCoachNoteStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    @StateObject private var streakFreeze = StreakFreezeManager.shared
     @State private var showPaywall = false
     @State private var displayedXP: Int = 0
     @State private var progress: Double = 0
@@ -161,10 +162,6 @@ struct SummaryView: View {
 
     private var isIMSummary: Bool { currentMode == .imConversation }
     private var isSuddenDeathSummary: Bool { currentMode == .suddenDeath }
-
-    private var currentStreak: Int {
-        PracticeSession.calculateStreak(from: sessionStore.sessions)
-    }
 
     private var scoreValue: Int {
         if let lockedScore { return lockedScore }
@@ -460,7 +457,8 @@ struct SummaryView: View {
     private var retentionSnapshot: RetentionLoopSnapshot {
         RetentionLoopEngine.snapshot(
             sessions: sessionStore.sessions,
-            profile: coachingProfileStore.profile
+            profile: coachingProfileStore.profile,
+            displayedStreak: streakFreeze.currentStreak
         )
     }
 
@@ -503,18 +501,12 @@ struct SummaryView: View {
         return Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: last), to: Calendar.current.startOfDay(for: Date())).day ?? 0
     }
 
+    /// Feeds the recommendation engine's input. Reads the freeze-aware
+    /// displayed streak (StreakFreezeManager is the single displayed-streak
+    /// owner) so any coach copy that references a streak can never claim a
+    /// number the user doesn't see on Home/Profile.
     private var sessionStreak: Int {
-        let calendar = Calendar.current
-        let uniqueDays = Set(sessionStore.sessions.map { calendar.startOfDay(for: $0.date) })
-        guard !uniqueDays.isEmpty else { return 0 }
-        var streak = 0
-        var cursor = calendar.startOfDay(for: Date())
-        while uniqueDays.contains(cursor) {
-            streak += 1
-            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
-            cursor = previousDay
-        }
-        return streak
+        streakFreeze.currentStreak
     }
 
     private var currentIdentity: SpeakingIdentitySnapshot {

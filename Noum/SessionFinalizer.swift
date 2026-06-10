@@ -69,13 +69,24 @@ enum SessionFinalizer {
         let notificationManager = NotificationManager.shared
 
         let previousXP = profile.xp
-        let currentStreak = PracticeSession.calculateStreak(from: sessionStore.sessions)
+
+        // Streak ownership: anything the USER reads (streak milestones,
+        // achievement progress) uses the freeze-aware displayed streak from
+        // StreakFreezeManager — the single displayed-streak owner — so the
+        // celebration can never name a number Home/Profile don't show.
+        // Recompute explicitly: the session was just appended and the
+        // manager's Combine sink fires on a later runloop turn.
+        StreakFreezeManager.shared.recompute()
+        let displayedStreak = StreakFreezeManager.shared.currentStreak
+        // Raw history streak — kept ONLY as a model input (NextAction
+        // heuristics), mirroring the baseline-pressure call sites.
+        let rawHistoryStreak = PracticeSession.calculateStreak(from: sessionStore.sessions)
 
         // Capture achievement state BEFORE applying session
         let achievementsBefore: [String: (current: Int, target: Int)] = {
             var map: [String: (Int, Int)] = [:]
             for tier in AchievementStore.allTiers {
-                map[tier.id] = tier.evaluate(recentSessions, currentStreak)
+                map[tier.id] = tier.evaluate(recentSessions, displayedStreak)
             }
             return map
         }()
@@ -95,14 +106,14 @@ enum SessionFinalizer {
         // Re-evaluate achievements after XP (session already recorded by PracticeSessionFinalizer)
         let newlyUnlockedIDs = AchievementStore.shared.evaluate(
             sessions: sessionStore.sessions,
-            streak: currentStreak
+            streak: displayedStreak
         )
 
         // Compute achievement progress deltas
         var deltas: [AchievementProgressDelta] = []
         for tier in AchievementStore.allTiers {
             let before = achievementsBefore[tier.id] ?? (0, 1)
-            let (current, target) = tier.evaluate(sessionStore.sessions, currentStreak)
+            let (current, target) = tier.evaluate(sessionStore.sessions, displayedStreak)
             let prevProgress = target > 0 ? min(1.0, Double(before.0) / Double(target)) : 0
             let newProgress = target > 0 ? min(1.0, Double(current) / Double(target)) : 0
             let delta = newProgress - prevProgress
@@ -260,7 +271,7 @@ enum SessionFinalizer {
             levelAfter: levelAfter,
             scoreValue: scoreValue,
             currentMode: currentMode,
-            currentStreak: currentStreak,
+            currentStreak: displayedStreak,
             sessions: sessionStore.sessions,
             skillTrends: skillTrends
         )
@@ -301,7 +312,7 @@ enum SessionFinalizer {
                 trends: skillTrends,
                 drillHistory: DrillHistoryStore.shared.entries,
                 sessionCount: sessionStore.sessions.count,
-                streakDays: currentStreak,
+                streakDays: rawHistoryStreak,
                 styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title,
                 recommendationOutcomes: RecommendationLearningStore.shared.outcomes
             )

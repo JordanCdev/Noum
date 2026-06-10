@@ -419,7 +419,11 @@ final class NotificationManager: ObservableObject {
 
         let content = UNMutableNotificationContent()
         content.sound = .default
-        let retentionSnapshot = RetentionLoopEngine.snapshot(sessions: sessions, profile: profile)
+        let retentionSnapshot = RetentionLoopEngine.snapshot(
+            sessions: sessions,
+            profile: profile,
+            displayedStreak: StreakFreezeManager.shared.currentStreak
+        )
         content.title = reminderTitle(
             profile: profile,
             relationship: relationship,

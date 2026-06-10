@@ -343,6 +343,52 @@ struct ProfileTransferStatusContent: Equatable {
     }
 }
 
+/// Earned-motion policy for the Profile rating number (Iteration 7).
+///
+/// The numeric roll on the Speaking Rating hero animates ONLY when the
+/// rating ticks UP to a new weekly best — the one earned moment on this
+/// surface. Everything else updates silently:
+///   • first paint (`previous == nil`) — no motion on appear
+///   • cold start (no rated evidence) — the seeded 400 never animates
+///   • drops — never-punish-shame: the snapshot updates with no motion
+///   • partial recoveries below the week peak — quiet until the best is back
+///
+/// `RatingEngine.processRatedSession` keeps `weekPeakRating` at the max of
+/// the current ISO week, so "new weekly best" reduces to the overall rating
+/// having just risen to meet (or exceed) that peak inside the current week.
+enum ProfileRatingTickMotion {
+    static func shouldAnimateTick(previous: Int?, rating: SpeakingRating) -> Bool {
+        guard let previous else { return false }
+        guard rating.hasRatedEvidence else { return false }
+        guard rating.overall > previous else { return false }
+        guard rating.isWeekPeakCurrent else { return false }
+        return rating.overall >= rating.weekPeakRating
+    }
+}
+
+/// One quiet "recently resolved" line for the Speaking Rating card — the
+/// believable-progress payoff when a tracked weakness flips to `.resolved`
+/// ("was a problem, no longer is") in the skill trends.
+///
+/// Honesty contract:
+///   • Only `.resolved` directions render. Improving/declining/stable
+///     produce nothing here — a slipping skill is never called out on the
+///     progress hero (never punish-shame; drops live in the case file).
+///   • Requires better-than-`.low` trend confidence, so a two-rep blip
+///     cannot claim a weakness was conquered (weak evidence → no claim).
+///   • Returns nil when nothing qualifies — the row disappears entirely,
+///     never an empty shell.
+enum ProfileResolvedWeaknessLine {
+    static func make(trends: [SkillTrend]) -> String? {
+        let resolved = trends.filter {
+            $0.direction == .resolved && $0.confidence != .low
+        }
+        guard !resolved.isEmpty else { return nil }
+        let names = resolved.prefix(2).map(\.skillArea.displayName)
+        return "Recently resolved: \(names.joined(separator: ", "))"
+    }
+}
+
 @available(iOS 17.0, *)
 struct ProfileView: View {
     @StateObject private var profile = ProfileManager.shared
@@ -354,6 +400,7 @@ struct ProfileView: View {
     @StateObject private var challenges = ChallengesManager.shared
     @StateObject private var ratingStore = RatingStore.shared
     @StateObject private var baselineStore = BaselineStore.shared
+    @StateObject private var streakFreeze = StreakFreezeManager.shared
     @StateObject private var trendStore = SkillTrendStore.shared
     @StateObject private var clutchWordStore = ClutchWordStore.shared
     @StateObject private var feedbackManager = FeedbackRequestManager.shared
@@ -370,6 +417,14 @@ struct ProfileView: View {
     @State private var showAchievementsTree = false
     @State private var showPaywall = false
     @State private var showProfileEvidence = false
+    /// Last rating value this view has rendered — feeds the earned-motion
+    /// policy so the numeric roll fires only on an upward tick to a new
+    /// weekly best (drops and first paint update silently).
+    @State private var lastSeenOverallRating: Int?
+    /// One-shot trigger for the resolved-weakness settle bounce. Toggled on
+    /// row appearance (skipped under Reduce Motion) so the checkmark gets a
+    /// single discrete bounce, never a repeating effect.
+    @State private var resolvedSettleTick = false
     @State private var showAddFriendManual = false
     @State private var selectedAsyncChallenge: AsyncChallenge?
     @State private var showChallengePickFriend = false
@@ -392,7 +447,8 @@ struct ProfileView: View {
     private var retentionSnapshot: RetentionLoopSnapshot {
         RetentionLoopEngine.snapshot(
             sessions: sessions,
-            profile: coachingProfileStore.profile
+            profile: coachingProfileStore.profile,
+            displayedStreak: streakFreeze.currentStreak
         )
     }
 
@@ -402,8 +458,11 @@ struct ProfileView: View {
 
     private var totalSessions: Int { sessions.count }
 
+    /// The displayed streak — always the freeze-aware number from
+    /// StreakFreezeManager (the single displayed-streak owner), so the
+    /// Profile stat can never disagree with Home's quiet streak line.
     private var currentStreak: Int {
-        PracticeSession.calculateStreak(from: sessions)
+        streakFreeze.currentStreak
     }
 
     /// True when there's at least one friend and none of them carry an
@@ -1115,6 +1174,13 @@ struct ProfileView: View {
     private var speakingRatingCard: some View {
         let rating = ratingStore.rating
         let baseline = baselineStore.baseline
+        // Earned motion only (Iteration 7): the numeric roll animates solely
+        // on an upward tick to a new weekly best. Drops, sideways churn and
+        // first paint snap silently — never punish-shame, never decorate.
+        let animateRatingTick = !reduceMotion && ProfileRatingTickMotion.shouldAnimateTick(
+            previous: lastSeenOverallRating,
+            rating: rating
+        )
 
         if rating.totalRatedSessions > 0 || baseline.overallConfidence >= .tentative {
             VStack(alignment: .leading, spacing: 16) {
@@ -1137,8 +1203,8 @@ struct ProfileView: View {
                             Text("\(rating.overall)")
                                 .font(Typography.figtreeNumeric(size: 44, relativeTo: .largeTitle))
                                 .foregroundStyle(AppColor.brandBlue)
-                                .contentTransition(reduceMotion ? .identity : .numericText())
-                                .animation(reduceMotion ? nil : .standardSpring, value: rating.overall)
+                                .contentTransition(animateRatingTick ? .numericText() : .identity)
+                                .animation(animateRatingTick ? .standardSpring : nil, value: rating.overall)
                             if rating.weeklyDelta != 0 {
                                 Text(rating.weeklyDelta > 0 ? "+\(rating.weeklyDelta) this week" : "\(rating.weeklyDelta) this week")
                                     .font(.caption.weight(.semibold))
@@ -1209,7 +1275,7 @@ struct ProfileView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.seal.fill")
                             .font(.caption2)
-                            .foregroundStyle(.green)
+                            .foregroundStyle(AppColor.positive)
                         Text("Strengths: \(baseline.topStrengths.joined(separator: ", "))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -1221,10 +1287,37 @@ struct ProfileView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.caption2)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(AppColor.caution)
                         Text("Working on: \(baseline.persistentBlockers.joined(separator: ", "))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    }
+                }
+
+                // Recently-resolved weakness — the earned "fill + settle"
+                // moment (Iteration 7). Renders only when a tracked skill
+                // flipped to `.resolved` with real confidence; the checkmark
+                // gets ONE discrete bounce (skipped under Reduce Motion).
+                // Slipping skills get no mirror-image row — drops stay in
+                // the case file, silently.
+                if let resolvedLine = ProfileResolvedWeaknessLine.make(
+                    trends: TrendAnalyzer.analyze(snapshots: trendStore.snapshots)
+                ) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.positive)
+                            .symbolEffect(.bounce, options: .nonRepeating, value: resolvedSettleTick)
+                        Text(resolvedLine)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(resolvedLine)
+                    .accessibilityIdentifier("profile.rating.resolvedWeakness")
+                    .onAppear {
+                        guard !reduceMotion else { return }
+                        resolvedSettleTick.toggle()
                     }
                 }
             }
@@ -1235,6 +1328,10 @@ struct ProfileView: View {
             // registers, one product.
             .background(speakingRatingHeroBackground)
             .shadow(color: AppColor.brandBlue.opacity(0.16), radius: 22, x: 0, y: 10)
+            .onAppear { lastSeenOverallRating = rating.overall }
+            .onChange(of: rating.overall) { _, newValue in
+                lastSeenOverallRating = newValue
+            }
         }
     }
 

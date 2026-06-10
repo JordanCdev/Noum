@@ -324,7 +324,7 @@ enum FrameworkDrill: String, Codable {
 
 struct BeatTheBrakeMetrics {
     let averageWPM: Double
-    let timeInZone: TimeInterval      // Seconds within 110-140 WPM
+    let timeInZone: TimeInterval      // Seconds within the shared ConversationalPaceBand zone
     let totalDuration: TimeInterval
     let zonePercentage: Double        // timeInZone / totalDuration
     let peakWPM: Double

@@ -209,8 +209,11 @@ struct LiveCoachCallView: View {
     // We add at most ONE supporting focus line — never the old four-field
     // "COACHING READ" meta-brief (headline / current work / target / next move),
     // which made the user read a clinical case sheet before saying a word and,
-    // on a cold start, surfaced an "I have nothing yet" version. When there is no
-    // earned focus, we show nothing and let "Tap Talk" carry the moment.
+    // on a cold start, surfaced an "I have nothing yet" version. Priority:
+    // an earned case-file focus first; else one DATA-GROUNDED line from the
+    // most recent timed rep's delivery facts ("Last rep: 142 WPM, 3 fillers —
+    // want to tighten that?"); else nothing — a true cold start shows no line
+    // and lets "Tap Talk" carry the moment. Never fabricated.
 
     @ViewBuilder
     private var coachingBriefCard: some View {
@@ -229,13 +232,39 @@ struct LiveCoachCallView: View {
         }
     }
 
-    /// The single focus line for the live-call landing, or `nil` on a cold start
-    /// (no earned case file → no focus to name, so the landing stays "Tap Talk").
+    /// The single focus line for the live-call landing: an earned case-file
+    /// focus when one exists, else one data-grounded line from the latest
+    /// timed rep, else `nil` on a true cold start (no reps → no focus to
+    /// name, so the landing stays "Tap Talk").
     private var coachingFocusLine: String? {
-        guard let caseFile = coachMemoryStore.currentMemory?.caseFile else { return nil }
-        return bounded(caseFile.hypothesis)
-            ?? caseFile.focus.map { "Today's lever: \($0.displayName.lowercased())." }
-            ?? bounded(caseFile.activeIntervention)
+        if let caseFile = coachMemoryStore.currentMemory?.caseFile,
+           let earned = bounded(caseFile.hypothesis)
+               ?? caseFile.focus.map({ "Today's lever: \($0.displayName.lowercased())." })
+               ?? bounded(caseFile.activeIntervention) {
+            return earned
+        }
+        return lastRepLandingLine
+    }
+
+    /// Data-grounded landing fallback: the most recent TIMED rep's delivery
+    /// facts (the same evidence source the chat's deterministic fallback
+    /// reads — see `CoachReplyPipeline`), composed by the pure
+    /// `CoachContextBuilder.liveCallLandingLine`. Nil when no timed rep with
+    /// a measurable pace exists, so rep-0 fabricates nothing. Plain read,
+    /// not observed — the landing renders before any exchange, and a rep
+    /// cannot complete mid-call.
+    private var lastRepLandingLine: String? {
+        guard let rep = PracticeSessionStore.shared.sessions.last(where: { $0.mode == .timed }) else {
+            return nil
+        }
+        let wpm = PracticeEvaluator.paceSnapshot(
+            forTranscript: rep.transcript,
+            duration: rep.duration
+        ).wordsPerMinute
+        return CoachContextBuilder.liveCallLandingLine(
+            wordsPerMinute: wpm,
+            fillerCount: rep.fillerWordCount
+        )
     }
 
     private func bounded(_ value: String?, maximumLength: Int = 96) -> String? {

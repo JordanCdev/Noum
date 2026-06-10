@@ -7,8 +7,8 @@ import SwiftUI
 
 /// Beat the Brake — a live WPM gauge drill.
 /// User speaks for 45s. A large arc gauge shows real-time WPM.
-/// The zone (110–140 WPM) is highlighted green. Outside = red/amber.
-/// Success: 60%+ time in the zone.
+/// The zone (the shared `ConversationalPaceBand`) is highlighted green.
+/// Outside = red/amber. Success: 60%+ time in the zone.
 struct BeatTheBrakeView: View {
     let drill: DrillRecommendationV2
     let prompt: String?
@@ -34,8 +34,11 @@ struct BeatTheBrakeView: View {
     @State private var recordingStartDate: Date?
 
     private let drillDuration: Int = 45
-    private let zoneMin: Double = 110
-    private let zoneMax: Double = 140
+    // The ONE conversational pace zone — shared with PaceTrainingEngine,
+    // DailyChallenge copy, and live path state. Never hardcode a second
+    // threshold here: three drills disagreeing on "in zone" reads as a bug.
+    private let zoneMin: Double = ConversationalPaceBand.minWPM
+    private let zoneMax: Double = ConversationalPaceBand.maxWPM
     private let gaugeMin: Double = 60
     private let gaugeMax: Double = 200
 
@@ -215,7 +218,7 @@ struct BeatTheBrakeView: View {
                     .stroke(.white.opacity(0.08), lineWidth: 14)
                     .frame(width: 200, height: 200)
 
-                // Zone segment (green arc for 110-140)
+                // Zone segment (green arc for the shared conversational band)
                 ArcShape(
                     startAngle: .degrees(angleForWPM(zoneMin)),
                     endAngle: .degrees(angleForWPM(zoneMax)),

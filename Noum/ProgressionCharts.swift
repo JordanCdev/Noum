@@ -21,6 +21,7 @@ struct ProgressionChartsCard: View {
 
     @State private var hasAppeared = false
     @State private var selectedSeries: ChartSeries = .score
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var dataPoints: [ChartPoint] {
         let calendar = Calendar.current
@@ -51,7 +52,12 @@ struct ProgressionChartsCard: View {
             .scaleEffect(hasAppeared ? 1 : 0.97)
             .opacity(hasAppeared ? 1 : 0)
             .onAppear {
-                withAnimation(.standardSpring.delay(0.05)) { hasAppeared = true }
+                // Respect Reduce Motion: appear instantly with no scale pop.
+                if reduceMotion {
+                    hasAppeared = true
+                } else {
+                    withAnimation(.standardSpring.delay(0.05)) { hasAppeared = true }
+                }
             }
         }
     }
@@ -89,8 +95,12 @@ struct ProgressionChartsCard: View {
             HStack(spacing: 6) {
                 ForEach(ChartSeries.allCases, id: \.self) { series in
                     Button {
-                        withAnimation(.snappySpring) {
+                        if reduceMotion {
                             selectedSeries = series
+                        } else {
+                            withAnimation(.snappySpring) {
+                                selectedSeries = series
+                            }
                         }
                         CoachHaptic.selectionTap()
                     } label: {

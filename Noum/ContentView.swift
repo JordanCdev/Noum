@@ -112,6 +112,21 @@ enum HomeAskNoumEvidenceCopy {
     }
 }
 
+/// Quiet streak status under the coach hero — owner decision (roadmap
+/// §12.1): the streak survives as a gentle, no-countdown marker, never a
+/// pressure anchor. Coach-voice fact only ("4 day streak"), no
+/// exclamation, no "don't lose it", no zero-state furniture.
+///
+/// Returns nil below two days: a single rep is not a streak, and the
+/// reset state renders nothing — drops update the home silently
+/// (never punish-shame).
+enum HomeStreakStatusCopy {
+    static func line(days: Int) -> String? {
+        guard days >= 2 else { return nil }
+        return "\(days) day streak"
+    }
+}
+
 struct HomeBottomShortcut: Identifiable, Equatable {
     enum Accent: String, Equatable {
         case practice
@@ -364,6 +379,18 @@ struct ContentView: View {
                                     scrollOffset: homeScrollOffset,
                                     showsAskNoumShortcut: gate.askNoumShortcut
                                 ).cardEntrance(0)
+                            }
+                            // Quiet streak status — the ONE status line the
+                            // populated home keeps (roadmap Iter 4). Gated on
+                            // a real >=2-day freeze-aware streak; the copy
+                            // helper returns nil below that floor so even the
+                            // developer show-all override can't render "0 day
+                            // streak" furniture. No countdown, no tap target,
+                            // no loss-aversion — a reset simply removes the
+                            // line silently.
+                            if gate.streakStatus,
+                               let streakLine = HomeStreakStatusCopy.line(days: streakFreeze.currentStreak) {
+                                streakStatusLine(streakLine).cardEntrance(1)
                             }
                             if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
                                 BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
@@ -718,8 +745,32 @@ struct ContentView: View {
             hasUnlockedPathNode: !pathProgress.completedNodes.isEmpty,
             hasCoachingProfile: coachingProfileStore.profile != nil,
             showAllOverride: showAllHomeCards,
-            overrideEligible: authManager.isDeveloper
+            overrideEligible: authManager.isDeveloper,
+            streakDays: streakFreeze.currentStreak
         )
+    }
+
+    /// Quiet status line — a coach-voice fact ("4 day streak") rendered in
+    /// the caption register with no countdown, no warning and no tap
+    /// target. Reads the freeze-aware `StreakFreezeManager` count — the
+    /// single displayed-streak owner — so this never disagrees with the
+    /// streak shown elsewhere. Drops update silently: the line disappears,
+    /// nothing shames.
+    private func streakStatusLine(_ line: String) -> some View {
+        HStack(spacing: Spacing.xxs) {
+            Image(systemName: "flame.fill")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(AppColor.caution)
+                .accessibilityHidden(true)
+            Text(line)
+                .font(Typography.captionSmall.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("\(line)."))
+        .accessibilityIdentifier("home.streakStatus")
     }
 
     // MARK: - Personal-best anchor (Figma "Premium Hero")
@@ -957,8 +1008,17 @@ struct ContentView: View {
         return "You're holding \(tier.title). +\(toGo) rating to \(nextTier.title)."
     }
 
+    // Shortcut dock — deliberately NOT a tab bar (roadmap Iter 4 "resolve
+    // the fake tab bar"). Every control is a push into the one
+    // NavigationStack, so there is no tab/selection state to represent.
+    // Resolution taken: stop styling the row as a single tab-bar slab.
+    // The four shortcuts render as discrete capsule buttons floating over
+    // the canvas — they read as buttons (and VoiceOver announces them as
+    // buttons, "Open Train"), not as tabs promising a persistent section
+    // indicator. The dock only exists on the home root; pushed screens
+    // cover it, which is honest for push navigation.
     private var bottomShortcutDock: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Spacing.xs) {
             ForEach(HomeBottomShortcut.all) { shortcut in
                 Button {
                     navigationPath.append(shortcut.destination)
@@ -970,45 +1030,15 @@ struct ContentView: View {
                 .accessibilityLabel(shortcut.accessibilityLabel)
             }
         }
-        .padding(8)
-        // Each control pushes into the existing navigation stack and carries no
-        // active-section state.
-        .background(
-            ZStack {
-                LinearGradient(
-                    colors: [
-                        AppColor.pro.opacity(0.16),
-                        AppColor.proLight.opacity(0.06),
-                        Color.clear
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                Rectangle().fill(.regularMaterial)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.70), AppColor.pro.opacity(0.18)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 1
-                )
-        )
-        .shadow(color: AppColor.pro.opacity(0.12), radius: 16, x: 0, y: 8)
-        .padding(.horizontal, 14)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
+        .padding(.horizontal, Spacing.md)
+        .padding(.top, Spacing.xs)
+        .padding(.bottom, Spacing.sm)
         .accessibilityElement(children: .contain)
     }
 
     private func shortcutItem(_ shortcut: HomeBottomShortcut) -> some View {
         let accent = shortcutAccent(shortcut.accent)
-        return HStack(spacing: 6) {
+        return HStack(spacing: Spacing.xxs) {
             Image(systemName: shortcut.systemImage)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(accent)
@@ -1020,24 +1050,36 @@ struct ContentView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
         }
-        .frame(maxWidth: .infinity, minHeight: 40)
-        .padding(.horizontal, 7)
+        // 44pt min height — HIG tap target (the old 40pt was sub-HIG).
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .padding(.horizontal, Spacing.xs)
+        // Each chip carries its own frosted backing so scrolled content
+        // never bleeds through the button itself; the gaps between chips
+        // stay transparent, which is what visually breaks the "one solid
+        // tab bar" read.
         .background(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .fill(accent.opacity(0.08))
+            ZStack {
+                Capsule(style: .continuous).fill(.regularMaterial)
+                Capsule(style: .continuous).fill(accent.opacity(0.08))
+            }
         )
         .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .stroke(accent.opacity(0.12), lineWidth: 1)
+            Capsule(style: .continuous)
+                .stroke(accent.opacity(0.16), lineWidth: 1)
         )
+        .shadow(color: accent.opacity(0.10), radius: 10, x: 0, y: 5)
     }
 
+    /// Accent tokens for the dock — design-system colors only, matched to
+    /// the hues the dock has always carried (blue/orange/purple/green).
+    /// `caution` here is used purely as the warm amber accent token, not
+    /// as a semantic warning.
     private func shortcutAccent(_ accent: HomeBottomShortcut.Accent) -> Color {
         switch accent {
-        case .practice: return .blue
-        case .review: return .orange
-        case .profile: return .purple
-        case .settings: return .green
+        case .practice: return AppColor.brandBlue
+        case .review: return AppColor.caution
+        case .profile: return AppColor.pro
+        case .settings: return AppColor.positive
         }
     }
 

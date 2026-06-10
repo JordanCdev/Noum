@@ -11,6 +11,11 @@ struct HomeCardGate: Equatable {
     var dailyChallenge: Bool
     var voiceMetrics: Bool
     var aiWeeklyInsight: Bool
+    /// Quiet streak status line under the coach hero. Owner decision
+    /// (roadmap §12.1): the streak is a gentle, no-countdown marker —
+    /// never a pressure anchor. Defaults false so older call sites that
+    /// don't pass `streakDays` fail quiet (hidden), never fabricated.
+    var streakStatus: Bool = false
 
     static let allVisible = HomeCardGate(
         coachCard: true,
@@ -19,7 +24,8 @@ struct HomeCardGate: Equatable {
         askNoumShortcut: true,
         dailyChallenge: false,
         voiceMetrics: false,
-        aiWeeklyInsight: true
+        aiWeeklyInsight: true,
+        streakStatus: true
     )
 }
 
@@ -49,13 +55,20 @@ enum HomeSignalGate {
     ///     optional cards. Retired Home surfaces remain off even when true.
     ///   - overrideEligible: True only for developer accounts. A stale
     ///     stored override from a normal account must not bypass the gate.
+    ///   - streakDays: freeze-aware displayed streak from
+    ///     `StreakFreezeManager.currentStreak` (the single displayed-streak
+    ///     owner). The quiet status line needs >= 2 days — a single rep is
+    ///     not a "streak", and rendering "1 day streak" on rep 1 would be
+    ///     low-confidence progress furniture. Defaults 0 (hidden) so older
+    ///     call sites stay honest by construction.
     static func evaluate(
         sessionCount: Int,
         sessionsThisWeekCount: Int,
         hasUnlockedPathNode: Bool,
         hasCoachingProfile: Bool,
         showAllOverride: Bool,
-        overrideEligible: Bool
+        overrideEligible: Bool,
+        streakDays: Int = 0
     ) -> HomeCardGate {
         if showAllOverride && overrideEligible { return .allVisible }
         let hasCompletedRep = sessionCount >= 1
@@ -66,7 +79,8 @@ enum HomeSignalGate {
             askNoumShortcut: hasCompletedRep,
             dailyChallenge: false,
             voiceMetrics: false,
-            aiWeeklyInsight: sessionsThisWeekCount >= 3
+            aiWeeklyInsight: sessionsThisWeekCount >= 3,
+            streakStatus: hasCompletedRep && streakDays >= 2
         )
     }
 

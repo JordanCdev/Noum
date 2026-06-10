@@ -7057,6 +7057,11 @@ extension PracticeSession {
     /// today and walking backward. A **one-day grace period** allows a single
     /// missed day inside the streak without breaking it (two consecutive missed
     /// days end the streak).
+    ///
+    /// MODEL INPUT ONLY. This raw calc can disagree with the freeze-aware
+    /// streak the user sees — any displayed/celebrated streak number must
+    /// read `StreakFreezeManager.shared.currentStreak` (the single
+    /// displayed-streak owner) instead.
     static func calculateStreak(from sessions: [PracticeSession]) -> Int {
         let calendar = Calendar.current
         let uniqueDays = Set(sessions.map { calendar.startOfDay(for: $0.date) })
@@ -8025,8 +8030,15 @@ enum PracticeSessionFinalizer {
         // Record baseline data
         BaselineStore.shared.recordSession(finalized, pressure: draft.pressureLevel)
 
-        // Check personal bests (for all sessions)
-        let streak = PracticeSession.calculateStreak(from: store.sessions)
+        // Check personal bests (for all sessions). Personal bests and
+        // achievements are user-visible ledgers, so they read the
+        // freeze-aware displayed streak from StreakFreezeManager — the
+        // single displayed-streak owner — never the raw history calc.
+        // Recompute explicitly: the session was appended above and the
+        // manager's Combine sink fires on a later runloop turn, so reading
+        // without recomputing would hand these checks the pre-rep streak.
+        StreakFreezeManager.shared.recompute()
+        let streak = StreakFreezeManager.shared.currentStreak
         RatingStore.shared.checkPersonalBests(session: finalized, currentStreak: streak)
 
         // Update speaking rating (only for rated/pressure sessions)

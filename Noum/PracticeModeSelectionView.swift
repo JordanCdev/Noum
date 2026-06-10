@@ -92,6 +92,33 @@ struct PracticeModeAvailability: Equatable {
     }
 }
 
+/// The quiet goal-grounding line under the Coach-Pick hero — ties the ONE
+/// prescribed rep back to the user's stated goal using the measured
+/// `distanceFromGoal` (M5) read, so the prescription feels like a coach
+/// working a plan rather than a stateless default.
+///
+/// Honesty contract:
+/// - No profile → no line (nothing to ground against).
+/// - Goal-refresh cadence due (`GoalRefreshManager`, 2-week check-in) → no
+///   line. We never claim distance against a goal the user hasn't
+///   reconfirmed; the refresh sheet owns that conversation.
+/// - Insufficient baseline evidence → no line (`measuredDistanceFromGoal`
+///   returns nil rather than fabricating the 0.5 midpoint read).
+/// The label vocabulary ("On track" … "Early days") is forward-only —
+/// distance never renders as a countdown or a deficit.
+struct PracticeModeGoalGrounding {
+    static func line(
+        profile: CoachingProfile?,
+        baseline: CommunicationBaseline,
+        goalRefreshDue: Bool
+    ) -> String? {
+        guard let profile else { return nil }
+        guard !goalRefreshDue else { return nil }
+        guard baseline.measuredDistanceFromGoal(profile.primaryGoal) != nil else { return nil }
+        return "Goal: \(profile.primaryGoal.title) \u{00B7} \(baseline.goalDistanceLabel(profile.primaryGoal))"
+    }
+}
+
 #if canImport(SwiftUI)
 @available(iOS 17.0, macOS 12.0, *)
 struct PracticeModeSelectionView: View {
@@ -104,6 +131,9 @@ struct PracticeModeSelectionView: View {
     @StateObject private var masteryStore = ModeMasteryStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    @StateObject private var streakFreeze = StreakFreezeManager.shared
+    @StateObject private var baselineStore = BaselineStore.shared
+    @StateObject private var goalRefresh = GoalRefreshManager.shared
     @State private var cachedRecommendedMode: PracticeMode?
     @State private var cachedRecommendedFocus: String?
     @State private var cachedRecommendedTarget: String?
@@ -331,6 +361,8 @@ struct PracticeModeSelectionView: View {
 
             recommendedSuccessMarker(tint: option.tint)
 
+            goalGroundingRow
+
             PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: option.title), tint: option.tint) {
                 selectedMode = option.mode
                 crutchSelected = false
@@ -392,6 +424,36 @@ struct PracticeModeSelectionView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(line)
             }
+        }
+    }
+
+    /// One quiet, non-interactive line tying the prescription to the user's
+    /// stated goal. Gated by `PracticeModeGoalGrounding` (self-suppresses on
+    /// no profile, thin baseline evidence, or a due goal check-in), so a
+    /// cold-start user never sees fabricated goal progress.
+    @ViewBuilder
+    private var goalGroundingRow: some View {
+        if let line = PracticeModeGoalGrounding.line(
+            profile: coachingProfileStore.profile,
+            baseline: baselineStore.baseline,
+            goalRefreshDue: goalRefresh.shouldPresent
+        ) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "flag")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+
+                Text(line)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, Spacing.xs)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(line)
+            .accessibilityIdentifier("practiceModes.recommendedHero.goalGrounding")
         }
     }
 
@@ -1226,19 +1288,12 @@ struct PracticeModeSelectionView: View {
 
     // MARK: - Recent-session signals (feed RecommendationBiasEngine)
 
+    /// Feeds the recommendation engine's input. Reads the freeze-aware
+    /// displayed streak (StreakFreezeManager is the single displayed-streak
+    /// owner) so prescription copy can never reference a streak the user
+    /// doesn't see on Home/Profile.
     private var sessionStreak: Int {
-        let calendar = Calendar.current
-        let uniqueDays = Set(sessionStore.sessions.map { calendar.startOfDay(for: $0.date) })
-        guard !uniqueDays.isEmpty else { return 0 }
-
-        var streak = 0
-        var cursor = calendar.startOfDay(for: Date())
-        while uniqueDays.contains(cursor) {
-            streak += 1
-            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
-            cursor = previousDay
-        }
-        return streak
+        streakFreeze.currentStreak
     }
 
     private var daysSinceLastSession: Int {

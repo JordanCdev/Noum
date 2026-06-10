@@ -2518,6 +2518,89 @@ enum CoachContextBuilder {
         return true
     }
 
+    // MARK: - Continuation surface arbiter (one per turn)
+    //
+    // The chat accumulated four post-reply surfaces across rounds 26-30 (goal
+    // proposal, hypothesis ack, revised-read verdict, next-move panel), each
+    // with its own eligibility predicate but no cross-surface arbiter — so a
+    // goal-change turn could stack the commit card AND a "Next move" panel,
+    // two competing calls-to-action under one reply. Iteration 6 contract:
+    // every substantive coach turn ends in exactly ONE continuation surface.
+    //
+    // Priority: a pending DECISION is the turn's continuation — the user owes
+    // the thread a verdict (or a profile commit) before the coach prescribes
+    // the next rep, exactly as a human coach finishes "does that read land?"
+    // before assigning homework. The goal proposal outranks the verdict rows
+    // because it is the ONLY commit path for a voice change (the model never
+    // writes the profile — prompt rule 16); hiding it would dead-end the
+    // "tap to confirm" cue the coach just gave. The next-move panel comes
+    // last and already collapses drill + follow-up chips into one primary
+    // action (launchable drill wins; chips fold behind the overflow menu).
+
+    /// The single continuation surface the chat may render under the latest
+    /// coach reply. See the arbiter note above for the priority rationale.
+    enum ChatContinuationSurface: Equatable {
+        /// In-chat goal set/change confirmation card — the only commit path
+        /// for a voice change, so it always wins while an intent is pending.
+        case goalProposal
+        /// Case-review verdict chips on the working hypothesis (round 26).
+        case hypothesisAcknowledgement
+        /// Rebuilt-read verdict chips after user pushback (round 30).
+        case revisedReadFollowUp
+        /// "Next move" panel: launchable drill first, else one follow-up
+        /// chip as the primary with the rest behind the overflow menu.
+        case nextMove
+    }
+
+    /// Resolve which ONE continuation surface this turn earns. Pure so the
+    /// no-stacking contract is testable without standing up the view: the
+    /// caller passes each surface's own eligibility composite and renders
+    /// only the returned case. Nil → no continuation surface at all (e.g.
+    /// a greeting turn whose reply earned no follow-up).
+    static func continuationSurface(
+        goalProposalEligible: Bool,
+        hypothesisAckEligible: Bool,
+        revisedReadFollowUpEligible: Bool,
+        nextMoveAvailable: Bool
+    ) -> ChatContinuationSurface? {
+        if goalProposalEligible { return .goalProposal }
+        if hypothesisAckEligible { return .hypothesisAcknowledgement }
+        if revisedReadFollowUpEligible { return .revisedReadFollowUp }
+        if nextMoveAvailable { return .nextMove }
+        return nil
+    }
+
+    // MARK: - Live-call landing line (data-grounded)
+
+    /// One data-grounded landing line for the live call when no case-file
+    /// focus has been earned yet: the most recent timed rep's delivery facts
+    /// (pace + filler count), stated plainly, with a forward invitation —
+    /// "Last rep: 142 WPM, 3 fillers — want to tighten that?". Returns nil
+    /// when there is no measured pace (no rep / empty transcript) so a true
+    /// cold start never fabricates a read and the landing stays "Tap Talk
+    /// to begin".
+    ///
+    /// Delivery FACTS only — never a substance or quality verdict. One rep is
+    /// weak evidence, and weak evidence gets softer language: the line names
+    /// what was measured and invites, it does not judge. The filler-count
+    /// threshold (4) matches the deterministic chat fallback's
+    /// (`AICoachChatService.bodySentence`) so every surface reads the same
+    /// rep the same way.
+    static func liveCallLandingLine(wordsPerMinute: Int, fillerCount: Int) -> String? {
+        guard wordsPerMinute > 0 else { return nil }
+        let fillers: String
+        switch fillerCount {
+        case 0: fillers = "no fillers"
+        case 1: fillers = "1 filler"
+        default: fillers = "\(fillerCount) fillers"
+        }
+        // Forward-only invite: name the most useful thread, never a verdict.
+        let invite = fillerCount >= 4
+            ? "want to tighten that?"
+            : "want to pick it up from there?"
+        return "Last rep: \(wordsPerMinute) WPM, \(fillers) — \(invite)"
+    }
+
     /// The action a goal-proposal chip commits when tapped. Drives the view's
     /// tap handler (`recordGoalSet` / `recordGoalChange`) and the voice-shaped
     /// continuation dispatched after the durable write.

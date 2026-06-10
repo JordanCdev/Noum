@@ -7642,6 +7642,124 @@ struct ProfileCollapseContractTests {
     }
 }
 
+// MARK: - Profile earned-motion policy (Iteration 7)
+//
+// Locks the asymmetric-motion contract on the believable-progress hero:
+// the rating numeric roll animates ONLY on an upward tick to a new weekly
+// best, and the "Recently resolved" row renders ONLY for a `.resolved`
+// skill trend with real confidence. Everything else — first paint, cold
+// start, drops, partial recoveries, slipping skills — stays silent
+// (never punish-shame: regressions update the snapshot with no motion).
+struct ProfileEarnedMotionTests {
+
+    private func rating(
+        overall: Int,
+        weekPeak: Int,
+        totalRated: Int = 5
+    ) -> SpeakingRating {
+        // Default init stamps weekPeakISOWeek/Year with the current ISO
+        // week, so `isWeekPeakCurrent` is true — matching a live account
+        // that just finished a rated rep this week.
+        SpeakingRating(
+            overall: overall,
+            peakRating: max(overall, weekPeak),
+            ratingHistory: [],
+            personalBests: [],
+            totalRatedSessions: totalRated,
+            weekPeakRating: weekPeak
+        )
+    }
+
+    @Test func firstPaintNeverAnimates() {
+        let r = rating(overall: 520, weekPeak: 520)
+        #expect(ProfileRatingTickMotion.shouldAnimateTick(previous: nil, rating: r) == false)
+    }
+
+    @Test func coldStartSeededRatingNeverAnimates() {
+        // Rep-0 account: seeded 400, no rated evidence. Even a synthetic
+        // upward delta must not produce motion — the cold-start floor
+        // fabricates nothing.
+        let seeded = SpeakingRating.initial
+        #expect(seeded.hasRatedEvidence == false)
+        #expect(ProfileRatingTickMotion.shouldAnimateTick(previous: 390, rating: seeded) == false)
+    }
+
+    @Test func dropUpdatesSilently() {
+        let r = rating(overall: 505, weekPeak: 530)
+        #expect(ProfileRatingTickMotion.shouldAnimateTick(previous: 530, rating: r) == false)
+    }
+
+    @Test func upwardTickBelowWeeklyBestStaysQuiet() {
+        // Recovered part of an earlier dip this week — quiet until the
+        // weekly best is actually back.
+        let r = rating(overall: 520, weekPeak: 540)
+        #expect(ProfileRatingTickMotion.shouldAnimateTick(previous: 505, rating: r) == false)
+    }
+
+    @Test func newWeeklyBestAnimates() {
+        let r = rating(overall: 545, weekPeak: 545)
+        #expect(ProfileRatingTickMotion.shouldAnimateTick(previous: 530, rating: r) == true)
+    }
+
+    private func trend(
+        _ area: SkillArea,
+        direction: TrendDirection,
+        confidence: TrendConfidence
+    ) -> SkillTrend {
+        SkillTrend(
+            skillArea: area,
+            direction: direction,
+            confidence: confidence,
+            windowSize: 6,
+            currentLevel: .solid
+        )
+    }
+
+    @Test func resolvedLineRendersOnlyForResolvedDirections() {
+        let trends = [
+            trend(.fillerReduction, direction: .improving, confidence: .high),
+            trend(.paceControl, direction: .declining, confidence: .high),
+            trend(.structure, direction: .stable, confidence: .high),
+            trend(.openingStrength, direction: .newIssue, confidence: .high)
+        ]
+        #expect(ProfileResolvedWeaknessLine.make(trends: trends) == nil)
+    }
+
+    @Test func resolvedLineRequiresRealConfidence() {
+        // A two-rep blip (.low confidence) cannot claim a weakness was
+        // conquered — weak evidence produces no claim.
+        let thin = [trend(.fillerReduction, direction: .resolved, confidence: .low)]
+        #expect(ProfileResolvedWeaknessLine.make(trends: thin) == nil)
+    }
+
+    @Test func resolvedLineNamesTheResolvedSkill() {
+        let trends = [
+            trend(.paceControl, direction: .improving, confidence: .high),
+            trend(.fillerReduction, direction: .resolved, confidence: .medium)
+        ]
+        let line = ProfileResolvedWeaknessLine.make(trends: trends)
+        #expect(line == "Recently resolved: Filler Words")
+    }
+
+    @Test func resolvedLineCapsAtTwoSkillsAndStaysCalm() {
+        let trends = [
+            trend(.fillerReduction, direction: .resolved, confidence: .high),
+            trend(.paceControl, direction: .resolved, confidence: .medium),
+            trend(.structure, direction: .resolved, confidence: .high)
+        ]
+        guard let line = ProfileResolvedWeaknessLine.make(trends: trends) else {
+            Issue.record("Expected a resolved line for multiple resolved trends")
+            return
+        }
+        #expect(line == "Recently resolved: Filler Words, Pace")
+        #expect(!line.contains("!"))
+    }
+
+    @Test func resolvedLineSilentOnEmptyTrends() {
+        #expect(ProfileResolvedWeaknessLine.make(trends: []) == nil)
+    }
+}
+
 struct RevampPathLivePresentationTests {
 
     @Test func pathProgressComesFromNodeLedgerNotCalendarWindow() {
@@ -8421,6 +8539,13 @@ struct CoachContextBuilderTests {
         #expect(prompt.contains("not visible section labels"))
         #expect(prompt.contains("VERIFIED PROOFS"))
         #expect(prompt.contains("If you cannot verify the quote"))
+        // The shape is for SUBSTANTIVE turns only — greetings / off-topic /
+        // list requests / preference turns must never be forced into the
+        // read -> evidence -> next-move template (it reads robotic there).
+        // Pin the carve-out so a prompt edit can't silently drop it.
+        #expect(prompt.contains(
+            "Greetings, off-topic noise, explicit list/plan requests, and pure preference turns may break the shape"
+        ))
     }
 
     @Test func systemPromptCanDisableStructuredReplyShape() {
@@ -10983,6 +11108,123 @@ struct HomeSignalGateTests {
             overrideEligible: false
         )
         #expect(!coldWithGoal.journey, "Path must stay off the first screen until the user has one real rep.")
+    }
+}
+
+/// Quiet streak status (roadmap Iter 4, owner decision §12.1): the streak
+/// survives on Home only as a gentle, no-countdown marker. Pins the gate
+/// floor (>= 2 freeze-aware days AND >= 1 completed rep), the
+/// default-parameter fail-quiet behavior, and the copy contract — a
+/// coach-voice fact with no loss-aversion framing, nil below the floor so
+/// no surface (including the developer show-all override) can render
+/// zero-state streak furniture.
+struct HomeStreakStatusGateTests {
+
+    @Test func coldStartHidesStreakStatus() {
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: false,
+            overrideEligible: false,
+            streakDays: 0
+        )
+        #expect(!gate.streakStatus)
+    }
+
+    @Test func singleDayIsNotAStreak() {
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 1,
+            sessionsThisWeekCount: 1,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: false,
+            overrideEligible: false,
+            streakDays: 1
+        )
+        #expect(!gate.streakStatus)
+    }
+
+    @Test func twoRealDaysShowTheQuietLine() {
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 2,
+            sessionsThisWeekCount: 2,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: false,
+            overrideEligible: false,
+            streakDays: 2
+        )
+        #expect(gate.streakStatus)
+    }
+
+    @Test func streakWithoutACompletedRepStaysHidden() {
+        // Defensive: a streak count with zero recorded sessions (account
+        // migration / store divergence edge) must not render progress
+        // furniture on a home that otherwise reads as cold-start.
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: false,
+            overrideEligible: false,
+            streakDays: 5
+        )
+        #expect(!gate.streakStatus)
+    }
+
+    @Test func omittedStreakDaysFailQuiet() {
+        // Call sites that don't pass streakDays must hide the line,
+        // never invent one — even with rich signal everywhere else.
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 50,
+            sessionsThisWeekCount: 5,
+            hasUnlockedPathNode: true,
+            hasCoachingProfile: true,
+            showAllOverride: false,
+            overrideEligible: false
+        )
+        #expect(!gate.streakStatus)
+    }
+
+    @Test func developerOverrideStillCannotFabricateCopy() {
+        // The show-all override flips the gate for inspection, but the
+        // copy helper is the honesty floor: below 2 days there is no line
+        // to render, so the override can't paint a fake streak.
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: true,
+            overrideEligible: true,
+            streakDays: 0
+        )
+        #expect(gate.streakStatus)
+        #expect(HomeStreakStatusCopy.line(days: 0) == nil)
+        #expect(HomeStreakStatusCopy.line(days: 1) == nil)
+    }
+
+    @Test func copyIsACoachVoiceFact() {
+        #expect(HomeStreakStatusCopy.line(days: 2) == "2 day streak")
+        #expect(HomeStreakStatusCopy.line(days: 14) == "14 day streak")
+    }
+
+    @Test func copyCarriesNoCountdownOrLossAversion() {
+        for days in 2...30 {
+            guard let line = HomeStreakStatusCopy.line(days: days)?.lowercased() else {
+                Issue.record("Expected a streak line at \(days) days")
+                continue
+            }
+            #expect(!line.contains("lose"))
+            #expect(!line.contains("risk"))
+            #expect(!line.contains("left"))
+            #expect(!line.contains("don't"))
+            #expect(!line.contains("hold"))
+            #expect(!line.contains("!"))
+        }
     }
 }
 
@@ -39988,6 +40230,126 @@ struct GoalProposalPredicateTests {
     }
 }
 
+// MARK: - ChatContinuationSurfaceTests
+//
+// Iteration 6 one-per-turn arbiter: every substantive coach turn ends in
+// exactly ONE continuation surface. The chat body switches on
+// `CoachContextBuilder.continuationSurface(...)`, so a pending decision (goal
+// commit / hypothesis verdict / revised-read verdict) and the "Next move"
+// panel can never stack under a single coach reply. Priority pinned here:
+// goal proposal (the only profile-commit path — the model never writes)
+// > hypothesis ack > revised-read verdict > next move > nothing.
+
+@Suite("ChatContinuationSurfaceTests")
+struct ChatContinuationSurfaceTests {
+
+    @Test func goalProposalOutranksEveryOtherSurface() {
+        // A goal-change turn whose reply also earned follow-up chips must
+        // show ONLY the commit card — the chips would compete with the
+        // "tap to confirm" cue the coach just gave.
+        let surface = CoachContextBuilder.continuationSurface(
+            goalProposalEligible: true,
+            hypothesisAckEligible: true,
+            revisedReadFollowUpEligible: true,
+            nextMoveAvailable: true
+        )
+        #expect(surface == .goalProposal)
+    }
+
+    @Test func hypothesisAckOutranksNextMove() {
+        // A case-review reply that also names a launchable mode: the user
+        // owes the thread a verdict before the coach assigns homework.
+        let surface = CoachContextBuilder.continuationSurface(
+            goalProposalEligible: false,
+            hypothesisAckEligible: true,
+            revisedReadFollowUpEligible: false,
+            nextMoveAvailable: true
+        )
+        #expect(surface == .hypothesisAcknowledgement)
+    }
+
+    @Test func revisedReadVerdictOutranksNextMove() {
+        let surface = CoachContextBuilder.continuationSurface(
+            goalProposalEligible: false,
+            hypothesisAckEligible: false,
+            revisedReadFollowUpEligible: true,
+            nextMoveAvailable: true
+        )
+        #expect(surface == .revisedReadFollowUp)
+    }
+
+    @Test func nextMoveRendersWhenNoDecisionIsPending() {
+        let surface = CoachContextBuilder.continuationSurface(
+            goalProposalEligible: false,
+            hypothesisAckEligible: false,
+            revisedReadFollowUpEligible: false,
+            nextMoveAvailable: true
+        )
+        #expect(surface == .nextMove)
+    }
+
+    @Test func nilWhenNoSurfaceEarned() {
+        // A greeting turn whose reply earned no continuation renders nothing
+        // — no surface is fabricated just to fill the space.
+        let surface = CoachContextBuilder.continuationSurface(
+            goalProposalEligible: false,
+            hypothesisAckEligible: false,
+            revisedReadFollowUpEligible: false,
+            nextMoveAvailable: false
+        )
+        #expect(surface == nil)
+    }
+}
+
+// MARK: - LiveCallLandingLineTests
+//
+// Iteration 6 live-call landing: when no case-file focus has been earned,
+// the landing may show ONE data-grounded line built from the latest timed
+// rep's delivery facts — and must show NOTHING on a true cold start (no
+// measured pace → nil; rep-0 fabricates no read). Facts only, forward-only
+// invites, brand voice (no exclamations).
+
+@Suite("LiveCallLandingLineTests")
+struct LiveCallLandingLineTests {
+
+    @Test func coldStartWithoutMeasuredPaceShowsNoLine() {
+        // Zero WPM = no rep / empty transcript. The landing must stay
+        // "Tap Talk to begin" — never a fabricated read.
+        #expect(CoachContextBuilder.liveCallLandingLine(wordsPerMinute: 0, fillerCount: 0) == nil)
+        #expect(CoachContextBuilder.liveCallLandingLine(wordsPerMinute: 0, fillerCount: 5) == nil)
+    }
+
+    @Test func fillerHeavyRepInvitesTightening() {
+        // >= 4 fillers (the same threshold the deterministic chat fallback
+        // uses) earns the "tighten" invite, citing both facts.
+        let line = CoachContextBuilder.liveCallLandingLine(wordsPerMinute: 142, fillerCount: 5)
+        #expect(line == "Last rep: 142 WPM, 5 fillers — want to tighten that?")
+    }
+
+    @Test func cleanRepStatesFactsWithForwardInvite() {
+        // A clean rep states the facts and invites forward — no verdict,
+        // no celebration fabricated from one rep.
+        let line = CoachContextBuilder.liveCallLandingLine(wordsPerMinute: 128, fillerCount: 0)
+        #expect(line == "Last rep: 128 WPM, no fillers — want to pick it up from there?")
+    }
+
+    @Test func singularFillerReadsNaturally() {
+        let line = CoachContextBuilder.liveCallLandingLine(wordsPerMinute: 115, fillerCount: 1)
+        #expect(line?.contains("1 filler —") == true)
+        #expect(line?.contains("fillers") == false)
+    }
+
+    @Test func landingLineHonorsBrandVoice() {
+        // No exclamation marks, ever (brand non-negotiable), and the line
+        // never judges — it cites and invites.
+        for fillers in [0, 1, 3, 4, 9] {
+            let line = CoachContextBuilder.liveCallLandingLine(wordsPerMinute: 150, fillerCount: fillers)
+            #expect(line?.contains("!") == false)
+            #expect(line?.hasPrefix("Last rep:") == true)
+        }
+    }
+}
+
 @Suite("GoalProposalChipCatalogTests")
 struct GoalProposalChipCatalogTests {
 
@@ -40265,5 +40627,126 @@ struct RewardOwnershipTests {
             score: 7,
             xpEarned: 35
         ) == false)
+    }
+}
+
+// MARK: - Practice picker goal grounding (Iteration 5)
+//
+// Locks the honesty contract on the Coach-Pick hero's quiet goal line:
+// it renders ONLY when there is a profile, the goal-refresh cadence is
+// not due (never claim distance against a goal the user hasn't
+// reconfirmed), and the baseline has measured evidence for the goal's
+// dimension (`measuredDistanceFromGoal` != nil — no fabricated 0.5
+// midpoint reads). The vocabulary is forward-only.
+struct PracticeModeGoalGroundingTests {
+
+    private static func stat(_ value: Double) -> BaselineStat {
+        BaselineStat(value: value, sampleCount: 10, confidence: .moderate, trend: .stable, percentile25: 0, percentile75: 0)
+    }
+
+    private static func measuredBaseline(fillerRate: Double) -> CommunicationBaseline {
+        var b = CommunicationBaseline.empty
+        b.fillerRate = stat(fillerRate)
+        return b
+    }
+
+    private static func fillerProfile() -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .interviews,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .persuasive,
+            speakingStyleGoal: .executive,
+            styleReference: "",
+            coachingBrief: "Sound sharper in interviews",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    @Test func suppressesWithoutProfile() {
+        let line = PracticeModeGoalGrounding.line(
+            profile: nil,
+            baseline: Self.measuredBaseline(fillerRate: 0),
+            goalRefreshDue: false
+        )
+        #expect(line == nil)
+    }
+
+    @Test func suppressesWhenGoalRefreshIsDue() {
+        // A due 2-week check-in means the stated goal may be stale —
+        // never ground the prescription in a goal awaiting reconfirmation.
+        let line = PracticeModeGoalGrounding.line(
+            profile: Self.fillerProfile(),
+            baseline: Self.measuredBaseline(fillerRate: 0),
+            goalRefreshDue: true
+        )
+        #expect(line == nil)
+    }
+
+    @Test func suppressesOnInsufficientBaselineEvidence() {
+        // CommunicationBaseline.empty has .insufficient confidence on all
+        // stats — measuredDistanceFromGoal returns nil, so no line. The
+        // unmeasured 0.5 fallback must never leak into the picker.
+        let line = PracticeModeGoalGrounding.line(
+            profile: Self.fillerProfile(),
+            baseline: CommunicationBaseline.empty,
+            goalRefreshDue: false
+        )
+        #expect(line == nil)
+    }
+
+    @Test func rendersGoalTitleAndForwardLabelWhenMeasured() {
+        let line = PracticeModeGoalGrounding.line(
+            profile: Self.fillerProfile(),
+            baseline: Self.measuredBaseline(fillerRate: 0),
+            goalRefreshDue: false
+        )
+        #expect(line == "Goal: Reduce filler words \u{00B7} On track")
+    }
+
+    @Test func farFromGoalStaysForwardOnly() {
+        // distance 1.0 renders the neutral "Early days" — never deficit,
+        // countdown, or shame framing.
+        let line = PracticeModeGoalGrounding.line(
+            profile: Self.fillerProfile(),
+            baseline: Self.measuredBaseline(fillerRate: 8),
+            goalRefreshDue: false
+        )
+        #expect(line == "Goal: Reduce filler words \u{00B7} Early days")
+    }
+}
+
+// MARK: - RetentionLoopEngine displayed-streak override (Iteration 5)
+//
+// Locks the streak consolidation: live call sites hand the freeze-aware
+// displayed streak from StreakFreezeManager into the retention snapshot,
+// so the "X/2 days" challenge label and streak achievements can never
+// disagree with the streak number Home/Profile show.
+struct RetentionLoopDisplayedStreakTests {
+
+    @Test func snapshotUsesProvidedDisplayedStreak() {
+        let snapshot = RetentionLoopEngine.snapshot(
+            sessions: [],
+            profile: nil,
+            displayedStreak: 1
+        )
+        #expect(snapshot.activeChallenge.title == "Build a rhythm")
+        #expect(snapshot.activeChallenge.progressLabel == "1/2 days")
+        // Quiet-streak owner decision: the rhythm challenge is an invite,
+        // never possession/loss framing.
+        let copy = "\(snapshot.activeChallenge.title) \(snapshot.activeChallenge.summary)".lowercased()
+        for banned in ["hold the", "keep the", "lose", "don't break"] {
+            #expect(!copy.contains(banned))
+        }
+    }
+
+    @Test func snapshotFallsBackToRawCalcWithoutOverride() {
+        let snapshot = RetentionLoopEngine.snapshot(
+            sessions: [],
+            profile: nil
+        )
+        #expect(snapshot.activeChallenge.progressLabel == "0/2 days")
     }
 }

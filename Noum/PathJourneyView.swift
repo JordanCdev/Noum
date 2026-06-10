@@ -42,7 +42,8 @@ struct PathJourneyView: View {
     private var retentionSnapshot: RetentionLoopSnapshot {
         RetentionLoopEngine.snapshot(
             sessions: sessionStore.sessions,
-            profile: coachingProfileStore.profile
+            profile: coachingProfileStore.profile,
+            displayedStreak: streakManager.currentStreak
         )
     }
 
@@ -528,10 +529,19 @@ struct RetentionLoopSnapshot {
 }
 
 enum RetentionLoopEngine {
-    static func snapshot(sessions: [PracticeSession], profile: CoachingProfile?) -> RetentionLoopSnapshot {
+    /// `displayedStreak` lets MainActor call sites hand in the freeze-aware
+    /// streak from `StreakFreezeManager` (the single displayed-streak owner)
+    /// so the "X/2 days" challenge label and streak achievements can never
+    /// disagree with the number Home shows. The raw fallback keeps the
+    /// engine pure for tests and non-live inputs.
+    static func snapshot(
+        sessions: [PracticeSession],
+        profile: CoachingProfile?,
+        displayedStreak: Int? = nil
+    ) -> RetentionLoopSnapshot {
         let sortedSessions = sessions.sorted { $0.date > $1.date }
         let recentSessions = Array(sortedSessions.prefix(6))
-        let currentStreak = currentStreak(from: sortedSessions)
+        let currentStreak = displayedStreak ?? currentStreak(from: sortedSessions)
 
         let activeChallenge = activeChallenge(
             sessions: recentSessions,
@@ -570,8 +580,8 @@ enum RetentionLoopEngine {
         if currentStreak < 2 {
             let progress = min(Double(currentStreak), 2) / 2
             return PracticeChallengeStatus(
-                title: "Hold the streak",
-                summary: "Come back tomorrow and keep the path open with one focused rep.",
+                title: "Build a rhythm",
+                summary: "One focused rep a day — today counts.",
                 progress: progress,
                 progressLabel: "\(currentStreak)/2 days"
             )

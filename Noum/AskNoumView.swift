@@ -282,21 +282,34 @@ struct AskNoumView: View {
                                     messageRow(message: message)
                                         .id(message.id)
                                 }
-                                hypothesisAckRow
-                                    .id("hypothesisAck")
-                                revisedReadFollowUpRow
-                                    .id("revisedReadFollowUp")
-                                goalProposalRow
-                                    .id("goalProposal")
-                                // One visible continuation surface. A
-                                // launchable drill wins as the primary action;
-                                // conversational follow-ups move into the
-                                // same calm panel instead of a row of chips.
-                                coachNextMovePanel(
-                                    destination: suggestedModeDestination,
-                                    chips: followUpChips ?? []
-                                )
-                                .id("coachNextMove")
+                                // ONE continuation surface per turn — the
+                                // arbiter (`CoachContextBuilder.continuationSurface`)
+                                // picks the single surface this reply earned:
+                                // a pending decision (goal commit / hypothesis
+                                // verdict / revised-read verdict) outranks the
+                                // "Next move" panel, which itself collapses
+                                // drill + follow-up chips into one primary
+                                // action. Never two calls-to-action stacked
+                                // under one coach reply.
+                                switch activeContinuationSurface {
+                                case .goalProposal:
+                                    goalProposalRow
+                                        .id("goalProposal")
+                                case .hypothesisAcknowledgement:
+                                    hypothesisAckRow
+                                        .id("hypothesisAck")
+                                case .revisedReadFollowUp:
+                                    revisedReadFollowUpRow
+                                        .id("revisedReadFollowUp")
+                                case .nextMove:
+                                    coachNextMovePanel(
+                                        destination: suggestedModeDestination,
+                                        chips: followUpChips ?? []
+                                    )
+                                    .id("coachNextMove")
+                                case nil:
+                                    EmptyView()
+                                }
                             }
                             // Bottom spacer keeps the last message off
                             // the input bar so it's never visually cramped.
@@ -871,6 +884,21 @@ struct AskNoumView: View {
         return AskNoumModeSuggestion.detect(in: last.text)
     }
 
+    /// The ONE continuation surface the current turn earned, resolved by the
+    /// pure arbiter on `CoachContextBuilder` from each surface's own
+    /// eligibility composite. The body renders only the returned case, so a
+    /// pending decision (goal commit / hypothesis verdict / revised-read
+    /// verdict) and the "Next move" panel can never stack under one reply.
+    private var activeContinuationSurface: CoachContextBuilder.ChatContinuationSurface? {
+        let layout = Self.coachOptionLayout(for: followUpChips ?? [])
+        return CoachContextBuilder.continuationSurface(
+            goalProposalEligible: shouldShowGoalProposal,
+            hypothesisAckEligible: shouldShowHypothesisAck,
+            revisedReadFollowUpEligible: shouldShowRevisedReadFollowUp,
+            nextMoveAvailable: suggestedModeDestination != nil || layout.primary != nil
+        )
+    }
+
     /// Coach message ID of the most-recent landed reply, if any. Drives
     /// the AI chip request — when this flips to a new ID we kick off a
     /// generation request for that reply (the previous reply's chips
@@ -1179,9 +1207,10 @@ struct AskNoumView: View {
     //
     // The two acknowledgement predicates (round-26 case-review and round-30
     // revised-read) are mutually exclusive at the chat-shape level: a single
-    // user turn can only begin with one opener lead. The UI layer doesn't
-    // need a tiebreaker — both rows can sit back-to-back in the body and
-    // only one will ever render for a given coach reply.
+    // user turn can only begin with one opener lead. The body additionally
+    // routes ALL post-reply surfaces through the one-per-turn arbiter
+    // (`activeContinuationSurface`), so no two continuation rows can ever
+    // stack under a single coach reply.
     //
     // Vision alignment:
     //   • Coach-parity stage #4 (Adaptation). Per `docs/VISION.md`, the

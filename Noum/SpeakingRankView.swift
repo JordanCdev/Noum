@@ -14,6 +14,7 @@ struct SpeakingRankView: View {
     @StateObject private var profile = ProfileManager.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var streakFreeze = StreakFreezeManager.shared
     @State private var selectedAchievementID: String?
 
     private var sessions: [PracticeSession] {
@@ -23,7 +24,8 @@ struct SpeakingRankView: View {
     private var retentionSnapshot: RetentionLoopSnapshot {
         RetentionLoopEngine.snapshot(
             sessions: sessions,
-            profile: coachingProfileStore.profile
+            profile: coachingProfileStore.profile,
+            displayedStreak: streakFreeze.currentStreak
         )
     }
 
