@@ -7,6 +7,22 @@ import UIKit
 /// Each pattern is designed to feel intentional and non-intrusive.
 /// All patterns honor `HapticsSettings.shared.isEnabled` — if the user
 /// disables haptics from Settings, nothing fires.
+///
+/// Register map (A2) — pick by what the moment IS, not by what's loudest:
+///   • Input acknowledgment — `selectionTap` / `.sensoryFeedback(.selection)`
+///     on small choices. Ordinary buttons get the visual squish only;
+///     never add a global haptic to every tap.
+///   • Commitment — `drillStart` (medium impact), reserved for Begin/Start
+///     CTAs: the user is committing to a rep.
+///   • Result lands — `scoreReveal` (light) on the verdict settle frame,
+///     paired with `InteractionCue.verdictReveal`; `sessionComplete`
+///     marks the rep boundary itself.
+///   • Completion verdicts — `drillSuccess` (.success) vs `drillIncomplete`
+///     (soft single tap — acknowledgment, never a fail-buzzer), paired
+///     with the bright/dull `drillComplete*` brushes.
+///   • Milestones — escalating patterns (`levelUp`, `personalBest`,
+///     `streakAchievement`) stay reserved for RewardEngine
+///     `.major`-gated celebrations. Never fire these for micro-wins.
 enum CoachHaptic {
 
     /// Master gate — all patterns route through this so a single setting

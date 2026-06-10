@@ -718,6 +718,9 @@ struct HomeCoachCard: View {
     // MARK: - Action
 
     private func beginRecommendedRep() {
+        // Commitment haptic (A2 register map): the user just committed
+        // to a rep — the single most consequential tap in the product.
+        CoachHaptic.drillStart()
         let mode = recommendedMode
         recommendationLearningStore.markTapped(mode: mode)
         if mode == .timed {

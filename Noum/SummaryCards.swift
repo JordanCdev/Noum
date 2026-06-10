@@ -193,11 +193,12 @@ struct HeroScoreCard: View {
     }
 
     /// One-shot verdict reveal: ring + number animate together on the
-    /// `scoreReveal` token, and the `scoreReveal` haptic fires on the
-    /// settle frame so motion and haptic are one moment (the haptic
+    /// `scoreReveal` token, and the `scoreReveal` haptic + verdict thump
+    /// land on the settle frame — one moment, three channels (the haptic
     /// previously fired from `SummaryView.setup()` with nothing visual
     /// landing alongside it). Under Reduce Motion the number and fill
-    /// render immediately — the reveal never gates comprehension.
+    /// render immediately — the reveal never gates comprehension; the
+    /// haptic + thump still mark the moment (sound is not motion).
     private func revealScore() {
         guard !hasRevealed else { return }
         hasRevealed = true
@@ -207,6 +208,7 @@ struct HeroScoreCard: View {
             revealedScore = scoreValue
             ringFill = target
             CoachHaptic.scoreReveal()
+            InteractionSoundEngine.cue(.verdictReveal)
             return
         }
 
@@ -216,6 +218,7 @@ struct HeroScoreCard: View {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + Animation.scoreRevealDuration) {
             CoachHaptic.scoreReveal()
+            InteractionSoundEngine.cue(.verdictReveal)
         }
     }
 }

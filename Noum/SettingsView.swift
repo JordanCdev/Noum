@@ -25,6 +25,7 @@ struct SettingsView: View {
     @StateObject private var profileManager = ProfileManager.shared
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
     @StateObject private var hapticsSettings = HapticsSettings.shared
+    @StateObject private var interactionSounds = InteractionSoundSettings.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
@@ -715,6 +716,19 @@ struct SettingsView: View {
                 subtitle: "Subtle taps for streaks, level-ups, and rep transitions.",
                 isOn: $hapticsSettings.isEnabled,
                 accessibilityHint: "Master haptic feedback switch."
+            )
+
+            Divider()
+
+            // Interaction sounds (A2) — tiny synthesized cues (verdict
+            // thump, settle tick, drill brush, streak tock). `.ambient`
+            // session category: the device silent switch always wins;
+            // this is the in-app master.
+            SettingsToggleRow(
+                title: "Interaction sounds",
+                subtitle: "Quiet synthesized ticks when results land. The silent switch always wins.",
+                isOn: $interactionSounds.isEnabled,
+                accessibilityHint: "Master switch for interface sound cues."
             )
         }
     }

@@ -146,8 +146,12 @@ extension Animation {
     static let statDelta = Animation.spring(response: 0.4, dampingFraction: 0.65).delay(0.3)
     /// Achievement badge or icon appearance
     static let achievementPop = Animation.spring(response: 0.5, dampingFraction: 0.55)
+    /// Duration companion for `progressFill` — referenced wherever a beat
+    /// must land on the fill's settle frame (count-settle tick) so the
+    /// channels can't drift apart. Never hardcode 0.6 at a call site.
+    static let progressFillDuration: TimeInterval = 0.6
     /// Progress bar fill — smooth linear-to-ease
-    static let progressFill = Animation.easeOut(duration: 0.6)
+    static let progressFill = Animation.easeOut(duration: progressFillDuration)
     /// Staggered list item entrance — pass index for delay
     static func stagger(_ index: Int) -> Animation {
         .spring(response: 0.34, dampingFraction: 0.84).delay(Double(index) * 0.08)
