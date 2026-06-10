@@ -610,10 +610,14 @@ struct SummaryView: View {
                 )
                 .transition(.opacity)
             } else if showLevelUpScreen {
-                // Full-screen level up celebration
+                // Full-screen practice-volume milestone. Detection still keys
+                // off the legacy levelUpPreviousLevel/levelUpNewLevel strings;
+                // the DISPLAY routes through PracticeVolumeNarration so XP
+                // never wears a skill-identity title ("Speaker N").
                 LevelUpCelebrationScreen(
-                    newLevel: levelUpNewLevel,
-                    previousLevel: levelUpPreviousLevel,
+                    newLevel: PracticeVolumeNarration.title(forXP: profile.xp),
+                    previousLevel: PracticeVolumeNarration.title(forXP: progressionPreviousXP),
+                    xp: profile.xp,
                     xpProgress: progress,
                     onContinue: {
                         withAnimation(.easeInOut(duration: 0.4)) {
@@ -967,6 +971,28 @@ struct SummaryView: View {
             // next move for the user's first three seconds.
             DisclosureGroup(isExpanded: $showSecondaryDetails) {
                 VStack(spacing: 14) {
+                    // Practice credit — visible-but-demoted (progression
+                    // spine): the verdict above the fold stays score +
+                    // read + win + fix; the XP that accrued this rep
+                    // reads as a quiet volume caption in here. Self-hides
+                    // when nothing accrued (never renders "+0").
+                    if let credit = PracticeVolumeNarration.verdictCreditLine(
+                        xpEarned: xpEarned,
+                        eloquenceBonus: EloquenceXP.totalXP(for: eloquenceFindings)
+                    ) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "plus.circle")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.secondary)
+                            Text(credit)
+                                .font(Typography.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                            Spacer(minLength: 0)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Practice credit: \(credit)")
+                    }
+
                     // Inline reflection prompt — kept discoverable but
                     // out of the hero block so it never interrupts the
                     // coach's read. Self-hides when nothing is pending.
@@ -2812,6 +2838,10 @@ struct SummaryView: View {
         progressionNewUnlocks = result.newUnlocks
         enhancedCoachNote = result.coachNote
         eloquenceFindings = result.eloquenceFindings
+        // Source of truth for pre-rep XP is the finalizer result — for
+        // Sudden Death the commit happened at run completion, so the
+        // setup()-time profile.xp snapshot would already include the rep.
+        progressionPreviousXP = result.previousXP
 
         if result.showProgressionScreen && !isSuddenDeathSummary {
             showProgressionScreen = true

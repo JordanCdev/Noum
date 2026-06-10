@@ -130,7 +130,11 @@ enum SessionFinalizer {
         let sortedDeltas = deltas.sorted { ($0.newProgress >= 1.0 ? 1 : 0) > ($1.newProgress >= 1.0 ? 1 : 0) }
         let newUnlocks = newlyUnlockedIDs.compactMap { AchievementStore.tier(for: $0) }
 
-        let showProgression = xpEarned > 0 || !sortedDeltas.isEmpty
+        // Progression-spine gate (S2): the full-screen interstitial is
+        // reserved for real achievement unlocks. Ordinary reps go straight
+        // to the verdict — XP credit lands as a quiet caption in the
+        // Details drawer instead of pre-empting the coach's read.
+        let showProgression = PostRepProgressionGate.shouldShowInterstitial(newUnlockCount: newUnlocks.count)
 
         // Record skill snapshot for trend analysis
         var categoryMap: [String: String] = [:]
@@ -269,6 +273,7 @@ enum SessionFinalizer {
         let milestone = detectMilestone(
             levelBefore: levelBefore,
             levelAfter: levelAfter,
+            newXP: newXP,
             scoreValue: scoreValue,
             currentMode: currentMode,
             currentStreak: displayedStreak,
@@ -418,6 +423,7 @@ enum SessionFinalizer {
     private static func detectMilestone(
         levelBefore: String,
         levelAfter: String,
+        newXP: Int,
         scoreValue: Int,
         currentMode: PracticeMode,
         currentStreak: Int,
@@ -426,12 +432,16 @@ enum SessionFinalizer {
     ) -> MilestoneEvent? {
         // 1. Level-up (highest priority — gets full-screen celebration)
         if levelBefore != levelAfter {
+            // NOTE: the title "Level up." is a string-equality routing ID
+            // consumed by SummaryView's milestone routing — it must stay
+            // byte-identical. Subtitle/detail re-narrate XP as practice
+            // VOLUME (ProgressionSpineNarration), never a skill rank.
             return MilestoneEvent(
                 icon: "arrow.up.circle.fill",
                 tint: .blue,
                 title: "Level up.",
-                subtitle: levelAfter,
-                detail: "Keep practicing to reach the next rank."
+                subtitle: PracticeVolumeNarration.title(forXP: newXP),
+                detail: PracticeVolumeNarration.levelUpDetail(forXP: newXP)
             )
         }
 

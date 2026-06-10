@@ -63,9 +63,13 @@ enum ProfileEvidenceDetailSurface: String, Equatable {
 struct ProfileEvidenceDetailPlan: Equatable {
     let surfaces: [ProfileEvidenceDetailSurface]
 
+    // Progression-spine order: practice volume (.rankProgress) renders
+    // AFTER the rating trajectory — volume is an input, never the spine,
+    // so it can never sit above the rating story. Pinned by test.
     static let valueFirst = ProfileEvidenceDetailPlan(
         surfaces: [
             .ratingTrajectory,
+            .rankProgress,
             .insightsBanked,
             .pressureHistoryShare,
             .coachingDirection,
@@ -977,20 +981,27 @@ struct ProfileView: View {
     private var growthLibrarySubtitle: String {
         let count = proofStore.records.count
         if count == 0 { return "Proof moments appear after reps" }
-        let noun = count == 1 ? "proof moment" : "proof moments"
-        return "\(count) \(noun) · replay your best lines"
+        // Proof role (progression spine): verified quotes are the evidence
+        // BEHIND the rating — an inventory, never a progress currency.
+        // Future-tense before any rated evidence exists.
+        return LedgerRoleLines.proofRole(
+            count: count,
+            hasRatedEvidence: ratingStore.rating.hasRatedEvidence
+        )
     }
 
     private var profileEvidenceDetails: some View {
         let plan = evidenceDetailPlan
         return VStack(spacing: Spacing.cardGap) {
             clusterHeader("Progression details")
-            if plan.surfaces.contains(.rankProgress) {
-                rankPanel
-            }
             if plan.surfaces.contains(.ratingTrajectory) {
                 ProgressionChartsCard(sessionStore: sessionStore)
                     .accessibilityIdentifier("profile.evidence.ratingTrajectory")
+            }
+            // Practice volume renders BELOW the rating trajectory — the
+            // spine (rating) always leads the progression story.
+            if plan.surfaces.contains(.rankProgress) {
+                rankPanel
             }
             if plan.surfaces.contains(.insightsBanked) {
                 insightsBankedChip
@@ -1149,54 +1160,42 @@ struct ProfileView: View {
         .accessibilityIdentifier("profile.upgradeCTA")
     }
 
-    // MARK: - Rank & XP Progress
-
+    // MARK: - Practice volume (XP)
+    //
+    // Quiet volume row (progression spine): XP is deliberate-practice
+    // VOLUME, never a skill identity — no "Speaker N" titles, no tier
+    // descriptors. The rating trajectory above answers "am I getting
+    // better?"; this row only answers "how much have I practiced?".
     private var rankPanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: profile.rankSymbol)
-                    .font(Typography.cardTitle.weight(.bold))
-                    .foregroundStyle(profile.rankTint)
-                    .frame(width: 52, height: 52)
-                    .background(profile.rankTint.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(profile.rankTitle)
-                        .font(Typography.bigStat)
-                    Text(profile.rankDescriptor)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(profile.rankTint)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "chart.bar.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue)
+                Text("Practice volume")
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(1.0)
+                Spacer()
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text(profile.nextRankTitle)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(profile.levelProgressLabel)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.blue)
-                }
+            Text(PracticeVolumeNarration.title(forXP: profile.xp))
+                .font(Typography.headline)
+                .foregroundStyle(.primary)
 
-                ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: AppColor.brandBlue)
+            ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: AppColor.brandBlue)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("\(profile.xp) XP total")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(AppColor.brandBlue)
-                        .contentTransition(reduceMotion ? .identity : .numericText())
-                        .animation(reduceMotion ? nil : .standardSpring, value: profile.xp)
-                    Text("\(ProfileManager.xpNeededToNextLevel(forXP: profile.xp)) XP to level up")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Text(PracticeVolumeNarration.detailLine(forXP: profile.xp))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .contentTransition(reduceMotion ? .identity : .numericText())
+                .animation(reduceMotion ? nil : .standardSpring, value: profile.xp)
         }
         .padding(20)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Practice volume. \(PracticeVolumeNarration.title(forXP: profile.xp)). \(PracticeVolumeNarration.detailLine(forXP: profile.xp))")
         .accessibilityIdentifier("profile.evidence.rankProgress")
     }
 
@@ -1579,11 +1578,16 @@ struct ProfileView: View {
     }
 
     private func insightsAccessibilityLabel(count: Int) -> String {
-        let noun = count == 1 ? "insight" : "insights"
+        // Proof role narration — names what the banked lines ARE (evidence
+        // behind the rating), not just a count. Future-tense pre-evidence.
+        let role = LedgerRoleLines.proofRole(
+            count: count,
+            hasRatedEvidence: ratingStore.rating.hasRatedEvidence
+        )
         if let recency = mostRecentInsightRecency {
-            return "\(count) \(noun) banked. Most recent \(recency)."
+            return "\(role) Most recent \(recency)."
         }
-        return "\(count) \(noun) banked."
+        return role
     }
 
     private func trendIcon(_ trend: TrendDirection) -> String {

@@ -7512,52 +7512,11 @@ final class PracticeSessionStore: ObservableObject {
 }
 #endif
 
-// MARK: - Rank Helpers (shared across ContentView, ProfileView, SpeakingRankView)
-
-#if canImport(SwiftUI)
-import SwiftUI
-
-extension ProfileManager {
-    var rankSymbol: String {
-        let title = levelTitle
-        if title.contains("Beginner") { return "sparkles" }
-        if title.contains("Novice") { return "figure.stand" }
-        if title.contains("Average") { return "waveform.path.ecg" }
-        if title.contains("Professional") { return "shield.lefthalf.filled" }
-        return "crown.fill"
-    }
-
-    var rankTint: Color {
-        let title = levelTitle
-        if title.contains("Beginner") { return .blue }
-        if title.contains("Novice") { return .teal }
-        if title.contains("Average") { return .indigo }
-        if title.contains("Professional") { return .orange }
-        return .yellow
-    }
-
-    var rankDescriptor: String {
-        let title = levelTitle
-        if title.contains("Beginner") { return "Foundational tier" }
-        if title.contains("Novice") { return "Developing tier" }
-        if title.contains("Average") { return "Steady tier" }
-        if title.contains("Professional") { return "Advanced tier" }
-        return "Elite tier"
-    }
-
-    var rankTitle: String {
-        "Speaker \(max(1, (xp / 1000) + 1))"
-    }
-
-    var nextRankTitle: String {
-        "Next: Speaker \(max(2, (xp / 1000) + 2))"
-    }
-
-    var levelProgressLabel: String {
-        "\(Int((progressTowardsNextLevel * 100).rounded()))%"
-    }
-}
-#endif
+// Rank-helpers extension deleted (progression spine S2): XP no longer
+// wears a skill identity anywhere — ProfileView and SettingsView render
+// practice volume via PracticeVolumeNarration, and the deprecated
+// SpeakingRankView (its last co-consumer) is removed. Zero references
+// verified by grep at deletion time.
 #if canImport(SwiftUI)
 struct RecommendationExposure: Codable, Equatable {
     let fingerprint: String

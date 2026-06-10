@@ -14,6 +14,7 @@ struct PathJourneyView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var pathProgress = PathProgressManager.shared
     @StateObject private var streakManager = StreakFreezeManager.shared
+    @StateObject private var ratingStore = RatingStore.shared
     @StateObject private var daylightModel = PathDaylightModel()
     @State private var selectedAchievementID: String?
 #if DEBUG
@@ -263,6 +264,15 @@ struct PathJourneyView: View {
                     .foregroundStyle(AppColor.brandBlue.opacity(0.85))
                     .textCase(.uppercase)
                     .tracking(0.4)
+
+                // Mission role (progression spine): missions are the coach's
+                // sequence toward the skills the rating measures — position
+                // on the path, never a second score. Future-tense before
+                // any rated evidence exists.
+                Text(LedgerRoleLines.missionRole(hasRatedEvidence: ratingStore.rating.hasRatedEvidence))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Text(snapshot.explanationLine)
                     .font(.subheadline.weight(.semibold))

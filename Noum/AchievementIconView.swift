@@ -571,24 +571,27 @@ struct PostSessionProgressionView: View {
                 VStack(spacing: 0) {
                     Spacer()
 
-                    // XP earned — big hero number
+                    // Progression spine (S2): this panel only mounts when an
+                    // achievement unlocked, so the unlock is the hero. XP is
+                    // practice VOLUME — a caption-weight credit line, never a
+                    // 52pt hero number competing with the verdict.
                     VStack(spacing: 6) {
                         Text("SESSION COMPLETE")
                             .font(Typography.figtree(size: 11, weight: .heavy, relativeTo: .caption2))
                             .foregroundStyle(.white.opacity(0.4))
 
-                        Text("+\(xpEarned) XP")
-                            .font(Typography.figtreeNumeric(size: 52, weight: .bold, relativeTo: .largeTitle))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color.orange, Color.yellow],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                        if let credit = PracticeVolumeNarration.verdictCreditLine(
+                            xpEarned: max(0, newXP - previousXP),
+                            eloquenceBonus: 0
+                        ) {
+                            Text(credit)
+                                .font(Typography.caption.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(.white.opacity(0.55))
+                                .accessibilityLabel("Practice credit: \(credit)")
+                        }
 
                         if didLevelUp {
-                            Text("LEVEL UP → \(newLevel)")
+                            Text("\(PracticeVolumeNarration.levelUpHeadline()) → \(PracticeVolumeNarration.title(forXP: newXP))")
                                 .font(Typography.figtree(size: 12, weight: .heavy, relativeTo: .caption))
                                 .foregroundStyle(.purple)
                                 .padding(.top, 2)
@@ -618,11 +621,11 @@ struct PostSessionProgressionView: View {
                         .frame(height: 10)
 
                         HStack {
-                            Text(newLevel)
+                            Text(PracticeVolumeNarration.title(forXP: newXP))
                                 .font(Typography.captionSmall.weight(.bold))
                                 .foregroundStyle(.white.opacity(0.6))
                             Spacer()
-                            Text("\(ProfileManager.xpNeededToNextLevel(forXP: newXP)) XP to next level")
+                            Text("\(ProfileManager.xpNeededToNextLevel(forXP: newXP)) to practice level \(PracticeVolumeNarration.level(forXP: newXP) + 1)")
                                 .font(Typography.captionSmall.weight(.medium))
                                 .foregroundStyle(.white.opacity(0.30))
                         }

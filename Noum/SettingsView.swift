@@ -369,17 +369,20 @@ struct SettingsView: View {
                         }
                     }
 
+                    // Practice volume, not identity (progression spine):
+                    // XP never wears a skill costume — "Practice level N"
+                    // is the only permitted title shape for the XP ledger.
                     HStack(spacing: 6) {
-                        Image(systemName: profileManager.rankSymbol)
+                        Image(systemName: "chart.bar.fill")
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(profileManager.rankTint)
-                        Text(profileManager.rankTitle)
+                            .foregroundStyle(AppColor.brandBlue)
+                        Text(PracticeVolumeNarration.title(forXP: profileManager.xp))
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(profileManager.rankTint)
+                            .foregroundStyle(AppColor.brandBlue)
                     }
                     .padding(.horizontal, Spacing.sm)
                     .padding(.vertical, 5)
-                    .background(profileManager.rankTint.opacity(0.12), in: Capsule())
+                    .background(AppColor.brandBlue.opacity(0.12), in: Capsule())
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -398,7 +401,7 @@ struct SettingsView: View {
             .shadow(color: AppColor.pro.opacity(0.10), radius: 14, x: 0, y: 6)
         }
         .buttonStyle(.pressable)
-        .accessibilityLabel("\(displayName), \(profileManager.rankTitle)")
+        .accessibilityLabel("\(displayName), \(PracticeVolumeNarration.title(forXP: profileManager.xp))")
         .accessibilityHint("Open coaching profile to edit")
         .accessibilityIdentifier("settings.profileHero")
     }

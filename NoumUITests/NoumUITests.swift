@@ -98,8 +98,11 @@ final class NoumUITests: XCTestCase {
             "Expanded evidence should keep the coach direction card"
         )
 
+        // NOTE (S2 progression spine): profile.evidence.rankProgress is no
+        // longer banned — it returns as a quiet "Practice volume" row
+        // rendered BELOW the rating trajectory (order pinned by the
+        // ProfileCollapseContractTests plan test).
         let hiddenDashboardSurfaces = [
-            "profile.evidence.rankProgress",
             "profile.evidence.skillProgress",
             "profile.evidence.activeChallenge",
             "profile.evidence.feedbackInbox",

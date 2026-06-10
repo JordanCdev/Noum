@@ -7233,8 +7233,12 @@ struct ProfileCollapseContractTests {
     @Test func profileDisclosureStaysCoachEvidenceNotDashboard() {
         let plan = ProfileEvidenceDetailPlan.valueFirst
 
+        // S2 progression spine: .rankProgress returns as a quiet practice-
+        // volume row, re-narrated via PracticeVolumeNarration (no Speaker-
+        // identity titles) and pinned BELOW the rating trajectory.
         #expect(plan.surfaces == [
             .ratingTrajectory,
+            .rankProgress,
             .insightsBanked,
             .pressureHistoryShare,
             .coachingDirection,
@@ -7246,8 +7250,7 @@ struct ProfileCollapseContractTests {
         #expect(plan.ratingStorySurfaceCount == 1)
         #expect(plan.optionalSystemSurfaceCount == 0)
         for dashboardSurface in [
-            ProfileEvidenceDetailSurface.rankProgress,
-            .weeklyCheckIn,
+            ProfileEvidenceDetailSurface.weeklyCheckIn,
             .skillProgress,
             .activeChallenge,
             .feedbackInbox,
@@ -7256,6 +7259,20 @@ struct ProfileCollapseContractTests {
             .achievements
         ] {
             #expect(!plan.surfaces.contains(dashboardSurface))
+        }
+    }
+
+    @Test func practiceVolumeNeverSitsAboveRatingTrajectory() {
+        // The spine leads: practice volume (XP) is an input, so its row may
+        // never render above the rating story inside "Progression details".
+        let plan = ProfileEvidenceDetailPlan.valueFirst
+        let ratingIndex = plan.surfaces.firstIndex(of: .ratingTrajectory)
+        let volumeIndex = plan.surfaces.firstIndex(of: .rankProgress)
+
+        #expect(ratingIndex != nil)
+        #expect(volumeIndex != nil)
+        if let ratingIndex, let volumeIndex {
+            #expect(ratingIndex < volumeIndex)
         }
     }
 

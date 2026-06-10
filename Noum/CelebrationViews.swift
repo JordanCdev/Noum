@@ -238,6 +238,7 @@ struct PersonalBestCelebrationScreen: View {
 struct LevelUpCelebrationScreen: View {
     let newLevel: String
     let previousLevel: String
+    let xp: Int             // banked XP after the rep — drives tint/icon band
     let xpProgress: Double  // 0...1 towards next sub-level
     let onContinue: () -> Void
 
@@ -247,20 +248,21 @@ struct LevelUpCelebrationScreen: View {
     @State private var ringRotation: Double = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    // Tint/icon derive from the XP band resolver, never from string-matching
+    // the title — re-narrated titles ("Practice level N") would silently
+    // degrade every level-up to the fallback styling otherwise.
     private var levelTint: Color {
-        if newLevel.contains("Beginner") { return .blue }
-        if newLevel.contains("Novice") { return .teal }
-        if newLevel.contains("Average") { return .indigo }
-        if newLevel.contains("Professional") { return .orange }
-        return .yellow
+        switch PracticeVolumeNarration.tintBand(forXP: xp) {
+        case .blue: return .blue
+        case .teal: return .teal
+        case .indigo: return .indigo
+        case .orange: return .orange
+        case .gold: return .yellow
+        }
     }
 
     private var levelIcon: String {
-        if newLevel.contains("Beginner") { return "sparkles" }
-        if newLevel.contains("Novice") { return "figure.stand" }
-        if newLevel.contains("Average") { return "waveform.path.ecg" }
-        if newLevel.contains("Professional") { return "shield.lefthalf.filled" }
-        return "crown.fill"
+        PracticeVolumeNarration.symbol(forXP: xp)
     }
 
     var body: some View {
@@ -323,7 +325,7 @@ struct LevelUpCelebrationScreen: View {
 
                 // Text content
                 VStack(spacing: 14) {
-                    Text("LEVEL UP")
+                    Text(PracticeVolumeNarration.levelUpHeadline())
                         .font(Typography.figtree(size: 14, weight: .heavy, relativeTo: .caption))
                         .foregroundStyle(levelTint)
                         .opacity(phase2 ? 1 : 0)
@@ -342,11 +344,13 @@ struct LevelUpCelebrationScreen: View {
                         .opacity(phase2 ? 1 : 0)
                         .offset(y: phase2 || reduceMotion ? 0 : 10)
 
-                    Text("Keep practicing to reach the next rank")
+                    Text(PracticeVolumeNarration.levelUpDetail(forXP: xp))
                         .font(Typography.captionSmall)
                         .foregroundStyle(.white.opacity(0.3))
+                        .multilineTextAlignment(.center)
                         .opacity(phase2 ? 1 : 0)
                         .padding(.top, 4)
+                        .padding(.horizontal, 32)
                 }
 
                 Spacer()

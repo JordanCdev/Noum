@@ -310,8 +310,9 @@ struct OverlayScreenshotHarnessView: View {
                 )
             case .levelUp:
                 LevelUpCelebrationScreen(
-                    newLevel: "Average Speaker I",
-                    previousLevel: "Novice Speaker IV",
+                    newLevel: PracticeVolumeNarration.title(forXP: 6_320),
+                    previousLevel: PracticeVolumeNarration.title(forXP: 5_980),
+                    xp: 6_320,
                     xpProgress: 0.32,
                     onContinue: {}
                 )

@@ -23,6 +23,7 @@ import SwiftUI
 struct GrowthLibraryView: View {
 
     @StateObject private var proofStore = ProofMomentStore.shared
+    @StateObject private var ratingStore = RatingStore.shared
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -69,7 +70,11 @@ struct GrowthLibraryView: View {
             Text(headerHeadline(count: count))
                 .font(Typography.sectionHero)
                 .foregroundStyle(.primary)
-            Text("Verbatim moments your coach has banked from past reps. Quote anchors only — never a paraphrase.")
+            // Proof role (progression spine): quoted, never scored — the
+            // qualitative evidence BEHIND the rating. The headline above
+            // already carries the count, so this line uses the generic
+            // subject (count: 0). Future-tense before rated evidence.
+            Text(LedgerRoleLines.proofRole(count: 0, hasRatedEvidence: ratingStore.rating.hasRatedEvidence))
                 .font(Typography.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

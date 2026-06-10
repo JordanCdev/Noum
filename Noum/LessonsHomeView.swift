@@ -11,6 +11,7 @@ import SwiftUI
 struct LessonsHomeView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var lessonStore = LessonStore.shared
+    @StateObject private var ratingStore = RatingStore.shared
     @Binding var navigationPath: NavigationPath
 
     init(navigationPath: Binding<NavigationPath>) {
@@ -64,8 +65,15 @@ struct LessonsHomeView: View {
             Text("Lessons")
                 .font(Typography.screenTitle)
                 .foregroundStyle(.primary)
-            Text("Short, focused lessons that teach a single move. Concept, then spot it, then say it. Each pass strengthens the technique.")
+            Text("Short, focused lessons that teach a single move. Concept, then spot it, then say it.")
                 .font(Typography.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            // Crowns role (progression spine): passes point UP the spine —
+            // passes unlock missions; missions build the skills the rating
+            // measures. Future-tense before any rated evidence exists.
+            Text(LedgerRoleLines.crownsRole(hasRatedEvidence: ratingStore.rating.hasRatedEvidence))
+                .font(Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -124,16 +132,19 @@ struct LessonsHomeView: View {
 
     private var summaryStrip: some View {
         let totalPasses = lessonStore.totalPracticePasses
+        let passesValue = LessonProgressPresentation.aggregateValue(
+            totalCompleted: totalPasses,
+            lessonCount: LessonsCatalog.all.count
+        )
         return HStack(spacing: 10) {
             summaryPill(
                 title: "Passes",
-                value: LessonProgressPresentation.aggregateValue(
-                    totalCompleted: totalPasses,
-                    lessonCount: LessonsCatalog.all.count
-                ),
+                value: passesValue,
                 icon: "checkmark.seal.fill",
                 tint: AppColor.brandBlue
             )
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Passes \(passesValue). \(LedgerRoleLines.crownsRole(hasRatedEvidence: ratingStore.rating.hasRatedEvidence))")
             summaryPill(
                 title: "Lessons",
                 value: "\(LessonsCatalog.all.count)",
