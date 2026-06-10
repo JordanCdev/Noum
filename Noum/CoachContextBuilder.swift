@@ -38,13 +38,28 @@ enum CoachContextBuilder {
         return defaults.bool(forKey: structuredAskNoumReplyDefaultsKey)
     }
 
+    /// Feature flag for the judgment-layer rule (same defaults-flag pattern
+    /// as the structured reply shape: default ON, explicit opt-out only).
+    /// The rule teaches the coach to work the gap between a technically
+    /// correct rep and one the user actually believes — the layer a human
+    /// coach adds beyond metrics.
+    static let judgmentLayerRuleDefaultsKey = "askNoum.judgmentLayerRule.enabled"
+
+    static func judgmentLayerRuleEnabled(defaults: UserDefaults = .standard) -> Bool {
+        guard defaults.object(forKey: judgmentLayerRuleDefaultsKey) != nil else {
+            return true
+        }
+        return defaults.bool(forKey: judgmentLayerRuleDefaultsKey)
+    }
+
     /// Top-level system prompt for the AI coach. Combines a fixed
     /// brand-voice frame with the user's chosen speaking style goal,
     /// producing a coach personality that matches *their* voice — not
     /// a generic "AI assistant" register.
     static func systemPrompt(
         for profile: CoachingProfile?,
-        structuredReplyShapeEnabled: Bool = CoachContextBuilder.structuredAskNoumReplyShapeEnabled()
+        structuredReplyShapeEnabled: Bool = CoachContextBuilder.structuredAskNoumReplyShapeEnabled(),
+        judgmentLayerRuleEnabled: Bool = CoachContextBuilder.judgmentLayerRuleEnabled()
     ) -> String {
         let voice = profile?.speakingStyleGoal
         let personality = voice.map { coachPersonality(for: $0) } ?? defaultCoachPersonality
@@ -58,6 +73,18 @@ enum CoachContextBuilder {
         text from VERIFIED PROOFS, an exact transcript slice in the context, \
         or the user's latest turn. If you cannot verify the quote, cite a \
         metric, pattern, or honest data gap instead.
+        """ : ""
+        let judgmentLayerRule = judgmentLayerRuleEnabled ? """
+        - Judgment layer: technically correct is not the bar — believed is. \
+        When a rep is clean on the numbers (fillers down, pace in band, \
+        structure tidy) but the delivery reads hedged, flat, or unlike the \
+        user — or they tell you it didn't feel like them — coach that gap: \
+        name what carried weight and what didn't land, then give one move \
+        that makes the words sound believed (commit to the close, cut the \
+        hedge, say the hard sentence plainly). Felt conviction is the user's \
+        own read: ask for it when you don't have it, treat it as a hypothesis \
+        when you do, and never hand down "you lack conviction" as a verdict \
+        on the person.
         """ : ""
 
         return """
@@ -80,6 +107,7 @@ enum CoachContextBuilder {
         user's actual data or land a concrete move. No headers. No bullet \
         lists unless the user explicitly asks for one.
         \(structuredReplyRule)
+        \(judgmentLayerRule)
         - Read the person, not just the words. When the user's message is \
         short, partial, ambiguous, or garbled — including imperfect voice \
         transcription (a stray "What do", a cut-off thought) — you NEVER reply \

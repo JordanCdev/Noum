@@ -100,6 +100,7 @@ enum CoachChatReplyQualityIssue: Equatable {
     case unanchoredCoaching
     case overclaimsEvidence
     case unverifiedQuotedUserSpeech
+    case unengagedUserSpeechClaim
 
     var repairInstruction: String {
         switch self {
@@ -123,6 +124,8 @@ enum CoachChatReplyQualityIssue: Equatable {
             return "The draft overclaims from limited evidence or labels the user. Reframe as a tentative coaching hypothesis the user can confirm or reject."
         case .unverifiedQuotedUserSpeech:
             return "The draft quotes user speech that is not verified against a transcript or the latest user turn. Remove the quote and cite a metric, pattern, or honest data gap instead."
+        case .unengagedUserSpeechClaim:
+            return "The draft claims to read the user's words but does not touch any known transcript, verified proof, or their latest message. Ground the read in what they actually said, or cite a metric, pattern, or honest data gap instead."
         }
     }
 }
@@ -157,6 +160,14 @@ struct CoachChatProfessionalRubricResult: Equatable {
 /// chat surface, but any "you said ..." quote must be backed by an exact slice
 /// of a known transcript, a verified proof quote, or the user's latest turn.
 /// Pure and transient — no persistence, no new chat schema.
+///
+/// This context backs BOTH halves of the chat's dual gate (the same pairing
+/// `PostRepCoachNoteService.generate` enforces on the post-rep note):
+///   • Gate 1 — presence (`engagesAnySource`): a reply that CLAIMS a read of
+///     the user's words must actually touch a known source at the
+///     `PostRepCoachNoteService.engagesTranscript` standard.
+///   • Gate 2 — fabrication (`verifies`): any QUOTED fragment attributed to
+///     the user must match a source exactly (ProofMomentService).
 struct CoachChatQuoteGuardContext: Equatable {
     let sourceTexts: [String]
 
@@ -173,6 +184,19 @@ struct CoachChatQuoteGuardContext: Equatable {
     func verifies(_ quote: String) -> Bool {
         sourceTexts.contains { source in
             ProofMomentService.transcriptContains(quote, in: source)
+        }
+    }
+
+    /// Gate 1 of the dual gate: true when the reply genuinely engages at
+    /// least one known source — shares a >= 4-char content word or a
+    /// >= 12-char verbatim slice with a rep transcript, a verified proof
+    /// quote, or the user's latest turn. Reuses the post-rep note's
+    /// `engagesTranscript` core so chat and note hold the same standard.
+    /// With no sources at all, a claimed read is unverifiable and fails —
+    /// mirroring Gate 2's rejection of unverifiable attributed quotes.
+    func engagesAnySource(_ reply: String) -> Bool {
+        sourceTexts.contains { source in
+            PostRepCoachNoteService.engagesTranscript(reply, transcript: source)
         }
     }
 }
@@ -375,6 +399,16 @@ actor AICoachChatService {
         if let quoteGuard,
            Self.containsUnverifiedQuotedUserSpeech(in: trimmed, quoteGuard: quoteGuard) {
             return .unverifiedQuotedUserSpeech
+        }
+        // Gate 1 of the dual gate (presence — mirrors the post-rep note's
+        // `engagesTranscript` check): a reply that claims a read of the
+        // user's words WITHOUT quoting ("your opening buried the lede...")
+        // must still touch a known source. Quote-free fabrication is the
+        // gap Gate 2 cannot see.
+        if let quoteGuard,
+           Self.claimsUserSpeechRead(in: trimmed),
+           !quoteGuard.engagesAnySource(trimmed) {
+            return .unengagedUserSpeechClaim
         }
 
         if lower.hasPrefix("understood.")
@@ -609,15 +643,30 @@ actor AICoachChatService {
         return false
     }
 
+    /// Attribution phrases that claim a read of the user's actual words.
+    /// Shared by both halves of the dual gate: Gate 2 verifies any QUOTED
+    /// fragment that follows one of these; Gate 1 requires the reply to
+    /// engage a known source even when nothing is quoted.
+    private nonisolated static let userSpeechAttributionPhrases = [
+        "you said", "you used", "your words", "your phrase",
+        "you put it", "your line", "you opened with", "your opening line",
+        "you closed with", "your closing line", "you mentioned",
+        "you talked about", "you described", "you argued",
+        "your exact words", "your phrasing", "your wording"
+    ]
+
+    /// True when the text claims to read the user's actual words (as opposed
+    /// to citing a metric or prescribing a move). Pure + lexical, exposed for
+    /// tests alongside the dual gate it scopes.
+    nonisolated static func claimsUserSpeechRead(in text: String) -> Bool {
+        containsAny(text.lowercased(), userSpeechAttributionPhrases)
+    }
+
     nonisolated static func containsUnverifiedQuotedUserSpeech(
         in text: String,
         quoteGuard: CoachChatQuoteGuardContext
     ) -> Bool {
-        let lower = text.lowercased()
-        guard containsAny(lower, [
-            "you said", "you used", "your words", "your phrase",
-            "you put it", "your line", "you opened with"
-        ]) else { return false }
+        guard claimsUserSpeechRead(in: text) else { return false }
 
         return quotedFragments(in: text).contains { quote in
             !quoteGuard.verifies(quote)
@@ -805,7 +854,7 @@ actor AICoachChatService {
             return .deterministicReply(candidate)
         case .tooLong, .roboticPhrase, .bareClarification, .defensiveProductLanguage,
              .menuInsteadOfDecision, .missedTrustRepair, .overclaimsEvidence,
-             .unverifiedQuotedUserSpeech:
+             .unverifiedQuotedUserSpeech, .unengagedUserSpeechClaim:
             // Objective failures the deterministic builder must never produce on
             // ANY path. If a future copy change ever did, the user gets the
             // honest `.empty` notice instead of a sub-bar substitute.

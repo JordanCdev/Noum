@@ -8639,6 +8639,63 @@ struct CoachContextBuilderTests {
         #expect(!prompt.contains("VERIFIED PROOFS"))
     }
 
+    @Test func systemPromptIncludesFeatureFlaggedJudgmentLayerRule() {
+        // The judgment layer is the rule a human coach adds beyond metrics:
+        // coach the gap between a technically correct rep and one the user
+        // actually believes. It must stay hypothesis-grade about conviction
+        // (never a verdict on the person — same never-label floor the reply
+        // gate enforces).
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+
+        #expect(prompt.contains("Judgment layer:"))
+        #expect(prompt.contains("technically correct is not the bar"))
+        #expect(prompt.contains("Felt conviction is the user's own read"))
+        #expect(prompt.contains("never hand down \"you lack conviction\" as a verdict"))
+    }
+
+    @Test func judgmentLayerRuleLeavesShortTurnCarveOutUntouched() {
+        // Adding the judgment-layer rule must not disturb the short-turn
+        // carve-outs around it: greetings/preference turns keep the 1-2
+        // sentence default, and the structured-shape exemption list stays
+        // verbatim. Pinned so a prompt edit can't silently regress either.
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+        let normalized = prompt.replacingOccurrences(
+            of: "\\s+",
+            with: " ",
+            options: .regularExpression
+        )
+
+        #expect(normalized.contains("greetings or simple preference turns should usually be 1-2"))
+        #expect(prompt.contains(
+            "Greetings, off-topic noise, explicit list/plan requests, and pure preference turns may break the shape"
+        ))
+    }
+
+    @Test func systemPromptCanDisableJudgmentLayerRule() {
+        let prompt = CoachContextBuilder.systemPrompt(
+            for: nil,
+            judgmentLayerRuleEnabled: false
+        )
+
+        #expect(!prompt.contains("Judgment layer:"))
+        // The neighbouring flag is independent — disabling the judgment
+        // layer must not drop the structured reply shape.
+        #expect(prompt.contains("Structured Ask Noum reply shape is enabled"))
+    }
+
+    @Test func judgmentLayerRuleFlagDefaultsOnAndHonorsOptOut() {
+        // Same defaults-flag contract as the structured reply shape:
+        // unset -> ON, explicit false -> OFF, explicit true -> ON.
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        #expect(CoachContextBuilder.judgmentLayerRuleEnabled(defaults: suite))
+
+        suite.set(false, forKey: CoachContextBuilder.judgmentLayerRuleDefaultsKey)
+        #expect(!CoachContextBuilder.judgmentLayerRuleEnabled(defaults: suite))
+
+        suite.set(true, forKey: CoachContextBuilder.judgmentLayerRuleDefaultsKey)
+        #expect(CoachContextBuilder.judgmentLayerRuleEnabled(defaults: suite))
+    }
+
     @Test func systemPromptRejectsRoboticTemplateLanguage() {
         // The model is allowed to cite data, but not in a dashboard register.
         // Pin the banned phrases that made Ask Noum feel robotic.
@@ -22522,6 +22579,103 @@ struct AICoachChatReplyQualityGateTests {
         )
 
         #expect(issue == nil)
+    }
+
+    // MARK: Dual gate — Gate 1 (presence/engagement, the
+    // PostRepCoachNoteService.engagesTranscript standard applied to chat).
+    // Gate 2 (above) catches fabricated QUOTES; these pin the half the chat
+    // was missing: a reply that claims a read of the user's words WITHOUT
+    // quoting must still touch a known source.
+
+    @Test func dualGateRejectsQuoteFreeFabricatedTranscriptClaim() {
+        // The reply narrates an opening the user never gave — no quotation
+        // marks, so Gate 2 cannot see it. Gate 1 must reject it: zero shared
+        // content words and no verbatim slice against any source.
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: ["We launched the product on Tuesday and handled the deadline well."],
+            latestUserTurn: "How did I do?"
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You opened with the budget shortfall and argued for headcount; next rep, lead with your strongest number.",
+            latestUserTurn: "How did I do?",
+            quoteGuard: guardContext
+        )
+
+        #expect(issue == .unengagedUserSpeechClaim)
+    }
+
+    @Test func dualGatePassesTranscriptClaimThatEngagesTranscript() {
+        // Same claim shape, but genuinely grounded: shares content words
+        // with the rep transcript, so the presence gate passes.
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: ["We launched the product on Tuesday and handled the deadline well."],
+            latestUserTurn: "How did I do?"
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You opened with the product launch and the deadline held; next rep, make the close the ask.",
+            latestUserTurn: "How did I do?",
+            quoteGuard: guardContext
+        )
+
+        #expect(issue == nil)
+    }
+
+    @Test func dualGateAllowsLatestTurnGroundedSpeechClaim() {
+        // "You said ..." in chat often reads the user's latest MESSAGE, not
+        // a rep. Engagement against the latest turn keeps those replies live
+        // instead of falsely downgrading them to the deterministic fallback.
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: ["We launched the product on Tuesday and handled the deadline well."],
+            latestUserTurn: "I keep rambling when I get nervous."
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You said the rambling starts when nerves spike; next rep, cap every answer at two sentences.",
+            latestUserTurn: "I keep rambling when I get nervous.",
+            quoteGuard: guardContext
+        )
+
+        #expect(issue == nil)
+    }
+
+    @Test func dualGateIgnoresMetricRepMentionsWithoutSpeechClaim() {
+        // Citing rep METRICS is not a claim about the user's words — the
+        // system prompt explicitly endorses this shape, so the presence gate
+        // must not fire on it even with zero transcript overlap.
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: ["We launched the product on Tuesday and handled the deadline well."],
+            latestUserTurn: "How did I do?"
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Yesterday's rep had 5 fillers; the fix is a held pause after sentence two.",
+            latestUserTurn: "How did I do?",
+            quoteGuard: guardContext
+        )
+
+        #expect(issue == nil)
+    }
+
+    @Test func dualGateRejectsSpeechClaimWhenNoSourcesExist() {
+        // No transcript, no proofs, no latest turn -> a claimed read is
+        // unverifiable, mirroring Gate 2's rejection of unverifiable quotes.
+        let guardContext = CoachChatQuoteGuardContext()
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You said you wanted a stronger close, so tonight hold the final line.",
+            latestUserTurn: nil,
+            quoteGuard: guardContext
+        )
+
+        #expect(issue == .unengagedUserSpeechClaim)
+    }
+
+    @Test func claimsUserSpeechReadScopesTheGateCorrectly() {
+        // Positive: attribution families that claim the user's words.
+        #expect(AICoachChatService.claimsUserSpeechRead(in: "You mentioned the board meeting."))
+        #expect(AICoachChatService.claimsUserSpeechRead(in: "Your phrasing on the close softened."))
+        #expect(AICoachChatService.claimsUserSpeechRead(in: "You opened with the mission."))
+        // Negative: prescriptions and third-person reads are not claims
+        // about what the user said.
+        #expect(!AICoachChatService.claimsUserSpeechRead(in: "Next rep, hold a beat before sentence two."))
+        #expect(!AICoachChatService.claimsUserSpeechRead(in: "The opening carried the point; the close softened."))
     }
 }
 

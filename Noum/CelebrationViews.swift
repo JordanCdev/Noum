@@ -22,6 +22,7 @@ struct PersonalBestCelebrationScreen: View {
     @State private var phase2 = false  // text
     @State private var phase3 = false  // particles
     @State private var starRotation: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -37,8 +38,10 @@ struct PersonalBestCelebrationScreen: View {
             )
             .ignoresSafeArea()
 
-            // Floating particles
-            if phase3 {
+            // Floating particles — never mounted under Reduce Motion (the
+            // 20fps drifting field is a vestibular trigger; the score, copy,
+            // and haptic carry the moment on their own).
+            if phase3, !reduceMotion {
                 particleField
                     .transition(.opacity)
             }
@@ -46,14 +49,16 @@ struct PersonalBestCelebrationScreen: View {
             VStack(spacing: 0) {
                 Spacer()
 
-                // Star icon
+                // Star icon. Under Reduce Motion the geometry (scale) is
+                // pre-resolved to its final value so the phase flips read as
+                // a static fade, never a zoom or spin.
                 ZStack {
                     // Outer glow rings
                     ForEach(0..<3, id: \.self) { i in
                         Circle()
                             .stroke(scoreAccent.opacity(phase1 ? 0.15 - Double(i) * 0.04 : 0), lineWidth: 2)
                             .frame(width: CGFloat(160 + i * 40), height: CGFloat(160 + i * 40))
-                            .scaleEffect(phase1 ? 1.0 : 0.5)
+                            .scaleEffect(phase1 || reduceMotion ? 1.0 : 0.5)
                     }
 
                     // Score ring
@@ -62,17 +67,19 @@ struct PersonalBestCelebrationScreen: View {
                         .frame(width: 140, height: 140)
 
                     Circle()
-                        .trim(from: 0, to: phase1 ? Double(scoreValue) / 10.0 : 0)
+                        .trim(from: 0, to: phase1 || reduceMotion ? Double(scoreValue) / 10.0 : 0)
                         .stroke(scoreAccent, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                         .frame(width: 140, height: 140)
                         .rotationEffect(.degrees(-90))
+                        .opacity(phase1 || !reduceMotion ? 1 : 0)
 
                     // Star
                     Image(systemName: "star.fill")
                         .font(.system(size: 48, weight: .bold))
                         .foregroundStyle(scoreAccent)
-                        .scaleEffect(phase1 ? 1.0 : 0.1)
+                        .scaleEffect(phase1 || reduceMotion ? 1.0 : 0.1)
                         .rotationEffect(.degrees(starRotation))
+                        .opacity(phase1 || !reduceMotion ? 1 : 0)
                 }
 
                 Spacer().frame(height: 40)
@@ -83,19 +90,19 @@ struct PersonalBestCelebrationScreen: View {
                         .font(Typography.figtree(size: 14, weight: .heavy, relativeTo: .caption))
                         .foregroundStyle(scoreAccent)
                         .opacity(phase2 ? 1 : 0)
-                        .offset(y: phase2 ? 0 : 20)
+                        .offset(y: phase2 || reduceMotion ? 0 : 20)
 
                     Text("\(scoreValue)/10")
                         .font(Typography.figtreeNumeric(size: 64, weight: .bold, relativeTo: .largeTitle))
                         .foregroundStyle(.white)
                         .opacity(phase2 ? 1 : 0)
-                        .scaleEffect(phase2 ? 1.0 : 0.7)
+                        .scaleEffect(phase2 || reduceMotion ? 1.0 : 0.7)
 
                     Text(modeName)
                         .font(Typography.cardTitle)
                         .foregroundStyle(.white.opacity(0.7))
                         .opacity(phase2 ? 1 : 0)
-                        .offset(y: phase2 ? 0 : 10)
+                        .offset(y: phase2 || reduceMotion ? 0 : 10)
 
                     if let previousBest {
                         Text(previousBest)
@@ -139,7 +146,7 @@ struct PersonalBestCelebrationScreen: View {
                 }
                 .buttonStyle(.pressable)
                 .opacity(phase2 ? 1 : 0)
-                .offset(y: phase2 ? 0 : 30)
+                .offset(y: phase2 || reduceMotion ? 0 : 30)
                 .padding(.horizontal, 32)
                 .padding(.bottom, 50)
             }
@@ -149,11 +156,28 @@ struct PersonalBestCelebrationScreen: View {
 
     private func runAnimation() {
 #if canImport(UIKit)
-        // Initial heavy haptic
+        // Initial heavy haptic — kept under Reduce Motion (tactile, not
+        // vestibular; it carries the moment when the choreography is cut).
         let heavy = UIImpactFeedbackGenerator(style: .heavy)
         heavy.prepare()
         heavy.impactOccurred()
 #endif
+
+        if reduceMotion {
+            // Reduce Motion: one gentle static fade. Geometry is pre-resolved
+            // in the body (no springs, no rotation, no slide-in), the particle
+            // field never mounts, and the success haptic still lands.
+            withAnimation(.easeOut(duration: 0.35)) {
+                phase1 = true
+                phase2 = true
+            }
+#if canImport(UIKit)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            }
+#endif
+            return
+        }
 
         // Phase 1: Score ring + star scale in
         withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
@@ -205,6 +229,7 @@ struct PersonalBestCelebrationScreen: View {
             }
         }
         .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
@@ -220,6 +245,7 @@ struct LevelUpCelebrationScreen: View {
     @State private var phase2 = false
     @State private var phase3 = false
     @State private var ringRotation: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var levelTint: Color {
         if newLevel.contains("Beginner") { return .blue }
@@ -251,8 +277,10 @@ struct LevelUpCelebrationScreen: View {
             )
             .ignoresSafeArea()
 
-            // Floating particles
-            if phase3 {
+            // Floating particles — never mounted under Reduce Motion (the
+            // drifting field is a vestibular trigger; the rank copy and
+            // haptic carry the moment on their own).
+            if phase3, !reduceMotion {
                 levelUpParticles
                     .transition(.opacity)
             }
@@ -260,30 +288,35 @@ struct LevelUpCelebrationScreen: View {
             VStack(spacing: 0) {
                 Spacer()
 
-                // Icon with rings
+                // Icon with rings. Under Reduce Motion the geometry (scale)
+                // is pre-resolved so the phase flips read as a static fade,
+                // never a zoom or spin.
                 ZStack {
                     ForEach(0..<3, id: \.self) { i in
                         Circle()
                             .stroke(levelTint.opacity(phase1 ? 0.12 - Double(i) * 0.03 : 0), lineWidth: 1.5)
                             .frame(width: CGFloat(150 + i * 35), height: CGFloat(150 + i * 35))
-                            .scaleEffect(phase1 ? 1.0 : 0.4)
+                            .scaleEffect(phase1 || reduceMotion ? 1.0 : 0.4)
                     }
 
                     Circle()
                         .fill(levelTint.opacity(0.1))
                         .frame(width: 120, height: 120)
-                        .scaleEffect(phase1 ? 1.0 : 0.5)
+                        .scaleEffect(phase1 || reduceMotion ? 1.0 : 0.5)
+                        .opacity(phase1 || !reduceMotion ? 1 : 0)
 
                     Circle()
                         .stroke(levelTint.opacity(0.3), lineWidth: 4)
                         .frame(width: 120, height: 120)
-                        .scaleEffect(phase1 ? 1.0 : 0.5)
+                        .scaleEffect(phase1 || reduceMotion ? 1.0 : 0.5)
+                        .opacity(phase1 || !reduceMotion ? 1 : 0)
 
                     Image(systemName: levelIcon)
                         .font(.system(size: 44, weight: .bold))
                         .foregroundStyle(levelTint)
-                        .scaleEffect(phase1 ? 1.0 : 0.1)
+                        .scaleEffect(phase1 || reduceMotion ? 1.0 : 0.1)
                         .rotationEffect(.degrees(ringRotation))
+                        .opacity(phase1 || !reduceMotion ? 1 : 0)
                 }
 
                 Spacer().frame(height: 44)
@@ -294,20 +327,20 @@ struct LevelUpCelebrationScreen: View {
                         .font(Typography.figtree(size: 14, weight: .heavy, relativeTo: .caption))
                         .foregroundStyle(levelTint)
                         .opacity(phase2 ? 1 : 0)
-                        .offset(y: phase2 ? 0 : 20)
+                        .offset(y: phase2 || reduceMotion ? 0 : 20)
 
                     Text(newLevel)
                         .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title2))
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
                         .opacity(phase2 ? 1 : 0)
-                        .scaleEffect(phase2 ? 1.0 : 0.8)
+                        .scaleEffect(phase2 || reduceMotion ? 1.0 : 0.8)
 
                     Text("Previously: \(previousLevel)")
                         .font(Typography.subheadline)
                         .foregroundStyle(.white.opacity(0.4))
                         .opacity(phase2 ? 1 : 0)
-                        .offset(y: phase2 ? 0 : 10)
+                        .offset(y: phase2 || reduceMotion ? 0 : 10)
 
                     Text("Keep practicing to reach the next rank")
                         .font(Typography.captionSmall)
@@ -331,7 +364,7 @@ struct LevelUpCelebrationScreen: View {
                 }
                 .buttonStyle(.pressable)
                 .opacity(phase2 ? 1 : 0)
-                .offset(y: phase2 ? 0 : 30)
+                .offset(y: phase2 || reduceMotion ? 0 : 30)
                 .padding(.horizontal, 32)
                 .padding(.bottom, 50)
             }
@@ -341,10 +374,28 @@ struct LevelUpCelebrationScreen: View {
 
     private func runLevelUpAnimation() {
 #if canImport(UIKit)
+        // Promotion haptic — kept under Reduce Motion (tactile, not
+        // vestibular; it carries the moment when the choreography is cut).
         let heavy = UIImpactFeedbackGenerator(style: .heavy)
         heavy.prepare()
         heavy.impactOccurred()
 #endif
+
+        if reduceMotion {
+            // Reduce Motion: one gentle static fade. Geometry is pre-resolved
+            // in the body (no springs, no rotation, no slide-in), the particle
+            // field never mounts, and the success haptic still lands.
+            withAnimation(.easeOut(duration: 0.35)) {
+                phase1 = true
+                phase2 = true
+            }
+#if canImport(UIKit)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            }
+#endif
+            return
+        }
 
         withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
             phase1 = true
@@ -391,6 +442,7 @@ struct LevelUpCelebrationScreen: View {
             }
         }
         .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

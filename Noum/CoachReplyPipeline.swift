@@ -28,7 +28,8 @@ enum CoachReplyPipeline {
         let profileStore = CoachingProfileStore.shared
         let systemPrompt = CoachContextBuilder.systemPrompt(
             for: profileStore.profile,
-            structuredReplyShapeEnabled: CoachContextBuilder.structuredAskNoumReplyShapeEnabled()
+            structuredReplyShapeEnabled: CoachContextBuilder.structuredAskNoumReplyShapeEnabled(),
+            judgmentLayerRuleEnabled: CoachContextBuilder.judgmentLayerRuleEnabled()
         )
 
         // Trend analysis at call time — cheap pure work over the snapshot store.

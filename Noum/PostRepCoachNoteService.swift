@@ -1215,7 +1215,16 @@ actor PostRepCoachNoteService {
     /// Empty transcript -> passes (nothing to quote; never blocks IM/silent
     /// reps).
     nonisolated static func engagesTranscript(_ note: String, input: PostRepCoachNoteInput) -> Bool {
-        let transcript = input.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        engagesTranscript(note, transcript: input.transcript)
+    }
+
+    /// Raw-transcript core of the presence gate, exposed so the live chat's
+    /// dual gate (`CoachChatQuoteGuardContext.engagesAnySource`) can hold
+    /// replies that claim a read of the user's words to the SAME standard
+    /// the post-rep note already enforces — one shared implementation, not
+    /// a parallel chat-side copy.
+    nonisolated static func engagesTranscript(_ note: String, transcript rawTranscript: String) -> Bool {
+        let transcript = rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !transcript.isEmpty else { return true }
 
         let lowerTranscript = transcript.lowercased()
