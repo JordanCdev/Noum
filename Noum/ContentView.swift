@@ -631,13 +631,23 @@ struct ContentView: View {
             // (old == nil, new != nil). Skip if a moment is already set or
             // if the intake is already showing. Do not steal focus from a
             // direct route like Ask Noum; the intake is a home-root prompt.
+            //
+            // LAUNCH-AMBUSH GUARD: the profile store also transitions
+            // nil → loaded on every normal app launch, which made this
+            // sheet ambush returning users on open (owner bug report,
+            // 2026-06-10). The persisted once-flag limits the AUTO-fire to
+            // a single lifetime show; Settings and the noum://bigmoment
+            // deep link remain the deliberate re-entry points.
+            let autoFireKey = "bigMomentIntake.hasAutoFired"
             if old == nil, new != nil,
+               !UserDefaults.standard.bool(forKey: autoFireKey),
                !launchedWithDeepLink,
                !deepLinkRouter.hasReceivedRouteThisLaunch,
                navigationPath.isEmpty,
                deepLinkRouter.pending == nil,
                BigMomentStore.shared.activeMoment == nil,
                !showBigMomentIntake {
+                UserDefaults.standard.set(true, forKey: autoFireKey)
                 showBigMomentIntake = true
             }
         }
