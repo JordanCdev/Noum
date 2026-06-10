@@ -14,6 +14,9 @@
 # as best-effort and confirm against current Deepgram docs.
 set -euo pipefail
 
+# Always shred temp response files, even on early exit / Ctrl-C — they hold key material.
+trap 'rm -f /tmp/dg_unauth.json /tmp/dg_auth.json 2>/dev/null || true' EXIT INT TERM
+
 BASE="${BACKEND_BASE_URL:-}"
 if [[ -z "$BASE" ]]; then
   PLIST="$(cd "$(dirname "$0")/.." && pwd)/Noum/BackendConfig.plist"
@@ -26,6 +29,35 @@ EP="${BASE%/}/v1/transcribe/deepgram-key"
 echo "Endpoint: $EP"
 
 extract_key() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("apiKey",""))' "$1" 2>/dev/null || true; }
+
+# Flag two things a correct response must NOT do: leak unexpected secret fields, or vend an
+# already-expired key. Never prints key material.
+validate_response() {
+  python3 - "$1" <<'PY' 2>/dev/null || true
+import json,sys,datetime
+try:
+    d=json.load(open(sys.argv[1]))
+except Exception:
+    raise SystemExit
+expected={"apiKey","expiresAt","expiration"}
+leaked=[k for k in d if k not in expected]
+if leaked:
+    print("   PROBLEM: response leaks unexpected fields:", leaked)
+exp=d.get("expiresAt") or d.get("expiration")
+if exp:
+    try:
+        t=datetime.datetime.fromisoformat(exp.replace("Z","+00:00"))
+        now=datetime.datetime.now(datetime.timezone.utc)
+        if t <= now:
+            print("   PROBLEM: key is already expired:", exp)
+        else:
+            print("   expiry OK:", exp)
+    except Exception:
+        print("   (could not parse expiresAt:", exp, ")")
+else:
+    print("   PROBLEM: no expiresAt in response (client requires it)")
+PY
+}
 
 check_scope() {
   local key="$1"
@@ -55,6 +87,7 @@ if [[ "$code" == "200" ]]; then
   echo "STILL LEAKING — endpoint returned 200 to an unauthenticated caller."
   echo "   Inspecting the leaked key's scope (pre-fix diagnostic):"
   check_scope "$(extract_key /tmp/dg_unauth.json)"
+  validate_response /tmp/dg_unauth.json
 else
   echo "Unauthenticated caller rejected."
 fi
@@ -67,9 +100,11 @@ if [[ -n "${BACKEND_API_KEY:-}" ]]; then
   [[ -n "${NOUM_AUTH_PROVIDER:-}" ]] && hdrs+=(-H "X-Noum-Auth-Provider: ${NOUM_AUTH_PROVIDER}")
   code=$(curl -s -o /tmp/dg_auth.json -w '%{http_code}' "${hdrs[@]}" "$EP" || true)
   echo "HTTP $code"
-  [[ "$code" == "200" ]] && check_scope "$(extract_key /tmp/dg_auth.json)"
+  if [[ "$code" == "200" ]]; then
+    check_scope "$(extract_key /tmp/dg_auth.json)"
+    validate_response /tmp/dg_auth.json
+  fi
 fi
 
-rm -f /tmp/dg_unauth.json /tmp/dg_auth.json 2>/dev/null || true
 echo
 echo "Pass criteria: step 1 = non-200; authenticated key (step 2) = usage:write only, with a short expiry."
