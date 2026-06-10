@@ -406,7 +406,6 @@ struct ContentView: View {
                                 HomeCoachCard(
                                     navigationPath: $navigationPath,
                                     scrollOffset: homeScrollOffset,
-                                    showsAskNoumShortcut: gate.askNoumShortcut,
                                     showsPlanArc: gate.planArc
                                 ).cardEntrance(0)
                             }
@@ -422,6 +421,13 @@ struct ContentView: View {
                                 }
                                 .cardEntrance(1)
                                 .transition(.opacity)
+                            }
+                            // Ask Noum coach door — a quiet white row, not a
+                            // nested chip on the hero. On day 0 (empty home)
+                            // this is the one calm progression cue under the
+                            // Begin CTA once onboarding produced a profile.
+                            if gate.askNoumShortcut {
+                                homeAskNoumRow.cardEntrance(2)
                             }
                             if showAllHomeCards && authManager.isDeveloper {
                                 secondaryDiscoveryCard.cardEntrance(3)
@@ -493,7 +499,6 @@ struct ContentView: View {
                                 HomeCoachCard(
                                     navigationPath: $navigationPath,
                                     scrollOffset: homeScrollOffset,
-                                    showsAskNoumShortcut: gate.askNoumShortcut,
                                     showsPlanArc: gate.planArc
                                 ).cardEntrance(0)
                             }
@@ -531,6 +536,16 @@ struct ContentView: View {
                             // without becoming a competing second hero.
                             if gate.journey {
                                 journeyPreviewCard.cardEntrance(2)
+                            }
+                            // H1 — Home-gap fill. The AI Weekly Insight card
+                            // below is gated on 3 current-week reps and is
+                            // usually absent, which left dead space under the
+                            // Path row. The Ask Noum coach door (relocated out
+                            // of the hero) now fills that slot as a quiet
+                            // white row + violet chat chip — a real,
+                            // signal-gated surface, never empty furniture.
+                            if gate.askNoumShortcut {
+                                homeAskNoumRow.cardEntrance(3)
                             }
                             if gate.aiWeeklyInsight {
                                 AIWeeklyInsightCard(
@@ -1123,6 +1138,77 @@ struct ContentView: View {
         guard toGo > 0, toGo <= 100 else { return nil }
 
         return "You're holding \(tier.title). +\(toGo) rating to \(nextTier.title)."
+    }
+
+    // MARK: - Ask Noum row (H1 — Home-gap fill)
+    //
+    // The Ask Noum coach door used to live as a white-on-gradient chip
+    // nested inside the coach hero. It now renders as its own quiet white
+    // row below the Path/Journey card — filling the dead space that opened
+    // when AIWeeklyInsightCard (3-rep gated) is absent, and matching the
+    // approved direction (docs/UX_VISUAL_DIRECTION.md: "Ask Noum = white
+    // row + violet chat chip").
+    //
+    // Card language mirrors `journeyPreviewCard` (white card, leading
+    // tinted chip, evidence-scaled coach line, chevron) so Home reads as
+    // one coherent stack, not a competing second hero. Copy stays the
+    // shared, evidence-gated `HomeAskNoumShortcut` contract — no new copy
+    // logic. Gated by `HomeSignalGate.askNoumShortcut`, so it never renders
+    // empty furniture: hidden on a cold start with no profile, present once
+    // onboarding produced a CoachingProfile (day-0 seeded thread) or after
+    // the first rep.
+    private var homeAskNoumRow: some View {
+        let tint = AppColor.pro // brand violet — the chat/ask hue
+        let body = HomeAskNoumShortcut.body(sessionCount: sessionStore.sessions.count)
+        return Button {
+            navigationPath.append(AppDestination.askNoum)
+        } label: {
+            HStack(alignment: .center, spacing: Spacing.md) {
+                Image(systemName: "message.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 32, height: 32)
+                    .background(tint.opacity(0.10), in: Circle())
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                        Text(HomeAskNoumShortcut.title)
+                            .microLabel(tint)
+                        Text(HomeAskNoumShortcut.actionTitle)
+                            .font(Typography.captionSmall)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Text(body)
+                        .font(Typography.caption)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+        .background(AppColor.cardBackground.opacity(0.82), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(tint.opacity(0.10), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("\(HomeAskNoumShortcut.title). \(body). \(HomeAskNoumShortcut.actionTitle)."))
+        .accessibilityIdentifier(HomeAskNoumShortcut.accessibilityIdentifier)
     }
 
     // Shortcut dock — deliberately NOT a tab bar (roadmap Iter 4 "resolve

@@ -8246,26 +8246,29 @@ struct AskNoumDayZeroGreetingTests {
     }
 }
 
-struct HomeCoachAskNoumShortcutTests {
+struct HomeAskNoumShortcutTests {
 
     @Test func shortcutReusesEvidenceScaledCopy() {
-        #expect(HomeCoachAskNoumShortcut.body(sessionCount: 1) == HomeAskNoumEvidenceCopy.line(sessionCount: 1))
-        #expect(HomeCoachAskNoumShortcut.body(sessionCount: 2).contains("without overcalling"))
-        #expect(HomeCoachAskNoumShortcut.body(sessionCount: 8).contains("recent reps"))
+        #expect(HomeAskNoumShortcut.body(sessionCount: 1) == HomeAskNoumEvidenceCopy.line(sessionCount: 1))
+        #expect(HomeAskNoumShortcut.body(sessionCount: 2).contains("without overcalling"))
+        #expect(HomeAskNoumShortcut.body(sessionCount: 8).contains("recent reps"))
     }
 
-    @Test func shortcutLivesInsideCoachCardContract() {
-        #expect(HomeCoachAskNoumShortcut.title == "Ask Noum")
-        #expect(HomeCoachAskNoumShortcut.actionTitle == "Open the thread")
-        #expect(HomeCoachAskNoumShortcut.accessibilityIdentifier == "home.coachCard.askNoum")
-        #expect(HomeCoachAskNoumShortcut.accessibilityIdentifier.hasPrefix("home.coachCard."))
+    @Test func shortcutStandaloneRowContract() {
+        // H1: the Ask Noum door is now a standalone white row on Home
+        // (below the Path card), not a chip nested in the coach hero, so
+        // the identifier is location-neutral.
+        #expect(HomeAskNoumShortcut.title == "Ask Noum")
+        #expect(HomeAskNoumShortcut.actionTitle == "Open the thread")
+        #expect(HomeAskNoumShortcut.accessibilityIdentifier == "home.askNoum.row")
+        #expect(HomeAskNoumShortcut.accessibilityIdentifier.hasPrefix("home.askNoum"))
     }
 
     @Test func shortcutCopyAvoidsPromoLanguageAndFakeUrgency() {
         let joined = [
-            HomeCoachAskNoumShortcut.title,
-            HomeCoachAskNoumShortcut.actionTitle,
-            HomeCoachAskNoumShortcut.body(sessionCount: 1)
+            HomeAskNoumShortcut.title,
+            HomeAskNoumShortcut.actionTitle,
+            HomeAskNoumShortcut.body(sessionCount: 1)
         ]
         .joined(separator: " ")
         .lowercased()

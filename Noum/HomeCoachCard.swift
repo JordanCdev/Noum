@@ -14,10 +14,15 @@ import SwiftUI
 // coaching logic.
 
 @available(iOS 17.0, macOS 12.0, *)
-struct HomeCoachAskNoumShortcut: Equatable {
+struct HomeAskNoumShortcut: Equatable {
     static let title = "Ask Noum"
     static let actionTitle = "Open the thread"
-    static let accessibilityIdentifier = "home.coachCard.askNoum"
+    // The Ask Noum door now renders as its own quiet white row on Home
+    // (below the Path/Journey card), not nested inside the coach hero —
+    // so the identifier is location-neutral. See `homeAskNoumRow` in
+    // ContentView and docs/UX_VISUAL_DIRECTION.md ("Ask Noum = white row
+    // + violet chat chip").
+    static let accessibilityIdentifier = "home.askNoum.row"
 
     static func body(sessionCount: Int) -> String {
         HomeAskNoumEvidenceCopy.line(sessionCount: sessionCount)
@@ -74,7 +79,6 @@ struct HomeCoachCard: View {
     /// moves. Default `0` keeps preview + non-scroll call sites
     /// compiling unchanged. Pinned to zero under reduce-motion.
     var scrollOffset: CGFloat = 0
-    var showsAskNoumShortcut: Bool = false
     /// Gate flag from `HomeSignalGate` (>= 1 completed rep). The row
     /// additionally self-gates on an actual active plan via
     /// `HomePlanArcLine` — both must hold before anything renders.
@@ -181,10 +185,6 @@ struct HomeCoachCard: View {
 
             if showsPlanArc {
                 planArcRow
-            }
-
-            if showsAskNoumShortcut {
-                askNoumShortcutCTA
             }
         }
         .padding(.horizontal, Spacing.lg)
@@ -573,66 +573,6 @@ struct HomeCoachCard: View {
             .accessibilityLabel(Text("Your four-week plan. \(line). Opens the coach thread."))
             .accessibilityIdentifier("home.coachCard.planArc")
         }
-    }
-
-    /// Secondary Ask Noum entry folded into the coach hero. This replaces
-    /// the standalone Home promo card so the home feed has one coach
-    /// surface, one primary rep action, and one quieter way to ask a
-    /// follow-up — seeded from the stated goal on day 0, evidence-backed
-    /// from rep 1.
-    @ViewBuilder
-    private var askNoumShortcutCTA: some View {
-        let body = HomeCoachAskNoumShortcut.body(sessionCount: sessionStore.sessions.count)
-        Button {
-            navigationPath.append(AppDestination.askNoum)
-        } label: {
-            HStack(alignment: .center, spacing: 10) {
-                ZStack {
-                    Circle()
-                        .fill(.white.opacity(0.18))
-                        .frame(width: 30, height: 30)
-                    Image(systemName: "message.fill")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.white)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(HomeCoachAskNoumShortcut.title)
-                        .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(.white)
-                    Text(body)
-                        .font(Typography.captionSmall)
-                        .foregroundStyle(.white.opacity(0.78))
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 4)
-                Text(HomeCoachAskNoumShortcut.actionTitle)
-                    .font(Typography.captionSmall.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.white.opacity(0.9))
-            }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                .white.opacity(0.12),
-                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                    .stroke(.white.opacity(0.20), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .padding(.top, Spacing.xs)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("\(HomeCoachAskNoumShortcut.title). \(body). \(HomeCoachAskNoumShortcut.actionTitle)."))
-        .accessibilityIdentifier(HomeCoachAskNoumShortcut.accessibilityIdentifier)
     }
 
     /// Countdown copy for the Big Moment subtitle.
