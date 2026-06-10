@@ -4073,6 +4073,21 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
         }
     }
 
+    /// V3 — DEVELOPER-ONLY: force the on-device Apple `AVSpeechSynthesizer`
+    /// voice instead of the cloud (Google/OpenAI) TTS path, to save provider
+    /// cost while testing. NEVER exposed in release: the Settings control that
+    /// flips this is `#if DEBUG` + `authManager.isDeveloper` gated, and the
+    /// production default is OFF so paying users always get the premium cloud
+    /// voice. When true, `IMMessageSpeaker.speak` routes through the on-device
+    /// synthesizer; the reply is still a real `.reply` (not the honest offline
+    /// stand-in), it just speaks in the system voice. Persisted like the other
+    /// playback prefs so a dev's choice survives relaunch.
+    @Published var forceOnDeviceTTS: Bool {
+        didSet {
+            UserDefaults.standard.set(forceOnDeviceTTS, forKey: forceOnDeviceTTSKey)
+        }
+    }
+
     @Published private(set) var lastResolvedEngineTitle: String = "None"
     @Published private(set) var lastPlaybackStatus: String = "Idle"
     @Published private(set) var lastPlaybackError: String?
@@ -4080,6 +4095,7 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
     private let engineKey = "imVoicePlaybackEngine"
     private let playbackEnabledKey = "imVoicePlaybackEnabled"
     private let askNoumSpokenRepliesKey = "askNoumSpokenRepliesEnabled"
+    private let forceOnDeviceTTSKey = "imForceOnDeviceTTS"
 
     private init() {
         if UserDefaults.standard.object(forKey: playbackEnabledKey) == nil {
@@ -4102,6 +4118,10 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
             objectPresent: UserDefaults.standard.object(forKey: askNoumSpokenRepliesKey) != nil,
             stored: UserDefaults.standard.bool(forKey: askNoumSpokenRepliesKey)
         )
+        // V3 — developer cost-saver. Defaults OFF (absent key → false), so the
+        // premium cloud voice is always the production path. Only a DEBUG dev
+        // toggle ever flips it.
+        forceOnDeviceTTS = UserDefaults.standard.bool(forKey: forceOnDeviceTTSKey)
     }
 
     /// A5 — voice-first default semantics for the coach-chat voice: an absent
@@ -4342,10 +4362,19 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
         stop()
         currentGeneration &+= 1
         let myGeneration = currentGeneration
+        // V3 — DEV cost-saver: when the developer toggle forces on-device TTS,
+        // chat-surface speech (the only callers that pass allowOnDeviceFallback)
+        // routes straight to the system voice instead of paying for cloud TTS.
+        // This affects only which voice ENGINE plays; the message itself is still
+        // whatever the caller decided (a real `.reply` stays a `.reply`), so it
+        // never masquerades as the honest offline stand-in. Production-safe: the
+        // flag is DEBUG-dev-gated and defaults OFF.
+        let forceOnDevice = allowOnDeviceFallback && playbackSettings.forceOnDeviceTTS
+
         speechTask = Task { [weak self] in
             guard let self else { return }
 
-            if onDeviceOnly {
+            if onDeviceOnly || forceOnDevice {
                 if !self.speakOnDevice(trimmed, generation: myGeneration),
                    myGeneration == self.currentGeneration {
                     self.voiceUnavailableNotice = Self.voiceUnavailableNoticeText
@@ -4448,6 +4477,19 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
                 try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
             }
             try audioSession.setActive(true)
+            // V2 — when the live call leaves `.playAndRecord` active (it
+            // interleaves mic + coach TTS under it and we deliberately do NOT
+            // flip the category mid-call, to avoid the documented route-thrash),
+            // that category routes to the EARPIECE unless speaker output is
+            // explicitly forced. A stale session from a practice rep or a
+            // re-entry may not carry `.defaultToSpeaker`, so the coach sounded
+            // quiet/held-to-the-ear. Re-assert the loudspeaker port here without
+            // touching the category, so the mic route is untouched but playback
+            // is loud. The `.playback` branch above already routes to the
+            // loudspeaker, so only the preserved-`.playAndRecord` case needs it.
+            if audioSession.category == .playAndRecord {
+                try? audioSession.overrideOutputAudioPort(.speaker)
+            }
             #endif
             lastFailureReason = nil
         } catch {
@@ -4757,6 +4799,11 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
             prepareForPlayback()
             let player = try AVAudioPlayer(data: data)
             player.delegate = self
+            // V2 — explicit full player volume. `AVAudioPlayer.volume` defaults
+            // to 1.0, but set it unconditionally so a future change (or a reused
+            // player) can never leave the coach quietly attenuated. This is the
+            // per-player gain, independent of the system volume the user controls.
+            player.volume = 1.0
             player.prepareToPlay()
             audioPlayer = player
             // Only treat the clip as "speaking" if play() actually starts.

@@ -1,0 +1,55 @@
+
+[00:00:00.000 --> 00:00:07.720]   I think right now the homepage is a little bit empty towards this bottom gap under the
+[00:00:07.720 --> 00:00:08.960]   path.
+[00:00:08.960 --> 00:00:20.880]   We could maybe move the Ask Gnome down to here or it's like else that you can suggest.
+[00:00:20.880 --> 00:00:29.840]   Think about other apps like speaker or rye, eulie, julingos are a very good one in terms
+[00:00:29.840 --> 00:00:32.140]   of what they have on their homepage.
+[00:00:32.140 --> 00:00:34.800]   That's going to be very important.
+[00:00:34.800 --> 00:00:42.600]   Now if we go to Begin iApp, so actually I don't want to go to that, I want to check
+[00:00:42.600 --> 00:00:55.600]   Ask Gnome, so I don't like the text at the top right where it says with gnome, it looks
+[00:00:55.600 --> 00:01:00.900]   weird.
+[00:01:00.900 --> 00:01:08.840]   When you say tap talk to begin, people might want to just press the screen or press the
+[00:01:08.840 --> 00:01:17.120]   circle and so this tap talk button on the bottom and honestly I don't think we should
+[00:01:17.120 --> 00:01:25.440]   have any text at the start, I just want to keep it clean and minimal.
+[00:01:25.440 --> 00:01:32.920]   Let me try testing it now.
+[00:01:32.920 --> 00:01:46.280]   That's my goal, so yeah it doesn't even work, what is my goal?
+[00:01:46.280 --> 00:01:55.440]   What I observed on your last time red the pace ran slow and so right there the audio
+[00:01:55.440 --> 00:02:05.140]   is too quiet, I pressed aloud because I wanted it to get louder.
+[00:02:05.140 --> 00:02:12.200]   Allowed confuses it with like the feature now, the functionality is if you click allowed,
+[00:02:12.200 --> 00:02:19.680]   it mutes right and that is great, you get to read it, but it should be called mute and
+[00:02:19.680 --> 00:02:24.080]   it should have a appropriate icon.
+[00:02:24.080 --> 00:02:31.720]   This is an okay icon, yeah it should just be called mute.
+[00:02:31.720 --> 00:02:37.640]   Now I turned up all the way though, the audio and it was quite quiet, you saw me pressing
+[00:02:37.640 --> 00:02:45.800]   the audio to be louder, so we need to change that, like it should use like loud speaker
+[00:02:45.800 --> 00:02:56.080]   or just normal audio rating.
+[00:02:56.080 --> 00:03:19.000]   In terms of the actual functionality we have to obviously not press close for it to give
+[00:03:19.000 --> 00:03:26.000]   a response, what that does is it means that Gnome can't give a response, we have to leave
+[00:03:26.000 --> 00:03:34.480]   it open, so here I have to leave it open.
+[00:03:34.480 --> 00:03:41.000]   What I observed on your last time red the pace ran slow at 1WPM, so lift the energy attached
+[00:03:41.000 --> 00:03:48.600]   in the line camera and it gave me the same response, let's test if it gives the same
+[00:03:48.600 --> 00:03:55.320]   response again.
+[00:03:55.320 --> 00:04:01.680]   What I observed on your last time representative the pace ran slow at 1WPM, so lift the energy
+[00:04:01.680 --> 00:04:23.740]   attached and the line carries, so it gave me a slightly different, what I observed on
+[00:04:23.740 --> 00:04:30.680]   your last time red the pace ran slow at 1WPM, so there's two different, the salt button
+[00:04:30.680 --> 00:04:40.980]   there's like I guess the Apple Texas speech, I don't want to use the Apple Texas speech
+[00:04:40.980 --> 00:04:48.320]   in production but to save costs while some testing and development I would like to use
+[00:04:48.320 --> 00:04:54.120]   the Apple one, so hopefully that makes sense.
+[00:04:54.120 --> 00:04:59.760]   We need to fix the actual response because this is crazy that we're not again all of
+[00:04:59.760 --> 00:05:08.200]   that intelligence, all of that code into, ignore that by the way, that was my friend
+[00:05:08.200 --> 00:05:20.640]   messaging, yeah, we're not getting that intelligence into the chat, so that's something that's
+[00:05:20.640 --> 00:05:29.440]   quite concerning, if we go into the text version, I don't like how this looks here, like the
+[00:05:29.440 --> 00:05:37.320]   top panel, it looks really ugly, it shouldn't be like that at all, so we need to hide that
+[00:05:37.320 --> 00:05:51.280]   or just change how it looks, it feels like the chat is a box, it's closed off, so yeah,
+[00:05:51.280 --> 00:05:59.640]   I don't like where it says like the back button, it should have a button somewhere to say like,
+[00:05:59.640 --> 00:06:14.560]   home instead, let's see, so what's going right so far in my recent sessions, now I don't
+[00:06:14.560 --> 00:06:25.240]   know if I like the fact that it recorded the audio, then it put the text into the text box
+[00:06:25.240 --> 00:06:33.160]   from me to upload, the better functionality is when I click stop, it automatically ups
+[00:06:33.160 --> 00:06:39.640]   look up inputs, that message into the chat, instead of bringing it here for me to then
+[00:06:39.640 --> 00:06:41.760]   upload again.
+[00:06:41.760 --> 00:06:48.000]   And I observed on your last time read the pace ran slow at 1WPM, so lift the energy a touch
+[00:06:48.000 --> 00:06:54.080]   and the line carries, so please like how are we not fixing this after all of this code
+[00:06:54.080 --> 00:07:12.080]   is absolutely nuts, and let's see if these prompts are even intelligent as well, see
+[00:07:12.080 --> 00:07:18.720]   what I observed test on your last time representative, the pace ran slow at 1WPM, so lift the energy
+[00:07:18.720 --> 00:07:23.200]   a touch and the line carries, so really you need to do a lot better in terms of development
+[00:07:23.200 --> 00:07:27.320]   because this is crazy the fact that we still don't have it working, I'm going to end it
+[00:07:27.320 --> 00:07:28.760]   there because it's just ridiculous.

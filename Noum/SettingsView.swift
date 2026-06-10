@@ -1335,6 +1335,21 @@ struct SettingsView: View {
                     .buttonStyle(.pressable)
                 }
             }
+
+            // V3 — DEBUG-only developer cost-saver: force the on-device Apple
+            // voice instead of paying for cloud TTS while testing. Compiled out
+            // of release entirely (`#if DEBUG`) and nested inside the
+            // `isDeveloper`-gated Developer tools section, so paying users can
+            // never land here. Default OFF → production always uses cloud voice.
+            #if DEBUG
+            Divider()
+            SettingsToggleRow(
+                title: "Force on-device voice (dev)",
+                subtitle: "Use the free Apple system voice instead of cloud TTS while testing. Lower quality — debug builds only.",
+                isOn: $imVoicePlaybackSettings.forceOnDeviceTTS,
+                accessibilityHint: "When on, coach replies speak with the on-device system voice to avoid cloud text-to-speech cost during development."
+            )
+            #endif
         }
     }
 

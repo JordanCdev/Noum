@@ -100,9 +100,14 @@ struct LiveCoachCallView: View {
         return .calm
     }
 
-    private var stateLine: String {
+    // V4 — the owner wants a clean landing with no instructional copy; the
+    // tappable orb + Talk control carry the affordance. So the idle pre-loop
+    // state shows NO state line (returns nil and the row is omitted) rather
+    // than "Tap Talk to begin". The unavailable case still speaks up — that's
+    // an honest problem, not chrome.
+    private var stateLine: String? {
         if !voiceInput.isAvailable { return "Use Type to write instead" }
-        if !loopActive { return "Tap Talk to begin" }
+        if !loopActive { return nil }
         if voiceInput.state == .recording { return "Listening — pause when you're done" }
         if store.isAwaitingReply { return "Thinking…" }
         if speaker.isSpeaking { return "Speaking…" }
@@ -217,36 +222,55 @@ struct LiveCoachCallView: View {
 
     // MARK: - Live bar
 
+    // V5 — the live bar carries call identity with a single quiet status pill.
+    // The owner found the old trailing "with Noum" text awkward and floating;
+    // it's dropped. The centered "Noum" under the orb and this LIVE/COACH pill
+    // already name who you're talking to, so the bar stays clean and leading.
     private var liveBar: some View {
         HStack(spacing: 8) {
-            Circle().fill((loopActive ? Color.red : AppColor.pro).opacity(loopActive ? 0.9 : 0.65)).frame(width: 8, height: 8)
+            Circle()
+                .fill((loopActive ? Color.red : AppColor.pro).opacity(loopActive ? 0.9 : 0.65))
+                .frame(width: 8, height: 8)
             Text(loopActive ? "LIVE" : "COACH")
                 .font(Typography.micro.weight(.bold))
                 .tracking(1.5)
                 .foregroundStyle(.white.opacity(0.85))
             Spacer()
-            Text("with Noum")
-                .font(Typography.caption)
-                .foregroundStyle(.white.opacity(0.5))
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Live call with Noum")
+        .accessibilityLabel(loopActive ? "Live call with Noum" : "Coach call with Noum")
     }
 
     // MARK: - Presence (the face)
 
     private var presence: some View {
         VStack(spacing: Spacing.md) {
-            NoumCharacter(mood: orbMood, tint: AppColor.pro, size: 168, stage: characterStage)
-                .accessibilityHidden(true)
+            // V4 — the orb is the primary "press the circle to start talking"
+            // affordance the owner asked for. Tapping it mirrors the Talk
+            // button (micTapped) so a user can start hands-free without
+            // hunting the control bar; the Talk button stays as the explicit
+            // alternative. Disabled when speech input isn't available so it
+            // never offers a dead tap.
+            Button(action: micTapped) {
+                NoumCharacter(mood: orbMood, tint: AppColor.pro, size: 168, stage: characterStage)
+                    .accessibilityHidden(true)
+            }
+            .buttonStyle(.plain)
+            .disabled(!voiceInput.isAvailable)
+            .accessibilityLabel(orbAccessibilityLabel)
             Text("Noum")
                 .font(Typography.cardTitle)
                 .foregroundStyle(.white)
-            Text(stateLine)
-                .font(Typography.body)
-                .foregroundStyle(.white.opacity(0.55))
-                .multilineTextAlignment(.center)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: stateLine)
+            // V4 — idle landing shows no instructional line (stateLine == nil);
+            // the orb + controls carry the moment. Only render when there's
+            // something honest to say.
+            if let stateLine {
+                Text(stateLine)
+                    .font(Typography.body)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .multilineTextAlignment(.center)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: stateLine)
+            }
             // C5 — never a silent dead state: mic problems, voice-output
             // problems, and the honest "who is listening" engine label all
             // surface here instead of being buried in debug fields.
@@ -259,8 +283,18 @@ struct LiveCoachCallView: View {
                     .accessibilityIdentifier("askNoum.live.statusLine")
             }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(honestStatusLine.map { "Noum — \(stateLine). \($0)" } ?? "Noum — \(stateLine)")
+    }
+
+    /// V4 — VoiceOver affordance for the now-tappable orb. Names the action it
+    /// performs in the current state so it isn't a mystery target.
+    private var orbAccessibilityLabel: String {
+        if !voiceInput.isAvailable { return "Noum. Voice unavailable — use Type instead." }
+        if loopActive {
+            if speaker.isSpeaking { return "Noum is speaking. Tap to interrupt and talk." }
+            if voiceInput.state == .recording { return "Noum is listening. Tap to stop the call." }
+            return "Noum. Tap to stop the call."
+        }
+        return "Noum. Tap to start talking."
     }
 
     // MARK: - Captions
@@ -307,15 +341,15 @@ struct LiveCoachCallView: View {
 
     // MARK: - Coaching focus line
     //
-    // The live-call landing leads with the orb + "Tap Talk to begin" (stateLine).
-    // We add at most ONE supporting focus line — never the old four-field
+    // The live-call landing leads with the tappable orb (no instructional copy
+    // — V4). We add at most ONE supporting focus line — never the old four-field
     // "COACHING READ" meta-brief (headline / current work / target / next move),
     // which made the user read a clinical case sheet before saying a word and,
     // on a cold start, surfaced an "I have nothing yet" version. Priority:
     // an earned case-file focus first; else one DATA-GROUNDED line from the
     // most recent timed rep's delivery facts ("Last rep: 142 WPM, 3 fillers —
     // want to tighten that?"); else nothing — a true cold start shows no line
-    // and lets "Tap Talk" carry the moment. Never fabricated.
+    // and lets the orb carry the moment. Never fabricated.
 
     @ViewBuilder
     private var coachingBriefCard: some View {
@@ -389,18 +423,39 @@ struct LiveCoachCallView: View {
                 disabled: !voiceInput.isAvailable
             ) { micTapped() }
 
+            // V1 — this control mutes/unmutes the coach's spoken replies, so it
+            // reads as "Mute" (not the vague "Aloud"). Glyph + label flip with
+            // the actual state: speaker.wave when voice is ON (tap to Mute),
+            // speaker.slash when already muted (label "Muted"). a11y label spells
+            // out the *action* the tap performs so VoiceOver users aren't guessing.
             callButton(
                 glyph: voiceSettings.askNoumSpokenRepliesEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill",
-                label: "Aloud",
+                label: voiceSettings.askNoumSpokenRepliesEnabled ? "Mute" : "Muted",
                 fill: Color.white.opacity(0.12),
-                tint: voiceSettings.askNoumSpokenRepliesEnabled ? AppColor.positive : .white
+                tint: voiceSettings.askNoumSpokenRepliesEnabled ? AppColor.positive : .white,
+                accessibilityLabel: voiceSettings.askNoumSpokenRepliesEnabled
+                    ? "Mute coach voice"
+                    : "Unmute coach voice"
             ) { toggleAloud() }
 
             callButton(glyph: "keyboard", label: "Type", fill: Color.white.opacity(0.12)) {
                 endLoop(); onSwitchToType()
             }
 
-            callButton(glyph: "xmark", label: "Leave", fill: Color.red.opacity(0.9)) {
+            // V6 — Leave is de-emphasized so it never reads as the "proceed /
+            // get my response" button. The owner watched users tap a bright-red
+            // Leave to advance and end the call before the reply landed. The
+            // turn already completes regardless of Leave (handleUtterance runs
+            // a detached Task into the shared store and re-arms on its own), so
+            // the real fix is clarity: a quiet ghost treatment keeps the active
+            // Talk/Stop control visually primary and signals "exit", not "next".
+            callButton(
+                glyph: "xmark",
+                label: "Leave",
+                fill: Color.white.opacity(0.12),
+                tint: Color.red.opacity(0.85),
+                accessibilityLabel: "Leave the call"
+            ) {
                 endLoop(); onLeave()
             }
         }
@@ -414,6 +469,7 @@ struct LiveCoachCallView: View {
     private func callButton(
         glyph: String, label: String, fill: Color,
         tint: Color = .white, ring: Bool = false, disabled: Bool = false,
+        accessibilityLabel: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         VStack(spacing: 6) {
@@ -436,7 +492,7 @@ struct LiveCoachCallView: View {
                 .foregroundStyle(.white.opacity(0.6))
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
+        .accessibilityLabel(accessibilityLabel ?? label)
         .accessibilityAddTraits(.isButton)
     }
 
