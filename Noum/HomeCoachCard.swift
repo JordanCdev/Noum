@@ -76,7 +76,7 @@ struct HomeCoachCard: View {
                 emanationRay
                 NoumCharacter(
                     mood: displayedMood,
-                    tint: accentTint,
+                    tint: .white,
                     size: 90
                 )
                 .accessibilityHidden(true)
@@ -88,7 +88,7 @@ struct HomeCoachCard: View {
             // read as a paragraph; this reads as a coach speaking.
             Text(coachTitle)
                 .font(Typography.figtree(size: 24, weight: .bold, relativeTo: .title2))
-                .foregroundStyle(.primary)
+                .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, Spacing.xs)
@@ -99,7 +99,7 @@ struct HomeCoachCard: View {
             if let subtitle = coachSubtitle {
                 Text(subtitle)
                     .font(Typography.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.85))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, Spacing.sm)
@@ -109,7 +109,7 @@ struct HomeCoachCard: View {
             VoiceAlignmentChip(
                 styleGoal: coachingProfileStore.profile?.speakingStyleGoal,
                 mode: recommendedMode,
-                tint: accentTint
+                tint: .white
             )
             .padding(.top, Spacing.xs)
 
@@ -128,7 +128,9 @@ struct HomeCoachCard: View {
             // Begin button carries the mode name so the micro-label
             // "SUDDEN DEATH · ONE BREATH · ONE COMPLETE REP" row can go
             // away — three text rows became one button label.
-            PrimaryCTA(beginCTAText, tint: accentTint) {
+            // Inverted register on the gradient hero: white capsule,
+            // gradient-blue label. The mode info rides the label text.
+            PrimaryCTA(beginCTAText, tint: .white, labelTint: AppColor.coachHeroStart) {
                 beginRecommendedRep()
             }
             .accessibilityIdentifier("home.coachCard.begin")
@@ -141,11 +143,9 @@ struct HomeCoachCard: View {
         .padding(.vertical, Spacing.lg)
         .frame(maxWidth: .infinity)
         .background(coachCardBackground)
-        // Soft Pro-purple elevation — the hero now carries the brand
-        // premium register as its ambient color, with mode tint reserved
-        // for the action (Begin button) + character. Two registers, not
-        // one, gives the hero presence without overloading the eye.
-        .shadow(color: AppColor.pro.opacity(0.18), radius: 22, x: 0, y: 10)
+        // Tinted elevation in the hero's own gradient family — the ONE
+        // vibrant surface on Home (docs/UX_VISUAL_DIRECTION.md).
+        .shadow(color: HeroGradient.coach.shadowTint.opacity(0.32), radius: 22, x: 0, y: 10)
         .onAppear { syncMoodForFreshRecommendation() }
         .onChange(of: recommendationKey) { _, _ in syncMoodForFreshRecommendation() }
         .accessibilityElement(children: .contain)
@@ -208,66 +208,33 @@ struct HomeCoachCard: View {
         let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
         let dy = parallaxAmount
         ZStack {
-            shape.fill(AppColor.cardBackground)
+            // The ONE vibrant surface on Home — the approved blue→cyan
+            // coach gradient (docs/UX_VISUAL_DIRECTION.md).
+            shape.fill(HeroGradient.coach.gradient)
 
-            // The drifting Pro-purple radial. When reduce-motion is on
-            // we render a single static gradient; otherwise a
-            // TimelineView samples a sine-driven UnitPoint so the
-            // center sweeps smoothly without invalidating SwiftUI
-            // state every frame.
-            //
-            // The whole wash shifts by `dy` opposite the scroll
-            // direction — a barely-there interior parallax that
-            // gives the card a sense of depth under scroll without
-            // moving the card itself. Clipped to the shape so the
+            // Drifting white highlight wash — keeps the "card breathes"
+            // quality on the gradient. Shifts by `dy` opposite the scroll
+            // direction (barely-there interior parallax); clipped so the
             // offset gradient never escapes the silhouette.
-            purpleWash(in: shape)
+            highlightWash(in: shape)
                 .offset(y: dy)
                 .clipShape(shape)
 
-            // Trailing mode-tint — kept under the material so the
-            // glass also frosts this register. The mode tint stays
-            // legible through the material because the radius is
-            // wider and the color anchors to the trailing edge.
-            // Drifts at 0.6x the purple wash so the two layers don't
-            // slide as one sheet.
-            shape.fill(
-                RadialGradient(
-                    colors: [accentTint.opacity(0.12), Color.clear],
-                    center: UnitPoint(x: 1.0, y: 0.5),
-                    startRadius: 0,
-                    endRadius: 240
-                )
-            )
-            .offset(y: dy * 0.6)
-            .clipShape(shape)
-
-            // Frosted-glass overlay — dropped from 0.55 to 0.30 alpha
-            // so the underlying purple wash reads obviously at rest, not
-            // just in motion. The previous opacity was too soft against
-            // a richer wash and made the card read as a flat white card
-            // in still screenshots.
-            shape.fill(.regularMaterial)
-                .opacity(0.30)
-
-            // Hairline border bumped from 0.22 to 0.40 so the card's
-            // silhouette has a defined edge against the home canvas.
-            shape.strokeBorder(AppColor.pro.opacity(0.40), lineWidth: 1)
+            // White hairline keeps the silhouette crisp on the canvas.
+            shape.strokeBorder(.white.opacity(0.22), lineWidth: 1)
         }
     }
 
-    /// Pro-purple radial wash with optional slow drift across the top
-    /// of the card. The TimelineView path samples the system animation
-    /// clock so the gradient itself redraws smoothly rather than relying
-    /// on `withAnimation` interpolating a state-bound `UnitPoint` (which
-    /// SwiftUI doesn't animate continuously across `RadialGradient`
-    /// re-creations).
+    /// White highlight wash with optional slow drift across the top of
+    /// the gradient hero. The TimelineView path samples the system
+    /// animation clock so the gradient redraws smoothly; reduce-motion
+    /// renders a single static highlight.
     @ViewBuilder
-    private func purpleWash<S: Shape>(in shape: S) -> some View {
+    private func highlightWash<S: Shape>(in shape: S) -> some View {
         if reduceMotion {
             shape.fill(
                 RadialGradient(
-                    colors: [AppColor.pro.opacity(0.55), AppColor.proLight.opacity(0.25), AppColor.pro.opacity(0.04), Color.clear],
+                    colors: [.white.opacity(0.20), .white.opacity(0.05), Color.clear],
                     center: UnitPoint(x: 0.5, y: 0.0),
                     startRadius: 0,
                     endRadius: 340
@@ -276,16 +243,14 @@ struct HomeCoachCard: View {
         } else {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
                 let t = context.date.timeIntervalSinceReferenceDate
-                // 7s ease-in-out loop. Mapping a sine to [0, 1] gives
-                // a symmetric drift that lingers softly at each end —
-                // the user reads "this card breathes," not "this card
-                // animates."
+                // 7s ease-in-out loop — "this card breathes," not
+                // "this card animates."
                 let phase = (sin(t * (2 * .pi / 7.0)) + 1) / 2
                 let centerX = 0.35 + 0.30 * phase
                 let centerY = 0.0 + 0.15 * phase
                 shape.fill(
                     RadialGradient(
-                        colors: [AppColor.pro.opacity(0.55), AppColor.proLight.opacity(0.25), AppColor.pro.opacity(0.04), Color.clear],
+                        colors: [.white.opacity(0.20), .white.opacity(0.05), Color.clear],
                         center: UnitPoint(x: centerX, y: centerY),
                         startRadius: 0,
                         endRadius: 340
@@ -483,34 +448,30 @@ struct HomeCoachCard: View {
             HStack(spacing: 8) {
                 Image(systemName: moment.category.sfSymbol)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AppColor.pro)
+                    .foregroundStyle(.white)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Prepare for your \(moment.category.displayName)")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.white)
                     Text("\(days) day\(days == 1 ? "" : "s") out · three-rep rehearsal")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.78))
                 }
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(AppColor.pro)
+                    .foregroundStyle(.white.opacity(0.9))
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                LinearGradient(
-                    colors: [AppColor.pro.opacity(0.14), AppColor.pro.opacity(0.06)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
+                .white.opacity(0.14),
                 in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                    .stroke(AppColor.pro.opacity(0.22), lineWidth: 1)
+                    .stroke(.white.opacity(0.22), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -532,19 +493,19 @@ struct HomeCoachCard: View {
             HStack(alignment: .center, spacing: 10) {
                 ZStack {
                     Circle()
-                        .fill(AppColor.pro.opacity(0.12))
+                        .fill(.white.opacity(0.18))
                         .frame(width: 30, height: 30)
                     Image(systemName: "message.fill")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(AppColor.pro)
+                        .foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(HomeCoachAskNoumShortcut.title)
                         .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.white)
                     Text(body)
                         .font(Typography.captionSmall)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.78))
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -552,23 +513,23 @@ struct HomeCoachCard: View {
                 Spacer(minLength: 4)
                 Text(HomeCoachAskNoumShortcut.actionTitle)
                     .font(Typography.captionSmall.weight(.semibold))
-                    .foregroundStyle(AppColor.pro)
+                    .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
                 Image(systemName: "chevron.right")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(AppColor.pro)
+                    .foregroundStyle(.white.opacity(0.9))
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                AppColor.pro.opacity(0.07),
+                .white.opacity(0.12),
                 in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                    .stroke(AppColor.pro.opacity(0.18), lineWidth: 1)
+                    .stroke(.white.opacity(0.20), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)

@@ -576,18 +576,21 @@ struct ProfileView: View {
             VStack(spacing: 18) {
                 let surfacePlan = defaultSurfacePlan
 
-                VStack(spacing: Spacing.cardGap) {
-                    identityHeader
-                    if !premium.isPremium {
-                        upgradeCTA
-                    }
-                }
+                identityHeader
 
                 if surfacePlan.surfaces.contains(.progressHero) {
                     speakingRatingCard
                 }
 
                 profileCoachReadCard
+
+                // Pro after value (owner decision): the upsell renders
+                // below the believable-progress hero + coach read, never
+                // above them.
+                if !premium.isPremium {
+                    upgradeCTA
+                }
+
                 profileEvidenceHub
             }
             .padding(.horizontal, 20)
@@ -1181,17 +1184,26 @@ struct ProfileView: View {
             previous: lastSeenOverallRating,
             rating: rating
         )
+        let pbs = rating.personalBests.filter { $0.value > 0 }
+        let resolvedLine = ProfileResolvedWeaknessLine.make(
+            trends: TrendAnalyzer.analyze(snapshots: trendStore.snapshots)
+        )
+        // Frosted tray renders only with real content — a thin-data user
+        // gets the hero numbers alone, never an empty white shell.
+        let hasTrayContent = rating.totalRatedSessions > 0 || !pbs.isEmpty
+            || !baseline.topStrengths.isEmpty || !baseline.persistentBlockers.isEmpty
+            || resolvedLine != nil
 
         if rating.totalRatedSessions > 0 || baseline.overallConfidence >= .tentative {
             VStack(alignment: .leading, spacing: 16) {
-                // Header
+                // Header — white-on-gradient (progress hero register)
                 HStack(spacing: 8) {
                     Image(systemName: "chart.line.uptrend.xyaxis")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(.white)
                     Text("Speaking Rating")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.85))
                         .textCase(.uppercase)
                     Spacer()
                 }
@@ -1199,16 +1211,29 @@ struct ProfileView: View {
                 if rating.totalRatedSessions > 0 {
                     // Rating display
                     HStack(alignment: .bottom, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text("\(rating.overall)")
                                 .font(Typography.figtreeNumeric(size: 44, relativeTo: .largeTitle))
-                                .foregroundStyle(AppColor.brandBlue)
+                                .foregroundStyle(.white)
                                 .contentTransition(animateRatingTick ? .numericText() : .identity)
                                 .animation(animateRatingTick ? .standardSpring : nil, value: rating.overall)
-                            if rating.weeklyDelta != 0 {
-                                Text(rating.weeklyDelta > 0 ? "+\(rating.weeklyDelta) this week" : "\(rating.weeklyDelta) this week")
+                            // Upward week: earned glass chip. Down week:
+                            // quiet plain line — honest, never decorated.
+                            if rating.weeklyDelta > 0 {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "arrowtriangle.up.fill")
+                                        .font(.system(size: 8, weight: .bold))
+                                    Text("+\(rating.weeklyDelta) this week")
+                                        .font(.caption.weight(.semibold))
+                                }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .background(.white.opacity(0.16), in: Capsule())
+                            } else if rating.weeklyDelta < 0 {
+                                Text("\(rating.weeklyDelta) this week")
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(rating.weeklyDelta > 0 ? AppColor.positive : AppColor.caution)
+                                    .foregroundStyle(.white.opacity(0.75))
                             }
                         }
 
@@ -1218,19 +1243,26 @@ struct ProfileView: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "arrow.up.right")
                                     .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.white.opacity(0.8))
                                 Text("Peak: \(rating.peakRating)")
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.white.opacity(0.8))
                             }
                             Text("\(rating.totalRatedSessions) rated sessions")
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.white.opacity(0.8))
                         }
                     }
+                }
 
-                    // Rating history chart — replaces the previous trend pill.
-                    // Renders the last 30 days as a smoothed line with peak marker.
+                // Evidence tray — chart + honest sub-rows ride a frosted
+                // white surface so their tinted semantics stay legible on
+                // the gradient.
+                if hasTrayContent {
+                    VStack(alignment: .leading, spacing: 16) {
+                if rating.totalRatedSessions > 0 {
+                    // Rating history chart — last 30 days, smoothed line
+                    // with peak marker.
                     RatingHistoryChart(
                         history: rating.ratingHistory,
                         peakRating: rating.peakRating,
@@ -1239,7 +1271,6 @@ struct ProfileView: View {
                 }
 
                 // Personal Bests
-                let pbs = rating.personalBests.filter { $0.value > 0 }
                 if !pbs.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Personal Bests")
@@ -1300,9 +1331,7 @@ struct ProfileView: View {
                 // gets ONE discrete bounce (skipped under Reduce Motion).
                 // Slipping skills get no mirror-image row — drops stay in
                 // the case file, silently.
-                if let resolvedLine = ProfileResolvedWeaknessLine.make(
-                    trends: TrendAnalyzer.analyze(snapshots: trendStore.snapshots)
-                ) {
+                if let resolvedLine {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.caption2)
@@ -1320,14 +1349,18 @@ struct ProfileView: View {
                         resolvedSettleTick.toggle()
                     }
                 }
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.white.opacity(0.94), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                }
             }
             .padding(20)
-            // Rating hero — brand-blue ambient register. Identity hero
-            // carries the purple "premium" register; the rating card
-            // carries the blue "metric" register. Two heroes, two
-            // registers, one product.
-            .background(speakingRatingHeroBackground)
-            .shadow(color: AppColor.brandBlue.opacity(0.16), radius: 22, x: 0, y: 10)
+            // Progress hero — the ONE vibrant surface on Profile
+            // (docs/UX_VISUAL_DIRECTION.md): blue→green gradient, the
+            // believable number in white, evidence on a frosted tray.
+            .background(HeroGradient.progress.gradient, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            .shadow(color: HeroGradient.progress.shadowTint.opacity(0.30), radius: 22, x: 0, y: 10)
             .onAppear { lastSeenOverallRating = rating.overall }
             .onChange(of: rating.overall) { _, newValue in
                 lastSeenOverallRating = newValue
@@ -1522,25 +1555,6 @@ struct ProfileView: View {
             return "\(count) \(noun) banked. Most recent \(recency)."
         }
         return "\(count) \(noun) banked."
-    }
-
-    /// Rating hero chrome — mirrors `identityHeroBackground` with the
-    /// brand-blue tint substituted for Pro-purple. Same radial-from-top
-    /// pattern so the two hero cards read as one visual family.
-    private var speakingRatingHeroBackground: some View {
-        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-        return ZStack {
-            shape.fill(AppColor.cardBackground)
-            shape.fill(
-                RadialGradient(
-                    colors: [AppColor.brandBlue.opacity(0.42), AppColor.brandBlueLight.opacity(0.20), AppColor.brandBlue.opacity(0.04), Color.clear],
-                    center: UnitPoint(x: 0.5, y: 0.0),
-                    startRadius: 0,
-                    endRadius: 320
-                )
-            )
-            shape.strokeBorder(AppColor.brandBlue.opacity(0.38), lineWidth: 1)
-        }
     }
 
     private func trendIcon(_ trend: TrendDirection) -> String {

@@ -277,16 +277,22 @@ extension ButtonStyle where Self == PressableButtonStyle {
 }
 
 /// Standardized primary CTA button.
+///
+/// `labelTint` defaults to white (tinted capsule, white label). On a
+/// gradient hero pass `tint: .white, labelTint: <hero start colour>` for
+/// the inverted white-capsule register.
 struct PrimaryCTA: View {
     let title: String
     let icon: String?
     let tint: Color
+    let labelTint: Color
     let action: () -> Void
 
-    init(_ title: String, icon: String? = nil, tint: Color = AppColor.brandBlue, action: @escaping () -> Void) {
+    init(_ title: String, icon: String? = nil, tint: Color = AppColor.brandBlue, labelTint: Color = .white, action: @escaping () -> Void) {
         self.title = title
         self.icon = icon
         self.tint = tint
+        self.labelTint = labelTint
         self.action = action
     }
 
@@ -300,7 +306,7 @@ struct PrimaryCTA: View {
                 Text(title)
                     .font(.headline.weight(.semibold))
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(labelTint)
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.md)
             .background(tint.gradient, in: Capsule(style: .continuous))
@@ -318,6 +324,120 @@ struct LightGradientBackground: View {
             endPoint: .bottomTrailing
         )
         .ignoresSafeArea()
+    }
+}
+
+// MARK: - Hero Gradient System
+
+/// Hero gradient endpoints (docs/UX_VISUAL_DIRECTION.md — owner-approved
+/// colour pass). Named by surface semantics, not by colour.
+extension AppColor {
+    /// Verdict hero (post-rep): indigo → violet
+    static let verdictHeroStart = Color(red: 0.23, green: 0.43, blue: 0.96)
+    static let verdictHeroMid   = Color(red: 0.42, green: 0.30, blue: 0.96)
+    static let verdictHeroEnd   = Color(red: 0.55, green: 0.24, blue: 0.96)
+    /// Coach hero (Home prescription): blue → cyan
+    static let coachHeroStart = Color(red: 0.18, green: 0.48, blue: 0.96)
+    static let coachHeroMid   = Color(red: 0.23, green: 0.63, blue: 1.00)
+    static let coachHeroEnd   = Color(red: 0.09, green: 0.78, blue: 0.81)
+    /// Progress hero (Profile speaking rating): blue → green
+    static let progressHeroStart = Color(red: 0.18, green: 0.48, blue: 0.96)
+    static let progressHeroMid   = Color(red: 0.17, green: 0.56, blue: 0.61)
+    static let progressHeroEnd   = Color(red: 0.08, green: 0.62, blue: 0.41)
+}
+
+/// The three approved hero gradients — ONE vibrant gradient hero per
+/// screen, everything else stays calm. Use through `GradientHeroCard`;
+/// don't scatter raw per-screen `LinearGradient`s.
+enum HeroGradient {
+    /// Post-rep verdict: indigo → violet
+    case verdict
+    /// Home coach prescription: blue → cyan
+    case coach
+    /// Profile speaking rating: blue → green
+    case progress
+
+    var gradient: LinearGradient {
+        switch self {
+        case .verdict:
+            return LinearGradient(
+                colors: [AppColor.verdictHeroStart, AppColor.verdictHeroMid, AppColor.verdictHeroEnd],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+        case .coach:
+            return LinearGradient(
+                colors: [AppColor.coachHeroStart, AppColor.coachHeroMid, AppColor.coachHeroEnd],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+        case .progress:
+            return LinearGradient(
+                colors: [AppColor.progressHeroStart, AppColor.progressHeroMid, AppColor.progressHeroEnd],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+        }
+    }
+
+    /// Shadow tint matching the gradient family (tinted shadows, never gray).
+    var shadowTint: Color {
+        switch self {
+        case .verdict: return AppColor.verdictHeroMid
+        case .coach: return AppColor.coachHeroStart
+        case .progress: return AppColor.progressHeroMid
+        }
+    }
+}
+
+/// Gradient hero card — the single vibrant surface on a screen. Content
+/// renders white-on-gradient; everything else on the screen stays a calm
+/// white card.
+struct GradientHeroCard<Content: View>: View {
+    let style: HeroGradient
+    let padding: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    init(
+        _ style: HeroGradient,
+        padding: CGFloat = Spacing.lg,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.style = style
+        self.padding = padding
+        self.content = content
+    }
+
+    var body: some View {
+        content()
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(style.gradient, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            .shadow(color: style.shadowTint.opacity(0.30), radius: 18, y: 10)
+    }
+}
+
+/// Frosted stat chip for use ON a gradient hero (white-on-gradient).
+struct HeroGlassChip: View {
+    let value: String
+    let label: String
+
+    var body: some View {
+        VStack(spacing: Spacing.xxs) {
+            Text(value)
+                .font(.headline.bold())
+                .foregroundStyle(.white)
+            Text(label)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.white.opacity(0.78))
+                .textCase(.uppercase)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Spacing.xs + 2)
+        .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: CornerRadius.small + 3, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.small + 3, style: .continuous)
+                .stroke(.white.opacity(0.18), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
     }
 }
 

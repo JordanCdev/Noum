@@ -70,28 +70,28 @@ struct HeroScoreCard: View {
             // Mode label
             Text(practiceTitle.uppercased())
                 .font(.caption2.weight(.bold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.8))
                 .tracking(1.4)
 
-            // Score ring
+            // Score ring — white-on-gradient (verdict hero register)
             ZStack {
                 Circle()
-                    .stroke(scoreAccent.opacity(0.15), lineWidth: 8)
+                    .stroke(.white.opacity(0.25), lineWidth: 8)
                     .frame(width: 120, height: 120)
 
                 Circle()
                     .trim(from: 0, to: Double(scoreValue) / 10.0)
-                    .stroke(scoreAccent, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .stroke(.white, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                     .frame(width: 120, height: 120)
                     .rotationEffect(.degrees(-90))
 
                 VStack(spacing: 2) {
                     Text("\(scoreValue)")
                         .font(Typography.figtreeNumeric(size: 44, weight: .bold, relativeTo: .largeTitle))
-                        .foregroundStyle(scoreAccent)
+                        .foregroundStyle(.white)
                     Text("/10")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.7))
                 }
             }
             .scaleEffect(!reduceMotion && celebrationVisible ? 1.06 : 1.0)
@@ -113,10 +113,10 @@ struct HeroScoreCard: View {
                         .font(.caption.weight(.semibold))
                         .multilineTextAlignment(.center)
                 }
-                .foregroundStyle(AppColor.modeIM)
+                .foregroundStyle(.white)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(AppColor.modeIM.opacity(0.10), in: Capsule())
+                .background(.white.opacity(0.16), in: Capsule())
                 .accessibilityIdentifier("summary.hero.toneDrillSolvedRibbon")
                 .accessibilityLabel(label)
             }
@@ -124,42 +124,36 @@ struct HeroScoreCard: View {
             // Headline
             HStack(spacing: 8) {
                 Image(systemName: scoreEmoji)
-                    .foregroundStyle(scoreAccent)
+                    .foregroundStyle(.white)
                 Text(headline)
                     .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
             }
 
             // Prompt (if available)
             if let sessionPrompt {
                 Text("\"\(sessionPrompt)\"")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.85))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .padding(.horizontal, 12)
             }
 
-            // Quick stats row with trend deltas
+            // Quick stats — existing delta pills ride a frosted tray so
+            // their tinted semantics stay legible on the gradient.
             HStack(spacing: 20) {
                 StatPill(label: "Fillers", value: "\(effectiveFillerCount)", delta: fillerDelta, tint: fillerTint, invertDelta: true)
                 DurationAssessmentPill(effectiveDuration: effectiveDuration, durationAssessment: durationAssessment)
             }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
+            .background(.white.opacity(0.92), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         }
         .frame(maxWidth: .infinity)
         .padding(24)
-        .background(
-            LinearGradient(
-                colors: [AppColor.cardBackground, scoreAccent.opacity(0.04)],
-                startPoint: .top,
-                endPoint: .bottom
-            ),
-            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .stroke(scoreAccent.opacity(0.12), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
+        .background(HeroGradient.verdict.gradient, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .shadow(color: HeroGradient.verdict.shadowTint.opacity(0.30), radius: 18, y: 10)
     }
 }
 
