@@ -179,6 +179,14 @@ final class M17VerificationTour: XCTestCase {
         Thread.sleep(forTimeInterval: 1.5)
         attach(history, name: "11_history_top")
 
+        // Session rows live on the Session History sub-page now — the
+        // Review home is insight-first. Step through the entry card.
+        let listEntry = history.descendants(matching: .any)["history.sessionListEntry"]
+        if listEntry.waitForExistence(timeout: 4) {
+            listEntry.tap()
+            Thread.sleep(forTimeInterval: 1.0)
+        }
+
         let firstRow = history.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier BEGINSWITH 'history.row.'"))
             .element(boundBy: 0)

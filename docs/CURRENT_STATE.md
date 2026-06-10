@@ -457,8 +457,32 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   rating, streak, mode-mastery, lesson crowns). The home screen surfaces
   the next node with a one-tap CTA. Past + current + next-3 visible on
   the path map; further-out nodes stay masked. **M3 milestone shipped.**
-- `Noum/Noum/PathJourneyView.swift` — map surface that combines the new
-  node grid with retained decorative artwork.
+- `Noum/Noum/PathJourneyView.swift` — habit-first journey page (2026-06-10
+  overhaul, founder voice-feedback driven). The landscape artwork binds to
+  the BASE `PracticeJourneySnapshot` (1/21 of the trail per practiced day
+  in a rolling 21-day window) — the habit metaphor, NEVER node counts
+  (`applyingPathPresentation` removed; `withDisplayedStreak` swaps in the
+  freeze-aware streak). Page reads top-to-bottom as one story: hero
+  landscape (destination glow at the vanishing point + full `NoumCharacter`
+  walker standing at the reveal frontier, stage-ratcheted, additive-only —
+  no dimming on absence, ever) → consistency strip ("N of the last 21 days
+  walked" — never "Day N", the window rolls) → single Today CTA → "Why
+  you're walking" card (provenance rule: quotes + italics ONLY for the
+  user's literal words — successVision → motivationWhyNow → paraphrasedGoal
+  → coachingBrief → capture invitation, `JourneyWhyComposer` pure + tested,
+  incl. a never-punish sweep over every state) → "Trail landmarks" card
+  (System B demoted to a position read) → challenge + skill milestones
+  collapsed into one "Along the way" disclosure → honesty footer. Flag tap
+  scrolls to the why card. **Vocabulary: "mission" → "landmark" app-wide**
+  (PathJourneyPresentation, ContentView journey card + a11y IDs,
+  PathNodeCelebration headline "Landmark reached.", YourArcCard,
+  HomeCoachCard, SummaryView headline, DailyChallengeTile → "Today's
+  focus", LedgerRoleLines.landmarkRole, CoachContextBuilder "- Current
+  landmark:"; "landmark" verified collision-free vs "marker"/"chapter"/
+  "waypoint"). On-artwork landmark pins deliberately NOT shipped: pinning
+  node positions onto a days-driven reveal implies a day↔node equivalence
+  that doesn't exist (fake-progress). Deferred: day-bloom settle beat,
+  walker-relative pins, grass sway, wear system, full-bleed hero.
 - `Noum/Noum/StreakFreezeManager.swift` — weekly-replenishing streak
   freeze; protects the streak across one missed day per ISO week.
   Wires the app icon badge through `UNUserNotificationCenter.setBadgeCount`
@@ -467,9 +491,14 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   from SF Symbols (waveform variants + halos + glow), four moods (calm /
   listening / excited / coaching), state-specific accents (sparkle ribbon
   on excited, symmetric arc-pulses on listening, slight tilt on coaching).
-  Used on the home hero, FirstRepCelebration, ProfileView header, and
-  AchievementsTreeView hero strip. Brand-rule compliant: motion + color
-  + shape, no illustration.
+  Used on the home hero, FirstRepCelebration, ProfileView header,
+  AchievementsTreeView hero strip, and the journey-page walker. Brand-rule
+  compliant: motion + color + shape, no illustration. 2026-06-10: the
+  continuous 30fps phase loop + mastery sparkle loop are now held in
+  `@State` task handles and cancelled in `onDisappear` (previously raw
+  `Task { while true }` — every appearance leaked a loop that span forever
+  after the view left the hierarchy); `runEntrance` restarts them on
+  re-appearance.
 - `Noum/Noum/PauseMetrics.swift` + `Noum/Noum/PauseSummaryCard.swift` —
   M4 v1: pause statistics (count, mean, longest, filled-vs-unfilled
   ratio) computed from word timings during finalize. Card hides when

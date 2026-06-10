@@ -126,7 +126,7 @@ struct AIWeeklyInsightCard: View {
             // weekly insight reads "Chapter · <Tier>" above the headline,
             // tying the AI read into the story register the rest of the
             // app uses ("YOUR JOURNEY · Chapter · Bronze" on the journey
-            // card, "Chapter X — Mission Complete." on the celebration).
+            // card, "Chapter X — Landmark reached." on the celebration).
             if let chapter = chapterEyebrow {
                 Text(chapter)
                     .font(Typography.micro.weight(.bold))

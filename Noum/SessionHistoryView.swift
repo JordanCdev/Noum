@@ -61,6 +61,60 @@ struct SessionHistoryDetailPresentation: Equatable {
         "\(max(0, Int(session.duration.rounded())))s"
     }
 
+    /// The prompt this rep answered, or nil when none was captured. The
+    /// score and pace reads are impossible to sanity-check without the
+    /// question, so the detail view surfaces this whenever it exists.
+    static func prompt(for session: PracticeSession) -> String? {
+        clean(session.prompt)
+    }
+
+    /// First sentence of a coach paragraph — the focus card carries the
+    /// headline thought; the full paragraph stays in Coach Read so the
+    /// same wall of text isn't rendered twice on one screen.
+    static func leadSentence(of text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return trimmed }
+        var lead = ""
+        for character in trimmed {
+            lead.append(character)
+            // Min length guards against abbreviation periods ("e.g.",
+            // "Mr.") ending the sentence absurdly early.
+            if ".!?".contains(character) && lead.count >= 25 {
+                break
+            }
+        }
+        return lead.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Neutral context line connecting this rep to the previous scored rep
+    /// of the same mode — answers "what happened between sessions" without
+    /// judging a drop. Nil when this is the first scored rep of its mode.
+    static func previousRepLine(for session: PracticeSession, in sessions: [PracticeSession]) -> String? {
+        guard session.score != nil else { return nil }
+        let previous = sessions
+            .filter { $0.mode == session.mode && $0.date < session.date && $0.score != nil }
+            .max(by: { $0.date < $1.date })
+        guard let previous, let previousScore = previous.score else { return nil }
+        let day = previous.date.formatted(date: .abbreviated, time: .omitted)
+        return "Previous \(modeLabel(for: session.mode)) rep: \(previousScore)/10 · \(day)"
+    }
+
+    /// Footer for the transcript card. The transcript is stored in full —
+    /// when it reads as cut off, that's where the recording stopped, and
+    /// saying so explicitly is what keeps the user trusting the capture.
+    static func transcriptEndLine(for session: PracticeSession) -> String {
+        "Recording ended here · \(durationLabel(for: session))"
+    }
+
+    private static func modeLabel(for mode: PracticeMode) -> String {
+        switch mode {
+        case .timed: return "Timed"
+        case .suddenDeath: return "Pressure Drill"
+        case .ahCounter: return "Ah-Counter"
+        case .imConversation: return "IM Mode"
+        }
+    }
+
     private static func clean(_ text: String?) -> String? {
         guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty else {
@@ -93,16 +147,12 @@ struct SessionHistoryView: View {
 
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
-    @StateObject private var suddenDeathRunHistoryStore = SuddenDeathRunHistoryStore.shared
+    @StateObject private var skillTrendStore = SkillTrendStore.shared
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var clutchWordStore = ClutchWordStore.shared
     @StateObject private var ratingStore = RatingStore.shared
-    @State private var selectedModeFilter: PracticeMode? = nil
-    @State private var sessionToDelete: PracticeSession?
-    @State private var showTrends = false
     @Binding var navigationPath: NavigationPath
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(navigationPath: Binding<NavigationPath>) {
         self._navigationPath = navigationPath
@@ -118,53 +168,25 @@ struct SessionHistoryView: View {
         sessionStore.sessions.sorted { $0.date > $1.date }
     }
 
-    private var filteredSessions: [PracticeSession] {
-        guard let filter = selectedModeFilter else { return sessions }
-        return sessions.filter { $0.mode == filter }
-    }
-
-    private var leadSessions: [PracticeSession] {
-        Array(filteredSessions.prefix(3))
-    }
-
-    private var remainingSessions: [PracticeSession] {
-        Array(filteredSessions.dropFirst(3))
-    }
-
     private var totalSessions: Int { sessions.count }
 
-    private var averageScoreText: String {
-        let scores = sessions.compactMap(\.score)
-        guard !scores.isEmpty else { return "--" }
-        let average = Double(scores.reduce(0, +)) / Double(scores.count)
-        return String(format: "%.1f", average)
+    /// Mirrors ProgressionChartsCard's render gate (3+ scored reps in the
+    /// last 30 days) so the page knows whether the chart will draw before
+    /// asking it to — and can show the honest "forming" card instead.
+    private var developmentChartHasData: Bool {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+        return sessions.filter { $0.date >= cutoff && $0.score != nil }.count >= 3
     }
 
-    private var strongestModeText: String {
-        let grouped = Dictionary(grouping: sessions, by: \.mode)
-        let ranked = grouped.max { lhs, rhs in
-            averageScore(for: lhs.value) < averageScore(for: rhs.value)
-        }?.key
-        return ranked.map(modeLabel(for:)) ?? "--"
+    private var skillTrends: [SkillTrend] {
+        TrendAnalyzer.analyze(snapshots: skillTrendStore.snapshots)
     }
 
-    private var recentForTrends: [PracticeSession] {
-        Array(sessions.prefix(8).reversed())
-    }
-
-    private var scoreTrend: [Double] {
-        recentForTrends.compactMap { $0.score.map(Double.init) }
-    }
-
-    private var fillerTrend: [Double] {
-        recentForTrends.map { Double(max(0, 10 - min($0.fillerWordCount, 10))) }
-    }
-
-    private var pacingTrend: [Double] {
-        recentForTrends.map { session in
-            let distance = abs(Double(session.wordsPerMinute) - 130)
-            return max(0, 10 - min(distance / 12, 10))
-        }
+    private var highlights: [ReviewHighlightsEngine.Highlight] {
+        ReviewHighlightsEngine.highlights(
+            sessions: sessions,
+            profile: coachingProfileStore.profile
+        )
     }
 
     private var reviewSurface: SessionHistoryReviewSurface {
@@ -189,34 +211,26 @@ struct SessionHistoryView: View {
             } else {
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        historyLeadLine
-                            .padding(.horizontal, Spacing.screenH)
-                            .padding(.top, 8)
-                            .padding(.bottom, 12)
+                        // Insight-first: the page opens with what a coach
+                        // would say (development, read, picks) — the raw
+                        // session log lives behind the entry card below.
+                        developmentSection
 
-                        // --- Mode Filter ---
-                        modeFilterChips
-                            .padding(.bottom, 12)
+                        coachReadSection
 
-                        modeBreakdownSection
+                        highlightsSection
 
-                        // --- Section Header ---
-                        // Sentence-case cardTitle + hairline divider. Reads as
-                        // a premium app sentence, not a wireframe label.
-                        sessionListHeader
+                        reviewSignalsSection
 
-                        // --- Session List ---
-                        sessionListSection
-
-                        historyOverviewSection
-                            .padding(.top, 4)
+                        sessionHistoryEntry
 
                         Spacer(minLength: 40)
                     }
+                    .padding(.top, 8)
                 }
             }
         }
-        .navigationTitle("")
+        .navigationTitle("Review")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("history.screen")
         .toolbar {
@@ -224,57 +238,115 @@ struct SessionHistoryView: View {
                 Button("Done") { dismiss() }
             }
         }
-        .alert("Delete Session?", isPresented: .init(
-            get: { sessionToDelete != nil },
-            set: { if !$0 { sessionToDelete = nil } }
-        )) {
-            Button("Delete", role: .destructive) {
-                if let session = sessionToDelete {
-                    sessionStore.deleteSession(id: session.id)
-                    sessionToDelete = nil
+    }
+
+    // MARK: - Development
+
+    @ViewBuilder
+    private var developmentSection: some View {
+        Group {
+            if developmentChartHasData {
+                ProgressionChartsCard(sessionStore: sessionStore)
+            } else {
+                earlyDevelopmentCard
+            }
+        }
+        .padding(.horizontal, Spacing.screenH)
+        .padding(.bottom, 16)
+    }
+
+    /// Honest placeholder while the chart's evidence floor isn't met —
+    /// names what unlocks it rather than drawing a two-point line.
+    private var earlyDevelopmentCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue)
+                Text("Your development")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+            }
+            Text("Your development picture is forming. A few more scored reps unlock your progress chart here.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .accessibilityIdentifier("review.developmentForming")
+    }
+
+    private var coachReadSection: some View {
+        ReviewCoachReadCard(trends: skillTrends)
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.bottom, 16)
+    }
+
+    @ViewBuilder
+    private var highlightsSection: some View {
+        if !highlights.isEmpty {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Text("Worth a second look")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+
+                VStack(spacing: 8) {
+                    ForEach(highlights) { highlight in
+                        ReviewHighlightRow(highlight: highlight) {
+                            navigationPath.append(
+                                AppDestination.sessionDetail(sessionID: highlight.sessionID)
+                            )
+                        }
+                    }
                 }
             }
-            Button("Cancel", role: .cancel) { sessionToDelete = nil }
-        } message: {
-            Text("This permanently removes this practice session from your history. This cannot be undone.")
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.bottom, 20)
         }
     }
 
-    // MARK: - Summary Strip
+    // MARK: - Session history entry
 
-    private var historyLeadLine: some View {
-        Text(historyLeadSummary)
-            .font(Typography.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
+    private var sessionHistoryEntry: some View {
+        NavigationLink {
+            SessionHistoryListView(navigationPath: $navigationPath)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .frame(width: 34, height: 34)
+                    .background(AppColor.brandBlue.opacity(0.10), in: Circle())
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Session history")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text("\(totalSessions) saved rep\(totalSessions == 1 ? "" : "s") — search, filter, and revisit any of them")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.quaternary)
+            }
+            .padding(Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("history.leadSummary")
-    }
-
-    private var historyLeadSummary: String {
-        var parts = ["\(totalSessions) session\(totalSessions == 1 ? "" : "s") saved"]
-        if averageScoreText != "--" {
-            parts.append("\(averageScoreText) avg score")
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         }
-        parts.append("\(strongestModeText) strongest")
-        return parts.joined(separator: " · ")
-    }
-
-    private var historyOverviewSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("History overview")
-                .font(Typography.micro)
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.8)
-                .padding(.horizontal, Spacing.screenH)
-
-            summaryStrip
-                .padding(.horizontal, Spacing.screenH)
-
-            trendsSection
-                .padding(.horizontal, Spacing.screenH)
-        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, Spacing.screenH)
         .padding(.bottom, 20)
+        .accessibilityIdentifier("history.sessionListEntry")
     }
 
     @ViewBuilder
@@ -316,327 +388,6 @@ struct SessionHistoryView: View {
         }
     }
 
-    @ViewBuilder
-    private var modeBreakdownSection: some View {
-        // Mode-specific track records stay close to the selected filter, but
-        // below the lead summary so saved reps remain the primary surface.
-        if selectedModeFilter == .suddenDeath {
-            SuddenDeathHistoryBreakdownCard(
-                runs: suddenDeathRunHistoryStore.runs,
-                onSelectDifficulty: { difficulty in
-                    navigationPath.append(
-                        AppDestination.suddenDeathDifficultyDetail(difficulty: difficulty)
-                    )
-                }
-            )
-            .padding(.horizontal, Spacing.screenH)
-            .padding(.bottom, 16)
-        }
-
-        if selectedModeFilter == .ahCounter {
-            AhCounterHistoryBreakdownCard(
-                sessions: filteredSessions,
-                onSelectCleanestRep: { sessionID in
-                    navigationPath.append(
-                        AppDestination.sessionDetail(sessionID: sessionID)
-                    )
-                }
-            )
-            .padding(.horizontal, Spacing.screenH)
-            .padding(.bottom, 16)
-        }
-
-        if selectedModeFilter == .timed {
-            TimedHistoryBreakdownCard(
-                sessions: filteredSessions,
-                onSelectBestRep: { sessionID in
-                    navigationPath.append(
-                        AppDestination.sessionDetail(sessionID: sessionID)
-                    )
-                }
-            )
-            .padding(.horizontal, Spacing.screenH)
-            .padding(.bottom, 16)
-        }
-
-        if selectedModeFilter == .imConversation {
-            IMHistoryBreakdownCard(
-                sessions: filteredSessions,
-                onSelectScenario: { scenario in
-                    navigationPath.append(
-                        AppDestination.imScenarioDetail(scenario: scenario)
-                    )
-                }
-            )
-            .padding(.horizontal, Spacing.screenH)
-            .padding(.bottom, 16)
-        }
-    }
-
-    private var sessionListHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(sectionTitle)
-                .font(Typography.cardTitle)
-                .foregroundStyle(.primary)
-            Rectangle()
-                .fill(AppColor.subtleBorder)
-                .frame(height: 1)
-        }
-        .padding(.horizontal, Spacing.screenH)
-        .padding(.bottom, 12)
-    }
-
-    @ViewBuilder
-    private var sessionListSection: some View {
-        if filteredSessions.isEmpty {
-            emptyFilterState
-                .padding(.horizontal, Spacing.screenH)
-        } else {
-            sessionRows(leadSessions)
-
-            reviewSignalsSection
-                .padding(.top, 4)
-
-            if !remainingSessions.isEmpty {
-                sessionRows(remainingSessions)
-            }
-        }
-    }
-
-    private func sessionRows(_ rows: [PracticeSession]) -> some View {
-        ForEach(rows) { session in
-            NavigationLink {
-                SessionHistoryDetailView(
-                    session: session,
-                    insights: CoachingPlanner.sessionInsights(
-                        for: session,
-                        comparedTo: sessions,
-                        profile: coachingProfileStore.profile
-                    )
-                )
-            } label: {
-                sessionRow(session)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("history.row.\(session.id.uuidString)")
-            .contextMenu {
-                Button(role: .destructive) {
-                    sessionToDelete = session
-                } label: {
-                    Label("Delete Session", systemImage: "trash")
-                }
-            }
-        }
-        .padding(.horizontal, Spacing.screenH)
-    }
-
-    private var summaryStrip: some View {
-        HStack(spacing: 0) {
-            statPill(value: "\(totalSessions)", label: "Sessions", tint: .blue)
-            Spacer(minLength: 0)
-            statPill(value: averageScoreText, label: "Avg Score", tint: .green)
-            Spacer(minLength: 0)
-            statPill(value: strongestModeText, label: "Strongest", tint: .purple)
-        }
-        .padding(14)
-        .background(heroBackground(tint: AppColor.brandBlue, cornerRadius: CornerRadius.large))
-        .shadow(color: AppColor.brandBlue.opacity(0.14), radius: 14, x: 0, y: 6)
-    }
-
-    // MARK: - Hero Background
-    //
-    // Mirrors the `HomeCoachCard.coachCardBackground` / `LeagueView.tierCardBackground`
-    // pattern: opaque card base + radial tinted wash (0.12 → 0) anchored to the
-    // top edge + faint tinted border. Used to lift the summary strip into
-    // "hero surface" treatment.
-    private func heroBackground(tint: Color, cornerRadius: CGFloat) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        return ZStack {
-            shape.fill(AppColor.cardBackground)
-            shape.fill(
-                RadialGradient(
-                    colors: [tint.opacity(0.12), tint.opacity(0.03), Color.clear],
-                    center: UnitPoint(x: 0.5, y: 0.0),
-                    startRadius: 0,
-                    endRadius: 320
-                )
-            )
-            shape.strokeBorder(tint.opacity(0.18), lineWidth: 1)
-        }
-    }
-
-    private func statPill(value: String, label: String, tint: Color) -> some View {
-        VStack(spacing: 4) {
-            Text(value)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(tint)
-                .minimumScaleFactor(0.7)
-                .lineLimit(1)
-            Text(label)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Trends Section
-
-    private var trendsSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                if reduceMotion {
-                    showTrends.toggle()
-                } else {
-                    withAnimation(.easeInOut(duration: 0.25)) { showTrends.toggle() }
-                }
-            } label: {
-                HStack {
-                    Text("Progress Trends")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(showTrends ? 90 : 0))
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-            }
-            .buttonStyle(.plain)
-
-            if showTrends {
-                VStack(spacing: 12) {
-                    HStack(spacing: 10) {
-                        miniTrend(title: "Score", values: scoreTrend, tint: .green)
-                        miniTrend(title: "Filler Control", values: fillerTrend, tint: .orange)
-                    }
-                    miniTrend(title: "Pacing", values: pacingTrend, tint: .blue)
-                }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-    }
-
-    private func miniTrend(title: String, values: [Double], tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(trendDelta(for: values))
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(tint)
-            }
-            SparklineView(values: values, color: tint)
-                .frame(height: 32)
-        }
-        .padding(10)
-        .background(tint.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-    }
-
-    // MARK: - Mode Filter Chips
-
-    private var modeFilterChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                filterChip(label: "All", mode: nil)
-                filterChip(label: PracticeMode.timed.displayLabel, mode: .timed)
-                filterChip(label: PracticeMode.suddenDeath.displayLabel, mode: .suddenDeath)
-                filterChip(label: PracticeMode.ahCounter.displayLabel, mode: .ahCounter)
-                filterChip(label: PracticeMode.imConversation.displayLabel, mode: .imConversation)
-            }
-            .padding(.horizontal, Spacing.screenH)
-        }
-    }
-
-    private func filterChip(label: String, mode: PracticeMode?) -> some View {
-        Button {
-            if reduceMotion {
-                selectedModeFilter = mode
-            } else {
-                withAnimation(.easeInOut(duration: 0.2)) { selectedModeFilter = mode }
-            }
-        } label: {
-            Text(label)
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(
-                    selectedModeFilter == mode ? AppColor.brandBlue : Color(.systemGray6),
-                    in: Capsule(style: .continuous)
-                )
-                .foregroundStyle(selectedModeFilter == mode ? .white : .primary)
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - Session Row (Compact, Premium Feel)
-
-    private func sessionRow(_ session: PracticeSession) -> some View {
-        // Leading mode-tint stripe spans full row height so each row reads
-        // visually distinct by mode at a glance — Timed (blue), Sudden
-        // Death (orange), Ah-Counter (green), IM (indigo). Tokens via
-        // `AppColor.tint(for:)`.
-        HStack(alignment: .top, spacing: 0) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(AppColor.tint(for: session.mode))
-                .frame(width: 4)
-                .frame(maxHeight: .infinity)
-
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(session.headline ?? modeLabel(for: session.mode))
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        if let score = session.score {
-                            Text("\(score)/10")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(scoreColor(score))
-                        }
-                    }
-
-                    HStack(spacing: 6) {
-                        Text(session.date.formatted(date: .abbreviated, time: .shortened))
-                        Text("·")
-                        Text("\(Int(session.duration))s")
-                        if session.fillerWordCount > 0 {
-                            Text("·")
-                            Text("\(session.fillerWordCount) fillers")
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-
-                    if let summary = sessionOneLiner(for: session) {
-                        Text(summary)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.quaternary)
-                    .padding(.top, 6)
-            }
-            .padding(.vertical, 12)
-            .padding(.leading, 12)
-            .padding(.trailing, 14)
-        }
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-        .padding(.bottom, 8)
-    }
-
     // MARK: - Empty States
 
     private var emptyState: some View {
@@ -655,112 +406,6 @@ struct SessionHistoryView: View {
         .accessibilityIdentifier("emptyState.history")
     }
 
-    private var emptyFilterState: some View {
-        Text("No sessions for this mode yet")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 32)
-    }
-
-    private var sectionTitle: String {
-        if let mode = selectedModeFilter {
-            return "\(modeLabel(for: mode)) sessions"
-        }
-        return "All sessions"
-    }
-
-    // MARK: - Helpers
-
-    private func sessionOneLiner(for session: PracticeSession) -> String? {
-        SessionHistoryRowPreview.text(for: session)
-    }
-
-    private func modeLabel(for mode: PracticeMode) -> String {
-        switch mode {
-        case .timed: return "Timed"
-        case .suddenDeath: return "Pressure Drill"
-        case .ahCounter: return "Ah-Counter"
-        case .imConversation: return "IM Mode"
-        }
-    }
-
-    private func scoreColor(_ score: Int) -> Color {
-        switch score {
-        case 8...10: return .green
-        case 5...7: return .primary
-        default: return .orange
-        }
-    }
-
-    private func averageScore(for sessions: [PracticeSession]) -> Double {
-        let scores = sessions.compactMap(\.score)
-        guard !scores.isEmpty else { return 0 }
-        return Double(scores.reduce(0, +)) / Double(scores.count)
-    }
-
-    private func trendDelta(for values: [Double]) -> String {
-        guard let first = values.first, let last = values.last else { return "" }
-        let delta = Int((last - first).rounded())
-        if delta == 0 { return "Steady" }
-        return delta > 0 ? "+\(delta)" : "\(delta)"
-    }
-}
-
-private struct SparklineView: View {
-    let values: [Double]
-    let color: Color
-
-    var body: some View {
-        GeometryReader { geometry in
-            let normalized = normalizedValues
-
-            ZStack {
-                if normalized.count >= 2 {
-                    Path { path in
-                        for (index, point) in normalized.enumerated() {
-                            let x = geometry.size.width * CGFloat(point.x)
-                            let y = geometry.size.height * CGFloat(1 - point.y)
-                            if index == 0 {
-                                path.move(to: CGPoint(x: x, y: y))
-                            } else {
-                                path.addLine(to: CGPoint(x: x, y: y))
-                            }
-                        }
-                    }
-                    .stroke(color, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-                } else {
-                    Capsule()
-                        .fill(color.opacity(0.25))
-                        .frame(height: 4)
-                        .frame(maxHeight: .infinity, alignment: .center)
-                }
-
-                ForEach(Array(normalized.enumerated()), id: \.offset) { index, point in
-                    Circle()
-                        .fill(index == normalized.count - 1 ? color : color.opacity(0.35))
-                        .frame(width: index == normalized.count - 1 ? 8 : 6, height: index == normalized.count - 1 ? 8 : 6)
-                        .position(
-                            x: geometry.size.width * CGFloat(point.x),
-                            y: geometry.size.height * CGFloat(1 - point.y)
-                        )
-                }
-            }
-        }
-    }
-
-    private var normalizedValues: [(x: Double, y: Double)] {
-        guard !values.isEmpty else { return [] }
-        let minValue = values.min() ?? 0
-        let maxValue = values.max() ?? 1
-        let range = max(maxValue - minValue, 0.001)
-
-        return values.enumerated().map { index, value in
-            let x = values.count == 1 ? 0.5 : Double(index) / Double(values.count - 1)
-            let y = (value - minValue) / range
-            return (x, y)
-        }
-    }
 }
 
 /// Visible to surfaces outside SessionHistoryView (e.g. Growth Library's
@@ -775,32 +420,6 @@ struct SessionHistoryDetailView: View {
     @State private var showsFullReview = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var imSessionStreak: Int {
-        guard let scenario = session.imConversationDetails?.setup.scenario else { return 0 }
-        let imSessions = sessionStore.sessions
-            .filter { $0.imConversationDetails?.setup.scenario == scenario }
-            .sorted { $0.date > $1.date }
-
-        guard !imSessions.isEmpty else { return 0 }
-        var streak = 0
-        var currentDay: Date?
-        let calendar = Calendar.current
-
-        for session in imSessions {
-            if let day = currentDay {
-                guard let previousDay = calendar.date(byAdding: .day, value: -1, to: day) else { break }
-                if calendar.isDate(session.date, inSameDayAs: day) {
-                    continue
-                }
-                guard calendar.isDate(session.date, inSameDayAs: previousDay) else { break }
-            }
-            currentDay = session.date
-            streak += 1
-        }
-
-        return streak
-    }
-
     var body: some View {
         ZStack {
             AppColor.screenBackground.ignoresSafeArea()
@@ -809,6 +428,7 @@ struct SessionHistoryDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     heroCard
 
+                    promptCard
                     focusCard
                     fullReviewToggle
 
@@ -851,6 +471,13 @@ struct SessionHistoryDetailView: View {
                 detailMetric(title: "Focus", value: SessionHistoryDetailPresentation.focusLabel(for: session), tint: .blue)
                 detailMetric(title: "Mode", value: modeLabel, tint: AppColor.tint(for: session.mode))
             }
+
+            if let previousLine = SessionHistoryDetailPresentation.previousRepLine(for: session, in: sessionStore.sessions) {
+                Text(previousLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("history.detail.previousRep")
+            }
         }
         .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -879,6 +506,39 @@ struct SessionHistoryDetailView: View {
                 )
             )
             shape.strokeBorder(tint.opacity(0.40), lineWidth: 1)
+        }
+    }
+
+    /// The question this rep answered. Stored on every prompted session but
+    /// historically never rendered here — without it, neither the score nor
+    /// the pace read can be judged against what was actually asked.
+    @ViewBuilder
+    private var promptCard: some View {
+        if let prompt = SessionHistoryDetailPresentation.prompt(for: session) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Prompt")
+                        .font(.headline)
+                    Spacer()
+                    if let theme = session.theme, theme != .all {
+                        Text(theme.rawValue)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(AppColor.tint(for: session.mode).opacity(0.10), in: Capsule(style: .continuous))
+                    }
+                }
+
+                Text("“\(prompt)”")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .accessibilityIdentifier("history.detail.prompt")
         }
     }
 
@@ -912,7 +572,7 @@ struct SessionHistoryDetailView: View {
                 }
             } else {
                 HStack(spacing: 10) {
-                    detailMetric(title: "Duration", value: "\(Int(session.duration))s", tint: .blue)
+                    detailMetric(title: "Duration", value: SessionHistoryDetailPresentation.durationLabel(for: session), tint: .blue)
                     detailMetric(title: "Fillers", value: "\(session.fillerWordCount)", tint: .red)
                     detailMetric(title: "WPM", value: "\(session.wordsPerMinute)", tint: .indigo)
                 }
@@ -1106,6 +766,18 @@ struct SessionHistoryDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
                 .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+
+            // Explicit end marker — a transcript that stops mid-thought with
+            // no signal reads as "did it even capture my speech?". It did;
+            // this is where the rep stopped.
+            HStack(spacing: 5) {
+                Image(systemName: "stop.circle")
+                    .font(.caption2)
+                Text(SessionHistoryDetailPresentation.transcriptEndLine(for: session))
+                    .font(.caption2)
+            }
+            .foregroundStyle(.tertiary)
+            .accessibilityIdentifier("history.detail.transcriptEnd")
         }
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
@@ -1138,7 +810,10 @@ struct SessionHistoryDetailView: View {
             return relationship.nextSessionHook(profile: coachingProfileStore.profile)
         }
         if let aiFeedback = session.aiCoachFeedback {
-            return aiFeedback.keyImprovement
+            // Lead sentence only — the full paragraph renders inside Coach
+            // Read below, and showing it twice on one screen reads as
+            // padding rather than coaching.
+            return SessionHistoryDetailPresentation.leadSentence(of: aiFeedback.keyImprovement)
         }
         if let firstInsight = insights.first {
             return firstInsight
@@ -1160,20 +835,6 @@ struct SessionHistoryDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.cardGap)
         .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-    }
-
-    private func historyBubble(speaker: String, text: String, tint: Color, isLeading: Bool) -> some View {
-        VStack(alignment: isLeading ? .leading : .trailing, spacing: 6) {
-            Text(speaker)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(text)
-                .font(.subheadline)
-                .multilineTextAlignment(isLeading ? .leading : .trailing)
-        }
-        .frame(maxWidth: 270, alignment: isLeading ? .leading : .trailing)
-        .padding(12)
-        .background(tint, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
     private var modeLabel: String {

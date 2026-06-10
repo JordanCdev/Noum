@@ -8031,10 +8031,10 @@ struct RevampPathLivePresentationTests {
 
         #expect(abs(presentation.revealProgress - 0.275) < 0.0001)
         #expect(presentation.progressLabel == "27% complete")
-        #expect(presentation.summaryLine == "5 of 20 missions unlocked from real practice signals.")
-        #expect(presentation.explanationLine == "Mission 6: Hold pressure")
+        #expect(presentation.summaryLine == "5 of 20 landmarks reached from real practice signals.")
+        #expect(presentation.explanationLine == "Landmark 6: Hold pressure")
         #expect(presentation.nextMilestoneLabel == "Two reps from unlocked.")
-        #expect(presentation.homeGoalLine.contains("Mission 6 of 20"))
+        #expect(presentation.homeGoalLine.contains("Landmark 6 of 20"))
         #expect(!presentation.summaryLine.contains("21 days"))
     }
 
@@ -8082,7 +8082,154 @@ struct RevampPathLivePresentationTests {
         #expect(presentation.revealProgress == 1)
         #expect(presentation.progressLabel == "100% complete")
         #expect(presentation.homeGoalShortLabel == "Cleared")
-        #expect(presentation.summaryLine.contains("All 20 missions"))
+        #expect(presentation.summaryLine.contains("All 20 landmarks"))
+    }
+
+    // MARK: Why composer — provenance chain
+
+    @Test func whyPrefersSuccessVisionVerbatim() {
+        let why = JourneyWhyComposer.whyContent(
+            successVision: "I walk into any room and speak without my heart racing.",
+            motivationWhyNow: "Promotion talks are coming.",
+            paraphrasedGoal: "You want calm, confident delivery.",
+            coachingBrief: "Confidence under pressure."
+        )
+        #expect(why?.text == "I walk into any room and speak without my heart racing.")
+        #expect(why?.provenance == .userVerbatim)
+    }
+
+    @Test func whyFallsBackToWhyNowThenParaphraseThenBrief() {
+        let whyNow = JourneyWhyComposer.whyContent(
+            successVision: "  ",
+            motivationWhyNow: "Promotion talks are coming.",
+            paraphrasedGoal: nil,
+            coachingBrief: "Confidence under pressure."
+        )
+        #expect(whyNow?.text == "Promotion talks are coming.")
+        #expect(whyNow?.provenance == .userVerbatim)
+
+        let paraphrase = JourneyWhyComposer.whyContent(
+            successVision: "",
+            motivationWhyNow: "",
+            paraphrasedGoal: "You want calm, confident delivery.",
+            coachingBrief: "Confidence under pressure."
+        )
+        #expect(paraphrase?.text == "You want calm, confident delivery.")
+        #expect(paraphrase?.provenance == .paraphrase)
+
+        let brief = JourneyWhyComposer.whyContent(
+            successVision: "",
+            motivationWhyNow: "",
+            paraphrasedGoal: "   ",
+            coachingBrief: "Confidence under pressure."
+        )
+        #expect(brief?.text == "Confidence under pressure.")
+        #expect(brief?.provenance == .userVerbatim)
+    }
+
+    @Test func whyNeverFabricatesWhenEverythingIsEmpty() {
+        let why = JourneyWhyComposer.whyContent(
+            successVision: "  ",
+            motivationWhyNow: "",
+            paraphrasedGoal: nil,
+            coachingBrief: "\n"
+        )
+        #expect(why == nil)
+    }
+
+    @Test func longVerbatimPrefersParaphraseButNeverDropsToNothing() {
+        let rambling = String(repeating: "I want to feel steady when everyone is looking at me. ", count: 6)
+        #expect(rambling.count > JourneyWhyComposer.verbatimLengthLimit)
+
+        let withParaphrase = JourneyWhyComposer.whyContent(
+            successVision: rambling,
+            motivationWhyNow: "",
+            paraphrasedGoal: "You want steadiness in front of a room.",
+            coachingBrief: ""
+        )
+        #expect(withParaphrase?.provenance == .paraphrase)
+
+        let withoutParaphrase = JourneyWhyComposer.whyContent(
+            successVision: rambling,
+            motivationWhyNow: "",
+            paraphrasedGoal: nil,
+            coachingBrief: ""
+        )
+        #expect(withoutParaphrase?.provenance == .userVerbatim)
+        #expect(withoutParaphrase?.text.isEmpty == false)
+    }
+
+    // MARK: Why composer — coach line (forward-framing only)
+
+    @Test func coachLineInvitesCaptureWhenNoWhyExists() {
+        let line = JourneyWhyComposer.coachLine(
+            practicedToday: true,
+            daysSinceLastSession: 0,
+            streak: 5,
+            practicedDays: 10,
+            hasWhy: false
+        )
+        #expect(line.contains("Tell Noum"))
+    }
+
+    @Test func coachLineStateVariantsSelectCorrectly() {
+        let day0 = JourneyWhyComposer.coachLine(
+            practicedToday: false, daysSinceLastSession: nil,
+            streak: 0, practicedDays: 0, hasWhy: true
+        )
+        #expect(day0.contains("first line"))
+
+        let today = JourneyWhyComposer.coachLine(
+            practicedToday: true, daysSinceLastSession: 0,
+            streak: 1, practicedDays: 3, hasWhy: true
+        )
+        #expect(today.contains("Today counted"))
+
+        let returning = JourneyWhyComposer.coachLine(
+            practicedToday: false, daysSinceLastSession: 7,
+            streak: 0, practicedDays: 2, hasWhy: true
+        )
+        #expect(returning.contains("Nothing you built is gone"))
+
+        let holding = JourneyWhyComposer.coachLine(
+            practicedToday: false, daysSinceLastSession: 1,
+            streak: 4, practicedDays: 8, hasWhy: true
+        )
+        #expect(holding.contains("4 days of showing up"))
+
+        let complete = JourneyWhyComposer.coachLine(
+            practicedToday: true, daysSinceLastSession: 0,
+            streak: 21, practicedDays: 21, hasWhy: true
+        )
+        #expect(complete.contains("hasn't moved — you have"))
+    }
+
+    @Test func coachLineNeverPunishesAbsence() {
+        // Sweep every reachable state; no branch may count missed days,
+        // name loss, or shame the gap (never-punish-shame invariant).
+        let gaps: [Int?] = [nil, 0, 1, 2, 4, 7, 30]
+        for gap in gaps {
+            for practicedToday in [true, false] {
+                for streak in [0, 1, 3, 8] {
+                    for days in [0, 1, 5, 12, 21] {
+                        let line = JourneyWhyComposer.coachLine(
+                            practicedToday: practicedToday,
+                            daysSinceLastSession: gap,
+                            streak: streak,
+                            practicedDays: days,
+                            hasWhy: true
+                        )
+                        #expect(!line.localizedCaseInsensitiveContains("missed"), "punish copy: \(line)")
+                        #expect(!line.localizedCaseInsensitiveContains("lost"), "punish copy: \(line)")
+                        #expect(!line.localizedCaseInsensitiveContains("behind"), "punish copy: \(line)")
+                        #expect(!line.localizedCaseInsensitiveContains("away"), "punish copy: \(line)")
+                        if let gap, gap >= 2 {
+                            #expect(!line.contains("\(gap) day"), "gap counted back at the user: \(line)")
+                        }
+                    }
+                }
+            }
+        }
     }
 
     @Test func rushingChallengeUsesSharedConversationalPaceBand() {
@@ -8597,7 +8744,7 @@ struct DailyChallengeTileCountdownTests {
 
     @Test func eyebrowWindowAt0010IsTodayAgain() {
         // 00:10 is the inclusive boundary — the spec says first ~10 minutes
-        // get NEW MISSIONS. The strict-less-than gate in the helper means
+        // get NEW FOCUS. The strict-less-than gate in the helper means
         // 00:10:00.000 already reads as TODAY. Locks the contract.
         let cal = Self.testCalendar
         let edge = Self.at(0, 10, calendar: cal)

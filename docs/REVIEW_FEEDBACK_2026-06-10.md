@@ -78,8 +78,16 @@ Keep the substance ("really good feedback"). Two fixes: (a) the same "Biggest im
 
 ---
 
-## Open questions before building
+## Implementation decisions (2026-06-10, same session)
 
-1. Rank 1 chart: one composite "development" line (rating/score trend) or per-dimension toggle like ProgressionCharts? (Coach lens suggests: one headline read + drill-down.)
-2. Where do demoted lifetime counters live on Profile — existing stats area or new block?
-3. Rank 4: cap scores on target-miss, or keep score but visibly explain? (Never-punish principle says explain > punish.)
+Implemented on `ux-overhaul` immediately after this analysis:
+
+1. **Rank 1** — Review home is now insight-first: `ProgressionChartsCard` (reused from Profile, 5-series + 7v7 delta) leads the page, with an honest "development picture is forming" card below the 3-scored-reps floor; then a `ReviewCoachReadCard` (top improving + top focus skill from TrendAnalyzer, medium+ confidence only, focus framed in brand blue not warning colors); then "Worth a second look" picks; then the untouched "Worth a replay" section; then a Session History entry card. Lifetime counters dropped from the page (count lives on the entry card; avg score on the list lead line; Profile already carries stats).
+2. **Rank 2** — `ReviewHighlightsEngine` (new, pure): breakthrough rep (score ≥7 beating own prior-5 average by ≥2), goal example (delivery ranked by the same `voiceDeliveryBonus` read the evaluator scores with, only when `hasChosenVoice`), recent best (14d, ≥8). ≥5 scored reps required before anything surfaces; dedupe by session.
+3. **Rank 3** — `SessionHistoryListView` (new sub-page): mode chips + per-mode breakdown cards moved here, plus search (headline/coach line/prompt/transcript), sort (newest / highest score / longest), and runs of 2+ consecutive low-signal reps (score ≤2, or unscored under 20s) collapsed into one expandable line. Searching disables collapsing. Single junk reps stay full rows — hiding one reads as editing history.
+4. **Rank 4** — capped, not just explained: `evaluateTimedPractice` now ceilings an under-target-range rep at 7 ("Solid response" band), so "Table-topics ready 9/10" can never sit beside "only 34s — target 45–90s" again. On-target reps unaffected.
+5. **Rank 5** — prompt card (with theme tag) renders in session detail whenever a prompt was captured.
+6. **Rank 6** — transcript card ends with "Recording ended here · Ns".
+7. **Rank 8** — Focus next shows the lead sentence of the coach paragraph (full text stays in Coach Read — no more double render); hero carries a neutral "Previous <mode> rep: X/10 · date" context line. Duration now rounds identically everywhere (34s/35s mismatch fixed). Dead `imSessionStreak`/`historyBubble` removed.
+
+**Deferred (follow-ups):** Rank 7 cross-mode summary card on the "All" filter + a sessions-based fallback for the Pressure Drill breakdown card (it self-hides when the run store is empty even though PD sessions exist); listen-back replay (audio isn't persisted); "Worth a replay" relaunching the exact prompt.

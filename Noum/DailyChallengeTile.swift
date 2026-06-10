@@ -17,7 +17,7 @@ import SwiftUI
 //
 // Daily-reset rhythm v2 (M14):
 //   • Header eyebrow shows TODAY most of the day, flips to RESETS IN Nm in
-//     the last 15 minutes, brief NEW MISSIONS for the first 10 minutes after
+//     the last 15 minutes, brief NEW FOCUS for the first 10 minutes after
 //     midnight — so the user feels the rotation happen.
 //   • Right-aligned in the header: "Xh Ym before midnight" — a real-time
 //     coach-voice signal of expiry pressure.
@@ -39,7 +39,7 @@ struct DailyChallengeTile: View {
 
     // Drives the countdown bar + expiry header. 60s is the right cadence:
     // minute-precise display, no CPU churn, and the reset-window flips
-    // (TODAY ↔ RESETS IN Nm ↔ NEW MISSIONS) all land on minute boundaries
+    // (TODAY ↔ RESETS IN Nm ↔ NEW FOCUS) all land on minute boundaries
     // by construction.
     @State private var nowTick: Date = Date()
 
@@ -251,7 +251,7 @@ struct DailyChallengeTile: View {
     static func eyebrowWindow(at now: Date, calendar: Calendar) -> EyebrowWindow {
         let startOfDay = calendar.startOfDay(for: now)
         let secondsSinceMidnight = now.timeIntervalSince(startOfDay)
-        // First 10 minutes after midnight — "NEW MISSIONS" rotation moment.
+        // First 10 minutes after midnight — "NEW FOCUS" rotation moment.
         if secondsSinceMidnight < 10 * 60 {
             return .newFocus
         }
@@ -276,7 +276,7 @@ struct DailyChallengeTile: View {
 
     /// Eyebrow tint shifts to the expiry color in the resets-in window so
     /// the visual pressure register matches the bottom bar and countdown.
-    /// NEW MISSIONS rides the brandBlue register — same color the
+    /// NEW FOCUS rides the brandBlue register — same color the
     /// claim-ready state already uses, signalling "fresh, ready, go."
     private var eyebrowTint: Color {
         switch eyebrowWindow {

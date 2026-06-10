@@ -5742,6 +5742,7 @@ enum PracticeEvaluator {
         }()
 
         let trends = trendSnapshot(fillerCount: fillerCount, duration: duration, recentSessions: recentSessions)
+        let durationAssessment = assessDuration(duration, difficulty: difficulty)
 
         let score: Int
         if wordCount < 3 || duration < 3 {
@@ -5772,7 +5773,12 @@ enum PracticeEvaluator {
                 - fillerPenalty
                 + difficultyBonus
                 + voiceBonus
-            score = max(1, min(10, Int(round(rawScore))))
+            let uncapped = max(1, min(10, Int(round(rawScore))))
+            // A sub-target-range answer can't read "Table-topics ready":
+            // the feedback line names the duration miss, so a 9–10 beside
+            // it overclaims. Solid (≤7) is the honest ceiling; the Timing
+            // segment and feedback line carry the why.
+            score = durationAssessment == .tooShort ? min(uncapped, 7) : uncapped
         }
 
         let xpBase = Double(score * 8)
@@ -5791,8 +5797,6 @@ enum PracticeEvaluator {
             baseHeadline = "Good warmup"
         }
         let headline = isLowConfidence ? "Based on what we could hear" : baseHeadline
-
-        let durationAssessment = assessDuration(duration, difficulty: difficulty)
 
         let feedback: String
         if wordCount < 3 || duration < 3 {
