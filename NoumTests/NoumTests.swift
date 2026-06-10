@@ -22858,6 +22858,48 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == nil)
     }
 
+    @Test func gateOneAcceptsReadOfEarlierChatTurn() {
+        // Regression (owner bug 2026-06-10: "chat says the same thing over
+        // and over"): "you mentioned X" referencing a user message from
+        // EARLIER in the conversation — not the latest turn, not a rep
+        // transcript — is a real read of real user words. Without the
+        // conversation sources, Gate 1 rejected every such reply into the
+        // same deterministic fallback on every turn.
+        // Reuses the reply shape the rubric already accepts (see
+        // dualGatePassesTranscriptClaimThatEngagesTranscript) but grounds it
+        // ONLY in an earlier conversation turn: the decoy transcript and the
+        // latest turn share no >=4-char content word with the reply, so the
+        // earlier turn ("product… deadline") is the sole legitimate source.
+        let reply = "You opened with the product launch and the deadline held; next rep, make the close the ask."
+        let conversationContext = CoachChatQuoteGuardContext(
+            transcripts: ["I practiced pacing this morning."],
+            latestUserTurn: "How did I do?",
+            recentUserTurns: [
+                "Last week we shipped the product and barely hit the deadline.",
+                "How did I do?"
+            ]
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "How did I do?",
+            quoteGuard: conversationContext
+        )
+        #expect(issue == nil)
+
+        // Same reply WITHOUT the conversation sources still fails Gate 1 —
+        // the anti-fabrication floor is unchanged.
+        let bareContext = CoachChatQuoteGuardContext(
+            transcripts: ["I practiced pacing this morning."],
+            latestUserTurn: "How did I do?"
+        )
+        let bareIssue = AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "How did I do?",
+            quoteGuard: bareContext
+        )
+        #expect(bareIssue == .unengagedUserSpeechClaim)
+    }
+
     // MARK: Dual gate — Gate 1 (presence/engagement, the
     // PostRepCoachNoteService.engagesTranscript standard applied to chat).
     // Gate 2 (above) catches fabricated QUOTES; these pin the half the chat

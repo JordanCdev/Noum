@@ -174,9 +174,19 @@ struct CoachChatQuoteGuardContext: Equatable {
     init(
         transcripts: [String?] = [],
         verifiedProofQuotes: [String] = [],
-        latestUserTurn: String? = nil
+        latestUserTurn: String? = nil,
+        recentUserTurns: [String] = []
     ) {
-        self.sourceTexts = (transcripts + verifiedProofQuotes.map { Optional($0) } + [latestUserTurn])
+        // `recentUserTurns` carries the WHOLE replayed conversation's user
+        // messages, not just the latest. A coach who says "you mentioned
+        // interviews" about something the user typed three turns ago is
+        // reading real user words — without these sources Gate 1 rejected
+        // every such reply into the same deterministic fallback (owner bug
+        // report 2026-06-10: "chat says the same thing over and over").
+        // Anti-fabrication holds: claims still must match something the
+        // user actually said in a rep, a verified proof, or the chat.
+        self.sourceTexts = (transcripts + verifiedProofQuotes.map { Optional($0) }
+            + [latestUserTurn] + recentUserTurns.map { Optional($0) })
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
     }
@@ -322,7 +332,8 @@ actor AICoachChatService {
         let quoteGuard = CoachChatQuoteGuardContext(
             transcripts: [fallback.recentTimedTranscript],
             verifiedProofQuotes: fallback.verifiedProofQuotes,
-            latestUserTurn: latestUserTurn
+            latestUserTurn: latestUserTurn,
+            recentUserTurns: trimmed.filter { $0.role == .user }.map(\.text)
         )
 
         do {
