@@ -7642,6 +7642,244 @@ struct ProfileCollapseContractTests {
     }
 }
 
+// MARK: - Progression spine narration (S1 resolvers)
+//
+// Pins the one-spine narration contract before any view adopts it:
+// the speaking rating is the only ledger allowed to claim skill; XP is
+// practice VOLUME with zero skill-identity vocabulary; the post-rep
+// interstitial mounts only on real achievement unlocks; and every spine
+// reference flips to future tense before rated evidence exists.
+struct ProgressionSpineNarrationTests {
+
+    /// Sweep of XP totals covering level boundaries, band boundaries,
+    /// and deep range — used by every totality/vocabulary test.
+    private var xpSweep: [Int] {
+        Array(stride(from: 0, through: 30_000, by: 137))
+            + [999, 1_000, 1_001, 2_999, 3_000, 5_999, 6_000,
+               8_999, 9_000, 11_999, 12_000, 50_000]
+    }
+
+    private func volumeCopyLines(forXP xp: Int) -> [String] {
+        var lines = [
+            PracticeVolumeNarration.title(forXP: xp),
+            PracticeVolumeNarration.detailLine(forXP: xp),
+            PracticeVolumeNarration.levelUpHeadline(),
+            PracticeVolumeNarration.levelUpDetail(forXP: xp)
+        ]
+        if let credit = PracticeVolumeNarration.verdictCreditLine(xpEarned: xp, eloquenceBonus: 7) {
+            lines.append(credit)
+        }
+        return lines
+    }
+
+    // MARK: Ledger taxonomy
+
+    @Test func ratingIsTheOnlySpineLedger() {
+        #expect(ProgressionLedgerRole.role(for: .speakingRating) == .spine)
+        #expect(ProgressionLedgerRole.role(for: .practiceVolume) == .input)
+        #expect(ProgressionLedgerRole.role(for: .lessonCrowns) == .input)
+        #expect(ProgressionLedgerRole.role(for: .pathMissions) == .input)
+        #expect(ProgressionLedgerRole.role(for: .proofArchive) == .proof)
+
+        let spineLedgers = ProgressionLedger.allCases.filter {
+            ProgressionLedgerRole.role(for: $0) == .spine
+        }
+        #expect(spineLedgers == [.speakingRating])
+    }
+
+    // MARK: Interstitial gate truth table
+
+    @Test func interstitialMountsOnlyOnAchievementUnlocks() {
+        // Legacy trigger inputs (XP earned, achievement-progress deltas)
+        // are deliberately ignored: an ordinary rep with XP and partial
+        // progress goes straight to the verdict.
+        #expect(!PostRepProgressionGate.shouldShowInterstitial(
+            xpEarned: 120, progressDeltaCount: 4, newUnlockCount: 0
+        ))
+        #expect(!PostRepProgressionGate.shouldShowInterstitial(
+            xpEarned: 0, progressDeltaCount: 0, newUnlockCount: 0
+        ))
+        #expect(PostRepProgressionGate.shouldShowInterstitial(
+            xpEarned: 0, progressDeltaCount: 0, newUnlockCount: 1
+        ))
+        #expect(PostRepProgressionGate.shouldShowInterstitial(
+            xpEarned: 80, progressDeltaCount: 2, newUnlockCount: 3
+        ))
+
+        #expect(!PostRepProgressionGate.shouldShowInterstitial(newUnlockCount: 0))
+        #expect(PostRepProgressionGate.shouldShowInterstitial(newUnlockCount: 1))
+    }
+
+    // MARK: Volume vocabulary bans
+
+    @Test func volumeNarrationNeverClaimsSkillIdentity() {
+        let banned = ["Speaker", "Professional", "World Class",
+                      "Novice", "Beginner", "Elite", "rank"]
+        for xp in xpSweep {
+            for line in volumeCopyLines(forXP: xp) {
+                for word in banned {
+                    #expect(
+                        !line.localizedCaseInsensitiveContains(word),
+                        "volume line \"\(line)\" carries skill vocabulary \"\(word)\" at xp \(xp)"
+                    )
+                }
+            }
+        }
+    }
+
+    @Test func narrationNeverUsesLossOrShameFraming() {
+        // Forward distances stay neutral ("M to practice level K") —
+        // never countdown, loss, or at-risk framing.
+        var lines: [String] = []
+        for xp in [0, 450, 999, 1_000, 4_200, 12_000] {
+            lines.append(contentsOf: volumeCopyLines(forXP: xp))
+        }
+        for hasEvidence in [true, false] {
+            lines.append(LedgerRoleLines.crownsRole(hasRatedEvidence: hasEvidence))
+            lines.append(LedgerRoleLines.missionRole(hasRatedEvidence: hasEvidence))
+            lines.append(LedgerRoleLines.proofRole(count: 0, hasRatedEvidence: hasEvidence))
+            lines.append(LedgerRoleLines.proofRole(count: 12, hasRatedEvidence: hasEvidence))
+        }
+        let banned = ["lose", "lost", "at risk", "don't", "remaining",
+                      "left", "running out", "countdown", "falling behind"]
+        for line in lines {
+            for phrase in banned {
+                #expect(
+                    !line.localizedCaseInsensitiveContains(phrase),
+                    "\"\(line)\" carries loss/shame framing \"\(phrase)\""
+                )
+            }
+        }
+    }
+
+    // MARK: Volume narration shape
+
+    @Test func practiceVolumeTitleAndDetailAreVolumeFramed() {
+        #expect(PracticeVolumeNarration.title(forXP: 0) == "Practice level 1")
+        #expect(PracticeVolumeNarration.title(forXP: 999) == "Practice level 1")
+        #expect(PracticeVolumeNarration.title(forXP: 1_000) == "Practice level 2")
+        #expect(PracticeVolumeNarration.title(forXP: 12_345) == "Practice level 13")
+
+        #expect(PracticeVolumeNarration.detailLine(forXP: 1_500)
+                == "1500 XP banked · 500 to practice level 3")
+        #expect(PracticeVolumeNarration.detailLine(forXP: 0)
+                == "0 XP banked · 1000 to practice level 2")
+
+        #expect(PracticeVolumeNarration.levelUpHeadline() == "PRACTICE MILESTONE")
+        #expect(PracticeVolumeNarration.levelUpDetail(forXP: 2_000)
+                == "2000 XP of deliberate practice banked — 1000 more to practice level 4.")
+    }
+
+    @Test func levelCrossingsMatchLegacyLadder() {
+        // The 1,000-XP-per-level ladder must not move: SessionFinalizer's
+        // levelBefore/levelAfter comparison and SummaryView's next-level
+        // math both read xp / 1000.
+        #expect(PracticeVolumeNarration.level(forXP: 0) == 1)
+        #expect(PracticeVolumeNarration.level(forXP: 999) == 1)
+        #expect(PracticeVolumeNarration.level(forXP: 1_000) == 2)
+        #expect(PracticeVolumeNarration.level(forXP: 2_999) == 3)
+        #expect(PracticeVolumeNarration.level(forXP: -50) == 1)
+    }
+
+    // MARK: Verdict credit line
+
+    @Test func verdictCreditLineFoldsBonusAndSelfSuppressesAtZero() {
+        #expect(PracticeVolumeNarration.verdictCreditLine(xpEarned: 0, eloquenceBonus: 0) == nil)
+        #expect(PracticeVolumeNarration.verdictCreditLine(xpEarned: 40, eloquenceBonus: 0) == "+40 XP banked")
+        #expect(PracticeVolumeNarration.verdictCreditLine(xpEarned: 40, eloquenceBonus: 15) == "+55 XP banked")
+        #expect(PracticeVolumeNarration.verdictCreditLine(xpEarned: 0, eloquenceBonus: 10) == "+10 XP banked")
+    }
+
+    // MARK: Tint band / symbol totality + legacy equivalence
+
+    @Test func tintBandAndSymbolAreTotalAcrossXPRange() {
+        for xp in xpSweep {
+            let band = PracticeVolumeNarration.tintBand(forXP: xp)
+            let symbol = PracticeVolumeNarration.symbol(forXP: xp)
+            #expect(PracticeVolumeTintBand.allCases.contains(band))
+            #expect(!symbol.isEmpty)
+        }
+        // Garbage XP clamps to the first band rather than trapping.
+        #expect(PracticeVolumeNarration.tintBand(forXP: -50) == .blue)
+        #expect(PracticeVolumeNarration.symbol(forXP: -50) == "sparkles")
+    }
+
+    @Test func tintBandMatchesLegacyTitleMatchingBoundaries() {
+        // LevelUpCelebrationScreen previously keyed tint/icon off
+        // `newLevel.contains("Beginner")` etc. These are the exact XP
+        // boundaries that string matching produced — the resolver swap
+        // must be visually lossless.
+        #expect(PracticeVolumeNarration.tintBand(forXP: 0) == .blue)
+        #expect(PracticeVolumeNarration.tintBand(forXP: 2_999) == .blue)
+        #expect(PracticeVolumeNarration.tintBand(forXP: 3_000) == .teal)
+        #expect(PracticeVolumeNarration.tintBand(forXP: 5_999) == .teal)
+        #expect(PracticeVolumeNarration.tintBand(forXP: 6_000) == .indigo)
+        #expect(PracticeVolumeNarration.tintBand(forXP: 8_999) == .indigo)
+        #expect(PracticeVolumeNarration.tintBand(forXP: 9_000) == .orange)
+        #expect(PracticeVolumeNarration.tintBand(forXP: 11_999) == .orange)
+        #expect(PracticeVolumeNarration.tintBand(forXP: 12_000) == .gold)
+        #expect(PracticeVolumeNarration.tintBand(forXP: 1_000_000) == .gold)
+
+        #expect(PracticeVolumeNarration.symbol(forXP: 0) == "sparkles")
+        #expect(PracticeVolumeNarration.symbol(forXP: 3_000) == "figure.stand")
+        #expect(PracticeVolumeNarration.symbol(forXP: 6_000) == "waveform.path.ecg")
+        #expect(PracticeVolumeNarration.symbol(forXP: 9_000) == "shield.lefthalf.filled")
+        #expect(PracticeVolumeNarration.symbol(forXP: 12_000) == "crown.fill")
+    }
+
+    // MARK: Evidence-gated role lines
+
+    @Test func preEvidenceRoleLinesStayFutureTense() {
+        let lines = [
+            LedgerRoleLines.crownsRole(hasRatedEvidence: false),
+            LedgerRoleLines.missionRole(hasRatedEvidence: false),
+            LedgerRoleLines.proofRole(count: 0, hasRatedEvidence: false),
+            LedgerRoleLines.proofRole(count: 7, hasRatedEvidence: false)
+        ]
+        for line in lines {
+            #expect(!line.contains("rating measures"),
+                    "pre-evidence line claims a present-tense rating: \"\(line)\"")
+            #expect(!line.contains("behind your rating"),
+                    "pre-evidence line claims a present-tense rating: \"\(line)\"")
+            #expect(line.contains("will measure") || line.contains("will stand on"),
+                    "pre-evidence line is not future-tense: \"\(line)\"")
+            #expect(line.contains("once it's earned"))
+        }
+    }
+
+    @Test func ratedCrownsLineNamesMissionsAndRating() {
+        let line = LedgerRoleLines.crownsRole(hasRatedEvidence: true)
+        #expect(line.localizedCaseInsensitiveContains("mission"))
+        #expect(line.localizedCaseInsensitiveContains("rating"))
+        #expect(line.contains("rating measures"))
+        #expect(line.contains("passes unlock missions"))
+    }
+
+    @Test func ratedMissionLinePointsUpTheSpineNotAtAScore() {
+        let line = LedgerRoleLines.missionRole(hasRatedEvidence: true)
+        #expect(line.contains("rating measures"))
+        #expect(line.contains("not a second score"))
+    }
+
+    @Test func proofRoleIsInventoryNeverCurrency() {
+        let one = LedgerRoleLines.proofRole(count: 1, hasRatedEvidence: true)
+        let many = LedgerRoleLines.proofRole(count: 12, hasRatedEvidence: true)
+        let none = LedgerRoleLines.proofRole(count: 0, hasRatedEvidence: true)
+
+        #expect(one.contains("1 verified line from your own reps"))
+        #expect(many.contains("12 verified lines from your own reps"))
+        #expect(none.hasPrefix("Verified lines from your own reps"))
+        for line in [one, many, none] {
+            #expect(line.contains("the evidence behind your rating"))
+            // Inventory, never a progress currency or score.
+            #expect(!line.localizedCaseInsensitiveContains("XP"))
+            #expect(!line.localizedCaseInsensitiveContains("score"))
+            #expect(!line.localizedCaseInsensitiveContains("level"))
+            #expect(!line.contains("%"))
+        }
+    }
+}
+
 // MARK: - Profile earned-motion policy (Iteration 7)
 //
 // Locks the asymmetric-motion contract on the believable-progress hero:
