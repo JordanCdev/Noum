@@ -52,27 +52,14 @@ struct EloquenceFindingsCard: View {
                 .textCase(.uppercase)
                 .tracking(0.8)
             Spacer()
-            xpBadge
         }
     }
 
-    /// XP bonus chip. Always present when there's at least one finding —
-    /// surfacing the reward keeps eloquence from feeling decorative.
-    private var xpBadge: some View {
-        let xp = EloquenceXP.totalXP(for: findings)
-        return HStack(spacing: 4) {
-            Image(systemName: "plus.circle.fill")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(AppColor.brandBlue)
-            Text("\(xp) XP")
-                .font(Typography.caption.monospacedDigit())
-                .foregroundStyle(AppColor.brandBlue)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
-        .accessibilityLabel("Bonus \(xp) experience points")
-    }
+    // XP chip removed (spine review): the verdict's Details credit caption
+    // carries the single, total XP number — a second per-card XP figure
+    // here disagreed with it. Eloquence credit still accrues unchanged
+    // (EloquenceXP feeds the finalizer); this card now reads as findings,
+    // not a score.
 
     // MARK: - Finding row
 

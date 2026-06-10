@@ -78,6 +78,11 @@ struct GrowthLibraryView: View {
                 .font(Typography.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            // The library's trust contract, stated where the user reads it:
+            // every line here is verbatim transcript, never a paraphrase.
+            Text("Verbatim from your transcripts — never paraphrased.")
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)

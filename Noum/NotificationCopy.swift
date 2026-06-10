@@ -180,7 +180,7 @@ enum NotificationCopy {
     static func dailyChallengeClaimed(title: String, xp: Int) -> NotificationLine {
         return NotificationLine(
             title: "Claimed — \(title.lowercased())",
-            body: "Logged. +\(xp) XP toward your rank."
+            body: "Logged. +\(xp) XP banked."
         )
     }
 
