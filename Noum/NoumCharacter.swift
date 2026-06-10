@@ -80,6 +80,12 @@ struct NoumCharacter: View {
     /// entry, back to rest 0.4s later.
     @State private var noticingScale: CGFloat = 1.0
     @State private var hasAppeared = false
+    /// Handles for the continuous phase loops so they stop when the view
+    /// leaves the hierarchy. Raw `Task { while true }` (the previous shape)
+    /// outlives the view — every appearance leaked a 30fps loop. Cancelled
+    /// in `onDisappear`; `runEntrance` restarts them on re-appearance.
+    @State private var phaseLoopTask: Task<Void, Never>?
+    @State private var sparkleLoopTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -185,6 +191,7 @@ struct NoumCharacter: View {
         .frame(width: size * 1.5, height: size * 1.5)
         .opacity(hasAppeared ? 1 : 0)
         .onAppear { runEntrance() }
+        .onDisappear { stopLoops() }
         .onChange(of: mood) { _, _ in retriggerForMood() }
         .accessibilityLabel(accessibilityCopy)
     }
@@ -502,10 +509,11 @@ struct NoumCharacter: View {
         // Continuous low-rate phase for the core's subtle wobble and the
         // listening arc-pulse. Independent of the halo's SwiftUI-driven
         // breath so changes to mood-specific core scale stay snappy.
-        Task { @MainActor in
+        phaseLoopTask?.cancel()
+        phaseLoopTask = Task { @MainActor in
             let frameRate = 1.0 / 30.0
-            while true {
-                try? await Task.sleep(for: .seconds(frameRate))
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(frameRate)) } catch { return }
                 breathePhase += 2 * .pi / 72   // 2.4s loop at 30fps
                 if breathePhase > 2 * .pi { breathePhase -= 2 * .pi }
                 if mood == .listening {
@@ -521,21 +529,30 @@ struct NoumCharacter: View {
         // distraction. Loop only runs when stage starts at .mastery; if
         // a user reaches mastery mid-view they'll see it on the next
         // render (the view re-enters this task on appear).
+        sparkleLoopTask?.cancel()
         if stage == .mastery {
-            Task { @MainActor in
-                while true {
-                    try? await Task.sleep(for: .seconds(60))
+            sparkleLoopTask = Task { @MainActor in
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .seconds(60)) } catch { return }
                     guard stage == .mastery else { return }
                     withAnimation(.easeInOut(duration: 0.4)) {
                         masterySparkleVisible = true
                     }
-                    try? await Task.sleep(for: .seconds(1.0))
+                    do { try await Task.sleep(for: .seconds(1.0)) } catch { return }
                     withAnimation(.easeInOut(duration: 0.4)) {
                         masterySparkleVisible = false
                     }
                 }
             }
         }
+    }
+
+    /// Stop the continuous loops the moment the view leaves the hierarchy.
+    private func stopLoops() {
+        phaseLoopTask?.cancel()
+        phaseLoopTask = nil
+        sparkleLoopTask?.cancel()
+        sparkleLoopTask = nil
     }
 
     /// When mood swaps to a transient state, kick the appropriate

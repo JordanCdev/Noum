@@ -17,27 +17,41 @@ struct PathJourneyView: View {
     @StateObject private var ratingStore = RatingStore.shared
     @StateObject private var daylightModel = PathDaylightModel()
     @State private var selectedAchievementID: String?
+    @State private var alongTheWayExpanded = false
+    @State private var showWhyCapture = false
+    @State private var showGoalRefresh = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 #if DEBUG
     @State private var debugDayOverride: Double = -1
 
     private var isDebugActive: Bool { debugDayOverride >= 0 }
 #endif
 
+    /// Days-driven landscape truth (System A). The artwork, header, and
+    /// consistency strip read THIS: the path is worn in by practiced days
+    /// — the habit — never by landmark counts. The coach's landmark
+    /// sequence renders separately in `landmarksCard` so the two
+    /// progressions never masquerade as one number.
     private var snapshot: PracticeJourneySnapshot {
         let base = PracticeJourneySnapshot.make(from: sessionStore.sessions)
-        let livePath = PathJourneyPresentation.make(
+            .withDisplayedStreak(streakManager.currentStreak)
+#if DEBUG
+        if isDebugActive {
+            return base.withSimulatedReveal(Int(debugDayOverride))
+        }
+#endif
+        return base
+    }
+
+    /// The coach's landmark sequence (System B) — feeds the
+    /// "Trail landmarks" card only.
+    private var landmarkPresentation: PathJourneyPresentation {
+        PathJourneyPresentation.make(
             statuses: pathProgress.statuses,
             currentStreak: streakManager.currentStreak,
             sessionCount: sessionStore.sessions.count,
             currentGatingPhrase: pathProgress.currentNodeGatingPhrase
         )
-        let live = base.applyingPathPresentation(livePath)
-#if DEBUG
-        if isDebugActive {
-            return live.withSimulatedReveal(Int(debugDayOverride))
-        }
-#endif
-        return live
     }
 
     private var retentionSnapshot: RetentionLoopSnapshot {
@@ -48,64 +62,114 @@ struct PathJourneyView: View {
         )
     }
 
+    private var practicedToday: Bool {
+        let calendar = Calendar.current
+        return sessionStore.sessions.contains { calendar.isDateInToday($0.date) }
+    }
+
+    /// Whole days since the most recent rep; nil when the user has never
+    /// practiced. Drives the why card's coach line — forward-framing only.
+    private var daysSinceLastSession: Int? {
+        guard let last = sessionStore.sessions.map(\.date).max() else { return nil }
+        let calendar = Calendar.current
+        return calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: last),
+            to: calendar.startOfDay(for: Date())
+        ).day
+    }
+
+    private var whyContent: JourneyWhyContent? {
+        JourneyWhyComposer.whyContent(
+            successVision: coachingProfileStore.profile?.successVision ?? "",
+            motivationWhyNow: coachingProfileStore.profile?.motivationWhyNow ?? "",
+            paraphrasedGoal: coachingProfileStore.profile?.paraphrasedGoal,
+            coachingBrief: coachingProfileStore.profile?.coachingBrief ?? ""
+        )
+    }
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 AppColor.screenBackground
                 .ignoresSafeArea()
 
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Your journey")
-                                .font(Typography.screenTitle)
-                            Text(snapshot.summaryLine)
-                                .font(Typography.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-
-                        VStack(alignment: .leading, spacing: 14) {
-                            PathJourneyArtwork(
-                                snapshot: snapshot,
-                                compact: false,
-                                sceneResolver: { date in
-                                    daylightModel.sceneState(for: date)
-                                }
-                            )
-                            .frame(height: min(270, geometry.size.height * 0.37))
-                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                                    .stroke(Color.white.opacity(0.55), lineWidth: 1)
-                            )
-                            .shadow(color: AppColor.brandBlue.opacity(0.10), radius: 14, y: 8)
-
-                            HStack(spacing: 10) {
-                                journeyPill(title: "Path", value: snapshot.progressLabel, icon: "map.fill", accent: .green)
-                                journeyPill(title: "Streak", value: snapshot.streakLabel, icon: "flame.fill", accent: .orange)
+                ScrollViewReader { scrollProxy in
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Your journey")
+                                    .font(Typography.screenTitle)
+                                Text(headerStateLine)
+                                    .font(Typography.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
                             }
 
-                            coachExplanationCard
+                            VStack(alignment: .leading, spacing: 14) {
+                                PathJourneyArtwork(
+                                    snapshot: snapshot,
+                                    compact: false,
+                                    sceneResolver: { date in
+                                        daylightModel.sceneState(for: date)
+                                    },
+                                    walkerStage: ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp),
+                                    onDestinationTap: {
+                                        if reduceMotion {
+                                            scrollProxy.scrollTo("journey.why", anchor: .center)
+                                        } else {
+                                            withAnimation(.easeInOut(duration: 0.45)) {
+                                                scrollProxy.scrollTo("journey.why", anchor: .center)
+                                            }
+                                        }
+                                    }
+                                )
+                                .frame(height: min(300, geometry.size.height * 0.40))
+                                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                                        .stroke(Color.white.opacity(0.55), lineWidth: 1)
+                                )
+                                .shadow(color: AppColor.brandBlue.opacity(0.10), radius: 14, y: 8)
 
-                            activeChallengeCard
-                            achievementsCard
-                        }
-                        .padding(18)
-                        .background(journeyHeroBackground)
+                                consistencyStrip
+                                todayRow
+                            }
+                            .padding(18)
+                            .background(journeyHeroBackground)
 
-                        // MARK: - Debug day slider (developer only)
+                            whyCard
+                                .id("journey.why")
+
+                            landmarksCard
+
+                            alongTheWayCard
+
+                            Text(snapshot.summaryLine)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.top, 2)
+
+                            // MARK: - Debug day slider (developer only)
 #if DEBUG
-                        if AuthManager.shared.isDeveloper {
-                            debugSliderCard
-                        }
+                            if AuthManager.shared.isDeveloper {
+                                debugSliderCard
+                            }
 #endif
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.top, 8)
+                        .padding(.bottom, 16)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-                    .padding(.bottom, 16)
                 }
             }
+        }
+        .sheet(isPresented: $showWhyCapture) {
+            DeferredProfileCaptureSheet(prompt: .whyNow)
+        }
+        .sheet(isPresented: $showGoalRefresh) {
+            GoalRefreshSheet()
         }
         .navigationBarBackButtonHidden(true)
         .toolbar {
@@ -204,24 +268,338 @@ struct PathJourneyView: View {
     }
 #endif
 
-    private func journeyPill(title: String, value: String, icon: String, accent: Color) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(accent.opacity(0.82))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(value)
-                    .font(Typography.cardLabel)
-                    .foregroundStyle(accent.opacity(0.92))
-            }
+    /// Header subtitle — states the habit metaphor once, plainly. The
+    /// numbers live in the consistency strip; this line carries the idea.
+    private var headerStateLine: String {
+        if snapshot.practicedDays == 0 {
+            return "A habit is a path worn into a field. Your first rep cuts the first line."
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        return "Worn in one day at a time. Every rep deepens the path."
+    }
+
+    /// Replaces the old Path-% / Streak pills. The landscape is days, so
+    /// the number under it is days — "12 of the last 21" is the honest
+    /// phrasing for a rolling window (the count can drift down as old
+    /// days age out; a "Day 12" label that goes backwards would read as
+    /// punishment).
+    private var consistencyStrip: some View {
+        HStack(spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Text("\(snapshot.practicedDays)")
+                    .font(Typography.figtreeNumeric(size: 32, relativeTo: .title2))
+                    .foregroundStyle(.primary)
+                Text(snapshot.practicedDays == 0
+                     ? "of the last 21 days — the trail is waiting"
+                     : "of the last 21 days walked")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 6) {
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.orange.opacity(0.85))
+                Text(snapshot.streakLabel)
+                    .font(Typography.cardLabel)
+                    .foregroundStyle(.orange.opacity(0.92))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.orange.opacity(0.10), in: Capsule(style: .continuous))
+        }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(snapshot.practicedDays) of the last 21 days practiced. Streak: \(snapshot.streakLabel).")
+        .accessibilityIdentifier("journey.consistency")
+    }
+
+    /// The page's one call to action. Pre-rep it points at practice;
+    /// post-rep it acknowledges, quietly.
+    @ViewBuilder
+    private var todayRow: some View {
+        if practicedToday {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.green.opacity(0.85))
+                Text("Today's rep is in. The trail held.")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color.green.opacity(0.07), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("journey.today")
+        } else {
+            NavigationLink(value: AppDestination.practiceSelection) {
+                HStack(spacing: 10) {
+                    Image(systemName: "figure.walk")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(AppColor.brandBlue)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("One rep keeps the trail open.")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text("About two minutes.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(AppColor.brandBlue)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .background(AppColor.brandBlue.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            .accessibilityIdentifier("journey.today")
+        }
+    }
+
+    /// The user's own reason, kept visible — what the flag on the
+    /// horizon stands for. Provenance rule: quotation marks and italics
+    /// ONLY around the user's literal words; the AI paraphrase renders
+    /// plain so the page never puts words in their mouth.
+    private var whyCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Why you're walking")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppColor.brandBlue.opacity(0.85))
+                .textCase(.uppercase)
+                .tracking(0.4)
+
+            if let why = whyContent {
+                Group {
+                    if why.provenance == .userVerbatim {
+                        Text("\u{201C}\(why.text)\u{201D}")
+                            .font(.body.weight(.medium).italic())
+                    } else {
+                        Text(why.text)
+                            .font(.body.weight(.medium))
+                    }
+                }
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(4)
+
+                Text(whyCoachLine)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
+
+                HStack {
+                    Spacer()
+                    Button {
+                        showGoalRefresh = true
+                    } label: {
+                        Text("Still true?")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AppColor.brandBlue.opacity(0.9))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("journey.why.refresh")
+                }
+            } else {
+                Text("What are you walking toward?")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(whyCoachLine)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    showWhyCapture = true
+                } label: {
+                    Text("Make it yours")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .background(AppColor.brandBlue, in: Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+                .accessibilityIdentifier("journey.why.capture")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .fill(AppColor.brandBlue.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .strokeBorder(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
+        )
+        .accessibilityIdentifier("journey.why")
+    }
+
+    private var whyCoachLine: String {
+        JourneyWhyComposer.coachLine(
+            practicedToday: practicedToday,
+            daysSinceLastSession: daysSinceLastSession,
+            streak: snapshot.streak,
+            practicedDays: snapshot.practicedDays,
+            hasWhy: whyContent != nil
+        )
+    }
+
+    /// The coach's sequence (System B), demoted to a position read: the
+    /// landmark you're walking toward, what opens it, and the two after
+    /// it. Never a percentage, never the landscape's truth.
+    private var landmarksCard: some View {
+        let statuses = pathProgress.statuses
+        let completedCount = statuses.filter(\.isComplete).count
+        let current = statuses.first(where: { !$0.isComplete })
+        let upcoming = current.map { cur in
+            statuses
+                .filter { !$0.isComplete && $0.node.order > cur.node.order }
+                .sorted { $0.node.order < $1.node.order }
+                .prefix(2)
+        } ?? []
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                NoumPathCharacter()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Trail landmarks")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AppColor.brandBlue.opacity(0.85))
+                            .textCase(.uppercase)
+                            .tracking(0.4)
+                        Spacer()
+                        Text("\(completedCount) of \(statuses.count)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let current {
+                        Text(current.node.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text(pathProgress.currentNodeGatingPhrase ?? landmarkPresentation.nextMilestoneLabel)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        if current.progress > 0 {
+                            ShimmerProgressBar(progress: current.progress, tint: AppColor.brandBlue, animated: false)
+                                .padding(.top, 2)
+                        }
+
+                        if !upcoming.isEmpty {
+                            VStack(alignment: .leading, spacing: 3) {
+                                ForEach(Array(upcoming), id: \.node.id) { status in
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "circle.dashed")
+                                            .font(.system(size: 9, weight: .semibold))
+                                        Text(status.node.title)
+                                            .font(.caption)
+                                    }
+                                    .foregroundStyle(.secondary.opacity(0.7))
+                                }
+                            }
+                            .padding(.top, 4)
+                        }
+                    } else {
+                        Text("Current path complete.")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text(landmarkPresentation.summaryLine)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(LedgerRoleLines.landmarkRole(hasRatedEvidence: ratingStore.rating.hasRatedEvidence))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .fill(Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .strokeBorder(Color.black.opacity(0.06), lineWidth: 1)
+        )
+        .accessibilityIdentifier("journey.landmarks")
+    }
+
+    /// The weekly challenge and skill milestones, demoted into one quiet
+    /// disclosure — real content, off the main read. They near-duplicate
+    /// the landmark ladder; until they merge, they stay reachable here
+    /// without competing for the page's story.
+    private var alongTheWayCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.84)) {
+                    alongTheWayExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    Text("Along the way")
+                        .font(Typography.headline)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(alongTheWayExpanded ? 180 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("journey.alongTheWay")
+
+            if alongTheWayExpanded {
+                VStack(alignment: .leading, spacing: 10) {
+                    activeChallengeRow
+                    ForEach(Array(retentionSnapshot.achievements.prefix(3))) { achievement in
+                        Button {
+                            withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.84)) {
+                                selectedAchievementID = selectedAchievementID == achievement.id ? nil : achievement.id
+                            }
+                        } label: {
+                            milestoneRow(
+                                achievement: achievement,
+                                isExpanded: selectedAchievementID == achievement.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .fill(Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .strokeBorder(Color.black.opacity(0.06), lineWidth: 1)
+        )
     }
 
     /// Hero background for the main journey card — brand-blue radial wash on white,
@@ -252,134 +630,32 @@ struct PathJourneyView: View {
         .shadow(color: AppColor.brandBlue.opacity(0.10), radius: 18, y: 10)
     }
 
-    /// Coach-narrated "What this means" sub-card. The Noum character glyph sits
-    /// top-left and anchors the section as the narrator of the path.
-    private var coachExplanationCard: some View {
-        HStack(alignment: .top, spacing: 12) {
-            NoumPathCharacter()
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("What this means")
+    /// This week's focus (the active challenge), compacted to one row
+    /// inside the "Along the way" disclosure.
+    private var activeChallengeRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("This week's focus")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(AppColor.brandBlue.opacity(0.85))
+                    .foregroundStyle(.secondary)
                     .textCase(.uppercase)
-                    .tracking(0.4)
-
-                // Mission role (progression spine): missions are the coach's
-                // sequence toward the skills the rating measures — position
-                // on the path, never a second score. Future-tense before
-                // any rated evidence exists.
-                Text(LedgerRoleLines.missionRole(hasRatedEvidence: ratingStore.rating.hasRatedEvidence))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(snapshot.explanationLine)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-
-                Text(snapshot.consequenceLine)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-
-                Text(snapshot.nextMilestoneLabel)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(AppColor.brandBlue.opacity(0.92))
-                    .lineLimit(2)
-                    .padding(.top, 2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .fill(AppColor.brandBlue.opacity(0.06))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .strokeBorder(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
-        )
-    }
-
-    private var activeChallengeCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Active Challenge")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            HStack(alignment: .top, spacing: 10) {
-                PulseBadge(systemImage: "bolt.fill", tint: .orange, animated: false)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(retentionSnapshot.activeChallenge.title)
-                        .font(.headline)
-                    Text(retentionSnapshot.activeChallenge.summary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
                 Spacer()
-            }
-
-            ShimmerProgressBar(progress: retentionSnapshot.activeChallenge.progress, tint: .blue, animated: false)
-
-            HStack {
                 Text(retentionSnapshot.activeChallenge.progressLabel)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.blue)
-                Spacer()
-                Text(retentionSnapshot.motivationLine)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
             }
+
+            Text(retentionSnapshot.activeChallenge.title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text(retentionSnapshot.activeChallenge.summary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ShimmerProgressBar(progress: retentionSnapshot.activeChallenge.progress, tint: .blue, animated: false)
         }
-        .padding(Spacing.cardGap)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-    }
-
-    private var achievementsCard: some View {
-        let visibleAchievements = Array(retentionSnapshot.achievements.prefix(3))
-        let unlockedCount = visibleAchievements.filter { $0.isUnlocked }.count
-        let totalCount = visibleAchievements.count
-
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Skill milestones")
-                    .font(Typography.headline)
-                    .foregroundStyle(.primary)
-                Spacer()
-                Text("\(unlockedCount) of \(totalCount)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(Color.black.opacity(0.05))
-                    )
-            }
-            .padding(.top, 4)
-            .padding(.bottom, 2)
-
-            VStack(spacing: 10) {
-                ForEach(visibleAchievements) { achievement in
-                    Button {
-                        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
-                            selectedAchievementID = selectedAchievementID == achievement.id ? nil : achievement.id
-                        }
-                    } label: {
-                        milestoneRow(
-                            achievement: achievement,
-                            isExpanded: selectedAchievementID == achievement.id
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
+        .padding(12)
+        .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
     @ViewBuilder
@@ -741,8 +1017,8 @@ struct PracticeJourneySnapshot {
     let homeGoalShortLabel: String
 
     /// Returns a copy with visual reveal progress overridden for DEBUG-only
-    /// inspection. Copy still reads from the live path presentation so the
-    /// simulator tool cannot become a second product truth source.
+    /// inspection. Narrative copy stays live so the simulator tool cannot
+    /// become a second product truth source.
     func withSimulatedReveal(_ days: Int) -> PracticeJourneySnapshot {
         let windowDays = 21
         let clamped = max(0, min(windowDays, days))
@@ -764,20 +1040,25 @@ struct PracticeJourneySnapshot {
         )
     }
 
-    func applyingPathPresentation(_ presentation: PathJourneyPresentation) -> PracticeJourneySnapshot {
+    /// Returns a copy with the displayed streak swapped in.
+    /// `StreakFreezeManager.currentStreak` is the single displayed-streak
+    /// owner (freeze-aware, never punishes one missed day); the snapshot's
+    /// internal strict streak only seeds the quality read. The reveal
+    /// stays days-driven — landmark progress never touches the landscape.
+    func withDisplayedStreak(_ displayed: Int) -> PracticeJourneySnapshot {
         PracticeJourneySnapshot(
             practicedDays: practicedDays,
-            streak: presentation.currentStreak,
-            revealProgress: presentation.revealProgress,
+            streak: max(0, displayed),
+            revealProgress: revealProgress,
             quality: quality,
-            progressLabel: presentation.progressLabel,
-            previewLine: presentation.previewLine,
-            summaryLine: presentation.summaryLine,
-            explanationLine: presentation.explanationLine,
-            nextMilestoneLabel: presentation.nextMilestoneLabel,
-            consequenceLine: presentation.consequenceLine,
-            homeGoalLine: presentation.homeGoalLine,
-            homeGoalShortLabel: presentation.homeGoalShortLabel
+            progressLabel: progressLabel,
+            previewLine: previewLine,
+            summaryLine: summaryLine,
+            explanationLine: explanationLine,
+            nextMilestoneLabel: nextMilestoneLabel,
+            consequenceLine: consequenceLine,
+            homeGoalLine: homeGoalLine,
+            homeGoalShortLabel: homeGoalShortLabel
         )
     }
 
@@ -851,11 +1132,13 @@ struct PracticeJourneySnapshot {
             nextMilestoneLabel = "\(daysRemaining) more day\(daysRemaining == 1 ? "" : "s") to reveal the next section."
         }
 
+        // Forward-framed only — absence is described as invitation, never
+        // as a threatened loss (never-punish-shame invariant).
         let consequenceLine: String
         if practicedDays == 0 {
-            consequenceLine = "Leave it untouched and the grass keeps covering the route you want to build."
+            consequenceLine = "Nothing is lost — the route is waiting to be cut."
         } else if streak <= 1 {
-            consequenceLine = "Miss too many days and the trail softens again. Consistency keeps it visible."
+            consequenceLine = "Each return keeps the route easy to find."
         } else {
             consequenceLine = "Staying with it keeps the route open and makes confident speaking feel more natural."
         }
@@ -976,7 +1259,7 @@ struct PathJourneyPresentation: Equatable {
                 previewLine: "One short rep gives Noum a real signal to build from.",
                 summaryLine: "Path progress unlocks from real practice signals, not calendar decoration.",
                 explanationLine: "Start with one rep.",
-                nextMilestoneLabel: "Noum will name the first mission after there is something to read.",
+                nextMilestoneLabel: "Noum will name the first landmark after there is something to read.",
                 consequenceLine: "No progress is claimed before you speak.",
                 homeGoalLine: "Start the path with one rep today.",
                 homeGoalShortLabel: "Begin"
@@ -989,34 +1272,34 @@ struct PathJourneyPresentation: Equatable {
                 currentStreak: max(0, currentStreak),
                 progressLabel: "100% complete",
                 previewLine: "The current path is clear. Keep training to make the gains durable.",
-                summaryLine: "All \(totalCount) missions unlocked from real practice signals.",
+                summaryLine: "All \(totalCount) landmarks reached from real practice signals.",
                 explanationLine: "Current path complete.",
                 nextMilestoneLabel: "Keep training to strengthen the habits behind the unlocks.",
                 consequenceLine: "The coach will keep looking for the next high-leverage pattern.",
-                homeGoalLine: "All \(totalCount) missions unlocked. Keep the route strong.",
+                homeGoalLine: "All \(totalCount) landmarks reached. Keep the route strong.",
                 homeGoalShortLabel: "Cleared"
             )
         }
 
-        let missionNumber = min(totalCount, completedCount + 1)
+        let landmarkNumber = min(totalCount, completedCount + 1)
         let title = currentTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
         let detail = currentDetail?.trimmingCharacters(in: .whitespacesAndNewlines)
         let gating = currentGatingPhrase?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let readableTitle = title?.isEmpty == false ? title! : "Next mission"
+        let readableTitle = title?.isEmpty == false ? title! : "Next landmark"
         let readableDetail = detail?.isEmpty == false
             ? detail!
             : "Complete a rep to give this node a stronger signal."
         let readableGate = gating?.isEmpty == false
             ? gating!
-            : "Keep training to move this mission forward."
+            : "Keep training to move toward this landmark."
 
         let previewLine: String
         if sessionCount <= 0 {
-            previewLine = "The path starts after one real rep. No mission is claimed before you speak."
+            previewLine = "The path starts after one real rep. No landmark is claimed before you speak."
         } else if completedCount == 0 {
-            previewLine = "Your first mission is live. Noum is reading real reps now."
+            previewLine = "Your first landmark is ahead. Noum is reading real reps now."
         } else {
-            previewLine = "\(completedCount) mission\(completedCount == 1 ? "" : "s") unlocked. The next one is based on your latest signals."
+            previewLine = "\(completedCount) landmark\(completedCount == 1 ? "" : "s") reached. The next one is based on your latest signals."
         }
 
         return PathJourneyPresentation(
@@ -1024,11 +1307,11 @@ struct PathJourneyPresentation: Equatable {
             currentStreak: max(0, currentStreak),
             progressLabel: "\(pct)% complete",
             previewLine: previewLine,
-            summaryLine: "\(completedCount) of \(totalCount) missions unlocked from real practice signals.",
-            explanationLine: "Mission \(missionNumber): \(readableTitle)",
+            summaryLine: "\(completedCount) of \(totalCount) landmarks reached from real practice signals.",
+            explanationLine: "Landmark \(landmarkNumber): \(readableTitle)",
             nextMilestoneLabel: readableGate,
             consequenceLine: readableDetail,
-            homeGoalLine: "Mission \(missionNumber) of \(totalCount): \(readableTitle). \(readableGate)",
+            homeGoalLine: "Landmark \(landmarkNumber) of \(totalCount): \(readableTitle). \(readableGate)",
             homeGoalShortLabel: "\(pct)%"
         )
     }
@@ -1043,10 +1326,124 @@ struct PathJourneyPresentation: Equatable {
     }
 }
 
+// MARK: - Why composer (pure, view-free)
+
+/// What the journey page shows as the user's reason for walking.
+struct JourneyWhyContent: Equatable {
+    enum Provenance: Equatable {
+        /// The user's literal words — the ONLY provenance that renders
+        /// with quotation marks. Quoting the AI paraphrase would put
+        /// words in the user's mouth (overclaiming at the typographic
+        /// level).
+        case userVerbatim
+        /// `CoachingProfile.paraphrasedGoal` — AI-sanitised; renders plain.
+        case paraphrase
+    }
+
+    let text: String
+    let provenance: Provenance
+}
+
+/// Pure resolvers for the journey page's "Why you're walking" card.
+/// No state of its own — reads the fields the app already captures
+/// (onboarding + DeferredProfileCapture) and the session-derived
+/// recency facts the page already computes.
+enum JourneyWhyComposer {
+
+    /// Longest verbatim answer we'll surface before preferring the AI
+    /// paraphrase — a why should land in one breath, and onboarding
+    /// answers can run long. If there's no paraphrase, the long verbatim
+    /// still wins: real words beat no words.
+    static let verbatimLengthLimit = 220
+
+    /// Fallback chain: success vision → why-now → AI paraphrase →
+    /// coaching brief → nil (the card invites capture instead of
+    /// fabricating a reason).
+    static func whyContent(
+        successVision: String,
+        motivationWhyNow: String,
+        paraphrasedGoal: String?,
+        coachingBrief: String
+    ) -> JourneyWhyContent? {
+        let paraphrase = paraphrasedGoal?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        let verbatimCandidates = [successVision, motivationWhyNow]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        if let verbatim = verbatimCandidates.first {
+            if verbatim.count <= verbatimLengthLimit || paraphrase.isEmpty {
+                return JourneyWhyContent(text: verbatim, provenance: .userVerbatim)
+            }
+            return JourneyWhyContent(text: paraphrase, provenance: .paraphrase)
+        }
+
+        if !paraphrase.isEmpty {
+            return JourneyWhyContent(text: paraphrase, provenance: .paraphrase)
+        }
+
+        let brief = coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !brief.isEmpty {
+            return JourneyWhyContent(text: brief, provenance: .userVerbatim)
+        }
+
+        return nil
+    }
+
+    /// One state-aware coach line under the why. Forward-framing only:
+    /// a return after absence is re-anchored ("nothing you built is
+    /// gone"), never counted against the user. No missed-day numbers,
+    /// no loss copy — the never-punish-shame invariant applies to every
+    /// branch here.
+    static func coachLine(
+        practicedToday: Bool,
+        daysSinceLastSession: Int?,
+        streak: Int,
+        practicedDays: Int,
+        windowDays: Int = 21,
+        hasWhy: Bool
+    ) -> String {
+        guard hasWhy else {
+            return "Tell Noum why this matters. A coach who knows what you're walking toward can hold you to it."
+        }
+
+        guard daysSinceLastSession != nil else {
+            return "This field is where that lives. One rep cuts the first line toward it."
+        }
+
+        if practicedDays >= windowDays {
+            return "You've walked all \(windowDays) of the last \(windowDays) days. What you're walking toward hasn't moved — you have."
+        }
+
+        if practicedToday {
+            return "Today counted. You're a day's walking closer."
+        }
+
+        if let gap = daysSinceLastSession, gap >= 4 {
+            return "Nothing you built is gone — the trail just softened. One rep reopens it."
+        }
+
+        if streak >= 3 {
+            return "\(streak) days of showing up for this. The path is holding under your feet."
+        }
+
+        return "Each return makes the route easier to find."
+    }
+}
+
 struct PathJourneyArtwork: View {
     let snapshot: PracticeJourneySnapshot
     let compact: Bool
     let sceneResolver: (Date) -> PathSkyScene
+    /// Lifetime stage for the walker on the trail — pass
+    /// `ProgressionRatchet.resolvedStage(forXP:)` from the page so the
+    /// being standing on your days carries your whole arc. Defaults keep
+    /// existing call sites compiling.
+    var walkerStage: NoumCharacter.Stage = .awakening
+    /// Fired when the user taps the destination flag. The page scrolls
+    /// to the why card — the flag IS the why.
+    var onDestinationTap: (() -> Void)? = nil
 
     @State private var scene: PathSkyScene?
 
@@ -1205,10 +1602,29 @@ struct PathJourneyArtwork: View {
 
                 distantTrees(size: size)
 
+                // Destination glow — a soft beacon at the vanishing point
+                // where the trail leads. It exists before the first rep
+                // (the destination is real before you start walking) and
+                // warms with reveal; green-shifts when the window is full,
+                // matching the flag.
+                destinationGlow(size: size, scene: currentScene)
+
                 // Goal marker rendered outside the field mask so the flag
                 // pole and banner are never clipped by the ground region.
                 if snapshot.revealProgress > 0 {
                     goalMarker(size: size)
+                }
+
+                // The walker — you, on your trail, at the frontier your
+                // practiced days have revealed. Additive-only presence:
+                // mood stays calm, glow never dims with absence; the
+                // character's internal breathing is reduce-motion gated.
+                walker(size: size)
+
+                // Tap target over the flag → the why card. Rendered last
+                // so nothing occludes the hit area.
+                if onDestinationTap != nil {
+                    destinationTapTarget(size: size)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: compact ? 24 : 30, style: .continuous))
@@ -1319,6 +1735,83 @@ struct PathJourneyArtwork: View {
                 .position(x: centerX, y: flagY + (compact ? 1 : 2))
         }
         .opacity(snapshot.revealProgress > 0.05 ? 1 : 0.35)
+    }
+
+    // MARK: - Destination glow + walker
+
+    @ViewBuilder
+    private func destinationGlow(size: CGSize, scene: PathSkyScene) -> some View {
+        let field = fieldMetrics(for: size)
+        let isComplete = snapshot.revealProgress >= 1.0
+        let intensity = 0.16 + snapshot.revealProgress * 0.22
+        let color = isComplete
+            ? Color(red: 0.36, green: 0.86, blue: 0.52)
+            : scene.glowColor
+        let radius: CGFloat = compact ? 58 : 92
+
+        RadialGradient(
+            colors: [color.opacity(intensity), Color.clear],
+            center: .center,
+            startRadius: 2,
+            endRadius: radius
+        )
+        .frame(width: radius * 2, height: radius * 2)
+        .position(x: size.width * 0.515, y: field.top - (compact ? 26 : 38))
+        .allowsHitTesting(false)
+    }
+
+    /// Where the walker stands: the frontier of the revealed trail,
+    /// following the path's S-curve, perspective-scaled. At day zero the
+    /// character waits at the trailhead — present before the first rep,
+    /// because the coach shows up first.
+    private func walkerMetrics(for size: CGSize) -> (x: CGFloat, y: CGFloat, size: CGFloat) {
+        let field = fieldMetrics(for: size)
+        let frontierY = field.top + hiddenDepth(for: size)
+
+        // Same depth mapping the grass rows use: 0 at the horizon end of
+        // the field, 1 at the bottom edge.
+        let yNorm = Double(frontierY / max(size.height, 1))
+        let walkerDepth = max(0, min(1, (yNorm - 0.55) / 0.39))
+        let curveShift = (1.0 - walkerDepth) * 0.015 - walkerDepth * 0.01
+        let x = size.width * CGFloat(0.5 + curveShift)
+
+        let characterSize = (compact ? 16.0 : 24.0) + (compact ? 18.0 : 30.0) * walkerDepth
+        // Feet on the frontier line, body above it; clamp so the orb
+        // never clips the artwork's bottom edge at day zero.
+        let rawY = frontierY - CGFloat(characterSize) * 0.45
+        let y = min(rawY, size.height - CGFloat(characterSize) * 0.95)
+        return (x, y, CGFloat(characterSize))
+    }
+
+    @ViewBuilder
+    private func walker(size: CGSize) -> some View {
+        let metrics = walkerMetrics(for: size)
+
+        // Ground shadow keeps the orb anchored to the trail instead of
+        // floating over it.
+        Ellipse()
+            .fill(Color.black.opacity(0.16))
+            .frame(width: metrics.size * 0.78, height: metrics.size * 0.20)
+            .blur(radius: 1.5)
+            .position(x: metrics.x, y: metrics.y + metrics.size * 0.58)
+
+        NoumCharacter(mood: .calm, tint: AppColor.brandBlue, size: metrics.size, stage: walkerStage)
+            .position(x: metrics.x, y: metrics.y)
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private func destinationTapTarget(size: CGSize) -> some View {
+        let field = fieldMetrics(for: size)
+        Color.clear
+            .frame(width: 56, height: compact ? 64 : 88)
+            .contentShape(Rectangle())
+            .position(x: size.width * 0.515, y: field.top - (compact ? 22 : 32))
+            .onTapGesture { onDestinationTap?() }
+            .accessibilityElement()
+            .accessibilityLabel("Your destination. Opens why you're walking.")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("journey.flag")
     }
 
     private func revealedDepth(for size: CGSize) -> CGFloat {

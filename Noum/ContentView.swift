@@ -1023,7 +1023,7 @@ struct ContentView: View {
     private var journeyPreviewCard: some View {
         let status = pathProgress.currentNode
         let cleared = status == nil
-        let missionLine = journeyMissionLine(for: status)
+        let landmarkLine = journeyLandmarkLine(for: status)
         let titleLine = status?.node.title ?? "Path cleared"
         let gatingLine = journeyGatingLine(for: status)
         return Button {
@@ -1041,11 +1041,11 @@ struct ContentView: View {
                     HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
                         Text("Path")
                             .microLabel(journeyTint)
-                        Text(missionLine)
+                        Text(landmarkLine)
                             .font(Typography.captionSmall)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                            .accessibilityIdentifier("home.path.missionCounter")
+                            .accessibilityIdentifier("home.path.landmarkCounter")
                     }
 
                     Text(titleLine)
@@ -1053,7 +1053,7 @@ struct ContentView: View {
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                         .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("home.path.missionTitle")
+                        .accessibilityIdentifier("home.path.landmarkTitle")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -1075,18 +1075,18 @@ struct ContentView: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.path")
-        .accessibilityLabel(Text("\(titleLine). \(missionLine). \(gatingLine)"))
+        .accessibilityLabel(Text("\(titleLine). \(landmarkLine). \(gatingLine)"))
     }
 
-    /// "Mission X of N" framing line. For the cleared state we celebrate
+    /// "Landmark X of N" framing line. For the cleared state we celebrate
     /// the achievement without inventing a fake counter.
-    private func journeyMissionLine(for status: PathNodeStatus?) -> String {
+    private func journeyLandmarkLine(for status: PathNodeStatus?) -> String {
         let total = PathNodeRegistry.all.count
         guard let status else {
-            return "All \(total) missions cleared"
+            return "All \(total) landmarks reached"
         }
         let position = status.node.order + 1
-        return "Mission \(position) of \(total)"
+        return "Landmark \(position) of \(total)"
     }
 
     /// Coach-voice secondary line for the journey preview card.
