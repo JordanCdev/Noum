@@ -411,11 +411,17 @@ final class ScreenshotTour: XCTestCase {
         // The force-hook re-finalizes the seeded session, which can fire a
         // celebration/achievement overlay over the summary body. Dismiss the
         // chain (Continue) so we capture the actual verdict, not the overlay.
-        // The force-hook re-finalizes the seeded session, firing the
-        // progression/celebration chain (Session Complete -> View Summary, then
-        // any PB / level-up Continue) over the verdict. Tap through it.
-        let dismissLabels = ["View Summary", "Continue", "Got it", "Done"]
+        // The force-hook re-finalizes the seeded session, which MAY fire the
+        // progression/celebration chain over the verdict (only on a real
+        // unlock since the PostRepProgressionGate change — silent reps now
+        // route straight to the verdict). Tap through overlay labels only.
+        // NEVER tap "Done": the redesigned verdict's bottom exit panel has
+        // its own Done (summary.exitPanel.done) and blind-tapping it exits
+        // the very screen this tour captures. Stop as soon as the verdict
+        // read card (summary.postRepVerdict) is on screen.
+        let dismissLabels = ["View Summary", "Continue", "Got it"]
         for _ in 0..<5 {
+            if app.otherElements["summary.postRepVerdict"].exists { break }
             var tapped = false
             for label in dismissLabels {
                 let b = app.buttons[label]
