@@ -349,8 +349,6 @@ struct AskNoumView: View {
             VStack(spacing: 0) {
                 header
                 currentFocusStrip
-                Divider()
-                    .opacity(0.4)
                 ScrollViewReader { proxy in
                     ScrollView {
                         // Zero-height offset probe — publishes the scroll
@@ -492,14 +490,47 @@ struct AskNoumView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // T2 — owner: "where the back button is, there should be a Home
+            // button instead." Replace the default nav-back chevron with a
+            // single Home affordance that pops the shared NavigationPath to
+            // root (the Home tab root), the same stack Home/Summary push onto.
+            // Emptying the path unwinds every pushed destination at once, so a
+            // deep chat thread returns straight Home rather than one screen at
+            // a time. `.navigationBarBackButtonHidden` removes the now-redundant
+            // chevron so there is one unambiguous exit.
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    CoachHaptic.selectionTap()
+                    speaker.stop()
+                    navigationPath = NavigationPath()
+                } label: {
+                    Image(systemName: "house")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .accessibilityLabel("Home")
+                .accessibilityIdentifier("askNoum.home")
+            }
+        }
+        .navigationBarBackButtonHidden(true)
         .onAppear {
-            // Voice dictation lands in the composer as editable draft text.
-            // Sending remains explicit through the single trailing control.
+            // T3 — owner: "clicking stop on voice dictation auto-inserts the
+            // message into chat to upload again; it should auto-send on stop."
+            // The final transcript now dispatches the user turn directly
+            // through the single `send(_:)` funnel (same path as typed text,
+            // chips, and the live call's `handleUtterance`) so stopping
+            // dictation immediately runs the reply pipeline — no second tap on
+            // the composer. `send(_:)` keeps the day-0 gate, goal-intent
+            // detection, and barge-in stop, so auto-send inherits every
+            // invariant the explicit path had.
             voiceInput.onFinalTranscript = { transcript in
                 let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
-                draft = trimmed
-                inputFocused = true
+                // Clear any half-typed draft so the dictated turn doesn't leave
+                // stale text in the composer after it sends.
+                draft = ""
+                inputFocused = false
+                send(trimmed)
             }
             // Pick up any cross-surface inject (e.g. Summary's "Talk to
             // your coach about this rep" bridge dropped a seed message
@@ -557,7 +588,13 @@ struct AskNoumView: View {
         .padding(.horizontal, Spacing.lg)
         .padding(.top, Spacing.xs)
         .padding(.bottom, Spacing.sm)
-        .background(AppColor.cardBackground.opacity(0.5))
+        // T1 — the header no longer reads as a closed box. The old opaque
+        // `cardBackground.opacity(0.5)` bar + hard Divider fenced the coach
+        // off from the thread; now the header sits directly on
+        // `screenBackground` so the orb + name flow continuously into the
+        // conversation below. No hardcoded opacity — the screen background
+        // token carries the surface.
+        .background(AppColor.screenBackground)
     }
 
     @ViewBuilder
