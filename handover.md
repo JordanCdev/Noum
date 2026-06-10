@@ -1,6 +1,6 @@
 # Noum handover
 
-Updated: 2026-06-08
+Updated: 2026-06-10
 Branch: `ux-overhaul`
 
 This file is for Claude or any follow-on agent picking up the Noum UX/value
@@ -46,6 +46,34 @@ Do not introduce new stores, duplicate routes, fake progress, fake loading,
 hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
+
+2026-06-10 continuation (autonomous `noum-1` run, real toolchain). Full detail
+in `docs/UX_VALUE_OVERHAUL_SESSION_2026-06-10_CONTINUATION.md`:
+
+- Verified the uncommitted in-flight tree (GoalJourney removal + displayed-streak
+  consolidation onto `StreakFreezeManager` + goal-grounded prescription + several
+  "make the wedge felt" surfaces) builds clean and passes the full `NoumTests`
+  suite (2,273 / 0). Committed it as `e22a786`.
+- Ran a fresh 10-agent multi-role evaluation (market, UX, cold + returning user,
+  coaching expert, QA/trust → strategist synthesis → engineer specs). Honest
+  defensible score: **7/10** on the depth+trust axis. Literal "10/10, replaces a
+  human coach" answer: **no** — and the app is right to never claim it
+  (`CoachParityReadiness` caps at `.forming`, never `.earned`).
+- Shipped two owner-local, unit-tested fixes (`b0fb22e`): REMEMBER-4 case-file
+  coherence (incremental rebuilds now re-derive the live upcoming moment instead
+  of carrying a stale one) and cold-start coach copy (benefit-first, depth-curve
+  legible, all honesty substrings preserved).
+- ⚠️ A SEPARATE automated agent ran concurrently this session and committed
+  `a81d414` (Iterations 4-7) + `ac4194a` (Iteration 8 — the SAME REMEMBER-4 fix,
+  reached independently and identically) between my two commits. History is
+  linear and HEAD is coherent (no duplicate decls; verified). If two scheduled
+  tasks are pointing at this repo, expect interleaved commits and lock contention
+  on `./DerivedData/Noum` — use focused suites + an explicit `-resultBundlePath`,
+  and don't fight the other process.
+- Did NOT push (avoided racing the concurrent agent's ref). Remaining ranked
+  backlog (proof-sync, Ask-Noum auto-seed, rep-1 prescription, verified-quote
+  chip, earned-motion) is left as engineer-grade specs — they are SwiftUI visual
+  changes needing simulator/screenshot QA an autonomous run can't honestly verify.
 
 2026-06-08 ~18:39 continuation (local Codex run, light screenshot caveat):
 
