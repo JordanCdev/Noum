@@ -4,7 +4,7 @@ import SwiftUI
 // MARK: - Your Arc Card (Profile)
 //
 // A horizontal timeline that makes the user's progression LEGIBLE:
-// Day 1  →  Today  →  Next mission  →  Next chapter.
+// Day 1  →  Today  →  Next landmark  →  Next chapter.
 //
 // Sits on Profile between the speakingRatingCard and the "Progression"
 // cluster. Pillar 4 (Believable progress) made visual instead of inferred
@@ -12,7 +12,7 @@ import SwiftUI
 // claims a "level up" — the markers reflect already-true state:
 //   • Day 1 — the day of the user's first finished rep.
 //   • Today — the current NoumCharacter.Stage (XP-derived, ratcheted).
-//   • Next mission — the title of the active path node (if any).
+//   • Next landmark — the title of the active path node (if any).
 //   • Next chapter — the next NoumCharacter.Stage above the current one
 //     (omitted on .mastery, which has no "next").
 //
@@ -107,7 +107,7 @@ struct YourArcCard: View {
             // Labels row — two-line label under each marker. Positioned
             // proportionally to the same fractions so they sit beneath
             // their dots. Top line is the position name ("Day 1"); the
-            // bottom line is the stage / mission name.
+            // bottom line is the stage / landmark name.
             GeometryReader { geo in
                 let width = geo.size.width
                 ZStack(alignment: .topLeading) {
@@ -203,7 +203,7 @@ struct YourArcCard: View {
     }
 
     /// One-to-two sentence coach-voice read pulling: days since first
-    /// session, count of trending-positive metrics, and a mission clause
+    /// session, count of trending-positive metrics, and a landmark clause
     /// if one applies. The variants follow the spec exactly — every line
     /// is declarative and the language never punish-shames or overclaims.
     private var coachVoiceText: String {
@@ -224,7 +224,7 @@ struct YourArcCard: View {
         }
 
         // Default — open with days since the first session, optionally
-        // attach the trending-metric count, then a mission clause.
+        // attach the trending-metric count, then a landmark clause.
         var pieces: [String] = []
 
         let days = daysSinceFirstSession
@@ -240,34 +240,34 @@ struct YourArcCard: View {
             pieces.append("\(trending) \(metric) moving the right way.")
         }
 
-        pieces.append(missionClause)
+        pieces.append(landmarkClause)
 
         return pieces.joined(separator: " ")
     }
 
-    /// Mission clause — selects from three honest framings:
-    ///   1. "One mission from your next chapter." — when the current
+    /// Landmark clause — selects from three honest framings:
+    ///   1. "One landmark from your next chapter." — when the current
     ///      path node is honestly within reach (same predicate as
-    ///      `HomeCoachCard.missionWithinReach`).
-    ///   2. "Next mission: <title>." — when there's a current node but
+    ///      `HomeCoachCard.landmarkWithinReach`).
+    ///   2. "Next landmark: <title>." — when there's a current node but
     ///      it's not within reach yet.
     ///   3. "Stay on the run." — when the path is cleared or has no
     ///      current node.
-    private var missionClause: String {
-        if missionWithinReach {
-            return "One mission from your next chapter."
+    private var landmarkClause: String {
+        if landmarkWithinReach {
+            return "One landmark from your next chapter."
         }
         if let title = pathProgress.currentNode?.node.title, !title.isEmpty {
-            return "Next mission: \(title)."
+            return "Next landmark: \(title)."
         }
         return "Stay on the run."
     }
 
-    /// Mirrors the "Mission within reach" predicate in HomeCoachCard. We
+    /// Mirrors the "Landmark within reach" predicate in HomeCoachCard. We
     /// don't share the helper — the home file owns its own UI state — but
     /// the math is identical so the two surfaces agree on when a user is
     /// genuinely one step away.
-    private var missionWithinReach: Bool {
+    private var landmarkWithinReach: Bool {
         guard let status = pathProgress.currentNode, !status.isComplete else {
             return false
         }
@@ -400,7 +400,7 @@ struct YourArcCard: View {
         let positionLabel: String
         let detailLabel: String
 
-        enum Kind { case day1, today, nextMission, nextChapter }
+        enum Kind { case day1, today, nextLandmark, nextChapter }
         enum Style { case filled, stroked, dotted }
     }
 
@@ -436,18 +436,18 @@ struct YourArcCard: View {
             )
         )
 
-        let missionTitle = pathProgress.currentNode?.node.title
-        let missionLabel = missionTitle.flatMap { $0.isEmpty ? nil : $0 } ?? "Open road"
+        let landmarkTitle = pathProgress.currentNode?.node.title
+        let landmarkLabel = landmarkTitle.flatMap { $0.isEmpty ? nil : $0 } ?? "Open road"
         out.append(
             ArcMarker(
-                id: "nextMission",
-                kind: .nextMission,
+                id: "nextLandmark",
+                kind: .nextLandmark,
                 fraction: 0.62,
                 diameter: 12,
                 style: .stroked,
                 color: AppColor.brandBlue,
-                positionLabel: "Next mission",
-                detailLabel: missionLabel
+                positionLabel: "Next landmark",
+                detailLabel: landmarkLabel
             )
         )
 

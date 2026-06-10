@@ -70,7 +70,7 @@ struct LessonsHomeView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             // Crowns role (progression spine): passes point UP the spine —
-            // passes unlock missions; missions build the skills the rating
+            // passes unlock landmarks; landmarks build the skills the rating
             // measures. Future-tense before any rated evidence exists.
             Text(LedgerRoleLines.crownsRole(hasRatedEvidence: ratingStore.rating.hasRatedEvidence))
                 .font(Typography.caption)

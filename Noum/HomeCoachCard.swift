@@ -91,7 +91,7 @@ struct HomeCoachCard: View {
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var forwardPlanStore = ForwardPlanStore.shared
-    // Path progress drives the "Mission within reach" coach variant — when
+    // Path progress drives the "Landmark within reach" coach variant — when
     // the current path node is one rep / one score-point / one day from
     // unlocking, the coach voice points at it directly. Read-only.
     @StateObject private var pathProgress = PathProgressManager.shared
@@ -373,15 +373,15 @@ struct HomeCoachCard: View {
             return cleanRun == 3 ? "Three in a row." : "\(cleanRun) clean."
         }
 
-        // Mission within reach — wins over tier-holding because the path
+        // Landmark within reach — wins over tier-holding because the path
         // node is a concrete next action the user can complete this rep,
         // while "Hold {tier}" is a steady-state nudge. When the user is
         // one rep / one score-point / one day from unlocking their next
-        // node, surface that explicitly. See `missionWithinReach` for the
+        // node, surface that explicitly. See `landmarkWithinReach` for the
         // predicate. Never fires for boolean-trigger criteria the user
         // hasn't engaged with at all — restraint over coverage.
-        if missionWithinReach {
-            return "Mission within reach."
+        if landmarkWithinReach {
+            return "Landmark within reach."
         }
 
         let tier = LeagueTier.tier(for: ratingStore.rating.overall)
@@ -439,17 +439,17 @@ struct HomeCoachCard: View {
             return recommendationBlueprint.whyNow
         }
 
-        // Mission within reach — subtitle is the gating line itself so the
+        // Landmark within reach — subtitle is the gating line itself so the
         // user reads the concrete bar ("One rep from unlocked.") right
         // under the headline. The gating phrase is sourced from
         // `PathProgressManager.currentNodeGatingPhrase`, which never
         // punish-shames a regression.
-        if missionWithinReach, let phrase = pathProgress.currentNodeGatingPhrase {
+        if landmarkWithinReach, let phrase = pathProgress.currentNodeGatingPhrase {
             return phrase
         }
 
         // Weekly rhythm milestone — fires at 3, 5, 7 reps per week.
-        // Reinforces cadence between mission and tier variants.
+        // Reinforces cadence between landmark and tier variants.
         let weekReps = weeklyRepCount
         if [3, 5, 7].contains(weekReps), sessionStore.sessions.count >= 5 {
             switch weekReps {
@@ -602,7 +602,7 @@ struct HomeCoachCard: View {
     /// Silent in the cleared-path state. The variant is never invented when
     /// the user is genuinely far from the next bar — restraint over
     /// coverage. Re-reads on every recompute via the @StateObject binding.
-    private var missionWithinReach: Bool {
+    private var landmarkWithinReach: Bool {
         guard let status = pathProgress.currentNode, !status.isComplete else {
             return false
         }

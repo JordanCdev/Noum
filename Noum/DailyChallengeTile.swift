@@ -192,13 +192,13 @@ struct DailyChallengeTile: View {
         let target = anchor?.targetPhrase ?? "a clean rep"
         switch state {
         case .cold:
-            return "Today's mission — \(target). One rep gets you started."
+            return "Today's focus — \(target). One rep gets you started."
         case .inProgress:
             let repFragment = repsToday == 1 ? "One rep in." : "\(repsToday) reps in."
-            return "Today's mission — \(target). \(repFragment)"
+            return "Today's focus — \(target). \(repFragment)"
         case .readyToClaim:
             guard let kind = anchor else {
-                return "Today's mission is logged. Tap to claim."
+                return "Today's focus is logged. Tap to claim."
             }
             return "\(kind.claimedNoun.capitalizedFirst) logged. Tap to claim."
         case .claimed:
@@ -210,9 +210,9 @@ struct DailyChallengeTile: View {
             if let kind = anchor {
                 return "\(kind.claimedNoun.capitalizedFirst) logged and claimed."
             }
-            return "Today's missions are logged and claimed."
+            return "Today's focus is logged and claimed."
         case .softExpiry:
-            return "Today's mission is still open — \(target)."
+            return "Today's focus is still open — \(target)."
         }
     }
 
@@ -225,7 +225,7 @@ struct DailyChallengeTile: View {
     // MARK: - Reset rhythm header
 
     /// Window state for the eyebrow label. Three real-clock signals:
-    ///   • `newMissions` — first 10 minutes after midnight; says the
+    ///   • `newFocus` — first 10 minutes after midnight; says the
     ///     rotation just happened.
     ///   • `resetsIn(Int)` — last 15 minutes of the day; counts down to
     ///     the rollover the user is about to see.
@@ -238,7 +238,7 @@ struct DailyChallengeTile: View {
     enum EyebrowWindow: Equatable {
         case today
         case resetsIn(minutes: Int)
-        case newMissions
+        case newFocus
     }
 
     private var eyebrowWindow: EyebrowWindow {
@@ -253,7 +253,7 @@ struct DailyChallengeTile: View {
         let secondsSinceMidnight = now.timeIntervalSince(startOfDay)
         // First 10 minutes after midnight — "NEW MISSIONS" rotation moment.
         if secondsSinceMidnight < 10 * 60 {
-            return .newMissions
+            return .newFocus
         }
         // Last 15 minutes before midnight — "RESETS IN Nm".
         let mins = minutesUntilMidnight(from: now, in: calendar)
@@ -270,7 +270,7 @@ struct DailyChallengeTile: View {
         switch eyebrowWindow {
         case .today:                      return "Today"
         case .resetsIn(let m):            return "Resets in \(m)m"
-        case .newMissions:                return "New missions"
+        case .newFocus:                   return "New focus"
         }
     }
 
@@ -282,7 +282,7 @@ struct DailyChallengeTile: View {
         switch eyebrowWindow {
         case .today:        return .secondary
         case .resetsIn:     return expiryBarColor
-        case .newMissions:  return AppColor.brandBlue
+        case .newFocus:     return AppColor.brandBlue
         }
     }
 
@@ -547,7 +547,7 @@ private struct ClaimReadyPill: View {
 // phrasing next to the tile that renders it makes both easier to revise.
 
 extension DailyChallengeKind {
-    /// Imperative target — drops into "Today's mission — \(targetPhrase)."
+    /// Imperative target — drops into "Today's focus — \(targetPhrase)."
     /// Sentence-case, no trailing punctuation, no "you" (the wrapper line
     /// supplies the address).
     var targetPhrase: String {

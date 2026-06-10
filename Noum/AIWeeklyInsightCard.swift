@@ -122,7 +122,7 @@ struct AIWeeklyInsightCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Focus shift: from \(shift.from.displayName) to \(shift.to.displayName)")
             }
-            // Chapter eyebrow — when there's a current path mission, the
+            // Chapter eyebrow — when there's a current path landmark, the
             // weekly insight reads "Chapter · <Tier>" above the headline,
             // tying the AI read into the story register the rest of the
             // app uses ("YOUR JOURNEY · Chapter · Bronze" on the journey

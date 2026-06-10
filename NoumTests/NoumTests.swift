@@ -7695,7 +7695,7 @@ struct ProgressionSpineNarrationTests {
         #expect(ProgressionLedgerRole.role(for: .speakingRating) == .spine)
         #expect(ProgressionLedgerRole.role(for: .practiceVolume) == .input)
         #expect(ProgressionLedgerRole.role(for: .lessonCrowns) == .input)
-        #expect(ProgressionLedgerRole.role(for: .pathMissions) == .input)
+        #expect(ProgressionLedgerRole.role(for: .pathLandmarks) == .input)
         #expect(ProgressionLedgerRole.role(for: .proofArchive) == .proof)
 
         let spineLedgers = ProgressionLedger.allCases.filter {

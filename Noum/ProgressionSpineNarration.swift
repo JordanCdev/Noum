@@ -5,7 +5,7 @@ import Foundation
 // One story across every progression surface: the speaking rating is the
 // ONLY number allowed to answer "am I getting better at speaking?". Every
 // other ledger must name its role in the same breath — practice volume
-// (XP), unlock/input (crowns, missions), or proof (verified quotes).
+// (XP), unlock/input (crowns, landmarks), or proof (verified quotes).
 //
 // These resolvers are pure and view-free (same testable pattern as
 // `ProfileDefaultSurfacePlan`) so the narration contract is pinned by unit
@@ -27,7 +27,7 @@ enum ProgressionLedger: String, CaseIterable, Equatable {
     /// LessonStore practice passes / crowns.
     case lessonCrowns
     /// PathProgressManager nodes — the coach's sequenced course.
-    case pathMissions
+    case pathLandmarks
     /// ProofMomentArchive — transcript-verified quotes.
     case proofArchive
 }
@@ -37,7 +37,7 @@ enum ProgressionLedgerRole: String, Equatable {
     /// The only ledger allowed to claim skill: the speaking rating.
     case spine
     /// Feeds the spine — volume and unlocks. Narrates as "points UP the
-    /// spine" (passes unlock missions; missions build the skills the
+    /// spine" (passes unlock landmarks; landmarks build the skills the
     /// rating measures), never as a competing score.
     case input
     /// Qualitative evidence BEHIND the rating — quoted, never scored.
@@ -47,7 +47,7 @@ enum ProgressionLedgerRole: String, Equatable {
         switch ledger {
         case .speakingRating:
             return .spine
-        case .practiceVolume, .lessonCrowns, .pathMissions:
+        case .practiceVolume, .lessonCrowns, .pathLandmarks:
             return .input
         case .proofArchive:
             return .proof
@@ -186,7 +186,7 @@ enum PostRepProgressionGate {
 // MARK: - Ledger role lines
 
 /// One-sentence role narration for each input/proof surface, tying the
-/// ledger UP the spine: passes unlock missions; missions build the skills
+/// ledger UP the spine: passes unlock landmarks; landmarks build the skills
 /// the rating measures; quotes are the evidence behind it.
 ///
 /// `hasRatedEvidence == false` flips every spine reference to future
@@ -199,18 +199,18 @@ enum LedgerRoleLines {
     /// Lesson crowns / practice passes (LessonsHomeView header, Passes pill).
     static func crownsRole(hasRatedEvidence: Bool) -> String {
         if hasRatedEvidence {
-            return "Each pass drills one technique — passes unlock missions on your path, and missions build the skills your rating measures."
+            return "Each pass drills one technique — passes unlock landmarks on your path, and landmarks build the skills your rating measures."
         }
-        return "Each pass drills one technique — passes unlock missions on your path, and missions build the skills your rating will measure once it's earned."
+        return "Each pass drills one technique — passes unlock landmarks on your path, and landmarks build the skills your rating will measure once it's earned."
     }
 
-    /// Path missions (PathJourneyView "What this means" card). Missions
+    /// Path landmarks (PathJourneyView "What this means" card). Landmarks
     /// are the coach's sequence — position, not a parallel score.
-    static func missionRole(hasRatedEvidence: Bool) -> String {
+    static func landmarkRole(hasRatedEvidence: Bool) -> String {
         if hasRatedEvidence {
-            return "Missions are your coach's sequence toward the skills your rating measures — a position on the path, not a second score."
+            return "Landmarks are your coach's sequence toward the skills your rating measures — a position on the path, not a second score."
         }
-        return "Missions are your coach's sequence toward the skills your rating will measure once it's earned — a position on the path, not a second score."
+        return "Landmarks are your coach's sequence toward the skills your rating will measure once it's earned — a position on the path, not a second score."
     }
 
     /// Proof archive (Growth Library header, Profile insights chip).

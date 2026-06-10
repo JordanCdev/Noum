@@ -188,7 +188,7 @@ enum CoachContextBuilder {
         1. Quote at least one concrete fact from CONTEXT — a baseline \
            number (fillers/min, pace, score, hedging), a streak day count, \
            a specific recent rep ("yesterday's Ah-Counter rep"), a COACH \
-           MEMORY hypothesis, a path mission, or a verbatim PROOF quote. \
+           MEMORY hypothesis, a path landmark, or a verbatim PROOF quote. \
            Generic advice without a \
            cited fact reads as a GPT wrapper and fails this floor.
         2. Tie the answer to the user's chosen voice (the GOAL section). \
@@ -384,7 +384,7 @@ enum CoachContextBuilder {
     ///   • INTERVENTION RESPONSE — whether previously prescribed modes
     ///     are associated with improved or worse subsequent reps.
     ///   • RECENT — last 3 sessions: mode, score, fillers, duration
-    ///   • PATH — current node title + mission position
+    ///   • PATH — current node title + landmark position
     ///   • TRENDS — strengths + persistent blockers
     ///   • PROOFS — transcript-anchored evidence of growth (verbatim
     ///     quotes the user actually said in past reps). Omitted entirely
@@ -1052,7 +1052,7 @@ enum CoachContextBuilder {
             lines.append("")
             lines.append("PATH")
             lines.append("- Chapter: \(status.node.tier.title).")
-            lines.append("- Current mission: \(status.node.title).")
+            lines.append("- Current landmark: \(status.node.title).")
             if let phrase = pathGatingPhrase {
                 lines.append("- Gating: \(phrase)")
             }
@@ -3950,10 +3950,17 @@ enum CoachContextBuilder {
     //
     // This overload is what the view calls. The old `starterPrompts(for:)`
     // remains as the deterministic catalog for tests and the AI chip fallback.
+    /// `rotation` varies which catalog prompts fill the non-contextual
+    /// slots (owner feedback 2026-06-10: "the suggested prompts are just
+    /// the same ones every time"). Callers pass a slow-changing seed
+    /// (e.g. day-of-year) so consecutive opens differ while a single
+    /// session stays stable. BigMoment chips are genuinely contextual and
+    /// never rotate away.
     static func starterPrompts(
         bigMoment: BigMoment?,
         baseline: CommunicationBaseline,
-        voice: SpeakingStyleGoal?
+        voice: SpeakingStyleGoal?,
+        rotation: Int = 0
     ) -> [String] {
         var chips: [String] = []
 
@@ -3973,25 +3980,32 @@ enum CoachContextBuilder {
         }
 
         // Signal 2 — weakest blocker from baseline. One chip max so it
-        // doesn't crowd out the BigMoment prompts.
+        // doesn't crowd out the BigMoment prompts. Phrasing alternates by
+        // rotation parity so the line reads fresh across days.
         if chips.count < 3,
            let blocker = baseline.persistentBlockers.first,
            !blocker.isEmpty {
-            let blockerChip = "Why does my \(blocker.lowercased()) keep slipping?"
-            if blockerChip.count <= 60 {
-                chips.append(blockerChip)
-            } else {
-                chips.append("What's holding back my \(blocker.lowercased())?")
-            }
+            let variants = [
+                "Why does my \(blocker.lowercased()) keep slipping?",
+                "What's holding back my \(blocker.lowercased())?"
+            ]
+            let pick = variants[abs(rotation) % variants.count]
+            chips.append(pick.count <= 60 ? pick : variants[1])
         }
 
         // Fill remaining slots (up to 3 total) from the deterministic
-        // voice-catalog, skipping any that are already present.
+        // voice-catalog, starting at a rotation-derived offset and
+        // wrapping — consecutive days surface different openers instead
+        // of the same head-of-catalog trio forever.
         let catalog = starterPrompts(for: voice)
-        for prompt in catalog {
-            if chips.count >= 3 { break }
-            if !chips.contains(prompt) {
-                chips.append(prompt)
+        if !catalog.isEmpty {
+            let offset = abs(rotation) % catalog.count
+            for index in 0..<catalog.count {
+                if chips.count >= 3 { break }
+                let prompt = catalog[(offset + index) % catalog.count]
+                if !chips.contains(prompt) {
+                    chips.append(prompt)
+                }
             }
         }
 

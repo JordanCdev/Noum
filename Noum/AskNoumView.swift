@@ -401,6 +401,14 @@ struct AskNoumView: View {
                                 case nil:
                                     EmptyView()
                                 }
+
+                                // End chat — the deliberate session exit,
+                                // at the BOTTOM of the thread (owner
+                                // refinement on T2: "like end chat which
+                                // takes you home, and shouldn't be at the
+                                // top"). Same register as the live call's
+                                // Leave and the verdict's bottom Done.
+                                endChatRow
                             }
                             // Bottom spacer keeps the last message off
                             // the input bar so it's never visually cramped.
@@ -490,29 +498,11 @@ struct AskNoumView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            // T2 — owner: "where the back button is, there should be a Home
-            // button instead." Replace the default nav-back chevron with a
-            // single Home affordance that pops the shared NavigationPath to
-            // root (the Home tab root), the same stack Home/Summary push onto.
-            // Emptying the path unwinds every pushed destination at once, so a
-            // deep chat thread returns straight Home rather than one screen at
-            // a time. `.navigationBarBackButtonHidden` removes the now-redundant
-            // chevron so there is one unambiguous exit.
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    CoachHaptic.selectionTap()
-                    speaker.stop()
-                    navigationPath = NavigationPath()
-                } label: {
-                    Image(systemName: "house")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .accessibilityLabel("Home")
-                .accessibilityIdentifier("askNoum.home")
-            }
-        }
-        .navigationBarBackButtonHidden(true)
+        // T2 (owner refinement): the deliberate exit is the bottom-of-thread
+        // "End chat" row (`endChatRow`), not a top-bar control — "shouldn't
+        // be at the top." The standard back chevron stays for plain
+        // navigation; End chat is the session-ending action that returns
+        // straight Home.
         .onAppear {
             // T3 — owner: "clicking stop on voice dictation auto-inserts the
             // message into chat to upload again; it should auto-send on stop."
@@ -1217,13 +1207,21 @@ struct AskNoumView: View {
     // Starters never disappear — they upgrade from deterministic to AI
     // when the cached entry arrives.
 
+    /// Slow-changing rotation seed (day-of-year): the starter trio re-rolls
+    /// daily instead of being identical on every open (owner feedback
+    /// 2026-06-10), while staying stable within a session.
+    private var starterRotation: Int {
+        Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0
+    }
+
     /// The deterministic data-grounded starters. Always non-empty; this is
     /// both the instant skeleton and the final fallback.
     private var deterministicStarters: [String] {
         CoachContextBuilder.starterPrompts(
             bigMoment: bigMomentStore.activeMoment,
             baseline: baselineStore.baseline,
-            voice: voice
+            voice: voice,
+            rotation: starterRotation
         )
     }
 
@@ -1239,7 +1237,9 @@ struct AskNoumView: View {
             return "\(moment.category.rawValue)#\(days)"
         } ?? "nomoment"
         let weakPart = PracticeTopics.weakestDimensionLabel(for: baselineStore.baseline) ?? "noweak"
-        return "\(voicePart)|\(momentPart)|\(weakPart)"
+        // Day-bucket component: the AI-tailored starters re-roll daily too,
+        // not only when voice/moment/weakness change.
+        return "\(voicePart)|\(momentPart)|\(weakPart)|r\(starterRotation)"
     }
 
     /// Starters shown in the empty state. Prefers the cached AI set for the
@@ -1882,6 +1882,34 @@ struct AskNoumView: View {
     }
 
     // MARK: - Message rows
+
+    /// Quiet session-ending action at the bottom of the thread. Stops any
+    /// speech, then pops the shared NavigationPath to root — a deep chat
+    /// thread returns straight Home in one tap. Renders only when a
+    /// conversation exists (the empty state has nothing to end).
+    private var endChatRow: some View {
+        Button {
+            CoachHaptic.selectionTap()
+            speaker.stop()
+            navigationPath = NavigationPath()
+        } label: {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "arrow.uturn.left")
+                    .font(.caption.weight(.semibold))
+                Text("End chat")
+                    .font(Typography.caption.weight(.semibold))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs + 2)
+            .background(AppColor.tagBackground, in: Capsule())
+        }
+        .buttonStyle(.pressable)
+        .frame(maxWidth: .infinity)
+        .padding(.top, Spacing.xs)
+        .accessibilityLabel("End chat and return home")
+        .accessibilityIdentifier("askNoum.endChat")
+    }
 
     @ViewBuilder
     private func messageRow(message: CoachMessage) -> some View {

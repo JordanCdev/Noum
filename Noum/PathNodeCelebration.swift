@@ -1,7 +1,7 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
-// MARK: - Path Node Celebration ("Mission Complete")
+// MARK: - Path Node Celebration ("Landmark Reached")
 //
 // Full-screen cinematic fired the moment a path node is newly unlocked.
 // The path is the visible story of progress in Noum — clearing a node is
@@ -75,7 +75,7 @@ struct PathNodeCelebration: View {
         case backdropIn    // Radial fading in
         case characterIn   // NoumCharacter scaled in, sparkle ribbon live
         case headlineIn    // Eyebrow + headline slid + faded in
-        case subtitleIn    // Mission name fading in
+        case subtitleIn    // Landmark name fading in
         case statIn        // Stat line fading in
         case ctaIn         // Continue + Open the Path
 
@@ -210,11 +210,11 @@ struct PathNodeCelebration: View {
             .accessibilityLabel(accessibilityChapterCopy)
     }
 
-    /// "Mission complete." — display weight, Dynamic-Type-aware rounded
+    /// "Landmark reached." — display weight, Dynamic-Type-aware rounded
     /// treatment. Coach voice, no exclamation. Motion + sparkle carry the
     /// moment.
     private var headline: some View {
-        Text("Mission complete.")
+        Text("Landmark reached.")
             .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
             .foregroundStyle(.white)
             .multilineTextAlignment(.center)
@@ -225,7 +225,7 @@ struct PathNodeCelebration: View {
             .accessibilityAddTraits(.isHeader)
     }
 
-    /// Mission name = the node's `title`. Stays as the user's reference
+    /// Landmark name = the node's `title`. Stays as the user's reference
     /// to what they just earned ("Hold a silent beat", "Three-day streak").
     private var subtitle: some View {
         Text(node.title)
@@ -366,7 +366,7 @@ struct PathNodeCelebration: View {
             }
         }
 
-        // Beat 4 — Subtitle (mission name) fades in (300ms delay).
+        // Beat 4 — Subtitle (landmark name) fades in (300ms delay).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
             withAnimation(.easeOut(duration: 0.35)) {
                 phase = .subtitleIn
@@ -508,7 +508,7 @@ struct PathNodeCelebration: View {
     }
 
     private var accessibilityCopy: String {
-        "Mission complete. \(accessibilityChapterCopy). \(node.title). \(statCopy)"
+        "Landmark reached. \(accessibilityChapterCopy). \(node.title). \(statCopy)"
     }
 
     // MARK: - Helpers
@@ -552,7 +552,7 @@ struct PathNodeCelebration: View {
 
 #if DEBUG
 @available(iOS 17.0, *)
-#Preview("Mission Complete — Clean rep") {
+#Preview("Landmark Reached — Clean rep") {
     PathNodeCelebration(
         node: PathNodeRegistry.all.first(where: { $0.0.id == "clean_rep" })!.0,
         onDismiss: {},
@@ -561,7 +561,7 @@ struct PathNodeCelebration: View {
 }
 
 @available(iOS 17.0, *)
-#Preview("Mission Complete — First rep") {
+#Preview("Landmark Reached — First rep") {
     PathNodeCelebration(
         node: PathNodeRegistry.all.first(where: { $0.0.id == "first_rep" })!.0,
         onDismiss: {}
@@ -569,7 +569,7 @@ struct PathNodeCelebration: View {
 }
 
 @available(iOS 17.0, *)
-#Preview("Mission Complete — Composed pauses") {
+#Preview("Landmark Reached — Composed pauses") {
     PathNodeCelebration(
         node: PathNodeRegistry.all.first(where: { $0.0.id == "clean_pause_session" })!.0,
         onDismiss: {},
