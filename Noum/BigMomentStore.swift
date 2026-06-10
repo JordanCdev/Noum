@@ -215,6 +215,55 @@ struct BigMomentOutcomeReport: Codable, Identifiable, Equatable {
     }
 }
 
+// MARK: - Coach acknowledgment (the receipt for a saved check-in)
+
+/// Deterministic coach acknowledgment for a just-saved outcome report —
+/// the human beat after the user tells their coach how the real moment
+/// went. Rendered in the Home card's slot the moment they save, and
+/// injected once into the Ask Noum thread so the coach has visibly
+/// received the report on the next visit.
+///
+/// Contracts:
+///   • Association language ONLY. The prep "carried" because the USER
+///     reported it carried — their read, never proof the training caused
+///     the result, and the copy says so.
+///   • Never punish-shame. A moment that fell short gets a steady,
+///     forward-looking line — never a verdict on the user, never
+///     repetition of "fell short" back at them.
+///   • No quotes. The user's free-text note is never echoed, so no quote
+///     verification is needed and nothing sensitive is repeated.
+///   • Honest. "Noted" is literal: the report persists here and reaches
+///     `CoachMemoryStore.noteTransferOutcome` at the save site.
+enum BigMomentOutcomeAck {
+    static func line(for report: BigMomentOutcomeReport) -> String {
+        let event = report.category.displayName
+
+        let opening: String
+        switch report.outcome {
+        case .wentWell:
+            opening = "Good to hear the \(event) went well."
+        case .mixed:
+            opening = "Thanks for the honest read on the \(event) — mixed moments are useful evidence."
+        case .fellShort:
+            opening = "Thanks for logging the \(event) honestly. One hard room doesn't change the work — it sharpens it."
+        }
+
+        let transferClause: String
+        switch report.drillTransfer {
+        case .transferred:
+            transferClause = "You felt the prep carry into the room — noted alongside your reps, as your read, not as proof either way."
+        case .partly:
+            transferClause = "You felt part of the prep carry — noted, so the next reps can aim at the part that stayed behind."
+        case .didNotTransfer:
+            transferClause = "You felt the prep didn't carry this time — a useful read, noted as your account, never a verdict on you."
+        case nil:
+            transferClause = "I've noted your read of the room alongside your training."
+        }
+
+        return opening + " " + transferClause
+    }
+}
+
 /// A bounded cross-event read over the user's own real-world outcome reports.
 /// This is not persisted and never claims objective transfer; it only gives the
 /// coach enough shape to ask a better follow-up after repeated similar moments.
@@ -308,6 +357,14 @@ final class BigMomentStore: ObservableObject {
     @Published private(set) var archive: [BigMoment] = []
     @Published private(set) var outcomeReports: [BigMomentOutcomeReport] = []
 
+    /// Transient, in-memory only: the outcome report the user just saved
+    /// this session, so Home can replace the check-in card with one quiet
+    /// coach acknowledgment instead of a silent vanish. Never persisted —
+    /// relaunch and account changes clear it; `consumeOutcomeAck()` clears
+    /// it once the acknowledgment beat has been shown. Mirrors the
+    /// `RatingStore.pendingPeakGlow` transient-celebration contract.
+    @Published private(set) var pendingOutcomeAck: BigMomentOutcomeReport?
+
     private let defaults: UserDefaults
     private let accountIDProvider: () -> String?
     private let activeMomentKeyPrefix = "bigMoment."
@@ -327,6 +384,7 @@ final class BigMomentStore: ObservableObject {
     // MARK: - Lifecycle
 
     func reloadForCurrentAccount() {
+        pendingOutcomeAck = nil
         guard let accountID = currentAccountID else {
             activeMoment = nil
             archive = []
@@ -343,6 +401,13 @@ final class BigMomentStore: ObservableObject {
         activeMoment = nil
         archive = []
         outcomeReports = []
+        pendingOutcomeAck = nil
+    }
+
+    /// One-shot consumer for the transient post-save acknowledgment.
+    /// Home calls this once the acknowledgment beat has been shown.
+    func consumeOutcomeAck() {
+        pendingOutcomeAck = nil
     }
 
     // MARK: - API
@@ -461,6 +526,9 @@ final class BigMomentStore: ObservableObject {
         updated.insert(report, at: 0)
         outcomeReports = Array(updated.prefix(Self.outcomeReportCap))
         persistOutcomeReports(accountID: accountID)
+        // Surface the one-shot coach acknowledgment in the card's slot —
+        // a save must never be a silent vanish.
+        pendingOutcomeAck = report
         return report
     }
 
@@ -539,6 +607,7 @@ final class BigMomentStore: ObservableObject {
             activeMoment = nil
             archive = []
             outcomeReports = []
+            pendingOutcomeAck = nil
         }
     }
 }

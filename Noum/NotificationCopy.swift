@@ -151,6 +151,27 @@ enum NotificationCopy {
         }
     }
 
+    // MARK: - Big Moment day-after check-in (neutral invite, never guilt)
+    //
+    // Fired the morning after a dated Big Moment passes. Closes the
+    // prepare → event → reflect loop: the user prepped for a real
+    // moment; the day after, the coach asks how it went so the Home
+    // outcome card can collect their read of the room.
+    //
+    // Contracts:
+    //   • Privacy — takes only the category, by construction. The
+    //     user-authored moment title must NEVER reach the lock screen
+    //     (same rule as the T-7 / T-1 countdown copy).
+    //   • Never guilt — a pure invite. No "don't forget", no urgency,
+    //     no implication that skipping the check-in costs anything.
+    //     "No rush" is the register: the check-in waits for them.
+    static func bigMomentCheckIn(category: BigMomentCategory) -> NotificationLine {
+        NotificationLine(
+            title: "How did your \(category.displayName) go?",
+            body: "When you're ready, a short check-in tells your coach how the room felt. No rush."
+        )
+    }
+
     /// Brief acknowledgement line when a claim lands. The home tile
     /// already plays a celebration toast — this copy is reserved for
     /// any future surface (notification action, watch glance) that

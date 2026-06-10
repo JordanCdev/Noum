@@ -186,8 +186,79 @@ struct BigMomentOutcomeInlineCard: View {
             drillTransfer: selectedTransfer
         ) {
             CoachMemoryStore.shared.noteTransferOutcome(report)
+            // The day-after check-in push is now redundant — the user just
+            // checked in. Never let a notification invite work that's done.
+            NotificationManager.shared.cancelBigMomentCheckIn()
+            // Drop the coach's acknowledgment into the Ask Noum thread so
+            // the next visit shows the coach received the report. One
+            // deterministic line, association language only (their read,
+            // never proof the prep caused the result) — the same line the
+            // transient Home acknowledgment shows.
+            AskNoumStore.shared.injectCoachTurn(BigMomentOutcomeAck.line(for: report))
         }
         CoachHaptic.selectionTap()
+    }
+}
+
+// MARK: - Big Moment Outcome Ack Card
+//
+// The quiet receipt that replaces the check-in card the moment the user
+// saves — the coach acknowledging the report instead of the card silently
+// vanishing. Transient by contract: `BigMomentStore.pendingOutcomeAck` is
+// in-memory only, and this card self-consumes after a short beat
+// (mirroring the personal-best glow's post-event lifecycle). The same
+// line persists in the Ask Noum thread, so nothing is lost when it fades.
+
+@available(iOS 17.0, macOS 12.0, *)
+struct BigMomentOutcomeAckCard: View {
+    let report: BigMomentOutcomeReport
+    var onConsume: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var line: String {
+        BigMomentOutcomeAck.line(for: report)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(AppColor.brandBlue)
+                .padding(.top, 1)
+                .accessibilityHidden(true)
+            Text(line)
+                .font(Typography.caption)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(Spacing.lg)
+        .background(
+            AppColor.cardBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.brandBlue.opacity(0.15), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Coach acknowledgment: \(line)")
+        .accessibilityIdentifier("home.bigMomentOutcomeAck")
+        .task {
+            // Brief post-save beat, then self-consume — same lifecycle as
+            // the personal-best glow. Under reduce motion the fade is
+            // suppressed: the card appears, sits, then disappears.
+            let seconds: UInt64 = reduceMotion ? 6 : 8
+            try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+            if reduceMotion {
+                onConsume()
+            } else {
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    onConsume()
+                }
+            }
+        }
     }
 }
 

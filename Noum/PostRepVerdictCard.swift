@@ -30,6 +30,12 @@ struct PostRepVerdictContent: Equatable {
     let readText: String
     let provenanceLabel: String?
     let thinEvidenceCopy: String?
+    /// ONE bounded delivery read for this rep (move #8) — the
+    /// `PostRepDeliveryReadLine` projection of the existing composure +
+    /// confidence-marker fusion. Nil whenever either read failed its
+    /// 2-channel evidence floor, and always suppressed on minimal-effort
+    /// reps (a 5-second blurt can't earn a delivery read). Never numeric.
+    let deliveryReadLine: String?
     let win: Win?
     let fix: Fix?
 
@@ -39,12 +45,14 @@ struct PostRepVerdictContent: Equatable {
         winBullets: [WhatYouDidWellCard.Bullet],
         fixBullets: [WhatToImproveCard.Bullet],
         proof: ProofMoment?,
-        isMinimalEffort: Bool
+        isMinimalEffort: Bool,
+        deliveryReadLine: String? = nil
     ) -> PostRepVerdictContent {
         PostRepVerdictContent(
             readText: readText(note: note, coachNote: coachNote),
             provenanceLabel: note?.isAIBacked == false ? "RULE-BASED" : nil,
             thinEvidenceCopy: isMinimalEffort ? "Early read: one longer rep will sharpen the diagnosis." : nil,
+            deliveryReadLine: isMinimalEffort ? nil : deliveryReadLine,
             win: win(proof: proof, bullets: winBullets),
             fix: fix(coachNote: coachNote, bullets: fixBullets)
         )
@@ -143,6 +151,16 @@ struct PostRepVerdictCard: View {
                 .font(Typography.body)
                 .foregroundStyle(AppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if let deliveryLine = content.deliveryReadLine {
+                // One quiet delivery line — qualitative only, self-suppressed
+                // below the evidence floor (nil = this block never mounts).
+                Text(deliveryLine)
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Delivery read: \(deliveryLine)")
+            }
 
             if let copy = content.thinEvidenceCopy {
                 Text(copy)

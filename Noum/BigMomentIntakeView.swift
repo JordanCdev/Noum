@@ -194,6 +194,14 @@ struct BigMomentIntakeView: View {
             category: selectedCategory
         )
         store.setMoment(moment)
+        // Arm the moment's notification spine (T-7 / T-1 countdown + the
+        // day-after check-in). Authorization is checked passively inside —
+        // this never triggers the hard system prompt (the soft pre-prompt
+        // sheet owns asks). If the user authorizes later, the launch
+        // refresh pass re-arms the active moment.
+        Task {
+            await NotificationManager.shared.scheduleBigMomentCountdown(for: moment)
+        }
     }
 }
 

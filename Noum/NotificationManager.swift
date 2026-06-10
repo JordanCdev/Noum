@@ -65,6 +65,7 @@ final class NotificationManager: ObservableObject {
     private let dailyChallengeExpiryIdentifier = "noum.daily.challengeExpiry"
     private let bigMomentT7Identifier = "noum.bigmoment.t7"
     private let bigMomentT1Identifier = "noum.bigmoment.t1"
+    private let bigMomentCheckInIdentifier = "noum.bigmoment.checkin"
 
     /// Fixed 8:30 PM local fire time for the daily-challenge expiry warning.
     /// Set 30 minutes after the evening practice nudge's 8 PM so the two
@@ -184,6 +185,19 @@ final class NotificationManager: ObservableObject {
             }
             if weeklyDigestEnabled {
                 await scheduleWeeklyDigest()
+            }
+
+            // Re-arm the active Big Moment's spine (T-7 / T-1 countdown +
+            // day-after check-in). Closes the authorization race: a moment
+            // set before the rep-1 pre-prompt accept grants authorization
+            // would otherwise never arm. `scheduleBigMomentCountdown`
+            // removes its own identifiers first, so this pass is
+            // idempotent. When no moment is active we deliberately do NOT
+            // remove the Big Moment identifiers — an already-armed
+            // day-after check-in for a just-archived moment must survive
+            // launch refreshes until it fires or the user checks in.
+            if let activeMoment = BigMomentStore.shared.activeMoment {
+                await scheduleBigMomentCountdown(for: activeMoment)
             }
         }
 #endif
@@ -320,21 +334,28 @@ final class NotificationManager: ObservableObject {
 
     // MARK: - Big Moment countdown notifications
 
-    /// Schedules T-7 and T-1 notifications for the given `BigMoment`.
-    /// Call when the user sets or updates their Big Moment; cancel first
-    /// via `cancelBigMomentNotifications()` to avoid duplicates.
+    /// Schedules T-7 and T-1 notifications plus the day-after check-in
+    /// for the given `BigMoment`. Call when the user sets or updates
+    /// their Big Moment; removes its own identifiers first so repeated
+    /// calls (including the launch re-arm pass) never double-stack.
     ///
     /// Privacy contract: NEVER expose `moment.title` (user-authored text)
     /// on the lock screen. Use `category.displayName` only — the title
     /// could contain sensitive information the user doesn't want visible
     /// on a shared or unattended device.
+    ///
+    /// Authorization is checked passively — this never triggers the hard
+    /// system prompt (the soft pre-prompt sheet owns asks). A moment set
+    /// before the user authorizes is re-armed by
+    /// `refreshScheduledNotifications()` on the next launch/toggle pass.
     func scheduleBigMomentCountdown(for moment: BigMoment) async {
 #if canImport(UserNotifications)
         guard let eventDate = moment.date else { return }
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [
             bigMomentT7Identifier,
-            bigMomentT1Identifier
+            bigMomentT1Identifier,
+            bigMomentCheckInIdentifier
         ])
 
         let settings = await center.notificationSettings()
@@ -380,16 +401,56 @@ final class NotificationManager: ObservableObject {
             )
             try? await center.add(t1Request)
         }
+
+        // Day-after check-in: ONE neutral invite the morning after the
+        // event passed, closing the prepare → event → reflect loop. The
+        // Home outcome card collects the user's read once they open the
+        // app; this is the comeback trigger for users who don't. 10 AM
+        // local — offset from the 9 AM countdown/daily-reminder slot so
+        // two surfaces never fire on the same minute. Copy lives in
+        // `NotificationCopy.bigMomentCheckIn` (neutral invite, never
+        // guilt) and takes only the category, so the privacy contract
+        // above holds by construction.
+        if let dayAfter = calendar.date(byAdding: .day, value: 1, to: eventDate) {
+            var checkInComponents = calendar.dateComponents([.year, .month, .day], from: dayAfter)
+            checkInComponents.hour = 10
+            checkInComponents.minute = 0
+            let copy = NotificationCopy.bigMomentCheckIn(category: moment.category)
+            let checkInContent = UNMutableNotificationContent()
+            checkInContent.title = copy.title
+            checkInContent.body = copy.body
+            checkInContent.sound = .default
+            let checkInTrigger = UNCalendarNotificationTrigger(dateMatching: checkInComponents, repeats: false)
+            let checkInRequest = UNNotificationRequest(
+                identifier: bigMomentCheckInIdentifier,
+                content: checkInContent,
+                trigger: checkInTrigger
+            )
+            try? await center.add(checkInRequest)
+        }
 #endif
     }
 
-    /// Cancels any pending Big Moment countdown notifications.
-    /// Call when the user clears or changes their Big Moment.
+    /// Cancels any pending Big Moment notifications (countdown + the
+    /// day-after check-in). Call when the user clears or changes their
+    /// Big Moment.
     func cancelBigMomentNotifications() {
 #if canImport(UserNotifications)
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [
             bigMomentT7Identifier,
-            bigMomentT1Identifier
+            bigMomentT1Identifier,
+            bigMomentCheckInIdentifier
+        ])
+#endif
+    }
+
+    /// Cancels ONLY the pending day-after check-in. Called the moment an
+    /// outcome report is saved in-app — a push inviting a check-in the
+    /// user has already done would be a lie.
+    func cancelBigMomentCheckIn() {
+#if canImport(UserNotifications)
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [
+            bigMomentCheckInIdentifier
         ])
 #endif
     }

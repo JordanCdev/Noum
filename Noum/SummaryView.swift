@@ -288,6 +288,33 @@ struct SummaryView: View {
         )
     }
 
+    /// Move #8 — ONE bounded delivery read for the verdict card. Fuses the
+    /// SAME per-rep composure + confidence-marker engines the chat context
+    /// reads for the most-recent rep (each self-suppresses below its
+    /// 2-channel evidence floor; hedging + pace are relative to the user's
+    /// own baseline, mirroring `CoachMemoryEngine.build`'s calibration).
+    /// Nil whenever the finalized session isn't available yet or either
+    /// read failed to form — the card simply omits the line. Never numeric.
+    private var postRepDeliveryReadLine: String? {
+        guard let session = sessionStore.sessions.first else { return nil }
+        let baseline = baselineStore.baseline
+        let composure = ComposureReadEngine.derive(
+            session: session,
+            hedgingPerMinute: baseline.hedgingRate.value
+        )
+        let confidence = ConfidenceMarkerEngine.derive(
+            session: session,
+            hedgingPerMinute: baseline.hedgingRate.value,
+            paceWPM: baseline.pace.value,
+            composure: composure
+        )
+        return PostRepDeliveryReadLine.make(
+            composure: composure,
+            confidence: confidence,
+            mode: session.mode
+        )
+    }
+
     private var postRepVerdictContent: PostRepVerdictContent {
         PostRepVerdictContent.make(
             note: currentPostRepCoachNote,
@@ -295,7 +322,8 @@ struct SummaryView: View {
             winBullets: postRepWinBullets,
             fixBullets: postRepFixBullets,
             proof: personalBestProof,
-            isMinimalEffort: isMinimalEffort
+            isMinimalEffort: isMinimalEffort,
+            deliveryReadLine: postRepDeliveryReadLine
         )
     }
 

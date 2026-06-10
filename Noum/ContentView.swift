@@ -313,6 +313,16 @@ struct ContentView: View {
                             }
                             if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
                                 BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
+                            } else if let ackReport = bigMomentStore.pendingOutcomeAck {
+                                // The coach's receipt for a just-saved
+                                // check-in — fills the card's slot for a
+                                // beat instead of a silent vanish, then
+                                // self-consumes (transient, in-memory).
+                                BigMomentOutcomeAckCard(report: ackReport) {
+                                    bigMomentStore.consumeOutcomeAck()
+                                }
+                                .cardEntrance(1)
+                                .transition(.opacity)
                             }
                             if showAllHomeCards && authManager.isDeveloper {
                                 secondaryDiscoveryCard.cardEntrance(3)
@@ -402,6 +412,16 @@ struct ContentView: View {
                             }
                             if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
                                 BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
+                            } else if let ackReport = bigMomentStore.pendingOutcomeAck {
+                                // The coach's receipt for a just-saved
+                                // check-in — fills the card's slot for a
+                                // beat instead of a silent vanish, then
+                                // self-consumes (transient, in-memory).
+                                BigMomentOutcomeAckCard(report: ackReport) {
+                                    bigMomentStore.consumeOutcomeAck()
+                                }
+                                .cardEntrance(1)
+                                .transition(.opacity)
                             }
                             // Path Journey — a quiet supporting row. The
                             // Coach Card owns Home's hero register; Path

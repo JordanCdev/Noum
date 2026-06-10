@@ -317,6 +317,55 @@ struct DeliveryProfile: Codable, Equatable {
     }
 }
 
+// MARK: - Post-Rep Delivery Read Line (#8 — one bounded line in the verdict)
+//
+// ONE quiet, user-facing delivery line for the post-rep verdict card,
+// fusing the SAME two always-available baseline-relative reads the chat
+// context's per-rep sections consume (ComposureRead + ConfidenceMarkerRead,
+// each with its own 2-channel evidence floor). NOT a new analyzer — the
+// engines are the existing ones; this is only the user-voice projection.
+//
+// Contracts:
+//   • Self-suppressing. Returns nil when EITHER read failed to form (below
+//     its 2-channel floor) — the verdict says nothing rather than guess.
+//     Same both-reads-or-no-vote rule `fusedDeliveryRead` applies per rep.
+//   • Never numeric. Qualitative buckets only; the floors are shared with
+//     the durable fused read (`deliveryClearFloor` / `deliveryTimidCeiling`)
+//     so this line can never disagree with the pattern machinery about
+//     what "steady" or "tentative" means.
+//   • Reads THIS REP's markers, never the person. No trait language, and
+//     the tentative bucket carries an explicit one-rep hedge.
+enum PostRepDeliveryReadLine {
+
+    static func make(
+        composure: ComposureRead?,
+        confidence: ConfidenceMarkerRead?,
+        mode: PracticeMode
+    ) -> String? {
+        guard let composure, let confidence else { return nil }
+        let clearFloor = DerivedReadsTrendEngine.deliveryClearFloor
+        let timidCeiling = DerivedReadsTrendEngine.deliveryTimidCeiling
+
+        if composure.score >= clearFloor, confidence.score >= clearFloor {
+            // The Pressure Drill variant names what holding steady there
+            // actually means — composure under the hard clock.
+            return mode == .suddenDeath
+                ? "Steady delivery this rep — composure held under the time pressure."
+                : "Steady delivery this rep — composure held and the phrasing stayed direct."
+        }
+        if composure.score >= clearFloor {
+            return "Steady energy this rep, with a few tentative markers in the phrasing."
+        }
+        if confidence.score >= clearFloor {
+            return "The phrasing stayed direct this rep, even where the energy wavered."
+        }
+        if confidence.score <= timidCeiling {
+            return "This rep read as tentative in places — one rep's read, not a pattern."
+        }
+        return "A mixed delivery read this rep — steady stretches alongside tentative beats."
+    }
+}
+
 enum DerivedReadsTrendEngine {
 
     /// Minimum reps in the RECENT window to compute a direction.

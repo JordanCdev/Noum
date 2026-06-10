@@ -41657,3 +41657,400 @@ struct PostRepStandingWatchTests {
         #expect(!prompt.contains("STANDING COACH READ"))
     }
 }
+
+// MARK: - C4-transfer-and-read — Move 8: post-rep delivery read line
+//
+// ONE bounded, qualitative delivery line in the post-rep verdict, fused
+// from the existing per-rep ComposureRead + ConfidenceMarkerRead (each
+// already enforcing its own 2-channel evidence floor). These tests pin
+// the four contracts: self-suppression when either read is missing,
+// bucket selection at the shared floors (deliveryClearFloor /
+// deliveryTimidCeiling), the Pressure Drill variant, and the
+// never-numeric / markers-not-person copy rules.
+
+@Suite("PostRepDeliveryReadLineTests")
+struct PostRepDeliveryReadLineTests {
+
+    private func composure(_ score: Double) -> ComposureRead {
+        ComposureRead(
+            score: score,
+            contributingChannels: 3,
+            inputs: .init(
+                vocalEnergyContributed: true,
+                pitchContributed: false,
+                pauseQualityContributed: true,
+                hedgingContributed: true
+            ),
+            readout: "test composure readout"
+        )
+    }
+
+    private func confidence(_ score: Double) -> ConfidenceMarkerRead {
+        ConfidenceMarkerRead(
+            score: score,
+            contributingChannels: 3,
+            inputs: .init(
+                hedgingContributed: true,
+                fillerDensityContributed: true,
+                paceConsistencyContributed: false,
+                composureContributed: true
+            ),
+            readout: "test confidence readout"
+        )
+    }
+
+    /// Every emitted line across the bucket matrix — used by the copy-rule
+    /// sweeps so a new bucket can't dodge the contracts.
+    private var allEmittedLines: [String] {
+        let scores: [Double] = [0.85, 0.65, 0.5, 0.4, 0.2]
+        var lines: [String] = []
+        for c in scores {
+            for k in scores {
+                for mode in [PracticeMode.timed, .suddenDeath] {
+                    if let line = PostRepDeliveryReadLine.make(
+                        composure: composure(c),
+                        confidence: confidence(k),
+                        mode: mode
+                    ) {
+                        lines.append(line)
+                    }
+                }
+            }
+        }
+        return lines
+    }
+
+    @Test func suppressedWhenEitherReadIsMissing() {
+        // Either engine returning nil (below its 2-channel floor) must
+        // suppress the line entirely — silence over a one-channel guess.
+        #expect(PostRepDeliveryReadLine.make(
+            composure: nil, confidence: confidence(0.9), mode: .timed
+        ) == nil)
+        #expect(PostRepDeliveryReadLine.make(
+            composure: composure(0.9), confidence: nil, mode: .timed
+        ) == nil)
+        #expect(PostRepDeliveryReadLine.make(
+            composure: nil, confidence: nil, mode: .timed
+        ) == nil)
+    }
+
+    @Test func steadyBucketRequiresBothReadsAtTheSharedClearFloor() {
+        let line = PostRepDeliveryReadLine.make(
+            composure: composure(DerivedReadsTrendEngine.deliveryClearFloor),
+            confidence: confidence(DerivedReadsTrendEngine.deliveryClearFloor),
+            mode: .timed
+        )
+        #expect(line == "Steady delivery this rep — composure held and the phrasing stayed direct.")
+    }
+
+    @Test func pressureDrillVariantNamesTheTimePressure() {
+        let line = PostRepDeliveryReadLine.make(
+            composure: composure(0.8),
+            confidence: confidence(0.8),
+            mode: .suddenDeath
+        )
+        #expect(line == "Steady delivery this rep — composure held under the time pressure.")
+    }
+
+    @Test func steadyEnergyWithTentativeMarkersBucket() {
+        let line = PostRepDeliveryReadLine.make(
+            composure: composure(0.8),
+            confidence: confidence(0.5),
+            mode: .timed
+        )
+        #expect(line == "Steady energy this rep, with a few tentative markers in the phrasing.")
+    }
+
+    @Test func directPhrasingDespiteWaveringEnergyBucket() {
+        let line = PostRepDeliveryReadLine.make(
+            composure: composure(0.4),
+            confidence: confidence(0.8),
+            mode: .timed
+        )
+        #expect(line == "The phrasing stayed direct this rep, even where the energy wavered.")
+    }
+
+    @Test func tentativeBucketCarriesTheOneRepHedge() {
+        let line = PostRepDeliveryReadLine.make(
+            composure: composure(0.3),
+            confidence: confidence(DerivedReadsTrendEngine.deliveryTimidCeiling),
+            mode: .timed
+        )
+        #expect(line == "This rep read as tentative in places — one rep's read, not a pattern.")
+    }
+
+    @Test func mixedBucketIsTheHonestMiddle() {
+        let line = PostRepDeliveryReadLine.make(
+            composure: composure(0.5),
+            confidence: confidence(0.5),
+            mode: .timed
+        )
+        #expect(line == "A mixed delivery read this rep — steady stretches alongside tentative beats.")
+    }
+
+    @Test func emittedLinesAreNeverNumeric() {
+        // The verdict line is qualitative by contract — no score, no
+        // composite, no channel count ever leaks into user copy.
+        for line in allEmittedLines {
+            #expect(line.rangeOfCharacter(from: .decimalDigits) == nil, "numeric leak in: \(line)")
+        }
+    }
+
+    @Test func emittedLinesReadMarkersNeverThePerson() {
+        // Anti-diagnosis rule: the line characterises THIS REP's markers,
+        // never the speaker. No trait language, no "you are/sound/lack".
+        let banned = ["you are", "you sound", "you lack", "you're", "timid person", "unconfident"]
+        for line in allEmittedLines {
+            let lowered = line.lowercased()
+            for phrase in banned {
+                #expect(!lowered.contains(phrase), "trait language in: \(line)")
+            }
+            #expect(!line.contains("!"))
+        }
+    }
+}
+
+// MARK: - C4-transfer-and-read — Move 8: verdict content carries the line
+
+@Suite("PostRepVerdictDeliveryLineTests")
+struct PostRepVerdictDeliveryLineTests {
+
+    private func coachNote() -> CoachNote {
+        CoachNote(
+            momentum: "The opener landed cleanly.",
+            leverage: "The middle section drifted.",
+            nextStep: "Pause before the second point."
+        )
+    }
+
+    @Test func deliveryLineRidesIntoTheVerdictContent() {
+        let content = PostRepVerdictContent.make(
+            note: nil,
+            coachNote: coachNote(),
+            winBullets: [],
+            fixBullets: [],
+            proof: nil,
+            isMinimalEffort: false,
+            deliveryReadLine: "Steady delivery this rep — composure held and the phrasing stayed direct."
+        )
+        #expect(content.deliveryReadLine == "Steady delivery this rep — composure held and the phrasing stayed direct.")
+    }
+
+    @Test func minimalEffortSuppressesTheDeliveryLine() {
+        // A 5-second blurt can't earn a delivery read even when the
+        // engines technically produced one — the thin-evidence copy owns
+        // that surface.
+        let content = PostRepVerdictContent.make(
+            note: nil,
+            coachNote: coachNote(),
+            winBullets: [],
+            fixBullets: [],
+            proof: nil,
+            isMinimalEffort: true,
+            deliveryReadLine: "Steady delivery this rep — composure held and the phrasing stayed direct."
+        )
+        #expect(content.deliveryReadLine == nil)
+        #expect(content.thinEvidenceCopy != nil)
+    }
+
+    @Test func absentLineStaysAbsent() {
+        let content = PostRepVerdictContent.make(
+            note: nil,
+            coachNote: coachNote(),
+            winBullets: [],
+            fixBullets: [],
+            proof: nil,
+            isMinimalEffort: false,
+            deliveryReadLine: nil
+        )
+        #expect(content.deliveryReadLine == nil)
+    }
+}
+
+// MARK: - C4-transfer-and-read — Move 5: coach acknowledgment copy
+//
+// The deterministic receipt for a saved real-world check-in. Contracts:
+// association language only (the user's read, never proof the prep caused
+// the result), never punish-shame on a hard moment, celebratory opener
+// only on the upward outcome, and the user-authored moment title never
+// echoed (category.displayName only).
+
+@Suite("BigMomentOutcomeAckTests")
+struct BigMomentOutcomeAckTests {
+
+    private func report(
+        outcome: ReportedMomentOutcome,
+        drillTransfer: ReportedDrillTransfer? = nil,
+        title: String = "SENSITIVE BOARD PITCH FOR PROJECT NOVA",
+        category: BigMomentCategory = .presentation
+    ) -> BigMomentOutcomeReport {
+        BigMomentOutcomeReport(
+            moment: BigMoment(title: title, category: category),
+            outcome: outcome,
+            audienceResponse: .engaged,
+            drillTransfer: drillTransfer
+        )
+    }
+
+    private var allCombos: [BigMomentOutcomeReport] {
+        var combos: [BigMomentOutcomeReport] = []
+        for outcome in ReportedMomentOutcome.allCases {
+            combos.append(report(outcome: outcome, drillTransfer: nil))
+            for transfer in ReportedDrillTransfer.allCases {
+                combos.append(report(outcome: outcome, drillTransfer: transfer))
+            }
+        }
+        return combos
+    }
+
+    @Test func everyLineIsAssociationOnlyAndBrandClean() {
+        let causalPhrases = ["because of", "caused", "thanks to", "led to", "proves", "proof that", "guarantee"]
+        for combo in allCombos {
+            let line = BigMomentOutcomeAck.line(for: combo).lowercased()
+            for phrase in causalPhrases {
+                #expect(!line.contains(phrase), "causal claim in: \(line)")
+            }
+            #expect(!line.contains("!"))
+            #expect(!line.contains("let's"))
+        }
+    }
+
+    @Test func titleNeverEchoesIntoTheAck() {
+        for combo in allCombos {
+            let line = BigMomentOutcomeAck.line(for: combo)
+            #expect(!line.contains("SENSITIVE BOARD PITCH"))
+            #expect(line.contains(combo.category.displayName))
+        }
+    }
+
+    @Test func upwardOutcomeOpensCelebratory() {
+        let line = BigMomentOutcomeAck.line(for: report(outcome: .wentWell))
+        #expect(line.hasPrefix("Good to hear the presentation went well."))
+    }
+
+    @Test func hardMomentIsNeverShamed() {
+        // Never-punish-shame: a fell-short report gets a steady,
+        // forward-looking line — no verdict on the user, no echo of
+        // "fell short" back at them, no failure language.
+        for transfer in [nil] + ReportedDrillTransfer.allCases.map(Optional.some) {
+            let line = BigMomentOutcomeAck.line(for: report(outcome: .fellShort, drillTransfer: transfer)).lowercased()
+            #expect(!line.contains("fell short"))
+            #expect(!line.contains("fail"))
+            #expect(!line.contains("you should have"))
+            #expect(line.contains("doesn't change the work"))
+        }
+    }
+
+    @Test func transferClauseReflectsTheUsersOwnRead() {
+        // Each reported transfer state lands as "you felt..." — the user's
+        // account, never the coach asserting transfer happened.
+        for transfer in ReportedDrillTransfer.allCases {
+            let line = BigMomentOutcomeAck.line(for: report(outcome: .mixed, drillTransfer: transfer))
+            #expect(line.contains("You felt"))
+            #expect(line.lowercased().contains("prep"))
+        }
+        // No transfer reported → still acknowledges receipt, without
+        // inventing a prep read the user never gave.
+        let bare = BigMomentOutcomeAck.line(for: report(outcome: .mixed, drillTransfer: nil))
+        #expect(bare.contains("I've noted your read of the room"))
+        #expect(!bare.contains("You felt"))
+    }
+}
+
+// MARK: - C4-transfer-and-read — Move 5: day-after check-in notification copy
+
+@Suite("BigMomentCheckInNotificationCopyTests")
+struct BigMomentCheckInNotificationCopyTests {
+
+    @Test func checkInCopyIsANeutralInviteNeverGuilt() {
+        for category in BigMomentCategory.allCases {
+            let copy = NotificationCopy.bigMomentCheckIn(category: category)
+            let combined = (copy.title + " " + copy.body).lowercased()
+            // Never-guilt sweep: no urgency, no loss framing, no nagging.
+            for banned in ["don't forget", "last chance", "hurry", "missed", "before it's too late", "you didn't"] {
+                #expect(!combined.contains(banned), "guilt framing in: \(combined)")
+            }
+            #expect(!copy.title.contains("!"))
+            #expect(!copy.body.contains("!"))
+            #expect(copy.body.contains("No rush"))
+        }
+    }
+
+    @Test func checkInCopyUsesCategoryDisplayNameOnly() {
+        // Privacy contract holds by construction (the helper takes only the
+        // category), and the rendered title must embed the lowercase
+        // sentence form — same rule as the T-7 / T-1 countdown copy.
+        for category in BigMomentCategory.allCases {
+            let copy = NotificationCopy.bigMomentCheckIn(category: category)
+            #expect(copy.title == "How did your \(category.displayName) go?")
+        }
+    }
+}
+
+// MARK: - C4-transfer-and-read — Move 5: transient acknowledgment lifecycle
+
+@MainActor
+@Suite("BigMomentOutcomeAckTransientTests")
+struct BigMomentOutcomeAckTransientTests {
+
+    @Test func recordOutcomeSetsTheAckAndConsumeClearsIt() {
+        let suite = "big-moment-ack-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = BigMomentStore(defaults: defaults, accountIDProvider: { "ack-account" })
+        let moment = BigMoment(title: "Team review", category: .review)
+
+        #expect(store.pendingOutcomeAck == nil)
+        let report = store.recordOutcome(
+            for: moment,
+            outcome: .wentWell,
+            audienceResponse: .engaged,
+            drillTransfer: .transferred
+        )
+        #expect(store.pendingOutcomeAck == report)
+
+        store.consumeOutcomeAck()
+        #expect(store.pendingOutcomeAck == nil)
+        // Consuming the transient ack never touches the persisted report.
+        #expect(store.recentOutcomeReports().first?.momentID == moment.id)
+    }
+
+    @Test func ackIsInMemoryOnlyAndClearedByReload() {
+        let suite = "big-moment-ack-reload-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "ack-reload-account"
+        let store = BigMomentStore(defaults: defaults, accountIDProvider: { accountID })
+        store.recordOutcome(
+            for: BigMoment(title: "Keynote", category: .publicSpeaking),
+            outcome: .mixed,
+            audienceResponse: .unclear
+        )
+        #expect(store.pendingOutcomeAck != nil)
+
+        // Account reload (sign-in path) clears the transient beat.
+        store.reloadForCurrentAccount()
+        #expect(store.pendingOutcomeAck == nil)
+
+        // A fresh store instance (relaunch) never resurrects it either.
+        let relaunched = BigMomentStore(defaults: defaults, accountIDProvider: { accountID })
+        relaunched.reloadForCurrentAccount()
+        #expect(relaunched.pendingOutcomeAck == nil)
+        #expect(relaunched.recentOutcomeReports().count == 1)
+    }
+
+    @Test func endSessionClearsTheAck() {
+        let suite = "big-moment-ack-end-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = BigMomentStore(defaults: defaults, accountIDProvider: { "ack-end" })
+        store.recordOutcome(
+            for: BigMoment(title: "Interview", category: .interview),
+            outcome: .fellShort,
+            audienceResponse: .resistant
+        )
+        #expect(store.pendingOutcomeAck != nil)
+        store.endSession()
+        #expect(store.pendingOutcomeAck == nil)
+    }
+}
