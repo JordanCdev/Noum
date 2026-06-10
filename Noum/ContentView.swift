@@ -140,10 +140,11 @@ enum HomeStreakStatusCopy {
 /// First-sight beat: on the first render of a genuinely HIGHER day count
 /// (persisted last-seen guard on `StreakFreezeManager`, seeded on first
 /// launch so a fresh install never pops a day it didn't watch grow), the
-/// flame does one scale pop and the number rolls in via `.numericText`.
-/// A calendar day of practice genuinely happened — one pop, never
-/// repeated, no haptic, no sound. Freeze-spends show the same number and
-/// stay silent; drops persist silently (never punish-shame).
+/// flame does one scale pop and the number rolls in via `.numericText`,
+/// with one quiet damped tock (`InteractionCue.streakFirstSight`) on the
+/// pop beat. A calendar day of practice genuinely happened — one pop,
+/// one tock, never repeated, no haptic. Freeze-spends show the same
+/// number and stay silent; drops persist silently (never punish-shame).
 private struct HomeStreakStatusLine: View {
     let days: Int
     /// Final display copy from `HomeStreakStatusCopy` — also the stable
@@ -188,6 +189,19 @@ private struct HomeStreakStatusLine: View {
         // Always consume — drops and freeze-days must be marked seen even
         // under Reduce Motion so a later increment compares honestly.
         let isFirstSightIncrement = StreakFreezeManager.shared.takeStreakFirstSightIncrement()
+        // One quiet tock per genuine increment. Sound is not motion, so
+        // it fires under Reduce Motion too (immediately — there is no
+        // pop beat to sync with there); drops and freeze-spends never
+        // reach this branch.
+        if isFirstSightIncrement {
+            if reduceMotion {
+                InteractionSoundEngine.cue(.streakFirstSight)
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    InteractionSoundEngine.cue(.streakFirstSight)
+                }
+            }
+        }
         guard isFirstSightIncrement, !reduceMotion else {
             // Static fallback stays truthful: sync the displayed count on
             // every non-animating evaluation (Reduce Motion, drops, etc.).

@@ -15,7 +15,15 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var transcribedText: String = ""
     @Published var fillerWordCount: Int = 0
     @Published var highlightedText: AttributedString = AttributedString("")
-    @Published var isRecording: Bool = false
+    @Published var isRecording: Bool = false {
+        didSet {
+            // Hard mute-gate for interaction cues (A2): nothing may
+            // synthesize while the mic is open — a cue would bleed into
+            // the transcript and fight the playAndRecord session.
+            guard isRecording != oldValue else { return }
+            InteractionSoundEngine.noteRecordingActive(isRecording)
+        }
+    }
     @Published var lastSessionDuration: TimeInterval = 0
     @Published var pastSessions: [PracticeSession] = []
     @Published var connectionError: String?

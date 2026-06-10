@@ -2104,11 +2104,13 @@ struct SummaryView: View {
 
         animateXP(to: result.newXP)
         // HeroScoreCard now owns the score-reveal beat — its ring draws in
-        // on appear and the haptic fires on the settle frame so motion +
-        // haptic land together. The two verdicts without an animated ring
-        // (IM, Pressure Drill) keep the immediate punctuation here.
+        // on appear and the haptic + verdict thump fire on the settle
+        // frame so the channels land together. The two verdicts without
+        // an animated ring (IM, Pressure Drill) keep the immediate
+        // punctuation here — same moment, same two channels.
         if isIMSummary || isSuddenDeathSummary {
             CoachHaptic.scoreReveal()
+            InteractionSoundEngine.cue(.verdictReveal)
         }
 
         // Milestone routing — personal bests and level-ups get full intermediary screens,

@@ -1144,6 +1144,10 @@ struct PracticeModeSelectionView: View {
         // U+00B7 (middle dot) is the same separator the Coach Card uses.
         let ctaLabel = "Begin \u{00B7} \(title)"
         return Button {
+            // Commitment haptic (A2 register map) — same beat as the
+            // Home coach card's Begin: medium impact on committing to a
+            // rep, fired before navigation.
+            CoachHaptic.drillStart()
             if paceSelected {
                 navigationPath.append(AppDestination.paceTrainingPractice)
             } else if crutchSelected {

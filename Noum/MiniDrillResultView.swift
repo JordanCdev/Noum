@@ -153,7 +153,13 @@ struct MiniDrillResultView: View {
     // MARK: - Animation Sequence
 
     private func runEntrance() {
-        // Phase 1: Icon (0s)
+        // Phase 1: Icon (0s) — the drill verdict resolves here, so the
+        // soft brush lands with the icon pop (the haptic verdict already
+        // fired at stop in `MiniDrillView.finishDrill`). Success is the
+        // brighter brush; incomplete is duller, never a fail-buzzer.
+        InteractionSoundEngine.cue(
+            outcome.succeeded ? .drillCompleteSuccess : .drillCompleteIncomplete
+        )
         withAnimation(.bouncySpring) { phase = 1 }
 
         // Phase 2: Title + feedback (0.2s)

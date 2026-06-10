@@ -1189,7 +1189,9 @@ struct ProfileView: View {
                 .font(Typography.headline)
                 .foregroundStyle(.primary)
 
-            ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: AppColor.brandBlue)
+            // settleCue: earned XP is the one bar that may tick when its
+            // fill lands after a live increase (A2 count-settle).
+            ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: AppColor.brandBlue, settleCue: true)
 
             Text(PracticeVolumeNarration.detailLine(forXP: profile.xp))
                 .font(.caption)

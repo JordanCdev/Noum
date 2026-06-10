@@ -9,6 +9,10 @@ struct ShimmerProgressBar: View {
     var tint: Color
     var track: Color = Color.black.opacity(0.08)
     var animated: Bool = true
+    /// Opt-in count-settle tick when the fill lands after a genuine
+    /// increase (A2). Off by default — only earned-progress bars (the
+    /// Profile XP bar) should be audible; metric gauges stay silent.
+    var settleCue: Bool = false
 
     // The FILL is the earned part — it animates on the `progressFill`
     // token only when the value genuinely increased (XP landed, challenge
@@ -71,8 +75,20 @@ struct ShimmerProgressBar: View {
         .onChange(of: progress) { oldValue, newValue in
             if newValue > oldValue && !reduceMotion {
                 withAnimation(.progressFill) { displayedProgress = newValue }
+                // One dry tick as the fill settles — the number landed.
+                // Fires once per genuine increase, never per frame.
+                if settleCue {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Animation.progressFillDuration) {
+                        InteractionSoundEngine.cue(.countSettle)
+                    }
+                }
             } else {
                 displayedProgress = newValue
+                // Reduce Motion snaps the fill but the increase is just
+                // as real — the tick marks it immediately (sound ≠ motion).
+                if settleCue && newValue > oldValue {
+                    InteractionSoundEngine.cue(.countSettle)
+                }
             }
         }
     }
