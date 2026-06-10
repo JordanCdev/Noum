@@ -7753,7 +7753,7 @@ struct ProgressionSpineNarrationTests {
         }
         for hasEvidence in [true, false] {
             lines.append(LedgerRoleLines.crownsRole(hasRatedEvidence: hasEvidence))
-            lines.append(LedgerRoleLines.missionRole(hasRatedEvidence: hasEvidence))
+            lines.append(LedgerRoleLines.landmarkRole(hasRatedEvidence: hasEvidence))
             lines.append(LedgerRoleLines.proofRole(count: 0, hasRatedEvidence: hasEvidence))
             lines.append(LedgerRoleLines.proofRole(count: 12, hasRatedEvidence: hasEvidence))
         }
@@ -7849,7 +7849,7 @@ struct ProgressionSpineNarrationTests {
     @Test func preEvidenceRoleLinesStayFutureTense() {
         let lines = [
             LedgerRoleLines.crownsRole(hasRatedEvidence: false),
-            LedgerRoleLines.missionRole(hasRatedEvidence: false),
+            LedgerRoleLines.landmarkRole(hasRatedEvidence: false),
             LedgerRoleLines.proofRole(count: 0, hasRatedEvidence: false),
             LedgerRoleLines.proofRole(count: 7, hasRatedEvidence: false)
         ]
@@ -7864,16 +7864,16 @@ struct ProgressionSpineNarrationTests {
         }
     }
 
-    @Test func ratedCrownsLineNamesMissionsAndRating() {
+    @Test func ratedCrownsLineNamesLandmarksAndRating() {
         let line = LedgerRoleLines.crownsRole(hasRatedEvidence: true)
-        #expect(line.localizedCaseInsensitiveContains("mission"))
+        #expect(line.localizedCaseInsensitiveContains("landmark"))
         #expect(line.localizedCaseInsensitiveContains("rating"))
         #expect(line.contains("rating measures"))
-        #expect(line.contains("passes unlock missions"))
+        #expect(line.contains("passes unlock landmarks"))
     }
 
-    @Test func ratedMissionLinePointsUpTheSpineNotAtAScore() {
-        let line = LedgerRoleLines.missionRole(hasRatedEvidence: true)
+    @Test func ratedLandmarkLinePointsUpTheSpineNotAtAScore() {
+        let line = LedgerRoleLines.landmarkRole(hasRatedEvidence: true)
         #expect(line.contains("rating measures"))
         #expect(line.contains("not a second score"))
     }
@@ -8589,10 +8589,10 @@ struct DailyChallengeTileCountdownTests {
         #expect(DailyChallengeTile.eyebrowWindow(at: edge, calendar: cal) == .resetsIn(minutes: 2))
     }
 
-    @Test func eyebrowWindowAt0005IsNewMissions() {
+    @Test func eyebrowWindowAt0005IsNewFocus() {
         let cal = Self.testCalendar
         let edge = Self.at(0, 5, calendar: cal)
-        #expect(DailyChallengeTile.eyebrowWindow(at: edge, calendar: cal) == .newMissions)
+        #expect(DailyChallengeTile.eyebrowWindow(at: edge, calendar: cal) == .newFocus)
     }
 
     @Test func eyebrowWindowAt0010IsTodayAgain() {
