@@ -450,6 +450,11 @@ struct ProfileView: View {
     /// row appearance (skipped under Reduce Motion) so the checkmark gets a
     /// single discrete bounce, never a repeating effect.
     @State private var resolvedSettleTick = false
+    /// One-shot pop scale for the "+N this week" chip — fires only when the
+    /// rating's earned numeric roll fires (`ProfileRatingTickMotion`), so the
+    /// chip pop reuses the same upward-only, reduce-motion-aware predicate.
+    /// Down weeks render the quiet plain line and never enter this path.
+    @State private var weeklyDeltaChipScale: CGFloat = 1.0
     @State private var showAddFriendManual = false
     @State private var selectedAsyncChallenge: AsyncChallenge?
     @State private var showChallengePickFriend = false
@@ -1258,6 +1263,25 @@ struct ProfileView: View {
                                 .padding(.horizontal, 9)
                                 .padding(.vertical, 4)
                                 .background(.white.opacity(0.16), in: Capsule())
+                                .scaleEffect(weeklyDeltaChipScale)
+                                .opacity(weeklyDeltaChipScale < 1 ? 0 : 1)
+                                // Pops once alongside the earned numeric roll:
+                                // `animateRatingTick` flips true only on an
+                                // upward tick to a new weekly best (and never
+                                // under Reduce Motion), so the chip's beat is
+                                // gated by the exact same honesty predicate.
+                                .onChange(of: animateRatingTick) { _, isTicking in
+                                    guard isTicking else { return }
+                                    // Seed the collapsed scale in its own
+                                    // pass so the pop has a real start frame
+                                    // — a same-pass animated write coalesces
+                                    // into a no-op (same discipline as
+                                    // HomeStreakStatusLine's number roll).
+                                    weeklyDeltaChipScale = 0.6
+                                    DispatchQueue.main.async {
+                                        withAnimation(.statDelta) { weeklyDeltaChipScale = 1.0 }
+                                    }
+                                }
                             } else if rating.weeklyDelta < 0 {
                                 Text("\(rating.weeklyDelta) this week")
                                     .font(.caption.weight(.semibold))

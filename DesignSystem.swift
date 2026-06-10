@@ -133,8 +133,15 @@ extension Animation {
 
     // MARK: Reward & Progress Animations
 
+    /// Duration companion for `scoreReveal`. Referenced wherever a beat
+    /// must land on the ring's settle frame (haptic, delta pop) so the
+    /// channels can't drift apart — never hardcode 0.8 at a call site.
+    static let scoreRevealDuration: TimeInterval = 0.8
     /// Score number count-up landing — smooth deceleration
-    static let scoreReveal = Animation.easeOut(duration: 0.8)
+    static let scoreReveal = Animation.easeOut(duration: scoreRevealDuration)
+    /// Press squish for `PressableButtonStyle` — fast enough to track the
+    /// finger, springy enough to read as physical.
+    static let buttonSquish = Animation.spring(response: 0.15, dampingFraction: 0.8)
     /// Stat delta badge pop-in — delayed bouncy spring
     static let statDelta = Animation.spring(response: 0.4, dampingFraction: 0.65).delay(0.3)
     /// Achievement badge or icon appearance
@@ -262,13 +269,32 @@ struct SectionHeader<Trailing: View>: View {
 }
 
 /// Button style that provides a subtle press-down effect for tactile feedback.
-/// Uses only opacity (no scaleEffect) to avoid shrinking the hit-test area on press.
+/// Opacity dip + a 0.97 squish: pure input confirmation that acknowledges
+/// the tap itself and claims nothing. `contentShape` keeps the full frame
+/// tappable, and because the button gesture is already captured by the time
+/// the press state flips, the mid-press scale never shrinks the hit area
+/// out from under the finger. Reduce Motion: opacity only (no scale).
 struct PressableButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(configuration.isPressed ? 0.7 : 1.0)
-            .contentShape(Rectangle())
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+        PressableLabel(configuration: configuration)
+    }
+
+    /// Inner view so the style can read the environment — `ButtonStyle`
+    /// itself is not a `View`, so `@Environment` only resolves here.
+    private struct PressableLabel: View {
+        let configuration: Configuration
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        var body: some View {
+            configuration.label
+                .opacity(configuration.isPressed ? 0.7 : 1.0)
+                .scaleEffect(!reduceMotion && configuration.isPressed ? 0.97 : 1.0)
+                .contentShape(Rectangle())
+                .animation(
+                    reduceMotion ? .easeOut(duration: 0.1) : .buttonSquish,
+                    value: configuration.isPressed
+                )
+        }
     }
 }
 

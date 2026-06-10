@@ -19,6 +19,16 @@ struct HeroScoreCard: View {
     let celebrationVisible: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    // Verdict reveal — the ring draws 0 → score/10 and the number rolls up
+    // alongside it. The score was computed from the rep that ended seconds
+    // ago, so drawing it in IS the reveal of a real result, not decoration.
+    // One-shot per card lifetime (`hasRevealed`) so a push/pop or tab
+    // round-trip never replays the reveal. Reduce Motion: static fill +
+    // immediate number; the haptic is the only beat.
+    @State private var revealedScore: Int = 0
+    @State private var ringFill: Double = 0
+    @State private var hasRevealed = false
+
     /// Optional IM tone-drill SOLVED ribbon. When non-nil, the card
     /// renders a quiet mode-tinted capsule between the score ring and the
     /// headline naming the just-resolved scenario + committed tone. The
@@ -73,22 +83,24 @@ struct HeroScoreCard: View {
                 .foregroundStyle(.white.opacity(0.8))
                 .tracking(1.4)
 
-            // Score ring — white-on-gradient (verdict hero register)
+            // Score ring — white-on-gradient (verdict hero register).
+            // Draws in from zero on appear (see `revealScore`).
             ZStack {
                 Circle()
                     .stroke(.white.opacity(0.25), lineWidth: 8)
                     .frame(width: 120, height: 120)
 
                 Circle()
-                    .trim(from: 0, to: Double(scoreValue) / 10.0)
+                    .trim(from: 0, to: ringFill)
                     .stroke(.white, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                     .frame(width: 120, height: 120)
                     .rotationEffect(.degrees(-90))
 
                 VStack(spacing: 2) {
-                    Text("\(scoreValue)")
+                    Text("\(revealedScore)")
                         .font(Typography.figtreeNumeric(size: 44, weight: .bold, relativeTo: .largeTitle))
                         .foregroundStyle(.white)
+                        .contentTransition(.numericText(value: Double(revealedScore)))
                     Text("/10")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.white.opacity(0.7))
@@ -96,6 +108,21 @@ struct HeroScoreCard: View {
             }
             .scaleEffect(!reduceMotion && celebrationVisible ? 1.06 : 1.0)
             .animation(reduceMotion ? nil : .bouncySpring, value: celebrationVisible)
+            // VoiceOver always reads the final score — never an animated
+            // intermediate frame.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Score \(scoreValue) out of 10")
+            .onAppear(perform: revealScore)
+            // Defensive: the score is static in every current flow (the
+            // summary payload is pushed only after analysis resolves), but
+            // if it ever changes post-reveal, snap silently — a stale
+            // number is a lie, and a second reveal would be ceremony the
+            // moment didn't earn.
+            .onChange(of: scoreValue) { _, newValue in
+                guard hasRevealed else { return }
+                revealedScore = newValue
+                ringFill = Double(newValue) / 10.0
+            }
 
             // SOLVED ribbon (renders only when wired). Visual register
             // stays deliberately restrained — quiet mode-tinted capsule
@@ -141,9 +168,18 @@ struct HeroScoreCard: View {
             }
 
             // Quick stats — existing delta pills ride a frosted tray so
-            // their tinted semantics stay legible on the gradient.
+            // their tinted semantics stay legible on the gradient. The
+            // filler delta (a genuine comparison against the previous rep)
+            // gets its own beat ~0.3s after the ring settles.
             HStack(spacing: 20) {
-                StatPill(label: "Fillers", value: "\(effectiveFillerCount)", delta: fillerDelta, tint: fillerTint, invertDelta: true)
+                StatPill(
+                    label: "Fillers",
+                    value: "\(effectiveFillerCount)",
+                    delta: fillerDelta,
+                    tint: fillerTint,
+                    invertDelta: true,
+                    deltaRevealDelay: Animation.scoreRevealDuration
+                )
                 DurationAssessmentPill(effectiveDuration: effectiveDuration, durationAssessment: durationAssessment)
             }
             .padding(.horizontal, Spacing.md)
@@ -154,6 +190,33 @@ struct HeroScoreCard: View {
         .padding(24)
         .background(HeroGradient.verdict.gradient, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
         .shadow(color: HeroGradient.verdict.shadowTint.opacity(0.30), radius: 18, y: 10)
+    }
+
+    /// One-shot verdict reveal: ring + number animate together on the
+    /// `scoreReveal` token, and the `scoreReveal` haptic fires on the
+    /// settle frame so motion and haptic are one moment (the haptic
+    /// previously fired from `SummaryView.setup()` with nothing visual
+    /// landing alongside it). Under Reduce Motion the number and fill
+    /// render immediately — the reveal never gates comprehension.
+    private func revealScore() {
+        guard !hasRevealed else { return }
+        hasRevealed = true
+        let target = Double(scoreValue) / 10.0
+
+        if reduceMotion {
+            revealedScore = scoreValue
+            ringFill = target
+            CoachHaptic.scoreReveal()
+            return
+        }
+
+        withAnimation(.scoreReveal) {
+            revealedScore = scoreValue
+            ringFill = target
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Animation.scoreRevealDuration) {
+            CoachHaptic.scoreReveal()
+        }
     }
 }
 
@@ -250,6 +313,15 @@ struct StatPill: View {
     let delta: Int?
     let tint: Color
     let invertDelta: Bool
+    /// Extra delay (on top of the `statDelta` token's built-in beat)
+    /// before the delta badge pops in. The verdict hero passes the
+    /// score-ring duration so the badge gets its own beat after the ring
+    /// settles. Defaults 0 → existing call sites render with the plain
+    /// pop. Only fires when a real non-zero delta exists (already gated).
+    var deltaRevealDelay: TimeInterval = 0
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var deltaRevealed = false
 
     var body: some View {
         VStack(spacing: 4) {
@@ -268,6 +340,18 @@ struct StatPill: View {
                         .font(.caption2.weight(.bold))
                 }
                 .foregroundStyle(improved ? AppColor.positive : AppColor.caution)
+                .scaleEffect(deltaRevealed ? 1.0 : 0.6)
+                .opacity(deltaRevealed ? 1 : 0)
+                .onAppear {
+                    guard !deltaRevealed else { return }
+                    if reduceMotion {
+                        deltaRevealed = true
+                    } else {
+                        withAnimation(.statDelta.delay(deltaRevealDelay)) {
+                            deltaRevealed = true
+                        }
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity)

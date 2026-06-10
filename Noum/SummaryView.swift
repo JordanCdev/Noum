@@ -652,12 +652,14 @@ struct SummaryView: View {
                                 effectiveDuration: effectiveDuration,
                                 imConversationDetails: imConversationDetails
                             )
+                            .cardEntrance(0)
                             IMReadCard(
                                 coachNote: coachNote,
                                 effectiveDuration: effectiveDuration,
                                 imConversationDetails: imConversationDetails,
                                 revisedChange: freshRevisedReadChange
                             )
+                            .cardEntrance(1)
                             IMOneMoveCard(
                                 coachNote: coachNote,
                                 onPracticeAgain: onPracticeAgain,
@@ -667,6 +669,7 @@ struct SummaryView: View {
                                     { onAskNoumAboutRep?(interventionReviewOpener(for: intervention)) }
                                 }
                             )
+                            .cardEntrance(2)
                             // Slot 4.5 — exactly ONE Ask/Pro surface:
                             // premium gets the quiet Ask-Noum row, free
                             // gets the single merged Pro card.
@@ -681,14 +684,15 @@ struct SummaryView: View {
                                         showPaywall = true
                                     }
                                 )
+                                .cardEntrance(3)
                             } else {
-                                proPreviewCard
+                                proPreviewCard.cardEntrance(3)
                             }
-                            expandableDetailsSection
+                            expandableDetailsSection.cardEntrance(4)
                             // Slot 5 — bottom exit. IMOneMoveCard above
                             // already carries Try Again / New Chat, so
                             // the panel is the ghost Done only.
-                            SummaryExitPanel(onDone: onHome)
+                            SummaryExitPanel(onDone: onHome).cardEntrance(5)
                         } else {
                             // TIMED / AH-COUNTER / SUDDEN DEATH hierarchy.
                             // The post-rep attention budget is small; only the
@@ -705,6 +709,7 @@ struct SummaryView: View {
                                     duration: effectiveDuration,
                                     wordCount: suddenDeathTotalWords ?? transcriptWordCount
                                 )
+                                .cardEntrance(0)
                             } else {
                                 HeroScoreCard(
                                     scoreValue: scoreValue,
@@ -721,6 +726,7 @@ struct SummaryView: View {
                                     celebrationVisible: celebrationVisible,
                                     toneDrillResolvedRibbon: heroToneDrillResolvedRibbon
                                 )
+                                .cardEntrance(0)
                             }
                             // Slots 2–4 — the one coach pass, split into
                             // three calm cards (read / win / fix) per the
@@ -737,8 +743,9 @@ struct SummaryView: View {
                                 content: postRepVerdictContent,
                                 revisedChange: freshRevisedReadChange
                             )
+                            .cardEntrance(1)
                             if let win = postRepVerdictContent.win {
-                                PostRepWinCard(win: win)
+                                PostRepWinCard(win: win).cardEntrance(2)
                             }
                             if postRepVerdictContent.fix != nil || activeReviewDueIntervention != nil {
                                 PostRepFixCard(
@@ -748,6 +755,7 @@ struct SummaryView: View {
                                         { onAskNoumAboutRep?(interventionReviewOpener(for: intervention)) }
                                     }
                                 )
+                                .cardEntrance(3)
                             }
                             // Slot 4.5 — exactly ONE Ask/Pro surface:
                             // premium gets the quiet Ask-Noum row, free
@@ -764,10 +772,11 @@ struct SummaryView: View {
                                         showPaywall = true
                                     }
                                 )
+                                .cardEntrance(4)
                             } else {
-                                proPreviewCard
+                                proPreviewCard.cardEntrance(4)
                             }
-                            expandableDetailsSection
+                            expandableDetailsSection.cardEntrance(5)
                             // Slot 5 — bottom exit panel: the prescribed
                             // drill is the primary action, Done the ghost
                             // secondary. Replaces the pinned action bar so
@@ -782,6 +791,7 @@ struct SummaryView: View {
                                 onDone: onHome,
                                 onPracticeAgain: onPracticeAgain
                             )
+                            .cardEntrance(6)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -2093,7 +2103,13 @@ struct SummaryView: View {
         }
 
         animateXP(to: result.newXP)
-        CoachHaptic.scoreReveal()
+        // HeroScoreCard now owns the score-reveal beat — its ring draws in
+        // on appear and the haptic fires on the settle frame so motion +
+        // haptic land together. The two verdicts without an animated ring
+        // (IM, Pressure Drill) keep the immediate punctuation here.
+        if isIMSummary || isSuddenDeathSummary {
+            CoachHaptic.scoreReveal()
+        }
 
         // Milestone routing — personal bests and level-ups get full intermediary screens,
         // other milestones (streak, first session) use the compact overlay.

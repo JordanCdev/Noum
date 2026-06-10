@@ -254,6 +254,13 @@ struct PostRepReadCard: View {
 struct PostRepWinCard: View {
     let win: PostRepVerdictContent.Win
 
+    // The transcript-verified quote is the most earned artifact on the
+    // page — it gets its own entrance beat shortly after the card body
+    // instead of arriving in the bulk render. One-shot; Reduce Motion
+    // renders it statically in place.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var quoteRevealed = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: Spacing.sm) {
@@ -283,6 +290,21 @@ struct PostRepWinCard: View {
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(AppColor.positive.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                .opacity(quoteRevealed ? 1 : 0)
+                .offset(y: quoteRevealed ? 0 : 6)
+                .onAppear {
+                    guard !quoteRevealed else { return }
+                    if reduceMotion {
+                        quoteRevealed = true
+                    } else {
+                        // coachLineStagger(1): the quote follows the card
+                        // body by one reading beat — its own moment, no
+                        // fabricated weight.
+                        withAnimation(.coachLineStagger(1)) {
+                            quoteRevealed = true
+                        }
+                    }
+                }
             }
 
             if let support = win.support, !support.isEmpty {

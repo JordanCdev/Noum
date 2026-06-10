@@ -130,6 +130,90 @@ enum HomeStreakStatusCopy {
     }
 }
 
+/// Quiet status line — a coach-voice fact ("4 day streak") rendered in
+/// the caption register with no countdown, no warning and no tap
+/// target. Reads the freeze-aware `StreakFreezeManager` count — the
+/// single displayed-streak owner — so this never disagrees with the
+/// streak shown elsewhere. Drops update silently: the line disappears,
+/// nothing shames.
+///
+/// First-sight beat: on the first render of a genuinely HIGHER day count
+/// (persisted last-seen guard on `StreakFreezeManager`, seeded on first
+/// launch so a fresh install never pops a day it didn't watch grow), the
+/// flame does one scale pop and the number rolls in via `.numericText`.
+/// A calendar day of practice genuinely happened — one pop, never
+/// repeated, no haptic, no sound. Freeze-spends show the same number and
+/// stay silent; drops persist silently (never punish-shame).
+private struct HomeStreakStatusLine: View {
+    let days: Int
+    /// Final display copy from `HomeStreakStatusCopy` — also the stable
+    /// VoiceOver label, so assistive tech never hears the rolling value.
+    let line: String
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var displayedDays: Int
+    @State private var flamePop = false
+
+    init(days: Int, line: String) {
+        self.days = days
+        self.line = line
+        _displayedDays = State(initialValue: days)
+    }
+
+    var body: some View {
+        HStack(spacing: Spacing.xxs) {
+            Image(systemName: "flame.fill")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(AppColor.caution)
+                .scaleEffect(flamePop ? 1.25 : 1.0)
+                .accessibilityHidden(true)
+            Text(HomeStreakStatusCopy.line(days: displayedDays) ?? line)
+                .font(Typography.captionSmall.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .contentTransition(.numericText(value: Double(displayedDays)))
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("\(line)."))
+        .accessibilityIdentifier("home.streakStatus")
+        .onAppear(perform: animateFirstSightIfEarned)
+        // Streak recomputed while the line is on screen (foreground day
+        // rollover): evaluate the same first-sight beat live so the
+        // number can never sit stale behind `days`.
+        .onChange(of: days) { _, _ in animateFirstSightIfEarned() }
+    }
+
+    private func animateFirstSightIfEarned() {
+        // Always consume — drops and freeze-days must be marked seen even
+        // under Reduce Motion so a later increment compares honestly.
+        let isFirstSightIncrement = StreakFreezeManager.shared.takeStreakFirstSightIncrement()
+        guard isFirstSightIncrement, !reduceMotion else {
+            // Static fallback stays truthful: sync the displayed count on
+            // every non-animating evaluation (Reduce Motion, drops, etc.).
+            displayedDays = days
+            return
+        }
+
+        // Roll from yesterday's count when that count renders as a line
+        // (3 → 4); an increment onto the 2-day floor pops the flame only.
+        // The un-animated write paints first so the roll has a real start
+        // frame — a same-pass animated write would coalesce into a no-op.
+        if HomeStreakStatusCopy.line(days: days - 1) != nil {
+            displayedDays = days - 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                withAnimation(.standardSpring) { displayedDays = days }
+            }
+        }
+        // Pop starts as the card-entrance settle finishes; one beat, then
+        // the flame returns to rest.
+        withAnimation(.bouncySpring.delay(0.4)) { flamePop = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
+            withAnimation(.standardSpring) { flamePop = false }
+        }
+    }
+}
+
 struct HomeBottomShortcut: Identifiable, Equatable {
     enum Accent: String, Equatable {
         case practice
@@ -408,7 +492,10 @@ struct ContentView: View {
                             // line silently.
                             if gate.streakStatus,
                                let streakLine = HomeStreakStatusCopy.line(days: streakFreeze.currentStreak) {
-                                streakStatusLine(streakLine).cardEntrance(1)
+                                HomeStreakStatusLine(
+                                    days: streakFreeze.currentStreak,
+                                    line: streakLine
+                                ).cardEntrance(1)
                             }
                             if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
                                 BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
@@ -786,29 +873,6 @@ struct ContentView: View {
             overrideEligible: authManager.isDeveloper,
             streakDays: streakFreeze.currentStreak
         )
-    }
-
-    /// Quiet status line — a coach-voice fact ("4 day streak") rendered in
-    /// the caption register with no countdown, no warning and no tap
-    /// target. Reads the freeze-aware `StreakFreezeManager` count — the
-    /// single displayed-streak owner — so this never disagrees with the
-    /// streak shown elsewhere. Drops update silently: the line disappears,
-    /// nothing shames.
-    private func streakStatusLine(_ line: String) -> some View {
-        HStack(spacing: Spacing.xxs) {
-            Image(systemName: "flame.fill")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(AppColor.caution)
-                .accessibilityHidden(true)
-            Text(line)
-                .font(Typography.captionSmall.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("\(line)."))
-        .accessibilityIdentifier("home.streakStatus")
     }
 
     // MARK: - Personal-best anchor (Figma "Premium Hero")

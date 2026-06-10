@@ -42655,3 +42655,61 @@ struct BigMomentIntakePrefillTests {
         #expect(tints.count == BigMomentCategory.allCases.count)
     }
 }
+
+// MARK: - Streak first-sight policy (A1 motion register)
+//
+// The Home streak line's one-shot flame pop is gated by a persisted
+// last-seen day count on `StreakFreezeManager`. These tests pin the pure
+// policy (`StreakFirstSight.evaluate`) — the honesty rules that keep the
+// pop earned: seed silently on first launch (league-promotion-guard
+// precedent), animate exactly once per genuine increment, stay silent on
+// freeze-spends shown as the same number, and persist drops silently
+// (never punish-shame).
+struct StreakFirstSightPolicyTests {
+
+    @Test func firstLaunchSeedsSilently() {
+        // A fresh install (no stored last-seen) must never pop a day-N
+        // streak it never watched grow — the exact lie the league
+        // promotion guard exists to prevent.
+        let outcome = StreakFirstSight.evaluate(lastSeen: nil, current: 5)
+        #expect(!outcome.animate)
+        #expect(outcome.persist == 5)
+    }
+
+    @Test func genuineIncrementAnimatesAndPersists() {
+        let outcome = StreakFirstSight.evaluate(lastSeen: 3, current: 4)
+        #expect(outcome.animate)
+        #expect(outcome.persist == 4)
+    }
+
+    @Test func sameDayCountStaysSilent() {
+        // Includes a freeze-spend rendered as the same number — the saved
+        // day keeps the count flat, so nothing pops.
+        let outcome = StreakFirstSight.evaluate(lastSeen: 4, current: 4)
+        #expect(!outcome.animate)
+        #expect(outcome.persist == 4)
+    }
+
+    @Test func dropPersistsSilently() {
+        // Never punish-shame: a reset updates the snapshot with zero
+        // ceremony so the NEXT genuine increment compares honestly.
+        let outcome = StreakFirstSight.evaluate(lastSeen: 6, current: 2)
+        #expect(!outcome.animate)
+        #expect(outcome.persist == 2)
+    }
+
+    @Test func resetToZeroPersistsSilently() {
+        let outcome = StreakFirstSight.evaluate(lastSeen: 3, current: 0)
+        #expect(!outcome.animate)
+        #expect(outcome.persist == 0)
+    }
+
+    @Test func multiDayJumpAnimatesOnce() {
+        // A multi-day jump (e.g. a freeze-saved chain catching up) still
+        // earns a single pop — evaluate is called once per sighting, and
+        // the persisted value catches all the way up so it can't re-fire.
+        let outcome = StreakFirstSight.evaluate(lastSeen: 2, current: 5)
+        #expect(outcome.animate)
+        #expect(outcome.persist == 5)
+    }
+}

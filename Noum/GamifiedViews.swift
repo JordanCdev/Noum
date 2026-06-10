@@ -10,9 +10,18 @@ struct ShimmerProgressBar: View {
     var track: Color = Color.black.opacity(0.08)
     var animated: Bool = true
 
+    // The FILL is the earned part — it animates on the `progressFill`
+    // token only when the value genuinely increased (XP landed, challenge
+    // advanced). Drops and no-ops snap silently: never decorate, never
+    // punish-shame. The decorative shimmer respects Reduce Motion at the
+    // component level (same contract as PulseBadge below).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var displayedProgress: Double?
+
     var body: some View {
         GeometryReader { geometry in
-            let width = max(geometry.size.width * min(max(progress, 0), 1), 10)
+            let resolved = min(max(displayedProgress ?? progress, 0), 1)
+            let width = max(geometry.size.width * resolved, 10)
 
             ZStack(alignment: .leading) {
                 Capsule()
@@ -28,7 +37,7 @@ struct ShimmerProgressBar: View {
                     )
                     .frame(width: width)
                     .overlay(alignment: .leading) {
-                        if animated {
+                        if animated && !reduceMotion {
                             TimelineView(.animation(minimumInterval: 1 / 24.0)) { timeline in
                                 let phase = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) / 2.4
                                 let shimmerX = (width + 44) * phase - 22
@@ -57,6 +66,15 @@ struct ShimmerProgressBar: View {
             }
         }
         .frame(height: 12)
+        // Seed without animation so first paint never fakes a fill-up.
+        .onAppear { displayedProgress = progress }
+        .onChange(of: progress) { oldValue, newValue in
+            if newValue > oldValue && !reduceMotion {
+                withAnimation(.progressFill) { displayedProgress = newValue }
+            } else {
+                displayedProgress = newValue
+            }
+        }
     }
 }
 
