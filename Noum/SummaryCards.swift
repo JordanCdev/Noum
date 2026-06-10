@@ -997,6 +997,13 @@ struct IMReadCard: View {
     let coachNote: CoachNote
     let effectiveDuration: TimeInterval
     let imConversationDetails: IMConversationDetails?
+    /// Fresh user-pushback acknowledgment, folded INTO the read as a
+    /// one-line prefix (the revision IS the read — same fold the timed
+    /// path's `PostRepReadCard` applies). nil → legacy rendering,
+    /// byte-for-byte. Eligibility lives on
+    /// `CoachContextBuilder.freshRevisedReadChange`; copy stays on
+    /// `RevisedReadCard`'s tested statics.
+    var revisedChange: CoachCourseChange? = nil
 
     var body: some View {
         let userTurns = imConversationDetails?.turns.filter { $0.speaker == .user }.count ?? 0
@@ -1008,6 +1015,22 @@ struct IMReadCard: View {
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .tracking(0.8)
+
+            if let change = revisedChange {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(AppColor.pro)
+                        .padding(.top, 1)
+                    Text(RevisedReadCard.headlineCopy(for: change))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Revised coaching read. \(RevisedReadCard.headlineCopy(for: change))")
+                .accessibilityIdentifier("summary.revisedRead.card")
+            }
 
             // Strength
             HStack(alignment: .top, spacing: 10) {
@@ -1058,6 +1081,13 @@ struct IMOneMoveCard: View {
     let coachNote: CoachNote
     var onPracticeAgain: () -> Void
     var onSelectPracticeMode: () -> Void
+    /// On review-due reps the agreed case-file review IS the named next
+    /// move (same fold the timed path's `PostRepFixCard` applies) — the
+    /// one-line context + Ask-Noum CTA replace the generic next step.
+    /// nil → legacy rendering. `isReviewDue` gating + opener composition
+    /// stay in `SummaryView` / `CoachContextBuilder`.
+    var reviewIntervention: CoachIntervention? = nil
+    var onReview: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1072,10 +1102,31 @@ struct IMOneMoveCard: View {
                     .tracking(0.8)
             }
 
-            Text(coachNote.nextStep)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
+            if let reviewIntervention, let onReview {
+                Text(InterventionReviewPromptCard.headlineCopy(for: reviewIntervention))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(action: onReview) {
+                    HStack(spacing: 6) {
+                        Text("Review with coach")
+                            .font(.caption.weight(.semibold))
+                        Image(systemName: "arrow.right")
+                            .font(.caption.weight(.bold))
+                    }
+                    .foregroundStyle(AppColor.pro)
+                    .frame(minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier("summary.interventionReview.cta")
+                .accessibilityHint("Opens Ask Noum to review whether the active intervention is working.")
+            } else {
+                Text(coachNote.nextStep)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             // CTA buttons
             HStack(spacing: 12) {

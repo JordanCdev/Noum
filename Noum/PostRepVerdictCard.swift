@@ -125,27 +125,70 @@ struct PostRepVerdictContent: Equatable {
     }
 }
 
+// MARK: - Concept icon chip (shared register)
+
+/// 36pt gradient rounded-square icon chip — the per-concept coloured chip
+/// register from docs/UX_VISUAL_DIRECTION.md (same shape as the Big Moment
+/// sheet's type chips). White cards stay calm; the chip carries the
+/// semantic colour: blue = coach/read, green = win/proof, amber = fix/next.
+struct ConceptIconChip: View {
+    let systemName: String
+    let tint: Color
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(.white)
+            .frame(width: 36, height: 36)
+            .background(
+                tint.gradient,
+                in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
+            )
+            .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Slot 2 — THE READ
+
+/// White card with the blue "read" chip: the coach's spoken read for this
+/// rep. Carries the RULE-BASED provenance capsule, the bounded delivery
+/// line and the thin-evidence disclaimer — honesty contracts kept as
+/// truth, rendered without weight. When the just-finished memory rebuild
+/// documents fresh user pushback, the coach's acknowledgment renders as a
+/// one-line prefix INSIDE the read (the revision IS the read, not a sixth
+/// card). Eligibility stays on `CoachContextBuilder.freshRevisedReadChange`;
+/// copy stays on `RevisedReadCard`'s tested statics.
+///
+/// The score chip the old mega-card carried in this header is gone on
+/// purpose: the hero ring directly above already renders the number.
 @available(iOS 17.0, *)
-struct PostRepVerdictCard: View {
+struct PostRepReadCard: View {
     let content: PostRepVerdictContent
-    let scoreValue: Int
-    let scoreAccent: Color
-    let drill: DrillRecommendationV2
-    let legacyDrill: DrillRecommendation
-    var onStartMiniDrill: (DrillRecommendationV2) -> Void
-    var onStartDrill: ((DrillRecommendation) -> Void)?
+    var revisedChange: CoachCourseChange? = nil
 
     enum AccessibilityID {
         static let root = "summary.postRepVerdict"
-        static let startMiniDrill = "summary.postRepVerdict.startMiniDrill"
-        static let startFullRetry = "summary.postRepVerdict.startFullRetry"
-        static let fullRetry = "summary.postRepVerdict.fullRetry"
-        static let secondaryMiniDrill = "summary.postRepVerdict.secondaryMiniDrill"
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             header
+
+            if let change = revisedChange {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(AppColor.pro)
+                        .padding(.top, 1)
+                    Text(RevisedReadCard.headlineCopy(for: change))
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Revised coaching read. \(RevisedReadCard.headlineCopy(for: change))")
+                .accessibilityIdentifier("summary.revisedRead.card")
+            }
 
             Text(content.readText)
                 .font(Typography.body)
@@ -168,44 +211,23 @@ struct PostRepVerdictCard: View {
                     .foregroundStyle(AppColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            Divider().opacity(0.45)
-
-            if let win = content.win {
-                winSection(win)
-            }
-
-            if let fix = content.fix {
-                if content.win != nil {
-                    Divider().opacity(0.30)
-                }
-                fixSection(fix)
-            }
-
-            Divider().opacity(0.45)
-
-            drillCTA
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(AppColor.pro.opacity(0.18), lineWidth: 1)
-        )
-        .shadow(color: AppColor.pro.opacity(0.06), radius: 10, y: 3)
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.root)
         .accessibilityLabel("Coach verdict for this rep")
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            NoumCharacter.Inline(size: 22, mood: .coaching, tint: AppColor.pro)
+        HStack(spacing: Spacing.sm) {
+            ConceptIconChip(systemName: "eye", tint: AppColor.brandBlue)
             Text("THE READ")
                 .font(Typography.captionSmall)
                 .tracking(0.6)
-                .foregroundStyle(AppColor.pro)
+                .foregroundStyle(AppColor.brandBlue)
             Spacer(minLength: 0)
             if let label = content.provenanceLabel {
                 Text(label)
@@ -218,31 +240,51 @@ struct PostRepVerdictCard: View {
                             .stroke(AppColor.textSecondary.opacity(0.35), lineWidth: 1)
                     )
             }
-            Text("\(scoreValue)/10")
-                .font(Typography.caption.weight(.bold))
-                .foregroundStyle(scoreAccent)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
-                .background(scoreAccent.opacity(0.10), in: Capsule())
         }
     }
+}
 
-    private func winSection(_ win: PostRepVerdictContent.Win) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionLabel("Win", icon: "checkmark.seal.fill", tint: AppColor.positive)
+// MARK: - Slot 3 — WIN
+
+/// Green-tinted card with the verified quote rail. The quote arrives via
+/// `PostRepVerdictContent.win`, which only ever carries a `ProofMoment`
+/// that passed the transcript-verify guard (verified-quotes-only
+/// invariant) or a deterministic bullet — never raw model output.
+@available(iOS 17.0, *)
+struct PostRepWinCard: View {
+    let win: PostRepVerdictContent.Win
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: Spacing.sm) {
+                ConceptIconChip(systemName: "checkmark.seal.fill", tint: AppColor.positive)
+                Text("WIN")
+                    .font(Typography.captionSmall)
+                    .tracking(0.6)
+                    .foregroundStyle(AppColor.positive)
+                Spacer(minLength: 0)
+            }
+
             Text(win.headline)
                 .font(Typography.body.weight(.semibold))
                 .foregroundStyle(AppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
+
             if let quote = win.quote, !quote.isEmpty {
-                Text("\"\(quote)\"")
-                    .font(Typography.body.italic())
-                    .foregroundStyle(AppColor.brandBlue.opacity(0.92))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                HStack(alignment: .top, spacing: 10) {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(AppColor.positive.opacity(0.55))
+                        .frame(width: 3)
+                    Text("\"\(quote)\"")
+                        .font(Typography.body.italic())
+                        .foregroundStyle(AppColor.textPrimary.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppColor.positive.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
             }
+
             if let support = win.support, !support.isEmpty {
                 Text(support)
                     .font(Typography.caption)
@@ -250,47 +292,115 @@ struct PostRepVerdictCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [AppColor.cardBackground, AppColor.positive.opacity(0.05)],
+                startPoint: .top,
+                endPoint: .bottom
+            ),
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.positive.opacity(0.14), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("summary.win.card")
     }
+}
 
-    private func fixSection(_ fix: PostRepVerdictContent.Fix) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionLabel("Fix first", icon: "scope", tint: AppColor.caution)
-            Text(fix.headline)
-                .font(Typography.body.weight(.semibold))
-                .foregroundStyle(AppColor.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-            if let evidence = fix.evidence {
-                fixEvidence(evidence)
+// MARK: - Slot 4 — FIX FIRST
+
+/// Amber-tinted card: one located fix with its evidence inline
+/// (evidence-above-fold principle) and a single "Next move ·" line.
+/// On review-due reps the agreed case-file review IS the named next
+/// move — one-line context + the Ask-Noum CTA replace the generic
+/// next step, so the review never competes as a separate card.
+/// `isReviewDue` gating + opener composition stay in `SummaryView` /
+/// `CoachContextBuilder`; this card is pure presentation.
+@available(iOS 17.0, *)
+struct PostRepFixCard: View {
+    let fix: PostRepVerdictContent.Fix?
+    var reviewIntervention: CoachIntervention? = nil
+    var onReview: (() -> Void)? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: Spacing.sm) {
+                ConceptIconChip(systemName: "arrow.up.right", tint: AppColor.caution)
+                Text("FIX FIRST")
+                    .font(Typography.captionSmall)
+                    .tracking(0.6)
+                    .foregroundStyle(AppColor.caution)
+                Spacer(minLength: 0)
             }
-            if let nextMove = fix.nextMove, !nextMove.isEmpty {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "arrow.right.circle.fill")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(AppColor.brandBlue)
-                        .padding(.top, 1)
-                    Text(nextMove)
-                        .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let fix {
+                Text(fix.headline)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let evidence = fix.evidence {
+                    fixEvidence(evidence)
                 }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(AppColor.brandBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+            }
+
+            if let reviewIntervention, let onReview {
+                // Review-due rep: the agreed review is the next move.
+                VStack(alignment: .leading, spacing: 6) {
+                    nextMoveLine(InterventionReviewPromptCard.headlineCopy(for: reviewIntervention))
+                    Button(action: onReview) {
+                        HStack(spacing: 6) {
+                            Text("Review with coach")
+                                .font(Typography.caption.weight(.semibold))
+                            Image(systemName: "arrow.right")
+                                .font(.caption.weight(.bold))
+                        }
+                        .foregroundStyle(AppColor.pro)
+                        .frame(minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("summary.interventionReview.cta")
+                    .accessibilityHint("Opens Ask Noum to review whether the active intervention is working.")
+                }
+            } else if let nextMove = fix?.nextMove, !nextMove.isEmpty {
+                nextMoveLine(nextMove)
             }
         }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [AppColor.cardBackground, AppColor.caution.opacity(0.05)],
+                startPoint: .top,
+                endPoint: .bottom
+            ),
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.caution.opacity(0.14), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("summary.fix.card")
     }
 
-    private func sectionLabel(_ text: String, icon: String, tint: Color) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.caption.weight(.bold))
-            Text(text)
-                .font(Typography.micro)
-                .textCase(.uppercase)
-                .tracking(0.8)
-        }
-        .foregroundStyle(tint)
+    private func nextMoveLine(_ text: String) -> some View {
+        (Text("Next move · ")
+            .font(Typography.caption.weight(.bold))
+            .foregroundStyle(AppColor.caution)
+         + Text(text)
+            .font(Typography.caption.weight(.semibold))
+            .foregroundStyle(AppColor.textPrimary))
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel("Next move: \(text)")
     }
 
     @ViewBuilder
@@ -337,7 +447,99 @@ struct PostRepVerdictCard: View {
         }
     }
 
-    private var drillCTA: some View {
+    private func chipTint(count: Int) -> Color {
+        if count >= 4 { return AppColor.warning }
+        if count >= 2 { return AppColor.caution }
+        return .secondary
+    }
+}
+
+// MARK: - Slot 5 — Bottom exit panel
+
+/// The ONE in-scroll exit, rendered as the LAST element of the summary
+/// content (owner decision, docs/UX_VISUAL_DIRECTION.md: exit lives at
+/// the BOTTOM — the user scrolls through the feedback before leaving).
+/// Re-homes the old `PostRepVerdictCard.drillCTA` verbatim: same
+/// miniDrill / full-retry format split, same closures, and the SAME
+/// button accessibility ids (`summary.postRepVerdict.startMiniDrill` /
+/// `startFullRetry` / `fullRetry`) pinned by NoumUITests. The primary
+/// pill is the approved blue; "Done" stays a ghost/outline secondary.
+/// IM reps pass no drill (IMOneMoveCard already carries Try Again /
+/// New Chat) and render Done only.
+@available(iOS 17.0, *)
+struct SummaryExitPanel: View {
+    var drill: DrillRecommendationV2? = nil
+    var legacyDrill: DrillRecommendation? = nil
+    var onStartMiniDrill: ((DrillRecommendationV2) -> Void)? = nil
+    var onStartDrill: ((DrillRecommendation) -> Void)? = nil
+    let onDone: () -> Void
+    var onPracticeAgain: (() -> Void)? = nil
+
+    enum AccessibilityID {
+        static let root = "summary.exitPanel"
+        static let drill = "summary.exitPanel.drill"
+        static let done = "summary.exitPanel.done"
+        static let practiceAgain = "summary.exitPanel.practiceAgain"
+        // Legacy drill-button ids preserved verbatim — pinned by
+        // NoumUITests.swift; do not rename.
+        static let startMiniDrill = "summary.postRepVerdict.startMiniDrill"
+        static let startFullRetry = "summary.postRepVerdict.startFullRetry"
+        static let fullRetry = "summary.postRepVerdict.fullRetry"
+        static let secondaryMiniDrill = "summary.postRepVerdict.secondaryMiniDrill"
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            if let drill {
+                drillBlock(drill)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier(AccessibilityID.drill)
+            }
+
+            Button(action: onDone) {
+                Text("Done")
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(
+                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                            .stroke(AppColor.textSecondary.opacity(0.35), lineWidth: 1)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier(AccessibilityID.done)
+            .accessibilityLabel("Done")
+            .accessibilityHint("Finishes the review and returns home.")
+
+            if let onPracticeAgain {
+                Button(action: onPracticeAgain) {
+                    Text("Practice again")
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier(AccessibilityID.practiceAgain)
+                .accessibilityLabel("Practice again")
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(AccessibilityID.root)
+    }
+
+    // The old drillCTA, re-homed. Format split + closures unchanged;
+    // the primary pill takes the approved blue (UX_VISUAL_DIRECTION:
+    // "primary Start 45-second drill (blue pill)").
+    @ViewBuilder
+    private func drillBlock(_ drill: DrillRecommendationV2) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(drill.title)
                 .font(Typography.body.weight(.semibold))
@@ -348,17 +550,17 @@ struct PostRepVerdictCard: View {
                 .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if drill.format == .miniDrill {
+            if drill.format == .miniDrill, let onStartMiniDrill {
                 Button {
                     onStartMiniDrill(drill)
                 } label: {
-                    ctaLabel("Start 45s drill", systemImage: "bolt.fill", tint: drill.tint)
+                    ctaLabel("Start 45s drill", systemImage: "bolt.fill")
                 }
                 .buttonStyle(.pressable)
                 .accessibilityIdentifier(AccessibilityID.startMiniDrill)
                 .accessibilityHint("Starts the short drill Noum prescribed from this rep.")
 
-                if let onStartDrill {
+                if let onStartDrill, let legacyDrill {
                     Button {
                         onStartDrill(legacyDrill)
                     } label: {
@@ -366,37 +568,43 @@ struct PostRepVerdictCard: View {
                             .font(Typography.caption.weight(.semibold))
                             .foregroundStyle(AppColor.textSecondary)
                             .frame(maxWidth: .infinity)
+                            .frame(minHeight: 32)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier(AccessibilityID.fullRetry)
                     .accessibilityHint("Starts a full retry of the recommended practice.")
                 }
-            } else if let onStartDrill {
+            } else if drill.format != .miniDrill, let onStartDrill, let legacyDrill {
                 Button {
                     onStartDrill(legacyDrill)
                 } label: {
-                    ctaLabel("Start full retry", systemImage: "arrow.clockwise", tint: drill.tint)
+                    ctaLabel("Start full retry", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.pressable)
                 .accessibilityIdentifier(AccessibilityID.startFullRetry)
                 .accessibilityHint("Starts a full retry of the recommended practice.")
 
-                Button {
-                    onStartMiniDrill(drill)
-                } label: {
-                    Text("45s drill")
-                        .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(AppColor.textSecondary)
-                        .frame(maxWidth: .infinity)
+                if let onStartMiniDrill {
+                    Button {
+                        onStartMiniDrill(drill)
+                    } label: {
+                        Text("45s drill")
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(AppColor.textSecondary)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier(AccessibilityID.secondaryMiniDrill)
+                    .accessibilityHint("Starts the short drill Noum prescribed from this rep.")
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier(AccessibilityID.secondaryMiniDrill)
-                .accessibilityHint("Starts the short drill Noum prescribed from this rep.")
-            } else {
+            } else if let onStartMiniDrill {
                 Button {
                     onStartMiniDrill(drill)
                 } label: {
-                    ctaLabel("Start 45s drill", systemImage: "bolt.fill", tint: drill.tint)
+                    ctaLabel("Start 45s drill", systemImage: "bolt.fill")
                 }
                 .buttonStyle(.pressable)
                 .accessibilityIdentifier(AccessibilityID.startMiniDrill)
@@ -405,7 +613,7 @@ struct PostRepVerdictCard: View {
         }
     }
 
-    private func ctaLabel(_ text: String, systemImage: String, tint: Color) -> some View {
+    private func ctaLabel(_ text: String, systemImage: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: systemImage)
                 .font(.subheadline.weight(.semibold))
@@ -415,13 +623,7 @@ struct PostRepVerdictCard: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 13)
         .foregroundStyle(.white)
-        .background(tint, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-    }
-
-    private func chipTint(count: Int) -> Color {
-        if count >= 4 { return AppColor.warning }
-        if count >= 2 { return AppColor.caution }
-        return .secondary
+        .background(AppColor.brandBlue, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 }
 #endif
