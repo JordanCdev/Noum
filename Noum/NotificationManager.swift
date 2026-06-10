@@ -401,7 +401,23 @@ final class NotificationManager: ObservableObject {
         refreshScheduledNotifications()
     }
 
-    // MARK: - Existing post-session follow-up (kept as-is)
+    // MARK: - Post-session follow-up (+18h coach-continuity nudge)
+
+    /// Lightweight cache of the most recent session's follow-up payload. Held
+    /// on this existing singleton (not a new store) so that if the user enables
+    /// the post-session follow-up *after* a rep finalizes — e.g. by accepting
+    /// the notification pre-prompt that fires on rep 1 — we can still arm the
+    /// +18h nudge for that rep instead of silently missing it. This was the
+    /// bug: the accept flow flipped the three daily-rhythm surfaces but never
+    /// set `isEnabled`, so the follow-up surface was dead for opt-in users.
+    private struct PendingFollowUp {
+        var profile: CoachingProfile?
+        var relationship: IMRelationshipProfile?
+        var sessions: [PracticeSession]
+        var practiceTitle: String
+        var nextMove: String?
+    }
+    private var pendingFollowUp: PendingFollowUp?
 
     func scheduleFollowUpReminder(
         profile: CoachingProfile?,
@@ -410,8 +426,38 @@ final class NotificationManager: ObservableObject {
         practiceTitle: String,
         nextMove: String?
     ) async {
+        // Always remember the latest payload so a later opt-in (the rep-1
+        // pre-prompt accept, which lands after this rep finalizes) can still
+        // arm this rep's follow-up rather than waiting for the next session.
+        pendingFollowUp = PendingFollowUp(
+            profile: profile,
+            relationship: relationship,
+            sessions: sessions,
+            practiceTitle: practiceTitle,
+            nextMove: nextMove
+        )
+        await performFollowUpSchedule()
+    }
+
+    /// Master toggle for the post-session follow-up. The notification
+    /// pre-prompt's "Turn on reminders" path now calls this so the +18h nudge
+    /// joins the three daily-rhythm surfaces. Previously `isEnabled` was never
+    /// set from the accept flow, so the follow-up never fired for opt-in users.
+    func setFollowUpEnabled(_ value: Bool) async {
+        if value {
+            let granted = await requestAuthorizationIfNeeded()
+            isEnabled = granted
+            if granted { await performFollowUpSchedule() }
+        } else {
+            isEnabled = false
+        }
+        await refreshAuthorizationStatus()
+    }
+
+    private func performFollowUpSchedule() async {
 #if canImport(UserNotifications)
         guard isEnabled else { return }
+        guard let pending = pendingFollowUp else { return }
         guard await requestAuthorizationIfNeeded() else {
             isEnabled = false
             return
@@ -420,20 +466,20 @@ final class NotificationManager: ObservableObject {
         let content = UNMutableNotificationContent()
         content.sound = .default
         let retentionSnapshot = RetentionLoopEngine.snapshot(
-            sessions: sessions,
-            profile: profile,
+            sessions: pending.sessions,
+            profile: pending.profile,
             displayedStreak: StreakFreezeManager.shared.currentStreak
         )
         content.title = reminderTitle(
-            profile: profile,
-            relationship: relationship,
-            practiceTitle: practiceTitle,
+            profile: pending.profile,
+            relationship: pending.relationship,
+            practiceTitle: pending.practiceTitle,
             challenge: retentionSnapshot.activeChallenge
         )
         content.body = reminderBody(
-            profile: profile,
-            relationship: relationship,
-            nextMove: nextMove,
+            profile: pending.profile,
+            relationship: pending.relationship,
+            nextMove: pending.nextMove,
             challenge: retentionSnapshot.activeChallenge
         )
 

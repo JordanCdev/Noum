@@ -68,8 +68,9 @@ final class NotificationPrePromptManager: ObservableObject {
 
     // MARK: - User responses
 
-    /// Primary CTA. Flips on the three daily-rhythm notification surfaces,
-    /// each of which chains into NotificationManager's authorization request.
+    /// Primary CTA. Flips on the three daily-rhythm notification surfaces plus
+    /// the post-session follow-up, each of which chains into NotificationManager's
+    /// authorization request.
     /// Persists "seen" so we never re-show even if the user later toggles
     /// notifications off in Settings.
     func accept() async {
@@ -78,6 +79,10 @@ final class NotificationPrePromptManager: ObservableObject {
         await manager.setStreakWarningEnabled(true)
         await manager.setDailyReminderEnabled(true)
         await manager.setWeeklyDigestEnabled(true)
+        // Also arm the +18h post-session follow-up. Without this, the follow-up
+        // surface stayed dead for opt-in users — the app went silent after the
+        // first rep, the worst outcome for a habit product.
+        await manager.setFollowUpEnabled(true)
         pendingPrompt = false
     }
 
