@@ -2059,20 +2059,26 @@ final class CoachMemoryStore: ObservableObject {
     /// without a full rebuild. Called when the user reflects on the summary
     /// screen (after `refresh` already ran at finalize) so Ask Noum's
     /// context carries this rep's felt experience immediately.
-    func noteReflection(_ summary: String?) {
+    func noteReflection(
+        _ summary: String?,
+        upcomingMoment: BigMoment? = BigMomentStore.shared.activeMoment
+    ) {
         guard var memory = currentMemory else { return }
         memory.lastReflectionSummary = summary
         memory.lastReflectionReview = nil
         memory.reflectionPattern = nil
         memory.updatedAt = Date()
-        // Carry the upcoming-moment line forward across this incremental
-        // rebuild — it isn't a stored `CoachMemory` field, so without this the
-        // mid-session update would drop "Preparing for: …" until the next full
-        // `refresh`. The next finalize re-derives it from the store.
+        // Re-derive the upcoming-moment line from the live store on every
+        // incremental rebuild — it isn't a stored `CoachMemory` field. Carrying
+        // the prior value forward kept "Preparing for: …" coherent only while
+        // the moment was unchanged; if the user added or changed a real-world
+        // moment between full refreshes, the durable case quoted a stale one.
+        // Reading the store keeps goal + baseline + pattern + nearest moment
+        // coherent, and still never drops a line that is genuinely still set.
         memory.caseFile = CoachCaseFile.build(
             from: memory,
             now: memory.updatedAt,
-            upcomingMomentLine: memory.caseFile?.upcomingMomentLine
+            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment)
         )
         currentMemory = memory
         persist(memory)
@@ -2083,7 +2089,8 @@ final class CoachMemoryStore: ObservableObject {
     /// immediately, without waiting for the next full memory rebuild.
     func noteReflection(
         _ reflection: SessionReflection,
-        recentReflections: [SessionReflection] = []
+        recentReflections: [SessionReflection] = [],
+        upcomingMoment: BigMoment? = BigMomentStore.shared.activeMoment
     ) {
         guard var memory = currentMemory else { return }
         memory.lastReflectionSummary = reflection.coachClause
@@ -2094,7 +2101,7 @@ final class CoachMemoryStore: ObservableObject {
         memory.caseFile = CoachCaseFile.build(
             from: memory,
             now: memory.updatedAt,
-            upcomingMomentLine: memory.caseFile?.upcomingMomentLine
+            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment)
         )
         currentMemory = memory
         persist(memory)
@@ -2108,7 +2115,8 @@ final class CoachMemoryStore: ObservableObject {
     /// renders without a current hypothesis, but the store still guards).
     func noteHypothesisAcknowledgement(
         _ confidence: CoachHypothesisConfidence,
-        at now: Date = Date()
+        at now: Date = Date(),
+        upcomingMoment: BigMoment? = BigMomentStore.shared.activeMoment
     ) {
         guard var memory = currentMemory,
               let hypothesis = memory.workingHypothesis?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -2122,7 +2130,7 @@ final class CoachMemoryStore: ObservableObject {
         memory.caseFile = CoachCaseFile.build(
             from: memory,
             now: now,
-            upcomingMomentLine: memory.caseFile?.upcomingMomentLine
+            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment)
         )
         currentMemory = memory
         persist(memory)
@@ -2159,7 +2167,8 @@ final class CoachMemoryStore: ObservableObject {
         to: SpeakingStyleGoal,
         reason: String,
         evidenceBasis: String,
-        at now: Date = Date()
+        at now: Date = Date(),
+        upcomingMoment: BigMoment? = BigMomentStore.shared.activeMoment
     ) {
         guard var memory = currentMemory else { return }
         var log = memory.adaptationLog ?? []
@@ -2178,7 +2187,7 @@ final class CoachMemoryStore: ObservableObject {
         memory.caseFile = CoachCaseFile.build(
             from: memory,
             now: now,
-            upcomingMomentLine: memory.caseFile?.upcomingMomentLine
+            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment)
         )
         currentMemory = memory
         persist(memory)
@@ -2187,14 +2196,17 @@ final class CoachMemoryStore: ObservableObject {
     /// Fold a completed real-world check-in into the current case without
     /// changing the measured intervention verdict. The report may motivate a
     /// review question or an adaptation, but it cannot establish causation.
-    func noteTransferOutcome(_ report: BigMomentOutcomeReport) {
+    func noteTransferOutcome(
+        _ report: BigMomentOutcomeReport,
+        upcomingMoment: BigMoment? = BigMomentStore.shared.activeMoment
+    ) {
         guard var memory = currentMemory else { return }
         memory.lastTransferReview = CoachTransferReview(report: report)
         memory.updatedAt = Date()
         memory.caseFile = CoachCaseFile.build(
             from: memory,
             now: memory.updatedAt,
-            upcomingMomentLine: memory.caseFile?.upcomingMomentLine
+            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment)
         )
         currentMemory = memory
         persist(memory)
