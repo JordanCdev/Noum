@@ -212,6 +212,13 @@ struct IMPracticeView: View {
         }, message: {
             Text(serviceErrorMessage ?? "")
         })
+        // C5 — surface transcription start failures the way Timed /
+        // SuddenDeath already do. Without this the IM rep was the one
+        // surface that NEVER read `connectionError`: a failed provider
+        // start left a silently dead mic ("Listening..." with no words).
+        .onChange(of: speechVM.connectionError) { _, error in
+            if let error { serviceErrorMessage = error }
+        }
         .task(id: isAwaitingNPC) {
             guard isAwaitingNPC || isEndingConversation else {
                 typingPhase = 0

@@ -1,6 +1,40 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
+// MARK: - Live-call dead-mic watchdog (pure decision logic)
+//
+// C5 — the diagnosed live-call failure mode: the mic arms, "Listening…"
+// shows, and the recognition backend silently hears nothing (broken
+// simulator input route, dead recognition service). The session previously
+// sat in that state forever. This watchdog flags an armed-but-wordless mic
+// after a patient window so the call can say "I can't hear you" honestly
+// and end the hands-free loop instead of pretending to listen.
+//
+// Pure + view-free so the threshold decision is unit-testable.
+enum LiveCallMicWatchdog {
+
+    /// Seconds an armed mic may stay wordless before we flag it. Long
+    /// enough that a user gathering their thoughts (a few seconds of
+    /// natural pre-speech silence is normal on a coaching call) is never
+    /// interrupted; short enough that a genuinely dead mic is surfaced
+    /// within one breath of suspicion, not a stuck forever-state.
+    static let deadMicWindow: TimeInterval = 6.0
+
+    /// Honest line shown when the watchdog fires. Names the likely fix and
+    /// the typed escape hatch — never blames the user.
+    static let notice = "I can't hear you — check mic access, or use Type instead."
+
+    /// True when the hands-free loop should stop pretending to listen.
+    static func shouldFlag(
+        loopActive: Bool,
+        isRecording: Bool,
+        hasPartialTranscript: Bool,
+        secondsSinceArmed: TimeInterval
+    ) -> Bool {
+        loopActive && isRecording && !hasPartialTranscript && secondsSinceArmed > deadMicWindow
+    }
+}
+
 // MARK: - Live Coach Call
 //
 // The DEFAULT coach surface: an immersive, face-to-face "call" with Noum rather
@@ -41,6 +75,12 @@ struct LiveCoachCallView: View {
     /// Keeps old chat history from leaking into the live landing. The live call
     /// only shows captions after this session has produced a new turn.
     @State private var hasLiveExchange = false
+    /// When the mic last armed — feeds `LiveCallMicWatchdog` so an
+    /// armed-but-wordless mic is surfaced honestly instead of sitting in a
+    /// dead "Listening…" state. Nil while not recording.
+    @State private var recordingArmedAt: Date? = nil
+    /// Set when the dead-mic watchdog fires; cleared on the next Talk tap.
+    @State private var deadMicNotice: String? = nil
 
     /// Polls for end-of-turn silence. Cheap no-op unless we're recording.
     private let tick = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
@@ -67,6 +107,26 @@ struct LiveCoachCallView: View {
         if store.isAwaitingReply { return "Thinking…" }
         if speaker.isSpeaking { return "Speaking…" }
         return "…"
+    }
+
+    /// C5 — one honest status line under the state line, when something is
+    /// genuinely wrong or worth knowing. Priority: dead-mic watchdog (the
+    /// loop just ended because nothing was heard) > speech-input
+    /// unavailability > spoken-reply unavailability (Aloud on, no engine
+    /// could produce audio) > the honest "who is listening" engine label
+    /// while recording. Nil in the common healthy idle states.
+    private var honestStatusLine: String? {
+        if let deadMicNotice { return deadMicNotice }
+        if let micNotice = voiceInput.notice { return micNotice }
+        if voiceSettings.askNoumSpokenRepliesEnabled,
+           let voiceNotice = speaker.voiceUnavailableNotice {
+            return voiceNotice
+        }
+        if voiceInput.state == .recording,
+           let engine = voiceInput.activeEngineDescription {
+            return engine
+        }
+        return nil
     }
 
     /// Captions: your live words while you speak, otherwise the coach's latest
@@ -121,6 +181,12 @@ struct LiveCoachCallView: View {
         // Re-arm the mic once the coach is done (covers spoken + unspoken replies).
         .onChange(of: store.isAwaitingReply) { _, awaiting in if !awaiting { scheduleReArm() } }
         .onChange(of: speaker.isSpeaking) { _, speaking in if !speaking { reArmIfReady() } }
+        // C5 — speech input failed (chain exhausted / permission pulled):
+        // end the hands-free loop honestly instead of retry-looping a dead
+        // mic. The notice line explains; the user re-taps Talk to retry.
+        .onChange(of: voiceInput.unavailableReason) { _, reason in
+            if reason != nil, loopActive { endLoop() }
+        }
     }
 
     // MARK: - Background
@@ -171,9 +237,20 @@ struct LiveCoachCallView: View {
                 .foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: stateLine)
+            // C5 — never a silent dead state: mic problems, voice-output
+            // problems, and the honest "who is listening" engine label all
+            // surface here instead of being buried in debug fields.
+            if let status = honestStatusLine {
+                Text(status)
+                    .font(Typography.caption)
+                    .foregroundStyle(.white.opacity(0.45))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("askNoum.live.statusLine")
+            }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Noum — \(stateLine)")
+        .accessibilityLabel(honestStatusLine.map { "Noum — \(stateLine). \($0)" } ?? "Noum — \(stateLine)")
     }
 
     // MARK: - Captions
@@ -341,6 +418,7 @@ struct LiveCoachCallView: View {
     // MARK: - Hands-free loop
 
     private func micTapped() {
+        deadMicNotice = nil
         if loopActive {
             if speaker.isSpeaking {
                 speaker.stop()        // barge-in: cut the coach off
@@ -359,22 +437,43 @@ struct LiveCoachCallView: View {
         guard voiceInput.isAvailable else { return }
         if voiceInput.state != .recording { voiceInput.toggle() }
         lastPartialAt = Date()
+        recordingArmedAt = Date()
     }
 
     private func endLoop() {
         loopActive = false
         voiceInput.cancelRecording()
         speaker.stop()
+        recordingArmedAt = nil
     }
 
-    /// End the turn after a natural pause (hands-free send).
+    /// End the turn after a natural pause (hands-free send), and watch for
+    /// an armed-but-wordless mic (C5 — never a silent dead "Listening…").
     private func silenceTick() {
+        deadMicTick()
         guard loopActive,
               voiceInput.state == .recording,
               !voiceInput.partialTranscript.isEmpty,
               Date().timeIntervalSince(lastPartialAt) > silenceThreshold
         else { return }
         voiceInput.stopAndSend()  // → onFinalTranscript → handleUtterance
+    }
+
+    /// C5 — dead-mic watchdog: recording with zero words for the whole
+    /// patience window means nothing is reaching the recognizer. Say so and
+    /// end the hands-free loop honestly; the user re-taps Talk to retry or
+    /// drops to Type.
+    private func deadMicTick() {
+        guard let armedAt = recordingArmedAt,
+              LiveCallMicWatchdog.shouldFlag(
+                  loopActive: loopActive,
+                  isRecording: voiceInput.state == .recording,
+                  hasPartialTranscript: !voiceInput.partialTranscript.isEmpty,
+                  secondsSinceArmed: Date().timeIntervalSince(armedAt)
+              )
+        else { return }
+        deadMicNotice = LiveCallMicWatchdog.notice
+        endLoop()
     }
 
     /// After a reply lands but won't be spoken (aloud off / no provider), the
@@ -397,17 +496,20 @@ struct LiveCoachCallView: View {
         let ids = store.appendUserTurn(text)
         Task {
             let outcome = await CoachReplyPipeline.generate(coachID: ids.coachID)
-            if AskNoumSpokenMode.shouldSpeak(
+            let route = AskNoumSpokenMode.spokenRoute(
                 outcome: outcome,
                 spokenRepliesEnabled: voiceSettings.askNoumSpokenRepliesEnabled,
                 localeSupportsAI: LocaleSettingsManager.shared.current.aiSupported
-            ), case .reply(let replyText) = outcome {
+            )
+            if route != .none, let spokenText = AskNoumSpokenMode.spokenText(for: outcome) {
                 speaker.speak(
-                    replyText,
+                    spokenText,
                     setup: IMConversationSetup(
                         scenario: .workUpdate,
                         targetTone: AskNoumSpokenMode.coachTone(for: voice)
-                    )
+                    ),
+                    allowOnDeviceFallback: true,
+                    onDeviceOnly: route == .onDeviceOnly
                 )
             }
         }

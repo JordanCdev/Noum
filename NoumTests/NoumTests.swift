@@ -22038,98 +22038,137 @@ struct S4IMMessageSpeakerSpeakingStateTests {
 }
 #endif
 
-/// S5 — spoken-coach-mode pure decision logic (`AskNoumSpokenMode`).
+/// S5/C5 — spoken-coach-mode pure decision logic (`AskNoumSpokenMode`).
 ///
-/// `shouldSpeak(outcome:spokenRepliesEnabled:localeSupportsAI:)` is the single
-/// source of truth for whether a freshly-landed coach turn is read aloud. It
-/// is deliberately view-free so the full truth table can be asserted without
-/// the SwiftUI view, an audio engine, or a model. These tests pin every gate:
-/// toggle, locale, and outcome shape.
-struct S5SpokenModeShouldSpeakTests {
+/// `spokenRoute(outcome:spokenRepliesEnabled:localeSupportsAI:)` is the single
+/// source of truth for whether — and through WHICH engines — a freshly-landed
+/// coach turn is read aloud. It is deliberately view-free so the full truth
+/// table can be asserted without the SwiftUI view, an audio engine, or a
+/// model. These tests pin every gate: toggle, locale, and outcome shape.
+struct S5SpokenModeRouteTests {
 
     /// The happy path: toggle ON + locale supports AI + a real non-empty
-    /// reply → speak. This is the ONLY combination that returns true.
-    @Test func speaksRealReplyWhenEnabledAndLocaleSupported() {
-        #expect(AskNoumSpokenMode.shouldSpeak(
+    /// reply → the full engine chain (cloud first, on-device terminal).
+    @Test func realReplyRoutesToFullChainWhenEnabledAndLocaleSupported() {
+        #expect(AskNoumSpokenMode.spokenRoute(
             outcome: .reply("Do three reps of Pressure Drill."),
             spokenRepliesEnabled: true,
             localeSupportsAI: true
-        ))
+        ) == .fullChain)
     }
 
     /// Toggle OFF is an absolute veto even on an otherwise-speakable reply —
-    /// text-only must stay fully silent.
+    /// text-only must stay fully silent. The user's mute choice is the one
+    /// voice preference that is ALWAYS respected, for every outcome shape.
     @Test func neverSpeaksWhenToggleOff() {
-        #expect(!AskNoumSpokenMode.shouldSpeak(
+        #expect(AskNoumSpokenMode.spokenRoute(
             outcome: .reply("A perfectly good reply."),
             spokenRepliesEnabled: false,
             localeSupportsAI: true
-        ))
+        ) == AskNoumSpokenMode.SpokenRoute.none)
+        #expect(AskNoumSpokenMode.spokenRoute(
+            outcome: .deterministicReply("A grounded offline line."),
+            spokenRepliesEnabled: false,
+            localeSupportsAI: true
+        ) == AskNoumSpokenMode.SpokenRoute.none)
     }
 
     /// Locale gate: a non-AI locale stays text-only even with the toggle ON,
     /// mirroring the chat-reply locale gate so non-English users get a clean
     /// silent experience rather than an English voice over a localized UI.
+    /// Holds for the on-device deterministic route too.
     @Test func neverSpeaksWhenLocaleUnsupported() {
-        #expect(!AskNoumSpokenMode.shouldSpeak(
+        #expect(AskNoumSpokenMode.spokenRoute(
             outcome: .reply("A perfectly good reply."),
             spokenRepliesEnabled: true,
             localeSupportsAI: false
-        ))
+        ) == AskNoumSpokenMode.SpokenRoute.none)
+        #expect(AskNoumSpokenMode.spokenRoute(
+            outcome: .deterministicReply("A grounded offline line."),
+            spokenRepliesEnabled: true,
+            localeSupportsAI: false
+        ) == AskNoumSpokenMode.SpokenRoute.none)
     }
 
     /// A `.failure` outcome is NEVER spoken — the system-notice row is a UI
     /// affordance, not the coach's voice. Asserted across every failure cause
-    /// so a new cause can't silently become speakable.
+    /// so a new cause can't silently become speakable, and `spokenText` is
+    /// nil so no caller can even extract something to say.
     @Test func neverSpeaksAnyFailureCause() {
         let causes: [ChatFailure] = [.noProvider, .localeUnsupported, .network, .empty]
         for cause in causes {
-            #expect(!AskNoumSpokenMode.shouldSpeak(
+            #expect(AskNoumSpokenMode.spokenRoute(
                 outcome: .failure(cause),
                 spokenRepliesEnabled: true,
                 localeSupportsAI: true
-            ), "failure(\(cause)) must not be spoken")
+            ) == AskNoumSpokenMode.SpokenRoute.none, "failure(\(cause)) must not be spoken")
+            #expect(AskNoumSpokenMode.spokenText(for: .failure(cause)) == nil)
         }
     }
 
-    /// A1 — a `.deterministicReply` (the grounded offline line) is NEVER
-    /// spoken even with the toggle ON and a supported locale: TTS needs the
-    /// same network / provider that is down, and reading a canned line aloud
-    /// as if it were the live coach would overclaim. It renders as a coach
-    /// bubble (see `AskNoumStore.completeCoachTurn`) but stays silent. Sibling
-    /// of `neverSpeaksAnyFailureCause`. Asserted with non-empty text so the
-    /// suppression is the OUTCOME-SHAPE veto, not the empty-text veto.
-    @Test func neverSpeaksDeterministicReply() {
-        #expect(!AskNoumSpokenMode.shouldSpeak(
-            outcome: .deterministicReply("Here's what stood out: run one more rep when you're ready."),
+    /// C5 — a `.deterministicReply` (the grounded offline line) speaks
+    /// through the ON-DEVICE system voice ONLY, never the cloud chain. Both
+    /// halves of the old A1 rationale are preserved structurally: no cloud
+    /// TTS request rides a network that's likely down, and the canned line
+    /// is audibly NOT the cloud coach voice — a fallback that can be heard
+    /// as a fallback, never passed off as the live coach. (Previously the
+    /// line was silenced entirely, which made every model hiccup look like
+    /// a muted coach in a voice-first surface.)
+    @Test func deterministicReplyRoutesToOnDeviceOnly() {
+        let outcome = ChatOutcome.deterministicReply("Here's what stood out: run one more rep when you're ready.")
+        #expect(AskNoumSpokenMode.spokenRoute(
+            outcome: outcome,
             spokenRepliesEnabled: true,
             localeSupportsAI: true
-        ), "a deterministic offline reply must never be spoken as the live coach")
+        ) == .onDeviceOnly)
+        // Never the cloud chain — pinned as its own assertion so a future
+        // refactor can't quietly merge the two routes.
+        #expect(AskNoumSpokenMode.spokenRoute(
+            outcome: outcome,
+            spokenRepliesEnabled: true,
+            localeSupportsAI: true
+        ) != .fullChain)
     }
 
     /// A whitespace-only reply is rejected even though it is nominally a
     /// `.reply`. The predicate must not depend on the store routing empties to
-    /// `.failure(.empty)` — it owns the empty check itself.
+    /// `.failure(.empty)` — it owns the empty check itself. Same for a
+    /// whitespace-only deterministic line (defensive; the builder is total).
     @Test func neverSpeaksWhitespaceOnlyReply() {
-        #expect(!AskNoumSpokenMode.shouldSpeak(
+        #expect(AskNoumSpokenMode.spokenRoute(
             outcome: .reply("   \n\t  "),
             spokenRepliesEnabled: true,
             localeSupportsAI: true
-        ))
+        ) == AskNoumSpokenMode.SpokenRoute.none)
+        #expect(AskNoumSpokenMode.spokenRoute(
+            outcome: .deterministicReply("   \n\t  "),
+            spokenRepliesEnabled: true,
+            localeSupportsAI: true
+        ) == AskNoumSpokenMode.SpokenRoute.none)
     }
 
-    /// All four off/locale combinations on an empty-text reply are false —
+    /// All four off/locale combinations on an empty-text reply are `.none` —
     /// no combination of flags resurrects an empty reply.
     @Test func emptyReplyNeverSpeaksUnderAnyFlags() {
         for enabled in [true, false] {
             for locale in [true, false] {
-                #expect(!AskNoumSpokenMode.shouldSpeak(
+                #expect(AskNoumSpokenMode.spokenRoute(
                     outcome: .reply(""),
                     spokenRepliesEnabled: enabled,
                     localeSupportsAI: locale
-                ))
+                ) == AskNoumSpokenMode.SpokenRoute.none)
             }
         }
+    }
+
+    /// `spokenText` hands back the trimmed coach text for both speakable
+    /// outcome shapes and nil otherwise, so call sites can't drift from the
+    /// route decision by re-extracting text themselves.
+    @Test func spokenTextMatchesSpeakableOutcomes() {
+        #expect(AskNoumSpokenMode.spokenText(for: .reply("  Tighten the open.  ")) == "Tighten the open.")
+        #expect(AskNoumSpokenMode.spokenText(for: .deterministicReply("One more rep.")) == "One more rep.")
+        #expect(AskNoumSpokenMode.spokenText(for: .reply("   ")) == nil)
+        #expect(AskNoumSpokenMode.spokenText(for: .deterministicReply("")) == nil)
     }
 }
 
@@ -42052,5 +42091,203 @@ struct BigMomentOutcomeAckTransientTests {
         #expect(store.pendingOutcomeAck != nil)
         store.endSession()
         #expect(store.pendingOutcomeAck == nil)
+    }
+}
+
+// MARK: - C5 — live-call STT provider chain (pure selection/fallback logic)
+
+/// C5 — `LiveCallSTTChain` is the pure decision core behind the live coach
+/// call's speech input: the configured cloud `TranscriptionProvider` leads
+/// (the exact chain practice reps stream through), native Apple recognition
+/// is the ALWAYS-terminal fallback, and a cloud provider that already failed
+/// this surface session is skipped instead of re-tried on every hands-free
+/// turn. These tests pin the selection and fallback decisions without a
+/// recognizer, a network, or an audio engine.
+struct C5LiveCallSTTChainTests {
+
+    /// The canonical stored-value → provider mapping, shared with
+    /// `SpeechRecognizerViewModel`: unset → Deepgram (the default),
+    /// "deepgram"/"google" → themselves, anything unknown → AWS. Pinned so
+    /// the live call and practice reps can never resolve different providers
+    /// from the same persisted setting.
+    @Test func storedValueResolutionMatchesPracticeRepSemantics() {
+        #expect(TranscriptionProviderID.resolved(fromStoredValue: nil) == .deepgram)
+        #expect(TranscriptionProviderID.resolved(fromStoredValue: "deepgram") == .deepgram)
+        #expect(TranscriptionProviderID.resolved(fromStoredValue: "google") == .google)
+        #expect(TranscriptionProviderID.resolved(fromStoredValue: "aws") == .aws)
+        // Historic behavior: any unknown string falls through to AWS.
+        #expect(TranscriptionProviderID.resolved(fromStoredValue: "garbage") == .aws)
+        #expect(TranscriptionProviderID.resolved(fromStoredValue: "") == .aws)
+    }
+
+    /// Healthy chain: cloud leads, native is terminal — the order that makes
+    /// a cloud quota outage degrade to Apple transcription, never a dead mic.
+    @Test func cloudLeadsAndNativeIsTerminal() {
+        let order = LiveCallSTTChain.engineOrder(
+            configuredProviderRawValue: nil,
+            cloudMarkedUnhealthy: false,
+            nativeAvailable: true
+        )
+        #expect(order == [.cloud(.deepgram), .native])
+    }
+
+    /// The configured provider (not a hardcoded one) leads the chain.
+    @Test func configuredProviderLeadsTheChain() {
+        let order = LiveCallSTTChain.engineOrder(
+            configuredProviderRawValue: "google",
+            cloudMarkedUnhealthy: false,
+            nativeAvailable: true
+        )
+        #expect(order == [.cloud(.google), .native])
+    }
+
+    /// A cloud provider that already failed this surface session is skipped
+    /// — the next hands-free turn goes straight to native instead of paying
+    /// a doomed network round-trip between every utterance.
+    @Test func unhealthyCloudIsSkipped() {
+        let order = LiveCallSTTChain.engineOrder(
+            configuredProviderRawValue: "deepgram",
+            cloudMarkedUnhealthy: true,
+            nativeAvailable: true
+        )
+        #expect(order == [.native])
+    }
+
+    /// No native recognizer (the diagnosed simulator case that used to
+    /// disable the Talk button outright) still yields a serviceable chain:
+    /// cloud alone.
+    @Test func missingNativeStillOffersCloud() {
+        let order = LiveCallSTTChain.engineOrder(
+            configuredProviderRawValue: nil,
+            cloudMarkedUnhealthy: false,
+            nativeAvailable: false
+        )
+        #expect(order == [.cloud(.deepgram)])
+    }
+
+    /// Both links gone → an EMPTY chain, which the attempt path turns into
+    /// an honest `.temporarilyUnavailable` notice — never a silent dead mic
+    /// and never a fabricated engine.
+    @Test func exhaustedChainIsEmpty() {
+        let order = LiveCallSTTChain.engineOrder(
+            configuredProviderRawValue: nil,
+            cloudMarkedUnhealthy: true,
+            nativeAvailable: false
+        )
+        #expect(order.isEmpty)
+    }
+
+    /// Honest "who is listening" labels. The native engine deliberately says
+    /// "Apple transcription", NOT "on-device" — `SFSpeechRecognizer` may
+    /// route to Apple's servers when the on-device model isn't ready, so the
+    /// label is the strongest claim that is always true.
+    @Test func engineLabelsAreHonest() {
+        #expect(LiveCallSTTChain.engineDescription(for: .cloud(.deepgram)) == "Cloud transcription")
+        #expect(LiveCallSTTChain.engineDescription(for: .cloud(.google)) == "Cloud transcription")
+        #expect(LiveCallSTTChain.engineDescription(for: .cloud(.aws)) == "Cloud transcription")
+        #expect(LiveCallSTTChain.engineDescription(for: .native) == "Apple transcription")
+        #expect(!LiveCallSTTChain.engineDescription(for: .native).lowercased().contains("on-device"))
+    }
+}
+
+/// C5 — dead-mic watchdog decision (`LiveCallMicWatchdog`). The live call's
+/// hands-free loop previously could sit in "Listening…" forever while the
+/// recognition backend heard nothing. The watchdog flags an armed-but-
+/// wordless mic after a patient window so the call ends the loop with an
+/// honest line instead of pretending to listen.
+struct C5LiveCallMicWatchdogTests {
+
+    /// The core trip: loop active, recording, zero words, past the window.
+    @Test func flagsArmedWordlessMicPastWindow() {
+        #expect(LiveCallMicWatchdog.shouldFlag(
+            loopActive: true,
+            isRecording: true,
+            hasPartialTranscript: false,
+            secondsSinceArmed: LiveCallMicWatchdog.deadMicWindow + 0.5
+        ))
+    }
+
+    /// Words arrived → never flagged, no matter how long the turn runs. A
+    /// long thoughtful utterance is the OPPOSITE of a dead mic.
+    @Test func neverFlagsOnceWordsArrived() {
+        #expect(!LiveCallMicWatchdog.shouldFlag(
+            loopActive: true,
+            isRecording: true,
+            hasPartialTranscript: true,
+            secondsSinceArmed: 120
+        ))
+    }
+
+    /// Inside the patience window → not flagged. A user gathering their
+    /// thoughts for a few seconds before speaking is normal on a coaching
+    /// call and must never be interrupted with "I can't hear you".
+    @Test func patientWithinWindow() {
+        #expect(!LiveCallMicWatchdog.shouldFlag(
+            loopActive: true,
+            isRecording: true,
+            hasPartialTranscript: false,
+            secondsSinceArmed: LiveCallMicWatchdog.deadMicWindow - 0.5
+        ))
+        // And the window itself is a real pause-friendly span, not a hair
+        // trigger — pinned so a future tweak can't quietly make the call
+        // interrupt people mid-breath.
+        #expect(LiveCallMicWatchdog.deadMicWindow >= 5.0)
+    }
+
+    /// Not recording / loop not active → never flagged (the mic isn't
+    /// claiming to listen, so there is nothing to be honest about).
+    @Test func neverFlagsWhenNotListening() {
+        #expect(!LiveCallMicWatchdog.shouldFlag(
+            loopActive: false,
+            isRecording: true,
+            hasPartialTranscript: false,
+            secondsSinceArmed: 60
+        ))
+        #expect(!LiveCallMicWatchdog.shouldFlag(
+            loopActive: true,
+            isRecording: false,
+            hasPartialTranscript: false,
+            secondsSinceArmed: 60
+        ))
+    }
+
+    /// The notice names the fix and the typed escape hatch, and never blames
+    /// the user — same never-shame register as every other coach surface.
+    @Test func noticeIsHonestAndBlameFree() {
+        let notice = LiveCallMicWatchdog.notice
+        #expect(notice.contains("Type"))
+        #expect(notice.lowercased().contains("mic"))
+        for banned in ["you failed", "wrong", "your fault", "try harder"] {
+            #expect(!notice.lowercased().contains(banned))
+        }
+    }
+}
+
+/// C5 — honest voice-output state (`IMMessageSpeaker.voiceUnavailableNoticeText`).
+/// When a requested spoken reply produced no audio through any engine, the
+/// chat surfaces show this single line instead of a silent bubble that reads
+/// as a muted coach.
+struct C5VoiceUnavailableNoticeTests {
+
+    /// The note is factual + quiet: names the state, promises nothing,
+    /// blames nobody, and never claims the text itself failed.
+    @Test func noticeCopyIsFactualAndBlameFree() {
+        let notice = IMMessageSpeaker.voiceUnavailableNoticeText
+        #expect(!notice.isEmpty)
+        #expect(notice.lowercased().contains("voice"))
+        #expect(notice.lowercased().contains("text"))
+        #expect(!notice.contains("!"))
+        for banned in ["error", "failed", "broken", "sorry"] {
+            #expect(!notice.lowercased().contains(banned), "'\(banned)' reads as system blame, not coach calm")
+        }
+    }
+
+    /// `stop()` clears the note — every new turn begins with `stop()`, so a
+    /// stale "voice unavailable" can never describe a turn that spoke fine.
+    @MainActor
+    @Test func stopClearsTheNotice() {
+        let speaker = IMMessageSpeaker.shared
+        speaker.stop()
+        #expect(speaker.voiceUnavailableNotice == nil)
     }
 }

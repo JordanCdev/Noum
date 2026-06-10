@@ -53,13 +53,14 @@ private struct AskNoumScrollOffsetKey: PreferenceKey {
     }
 }
 
-// MARK: - Spoken-coach-mode pure logic (S5)
+// MARK: - Spoken-coach-mode pure logic (S5, routes since C5)
 //
-// The decision of WHETHER to speak a freshly-landed coach turn is isolated
-// here as pure, view-free logic so it can be unit-tested without standing up
-// the SwiftUI view, an audio engine, or a model. `AskNoumView.runReply`
-// calls `shouldSpeak(...)` at the single chokepoint where a reply becomes
-// visible (`store.completeCoachTurn`), and only then drives
+// The decision of WHETHER (and through WHICH engines) to speak a
+// freshly-landed coach turn is isolated here as pure, view-free logic so it
+// can be unit-tested without standing up the SwiftUI view, an audio engine,
+// or a model. `AskNoumView.runReply` and the live call's `handleUtterance`
+// call `spokenRoute(...)` at the single chokepoint where a reply becomes
+// visible (`store.completeCoachTurn`), and only then drive
 // `IMMessageSpeaker.shared.speak(...)`.
 //
 // The voice → tone mapping translates the user's CHOSEN `SpeakingStyleGoal`
@@ -70,41 +71,63 @@ private struct AskNoumScrollOffsetKey: PreferenceKey {
 @available(iOS 17.0, macOS 12.0, *)
 enum AskNoumSpokenMode {
 
-    /// The single source of truth for "should this landed outcome be spoken?".
+    /// How a landed coach turn reaches the user's ears, if at all.
+    enum SpokenRoute: Equatable {
+        /// Live `.reply`: full engine chain — cloud TTS first, on-device
+        /// system voice as the terminal fallback so a TTS outage degrades
+        /// to an audible reply instead of a silent bubble.
+        case fullChain
+        /// `.deterministicReply`: ON-DEVICE system voice ONLY. The grounded
+        /// offline line usually lands exactly when the network/provider is
+        /// down (so cloud TTS is moot), and honesty is preserved because
+        /// the system voice is audibly NOT the cloud coach voice — a canned
+        /// line is never passed off as the live coach speaking.
+        case onDeviceOnly
+        /// Stay silent (toggle off, unsupported locale, failure, empty).
+        case none
+    }
+
+    /// The single source of truth for "how should this landed outcome be
+    /// spoken?".
     ///
-    /// True ONLY when ALL hold:
+    /// Non-`.none` ONLY when ALL hold:
     ///   • the voice-mode toggle is ON (`spokenRepliesEnabled`),
     ///   • the active locale supports AI (`localeSupportsAI`) — non-English
     ///     users stay clean text-only, matching the chat-reply locale gate,
-    ///   • the outcome is a real `.reply` with non-empty trimmed text.
+    ///   • the outcome carries non-empty trimmed coach text.
     ///
     /// A `.failure` (any cause) is NEVER spoken — a system-notice row is a
     /// UI affordance, not the coach's voice, so reading "I couldn't reach my
-    /// model" aloud would be worse than silence. A `.deterministicReply` (the
-    /// grounded offline line) is ALSO never spoken: TTS needs the same network /
-    /// provider that is down, and reading a canned line aloud as if it were the
-    /// live coach would overclaim — it stays a silent text bubble. An
-    /// all-whitespace reply is also rejected (defensive; the store routes that
-    /// to `.failure(.empty)` anyway, but the predicate must not depend on that
-    /// downstream behavior).
-    static func shouldSpeak(
+    /// model" aloud would be worse than silence. An all-whitespace reply is
+    /// also rejected (defensive; the store routes that to `.failure(.empty)`
+    /// anyway, but the predicate must not depend on that downstream
+    /// behavior).
+    static func spokenRoute(
         outcome: ChatOutcome,
         spokenRepliesEnabled: Bool,
         localeSupportsAI: Bool
-    ) -> Bool {
-        guard spokenRepliesEnabled, localeSupportsAI else { return false }
+    ) -> SpokenRoute {
+        guard spokenRepliesEnabled, localeSupportsAI else { return .none }
         switch outcome {
         case .reply(let text):
-            return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .deterministicReply:
-            // A canned offline line is NEVER read aloud as the live coach —
-            // TTS needs the same network / provider that is down, and a
-            // deterministic line spoken as if live would overclaim. It renders
-            // as a coach bubble (see `AskNoumStore.completeCoachTurn`) but stays
-            // silent.
-            return false
+            return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .none : .fullChain
+        case .deterministicReply(let text):
+            return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .none : .onDeviceOnly
         case .failure:
-            return false
+            return .none
+        }
+    }
+
+    /// The coach text a non-`.none` route speaks. Nil for `.failure` and
+    /// empty outcomes — total, so callers can `if let` without re-deriving
+    /// the route's preconditions.
+    static func spokenText(for outcome: ChatOutcome) -> String? {
+        switch outcome {
+        case .reply(let text), .deterministicReply(let text):
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        case .failure:
+            return nil
         }
     }
 
@@ -1962,6 +1985,7 @@ struct AskNoumView: View {
     private var inputBar: some View {
         VStack(spacing: 0) {
             micNoticeRow
+            voiceNoticeRow
             partialTranscriptPreview
             inputBarRow
         }
@@ -1988,6 +2012,30 @@ struct AskNoumView: View {
             .padding(.horizontal, Spacing.md)
             .padding(.top, Spacing.xs)
             .accessibilityIdentifier("askNoum.micNotice")
+        }
+    }
+
+    /// C5 — honest spoken-reply state: when the user asked for voice (Aloud
+    /// on) but no engine could produce audio, say so quietly instead of
+    /// letting the silent bubble read as a muted coach. Gated on the voice
+    /// preference so a user who has voice off never sees voice plumbing.
+    @ViewBuilder
+    private var voiceNoticeRow: some View {
+        if voiceSettings.askNoumSpokenRepliesEnabled,
+           let notice = speaker.voiceUnavailableNotice {
+            HStack(spacing: 6) {
+                Image(systemName: "speaker.slash")
+                    .font(Typography.captionSmall)
+                Text(notice)
+                    .font(Typography.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, Spacing.md)
+            .padding(.top, Spacing.xs)
+            .accessibilityIdentifier("askNoum.voiceNotice")
+            .accessibilityLabel(notice)
         }
     }
 
@@ -2304,17 +2352,20 @@ struct AskNoumView: View {
             coachID: coachID,
             pendingGoalIntent: pendingGoalIntent
         )
-        if AskNoumSpokenMode.shouldSpeak(
+        let route = AskNoumSpokenMode.spokenRoute(
             outcome: outcome,
             spokenRepliesEnabled: voiceSettings.askNoumSpokenRepliesEnabled,
             localeSupportsAI: LocaleSettingsManager.shared.current.aiSupported
-        ), case .reply(let replyText) = outcome {
+        )
+        if route != .none, let spokenText = AskNoumSpokenMode.spokenText(for: outcome) {
             speaker.speak(
-                replyText,
+                spokenText,
                 setup: IMConversationSetup(
                     scenario: .workUpdate,
                     targetTone: AskNoumSpokenMode.coachTone(for: voice)
-                )
+                ),
+                allowOnDeviceFallback: true,
+                onDeviceOnly: route == .onDeviceOnly
             )
         }
     }

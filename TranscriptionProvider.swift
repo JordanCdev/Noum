@@ -66,6 +66,23 @@ enum TranscriptionProviderID: String, CaseIterable, Identifiable, Codable {
         case .google: return "Google Cloud Speech"
         }
     }
+
+    /// Canonical mapping from the persisted `"transcriptionProvider"`
+    /// UserDefaults string to a provider ID. Single source of truth shared
+    /// by practice reps (`SpeechRecognizerViewModel`) and the live coach
+    /// call (`AskNoumVoiceInput`) so the two surfaces can never resolve a
+    /// different provider from the same stored value. Mirrors the historic
+    /// behavior exactly: unset → Deepgram (the default), unknown → AWS.
+    static func resolved(fromStoredValue raw: String?) -> TranscriptionProviderID {
+        switch raw {
+        case nil, TranscriptionProviderID.deepgram.rawValue:
+            return .deepgram
+        case TranscriptionProviderID.google.rawValue:
+            return .google
+        default:
+            return .aws
+        }
+    }
 }
 
 // MARK: - Quality Metrics (for benchmarking)

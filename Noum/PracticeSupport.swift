@@ -4135,6 +4135,16 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
         lastPlaybackStatus = "Failed via \(resolvedEngine.title)"
         lastPlaybackError = reason
     }
+
+    /// C5 — the chat surfaces' on-device terminal fallback took over after
+    /// the cloud chain failed. Not an `IMVoiceEngine` case on purpose: the
+    /// on-device voice is never user-selectable, only a graceful degrade,
+    /// so it must not appear in the engine picker.
+    func recordOnDeviceFallback(reason: String) {
+        lastResolvedEngineTitle = "On-device"
+        lastPlaybackStatus = "Fell back to on-device voice"
+        lastPlaybackError = reason
+    }
 }
 
 enum IMVoiceEngine: String, Codable, Identifiable {
@@ -4178,7 +4188,7 @@ enum IMVoiceEngine: String, Codable, Identifiable {
 
 #if canImport(AVFAudio)
 @MainActor
-final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
+final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDelegate {
     static let shared = IMMessageSpeaker()
 
     private let playbackSettings = IMVoicePlaybackSettingsManager.shared
@@ -4198,11 +4208,38 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate 
     /// / `stop` changes behavior; views may OR this with their own
     /// on-device `AVSpeechSynthesizer.isSpeaking` for a combined state.
     ///
-    /// Scope note: the on-device `AVSpeechSynthesizer` *offline fallback*
-    /// is owned by the practice views (`TimedPracticeView` /
-    /// `SuddenDeathPracticeView`), not by this class, so this flag tracks
-    /// the cloud `AVAudioPlayer` path only.
+    /// Scope note: the practice views (`TimedPracticeView` /
+    /// `SuddenDeathPracticeView`) still own their OWN prompt-readout
+    /// `AVSpeechSynthesizer` fallbacks; this flag tracks the engines THIS
+    /// class drives — the cloud `AVAudioPlayer` path AND (C5) the chat
+    /// surfaces' on-device `AVSpeechSynthesizer` terminal fallback, whose
+    /// delegate callbacks keep the flag truthful for both.
     @Published private(set) var isSpeaking: Bool = false
+
+    /// C5 — honest user-visible voice state for the chat surfaces. Set when
+    /// a REQUESTED spoken reply (the caller already passed the voice-mode
+    /// gates) could not produce audio through any engine — cloud chain and,
+    /// where allowed, the on-device fallback. Previously this outcome was
+    /// buried in the debug-only `IMVoicePlaybackSettingsManager` fields and
+    /// the reply just appeared silently, indistinguishable from a muted
+    /// coach. Cleared on `stop()` (every new `speak` calls it) so the note
+    /// never outlives the turn it describes. Never set for callers that
+    /// didn't ask for speech.
+    @Published private(set) var voiceUnavailableNotice: String? = nil
+
+    /// The one line the chat surfaces render when speech was requested but
+    /// no engine could serve. Quiet, factual, no blame.
+    static let voiceUnavailableNoticeText = "Voice is unavailable right now — showing the reply as text."
+
+    /// On-device terminal fallback for the chat surfaces (Ask Noum + live
+    /// call). The system voice is audibly distinct from the cloud coach
+    /// voice, which is exactly the honesty we want: a fallback that can be
+    /// HEARD as a fallback, never passed off as the premium path.
+    private let onDeviceSynthesizer = AVSpeechSynthesizer()
+    /// Identity token for the utterance currently on the synthesizer, so a
+    /// finish/cancel callback from a superseded utterance can never clear
+    /// the state of a newer one (mirrors the `audioPlayer === player` check).
+    private var currentUtterance: AVSpeechUtterance?
 
     /// Optional listen → speak → listen handoff hook for the S5 voice
     /// conversation UI. Fired on the main actor exactly once per clip,
@@ -4211,7 +4248,6 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate 
     /// nil for back-compat; no current caller sets it.
     var onPlaybackFinished: (() -> Void)?
     private var lastFailureReason: String?
-    private var hasPreparedAudioSession = false
     private var prewarmingKeys: Set<String> = []
     private var warmedKeys: Set<String> = []
     private var hasPrewarmedDefaultConnection = false
@@ -4271,9 +4307,36 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     override private init() {
         super.init()
+        onDeviceSynthesizer.delegate = self
     }
 
-    func speak(_ text: String, setup: IMConversationSetup) {
+    /// Speak `text` through the engine chain. Defaults preserve the IM
+    /// conversation-rep behavior exactly (cloud chain only; the rep views
+    /// own their own prompt fallbacks).
+    ///
+    /// C5 — the chat surfaces (Ask Noum + live call) pass:
+    ///   • `allowOnDeviceFallback: true` — when every cloud engine fails
+    ///     (network down, keys invalid, audio route broken), the on-device
+    ///     `AVSpeechSynthesizer` becomes the terminal engine instead of a
+    ///     silent skip.
+    ///   • `onDeviceOnly: true` for `.deterministicReply` outcomes — the
+    ///     grounded offline line is spoken ONLY in the system voice, never
+    ///     fetched from cloud TTS. Honesty holds both ways: the canned line
+    ///     is audibly NOT the cloud coach voice, and it needs no network.
+    /// If speech was requested and no engine at all produced audio,
+    /// `voiceUnavailableNotice` is set so the UI can say so.
+    ///
+    /// Silent-mode note: playback runs under the `.playback` category (or
+    /// the live call's `.playAndRecord`), which sounds over the ring/silent
+    /// switch — the standard contract for explicitly requested spoken
+    /// content. The user's voice preference is the mute switch we always
+    /// respect: when the Aloud toggle is off, `speak` is never called.
+    func speak(
+        _ text: String,
+        setup: IMConversationSetup,
+        allowOnDeviceFallback: Bool = false,
+        onDeviceOnly: Bool = false
+    ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         stop()
@@ -4281,12 +4344,30 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate 
         let myGeneration = currentGeneration
         speechTask = Task { [weak self] in
             guard let self else { return }
+
+            if onDeviceOnly {
+                if !self.speakOnDevice(trimmed, generation: myGeneration),
+                   myGeneration == self.currentGeneration {
+                    self.voiceUnavailableNotice = Self.voiceUnavailableNoticeText
+                }
+                return
+            }
+
             let candidateEngines = candidateEngines(for: setup)
-            guard let selectedEngine = candidateEngines.first else {
+            if candidateEngines.isEmpty {
+                if allowOnDeviceFallback, self.speakOnDevice(trimmed, generation: myGeneration) {
+                    playbackSettings.recordOnDeviceFallback(
+                        reason: "No cloud voice provider is configured."
+                    )
+                    return
+                }
                 playbackSettings.recordPlaybackFailure(
                     resolvedEngine: .auto,
                     reason: "No cloud voice provider is configured."
                 )
+                if allowOnDeviceFallback, myGeneration == self.currentGeneration {
+                    self.voiceUnavailableNotice = Self.voiceUnavailableNoticeText
+                }
                 return
             }
             for (index, engine) in candidateEngines.enumerated() {
@@ -4310,22 +4391,64 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate 
             // Final guard: don't record a stale failure if we've already
             // been invalidated by a newer speak().
             guard myGeneration == self.currentGeneration else { return }
+            // C5 — terminal on-device fallback for the chat surfaces: the
+            // cloud chain produced no audio, so the system voice carries
+            // the reply rather than leaving a silent bubble.
+            if allowOnDeviceFallback, self.speakOnDevice(trimmed, generation: myGeneration) {
+                playbackSettings.recordOnDeviceFallback(
+                    reason: lastFailureReason ?? "Cloud voice engines did not return playable audio."
+                )
+                return
+            }
             playbackSettings.recordPlaybackFailure(
-                resolvedEngine: selectedEngine,
+                resolvedEngine: candidateEngines.first ?? .auto,
                 reason: lastFailureReason ?? "Provider playback did not return playable audio."
             )
+            if allowOnDeviceFallback {
+                self.voiceUnavailableNotice = Self.voiceUnavailableNoticeText
+            }
         }
     }
 
+    /// C5 — speak through the on-device `AVSpeechSynthesizer`. Returns true
+    /// when the utterance was enqueued (the synthesizer starts within
+    /// milliseconds; the delegate clears `isSpeaking` on finish/cancel so
+    /// the speaking UI stays truthful). Generation-gated like every other
+    /// engine so a stale fallback can never talk over a newer turn.
+    @discardableResult
+    private func speakOnDevice(_ text: String, generation: UInt64) -> Bool {
+        guard generation == currentGeneration else { return false }
+        prepareForPlayback()
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.92
+        utterance.pitchMultiplier = 1.0
+        utterance.prefersAssistiveTechnologySettings = false
+        if let voice = AVSpeechSynthesisVoice(language: preferredLanguageCode()) {
+            utterance.voice = voice
+        }
+        currentUtterance = utterance
+        onDeviceSynthesizer.speak(utterance)
+        isSpeaking = true
+        return true
+    }
+
     func prepareForPlayback() {
-        guard !hasPreparedAudioSession else { return }
         do {
             #if canImport(AVFoundation)
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            // C5 — re-assert EVERY playback (the old one-shot guard left
+            // playback running under whatever state another surface left
+            // behind: practice reps deactivate the shared session on stop,
+            // and the live call configures `.playAndRecord`). Keep
+            // `.playAndRecord` when it's current — the live call deliberately
+            // interleaves mic + playback under it, and flipping the category
+            // on every coach turn is exactly the route-thrash the mic path
+            // documents. Anything else gets the clean playback config.
+            if audioSession.category != .playback && audioSession.category != .playAndRecord {
+                try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            }
             try audioSession.setActive(true)
             #endif
-            hasPreparedAudioSession = true
             lastFailureReason = nil
         } catch {
             lastFailureReason = "Audio playback preparation error: \(error.localizedDescription)"
@@ -4452,6 +4575,15 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate 
         speechTask = nil
         audioPlayer?.stop()
         audioPlayer = nil
+        // C5 — cut the on-device fallback voice on the same barge-in path
+        // so "stop" always means silence regardless of which engine spoke.
+        if onDeviceSynthesizer.isSpeaking {
+            onDeviceSynthesizer.stopSpeaking(at: .immediate)
+        }
+        currentUtterance = nil
+        // A new turn (every speak() begins with stop()) supersedes the
+        // previous turn's voice-unavailable note.
+        voiceUnavailableNotice = nil
         // Barge-in / teardown: clear the speaking flag immediately so a
         // "coach is speaking" UI never sticks. AVAudioPlayer.stop() does
         // not invoke audioPlayerDidFinishPlaying, and onPlaybackFinished
@@ -4631,15 +4763,38 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate 
             // The generation token is already verified by every caller
             // before this method runs, so the clip we're starting here is
             // the current one — never stale audio.
-            let didStart = player.play()
+            var didStart = player.play()
+            if !didStart {
+                // C5 — one recovery pass: a stale session config (e.g.
+                // `.playAndRecord` left behind with a broken input route —
+                // the documented simulator case) can make play() return
+                // false. Force the clean playback category and retry once.
+                forcePlaybackCategory()
+                didStart = player.play()
+            }
             isSpeaking = didStart
-            lastFailureReason = nil
+            if didStart {
+                lastFailureReason = nil
+            } else {
+                lastFailureReason = "Audio playback did not start."
+            }
             return didStart
         } catch {
             isSpeaking = false
             lastFailureReason = "Audio playback error: \(error.localizedDescription)"
             return false
         }
+    }
+
+    /// C5 — recovery path for `playAudioData`: unconditionally re-assert the
+    /// clean `.playback` configuration. The next mic use re-asserts its own
+    /// `.playAndRecord` (both mic paths set their category on every start).
+    private func forcePlaybackCategory() {
+        #if canImport(AVFoundation)
+        let audioSession = AVAudioSession.sharedInstance()
+        try? audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+        try? audioSession.setActive(true)
+        #endif
     }
 
     // MARK: - AVAudioPlayerDelegate
@@ -4658,6 +4813,34 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate 
             self.audioPlayer = nil
             self.isSpeaking = false
             self.onPlaybackFinished?()
+        }
+    }
+
+    // MARK: - AVSpeechSynthesizerDelegate (C5 on-device fallback)
+
+    /// Natural end of an on-device fallback utterance. Mirrors the player
+    /// path exactly: identity-checked, clears `isSpeaking`, and fires
+    /// `onPlaybackFinished` so the live call's listen → speak → listen
+    /// handoff re-arms after a fallback-voiced reply too.
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard self.currentUtterance === utterance else { return }
+            self.currentUtterance = nil
+            self.isSpeaking = false
+            self.onPlaybackFinished?()
+        }
+    }
+
+    /// Cancelled utterance (barge-in via `stop()`, which already cleared
+    /// `isSpeaking` and does not want `onPlaybackFinished`). Identity check
+    /// keeps a stale cancel from touching a newer clip's state.
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard self.currentUtterance === utterance else { return }
+            self.currentUtterance = nil
+            self.isSpeaking = false
         }
     }
 

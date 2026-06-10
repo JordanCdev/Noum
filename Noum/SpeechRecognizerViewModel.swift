@@ -162,11 +162,20 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     private static func resolveProvider() -> any TranscriptionProvider {
-        let selected = UserDefaults.standard.string(forKey: "transcriptionProvider") ?? "deepgram"
-        switch selected {
-        case "deepgram": return DeepgramProvider()
-        case "google": return GoogleSpeechProvider()
-        default: return AWSTranscribeProvider()
+        let selected = UserDefaults.standard.string(forKey: "transcriptionProvider")
+        return makeProvider(for: TranscriptionProviderID.resolved(fromStoredValue: selected))
+    }
+
+    /// Shared provider factory. The live coach call (`AskNoumVoiceInput`)
+    /// reuses this so its cloud STT chain is constructed from the EXACT
+    /// providers practice reps stream through — one registry, no parallel
+    /// resolution logic that could drift. Main-actor (like the class)
+    /// because `AWSTranscribeProvider.init` reads main-actor auth state.
+    static func makeProvider(for id: TranscriptionProviderID) -> any TranscriptionProvider {
+        switch id {
+        case .deepgram: return DeepgramProvider()
+        case .google: return GoogleSpeechProvider()
+        case .aws: return AWSTranscribeProvider()
         }
     }
 
@@ -413,7 +422,7 @@ class SpeechRecognizerViewModel: ObservableObject {
                 let blended = self.audioLevel * (1 - Self.audioLevelSmoothing) + level * Self.audioLevelSmoothing
                 self.audioLevel = min(max(blended, 0), 1)
             }
-            let data = self.convertBufferToPCMData(buffer: buffer)
+            let data = Self.pcm16Data(from: buffer)
             Task { try? await session.sendAudio(data) }
         }
 
@@ -462,7 +471,11 @@ class SpeechRecognizerViewModel: ObservableObject {
         sessionStart = nil
     }
 
-    private func convertBufferToPCMData(buffer: AVAudioPCMBuffer) -> Data {
+    /// Float mic buffer → 16-bit signed PCM, the wire format every
+    /// `TranscriptionProvider` consumes. `nonisolated static` because it is
+    /// called from the audio tap thread (it always was — making the isolation
+    /// explicit) and shared with the live coach call's cloud STT path.
+    nonisolated static func pcm16Data(from buffer: AVAudioPCMBuffer) -> Data {
         let frameLength = Int(buffer.frameLength)
         if let channelData = buffer.floatChannelData?[0] {
             var pcmData = Data(capacity: frameLength * MemoryLayout<Int16>.size)

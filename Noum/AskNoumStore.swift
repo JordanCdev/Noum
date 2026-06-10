@@ -173,8 +173,10 @@ final class AskNoumStore: ObservableObject {
             // A live `.reply` and a grounded `.deterministicReply` both render
             // as a real coach bubble — the deterministic offline line is the
             // coach answering, NOT a system notice. (The spoken path treats
-            // them differently — see `AskNoumSpokenMode.shouldSpeak` — because
-            // a canned line must never be read aloud as the live coach.)
+            // them differently — see `AskNoumSpokenMode.spokenRoute` — a
+            // canned line speaks only in the on-device system voice, never
+            // the cloud coach voice, so it can't be mistaken for the live
+            // coach.)
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
                 // Defensive: neither path should hand us empty content (a live
