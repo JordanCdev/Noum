@@ -70,9 +70,15 @@ final class ScreenshotTour: XCTestCase {
         reviewApp.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
         attach(reviewApp, name: "08-review-bottom")
 
-        // Session detail — tap the first session row (`history.row.<uuid>`
-        // is added to each NavigationLink in SessionHistoryView). We don't
-        // know the UUID up front, so match by prefix via `containing`.
+        // Session detail — rows live on the Session History sub-page now
+        // (the Review home is insight-first), so step through the entry
+        // card first, then tap the first `history.row.<uuid>` row.
+        let listEntry = reviewApp.descendants(matching: .any)["history.sessionListEntry"]
+        if listEntry.waitForExistence(timeout: 3) {
+            listEntry.tap()
+            Thread.sleep(forTimeInterval: 1.0)
+            attach(reviewApp, name: "08b-session-history-list")
+        }
         let firstSessionRow = reviewApp.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier BEGINSWITH 'history.row.'"))
             .element(boundBy: 0)
@@ -546,6 +552,60 @@ final class ScreenshotTour: XCTestCase {
             cont.tap()
             Thread.sleep(forTimeInterval: 0.8)
         }
+    }
+
+    /// DIAGNOSTIC (owner repro 2026-06-10): drive TWO real chat turns
+    /// through the live reply pipeline (real provider key, real network)
+    /// and capture what renders. Answers definitively whether HEAD still
+    /// degrades every turn to the deterministic fallback ("says the same
+    /// thing over and over") or live replies survive the quality gate.
+    /// Screenshots are the evidence; no assertion on reply content (live
+    /// model output is non-deterministic by design).
+    @MainActor
+    func testDiagnosticLiveChatRoundTrip() throws {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING", "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_SEED_PROFILE", "improvingIntermediate"
+        ]
+        app.launch()
+        _ = app.otherElements["home.screen"].waitForExistence(timeout: 10)
+
+        let entry = app.descendants(matching: .any)["home.askNoum.row"].firstMatch
+        guard entry.waitForExistence(timeout: 8) else {
+            deepAttach(app, name: "DIAG-00-no-askNoum-entry")
+            app.terminate(); return
+        }
+        entry.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+
+        // The coach surface defaults to the immersive live call — switch
+        // to the TEXT chat via the call's Type control before composing.
+        let typeButton = app.buttons["Type"].firstMatch
+        if typeButton.waitForExistence(timeout: 5) {
+            typeButton.tap()
+            Thread.sleep(forTimeInterval: 1.2)
+        }
+
+        let field = app.textViews.firstMatch.exists
+            ? app.textViews.firstMatch : app.textFields.firstMatch
+        guard field.waitForExistence(timeout: 8) else {
+            deepAttach(app, name: "DIAG-01-no-composer")
+            app.terminate(); return
+        }
+
+        field.tap()
+        field.typeText("What should I focus on in my next rep?")
+        app.buttons["askNoum.inputControl"].tap()
+        Thread.sleep(forTimeInterval: 20) // live model round-trip
+        deepAttach(app, name: "DIAG-02-first-reply")
+
+        field.tap()
+        field.typeText("And how do I fix my pacing?")
+        app.buttons["askNoum.inputControl"].tap()
+        Thread.sleep(forTimeInterval: 20)
+        deepAttach(app, name: "DIAG-03-second-reply")
+        app.terminate()
     }
 
     /// Screenshot + full accessibility-tree dump (the structured truth the
