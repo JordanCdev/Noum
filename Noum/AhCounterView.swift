@@ -7,6 +7,7 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct AhCounterView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var navigationPath: NavigationPath
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
@@ -124,6 +125,15 @@ struct AhCounterView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: Spacing.lg) {
+                    if speechVM.isRecording {
+                        // MARK: Focus state — the room shifts from
+                        // "configuring" to "performing". Setup cards
+                        // collapse; the rep itself (filler count + clean
+                        // streak) becomes the single focal object. The
+                        // dashboard returns when recording stops.
+                        focusedRepSurface
+                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
+                    } else {
                     // MARK: Header Card — mode hero treatment matching
                     // Cut the Crutch / Sudden Death / Timed setup. Mode-
                     // tinted waveform icon + rounded display headline so
@@ -222,7 +232,10 @@ struct AhCounterView: View {
                             RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                                 .fill(glowColor.opacity(0.15))
                                 .shadow(color: glowColor.opacity(speechVM.isRecording ? 0.35 : 0), radius: fillerFlash ? 12 : 6, x: 0, y: 0)
-                                .animation(.easeInOut(duration: fillerFlash ? 0.4 : 1.5).repeatForever(autoreverses: true), value: speechVM.isRecording)
+                                .animation(
+                                    reduceMotion ? nil : .easeInOut(duration: fillerFlash ? 0.4 : 1.5).repeatForever(autoreverses: true),
+                                    value: speechVM.isRecording
+                                )
 
                             VStack(spacing: Spacing.xxs) {
                                 Text("\(speechVM.fillerWordCount)")
@@ -282,10 +295,12 @@ struct AhCounterView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(Spacing.lg)
                     .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+                    } // end setup dashboard
                 }
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.top, Spacing.md)
                 .padding(.bottom, 90)
+                .animation(.easeInOut(duration: 0.35), value: speechVM.isRecording)
             }
             .safeAreaInset(edge: .bottom) {
                 Group {
@@ -414,6 +429,128 @@ struct AhCounterView: View {
             checkTimeMilestones(elapsed: newElapsed)
         }
         // Summary navigation is handled by path-based .navigationDestination(for:) in ContentView
+    }
+
+    // MARK: - Focused Rep Surface (recording)
+
+    /// While the mic is open the dashboard collapses and the rep becomes
+    /// the room: live status up top, filler count + clean streak as the
+    /// single focal object, a quiet live-words strip below. Every number
+    /// here is a metric the mode already showed — re-ranked, not added.
+    private var focusedRepSurface: some View {
+        VStack(spacing: Spacing.lg) {
+            // Live status row — the orb is audio-bound so the room
+            // visibly hears the user; elapsed time keeps quiet track.
+            HStack(spacing: Spacing.sm) {
+                NoumCharacter(
+                    mood: .listening,
+                    tint: AppColor.modeAhCounter,
+                    size: 36,
+                    audioLevel: speechVM.audioLevel,
+                    stage: characterStage
+                )
+                .accessibilityHidden(true)
+
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(AppColor.modeAhCounter)
+                        .frame(width: 8, height: 8)
+                    Text("LIVE")
+                        .font(.system(size: 10, weight: .heavy, design: .rounded))
+                        .foregroundStyle(AppColor.modeAhCounter)
+                }
+
+                Spacer()
+
+                Text(formattedElapsed)
+                    .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .contentTransition(.numericText())
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.xxs)
+                    .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Recording, \(formattedElapsed) elapsed")
+
+            // Goal-aware intent reminder — same self-fading banner as the
+            // dashboard; it owns its own lifecycle.
+            if let voice = coachingProfileStore.profile?.speakingStyleGoal {
+                VoiceAnchorBanner(styleGoal: voice, isRecording: speechVM.isRecording)
+            }
+
+            if let error = speechVM.connectionError {
+                ErrorCard(message: error)
+            }
+
+            // Focal object — the rep itself. The count stays neutral ink
+            // (judgment belongs to the summary); the brief orange flash +
+            // "shake it off" copy is the existing never-punish register.
+            VStack(spacing: Spacing.md) {
+                ZStack {
+                    Circle()
+                        .fill(glowColor.opacity(fillerFlash ? 0.16 : 0.08))
+                        .frame(width: 220, height: 220)
+                        .blur(radius: 40)
+                        .animation(.easeInOut(duration: 0.3), value: fillerFlash)
+
+                    VStack(spacing: Spacing.xxs) {
+                        Text("\(speechVM.fillerWordCount)")
+                            .font(.system(size: 92, weight: .bold, design: .rounded))
+                            .foregroundStyle(fillerFlash ? Color.orange : AppColor.textPrimary)
+                            .contentTransition(.numericText())
+                            .animation(.standardSpring, value: speechVM.fillerWordCount)
+                        Text("FILLER WORDS")
+                            .font(.caption.weight(.bold))
+                            .tracking(1.2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+
+                VStack(spacing: Spacing.xxs) {
+                    Text("\(currentStreakSeconds)s clean")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(currentStreakSeconds >= 15 ? AppColor.positive : AppColor.textPrimary)
+                        .contentTransition(.numericText())
+                        .animation(.easeInOut(duration: 0.3), value: currentStreakSeconds)
+
+                    HStack(spacing: 6) {
+                        Image(systemName: encouragementIcon)
+                            .font(.caption.weight(.semibold))
+                        Text(encouragementMessage)
+                            .font(.subheadline.weight(.medium))
+                    }
+                    .foregroundStyle(fillerFlash ? Color.orange : Color.secondary)
+                    .animation(.easeInOut(duration: 0.3), value: encouragementMessage)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(speechVM.fillerWordCount) filler words, clean for \(currentStreakSeconds) seconds")
+
+            // Quiet live words — confirmation the mic hears you. Fillers
+            // are dim-marked, never red mid-rep; the red ledger belongs
+            // to the summary, reviewed after the performance.
+            if !speechVM.highlightedText.characters.isEmpty {
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        Text(LiveTranscriptStyle.calmed(speechVM.highlightedText))
+                            .font(.subheadline)
+                            .foregroundStyle(AppColor.textPrimary.opacity(0.75))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .id("liveWordsEnd")
+                    }
+                    .frame(height: 120)
+                    .onChange(of: speechVM.highlightedText) {
+                        proxy.scrollTo("liveWordsEnd", anchor: .bottom)
+                    }
+                }
+                .padding(Spacing.md)
+                .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                .transition(.opacity)
+            }
+        }
+        .padding(.top, Spacing.md)
     }
 
     // MARK: - Timer Management

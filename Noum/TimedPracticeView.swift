@@ -271,19 +271,52 @@ private struct SpotlightOrbView: View {
     let timingState: ImpromptuTimingState
     let elapsedSeconds: Int
     let totalDuration: Int
+    /// Smoothed mic level from `SpeechRecognizerViewModel.audioLevel` —
+    /// the orb renders the microphone's live read of the user's voice,
+    /// not a generic decorative pulse.
+    let audioLevel: Double
     @Binding var spotlightPulse: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let orbSize: CGFloat = 240
 
+    /// Quantized to 5% steps so the glow tracks the voice without
+    /// re-animating on every audio buffer callback.
+    private var voiceLevel: Double {
+        (min(max(audioLevel, 0), 1) * 20).rounded() / 20
+    }
+
     var body: some View {
         ZStack {
-            // Outer glow halo
+            // Outer glow halo — ambient pulse. Reduce-motion: holds a
+            // calm mid-bright glow instead of looping.
             Circle()
                 .fill(timingState.vividColor)
                 .frame(width: orbSize * 1.4, height: orbSize * 1.4)
                 .blur(radius: 50)
-                .opacity(spotlightPulse ? timingState.glowOpacity : timingState.glowOpacity * 0.4)
-                .animation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true), value: spotlightPulse)
+                .opacity(
+                    reduceMotion
+                        ? timingState.glowOpacity * 0.7
+                        : (spotlightPulse ? timingState.glowOpacity : timingState.glowOpacity * 0.4)
+                )
+                .animation(
+                    reduceMotion ? nil : .easeInOut(duration: 2.4).repeatForever(autoreverses: true),
+                    value: spotlightPulse
+                )
+
+            // Voice-reactive inner glow — the room hears the user. Scale +
+            // brightness track the smoothed mic level while they speak;
+            // silence settles it back to a faint resting glow. Honest by
+            // construction: it renders real input, claims nothing.
+            // Reduce-motion: scale stays fixed, opacity alone carries it.
+            Circle()
+                .fill(timingState.vividColor)
+                .frame(width: orbSize * 0.62, height: orbSize * 0.62)
+                .blur(radius: 28)
+                .opacity(0.12 + voiceLevel * 0.38)
+                .scaleEffect(reduceMotion ? 1.0 : 0.92 + CGFloat(voiceLevel) * 0.30)
+                .animation(.easeOut(duration: 0.18), value: voiceLevel)
+                .allowsHitTesting(false)
 
             // Track ring
             Circle()
@@ -555,6 +588,7 @@ private struct SettingsCardView: View {
 @available(iOS 17.0, macOS 12.0, *)
 struct TimedPracticeView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var navigationPath: NavigationPath
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
@@ -1292,12 +1326,19 @@ struct TimedPracticeView: View {
 
             // Countdown with breathing indicator
             ZStack {
-                // Breathing circle — calming in normal mode, tighter pulse in pressure mode
+                // Breathing circle — calming in normal mode, tighter pulse in
+                // pressure mode. Reduce-motion: a still mid-size glow.
                 Circle()
                     .fill(practiceSettings.pressureModeEnabled ? Color.orange.opacity(0.06) : Color.white.opacity(0.04))
-                    .frame(width: breathePhase ? 180 : 140, height: breathePhase ? 180 : 140)
+                    .frame(
+                        width: reduceMotion ? 160 : (breathePhase ? 180 : 140),
+                        height: reduceMotion ? 160 : (breathePhase ? 180 : 140)
+                    )
                     .blur(radius: 30)
-                    .animation(.easeInOut(duration: practiceSettings.pressureModeEnabled ? 2.0 : 3.5).repeatForever(autoreverses: true), value: breathePhase)
+                    .animation(
+                        reduceMotion ? nil : .easeInOut(duration: practiceSettings.pressureModeEnabled ? 2.0 : 3.5).repeatForever(autoreverses: true),
+                        value: breathePhase
+                    )
 
                 VStack(spacing: 10) {
                     Text("\(thinkingCountdown)")
@@ -1480,8 +1521,11 @@ struct TimedPracticeView: View {
                     Circle()
                         .fill(.red)
                         .frame(width: 8, height: 8)
-                        .opacity(recPulse ? 1.0 : 0.3)
-                        .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: recPulse)
+                        .opacity(reduceMotion ? 0.85 : (recPulse ? 1.0 : 0.3))
+                        .animation(
+                            reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true),
+                            value: recPulse
+                        )
                         .onAppear { recPulse = true }
                     Text("REC")
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
@@ -1632,9 +1676,12 @@ struct TimedPracticeView: View {
                                 Circle()
                                     .fill(timingState == .neutral ? Color.green : timingState.vividColor)
                                     .frame(width: 8, height: 8)
-                                    .opacity(0.5)
-                                    .scaleEffect(recPulse ? 1.8 : 1.0)
-                                    .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: recPulse)
+                                    .opacity(reduceMotion ? 0 : 0.5)
+                                    .scaleEffect(reduceMotion ? 1.0 : (recPulse ? 1.8 : 1.0))
+                                    .animation(
+                                        reduceMotion ? nil : .easeInOut(duration: 1.0).repeatForever(autoreverses: true),
+                                        value: recPulse
+                                    )
                             )
                         Text("LIVE")
                             .font(.system(size: 10, weight: .heavy, design: .rounded))
@@ -1707,10 +1754,14 @@ struct TimedPracticeView: View {
                 .padding(.top, 12)
             }
 
-            // Transcript area — premium card
+            // Transcript area — premium card. Rendered through the calm
+            // live treatment: confirmed fillers are dim-marked, never red
+            // mid-rep — live mistake-marking during performance invites
+            // the self-monitoring the coaching trains away. The red
+            // ledger stays on the summary, where it's reviewed after.
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
-                    Text(speechVM.highlightedText)
+                    Text(LiveTranscriptStyle.calmed(speechVM.highlightedText))
                         .font(.system(size: 18, weight: .regular, design: .serif))
                         .lineSpacing(8)
                         .tracking(0.2)
@@ -1832,6 +1883,7 @@ struct TimedPracticeView: View {
             timingState: timingState,
             elapsedSeconds: elapsedSeconds,
             totalDuration: totalDuration,
+            audioLevel: speechVM.audioLevel,
             spotlightPulse: $spotlightPulse
         )
     }
@@ -1875,6 +1927,10 @@ struct TimedPracticeView: View {
     // MARK: - Milestone Animation
 
     private func triggerMilestoneAnimation() {
+        // Reduce-motion: the label still changes (contentTransition is
+        // env-aware) and the milestone haptic still fires — only the
+        // scale bounce is dropped.
+        guard !reduceMotion else { return }
         withAnimation(.bouncySpring) {
             milestoneScale = 1.15
         }
