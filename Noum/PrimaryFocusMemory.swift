@@ -2061,7 +2061,11 @@ final class CoachMemoryStore: ObservableObject {
     /// context carries this rep's felt experience immediately.
     func noteReflection(
         _ summary: String?,
-        upcomingMoment: BigMoment? = BigMomentStore.shared.activeMoment
+        // Outer `nil` (the default) re-reads the LIVE nearest moment from the
+        // store on every rebuild, so a caller can never accidentally freeze a
+        // stale moment. Tests inject a specific value via `.some(...)`; default
+        // args can't reference main-actor state, hence the double optional.
+        upcomingMoment: BigMoment?? = .none
     ) {
         guard var memory = currentMemory else { return }
         memory.lastReflectionSummary = summary
@@ -2078,7 +2082,7 @@ final class CoachMemoryStore: ObservableObject {
         memory.caseFile = CoachCaseFile.build(
             from: memory,
             now: memory.updatedAt,
-            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment)
+            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment ?? BigMomentStore.shared.activeMoment)
         )
         currentMemory = memory
         persist(memory)
@@ -2090,7 +2094,11 @@ final class CoachMemoryStore: ObservableObject {
     func noteReflection(
         _ reflection: SessionReflection,
         recentReflections: [SessionReflection] = [],
-        upcomingMoment: BigMoment? = BigMomentStore.shared.activeMoment
+        // Outer `nil` (the default) re-reads the LIVE nearest moment from the
+        // store on every rebuild, so a caller can never accidentally freeze a
+        // stale moment. Tests inject a specific value via `.some(...)`; default
+        // args can't reference main-actor state, hence the double optional.
+        upcomingMoment: BigMoment?? = .none
     ) {
         guard var memory = currentMemory else { return }
         memory.lastReflectionSummary = reflection.coachClause
@@ -2101,7 +2109,7 @@ final class CoachMemoryStore: ObservableObject {
         memory.caseFile = CoachCaseFile.build(
             from: memory,
             now: memory.updatedAt,
-            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment)
+            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment ?? BigMomentStore.shared.activeMoment)
         )
         currentMemory = memory
         persist(memory)
@@ -2116,7 +2124,11 @@ final class CoachMemoryStore: ObservableObject {
     func noteHypothesisAcknowledgement(
         _ confidence: CoachHypothesisConfidence,
         at now: Date = Date(),
-        upcomingMoment: BigMoment? = BigMomentStore.shared.activeMoment
+        // Outer `nil` (the default) re-reads the LIVE nearest moment from the
+        // store on every rebuild, so a caller can never accidentally freeze a
+        // stale moment. Tests inject a specific value via `.some(...)`; default
+        // args can't reference main-actor state, hence the double optional.
+        upcomingMoment: BigMoment?? = .none
     ) {
         guard var memory = currentMemory,
               let hypothesis = memory.workingHypothesis?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -2130,7 +2142,7 @@ final class CoachMemoryStore: ObservableObject {
         memory.caseFile = CoachCaseFile.build(
             from: memory,
             now: now,
-            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment)
+            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment ?? BigMomentStore.shared.activeMoment)
         )
         currentMemory = memory
         persist(memory)
@@ -2168,7 +2180,11 @@ final class CoachMemoryStore: ObservableObject {
         reason: String,
         evidenceBasis: String,
         at now: Date = Date(),
-        upcomingMoment: BigMoment? = BigMomentStore.shared.activeMoment
+        // Outer `nil` (the default) re-reads the LIVE nearest moment from the
+        // store on every rebuild, so a caller can never accidentally freeze a
+        // stale moment. Tests inject a specific value via `.some(...)`; default
+        // args can't reference main-actor state, hence the double optional.
+        upcomingMoment: BigMoment?? = .none
     ) {
         guard var memory = currentMemory else { return }
         var log = memory.adaptationLog ?? []
@@ -2187,7 +2203,7 @@ final class CoachMemoryStore: ObservableObject {
         memory.caseFile = CoachCaseFile.build(
             from: memory,
             now: now,
-            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment)
+            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment ?? BigMomentStore.shared.activeMoment)
         )
         currentMemory = memory
         persist(memory)
@@ -2198,7 +2214,11 @@ final class CoachMemoryStore: ObservableObject {
     /// review question or an adaptation, but it cannot establish causation.
     func noteTransferOutcome(
         _ report: BigMomentOutcomeReport,
-        upcomingMoment: BigMoment? = BigMomentStore.shared.activeMoment
+        // Outer `nil` (the default) re-reads the LIVE nearest moment from the
+        // store on every rebuild, so a caller can never accidentally freeze a
+        // stale moment. Tests inject a specific value via `.some(...)`; default
+        // args can't reference main-actor state, hence the double optional.
+        upcomingMoment: BigMoment?? = .none
     ) {
         guard var memory = currentMemory else { return }
         memory.lastTransferReview = CoachTransferReview(report: report)
@@ -2206,7 +2226,7 @@ final class CoachMemoryStore: ObservableObject {
         memory.caseFile = CoachCaseFile.build(
             from: memory,
             now: memory.updatedAt,
-            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment)
+            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment ?? BigMomentStore.shared.activeMoment)
         )
         currentMemory = memory
         persist(memory)

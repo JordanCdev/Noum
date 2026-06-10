@@ -7891,6 +7891,18 @@ struct HomeAskNoumEvidenceCopyTests {
         #expect(!line.localizedCaseInsensitiveContains("recent reps"))
     }
 
+    @Test func coldCopyMakesTheDepthCurveLegibleWithoutFabricatingHistory() {
+        // The cold-start line must show the coach sharpens with evidence
+        // (benefit-first, the depth arc) so a new user doesn't read the honest
+        // thin-data caveat as a limitation — while still claiming no history.
+        let line = HomeAskNoumEvidenceCopy.line(sessionCount: 0)
+
+        #expect(line.localizedCaseInsensitiveContains("core move"))
+        #expect(line.localizedCaseInsensitiveContains("more"))
+        #expect(!line.localizedCaseInsensitiveContains("30 days"))
+        #expect(!line.localizedCaseInsensitiveContains("baseline"))
+    }
+
     @Test func thinEvidenceCopyScalesCertainty() {
         let one = HomeAskNoumEvidenceCopy.line(sessionCount: 1)
         let two = HomeAskNoumEvidenceCopy.line(sessionCount: 2)
@@ -17377,6 +17389,76 @@ struct CoachMemoryStoreTests {
         #expect(reloaded.currentMemory?.activeIntervention?.reviewStatus == .awaitingAttempt)
         #expect(reloaded.currentMemory?.caseFile?.transferRead?.contains("Board update") == true)
         #expect(reloaded.currentMemory?.caseFile?.activeIntervention == "Timed for a decisive close")
+    }
+
+    // REMEMBER-4 coherence: an incremental case-file rebuild must re-derive the
+    // upcoming-moment line from the CURRENT nearest moment, never carry the
+    // stale value forward. If the user swaps in a different real-world moment
+    // between full refreshes, the durable case must quote the new one — and a
+    // cleared moment must drop the line, not leave stale "Preparing for:" text.
+    @Test func incrementalRebuildReDerivesUpcomingMomentFromCurrentMoment() {
+        let suite = "coach-memory-moment-coherence-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "account-\(UUID().uuidString)"
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+
+        // `BigMomentStore.daysUntil` floors against the real wall clock, so
+        // anchor moment dates to start-of-today + N for deterministic counts.
+        let today = Calendar.current.startOfDay(for: Date())
+        let momentA = BigMoment(
+            title: "Q3 board update",
+            date: Calendar.current.date(byAdding: .day, value: 5, to: today),
+            category: .review,
+            createdAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let trend = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .declining,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .weak
+        )
+
+        // Full refresh seeds the case file with moment A as the upcoming line.
+        store.refresh(
+            profile: profile(voice: .concise),
+            baseline: baseline(count: 5),
+            sessions: [session()],
+            trends: [trend],
+            forwardPlan: nil,
+            lastSessionID: nil,
+            upcomingMoment: momentA,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        #expect(store.currentMemory?.caseFile?.upcomingMomentLine?.contains("Q3 board update") == true)
+
+        // The user swaps in a different, nearer moment, then an incremental
+        // rebuild fires (a transfer check-in). The durable case must now quote
+        // moment B — not the stale moment A it was last built with.
+        let momentB = BigMoment(
+            title: "Investor pitch",
+            date: Calendar.current.date(byAdding: .day, value: 2, to: today),
+            category: .presentation,
+            createdAt: Date(timeIntervalSince1970: 1_100)
+        )
+        store.noteTransferOutcome(
+            BigMomentOutcomeReport(
+                moment: BigMoment(title: "Old review", category: .review),
+                outcome: .wentWell,
+                audienceResponse: .engaged,
+                note: "Done."
+            ),
+            upcomingMoment: .some(momentB)
+        )
+        let afterSwap = store.currentMemory?.caseFile?.upcomingMomentLine
+        #expect(afterSwap?.contains("Investor pitch") == true)
+        #expect(afterSwap?.contains("Q3 board update") == false)
+
+        // Injecting "no moment" (`.some(nil)`) drops the line on the next
+        // incremental rebuild rather than leaving stale text behind.
+        store.noteReflection("felt sharp and in control", upcomingMoment: .some(nil))
+        #expect(store.currentMemory?.caseFile?.upcomingMomentLine == nil)
     }
 
     private func baseline(count: Int) -> CommunicationBaseline {
