@@ -15,6 +15,12 @@ import GoogleSignIn
 #endif
 
 struct NoumApp: App {
+    // MUST be the first stored property: Swift runs property initializers
+    // in declaration order BEFORE init(), and the @StateObject singletons
+    // below can touch Firebase during their own init — configuring here
+    // (not in init()) is what guarantees FirebaseApp.configure() wins the
+    // race (fixes the I-COR000003 "not yet been configured" launch warning).
+    private let firebaseReady: Void = FirebaseBootstrap.configure()
     @StateObject private var firstRunOnboarding = FirstRunOnboardingManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var localeSettings = LocaleSettingsManager.shared
@@ -24,7 +30,9 @@ struct NoumApp: App {
     private let isRealFirstRunUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_REAL_FIRST_RUN")
 
     init() {
-        FirebaseBootstrap.configure()
+        // Firebase is configured by `firebaseReady` (first stored property)
+        // before any other property initializer runs; calling again is a
+        // guarded no-op inside FirebaseBootstrap.
         TypographyDebug.logRegisteredFamiliesOnce()
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
