@@ -8920,6 +8920,116 @@ struct NoumCharacterStageTests {
     }
 }
 
+// MARK: - Journey day-bloom ratchet
+//
+// Pins the contract behind the journey page's day-bloom settle beat:
+//   1. First sight SEEDS to the current count and never animates — a
+//      fresh install (or first open after the feature ships) must not
+//      celebrate progress the user didn't just earn. Same lesson as the
+//      league promotion guard.
+//   2. Only a strictly higher count fires `.advanced`, carrying the
+//      previous count so the artwork can rewind to it for the beat.
+//   3. Decreases (the rolling 21-day window sliding past old practice
+//      days) commit silently — no animation, no copy, never punish.
+//   4. `evaluate` commits atomically: the same count asked twice reads
+//      `.unchanged` the second time, so an interrupted bloom is dropped
+//      rather than replayed (no double celebration).
+//
+// Same `UserDefaults(suiteName:)` isolation as the stage-ratchet tests.
+
+struct JourneyDayBloomRatchetTests {
+
+    private func freshDefaults() -> UserDefaults {
+        UserDefaults(suiteName: UUID().uuidString)!
+    }
+
+    // MARK: First sight — seed, never animate
+
+    @Test func firstSightSeedsToCurrentWithoutFiring() {
+        let defaults = freshDefaults()
+        // Existing user updates the app with 14 practiced days on the
+        // books — the first look must seed quietly.
+        #expect(JourneyDayBloomRatchet.evaluate(currentDays: 14, defaults: defaults) == .seeded)
+        // The seed committed: looking again with the same count is a no-op.
+        #expect(JourneyDayBloomRatchet.evaluate(currentDays: 14, defaults: defaults) == .unchanged)
+    }
+
+    @Test func freshInstallSeedsZeroThenBloomsOnFirstPracticedDay() {
+        let defaults = freshDefaults()
+        // Brand-new install: zero practiced days, seeds silently.
+        #expect(JourneyDayBloomRatchet.evaluate(currentDays: 0, defaults: defaults) == .seeded)
+        // The user's genuine first practiced day SHOULD bloom — from zero.
+        #expect(JourneyDayBloomRatchet.evaluate(currentDays: 1, defaults: defaults)
+                == .advanced(previousDays: 0))
+    }
+
+    @Test func negativeInputClampsToZeroOnSeed() {
+        // Defensive: the snapshot never produces a negative count, but
+        // if one ever arrives the ratchet must not store it (a stored
+        // negative would make any real count fire a bloom).
+        let defaults = freshDefaults()
+        #expect(JourneyDayBloomRatchet.evaluate(currentDays: -3, defaults: defaults) == .seeded)
+        #expect(JourneyDayBloomRatchet.evaluate(currentDays: 0, defaults: defaults) == .unchanged)
+    }
+
+    // MARK: Upward-only firing
+
+    @Test func advanceFiresWithPreviousCountAndCommits() {
+        let defaults = freshDefaults()
+        JourneyDayBloomRatchet.evaluate(currentDays: 5, defaults: defaults)
+
+        let outcome = JourneyDayBloomRatchet.evaluate(currentDays: 7, defaults: defaults)
+        #expect(outcome == .advanced(previousDays: 5),
+                "An increase must fire exactly once, carrying the last-seen count")
+        // Committed atomically — a second look at the same count is silent,
+        // so an interrupted bloom can never replay.
+        #expect(JourneyDayBloomRatchet.evaluate(currentDays: 7, defaults: defaults) == .unchanged)
+    }
+
+    @Test func equalCountIsUnchanged() {
+        let defaults = freshDefaults()
+        JourneyDayBloomRatchet.evaluate(currentDays: 10, defaults: defaults)
+        #expect(JourneyDayBloomRatchet.evaluate(currentDays: 10, defaults: defaults) == .unchanged)
+    }
+
+    // MARK: Silent decrease (window slide)
+
+    @Test func decreaseCommitsSilently() {
+        let defaults = freshDefaults()
+        JourneyDayBloomRatchet.evaluate(currentDays: 10, defaults: defaults)
+
+        // The rolling window slid: 10 → 8. Stored, but never celebrated
+        // and never punished.
+        #expect(JourneyDayBloomRatchet.evaluate(currentDays: 8, defaults: defaults) == .regressed)
+        #expect(JourneyDayBloomRatchet.evaluate(currentDays: 8, defaults: defaults) == .unchanged,
+                "The lowered count must have been stored")
+    }
+
+    @Test func bloomFiresFromLoweredFloorAfterDecrease() {
+        // After the window slides back, the next practiced day still
+        // blooms — from the lowered floor, not the historical peak.
+        // (This ratchet tracks last-SEEN, not highest-ever: a decrease
+        // updates it downward silently, unlike the stage ratchet.)
+        let defaults = freshDefaults()
+        JourneyDayBloomRatchet.evaluate(currentDays: 10, defaults: defaults)
+        JourneyDayBloomRatchet.evaluate(currentDays: 8, defaults: defaults)
+        #expect(JourneyDayBloomRatchet.evaluate(currentDays: 9, defaults: defaults)
+                == .advanced(previousDays: 8))
+    }
+
+    // MARK: Per-account key construction
+
+    @Test func storageKeyScopesPerAccountWithGuestFallback() {
+        #expect(JourneyDayBloomRatchet.storageKey(for: "abc123")
+                == "noum.journey.lastSeenPracticedDays.abc123")
+        #expect(JourneyDayBloomRatchet.storageKey(for: nil)
+                == "noum.journey.lastSeenPracticedDays.guest")
+        #expect(JourneyDayBloomRatchet.storageKey(for: "")
+                == "noum.journey.lastSeenPracticedDays.guest",
+                "Empty account id must fall back to guest, matching ProgressionRatchet")
+    }
+}
+
 // MARK: - Coach context builder (Ask Noum)
 //
 // Pure-function helpers in `CoachContextBuilder` produce the structured

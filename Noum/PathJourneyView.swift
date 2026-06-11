@@ -20,6 +20,15 @@ struct PathJourneyView: View {
     @State private var alongTheWayExpanded = false
     @State private var showWhyCapture = false
     @State private var showGoalRefresh = false
+    /// Day-bloom settle beat. While non-nil the artwork renders rewound
+    /// to this practiced-day count; clearing it inside `withAnimation`
+    /// advances the reveal band to the live fraction. Set only when
+    /// `JourneyDayBloomRatchet` reports a genuine upward change.
+    @State private var bloomBaselineDays: Int?
+    /// Bumped once per bloom so the walker fires a single mood pulse.
+    /// Stays raised afterwards — the pulse wrapper reverts on its own.
+    @State private var bloomPulseTick = 0
+    @State private var bloomTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 #if DEBUG
     @State private var debugDayOverride: Double = -1
@@ -60,6 +69,21 @@ struct PathJourneyView: View {
             profile: coachingProfileStore.profile,
             displayedStreak: streakManager.currentStreak
         )
+    }
+
+    /// What the hero artwork renders. Identical to `snapshot` except for
+    /// the one beat where the day-bloom holds the reveal at the last-seen
+    /// count; the header and consistency strip always read the live
+    /// snapshot so copy never lags the truth. The DEBUG slider wins —
+    /// it already owns `snapshot` wholesale.
+    private var artworkSnapshot: PracticeJourneySnapshot {
+#if DEBUG
+        if isDebugActive { return snapshot }
+#endif
+        if let bloomBaselineDays {
+            return snapshot.withRevealRewound(toDays: bloomBaselineDays)
+        }
+        return snapshot
     }
 
     private var practicedToday: Bool {
@@ -107,23 +131,34 @@ struct PathJourneyView: View {
                             }
 
                             VStack(alignment: .leading, spacing: 14) {
-                                PathJourneyArtwork(
-                                    snapshot: snapshot,
-                                    compact: false,
-                                    sceneResolver: { date in
-                                        daylightModel.sceneState(for: date)
-                                    },
-                                    walkerStage: ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp),
-                                    onDestinationTap: {
-                                        if reduceMotion {
-                                            scrollProxy.scrollTo("journey.why", anchor: .center)
-                                        } else {
-                                            withAnimation(.easeInOut(duration: 0.45)) {
+                                ZStack {
+                                    PathJourneyArtwork(
+                                        snapshot: artworkSnapshot,
+                                        compact: false,
+                                        sceneResolver: { date in
+                                            daylightModel.sceneState(for: date)
+                                        },
+                                        walkerStage: ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp),
+                                        walkerPulseTick: bloomPulseTick,
+                                        onDestinationTap: {
+                                            if reduceMotion {
                                                 scrollProxy.scrollTo("journey.why", anchor: .center)
+                                            } else {
+                                                withAnimation(.easeInOut(duration: 0.45)) {
+                                                    scrollProxy.scrollTo("journey.why", anchor: .center)
+                                                }
                                             }
                                         }
-                                    }
-                                )
+                                    )
+                                    // Reduce-motion swaps the settle for a plain
+                                    // crossfade: keying identity on the bloom state
+                                    // fades the rewound artwork into the live one
+                                    // with zero movement. Identity stays fixed when
+                                    // motion is allowed so the band animates in place.
+                                    .id(reduceMotion
+                                        ? "journey.artwork.bloomed.\(bloomBaselineDays == nil)"
+                                        : "journey.artwork")
+                                }
                                 .frame(height: min(300, geometry.size.height * 0.40))
                                 .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
                                 .overlay(
@@ -187,6 +222,50 @@ struct PathJourneyView: View {
         .accessibilityIdentifier("journey.screen")
         .task {
             daylightModel.activate()
+        }
+        .onAppear {
+            evaluateDayBloom()
+        }
+        .onDisappear {
+            // An interrupted bloom must not strand the artwork on the
+            // rewound fraction — the ratchet already committed, so the
+            // next appear would read .unchanged and never clear it.
+            bloomTask?.cancel()
+            bloomTask = nil
+            bloomBaselineDays = nil
+        }
+    }
+
+    /// Compare the live practiced-day count against the per-account
+    /// ratchet and, on a genuine increase, play the one-shot settle beat:
+    /// hold the artwork at the last-seen fraction for a breath, then
+    /// advance the reveal band, stagger-bloom the new flowers, and step
+    /// the walker forward with a single mood pulse. Seeding, equal counts,
+    /// and window-slide decreases all return without animating — the
+    /// ratchet commits inside `evaluate` either way.
+    private func evaluateDayBloom() {
+        // `debugDayOverride` is always inactive at appear, so this reads
+        // the real window count, never a simulated one.
+        let outcome = JourneyDayBloomRatchet.evaluate(currentDays: snapshot.practicedDays)
+        guard case .advanced(let previousDays) = outcome else { return }
+
+        bloomBaselineDays = previousDays
+        bloomTask?.cancel()
+        bloomTask = Task { @MainActor in
+            // Let the page land before the beat so the change reads as
+            // "this just happened," not as load-in jitter.
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            if reduceMotion {
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    bloomBaselineDays = nil
+                }
+            } else {
+                withAnimation(.easeOut(duration: 0.8)) {
+                    bloomBaselineDays = nil
+                }
+                bloomPulseTick += 1
+            }
         }
     }
 
@@ -1040,6 +1119,31 @@ struct PracticeJourneySnapshot {
         )
     }
 
+    /// Returns a copy with the reveal rewound to an earlier practiced-day
+    /// count. Drives the day-bloom settle beat: the artwork opens at the
+    /// last-seen fraction and animates forward to the live one. Only the
+    /// two reveal-driving fields change — streak, quality, and every
+    /// narrative line stay live (the rewind is a visual baseline for one
+    /// beat, not a second truth source).
+    func withRevealRewound(toDays days: Int) -> PracticeJourneySnapshot {
+        let windowDays = 21
+        let clamped = max(0, min(windowDays, days))
+        return PracticeJourneySnapshot(
+            practicedDays: clamped,
+            streak: streak,
+            revealProgress: Double(clamped) / Double(windowDays),
+            quality: quality,
+            progressLabel: progressLabel,
+            previewLine: previewLine,
+            summaryLine: summaryLine,
+            explanationLine: explanationLine,
+            nextMilestoneLabel: nextMilestoneLabel,
+            consequenceLine: consequenceLine,
+            homeGoalLine: homeGoalLine,
+            homeGoalShortLabel: homeGoalShortLabel
+        )
+    }
+
     /// Returns a copy with the displayed streak swapped in.
     /// `StreakFreezeManager.currentStreak` is the single displayed-streak
     /// owner (freeze-aware, never punishes one missed day); the snapshot's
@@ -1441,11 +1545,17 @@ struct PathJourneyArtwork: View {
     /// being standing on your days carries your whole arc. Defaults keep
     /// existing call sites compiling.
     var walkerStage: NoumCharacter.Stage = .awakening
+    /// Day-bloom hook: bump past zero to fire a single mood pulse on the
+    /// walker (the "step forward" beat). Defaults keep existing call
+    /// sites compiling; the page never resets it, so the pulse plays
+    /// exactly once per bump.
+    var walkerPulseTick: Int = 0
     /// Fired when the user taps the destination flag. The page scrolls
     /// to the why card — the flag IS the why.
     var onDestinationTap: (() -> Void)? = nil
 
     @State private var scene: PathSkyScene?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geometry in
@@ -1795,9 +1905,21 @@ struct PathJourneyArtwork: View {
             .blur(radius: 1.5)
             .position(x: metrics.x, y: metrics.y + metrics.size * 0.58)
 
-        NoumCharacter(mood: .calm, tint: AppColor.brandBlue, size: metrics.size, stage: walkerStage)
-            .position(x: metrics.x, y: metrics.y)
-            .accessibilityHidden(true)
+        // Same trigger pattern as FirstRepCelebration's notice flash:
+        // while no pulse has fired the bare character renders; a tick
+        // bump swaps in the pulse wrapper (re-keyed per tick) which
+        // flashes once on appear and then rests back to calm.
+        Group {
+            if walkerPulseTick > 0 {
+                NoumCharacter(mood: .calm, tint: AppColor.brandBlue, size: metrics.size, stage: walkerStage)
+                    .moodPulse(.excited, duration: 1.0)
+                    .id("journey.walker.pulse.\(walkerPulseTick)")
+            } else {
+                NoumCharacter(mood: .calm, tint: AppColor.brandBlue, size: metrics.size, stage: walkerStage)
+            }
+        }
+        .position(x: metrics.x, y: metrics.y)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -1892,6 +2014,7 @@ struct PathJourneyArtwork: View {
                 let dryness = 0.35 + max(0, (0.5 - clumpWave)) * 0.7
 
                 return JourneyGrassBlade(
+                    id: row * 1000 + column,
                     position: CGPoint(
                         x: size.width * x,
                         y: size.height * y
@@ -1975,6 +2098,21 @@ struct PathJourneyArtwork: View {
             }
             .position(flower.position)
             .opacity(flower.opacity)
+            // Day-bloom: newly earned flowers scale-bloom in with a small
+            // per-flower stagger so a multi-day catch-up reads as growth,
+            // not a redraw. Flowers have stable ids, so this fires only
+            // for genuine insertions; reduce-motion bloom paths replace
+            // the whole artwork (crossfade), so no movement leaks there.
+            .transition(
+                reduceMotion
+                    ? .opacity
+                    : AnyTransition.scale(scale: 0.25)
+                        .combined(with: .opacity)
+                        .animation(
+                            .spring(response: 0.45, dampingFraction: 0.7)
+                                .delay(0.30 + Double(flower.id % 3) * 0.16)
+                        )
+            )
         }
     }
 
@@ -2014,12 +2152,15 @@ struct PathJourneyArtwork: View {
         let visibleCount = progressCount + streakBoost
         let clamped = min(maxCount, visibleCount)
 
-        return allFlowers.prefix(clamped).map { x, y, color, opacity in
+        // Index-stable ids: a flower keeps its identity as the visible
+        // prefix grows, so the day-bloom inserts only the new ones.
+        return allFlowers.prefix(clamped).enumerated().map { index, flower in
             JourneyFlowerNode(
-                position: CGPoint(x: size.width * x, y: size.height * y),
+                id: index,
+                position: CGPoint(x: size.width * flower.0, y: size.height * flower.1),
                 size: compact ? 5 : 7,
-                color: color,
-                opacity: opacity,
+                color: flower.2,
+                opacity: flower.3,
                 sway: compact ? 4 : 6
             )
         }
@@ -2251,7 +2392,10 @@ struct PathJourneyArtwork: View {
 }
 
 private struct JourneyGrassBlade: Identifiable {
-    let id = UUID()
+    /// Row/column-derived — stable across renders so blades cleared by
+    /// an advancing reveal fade out individually instead of the whole
+    /// field crossfading.
+    let id: Int
     let position: CGPoint
     let width: CGFloat
     let height: CGFloat
@@ -2652,7 +2796,9 @@ private extension Double {
 }
 
 private struct JourneyFlowerNode: Identifiable {
-    let id = UUID()
+    /// Index into the fixed flower table — stable across renders so
+    /// SwiftUI animates insertions instead of replacing the whole field.
+    let id: Int
     let position: CGPoint
     let size: CGFloat
     let color: Color

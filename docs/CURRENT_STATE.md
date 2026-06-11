@@ -481,8 +481,25 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   landmark:"; "landmark" verified collision-free vs "marker"/"chapter"/
   "waypoint"). On-artwork landmark pins deliberately NOT shipped: pinning
   node positions onto a days-driven reveal implies a day↔node equivalence
-  that doesn't exist (fake-progress). Deferred: day-bloom settle beat,
-  walker-relative pins, grass sway, wear system, full-bleed hero.
+  that doesn't exist (fake-progress). Day-bloom settle beat shipped
+  (2026-06-11): on page appear, `JourneyDayBloomRatchet`
+  (`Noum/Noum/JourneyDayBloomRatchet.swift`; per-account UserDefaults key
+  `noum.journey.lastSeenPracticedDays.<accountID>`, seed-on-first-sight,
+  upward-only fire, silent decrease on window slide — the league-
+  promotion-guard lesson) compares live practiced days against last-seen;
+  on a genuine rise the artwork holds at the previous fraction for ~0.5s
+  then plays one ~0.8s settle — reveal band advances, new flowers
+  stagger-bloom (flower/grass nodes got stable index ids so insertions
+  animate instead of the whole field crossfading), and the walker steps
+  forward with a single `.moodPulse(.excited)` (`MoodPulseWrapper` now
+  carries `stage` and is one-shot per identity, so no replay on
+  nav-back). Reduce-motion replaces the settle with a whole-artwork
+  crossfade and no pulse. The ratchet commits atomically inside
+  `evaluate` — an interrupted bloom is dropped, never replayed — and is
+  unit-tested (`JourneyDayBloomRatchetTests`). Both ratchet keys (stage +
+  day-bloom) enumerated in `AuthManager.clearAllUserData`. Still
+  deferred: walker-relative pins, grass sway, wear system, full-bleed
+  hero.
 - `Noum/Noum/StreakFreezeManager.swift` — weekly-replenishing streak
   freeze; protects the streak across one missed day per ISO week.
   Wires the app icon badge through `UNUserNotificationCenter.setBadgeCount`

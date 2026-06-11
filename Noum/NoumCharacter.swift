@@ -768,11 +768,18 @@ private struct MoodPulseWrapper: View {
     let tint: Color
     let size: CGFloat
     let duration: Double
+    /// Carried through so a stage-ratcheted character (e.g. the journey
+    /// walker) keeps its earned silhouette during the pulse.
+    let stage: NoumCharacter.Stage
 
     // The transient mood is the *override*. While non-nil the character
     // renders in that mood; once cleared we fall through to the static
     // mood the call site originally specified.
     @State private var transientMood: NoumCharacter.Mood?
+    // One-shot per wrapper identity: without this, a view that survives
+    // a navigation push (e.g. the journey walker) replays the pulse on
+    // every re-appear. Call sites that want a repeat re-key with `.id`.
+    @State private var hasFired = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Resolved mood for this frame: the transient pulse mood while the
@@ -782,9 +789,10 @@ private struct MoodPulseWrapper: View {
     }
 
     var body: some View {
-        NoumCharacter(mood: displayMood, tint: tint, size: size)
+        NoumCharacter(mood: displayMood, tint: tint, size: size, stage: stage)
             .onAppear {
-                guard duration > 0, transientMood == nil else { return }
+                guard duration > 0, transientMood == nil, !hasFired else { return }
+                hasFired = true
                 transientMood = pulseMood
                 Task { @MainActor in
                     try? await Task.sleep(for: .seconds(duration))
@@ -812,7 +820,8 @@ extension NoumCharacter {
             pulseMood: pulseMood,
             tint: self.tint,
             size: self.size,
-            duration: duration
+            duration: duration,
+            stage: self.stage
         )
     }
 }

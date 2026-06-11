@@ -516,6 +516,10 @@ class AuthManager: ObservableObject {
             "noum.notifications.weeklyDigestEnabled.\(accountID)",
             // M14: peak-glow cursor (Home-only post-session celebration).
             "speakingRating.lastShownWeekPeak.\(accountID)",
+            // M14: NoumCharacter lifetime-stage ratchet
+            "noumCharacter.peakStage.\(accountID)",
+            // Journey day-bloom ratchet (last-seen practiced days)
+            "noum.journey.lastSeenPracticedDays.\(accountID)",
             // M19: Big Moment intake + archive of past moments
             "bigMoment.\(accountID)",
             "bigMomentArchive.\(accountID)",
