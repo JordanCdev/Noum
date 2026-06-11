@@ -90,4 +90,6 @@ Implemented on `ux-overhaul` immediately after this analysis:
 6. **Rank 6** — transcript card ends with "Recording ended here · Ns".
 7. **Rank 8** — Focus next shows the lead sentence of the coach paragraph (full text stays in Coach Read — no more double render); hero carries a neutral "Previous <mode> rep: X/10 · date" context line. Duration now rounds identically everywhere (34s/35s mismatch fixed). Dead `imSessionStreak`/`historyBubble` removed.
 
-**Deferred (follow-ups):** Rank 7 cross-mode summary card on the "All" filter + a sessions-based fallback for the Pressure Drill breakdown card (it self-hides when the run store is empty even though PD sessions exist); listen-back replay (audio isn't persisted); "Worth a replay" relaunching the exact prompt.
+**Deferred (follow-ups):** listen-back replay (audio isn't persisted); "Worth a replay" relaunching the exact prompt.
+
+**Landed 2026-06-11 (`7660a13`):** Rank 7 both halves — `CrossModeHistoryBreakdownCard` (reps + avg score + 7-day trend per mode on the "All" filter, rows tap through to the mode's filter chip) and a sessions-based fallback on `SuddenDeathHistoryBreakdownCard` (rep count / avg score / best rep from `PracticeSession` rows when the run store is empty but PD sessions exist — the exact state on the owner's device in the feedback video).
