@@ -316,7 +316,7 @@ struct SummaryView: View {
             coachNote: coachNote,
             winBullets: postRepWinBullets,
             fixBullets: postRepFixBullets,
-            proof: personalBestProof,
+            proof: resolvedProof,
             isMinimalEffort: isMinimalEffort,
             deliveryReadLine: postRepDeliveryReadLine
         )
@@ -1909,7 +1909,7 @@ struct SummaryView: View {
                 }
                 advanceToPreSummaryIfNeeded()
             },
-            proof: personalBestProof
+            proof: resolvedProof
         )
         .onAppear {
             Task { await loadPersonalBestProof() }
@@ -1931,27 +1931,23 @@ struct SummaryView: View {
         }
     }
 
-    /// Load the proof moment for the personal-best celebration. Uses
-    /// the session we just finished (the one that set the new peak)
-    /// so the quote is fresh in the user's ear. Falls through to nil
-    /// on miss; the celebration renders without the proof line in
-    /// that case (a cold-start safety the AI-flow already builds in).
-    private func loadPersonalBestProof() async {
-        // Most recent session in the store is the one we just finished
-        // and finalized. If for some reason it's missing or has no
-        // transcript, skip the proof load.
+    /// The proof-extraction input for the just-finished session, or nil
+    /// when no qualifying session exists (empty transcript or a ≤8s misfire
+    /// rep). The most recent session in the store is the one we just
+    /// finalized. Shared by the synchronous first-frame proof and the async
+    /// upgrade so both read identical state.
+    private var proofInput: ProofMomentInput? {
         let recent = PracticeSessionStore.shared.sessions
             .sorted { $0.date > $1.date }
             .first
         guard let session = recent,
               !session.transcript.isEmpty,
               session.duration > 8 else {
-            personalBestProof = nil
-            return
+            return nil
         }
         let baseline = BaselineStore.shared.baseline
         let profile = CoachingProfileStore.shared.profile
-        let input = ProofMomentInput(
+        return ProofMomentInput(
             session: session,
             voice: profile?.speakingStyleGoal,
             goalParaphrase: profile?.displayableGoal,
@@ -1960,6 +1956,33 @@ struct SummaryView: View {
             baselinePace: baseline.pace.confidence != .insufficient
                 ? baseline.pace.value : nil
         )
+    }
+
+    /// The proof shown in the post-rep beat. Prefers the hydrated (possibly
+    /// AI-upgraded) `personalBestProof`; otherwise falls back to the
+    /// synchronous, network-free deterministic extraction so the verified
+    /// quote and its "Your words" provenance line paint on the FIRST frame
+    /// instead of staggering in ~0.5s after the WIN card — Noum quoting the
+    /// user's own verified words is the single most coach-like beat and must
+    /// not fracture. `deterministicProof` is a pure static function (no actor
+    /// hop, no network, no main-actor blocking), so there is zero added risk
+    /// on the finalize/summary path. The async `loadPersonalBestProof` still
+    /// runs to upgrade the claim wording when an AI provider is live; the
+    /// verbatim quote is identical on both paths.
+    private var resolvedProof: ProofMoment? {
+        if let personalBestProof { return personalBestProof }
+        guard let input = proofInput else { return nil }
+        return ProofMomentService.deterministicProof(for: input)
+    }
+
+    /// Upgrade the first-frame deterministic proof to an AI-backed claim when
+    /// a provider is live. Falls through to nil on miss; `resolvedProof`
+    /// keeps showing the deterministic proof (or nothing) in that case.
+    private func loadPersonalBestProof() async {
+        guard let input = proofInput else {
+            personalBestProof = nil
+            return
+        }
         let proof = await ProofMomentService.shared.proof(for: input)
         await MainActor.run {
             withAnimation(.standardSpring) {
