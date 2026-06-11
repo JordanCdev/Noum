@@ -13463,6 +13463,77 @@ struct PostRepVerdictContentTests {
         #expect(content.win?.headline == "You gave the listener a clean frame.")
         #expect(content.win?.quote == "we will focus on three priorities")
         #expect(content.win?.support == "Structured Claim")
+        // The proof cleared the transcript-verify guard, so the quote is
+        // earned provenance — the UI may show the "Your words" affordance.
+        #expect(content.win?.quoteIsVerified == true)
+    }
+
+    @Test func eloquenceSnippetQuoteIsMarkedAsTheUsersOwnWords() {
+        // An on-tape eloquence snippet is a verbatim slice of the user's
+        // speech detected by the evaluator — also genuine provenance.
+        let bullet = WhatYouDidWellCard.Bullet(
+            id: "eloquence-tricolon",
+            icon: "quote.opening",
+            iconTint: AppColor.brandBlue,
+            headline: "Tricolon landed.",
+            evidence: .quote(text: "clear, calm, and direct", source: "Three beats build momentum.")
+        )
+
+        let content = PostRepVerdictContent.make(
+            note: postRepNote(),
+            coachNote: coachNote(),
+            winBullets: [bullet],
+            fixBullets: [],
+            proof: nil,
+            isMinimalEffort: false
+        )
+
+        #expect(content.win?.quote == "clear, calm, and direct")
+        #expect(content.win?.quoteIsVerified == true)
+    }
+
+    @Test func coachAuthoredWinNeverClaimsQuoteProvenance() {
+        // A text/impression win is coach-authored, not the user's verbatim
+        // words. It must never carry the "Your words" provenance flag.
+        let textBullet = WhatYouDidWellCard.Bullet(
+            id: "category-Opening",
+            icon: "checkmark.circle.fill",
+            iconTint: AppColor.positive,
+            headline: "Opening felt solid.",
+            evidence: .text("Confident first sentence, no preamble.")
+        )
+
+        let textContent = PostRepVerdictContent.make(
+            note: postRepNote(),
+            coachNote: coachNote(),
+            winBullets: [textBullet],
+            fixBullets: [],
+            proof: nil,
+            isMinimalEffort: false
+        )
+
+        #expect(textContent.win?.quote == nil)
+        #expect(textContent.win?.quoteIsVerified == false)
+
+        let bareBullet = WhatYouDidWellCard.Bullet(
+            id: "category-Pacing",
+            icon: "checkmark.circle.fill",
+            iconTint: AppColor.positive,
+            headline: "Pacing held.",
+            evidence: nil
+        )
+
+        let bareContent = PostRepVerdictContent.make(
+            note: postRepNote(),
+            coachNote: coachNote(),
+            winBullets: [bareBullet],
+            fixBullets: [],
+            proof: nil,
+            isMinimalEffort: false
+        )
+
+        #expect(bareContent.win?.quote == nil)
+        #expect(bareContent.win?.quoteIsVerified == false)
     }
 
     @Test func missingProofFallsBackToFirstHonestWinBullet() {

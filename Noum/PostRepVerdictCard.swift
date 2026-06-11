@@ -9,6 +9,13 @@ struct PostRepVerdictContent: Equatable {
         let headline: String
         let quote: String?
         let support: String?
+        /// True only when `quote` is a verbatim, transcript-verified slice of
+        /// the user's own words for this rep — either a `ProofMoment` that
+        /// cleared `ProofMomentService`'s transcript-verify guard, or an
+        /// on-tape eloquence snippet the evaluator detected in the user's
+        /// speech. Drives the quiet "Your words" provenance line. Never set
+        /// for coach-authored copy, so the affordance can never overclaim.
+        var quoteIsVerified: Bool = false
     }
 
     struct Fix: Equatable {
@@ -78,7 +85,8 @@ struct PostRepVerdictContent: Equatable {
             return Win(
                 headline: proof.claim,
                 quote: proof.quote,
-                support: proof.technique
+                support: proof.technique,
+                quoteIsVerified: true
             )
         }
         guard let bullet = bullets.first else { return nil }
@@ -86,7 +94,7 @@ struct PostRepVerdictContent: Equatable {
         case .text(let text):
             return Win(headline: bullet.headline, quote: nil, support: text)
         case .quote(let text, let source):
-            return Win(headline: bullet.headline, quote: text, support: source)
+            return Win(headline: bullet.headline, quote: text, support: source, quoteIsVerified: true)
         case nil:
             return Win(headline: bullet.headline, quote: nil, support: nil)
         }
@@ -278,14 +286,34 @@ struct PostRepWinCard: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if let quote = win.quote, !quote.isEmpty {
-                HStack(alignment: .top, spacing: 10) {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(AppColor.positive.opacity(0.55))
-                        .frame(width: 3)
-                    Text("\"\(quote)\"")
-                        .font(Typography.body.italic())
-                        .foregroundStyle(AppColor.textPrimary.opacity(0.85))
-                        .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .top, spacing: 10) {
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(AppColor.positive.opacity(0.55))
+                            .frame(width: 3)
+                        Text("\"\(quote)\"")
+                            .font(Typography.body.italic())
+                            .foregroundStyle(AppColor.textPrimary.opacity(0.85))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    // Provenance affordance: Noum's strongest technical edge is
+                    // that this quote is a verbatim slice of the user's own rep,
+                    // not generated copy. Surface that quietly — never as a
+                    // "verified vs competitors" or parity claim. Only renders for
+                    // transcript-verified quotes (see `Win.quoteIsVerified`).
+                    if win.quoteIsVerified {
+                        HStack(spacing: 4) {
+                            Image(systemName: "waveform")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(AppColor.positive.opacity(0.7))
+                            Text("Your words, this rep")
+                                .font(Typography.captionSmall)
+                                .foregroundStyle(AppColor.textSecondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Your own words from this rep, verified against the recording")
+                    }
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
