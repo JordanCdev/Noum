@@ -19,6 +19,14 @@ import SwiftUI
 // rendering "0 runs" would just be visual noise on the History screen
 // for a user who hasn't touched the mode.
 //
+// Run records are written only when the Result screen appears, so a
+// device can hold Pressure Drill `PracticeSession` rows with an empty
+// run store. When that happens (and `sessions` were provided), the
+// card falls back to a score-based summary of those sessions — rep
+// count, average score, best rep — instead of vanishing. The richer
+// per-difficulty rounds breakdown takes over the moment a run record
+// exists.
+//
 // Vision-aligned (docs/VISION.md pillar #4): honest evidence from the
 // engine's own write path. No narrative. No coach voice. Just the
 // numbers the user produced, surfaced where they go to look back.
@@ -33,9 +41,21 @@ struct SuddenDeathHistoryBreakdownCard: View {
     /// on tap. Existing read-only call sites (tests, previews) work
     /// unchanged by omitting the argument.
     var onSelectDifficulty: ((SuddenDeathDifficulty) -> Void)? = nil
+    /// Pressure Drill `PracticeSession` rows backing the sessions-based
+    /// fallback when `runs` is empty. Defaults to empty so existing
+    /// call sites (tests, previews) keep the runs-only behavior.
+    var sessions: [PracticeSession] = []
+    /// Tap handler for the fallback's best-rep row. When `nil`, the
+    /// row renders read-only — mirrors `onSelectBestRep` on the Timed
+    /// card.
+    var onSelectBestRep: ((UUID) -> Void)? = nil
 
     private var breakdowns: [SuddenDeathDifficultyBreakdown] {
         SuddenDeathHistorySummary.breakdowns(from: runs)
+    }
+
+    private var sessionFallback: SuddenDeathHistorySummary.SessionFallbackStats? {
+        SuddenDeathHistorySummary.sessionFallback(from: sessions)
     }
 
     private var isInteractive: Bool { onSelectDifficulty != nil }
@@ -70,7 +90,131 @@ struct SuddenDeathHistoryBreakdownCard: View {
             .background(cardBackground)
             .shadow(color: accent.opacity(0.14), radius: 14, x: 0, y: 6)
             .accessibilityIdentifier("history.suddenDeath.breakdown")
+        } else if let fallback = sessionFallback {
+            VStack(alignment: .leading, spacing: 14) {
+                fallbackHeader(fallback)
+                fallbackStatRow(fallback)
+                if let best = fallback.best {
+                    Divider()
+                    fallbackBestRepRow(best)
+                }
+            }
+            .padding(Spacing.lg)
+            .background(cardBackground)
+            .shadow(color: accent.opacity(0.14), radius: 14, x: 0, y: 6)
+            .accessibilityIdentifier("history.suddenDeath.fallback")
         }
+    }
+
+    // MARK: - Sessions-based fallback
+    //
+    // Rendered only when the run store is empty but Pressure Drill
+    // sessions exist. Same hero treatment and header as the run-based
+    // card; the stats are score-based because rounds survived live
+    // only on run records — no invented rounds.
+
+    private func fallbackHeader(_ fallback: SuddenDeathHistorySummary.SessionFallbackStats) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "bolt.fill")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(accent)
+            Text("Pressure Drill history")
+                .font(.headline)
+                .foregroundStyle(.primary)
+            Spacer()
+            Text(fallbackRepCountLabel(fallback.repCount))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func fallbackRepCountLabel(_ count: Int) -> String {
+        count == 1 ? "1 rep" : "\(count) reps"
+    }
+
+    private func fallbackStatRow(_ fallback: SuddenDeathHistorySummary.SessionFallbackStats) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            fallbackStatColumn(
+                value: fallback.averageScore.map { String(format: "%.1f", $0) } ?? "—",
+                label: "avg score"
+            )
+            fallbackStatColumn(
+                value: "\(fallback.repCount)",
+                label: "reps"
+            )
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(fallbackStatAccessibilityLabel(fallback))
+    }
+
+    private func fallbackStatColumn(value: String, label: String) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.system(.title3, design: .rounded).weight(.bold))
+                .foregroundStyle(.primary)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+                .monospacedDigit()
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .textCase(.uppercase)
+                .tracking(0.6)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func fallbackStatAccessibilityLabel(_ fallback: SuddenDeathHistorySummary.SessionFallbackStats) -> String {
+        let avg = fallback.averageScore.map { String(format: "%.1f", $0) } ?? "not yet available"
+        return "Average score \(avg). \(fallbackRepCountLabel(fallback.repCount))."
+    }
+
+    @ViewBuilder
+    private func fallbackBestRepRow(_ best: SuddenDeathHistorySummary.SessionFallbackStats.BestRep) -> some View {
+        let row = HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "trophy.fill")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Best rep")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                Text(fallbackBestSubtitle(best))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            Spacer(minLength: 8)
+            if onSelectBestRep != nil {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Best rep: \(fallbackBestSubtitle(best))")
+
+        if let onSelectBestRep {
+            Button {
+                onSelectBestRep(best.sessionID)
+            } label: {
+                row
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("history.suddenDeath.fallback.bestRep")
+            .accessibilityHint("Open the source session.")
+        } else {
+            row
+                .accessibilityIdentifier("history.suddenDeath.fallback.bestRep")
+        }
+    }
+
+    private func fallbackBestSubtitle(_ best: SuddenDeathHistorySummary.SessionFallbackStats.BestRep) -> String {
+        "\(best.score)/10 · \(best.date.formatted(.relative(presentation: .named)))"
     }
 
     // MARK: - Header

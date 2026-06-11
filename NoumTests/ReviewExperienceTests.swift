@@ -4,7 +4,9 @@
 //
 //  Contracts behind the insight-first Review overhaul: the under-target
 //  scoring cap, the suggested-review highlights engine, the session-list
-//  search/sort/collapse model, and the detail-view presentation helpers.
+//  search/sort/collapse model, the detail-view presentation helpers, the
+//  cross-mode summary on the All filter, and the Pressure Drill
+//  sessions-based fallback.
 //
 
 import Foundation
@@ -375,5 +377,128 @@ struct ReviewCoachReadTests {
         #expect(!lowered.contains("fail"))
         #expect(!lowered.contains("bad"))
         #expect(!lowered.contains("worse"))
+    }
+}
+
+// MARK: - Cross-mode history summary (the "All" filter card)
+
+struct CrossModeHistorySummaryTests {
+
+    @Test func emptyInputProducesNoRows() {
+        #expect(CrossModeHistorySummary.rows(from: []).isEmpty)
+    }
+
+    @Test func modesWithoutSessionsProduceNoRow() {
+        let sessions = [
+            makeSession(score: 7, daysAgo: 1, mode: .timed),
+            makeSession(score: 6, daysAgo: 2, mode: .suddenDeath),
+        ]
+        let rows = CrossModeHistorySummary.rows(from: sessions)
+        #expect(rows.count == 2)
+        #expect(!rows.contains { $0.mode == .ahCounter }, "a never-played mode must not render a 0-rep row")
+        #expect(!rows.contains { $0.mode == .imConversation })
+    }
+
+    @Test func rowsOrderMostRecentlyPlayedFirst() {
+        let sessions = [
+            makeSession(score: 7, daysAgo: 5, mode: .timed),
+            makeSession(score: 6, daysAgo: 1, mode: .ahCounter),
+            makeSession(score: 5, daysAgo: 3, mode: .imConversation),
+        ]
+        let rows = CrossModeHistorySummary.rows(from: sessions)
+        #expect(rows.map(\.mode) == [.ahCounter, .imConversation, .timed])
+    }
+
+    @Test func unscoredModeKeepsItsRowWithoutAFabricatedAverage() {
+        let sessions = [
+            makeSession(score: nil, daysAgo: 1, mode: .suddenDeath),
+            makeSession(score: nil, daysAgo: 2, mode: .suddenDeath),
+        ]
+        let rows = CrossModeHistorySummary.rows(from: sessions)
+        #expect(rows.count == 1)
+        #expect(rows.first?.repCount == 2)
+        #expect(rows.first?.averageScore == nil)
+        #expect(rows.first?.trend == nil)
+    }
+
+    @Test func averageIsPerModeNotGlobal() {
+        let sessions = [
+            makeSession(score: 8, daysAgo: 1, mode: .timed),
+            makeSession(score: 6, daysAgo: 2, mode: .timed),
+            makeSession(score: 2, daysAgo: 1, mode: .suddenDeath),
+        ]
+        let rows = CrossModeHistorySummary.rows(from: sessions)
+        #expect(rows.first { $0.mode == .timed }?.averageScore == 7.0)
+        #expect(rows.first { $0.mode == .suddenDeath }?.averageScore == 2.0)
+    }
+
+    @Test func trendNeedsBothSevenDayWindows() {
+        // Recent reps only → no trend; the card renders "—", never a
+        // single-window "direction."
+        let recentOnly = [
+            makeSession(score: 8, daysAgo: 1, mode: .timed),
+            makeSession(score: 8, daysAgo: 2, mode: .timed),
+        ]
+        #expect(CrossModeHistorySummary.rows(from: recentOnly).first?.trend == nil)
+
+        // A prior week of 4s under a recent week of 8s reads as improving —
+        // same windows and direction band as the Timed card's trend chip.
+        let bothWindows = recentOnly + [
+            makeSession(score: 4, daysAgo: 8, mode: .timed),
+            makeSession(score: 4, daysAgo: 9, mode: .timed),
+        ]
+        let trend = CrossModeHistorySummary.rows(from: bothWindows).first?.trend
+        #expect(trend?.direction == .improving)
+    }
+}
+
+// MARK: - Pressure Drill sessions-based fallback
+
+// Run records are written only when the Result screen appears, so a
+// device can hold real Pressure Drill sessions with an empty run store —
+// the 2026-06-10 feedback video showed exactly that: the Pressure Drill
+// filter with no summary card at all. The fallback summarizes the
+// sessions the store does hold; it must never invent rounds or scores.
+struct SuddenDeathSessionFallbackTests {
+
+    @Test func nilWithoutPressureDrillSessions() {
+        #expect(SuddenDeathHistorySummary.sessionFallback(from: []) == nil)
+        let otherModes = [
+            makeSession(score: 8, mode: .timed),
+            makeSession(score: 6, mode: .ahCounter),
+        ]
+        #expect(SuddenDeathHistorySummary.sessionFallback(from: otherModes) == nil,
+                "other modes' sessions must not conjure a Pressure Drill card")
+    }
+
+    @Test func countsEveryRepButAveragesOnlyScoredOnes() {
+        let sessions = [
+            makeSession(score: 7, daysAgo: 1, mode: .suddenDeath),
+            makeSession(score: 4, daysAgo: 2, mode: .suddenDeath),
+            makeSession(score: nil, daysAgo: 3, mode: .suddenDeath),
+            makeSession(score: 9, daysAgo: 1, mode: .timed), // wrong mode — dropped
+        ]
+        let stats = SuddenDeathHistorySummary.sessionFallback(from: sessions)
+        #expect(stats?.repCount == 3)
+        #expect(stats?.averageScore == 5.5)
+        #expect(stats?.best?.score == 7)
+    }
+
+    @Test func bestTiebreaksTowardTheFresherRep() {
+        let older = makeSession(score: 8, daysAgo: 6, mode: .suddenDeath)
+        let fresher = makeSession(score: 8, daysAgo: 1, mode: .suddenDeath)
+        let stats = SuddenDeathHistorySummary.sessionFallback(from: [older, fresher])
+        #expect(stats?.best?.sessionID == fresher.id)
+    }
+
+    @Test func unscoredRepsProduceCountButNoFabricatedStats() {
+        let sessions = [
+            makeSession(score: nil, daysAgo: 1, mode: .suddenDeath),
+            makeSession(score: nil, daysAgo: 2, mode: .suddenDeath),
+        ]
+        let stats = SuddenDeathHistorySummary.sessionFallback(from: sessions)
+        #expect(stats?.repCount == 2)
+        #expect(stats?.averageScore == nil)
+        #expect(stats?.best == nil)
     }
 }

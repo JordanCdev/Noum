@@ -84,6 +84,80 @@ enum SuddenDeathHistorySummary {
         runs.map(\.completedAt).max()
     }
 
+    // MARK: - Sessions-based fallback (runs store empty, sessions exist)
+    //
+    // `SuddenDeathRunRecord` rows are written only when the Result
+    // screen appears (`SuddenDeathResultView`), so a device can hold
+    // real Pressure Drill `PracticeSession` rows with an empty run
+    // store — observed on the owner's device in the 2026-06-10
+    // feedback video, where the Pressure Drill filter showed no
+    // summary card at all. This fallback summarizes what the generic
+    // session store *does* hold for the mode — rep count, average
+    // score, best rep — so the filter still opens with an honest
+    // track record instead of nothing.
+    //
+    // Score-based, not rounds-based: rounds survived live only on the
+    // run records. No invented rounds; the card switches to the
+    // richer per-difficulty breakdown the moment a run record exists.
+
+    struct SessionFallbackStats: Equatable {
+        /// Pressure Drill sessions recorded — scored or not. A saved
+        /// rep is a rep, even when the user bailed before the summary.
+        let repCount: Int
+        /// Mean of `session.score` across scored reps, rounded to one
+        /// decimal place. `nil` when no rep is scored.
+        let averageScore: Double?
+        /// Highest-scoring rep, tiebreak by most-recent date. `nil`
+        /// when no rep is scored.
+        let best: BestRep?
+
+        struct BestRep: Equatable {
+            let sessionID: UUID
+            let date: Date
+            let score: Int
+        }
+    }
+
+    /// Summarize Pressure Drill `PracticeSession` rows. Defensive on
+    /// mode — non-Sudden-Death sessions are dropped silently so an
+    /// upstream filter mistake produces an empty result, not a
+    /// mixed-mode aggregate. Returns nil when no Pressure Drill
+    /// session exists (the card self-hides; same cold-start contract
+    /// as the run-based breakdown).
+    static func sessionFallback(from sessions: [PracticeSession]) -> SessionFallbackStats? {
+        let reps = sessions.filter { $0.mode == .suddenDeath }
+        guard !reps.isEmpty else { return nil }
+
+        let scored = reps.compactMap { session -> (PracticeSession, Int)? in
+            guard let score = session.score else { return nil }
+            return (session, score)
+        }
+        let averageScore: Double? = {
+            guard !scored.isEmpty else { return nil }
+            let mean = scored.map { Double($0.1) }.reduce(0, +) / Double(scored.count)
+            return (mean * 10).rounded() / 10
+        }()
+        let best = scored
+            .sorted { lhs, rhs in
+                if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+                return lhs.0.date > rhs.0.date
+            }
+            .first
+            .map { (session, score) in
+                SessionFallbackStats.BestRep(
+                    sessionID: session.id,
+                    date: session.date,
+                    score: score
+                )
+            }
+
+        return SessionFallbackStats(
+            repCount: reps.count,
+            averageScore: averageScore,
+            best: best
+        )
+    }
+
     /// "Best rep of the current 7-day window" — the highest
     /// rounds-survived among runs whose `completedAt` lands inside
     /// the most-recent 7 days from `now`. Tiebreak by most-recent

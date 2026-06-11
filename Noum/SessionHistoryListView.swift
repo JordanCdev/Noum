@@ -345,12 +345,33 @@ struct SessionHistoryListView: View {
 
     @ViewBuilder
     private var modeBreakdownSection: some View {
+        if selectedModeFilter == nil {
+            CrossModeHistoryBreakdownCard(
+                sessions: visibleSessions,
+                onSelectMode: { mode in
+                    if reduceMotion {
+                        selectedModeFilter = mode
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.2)) { selectedModeFilter = mode }
+                    }
+                }
+            )
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.bottom, 16)
+        }
+
         if selectedModeFilter == .suddenDeath {
             SuddenDeathHistoryBreakdownCard(
                 runs: suddenDeathRunHistoryStore.runs,
                 onSelectDifficulty: { difficulty in
                     navigationPath.append(
                         AppDestination.suddenDeathDifficultyDetail(difficulty: difficulty)
+                    )
+                },
+                sessions: visibleSessions,
+                onSelectBestRep: { sessionID in
+                    navigationPath.append(
+                        AppDestination.sessionDetail(sessionID: sessionID)
                     )
                 }
             )
