@@ -47,6 +47,36 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-11 continuation (autonomous `noum-1` run, real toolchain). Full detail
+in `docs/UX_VALUE_OVERHAUL_SESSION_2026-06-11_CONTINUATION.md` +
+`docs/COACH_PARITY_EVAL_2026-06-11.md`:
+
+- Confirmed green at HEAD: full `NoumTests` = **2451 / 0** (baseline and after
+  changes).
+- Ran a fresh 6-role evaluation workflow against the CURRENT tree (both 06-10
+  evals predate the REVIEW/HOME/CHAT commits). Honest score: **7/10**. Literal
+  "10/10, replaces a human coach" = **no** (audio-only perception ceiling +
+  unvalidated outcomes; the app correctly caps `CoachParityReadiness` at
+  `.forming`).
+- Shipped two verified owner-local fixes forming one coherent slice — *make
+  Noum quoting your own verified words land instantly and visibly*:
+  `a6e7524` (verified-quote "Your words, this rep" provenance on the post-rep
+  WIN card, 8/8 tests) and `2986303` (first-frame proof-sync via the pure
+  static `ProofMomentService.deterministicProof` — no finalize-hot-path /
+  URLSession risk; the eval's #1 item, done safely; 17/17 proof+verdict tests).
+- ⚠️ **Corrected a stale eval finding**: the post-session follow-up notification
+  is NOT dead code — `SessionFinalizer:184` → `scheduleFollowUpReminder` fires a
+  +18h coach-voice nudge (opt-in/auth gated; see `NotificationManager.swift:505-506`).
+- ⚠️ **Do NOT auto-activate `RewardEngine.evaluateSession`** — personal-best
+  already celebrates via the `SessionFinalizer` path; wiring the parallel engine
+  would double-fire and violate the CLAUDE.md fragmentation ban. Architecture
+  decision for Jordan.
+- Did NOT push (concurrent-agent ref-race protocol). Remaining backlog left as
+  precise engineer specs: #4 rep-1 named prescription, #5 auto-seed Ask Noum
+  thread, #6 provenance everywhere, #11 close the transfer loop, #12 isolated-
+  variable in the post-rep note. Each deferred for a real reason (coach-voice
+  delicacy / shared-store risk / needs on-device felt-quality QA), not skipped.
+
 2026-06-10 continuation (autonomous `noum-1` run, real toolchain). Full detail
 in `docs/UX_VALUE_OVERHAUL_SESSION_2026-06-10_CONTINUATION.md`:
 
