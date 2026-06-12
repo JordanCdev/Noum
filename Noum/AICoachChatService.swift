@@ -762,7 +762,10 @@ actor AICoachChatService {
         )
     }
 
-    private nonisolated static let roboticPhrases = [
+    /// Internal (not private): `CoachContextBuilder.systemPrompt` folds this
+    /// SAME list into the prompt's hard-ban line, so the model is told every
+    /// phrase the gate will reject — the two can never silently drift apart.
+    nonisolated static let roboticPhrases = [
         "based on your data",
         "the key insight is",
         "concrete next move",
@@ -932,10 +935,25 @@ actor AICoachChatService {
     }
 
     private nonisolated static func sentenceCount(in text: String) -> Int {
+        // Count runs of terminal punctuation followed by whitespace or
+        // end-of-text. A bare character count over ".!?" reads decimals in
+        // coaching stats ("3.5 fillers per rep") as sentence breaks and
+        // tooLong-trips legal 2-sentence replies — the model then gets
+        // punished for citing the user's own numbers.
         let endings = CharacterSet(charactersIn: ".!?")
-        let count = text.unicodeScalars.reduce(0) { partial, scalar in
-            partial + (endings.contains(scalar) ? 1 : 0)
+        var count = 0
+        var inRun = false
+        for scalar in text.unicodeScalars {
+            if endings.contains(scalar) {
+                inRun = true
+            } else {
+                if inRun, CharacterSet.whitespacesAndNewlines.contains(scalar) {
+                    count += 1
+                }
+                inRun = false
+            }
         }
+        if inRun { count += 1 }
         return max(count, text.isEmpty ? 0 : 1)
     }
 
@@ -980,14 +998,19 @@ actor AICoachChatService {
                 body: body
             ),
             case .success(let data) = result,
-            case .text(let text) = Self.chatExtractReplyText(from: data, provider: provider),
-            Self.replyQualityIssue(
-                in: text,
-                latestUserTurn: messages.last(where: { $0.role == .user })?.text,
-                quoteGuard: quoteGuard
-            ) == nil
-        else { return nil }
-
+            case .text(let text) = Self.chatExtractReplyText(from: data, provider: provider)
+        else {
+            Self.log.error("repair pass got no usable text from \(provider.displayName, privacy: .public)")
+            return nil
+        }
+        if let remainingIssue = Self.replyQualityIssue(
+            in: text,
+            latestUserTurn: messages.last(where: { $0.role == .user })?.text,
+            quoteGuard: quoteGuard
+        ) {
+            Self.log.error("repair pass still tripped the gate (\(String(describing: remainingIssue), privacy: .public))")
+            return nil
+        }
         return text
     }
 
@@ -1111,7 +1134,7 @@ actor AICoachChatService {
         let persona = CoachPersona.persona(for: context.voice)
         let candidates = [
             "\(persona.reflectionLead) \(steadyFallback(persona: persona))",
-            "Still working without my full read here. Your reps are saved — run another and I'll compare them properly the moment the connection is back."
+            "Still working without my full read here. Your reps are saved — run another and I'll compare them properly on the next pass."
         ]
         var last = candidates[candidates.count - 1]
         for raw in candidates {
@@ -1250,10 +1273,13 @@ actor AICoachChatService {
             return "Pick one idea, make it the first sentence of your next rep, and cut the rest."
         case .storytelling:
             return "Run one more rep and give me the arc — open on the point, then carry it through."
+        // No connectivity claims in this copy: the same lines serve genuine
+        // offline turns AND online quality-gate fallbacks (the offline chip
+        // is what says "offline", when true — the text must not).
         case .authoritative, .executive, .persuasive:
-            return "Run one more rep with a single clear point up front, and I'll read it the moment I'm back online."
+            return "Run one more rep with a single clear point up front, and I'll give it a full read."
         case .warm, .none:
-            return "Run one more rep when you're ready — lead with your point, and I'll read it the moment I'm back online."
+            return "Run one more rep when you're ready — lead with your point, and I'll give it a full read."
         }
     }
 

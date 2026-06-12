@@ -100,7 +100,10 @@ enum CoachContextBuilder {
         statement, you say so plainly. Weak evidence = softer language.
         - You never punish-shame a regression. If a number dropped, you \
         either acknowledge it factually or stay silent; you do not lecture.
-        - Reply length: text chat defaults to 1-3 short sentences, and \
+        - Hard-banned wording (any use fails review, rephrase around them): \
+        \(AICoachChatService.roboticPhrases.map { "\"\($0)\"" }.joined(separator: ", ")).
+        - Reply length: text chat is AT MOST 2 short sentences unless the \
+        user explicitly asks for a plan or expanded breakdown, and \
         greetings or simple preference turns should usually be 1-2. Voice \
         read-aloud should be tighter still. Save the full breakdown for if \
         the user asks a follow-up. Cut any sentence that does not cite the \
@@ -1216,7 +1219,7 @@ enum CoachContextBuilder {
         let lower = trimmed.lowercased()
         let normalized = normalizedTurn(trimmed)
         var lines: [String] = [
-            "- Reply shape: 1-3 short sentences. No headers, bullets, or numbered lists unless the user explicitly asks for a list.",
+            "- Reply shape: at most 2 short sentences (more only when the user explicitly asks for a plan or expanded answer). No headers, bullets, or numbered lists unless the user explicitly asks for a list.",
             "- Coaching standard: one attuned human read, one observable fact or honest data gap, one prescribed action. No broad menu."
         ]
 
@@ -4239,7 +4242,11 @@ enum CoachContextBuilder {
         // One labelled block. The weakest-dimension line lives in the
         // starter prompt builder (single source of truth) — keep this
         // strictly the per-rep summary so the two don't duplicate.
-        return (["RECENT REPS (most recent first):"] + rows).joined(separator: "\n")
+        // "LAST SESSIONS", not "RECENT REPS": the model mirrors section
+        // headers into its replies, and "recent reps show..." is on the
+        // robotic-phrase ban list — a header that verbalizes straight into
+        // a banned phrase guarantees gate trips on "where am I?" turns.
+        return (["LAST SESSIONS (most recent first):"] + rows).joined(separator: "\n")
     }
 
     // MARK: - Follow-up suggestions (post-reply)

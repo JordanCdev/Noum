@@ -9238,7 +9238,10 @@ struct CoachContextBuilderTests {
             with: " ",
             options: .regularExpression
         )
-        #expect(normalized.contains("text chat defaults to 1-3 short sentences"))
+        // Pins the prompt's length contract to the quality gate's 2-sentence
+        // cap (`replyQualityIssue` maxSentences) — a prompt that invites 3
+        // sentences guarantees a gate trip + repair round trip on every turn.
+        #expect(normalized.contains("text chat is AT MOST 2 short sentences"))
         #expect(normalized.contains("Voice read-aloud should be tighter still"))
         #expect(normalized.contains("report-style wording about scores being down"))
         #expect(!normalized.contains("recent reps show a decline"))
@@ -20384,7 +20387,7 @@ struct AskNoumStarterDigestTests {
         #expect(unwrapped.contains("aimed for Cut fillers"))
         #expect(unwrapped.contains("Work & Career"))      // theme rawValue
         #expect(unwrapped.contains("Strong open"))         // headline survives
-        #expect(unwrapped.contains("RECENT REPS"))         // labelled block
+        #expect(unwrapped.contains("LAST SESSIONS"))       // labelled block
     }
 
     @Test func digestIsBoundedToLimit() throws {
@@ -23273,6 +23276,15 @@ struct AICoachChatReplyQualityGateTests {
     @Test func normalTurnRejectsThreeSentenceReport() {
         let reply = "Your last rep held the opening. The middle softened under pressure. Next rep, hold a beat before sentence two."
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == .tooLong)
+    }
+
+    /// Decimals in coaching stats ("3.5 fillers") are NOT sentence breaks. A
+    /// naive ".!?" character count read them as one, tooLong-tripping legal
+    /// two-sentence replies — the model was punished for citing the user's
+    /// own numbers, and every such turn burned a repair round trip.
+    @Test func decimalsInStatsDoNotInflateSentenceCount() {
+        let reply = "Your fillers sat at 3.5 per rep across the last 2 reps. Next rep, hold a beat before sentence two and cut the lead-in."
+        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == nil)
     }
 
     @Test func expandedPlanTurnAllowsLongerShape() {
