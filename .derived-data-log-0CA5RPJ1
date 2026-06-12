@@ -9393,6 +9393,28 @@
         "systemVersion" : "25E246",
         "xcodeVersion" : "17F5032f"
       }
+    },
+    {
+      "accessDate" : "2026-06-12T00:14:23Z",
+      "appBundlePath" : "\/Users\/jordan\/Downloads\/Xcode-beta.app",
+      "versionInfo" : {
+        "roots" : [
+
+        ],
+        "sdkVersions" : {
+          "appletvos26.5" : "23L5467a",
+          "appletvsimulator26.5" : "23L5467a",
+          "iphoneos26.5" : "23F5067a",
+          "iphonesimulator26.5" : "23F5067a",
+          "macosx26.5" : "25F5066a",
+          "watchos26.5" : "23T5566a",
+          "watchsimulator26.5" : "23T5566a",
+          "xros26.5" : "23O5466a",
+          "xrsimulator26.5" : "23O5466a"
+        },
+        "systemVersion" : "25E246",
+        "xcodeVersion" : "17F5032f"
+      }
     }
   ]
 }
