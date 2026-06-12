@@ -1294,7 +1294,7 @@ actor AICoachChatService {
         case .openAI, .deepSeek:
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         case .gemini:
-            request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+            request.setGoogleAPIKey(key)
         case .anthropic:
             request.setValue(key, forHTTPHeaderField: "x-api-key")
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")

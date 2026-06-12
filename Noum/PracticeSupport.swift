@@ -230,6 +230,19 @@ enum LocalConfigLoader {
     }
 }
 
+extension URLRequest {
+    /// Attach a Google API key together with the app's bundle identifier.
+    /// The bundle-ID header is what lets the key carry an iOS-app
+    /// restriction in Cloud Console — without it, a restricted key
+    /// rejects every request.
+    mutating func setGoogleAPIKey(_ key: String) {
+        setValue(key, forHTTPHeaderField: "x-goog-api-key")
+        if let bundleID = Bundle.main.bundleIdentifier {
+            setValue(bundleID, forHTTPHeaderField: "X-Ios-Bundle-Identifier")
+        }
+    }
+}
+
 enum TimedPracticeDifficulty: String, CaseIterable, Codable, Identifiable {
     case free
     case easy
@@ -5149,6 +5162,9 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
         if accessToken != nil, let projectID = googleCloudProjectID() {
             request.setValue(projectID, forHTTPHeaderField: "x-goog-user-project")
         }
+        if apiKey != nil, let bundleID = Bundle.main.bundleIdentifier {
+            request.setValue(bundleID, forHTTPHeaderField: "X-Ios-Bundle-Identifier")
+        }
 
         let body = GoogleCloudTTSSpeechRequest(
             input: GoogleCloudTTSInput(text: text),
@@ -9805,7 +9821,7 @@ struct IMConversationService: IMConversationServicing {
             )
             request.httpBody = try JSONEncoder().encode(body)
         case .gemini:
-            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            request.setGoogleAPIKey(apiKey)
             let body = GeminiGenerateContentRequest(
                 systemInstruction: .init(parts: [.init(text: systemPrompt)]),
                 contents: [.init(parts: [.init(text: prompt)])],
@@ -10275,7 +10291,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
             )
             request.httpBody = try JSONEncoder().encode(body)
         case .gemini:
-            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            request.setGoogleAPIKey(apiKey)
             let body = GeminiGenerateContentRequest(
                 systemInstruction: .init(parts: [.init(text: systemPrompt)]),
                 contents: [.init(parts: [.init(text: prompt)])],
@@ -10979,7 +10995,7 @@ struct AICoachService: AICoachServicing {
                 )
                 request.httpBody = try JSONEncoder().encode(body)
             case .gemini:
-                request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+                request.setGoogleAPIKey(apiKey)
                 let body = GeminiGenerateContentRequest(
                     systemInstruction: .init(parts: [.init(text: system)]),
                     contents: [.init(parts: [.init(text: prompt)])],
@@ -11582,7 +11598,7 @@ struct AIHomeRecommendationService: AIHomeRecommendationServicing {
             )
             request.httpBody = try JSONEncoder().encode(body)
         case .gemini:
-            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            request.setGoogleAPIKey(apiKey)
             let body = GeminiGenerateContentRequest(
                 systemInstruction: .init(parts: [.init(text: systemPrompt)]),
                 contents: [.init(parts: [.init(text: prompt)])],
@@ -11974,7 +11990,7 @@ final class VideoAnalysisService {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        request.setGoogleAPIKey(apiKey)
         request.timeoutInterval = 60
 
         // Build parts with text + images

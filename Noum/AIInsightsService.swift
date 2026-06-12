@@ -150,7 +150,7 @@ actor AIInsightsService {
             case .openAI, .deepSeek:
                 request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
             case .gemini:
-                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+                request.setGoogleAPIKey(key)
             case .none:
                 cache[cacheKey] = templated
                 return templated

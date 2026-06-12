@@ -166,7 +166,7 @@ final class PressureFollowUpService: PressureFollowUpProviding {
 
         switch provider {
         case .gemini:
-            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            request.setGoogleAPIKey(apiKey)
             let body = GeminiRequest(
                 systemInstruction: .init(parts: [.init(text: systemPrompt)]),
                 contents: [.init(parts: [.init(text: userPrompt)])],

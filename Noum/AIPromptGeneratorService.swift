@@ -78,7 +78,7 @@ actor AIPromptGeneratorService {
                 ]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
             case .gemini:
-                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+                request.setGoogleAPIKey(key)
                 let body: [String: Any] = [
                     "systemInstruction": ["parts": [["text": Self.systemPrompt]]],
                     "contents": [["parts": [["text": prompt]]]],

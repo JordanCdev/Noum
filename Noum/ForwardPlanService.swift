@@ -92,7 +92,7 @@ actor ForwardPlanService {
             case .openAI, .deepSeek:
                 request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
             case .gemini:
-                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+                request.setGoogleAPIKey(key)
             case .none:
                 return fallback
             }

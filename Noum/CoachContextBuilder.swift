@@ -4090,7 +4090,7 @@ enum CoachContextBuilder {
                 ]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
             case .gemini:
-                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+                request.setGoogleAPIKey(key)
                 let body: [String: Any] = [
                     "systemInstruction": ["parts": [["text": system]]],
                     "contents": [["role": "user", "parts": [["text": user]]]],
@@ -4809,7 +4809,7 @@ enum CoachContextBuilder {
                 ]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
             case .gemini:
-                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+                request.setGoogleAPIKey(key)
                 let body: [String: Any] = [
                     "systemInstruction": ["parts": [["text": system]]],
                     "contents": [["role": "user", "parts": [["text": user]]]],
