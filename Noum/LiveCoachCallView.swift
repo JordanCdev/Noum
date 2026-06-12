@@ -68,7 +68,9 @@ struct LiveCoachCallView: View {
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// The hands-free session is engaged (auto silence-send + auto re-arm).
+    /// A call session is engaged (silence auto-SEND while recording stays;
+    /// the mic re-opens only on an explicit Talk tap — push-to-talk, never
+    /// auto re-arm, so the mic can't transcribe the coach's own TTS).
     @State private var loopActive = false
     /// Last time the live transcript changed — drives silence detection.
     @State private var lastPartialAt = Date()
@@ -111,7 +113,9 @@ struct LiveCoachCallView: View {
         if voiceInput.state == .recording { return "Listening — pause when you're done" }
         if store.isAwaitingReply { return "Thinking…" }
         if speaker.isSpeaking { return "Speaking…" }
-        return "…"
+        // Push-to-talk: mid-session idle is a real state now (the mic no
+        // longer auto re-arms), so name the affordance instead of "…".
+        return "Tap Talk to reply"
     }
 
     /// C5 — one honest status line under the state line, when something is
@@ -193,9 +197,11 @@ struct LiveCoachCallView: View {
         // Silence detection — ends the turn after a natural pause.
         .onReceive(tick) { _ in silenceTick() }
         .onChange(of: voiceInput.partialTranscript) { _, _ in lastPartialAt = Date() }
-        // Re-arm the mic once the coach is done (covers spoken + unspoken replies).
-        .onChange(of: store.isAwaitingReply) { _, awaiting in if !awaiting { scheduleReArm() } }
-        .onChange(of: speaker.isSpeaking) { _, speaking in if !speaking { reArmIfReady() } }
+        // PUSH-TO-TALK: no auto re-arm after the coach finishes. The auto
+        // loop re-opened the mic into the device speaker mid-/post-TTS and
+        // transcribed the coach's own reply as the user's next turn — the
+        // coach ended up answering its own echo. The mic now opens ONLY on
+        // an explicit Talk tap (barge-in while the coach speaks still works).
         // C5 — speech input failed (chain exhausted / permission pulled):
         // end the hands-free loop honestly instead of retry-looping a dead
         // mic. The notice line explains; the user re-taps Talk to retry.
@@ -516,7 +522,10 @@ struct LiveCoachCallView: View {
                 // read the old "Stop" as "discard" and lost their utterance.
                 voiceInput.stopAndSend()  // → onFinalTranscript → handleUtterance
             } else {
-                endLoop()             // nothing captured → stop the session
+                // Push-to-talk: idle mic + Talk tap = take the floor again.
+                // (Under the old auto re-arm loop an idle tap meant "end the
+                // session"; ending the call now belongs to Leave alone.)
+                startRecording()
             }
         } else {
             loopActive = true
@@ -566,21 +575,6 @@ struct LiveCoachCallView: View {
         else { return }
         deadMicNotice = LiveCallMicWatchdog.notice
         endLoop()
-    }
-
-    /// After a reply lands but won't be spoken (aloud off / no provider), the
-    /// `speaker.isSpeaking` transition never fires — so re-arm on a short delay.
-    private func scheduleReArm() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { reArmIfReady() }
-    }
-
-    private func reArmIfReady() {
-        guard loopActive,
-              voiceInput.state == .idle,
-              !store.isAwaitingReply,
-              !speaker.isSpeaking
-        else { return }
-        startRecording()
     }
 
     private func handleUtterance(_ text: String) {
