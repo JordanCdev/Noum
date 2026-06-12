@@ -194,6 +194,12 @@ final class AskNoumVoiceInput: ObservableObject {
     /// typing). Never called for cancelled or empty utterances.
     var onFinalTranscript: ((String) -> Void)?
 
+    /// True once the current utterance's transcript has been handed to
+    /// `onFinalTranscript`. Guards against double delivery when the
+    /// defensive finalisation timeout and the engine's real final race
+    /// (see `deliverFinalIfAble`). Reset by `startRecognition()`.
+    private var hasDeliveredFinal = false
+
     init() {
         #if canImport(Speech)
         // Try the user's preferred speech-locale; fall back to en-US.
@@ -415,6 +421,9 @@ final class AskNoumVoiceInput: ObservableObject {
     /// `.temporarilyUnavailable` — never a silent dead mic.
     private func startRecognition() async {
         #if canImport(Speech) && canImport(AVFoundation)
+        // New utterance — re-arm the single-delivery latch (see
+        // `deliverFinalIfAble`).
+        hasDeliveredFinal = false
         let order = LiveCallSTTChain.engineOrder(
             configuredProviderRawValue: UserDefaults.standard.string(forKey: "transcriptionProvider"),
             cloudMarkedUnhealthy: cloudUnhealthy,
@@ -675,9 +684,20 @@ final class AskNoumVoiceInput: ObservableObject {
     /// gate. Empty / tiny utterances (mic-tap-by-accident, single
     /// throat-clear) are dropped without firing the callback so the
     /// chat thread never gets junk turns.
+    ///
+    /// Single-delivery latch: TWO paths can race to finalise one
+    /// utterance — `stopAndSend`'s 1.5s defensive timeout (delivers the
+    /// partial) and the engine's real final landing late. Without the
+    /// latch both fire `onFinalTranscript`, the chat dispatches the same
+    /// utterance twice, and the user gets two racing coach replies for
+    /// one spoken input. Latch only on an actual delivery — a sub-floor
+    /// partial must not block a later usable final. Re-armed in
+    /// `startRecognition()`.
     private func deliverFinalIfAble(textOverride: String) {
+        guard !hasDeliveredFinal else { return }
         let trimmed = textOverride.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.count >= Self.minUtteranceCharacters {
+            hasDeliveredFinal = true
             onFinalTranscript?(trimmed)
         }
     }
