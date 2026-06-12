@@ -414,13 +414,19 @@ struct LiveCoachCallView: View {
     // MARK: - Control bar (Zoom-style)
 
     private var controlBar: some View {
-        HStack(spacing: Spacing.lg) {
+        // The user "has the floor" when the hands-free loop is live and the mic
+        // is actively recording — that's the moment the primary button must read
+        // as "Send" (submit the captured turn), never "Stop" (which users misread
+        // as cancel and lost their utterance). Otherwise it's the Talk affordance.
+        let onFloor = loopActive && voiceInput.state == .recording
+        return HStack(spacing: Spacing.lg) {
             callButton(
-                glyph: loopActive ? "stop.fill" : "mic.fill",
-                label: loopActive ? "Stop" : "Talk",
-                fill: loopActive ? AppColor.pro : Color.white.opacity(0.12),
+                glyph: onFloor ? "arrow.up.circle.fill" : "mic.fill",
+                label: onFloor ? "Send" : "Talk",
+                fill: onFloor ? AppColor.pro : Color.white.opacity(0.12),
                 ring: voiceInput.state == .recording,
-                disabled: !voiceInput.isAvailable
+                disabled: !voiceInput.isAvailable,
+                accessibilityLabel: onFloor ? "Send to coach" : "Talk to coach"
             ) { micTapped() }
 
             // V1 — this control mutes/unmutes the coach's spoken replies, so it
@@ -448,7 +454,7 @@ struct LiveCoachCallView: View {
             // turn already completes regardless of Leave (handleUtterance runs
             // a detached Task into the shared store and re-arms on its own), so
             // the real fix is clarity: a quiet ghost treatment keeps the active
-            // Talk/Stop control visually primary and signals "exit", not "next".
+            // Talk/Send control visually primary and signals "exit", not "next".
             callButton(
                 glyph: "xmark",
                 label: "Leave",
@@ -504,8 +510,13 @@ struct LiveCoachCallView: View {
             if speaker.isSpeaking {
                 speaker.stop()        // barge-in: cut the coach off
                 startRecording()      // and take the floor
+            } else if voiceInput.state == .recording {
+                // Primary button SENDS the captured turn (same path as the
+                // hands-free silence send), instead of cancelling it. Users
+                // read the old "Stop" as "discard" and lost their utterance.
+                voiceInput.stopAndSend()  // → onFinalTranscript → handleUtterance
             } else {
-                endLoop()             // stop the session
+                endLoop()             // nothing captured → stop the session
             }
         } else {
             loopActive = true

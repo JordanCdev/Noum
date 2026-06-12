@@ -1,13 +1,17 @@
 import Foundation
+import os
 
 // MARK: - AI Coach Chat Service
 //
 // Multi-turn coaching chat — the model behind the "Ask Noum" surface.
-// Reuses the same provider plumbing (OpenAI / DeepSeek / Gemini) as the
-// rest of the AI layer; the difference is that this service is *stateful
-// per request* (it replays the conversation history every turn) and
-// always-text (no JSON response shape; the coach is supposed to write
-// like a coach, not emit data).
+// Speaks a CHAIN of providers (Gemini → Anthropic → OpenAI → DeepSeek,
+// whichever have keys) with per-provider cooldowns, so a rate-limited or
+// refusing provider fails over to the next instead of silently degrading
+// every turn to the deterministic fallback. The rest of the AI layer
+// still uses the shared single-provider plumbing; this service is
+// *stateful per request* (it replays the conversation history every
+// turn) and always-text (no JSON response shape; the coach is supposed
+// to write like a coach, not emit data).
 //
 // Design rules:
 //   • Composed of: a voice-specific system prompt (from
@@ -285,9 +289,107 @@ struct ChatFallbackContext: Equatable {
 }
 
 @available(iOS 17.0, macOS 12.0, *)
+// MARK: - Chat provider chain
+
+/// Chat-reply provider identity. Wraps the shared `AIProvider` cases and adds
+/// Anthropic, which only the chat surface speaks today — promoting it into
+/// `AIProvider` proper means giving every AI service a request/extract branch
+/// (~40 switch sites across the AI layer), tracked as a follow-up. Declaration
+/// order is the failover preference order.
+enum CoachChatProvider: CaseIterable, Equatable, Hashable {
+    case gemini
+    case anthropic
+    case openAI
+    case deepSeek
+
+    /// The shared-provider equivalent whose request/extract plumbing already
+    /// exists, or nil for chat-only providers with their own branch.
+    var sharedProvider: AIProvider? {
+        switch self {
+        case .gemini: return .gemini
+        case .openAI: return .openAI
+        case .deepSeek: return .deepSeek
+        case .anthropic: return nil
+        }
+    }
+
+    var keyName: String {
+        switch self {
+        case .gemini: return "GEMINI_API_KEY"
+        case .anthropic: return "ANTHROPIC_API_KEY"
+        case .openAI: return "OPENAI_API_KEY"
+        case .deepSeek: return "DEEPSEEK_API_KEY"
+        }
+    }
+
+    var model: String {
+        switch self {
+        // Haiku: the chat contract is 2-4 sentences in a fixed voice —
+        // fast + cheap fits; the system prompt carries the intelligence.
+        case .anthropic: return "claude-haiku-4-5"
+        case .gemini, .openAI, .deepSeek: return sharedProvider?.model ?? ""
+        }
+    }
+
+    var endpoint: URL? {
+        switch self {
+        case .anthropic: return URL(string: "https://api.anthropic.com/v1/messages")
+        case .gemini, .openAI, .deepSeek: return sharedProvider?.endpoint
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .gemini: return "Gemini"
+        case .anthropic: return "Claude"
+        case .openAI: return "OpenAI"
+        case .deepSeek: return "DeepSeek"
+        }
+    }
+}
+
+/// Why a provider attempt produced no usable reply, and how long that
+/// provider should sit out of the chain. Cooldowns stop a rate-limited
+/// provider from being re-hit on every chat turn while it's refusing.
+enum CoachChatProviderRefusal: Equatable {
+    /// 429 — the quota window will pass; sit out briefly.
+    case rateLimited
+    /// 401/403 — the key is bad or blocked; hammering won't fix it.
+    case authBlocked
+    /// 5xx / transport / empty body — likely transient.
+    case transient
+    /// Reply text failed the quality gate and repair — a content miss by
+    /// this model on this turn, not a provider-health problem. No cooldown.
+    case contentRejected
+
+    var cooldown: TimeInterval {
+        switch self {
+        case .rateLimited: return 60
+        case .authBlocked: return 600
+        case .transient: return 30
+        case .contentRejected: return 0
+        }
+    }
+
+    static func classify(status: Int) -> CoachChatProviderRefusal {
+        switch status {
+        case 429: return .rateLimited
+        case 401, 403: return .authBlocked
+        default: return .transient
+        }
+    }
+}
+
 actor AICoachChatService {
 
     static let shared = AICoachChatService()
+
+    private static let log = Logger(subsystem: "com.jordancoaten.noum", category: "CoachChat")
+
+    /// Providers that refused recently sit at the BACK of the chain until
+    /// this date — never dropped entirely, because a cooling provider is
+    /// still better than no provider when it's the only one keyed.
+    private var providerCooldowns: [CoachChatProvider: Date] = [:]
 
     /// Cap on the number of chat messages we replay to the model per
     /// request. The user context block carries the long-arc summary,
@@ -315,21 +417,24 @@ actor AICoachChatService {
         userContext: String,
         fallback: ChatFallbackContext = ChatFallbackContext()
     ) async -> ChatOutcome {
-        guard let provider = await currentProvider(),
-              let endpoint = provider.endpoint,
-              let key = apiKey(for: provider)
-        else {
-            // No provider configured — the model can't be reached at all.
-            // A real coach still answers, so hand back a grounded, in-voice
-            // deterministic line rather than an error notice.
-            return Self.deterministicReplyOutcome(failure: .noProvider, context: fallback)
-        }
+        // The previous coach bubble — the repeat-guard input. A provider
+        // outage must never present as the coach saying the same line twice.
+        let previousCoachText = history.last(where: { $0.role == .coach })?.text
 
         // M13: AI surfaces are English-only. The deterministic fallback is
         // locale-agnostic English copy (layer-wide precedent), so a non-English
         // user still gets a useful coach line rather than a config notice.
         guard await activeLocaleSupportsAI() else {
-            return Self.deterministicReplyOutcome(failure: .localeUnsupported, context: fallback)
+            return Self.deterministicReplyOutcome(failure: .localeUnsupported, context: fallback, previousCoachText: previousCoachText)
+        }
+
+        let keyed = Self.keyedProviders()
+        guard !keyed.isEmpty else {
+            // No provider has a key — the model can't be reached at all.
+            // A real coach still answers, so hand back a grounded, in-voice
+            // deterministic line rather than an error notice.
+            Self.log.error("no chat provider has a key — deterministic fallback")
+            return Self.deterministicReplyOutcome(failure: .noProvider, context: fallback, previousCoachText: previousCoachText)
         }
 
         // Compose the system prompt — voice + context block.
@@ -345,53 +450,136 @@ actor AICoachChatService {
             recentUserTurns: trimmed.filter { $0.role == .user }.map(\.text)
         )
 
-        do {
-            let body = requestBody(for: provider, system: composedSystem, messages: trimmed)
-            guard let data = try await providerResponseData(
+        let chain = Self.orderedChain(keyed: keyed, cooldowns: providerCooldowns, now: Date())
+        for provider in chain {
+            guard let endpoint = provider.endpoint, let key = key(for: provider) else { continue }
+            let outcome = await attempt(
                 provider: provider,
                 endpoint: endpoint,
                 key: key,
-                body: body
-            ) else {
-                // Transport reached the server but it refused — treat as a
-                // network failure and answer deterministically (a coach who
-                // can't reach their notes still gives a useful read).
-                return Self.deterministicReplyOutcome(failure: .network, context: fallback, latestUserTurn: latestUserTurn)
+                system: composedSystem,
+                messages: trimmed,
+                quoteGuard: quoteGuard,
+                latestUserTurn: latestUserTurn
+            )
+            switch outcome {
+            case .reply(let text):
+                providerCooldowns[provider] = nil
+                return .reply(text)
+            case .refused(let refusal):
+                if refusal.cooldown > 0 {
+                    providerCooldowns[provider] = Date().addingTimeInterval(refusal.cooldown)
+                }
+                continue
             }
-            let extraction = Self.extractReplyText(from: data, provider: provider)
-            switch extraction {
-            case .text(let text):
-                if let issue = Self.replyQualityIssue(
-                    in: text,
-                    latestUserTurn: latestUserTurn,
-                    quoteGuard: quoteGuard
-                ) {
-                    if let repaired = await repairLowQualityReply(
-                        issue: issue,
-                        draft: text,
-                        provider: provider,
-                        endpoint: endpoint,
-                        key: key,
-                        system: composedSystem,
-                        messages: trimmed,
+        }
+
+        // Every keyed provider refused this turn — answer deterministically
+        // instead of dead-ending the user (a coach who can't reach their
+        // notes still gives a useful read).
+        Self.log.error("all \(chain.count) chat providers refused — deterministic fallback")
+        return Self.deterministicReplyOutcome(
+            failure: .network,
+            context: fallback,
+            latestUserTurn: latestUserTurn,
+            previousCoachText: previousCoachText
+        )
+    }
+
+    // MARK: - Provider chain
+
+    /// Providers with a usable key, in declaration (preference) order.
+    nonisolated static func keyedProviders(
+        env: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [CoachChatProvider] {
+        CoachChatProvider.allCases.filter { provider in
+            if let value = env[provider.keyName], !value.isEmpty { return true }
+            return LocalConfigLoader.value(forKey: provider.keyName, plistNamed: "AIConfig") != nil
+        }
+    }
+
+    /// Pure ordering: ready providers first, cooling ones moved to the BACK —
+    /// not dropped, because when everything is cooling the chain must still
+    /// try its best option rather than silently going deterministic.
+    nonisolated static func orderedChain(
+        keyed: [CoachChatProvider],
+        cooldowns: [CoachChatProvider: Date],
+        now: Date
+    ) -> [CoachChatProvider] {
+        let ready = keyed.filter { (cooldowns[$0] ?? .distantPast) <= now }
+        let cooling = keyed.filter { (cooldowns[$0] ?? .distantPast) > now }
+        return ready + cooling
+    }
+
+    private enum AttemptOutcome {
+        case reply(String)
+        case refused(CoachChatProviderRefusal)
+    }
+
+    /// One provider attempt: request (with a single short retry when the
+    /// server names a small Retry-After), extraction, quality gate + repair.
+    private func attempt(
+        provider: CoachChatProvider,
+        endpoint: URL,
+        key: String,
+        system: String,
+        messages: [CoachMessage],
+        quoteGuard: CoachChatQuoteGuardContext,
+        latestUserTurn: String?
+    ) async -> AttemptOutcome {
+        do {
+            let body = chatRequestBody(for: provider, system: system, messages: messages)
+            var result = try await providerHTTP(provider: provider, endpoint: endpoint, key: key, body: body)
+
+            // One in-call retry when the refusal is explicitly short-lived
+            // (429/503/529 with Retry-After within the turn's latency budget).
+            if case .refused(let status, let retryAfter) = result,
+               [429, 503, 529].contains(status),
+               let delay = retryAfter, delay > 0, delay <= 4 {
+                Self.log.info("\(provider.displayName, privacy: .public) \(status) — retrying after \(delay, format: .fixed(precision: 1))s")
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                result = try await providerHTTP(provider: provider, endpoint: endpoint, key: key, body: body)
+            }
+
+            switch result {
+            case .refused(let status, _):
+                Self.log.error("\(provider.displayName, privacy: .public) refused: HTTP \(status)")
+                return .refused(.classify(status: status))
+            case .success(let data):
+                let extraction = Self.chatExtractReplyText(from: data, provider: provider)
+                switch extraction {
+                case .text(let text):
+                    if let issue = Self.replyQualityIssue(
+                        in: text,
+                        latestUserTurn: latestUserTurn,
                         quoteGuard: quoteGuard
                     ) {
-                        return .reply(repaired)
+                        Self.log.notice("\(provider.displayName, privacy: .public) reply tripped quality gate — repairing")
+                        if let repaired = await repairLowQualityReply(
+                            issue: issue,
+                            draft: text,
+                            provider: provider,
+                            endpoint: endpoint,
+                            key: key,
+                            system: system,
+                            messages: messages,
+                            quoteGuard: quoteGuard
+                        ) {
+                            return .reply(repaired)
+                        }
+                        // A content miss by this model on this turn — let the
+                        // next provider in the chain take the question.
+                        return .refused(.contentRejected)
                     }
-                    return Self.deterministicReplyOutcome(failure: .empty, context: fallback, latestUserTurn: latestUserTurn)
+                    return .reply(text)
+                case .empty, .lengthTruncated:
+                    Self.log.error("\(provider.displayName, privacy: .public) returned no usable text (\(extraction == .lengthTruncated ? "truncated" : "empty", privacy: .public))")
+                    return .refused(.transient)
                 }
-                return .reply(text)
-            case .empty, .lengthTruncated:
-                return Self.outcomeForMissingExtractedReply(
-                    extraction,
-                    context: fallback,
-                    latestUserTurn: latestUserTurn
-                ) ?? .failure(.empty)
             }
         } catch {
-            // Transport / encode failure — the model is unreachable. Answer
-            // deterministically instead of dead-ending the user.
-            return Self.deterministicReplyOutcome(failure: .network, context: fallback, latestUserTurn: latestUserTurn)
+            Self.log.error("\(provider.displayName, privacy: .public) transport failure: \(error.localizedDescription, privacy: .public)")
+            return .refused(.transient)
         }
     }
 
@@ -739,7 +927,7 @@ actor AICoachChatService {
     private func repairLowQualityReply(
         issue: CoachChatReplyQualityIssue,
         draft: String,
-        provider: AIProvider,
+        provider: CoachChatProvider,
         endpoint: URL,
         key: String,
         system: String,
@@ -764,15 +952,16 @@ actor AICoachChatService {
         - Sound like a senior communications coach, not an assistant explaining itself.
         """
 
-        let body = requestBody(for: provider, system: repairSystem, messages: messages)
+        let body = chatRequestBody(for: provider, system: repairSystem, messages: messages)
         guard
-            let data = try? await providerResponseData(
+            let result = try? await providerHTTP(
                 provider: provider,
                 endpoint: endpoint,
                 key: key,
                 body: body
             ),
-            case .text(let text) = Self.extractReplyText(from: data, provider: provider),
+            case .success(let data) = result,
+            case .text(let text) = Self.chatExtractReplyText(from: data, provider: provider),
             Self.replyQualityIssue(
                 in: text,
                 latestUserTurn: messages.last(where: { $0.role == .user })?.text,
@@ -856,9 +1045,18 @@ actor AICoachChatService {
     nonisolated static func deterministicReplyOutcome(
         failure: ChatFailure,
         context: ChatFallbackContext,
-        latestUserTurn: String? = nil
+        latestUserTurn: String? = nil,
+        previousCoachText: String? = nil
     ) -> ChatOutcome {
-        let candidate = deterministicReply(failure: failure, context: context)
+        var candidate = deterministicReply(failure: failure, context: context)
+        // Repeat-guard: the deterministic line is a pure function of the
+        // fallback context, which rarely changes between turns — so a
+        // provider outage would otherwise present as the coach saying the
+        // SAME line on every turn. Never send the previous bubble verbatim.
+        if let previous = normalizedFallbackText(previousCoachText),
+           normalizedFallbackText(candidate) == previous {
+            candidate = alternateDeterministicReply(context: context, avoidingNormalized: previous)
+        }
         guard let issue = replyQualityIssue(in: candidate, latestUserTurn: latestUserTurn) else {
             return .deterministicReply(candidate)
         }
@@ -880,6 +1078,38 @@ actor AICoachChatService {
             // honest `.empty` notice instead of a sub-bar substitute.
             return .failure(.empty)
         }
+    }
+
+    /// Second-choice fallback when the primary deterministic line would repeat
+    /// the previous coach bubble verbatim. Composes lead + steady line
+    /// (skipping the verdict/case body the primary used); if even that matches
+    /// the previous bubble, falls to a neutral honest line. Every candidate is
+    /// held to the same whitespace/exclamation/length contract as the primary.
+    nonisolated static func alternateDeterministicReply(
+        context: ChatFallbackContext,
+        avoidingNormalized previous: String
+    ) -> String {
+        let persona = CoachPersona.persona(for: context.voice)
+        let candidates = [
+            "\(persona.reflectionLead) \(steadyFallback(persona: persona))",
+            "Still working without my full read here. Your reps are saved — run another and I'll compare them properly the moment the connection is back."
+        ]
+        var last = candidates[candidates.count - 1]
+        for raw in candidates {
+            var text = PostRepCoachNoteService.collapseWhitespace(in: raw)
+            text = PostRepCoachNoteService.ensureNoExclamations(in: text)
+            text = PostRepCoachNoteService.truncate(text, max: 220)
+            last = text
+            if normalizedFallbackText(text) != previous { return text }
+        }
+        return last
+    }
+
+    /// Case/whitespace-insensitive comparison key for the repeat-guard.
+    nonisolated static func normalizedFallbackText(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return trimmed.lowercased()
     }
 
     /// Evidence floor for stating a pace FACT in the offline fallback. Mirrors
@@ -1030,31 +1260,32 @@ actor AICoachChatService {
     // MARK: - Provider plumbing
 
     @MainActor
-    private func currentProvider() -> AIProvider? {
-        AISettingsManager.shared.activeProvider
-    }
-
-    @MainActor
     private func activeLocaleSupportsAI() -> Bool {
         LocaleSettingsManager.shared.current.aiSupported
     }
 
-    private func apiKey(for provider: AIProvider) -> String? {
-        guard let keyName = provider.environmentKey else { return nil }
-        if let value = ProcessInfo.processInfo.environment[keyName], !value.isEmpty {
+    private func key(for provider: CoachChatProvider) -> String? {
+        if let value = ProcessInfo.processInfo.environment[provider.keyName], !value.isEmpty {
             return value
         }
-        return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        return LocalConfigLoader.value(forKey: provider.keyName, plistNamed: "AIConfig")
     }
 
-    // MARK: - Request body construction
+    // MARK: - Transport
 
-    private func providerResponseData(
-        provider: AIProvider,
+    enum ProviderHTTPResult {
+        case success(Data)
+        /// The server answered with a non-2xx. `retryAfter` carries the
+        /// parsed Retry-After header when the server named one.
+        case refused(status: Int, retryAfter: TimeInterval?)
+    }
+
+    private func providerHTTP(
+        provider: CoachChatProvider,
         endpoint: URL,
         key: String,
         body: [String: Any]
-    ) async throws -> Data? {
+    ) async throws -> ProviderHTTPResult {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1064,17 +1295,59 @@ actor AICoachChatService {
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         case .gemini:
             request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
-        case .none:
-            return nil
+        case .anthropic:
+            request.setValue(key, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode) else {
-            return nil
+        guard let http = response as? HTTPURLResponse else {
+            return .refused(status: -1, retryAfter: nil)
         }
-        return data
+        guard (200..<300).contains(http.statusCode) else {
+            let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
+            return .refused(status: http.statusCode, retryAfter: retryAfter)
+        }
+        return .success(data)
+    }
+
+    // MARK: - Request body construction
+
+    private func chatRequestBody(
+        for provider: CoachChatProvider,
+        system: String,
+        messages: [CoachMessage]
+    ) -> [String: Any] {
+        if let shared = provider.sharedProvider {
+            return requestBody(for: shared, system: system, messages: messages)
+        }
+
+        // Anthropic Messages API: system is a top-level field; messages carry
+        // user/assistant roles and must START with a user turn (the thread
+        // can open with a coach greeting, so leading assistant turns drop —
+        // their substance is already baked into the context block).
+        var msgs: [[String: Any]] = []
+        for m in messages {
+            let role: String
+            switch m.role {
+            case .user: role = "user"
+            case .coach: role = "assistant"
+            case .systemNotice: continue // UI-only, never sent to model
+            }
+            msgs.append(["role": role, "content": m.text])
+        }
+        while let first = msgs.first, first["role"] as? String == "assistant" {
+            msgs.removeFirst()
+        }
+        return [
+            "model": provider.model,
+            // 800 is a safety ceiling, not the length lever — the
+            // system-prompt brevity contract (2-4 sentences) governs length.
+            "max_tokens": 800,
+            "system": system,
+            "messages": msgs
+        ]
     }
 
     private func requestBody(
@@ -1143,6 +1416,35 @@ actor AICoachChatService {
     }
 
     // MARK: - Response parsing
+
+    static func chatExtractReplyText(from data: Data, provider: CoachChatProvider) -> ChatExtractionResult {
+        if let shared = provider.sharedProvider {
+            return extractReplyText(from: data, provider: shared)
+        }
+        return extractAnthropicReplyText(from: data)
+    }
+
+    /// Anthropic Messages API extraction: text blocks joined, with
+    /// `stop_reason == "max_tokens"` treated as truncation — a guillotined
+    /// reply is never committed verbatim (same contract as the other
+    /// providers' finish-reason handling).
+    static func extractAnthropicReplyText(from data: Data) -> ChatExtractionResult {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return .empty
+        }
+        let stopReason = object["stop_reason"] as? String
+        let blocks = object["content"] as? [[String: Any]] ?? []
+        let text = blocks
+            .filter { ($0["type"] as? String) == "text" }
+            .compactMap { $0["text"] as? String }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if stopReason == "max_tokens" {
+            return .lengthTruncated
+        }
+        return text.isEmpty ? .empty : .text(text)
+    }
 
     static func extractReplyText(from data: Data, provider: AIProvider) -> ChatExtractionResult {
         switch provider {
