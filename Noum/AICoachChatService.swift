@@ -339,17 +339,29 @@ enum CoachChatProvider: CaseIterable, Equatable, Hashable {
 
     var model: String {
         switch self {
-        // Haiku: the chat contract is 2-4 sentences in a fixed voice —
+        // Haiku: the chat contract is 1-2 sentences in a fixed voice —
         // fast + cheap fits; the system prompt carries the intelligence.
         case .anthropic: return "claude-haiku-4-5"
-        case .gemini, .openAI, .deepSeek: return sharedProvider?.model ?? ""
+        case .gemini:
+            // Chat-only override (AIConfig.plist `GEMINI_CHAT_MODEL`) so a
+            // newer Gemini can be A/B'd against the register/quality gate
+            // without touching the other AI surfaces. Absent key = shared
+            // default, same behavior as before.
+            return LocalConfigLoader.value(forKey: "GEMINI_CHAT_MODEL", plistNamed: "AIConfig")
+                ?? sharedProvider?.model ?? ""
+        case .openAI, .deepSeek: return sharedProvider?.model ?? ""
         }
     }
 
     var endpoint: URL? {
         switch self {
         case .anthropic: return URL(string: "https://api.anthropic.com/v1/messages")
-        case .gemini, .openAI, .deepSeek: return sharedProvider?.endpoint
+        case .gemini:
+            // Built from `model` (not the shared endpoint) so the
+            // GEMINI_CHAT_MODEL override actually changes the URL — Gemini
+            // carries the model in the path, not the request body.
+            return URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")
+        case .openAI, .deepSeek: return sharedProvider?.endpoint
         }
     }
 

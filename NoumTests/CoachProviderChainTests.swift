@@ -28,9 +28,14 @@ struct CoachChatProviderTests {
         #expect(CoachChatProvider.gemini.sharedProvider == .gemini)
         #expect(CoachChatProvider.openAI.sharedProvider == .openAI)
         #expect(CoachChatProvider.deepSeek.sharedProvider == .deepSeek)
-        // Endpoint/model read through to the shared definitions.
-        #expect(CoachChatProvider.gemini.model == AIProvider.gemini.model)
-        #expect(CoachChatProvider.gemini.endpoint == AIProvider.gemini.endpoint)
+        // Gemini chat model = plist override when present, else the shared
+        // default — and the endpoint must embed whichever model resolved
+        // (Gemini carries the model in the URL path, not the body).
+        let expectedModel = LocalConfigLoader.value(forKey: "GEMINI_CHAT_MODEL", plistNamed: "AIConfig")
+            ?? AIProvider.gemini.model
+        #expect(CoachChatProvider.gemini.model == expectedModel)
+        #expect(CoachChatProvider.gemini.endpoint?.absoluteString
+            == "https://generativelanguage.googleapis.com/v1beta/models/\(expectedModel):generateContent")
     }
 
     @Test func preferenceOrderIsDeclarationOrder() {
