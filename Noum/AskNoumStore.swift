@@ -202,7 +202,7 @@ final class AskNoumStore: ObservableObject {
     func completeCoachTurn(id: UUID, outcome: ChatOutcome) {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
         switch outcome {
-        case .reply(let text), .deterministicReply(let text):
+        case .reply(let text), .deterministicReply(let text, _):
             // A live `.reply` and a grounded `.deterministicReply` both render
             // as a real coach bubble — the deterministic offline line is the
             // coach answering, NOT a system notice. (The spoken path treats
@@ -210,11 +210,11 @@ final class AskNoumStore: ObservableObject {
             // canned line speaks only in the on-device system voice, never
             // the cloud coach voice, so it can't be mistaken for the live
             // coach.) The VISIBLE bubble must honour the same honesty: a
-            // `.deterministicReply` carries `isOffline = true` so the row
-            // renders with a quiet "offline" marker + de-emphasised styling
-            // and never the brand-purple live-coach treatment.
+            // `.deterministicReply` wears the "offline" marker only when the
+            // model was genuinely unreachable — a `.contentRejected` turn
+            // happened fully online, and claiming otherwise is a lie.
             let isOffline: Bool
-            if case .deterministicReply = outcome { isOffline = true } else { isOffline = false }
+            if case .deterministicReply(_, let cause) = outcome { isOffline = cause.presentsAsOffline } else { isOffline = false }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
                 // Defensive: neither path should hand us empty content (a live
@@ -260,7 +260,7 @@ final class AskNoumStore: ObservableObject {
             return "I can only chat in English right now. Switch practice locale in Settings to continue."
         case .network:
             return "I couldn't reach my model — check your connection and try again."
-        case .empty:
+        case .empty, .contentRejected:
             return "I came up empty on that one. Try rephrasing."
         }
     }

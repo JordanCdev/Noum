@@ -111,7 +111,7 @@ enum AskNoumSpokenMode {
         switch outcome {
         case .reply(let text):
             return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .none : .fullChain
-        case .deterministicReply(let text):
+        case .deterministicReply(let text, _):
             return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .none : .onDeviceOnly
         case .failure:
             return .none
@@ -123,7 +123,7 @@ enum AskNoumSpokenMode {
     /// the route's preconditions.
     static func spokenText(for outcome: ChatOutcome) -> String? {
         switch outcome {
-        case .reply(let text), .deterministicReply(let text):
+        case .reply(let text), .deterministicReply(let text, _):
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed
         case .failure:

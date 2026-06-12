@@ -10406,7 +10406,7 @@ struct AskNoumStoreTests {
         let store = freshStore()
         let ids = store.appendUserTurn("How did my last rep go?")
         let line = "Here's what stood out: run one more rep when you're ready."
-        store.completeCoachTurn(id: ids.coachID, outcome: .deterministicReply(line))
+        store.completeCoachTurn(id: ids.coachID, outcome: .deterministicReply(line, cause: .network))
         #expect(store.messages.count == 2)
         #expect(store.messages[1].role == .coach)
         #expect(store.messages[1].role != .systemNotice)
@@ -10425,10 +10425,36 @@ struct AskNoumStoreTests {
         let ids = store.appendUserTurn("How did my last rep go?")
         store.completeCoachTurn(
             id: ids.coachID,
-            outcome: .deterministicReply("Here's what stood out: run one more rep when you're ready.")
+            outcome: .deterministicReply("Here's what stood out: run one more rep when you're ready.", cause: .network)
         )
         #expect(store.messages[1].role == .coach)
         #expect(store.messages[1].isOffline == true)
+    }
+
+    /// A `.contentRejected` deterministic reply happened fully ONLINE — the
+    /// model answered and the local quality gate rejected the draft. The row
+    /// renders as a normal coach bubble WITHOUT the offline marker: telling
+    /// an online user they're offline reads as a broken product, not honesty.
+    @Test func contentRejectedDeterministicReplyIsNotFlaggedOffline() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("How did my last rep go?")
+        store.completeCoachTurn(
+            id: ids.coachID,
+            outcome: .deterministicReply("Here's what stood out: run one more rep when you're ready.", cause: .contentRejected)
+        )
+        #expect(store.messages[1].role == .coach)
+        #expect(store.messages[1].isOffline == false)
+    }
+
+    /// Cause→offline mapping is the single source the store leans on: only
+    /// `.contentRejected` presents as online; every unreachable-model cause
+    /// keeps the honest offline marker.
+    @Test func presentsAsOfflineDistinguishesReachableFromUnreachable() {
+        #expect(ChatFailure.contentRejected.presentsAsOffline == false)
+        #expect(ChatFailure.network.presentsAsOffline == true)
+        #expect(ChatFailure.noProvider.presentsAsOffline == true)
+        #expect(ChatFailure.localeUnsupported.presentsAsOffline == true)
+        #expect(ChatFailure.empty.presentsAsOffline == true)
     }
 
     /// A3 — a LIVE `.reply` is NOT offline: it must render in the full
@@ -10482,7 +10508,7 @@ struct AskNoumStoreTests {
     @Test func completeCoachTurnEmptyDeterministicReplyBecomesNotice() {
         let store = freshStore()
         let ids = store.appendUserTurn("How did my last rep go?")
-        store.completeCoachTurn(id: ids.coachID, outcome: .deterministicReply("   \n\t "))
+        store.completeCoachTurn(id: ids.coachID, outcome: .deterministicReply("   \n\t ", cause: .network))
         #expect(store.messages.count == 2)
         #expect(store.messages[1].role == .systemNotice)
         #expect(!store.isAwaitingReply)
@@ -22713,7 +22739,7 @@ struct S5SpokenModeRouteTests {
             localeSupportsAI: true
         ) == AskNoumSpokenMode.SpokenRoute.none)
         #expect(AskNoumSpokenMode.spokenRoute(
-            outcome: .deterministicReply("A grounded offline line."),
+            outcome: .deterministicReply("A grounded offline line.", cause: .network),
             spokenRepliesEnabled: false,
             localeSupportsAI: true
         ) == AskNoumSpokenMode.SpokenRoute.none)
@@ -22730,7 +22756,7 @@ struct S5SpokenModeRouteTests {
             localeSupportsAI: false
         ) == AskNoumSpokenMode.SpokenRoute.none)
         #expect(AskNoumSpokenMode.spokenRoute(
-            outcome: .deterministicReply("A grounded offline line."),
+            outcome: .deterministicReply("A grounded offline line.", cause: .network),
             spokenRepliesEnabled: true,
             localeSupportsAI: false
         ) == AskNoumSpokenMode.SpokenRoute.none)
@@ -22761,7 +22787,7 @@ struct S5SpokenModeRouteTests {
     /// line was silenced entirely, which made every model hiccup look like
     /// a muted coach in a voice-first surface.)
     @Test func deterministicReplyRoutesToOnDeviceOnly() {
-        let outcome = ChatOutcome.deterministicReply("Here's what stood out: run one more rep when you're ready.")
+        let outcome = ChatOutcome.deterministicReply("Here's what stood out: run one more rep when you're ready.", cause: .network)
         #expect(AskNoumSpokenMode.spokenRoute(
             outcome: outcome,
             spokenRepliesEnabled: true,
@@ -22787,7 +22813,7 @@ struct S5SpokenModeRouteTests {
             localeSupportsAI: true
         ) == AskNoumSpokenMode.SpokenRoute.none)
         #expect(AskNoumSpokenMode.spokenRoute(
-            outcome: .deterministicReply("   \n\t  "),
+            outcome: .deterministicReply("   \n\t  ", cause: .network),
             spokenRepliesEnabled: true,
             localeSupportsAI: true
         ) == AskNoumSpokenMode.SpokenRoute.none)
@@ -22812,9 +22838,9 @@ struct S5SpokenModeRouteTests {
     /// route decision by re-extracting text themselves.
     @Test func spokenTextMatchesSpeakableOutcomes() {
         #expect(AskNoumSpokenMode.spokenText(for: .reply("  Tighten the open.  ")) == "Tighten the open.")
-        #expect(AskNoumSpokenMode.spokenText(for: .deterministicReply("One more rep.")) == "One more rep.")
+        #expect(AskNoumSpokenMode.spokenText(for: .deterministicReply("One more rep.", cause: .network)) == "One more rep.")
         #expect(AskNoumSpokenMode.spokenText(for: .reply("   ")) == nil)
-        #expect(AskNoumSpokenMode.spokenText(for: .deterministicReply("")) == nil)
+        #expect(AskNoumSpokenMode.spokenText(for: .deterministicReply("", cause: .network)) == nil)
     }
 }
 
@@ -23164,7 +23190,7 @@ struct AICoachChatDeterministicReplyTests {
                 )
                 let outcome = AICoachChatService.deterministicReplyOutcome(failure: cause, context: ctx)
                 switch outcome {
-                case .deterministicReply(let text):
+                case .deterministicReply(let text, _):
                     #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 case .reply, .failure:
                     Issue.record("gated wrapper degraded a normal deterministic line for \(cause) / \(String(describing: voice))")
@@ -40806,7 +40832,7 @@ struct AICoachTruncationGuardTests {
 
         let emptyOutcome = AICoachChatService.outcomeForMissingExtractedReply(.empty, context: ctx)
         switch emptyOutcome {
-        case .some(.deterministicReply(let text)):
+        case .some(.deterministicReply(let text, _)):
             #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         case .some(.reply), .some(.failure), nil:
             Issue.record("non-truncated empty extraction should answer with a deterministic coach bubble")

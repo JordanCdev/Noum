@@ -145,7 +145,7 @@ struct DeterministicRepeatGuardTests {
     @Test func identicalContextNeverRepeatsThePreviousBubble() {
         let context = ChatFallbackContext()
         let first = AICoachChatService.deterministicReplyOutcome(failure: .network, context: context)
-        guard case .deterministicReply(let firstText) = first else {
+        guard case .deterministicReply(let firstText, _) = first else {
             Issue.record("primary deterministic outcome should be a reply")
             return
         }
@@ -155,7 +155,7 @@ struct DeterministicRepeatGuardTests {
             context: context,
             previousCoachText: firstText
         )
-        guard case .deterministicReply(let secondText) = second else {
+        guard case .deterministicReply(let secondText, _) = second else {
             Issue.record("repeat-guarded outcome should still be a reply")
             return
         }
@@ -172,7 +172,7 @@ struct DeterministicRepeatGuardTests {
             context: context,
             previousCoachText: "A genuinely different earlier reply."
         )
-        guard case .deterministicReply(let text) = outcome else {
+        guard case .deterministicReply(let text, _) = outcome else {
             Issue.record("expected a deterministic reply")
             return
         }

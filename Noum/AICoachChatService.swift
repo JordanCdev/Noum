@@ -57,6 +57,11 @@ enum ChatFailure: Equatable {
     /// length-truncated completion, or a deterministic substitute failed its
     /// own quality gate. Distinct from `.network` because rephrasing might help.
     case empty
+    /// The model WAS reachable and replied, but every draft (and repair)
+    /// failed the local quality gate. Distinct from `.network` so the UI
+    /// never claims "offline" to a user who is online — that reads as a
+    /// broken product, not an honest state.
+    case contentRejected
 }
 
 /// Outcome of a chat turn — a live model reply, a *deterministic* offline
@@ -75,8 +80,18 @@ enum ChatOutcome {
     /// real coach bubble — never a system notice. Mirrors
     /// `AICoachService.deterministicFeedback` /
     /// `PostRepCoachNoteService.deterministicNote`.
-    case deterministicReply(String)
+    ///
+    /// `cause` is why the live path didn't answer. The store uses it to
+    /// label the row honestly: `.contentRejected` (model reachable, draft
+    /// below bar) must NOT wear the "Offline" marker.
+    case deterministicReply(String, cause: ChatFailure)
     case failure(ChatFailure)
+}
+
+extension ChatFailure {
+    /// Whether a deterministic reply with this cause should present as
+    /// "offline" in the UI. Content rejection happens while fully online.
+    var presentsAsOffline: Bool { self != .contentRejected }
 }
 
 /// Provider response extraction result for Ask Noum text replies. Kept typed
@@ -451,6 +466,7 @@ actor AICoachChatService {
         )
 
         let chain = Self.orderedChain(keyed: keyed, cooldowns: providerCooldowns, now: Date())
+        var sawContentRejection = false
         for provider in chain {
             guard let endpoint = provider.endpoint, let key = key(for: provider) else { continue }
             let outcome = await attempt(
@@ -467,6 +483,7 @@ actor AICoachChatService {
                 providerCooldowns[provider] = nil
                 return .reply(text)
             case .refused(let refusal):
+                if refusal == .contentRejected { sawContentRejection = true }
                 if refusal.cooldown > 0 {
                     providerCooldowns[provider] = Date().addingTimeInterval(refusal.cooldown)
                 }
@@ -476,10 +493,12 @@ actor AICoachChatService {
 
         // Every keyed provider refused this turn — answer deterministically
         // instead of dead-ending the user (a coach who can't reach their
-        // notes still gives a useful read).
+        // notes still gives a useful read). A content rejection means the
+        // model WAS reachable, so that cause must win over `.network` —
+        // the row must not claim "offline" to an online user.
         Self.log.error("all \(chain.count) chat providers refused — deterministic fallback")
         return Self.deterministicReplyOutcome(
-            failure: .network,
+            failure: sawContentRejection ? .contentRejected : .network,
             context: fallback,
             latestUserTurn: latestUserTurn,
             previousCoachText: previousCoachText
@@ -554,7 +573,7 @@ actor AICoachChatService {
                         latestUserTurn: latestUserTurn,
                         quoteGuard: quoteGuard
                     ) {
-                        Self.log.notice("\(provider.displayName, privacy: .public) reply tripped quality gate — repairing")
+                        Self.log.notice("\(provider.displayName, privacy: .public) reply tripped quality gate (\(String(describing: issue), privacy: .public)) — repairing")
                         if let repaired = await repairLowQualityReply(
                             issue: issue,
                             draft: text,
@@ -1058,7 +1077,7 @@ actor AICoachChatService {
             candidate = alternateDeterministicReply(context: context, avoidingNormalized: previous)
         }
         guard let issue = replyQualityIssue(in: candidate, latestUserTurn: latestUserTurn) else {
-            return .deterministicReply(candidate)
+            return .deterministicReply(candidate, cause: failure)
         }
         switch issue {
         case .unanchoredCoaching, .missingPrescribedAction:
@@ -1069,7 +1088,7 @@ actor AICoachChatService {
             // the correct cold coach response, so these do not block the offline
             // path (the live path, with real data + a real turn, still enforces
             // them on model output).
-            return .deterministicReply(candidate)
+            return .deterministicReply(candidate, cause: failure)
         case .tooLong, .roboticPhrase, .bareClarification, .defensiveProductLanguage,
              .menuInsteadOfDecision, .missedTrustRepair, .overclaimsEvidence,
              .unverifiedQuotedUserSpeech, .unengagedUserSpeechClaim:
