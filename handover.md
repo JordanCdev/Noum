@@ -47,6 +47,48 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-14 continuation (autonomous `noum-1` run, real toolchain). Full detail
+in `docs/COACH_PARITY_EVAL_2026-06-14.md` + `docs/SPEC_emotional_read_visibility.md`:
+
+- Ran the FIRST 6-role evaluation of the tree AFTER the coach-call redesign
+  (`7be6d71..49b96e9`); the 06-11 eval predates it. Honest score: **7.1/10**.
+  Literal "10/10, no-doubt replaces a human coach" = **no**, for one structural
+  reason (`CoachParityReadiness` caps at `.forming`; earned validation needs
+  real-world outcomes + expert calibration the app can't self-generate — a trust
+  feature) and one fixable reason (intelligence stays delivery-invisible at the
+  retention moments). Redesign verdict: net wash — bug fixes (echo loop, dedup,
+  chat-honesty) bought back exactly what the flow regressions (push-to-talk,
+  call-as-day-0-default) cost; the headline blocker is untouched.
+- Shipped two owner-local, unit-tested, red-line-safe slices (one coherent
+  "make the real intelligence precise + reachable" theme):
+  - **Rank 3 — day-0 door.** `CoachSessionView.resolvedInitialMode(...)` routes a
+    `.live` request to the typed chat when voice isn't actually accessible
+    (speech auth + mic record permission) or it's a true cold start (no rep AND
+    no chosen voice). `.askNoumTyped` stays typed. Pure + 4 tests. Fixes the
+    cold-start finding (lowest role score, 6.8) — a nervous/permission-blocked
+    beginner no longer lands in a dead "Listening…".
+  - **Rank 4 — confidence-graded emotional read** in `CoachContextBuilder`:
+    incidental-context guard ("stuck in traffic" ≠ frustration), self-correction
+    downgrade to tentative, a confidence qualifier on the LIVE COACHING FRAME,
+    and a confidence-WEIGHTED `detectArcPattern` requiring ≥1 unambiguous turn
+    (four tentative mentions never sustain). 4 tests. Serves the CLAUDE.md
+    invariants *weak evidence → softer feedback* / *avoid fake certainty*.
+- Verified: `CoachContextBuilderTests` **73/73**; regression batch across
+  CoachContextBuilderIntent/Proof, AICoachChatDeterministicReply,
+  AICoachChatReplyQualityGate, CoachChatEvaluationFixture,
+  ReflectionToCoachContextEndToEnd, CoachMemoryEngine. Built + tested on the
+  iPhone 17 simulator to isolated `./DerivedData/Noum-eval0614` (concurrent-agent
+  lock-contention protocol).
+- **DEFERRED with a precise spec, not skipped:** Rank 1 (make the emotional read
+  *visible* in the spoken reply) — it modifies what the coach says/speaks and the
+  eval gates it on on-device felt QA with a real provider key that an autonomous
+  run cannot honestly do. Its precision prerequisite (#4) shipped, so it's now
+  safe to build behind that QA. Spec: `docs/SPEC_emotional_read_visibility.md`.
+  Also spec-level: Rank 2 (persist next intervention as a call-landing anchor),
+  Rank 5 (emotional-read confirm/reject chips).
+- Did NOT push (concurrent-agent ref-race protocol). HEAD was `49b96e9`
+  throughout.
+
 2026-06-11 continuation (autonomous `noum-1` run, real toolchain). Full detail
 in `docs/UX_VALUE_OVERHAUL_SESSION_2026-06-11_CONTINUATION.md` +
 `docs/COACH_PARITY_EVAL_2026-06-11.md`:

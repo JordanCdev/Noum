@@ -9337,6 +9337,112 @@ struct CoachContextBuilderTests {
         #expect(lines.contains("do not ask the same choice again"))
     }
 
+    // MARK: - Day-0 coach door (rank 3, 2026-06-14 eval)
+
+    @available(iOS 17.0, macOS 12.0, *)
+    @Test func coachSessionRoutesToTypeWhenVoiceInaccessible() {
+        // A live request is not honored when the call cannot actually hear the
+        // user — land in the readable typed chat instead of a dead "Listening…".
+        #expect(CoachSessionView.resolvedInitialMode(
+            requested: .live, voiceAccessible: false,
+            hasCompletedReps: true, hasVoiceProfile: true) == .type)
+    }
+
+    @available(iOS 17.0, macOS 12.0, *)
+    @Test func coachSessionRoutesToTypeForTrueColdStart() {
+        // Voice accessible, but a true cold start (no rep, no chosen voice) meets
+        // the coach in text first — the call is the wrong nervous-beginner door.
+        #expect(CoachSessionView.resolvedInitialMode(
+            requested: .live, voiceAccessible: true,
+            hasCompletedReps: false, hasVoiceProfile: false) == .type)
+    }
+
+    @available(iOS 17.0, macOS 12.0, *)
+    @Test func coachSessionKeepsLiveForReturningUserWithVoiceAccess() {
+        // Any footing (a completed rep OR a chosen voice) + voice access = call.
+        #expect(CoachSessionView.resolvedInitialMode(
+            requested: .live, voiceAccessible: true,
+            hasCompletedReps: true, hasVoiceProfile: false) == .live)
+        #expect(CoachSessionView.resolvedInitialMode(
+            requested: .live, voiceAccessible: true,
+            hasCompletedReps: false, hasVoiceProfile: true) == .live)
+    }
+
+    @available(iOS 17.0, macOS 12.0, *)
+    @Test func coachSessionAlwaysHonorsExplicitTypeRequest() {
+        // askNoumTyped requests .type and is never upgraded to the call.
+        #expect(CoachSessionView.resolvedInitialMode(
+            requested: .type, voiceAccessible: true,
+            hasCompletedReps: true, hasVoiceProfile: true) == .type)
+    }
+
+    // MARK: - Confidence-graded emotional read (rank 4, 2026-06-14 eval)
+
+    @Test func emotionalReadDropsIncidentalStuck() {
+        let lines = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: "I was stuck in traffic on the way to my meeting today.",
+            previousCoachReply: nil,
+            profile: sampleProfile(voice: .warm),
+            coachMemory: nil
+        ).joined(separator: " ")
+        #expect(!lines.contains("Emotional signal (hypothesis, not diagnosis): frustration"))
+    }
+
+    @Test func emotionalReadKeepsGenuineFrustrationAsStrong() {
+        let lines = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: "Ugh, I keep messing up the same opening, I'm so stuck.",
+            previousCoachReply: nil,
+            profile: sampleProfile(voice: .warm),
+            coachMemory: nil
+        ).joined(separator: " ")
+        #expect(lines.contains("Emotional signal (hypothesis, not diagnosis): frustration"))
+        #expect(lines.contains("clear in this turn"))
+    }
+
+    @Test func emotionalReadGradesSelfCorrectionAsTentative() {
+        let lines = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: "I keep messing up the intro, but I'm managing now, all good.",
+            previousCoachReply: nil,
+            profile: sampleProfile(voice: .warm),
+            coachMemory: nil
+        ).joined(separator: " ")
+        // A self-corrected turn must never present as a hard "clear" read.
+        #expect(lines.contains("Emotional signal (hypothesis, not diagnosis): frustration"))
+        #expect(lines.contains("treat as tentative"))
+        #expect(!lines.contains("clear in this turn"))
+    }
+
+    @Test func sustainedPatternRequiresStrongEvidenceNotFourTentative() {
+        // Four tentative (non-first-person) mentions weigh 2.0 but carry zero
+        // unambiguous turns — they must NOT sustain a confident pattern claim.
+        let tentative = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: "anyway",
+            previousCoachReply: nil,
+            profile: nil,
+            coachMemory: nil,
+            recentUserTurns: [
+                "the printer is stuck again",
+                "traffic was stuck for an hour",
+                "the door handle is stuck",
+                "the queue was stuck"
+            ]
+        ).joined(separator: " ")
+        #expect(!tentative.contains("Sustained pattern"))
+
+        // Two strong first-person frustration turns DO sustain.
+        let strong = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: "anyway",
+            previousCoachReply: nil,
+            profile: nil,
+            coachMemory: nil,
+            recentUserTurns: [
+                "ugh I keep messing up",
+                "I can't get this, I keep failing"
+            ]
+        ).joined(separator: " ")
+        #expect(strong.contains("Sustained pattern"))
+    }
+
     @Test func userContextAddsGreetingFrame() {
         let ctx = CoachContextBuilder.userContext(
             profile: sampleProfile(voice: .concise),

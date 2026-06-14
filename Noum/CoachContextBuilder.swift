@@ -1161,17 +1161,20 @@ enum CoachContextBuilder {
             lines.append("- Coaching move: answer the user's actual ask first, then connect it to the active case only if it genuinely helps.")
         }
 
-        // === EMOTIONAL SIGNAL DETECTION (additive to intent) ===
-        let emotionalSignals = detectEmotionalSignals(lower)
+        // === EMOTIONAL SIGNAL DETECTION (additive to intent, confidence-graded) ===
+        let graded = gradedSignals(lower)
         let voice = profile?.speakingStyleGoal
 
-        if let primary = emotionalSignals.first {
-            let move = emotionalCoachingMove(for: primary, voice: voice)
-            lines.append("- Emotional signal (hypothesis, not diagnosis): \(primary.contextLabel).")
+        if let primary = graded.first {
+            let move = emotionalCoachingMove(for: primary.signal, voice: voice)
+            let qualifier = primary.confidence == .strong
+                ? "clear in this turn"
+                : "weak signal — treat as tentative, do not lead hard with it"
+            lines.append("- Emotional signal (hypothesis, not diagnosis): \(primary.signal.contextLabel) (\(qualifier)).")
             lines.append("- Emotional register: \(move)")
         }
 
-        // === CONVERSATION ARC (sustained emotional pattern) ===
+        // === CONVERSATION ARC (sustained emotional pattern, confidence-weighted) ===
         if let arc = detectArcPattern(recentUserTurns: recentUserTurns) {
             lines.append("- Sustained pattern: \(arc.signal.contextLabel) across \(arc.turnCount) of the last 4 turns. This is not a one-off — adjust the coaching posture accordingly.")
         }
@@ -1314,13 +1317,21 @@ enum CoachContextBuilder {
     private static func detectEmotionalSignals(_ lower: String) -> [EmotionalSignal] {
         var signals: [EmotionalSignal] = []
 
-        if containsAny(lower, [
+        // "stuck" is the highest-collision frustration trigger — "stuck in
+        // traffic" / "stuck in a meeting" is not coaching frustration. Match
+        // the rest of the triggers directly, and only count a bare "stuck"
+        // when it is NOT in an incidental physical context. Any non-stuck
+        // trigger ("ugh", "this isn't working") in the same turn keeps the
+        // frustration read regardless.
+        let frustrationTriggersExStuck = [
             "i can't", "i cant", "this isn't working", "this isnt working",
-            "not working", "ugh", "stuck", "failing", "keep messing up",
+            "not working", "ugh", "failing", "keep messing up",
             "same mistake", "what's the point", "whats the point",
             "going nowhere", "no progress", "getting worse",
             "i keep", "argh", "damn"
-        ]) {
+        ]
+        if containsAny(lower, frustrationTriggersExStuck)
+            || (lower.contains("stuck") && !isIncidentalStuck(lower)) {
             signals.append(.frustration)
         }
 
@@ -1412,6 +1423,78 @@ enum CoachContextBuilder {
         }
 
         return signals
+    }
+
+    // MARK: - Confidence grading (false-positive suppression)
+    //
+    // Rank-4 of the 2026-06-14 eval: before the coach's read is ever made more
+    // visible, it must be more PRECISE. Raw keyword matching over-fires — a
+    // bare keyword in an incidental clause ("stuck in traffic") or a turn that
+    // self-corrects ("I was frustrated but I'm managing now") should not be
+    // read as a sustained emotional state. These helpers grade each turn's
+    // signals so the LIVE COACHING FRAME can carry a confidence qualifier and
+    // the arc detector can require genuine strength — never punishing a
+    // semantically-valid turn with a confident misread (CLAUDE.md invariant:
+    // weak evidence → softer feedback; avoid fake certainty from small samples).
+
+    /// Confidence in a single-turn emotional read. `strong` = a first-person
+    /// emotional frame with no self-correction; `tentative` = a soft / bare /
+    /// self-corrected mention that the coach should hold lightly.
+    private enum SignalConfidence {
+        case strong, tentative
+        var weight: Double { self == .strong ? 1.0 : 0.5 }
+    }
+
+    /// Per-turn signals paired with a confidence grade. Empty when the turn
+    /// carries no emotional signal.
+    private static func gradedSignals(
+        _ lower: String
+    ) -> [(signal: EmotionalSignal, confidence: SignalConfidence)] {
+        let signals = detectEmotionalSignals(lower)
+        guard !signals.isEmpty else { return [] }
+        // A self-corrected turn, or one with no first-person framing, is held
+        // as tentative — the read may be real but the coach must not lead hard
+        // with it.
+        let confidence: SignalConfidence =
+            (selfCorrects(lower) || !firstPersonEmotionalFrame(lower)) ? .tentative : .strong
+        return signals.map { ($0, confidence) }
+    }
+
+    /// True when the bare trigger "stuck" appears only in an incidental
+    /// physical context, not a coaching-frustration one.
+    private static func isIncidentalStuck(_ lower: String) -> Bool {
+        containsAny(lower, [
+            "stuck in traffic", "stuck in a meeting", "stuck in line",
+            "stuck on the train", "stuck on a call", "stuck at work",
+            "stuck in the", "stuck behind", "stuck on the bus"
+        ])
+    }
+
+    /// True when the turn frames the feeling in the first person — the
+    /// structural marker that separates "I'm stuck and frustrated" (a real
+    /// emotional disclosure) from a detached or third-party mention.
+    private static func firstPersonEmotionalFrame(_ lower: String) -> Bool {
+        lower.hasPrefix("i ") || lower.hasPrefix("i'm") || lower.hasPrefix("im ")
+            || containsAny(lower, [
+                " i ", "i'm", "im ", "i'll", "i've", "i'd", "i can", "i cant",
+                "i can't", "i keep", "my ", " me ", "i feel", "i am", "i was"
+            ])
+    }
+
+    /// True when the same turn walks the feeling back ("…but I'm managing now",
+    /// "actually I'm good"). The coach should treat such a turn as tentative,
+    /// not lock onto the first half.
+    private static func selfCorrects(_ lower: String) -> Bool {
+        containsAny(lower, [
+            "but i'm managing", "but im managing", "but i'm ok", "but im ok",
+            "but i'm okay", "but im okay", "but i'm good", "but im good",
+            "but i'm fine", "but im fine", "actually i'm fine", "actually im fine",
+            "actually i'm good", "actually im good", "feeling good now",
+            "feeling better now", "but it's fine", "but its fine", "all good now",
+            "but i got it", "but i figured it out", "no worries though",
+            "i'm okay now", "im okay now", "i'm fine now", "im fine now",
+            "but i'm getting there", "but im getting there"
+        ])
     }
 
     /// Voice-specific coaching move for a detected emotional signal. Each
@@ -1616,23 +1699,31 @@ enum CoachContextBuilder {
         guard recentUserTurns.count >= 2 else { return nil }
 
         let window = recentUserTurns.suffix(4)
-        var signalCounts: [EmotionalSignal: Int] = [:]
+        var weighted: [EmotionalSignal: Double] = [:]
+        var counts: [EmotionalSignal: Int] = [:]
+        var strongCounts: [EmotionalSignal: Int] = [:]
 
         for turn in window {
-            let lower = turn.lowercased()
-            let signals = detectEmotionalSignals(lower)
-            for signal in signals {
-                signalCounts[signal, default: 0] += 1
+            for (signal, confidence) in gradedSignals(turn.lowercased()) {
+                weighted[signal, default: 0] += confidence.weight
+                counts[signal, default: 0] += 1
+                if confidence == .strong { strongCounts[signal, default: 0] += 1 }
             }
         }
 
-        // Only surface a pattern when 2+ turns carry the same signal
-        guard let (signal, count) = signalCounts.max(by: { $0.value < $1.value }),
-              count >= 2 else {
+        // Surface a pattern only when the confidence-WEIGHTED evidence reaches
+        // 2.0 (two strong turns, or one strong + soft echoes) AND at least one
+        // mention was unambiguous. This is why two high-confidence turns
+        // outrank four tentative ones: four soft mentions weigh 2.0 but carry
+        // zero strong turns, so they never sustain on their own — avoiding a
+        // confident pattern claim built from incidental keywords.
+        guard let (signal, weight) = weighted.max(by: { $0.value < $1.value }),
+              weight >= 2.0,
+              (strongCounts[signal] ?? 0) >= 1 else {
             return nil
         }
 
-        return (signal, count)
+        return (signal, counts[signal] ?? 0)
     }
 
     private static func isLowSignalGreeting(_ normalized: String) -> Bool {
