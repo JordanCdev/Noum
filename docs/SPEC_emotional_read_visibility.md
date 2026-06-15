@@ -1,10 +1,35 @@
 # Spec — make the coach's emotional read visible (rank 1, 2026-06-14 eval)
 
-Status: **spec only — deliberately not auto-shipped.** This changes what the
-coach *says/speaks*, and the synthesis gates it on on-device felt QA with a real
-provider key, which an autonomous run cannot honestly do. Its precision
-prerequisite (rank 4, confidence-graded detection) **shipped** on `49b96e9`+,
-so the foundation this depends on is in place.
+Status: **APPROACH #1 SHIPPED 2026-06-15 — commit `985ba09` (`COACH-VISIBLE`).**
+The "Recommended approach (lowest-risk)" below — strengthen the frame instruction
+— is now in `CoachContextBuilder.liveCoachingFrameLines`: when a signal is
+**strong this turn AND sustained across the arc** (`primary.confidence == .strong`
+and `detectArcPattern(...).signal == primary.signal`), it appends a near-imperative
+"Open this reply by naming this read in plain language…" line. The coach's words
+stay model-generated, so they still pass the reply quality gate, and a weak /
+tentative / one-off read never forces a visible open. Pure + 3 unit tests
+(`strongSustainedSignalEmitsMandatoryOpenInstruction`,
+`tentativeSignalNeverForcesVisibleOpen`, `oneOffStrongSignalDoesNotForceVisibleOpen`).
+Verified green on the iPhone 17 Pro simulator (full `CoachContextBuilderTests`
+pass; a deliberate FAIL-probe confirmed the new tests are genuinely selected and
+executing). NB: `985ba09` was committed by the concurrent `noum2` run from an
+identical in-tree implementation; the `noum-1` run reproduced the same code
+byte-for-byte independently and ran the verification above — two agents converging
+on the same minimal change is itself a correctness signal.
+
+**Still owed before this is fully closed:** the on-device felt-QA of the *spoken*
+open (does the model's resulting acknowledgment sound like a coach or a template,
+across warm / authoritative / concise / executive voices). The instruction is in
+place and safe; the felt quality of the output it produces is the human gate an
+autonomous run cannot stand in for. The guaranteed-gate path (below) remains
+unbuilt and is only needed if QA finds the model disobeys the instruction.
+
+----
+
+Original spec (retained for the guaranteed-gate path, still unbuilt):
+
+Its precision prerequisite (rank 4, confidence-graded detection) **shipped** on
+`49b96e9`+, so the foundation this depends on is in place.
 
 ## The gap
 

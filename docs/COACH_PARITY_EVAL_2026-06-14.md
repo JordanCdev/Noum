@@ -73,7 +73,7 @@ not the value unlock.
 
 | # | Item | Effort | Δ | Status this session |
 |---|------|--------|---|---------------------|
-| 1 | Make the coach's emotional read **visible** (acknowledgment surfaced at the trust moment) | S | +0.3–0.4 | **DEFERRED to spec** — see `docs/SPEC_emotional_read_visibility.md`. Modifies the *spoken* coach reply; needs on-device felt QA an autonomous run can't honestly do. Its precision prerequisite (#4) shipped. |
+| 1 | Make the coach's emotional read **visible** (acknowledgment surfaced at the trust moment) | S | +0.3–0.4 | **SHIPPED (frame-instruction path) 2026-06-15** — `liveCoachingFrameLines` now appends a mandatory-open instruction when the read is **strong AND sustained** (same signal strong this turn + sustained across the arc). Words stay model-generated (passes the quality gate, no double-naming, no clinical labels). Pure + 3 tests. ⚠️ Remaining felt-QA on the *spoken* open quality is still owed before calling it fully closed — see note below. |
 | 4 | **Confidence-grade** emotional detection (kill false positives) | M | +0.2 | **SHIPPED** this session — incidental-context guard + self-correction downgrade + confidence-weighted arc. Unit-tested. The upstream quality fix that makes #1 safe to ship. |
 | 3 | Gate the **day-0 default** on voice availability; chat as the cold-start door | S | +0.2 | **SHIPPED** this session — `CoachSessionView.resolvedInitialMode`, pure + unit-tested. |
 | 2 | Persist the next prescribed intervention in `CoachMemory`; surface as a durable call-landing anchor | M | +0.2–0.3 | Spec'd (below). Owner-local on `PrimaryFocusMemory` + `LiveCoachCallView`. |

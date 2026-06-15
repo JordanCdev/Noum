@@ -75,6 +75,17 @@ top deferred item; verified + committed stranded work, did NOT push:
   `PrimaryFocusMemory` + `LiveCoachCallView`, M effort, safe to build) and
   Rank 5 (emotional-read confirm/reject chips). The structural 10/10 ceiling is
   unchanged and intentional: `CoachParityReadiness` caps at `.forming` by design.
+- **noum-1 addendum (same day).** `noum-1` ran the IDENTICAL scheduled brief in
+  parallel and independently reimplemented this exact rank-1 change byte-for-byte
+  before discovering `985ba09` already existed — confirming correctness but
+  wasting ~4 build cycles. It synced the two docs `noum2` left stale
+  (`docs/COACH_PARITY_EVAL_2026-06-14.md` rank-1 row → SHIPPED;
+  `docs/SPEC_emotional_read_visibility.md` status → SHIPPED with the still-owed
+  felt-QA caveat) and re-verified `CoachContextBuilderTests` green on iPhone 17
+  Pro (FAIL-probe confirmed the 3 new tests are genuinely selected, not skipped).
+  ⚠️ **`noum-1` and `noum2` are byte-identical task prompts** → they will
+  duplicate every run. Serialize them, disable one, or split the briefs
+  (e.g. one ships code, one evaluates). Neither was pushed.
 
 2026-06-14 continuation (autonomous `noum-1` run, real toolchain). Full detail
 in `docs/COACH_PARITY_EVAL_2026-06-14.md` + `docs/SPEC_emotional_read_visibility.md`:
