@@ -47,6 +47,35 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-15 continuation (autonomous `noum2` run, real toolchain). Landed the
+top deferred item; verified + committed stranded work, did NOT push:
+
+- **Shipped build-list item #1** (`985ba09` — `COACH-VISIBLE`): the coach's
+  emotional read is now surfaced at the trust moment. A prior concurrent agent
+  had implemented the 06-14 spec's recommended approach #1 in the working tree
+  (`CoachContextBuilder.liveCoachingFrameLines`: when a read is **strong this
+  turn AND sustained across the arc** for the same signal, instruct the model to
+  OPEN by naming it in one plain clause) plus three unit tests — but left it
+  **uncommitted and unverified** (idle ~3.5h). This run compiled it (green),
+  ran `CoachContextBuilderTests` = **76/76** (was 73, +3 Rank-1 tests:
+  strongSustained→emits, tentative→never forces, one-off→never forces) on the
+  iPhone 17 sim to isolated `./DerivedData/Noum-rank1viz`, and committed it.
+  Coach's words stay model-generated → reply still passes the quality gate; no
+  authored-text injection, no double-naming, `ProofMomentService` untouched.
+  Closes the eval's #1 gap (the highest-value remaining slice, +0.3–0.4) and
+  unblocks Rank 5 (confirm/reject chips, which depended on #1+#4 landing).
+- ⚠️ **Heavy worktree contention this run.** 16 concurrent `xcodebuild`
+  processes were active; the first full build+test crashed the test host with
+  `XCTHTestOperationCoordinatorErrorDomain error 12` after the compile succeeded
+  — infra, not logic. `test-without-building` against a dedicated sim UDID
+  (`3D077053-…`) passed clean. If you see coordinator-error-12 / Channel
+  disconnected, re-run the test action only; the compile evidence still stands.
+- Remaining deferred (unchanged, real reasons): Rank 2 (persist next
+  intervention as a durable `CoachMemory` call-landing anchor — owner-local on
+  `PrimaryFocusMemory` + `LiveCoachCallView`, M effort, safe to build) and
+  Rank 5 (emotional-read confirm/reject chips). The structural 10/10 ceiling is
+  unchanged and intentional: `CoachParityReadiness` caps at `.forming` by design.
+
 2026-06-14 continuation (autonomous `noum-1` run, real toolchain). Full detail
 in `docs/COACH_PARITY_EVAL_2026-06-14.md` + `docs/SPEC_emotional_read_visibility.md`:
 
