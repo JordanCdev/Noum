@@ -9443,6 +9443,55 @@ struct CoachContextBuilderTests {
         #expect(strong.contains("Sustained pattern"))
     }
 
+    // MARK: - Rank-1 emotional-read visibility (2026-06-14 eval)
+
+    @Test func strongSustainedSignalEmitsMandatoryOpenInstruction() {
+        // The latest turn is a strong first-person frustration read AND the arc
+        // sustains the same signal — the coach must be told to OPEN by naming it.
+        let lines = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: "Ugh, I keep messing up the same opening, I'm so stuck.",
+            previousCoachReply: nil,
+            profile: sampleProfile(voice: .warm),
+            coachMemory: nil,
+            recentUserTurns: [
+                "ugh I keep messing up",
+                "I can't get this, I keep failing",
+                "Ugh, I keep messing up the same opening, I'm so stuck."
+            ]
+        ).joined(separator: " ")
+        #expect(lines.contains("Open this reply by naming this read"))
+    }
+
+    @Test func tentativeSignalNeverForcesVisibleOpen() {
+        // A self-corrected (tentative) latest turn must never force a visible
+        // open, even if the arc sustains — a misread is never spoken first.
+        let lines = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: "I keep messing up the intro, but I'm managing now, all good.",
+            previousCoachReply: nil,
+            profile: sampleProfile(voice: .warm),
+            coachMemory: nil,
+            recentUserTurns: [
+                "ugh I keep messing up",
+                "I can't get this, I keep failing",
+                "I keep messing up the intro, but I'm managing now, all good."
+            ]
+        ).joined(separator: " ")
+        #expect(!lines.contains("Open this reply by naming this read"))
+    }
+
+    @Test func oneOffStrongSignalDoesNotForceVisibleOpen() {
+        // Strong this turn but NOT sustained across the arc — the read is real
+        // but unproven as a pattern, so it stays soft (no mandatory open).
+        let lines = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: "Ugh, I keep messing up the same opening, I'm so stuck.",
+            previousCoachReply: nil,
+            profile: sampleProfile(voice: .warm),
+            coachMemory: nil
+        ).joined(separator: " ")
+        #expect(lines.contains("Emotional signal (hypothesis, not diagnosis): frustration"))
+        #expect(!lines.contains("Open this reply by naming this read"))
+    }
+
     @Test func userContextAddsGreetingFrame() {
         let ctx = CoachContextBuilder.userContext(
             profile: sampleProfile(voice: .concise),

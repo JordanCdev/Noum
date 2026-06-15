@@ -1165,6 +1165,11 @@ enum CoachContextBuilder {
         let graded = gradedSignals(lower)
         let voice = profile?.speakingStyleGoal
 
+        // === CONVERSATION ARC (sustained emotional pattern, confidence-weighted) ===
+        // Computed before the per-turn block so a strong-this-turn read that is
+        // ALSO sustained across the arc can trigger a visible acknowledgment.
+        let arc = detectArcPattern(recentUserTurns: recentUserTurns)
+
         if let primary = graded.first {
             let move = emotionalCoachingMove(for: primary.signal, voice: voice)
             let qualifier = primary.confidence == .strong
@@ -1172,10 +1177,21 @@ enum CoachContextBuilder {
                 : "weak signal — treat as tentative, do not lead hard with it"
             lines.append("- Emotional signal (hypothesis, not diagnosis): \(primary.signal.contextLabel) (\(qualifier)).")
             lines.append("- Emotional register: \(move)")
+
+            // Rank-1 visibility (2026-06-14 eval): being seen IS the coaching.
+            // When the read is BOTH strong in this turn AND sustained across the
+            // recent arc (the same signal), require the model to OPEN by naming
+            // it in plain language. The words stay model-generated, so the reply
+            // still passes the quality gate and there is no double-naming or
+            // clinical meta-text. A weak/tentative or one-off read never forces a
+            // visible open — that path stays soft so a misread is never spoken
+            // (CLAUDE.md: weak evidence → softer feedback).
+            if primary.confidence == .strong, arc?.signal == primary.signal {
+                lines.append("- Open this reply by naming this read in plain language before anything else — one short clause (e.g. \"Sounds like the last few reps have been frustrating\"), no clinical labels and without quoting their words back — then continue with the coaching move.")
+            }
         }
 
-        // === CONVERSATION ARC (sustained emotional pattern, confidence-weighted) ===
-        if let arc = detectArcPattern(recentUserTurns: recentUserTurns) {
+        if let arc {
             lines.append("- Sustained pattern: \(arc.signal.contextLabel) across \(arc.turnCount) of the last 4 turns. This is not a one-off — adjust the coaching posture accordingly.")
         }
 
