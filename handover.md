@@ -47,6 +47,45 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-16 continuation (autonomous `noum-1` run, real toolchain). Shipped the
+top remaining buildable deferred item; verified + committed; did NOT push:
+
+- **Shipped Rank 2** (`16151f9` — `COACH-ANCHOR`): the standing prescribed plan
+  is now surfaced as a durable **call-landing anchor** on `LiveCoachCallView`.
+  A human coach opens by naming the plan you agreed to last time; Noum already
+  persisted the next move (`CoachMemory.activeIntervention`) but the live-call
+  landing only ever showed the *read* (hypothesis / lever) — the next move was
+  never anchored the moment the call opened (the 06-14 eval's Rank-2 gap, "a
+  coach you can't see"). Added `CoachCaseFile.callLandingAnchor` (pure builder
+  + computed property in `PrimaryFocusMemory.swift`): a continuity-framed line
+  ("Picking up where we left off: <intervention>. Target: <target>.") whose
+  phrasing tracks `nextMove` (review-due → "Time to review this:"; adapt →
+  "…last time this needed adapting:"). Returns nil with no standing
+  intervention so a true cold start fabricates nothing. Wired top-priority into
+  `coachingFocusLine`; the landing now leads with the *plan* (continuity) and
+  the *read* stays in the spoken open (Rank 1) — the two split cleanly. Pure +
+  **6 tests** (`CallLandingAnchorTests`); `CoachMemoryEngineTests` +
+  `CoachContextBuilderTests` regressions green on iPhone 17 Pro, isolated
+  `./DerivedData/Noum-rank2`. Red-line safe: no parity claim, no fabrication,
+  one supporting line (respects the owner's clean-landing constraint).
+- **Remaining deferred** (unchanged reasons): Rank 5 (emotional-read
+  confirm/reject chips — reuses `CoachHypothesisConfidence`; a tappable UI
+  interaction on the live reply flow that genuinely needs felt/visual QA, so
+  left as a spec, not a blind autonomous build). The structural 10/10 ceiling
+  is unchanged and intentional (`CoachParityReadiness` caps at `.forming`).
+- ⚠️ **`noum-1` / `noum2` are STILL byte-identical task prompts** (re-confirmed
+  this run — see `SKILL.md` for each). They duplicate every fire and waste
+  build cycles. This run did NOT silently reconfigure Jordan's automation
+  (autonomous-task rule: write-actions only when the task file asks). Flagged
+  in the report with a ready-to-paste split (noum-1 = ship code, noum2 =
+  eval/QA-only, no commits) so the two become complementary instead of
+  duplicative. Until split, whichever fires second should `git log` for
+  already-shipped work BEFORE building.
+- **Connectors now available** (the prior handover said Figma was rate-limited
+  and Canva absent): both a Figma MCP and a Canva MCP are connected this
+  session. Not exercised this run — no concrete visual spec needed shipping —
+  but they're ready for a design-to-code or asset pass when one is scoped.
+
 2026-06-15 continuation (autonomous `noum2` run, real toolchain). Landed the
 top deferred item; verified + committed stranded work, did NOT push:
 
