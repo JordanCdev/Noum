@@ -379,11 +379,21 @@ struct LiveCoachCallView: View {
     /// timed rep, else `nil` on a true cold start (no reps → no focus to
     /// name, so the landing stays "Tap Talk").
     private var coachingFocusLine: String? {
-        if let caseFile = coachMemoryStore.currentMemory?.caseFile,
-           let earned = bounded(caseFile.hypothesis)
-               ?? caseFile.focus.map({ "Today's lever: \($0.displayName.lowercased())." })
-               ?? bounded(caseFile.activeIntervention) {
-            return earned
+        if let caseFile = coachMemoryStore.currentMemory?.caseFile {
+            // Rank 2 — a standing prescribed plan anchors the landing as
+            // continuity ("picking up where we left off"), the move a human
+            // coach opens with. This is the *plan*; the *read* (hypothesis)
+            // is surfaced in the spoken reply at the trust moment (Rank 1), so
+            // the landing leads with the plan and only falls back to the
+            // earned read / lever when no prescription is standing yet.
+            if let anchor = bounded(caseFile.callLandingAnchor) {
+                return anchor
+            }
+            if let earned = bounded(caseFile.hypothesis)
+                ?? caseFile.focus.map({ "Today's lever: \($0.displayName.lowercased())." })
+                ?? bounded(caseFile.activeIntervention) {
+                return earned
+            }
         }
         return lastRepLandingLine
     }

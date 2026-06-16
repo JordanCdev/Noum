@@ -17891,6 +17891,108 @@ struct CoachMemoryEngineTests {
     }
 }
 
+// MARK: - Call-landing anchor (eval Rank 2)
+//
+// The durable "pick up where we left off" line that names the standing
+// prescription on the live-call landing. Pure function of the case file's
+// plan fields + next move, so the continuity phrasing is locked without
+// standing up a CoachMemory or a live call. Closes the eval's Rank-2 gap:
+// "the next prescribed move … never anchored durably."
+@Suite("CallLandingAnchorTests")
+struct CallLandingAnchorTests {
+
+    @Test func standingPlanReadsAsContinuityWithTarget() {
+        let anchor = CoachCaseFile.callLandingAnchor(
+            activeIntervention: "Timed for a decisive close",
+            observableTarget: "One clean final sentence",
+            nextMove: .followIntervention
+        )
+        #expect(anchor == "Picking up where we left off: Timed for a decisive close. Target: One clean final sentence.")
+    }
+
+    @Test func standingPlanWithoutTargetStillAnchors() {
+        let anchor = CoachCaseFile.callLandingAnchor(
+            activeIntervention: "Timed for a decisive close",
+            observableTarget: nil,
+            nextMove: .followIntervention
+        )
+        #expect(anchor == "Picking up where we left off: Timed for a decisive close.")
+    }
+
+    @Test func reviewDueReadsAsReviewNotFreshStart() {
+        let anchor = CoachCaseFile.callLandingAnchor(
+            activeIntervention: "Timed for a decisive close",
+            observableTarget: "One clean final sentence",
+            nextMove: .reviewIntervention
+        )
+        #expect(anchor == "Time to review this: Timed for a decisive close. Target was One clean final sentence.")
+    }
+
+    @Test func adaptReadsAsAdaptBeforeRepeating() {
+        let anchor = CoachCaseFile.callLandingAnchor(
+            activeIntervention: "Timed for a decisive close",
+            observableTarget: "One clean final sentence",
+            nextMove: .adaptIntervention
+        )
+        #expect(anchor == "Picking back up — last time this needed adapting: Timed for a decisive close.")
+    }
+
+    @Test func noStandingPlanYieldsNoAnchorOnColdStart() {
+        // A true cold start has no prescribed intervention. The landing must
+        // show no anchor (the earned read / last-rep line / blank orb owns it)
+        // and never fabricate continuity that didn't happen.
+        #expect(CoachCaseFile.callLandingAnchor(
+            activeIntervention: nil,
+            observableTarget: "One clean final sentence",
+            nextMove: .gatherEvidence
+        ) == nil)
+        #expect(CoachCaseFile.callLandingAnchor(
+            activeIntervention: "   ",
+            observableTarget: nil,
+            nextMove: .followIntervention
+        ) == nil)
+    }
+
+    @Test func computedPropertyMatchesPureBuilder() {
+        // The CoachCaseFile.callLandingAnchor computed property must delegate
+        // to the pure builder with its own fields — so what the landing renders
+        // equals what the unit-tested builder produces.
+        let caseFile = CoachCaseFile(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            hypothesis: "Closings may be the highest-leverage focus because endings are rushed.",
+            focus: .closingStrength,
+            evidenceSummary: "Forming read across 5 signals",
+            activeIntervention: "Timed for a decisive close",
+            observableTarget: "One clean final sentence",
+            successMeasure: nil,
+            reviewDueAt: nil,
+            subjectivePattern: nil,
+            transferRead: nil,
+            nextMove: .followIntervention,
+            nextQuestion: "What is the next followed rep that will test the success measure?"
+        )
+        #expect(caseFile.callLandingAnchor == "Picking up where we left off: Timed for a decisive close. Target: One clean final sentence.")
+
+        // No intervention on the case file → no anchor (the read still shows
+        // via the landing's hypothesis fallback, exercised elsewhere).
+        let readOnly = CoachCaseFile(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            hypothesis: "Closings may be the highest-leverage focus.",
+            focus: .closingStrength,
+            evidenceSummary: "Forming read across 5 signals",
+            activeIntervention: nil,
+            observableTarget: nil,
+            successMeasure: nil,
+            reviewDueAt: nil,
+            subjectivePattern: nil,
+            transferRead: nil,
+            nextMove: .confirmHypothesis,
+            nextQuestion: "Does this working hypothesis match the user's lived experience?"
+        )
+        #expect(readOnly.callLandingAnchor == nil)
+    }
+}
+
 // MARK: - Stated-vs-measured concordance (slice-4)
 //
 // Covers the deterministic seams of the diagnosis owner's stated-vs-measured

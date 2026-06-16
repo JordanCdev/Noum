@@ -1273,6 +1273,62 @@ struct CoachCaseFile: Codable, Equatable {
         let title = bounded(moment.title) ?? moment.category.title
         return "Preparing for: \(title) (\(moment.category.displayName)), \(days) day\(days == 1 ? "" : "s") away."
     }
+
+    // MARK: - Call-landing anchor (the standing plan, surfaced on open)
+
+    /// The durable "pick up where we left off" line for the live-call landing.
+    /// A human coach opens by naming the plan you both agreed to last time;
+    /// Noum prescribes a next move (`activeIntervention`) and persists it in
+    /// `CoachMemory`, but until now never anchored it the moment the call
+    /// opened — the eval's Rank-2 gap ("the next prescribed move … never
+    /// anchored durably"). This names the standing prescription as a calm
+    /// continuity line so the call lands on the plan, not a blank orb.
+    ///
+    /// Deliberately distinct from `hypothesis` — that is the coach's *read*,
+    /// surfaced in the *spoken* reply at the trust moment (Rank 1). This is the
+    /// *plan* (the prescribed intervention + its observable target). The two
+    /// split cleanly: the landing carries continuity, the spoken open carries
+    /// the read.
+    ///
+    /// Returns `nil` when there is no standing intervention, so a true cold
+    /// start (no prescription yet) shows no anchor and nothing is fabricated —
+    /// the earned read / last-rep line / blank orb still own that case. The
+    /// phrasing tracks `nextMove` so a review-due or adapt case reads as the
+    /// real current move, never a stale "keep going".
+    var callLandingAnchor: String? {
+        CoachCaseFile.callLandingAnchor(
+            activeIntervention: activeIntervention,
+            observableTarget: observableTarget,
+            nextMove: nextMove
+        )
+    }
+
+    /// Pure builder behind `callLandingAnchor`, lifted out so the continuity
+    /// phrasing can be unit-tested without standing up a `CoachMemory`. Brand
+    /// voice: measured, no exclamation, no "Let's", no hype. Returns `nil`
+    /// without a standing intervention.
+    static func callLandingAnchor(
+        activeIntervention: String?,
+        observableTarget: String?,
+        nextMove: CoachCaseNextMove
+    ) -> String? {
+        guard let plan = bounded(activeIntervention) else { return nil }
+        let target = bounded(observableTarget)
+        switch nextMove {
+        case .reviewIntervention:
+            // Enough followed reps have landed and the review window is due —
+            // the anchor names a review, not a fresh start.
+            return target.map { "Time to review this: \(plan). Target was \($0)." }
+                ?? "Time to review this: \(plan)."
+        case .adaptIntervention:
+            // The last attempt needs adapting before repeating it unchanged.
+            return "Picking back up — last time this needed adapting: \(plan)."
+        default:
+            // A standing, still-active plan: the common continuity case.
+            return target.map { "Picking up where we left off: \(plan). Target: \($0)." }
+                ?? "Picking up where we left off: \(plan)."
+        }
+    }
 }
 
 enum CoachMemoryEngine {
