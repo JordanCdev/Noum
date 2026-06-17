@@ -335,7 +335,14 @@ struct LiveCoachCallView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxHeight: 150)
+                // Raised from 150 so the recent multi-sentence coaching reads
+                // don't clip into a cramped nested scroll under larger Dynamic
+                // Type. The whole caption is exposed to VoiceOver as one grouped
+                // element so a muted user (or anyone) can read the full reply —
+                // mirrors the chat coachBubble's "Noum: …" a11y label.
+                .frame(maxHeight: 220)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(captionIsOffline ? "Noum, offline reply: \(caption)" : "Noum: \(caption)")
             }
             .padding(Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -588,10 +595,24 @@ struct LiveCoachCallView: View {
     }
 
     private func handleUtterance(_ text: String) {
+        // Single-in-flight: a turn already awaiting a reply must not be
+        // superseded by a second dispatch (barge-in / Talk / late silence
+        // send all route here). Without this, two pending rows + two
+        // CoachReplyPipeline runs race and completeCoachTurn clears
+        // isAwaitingReply when EITHER lands, leaving the other stuck.
+        guard !store.isAwaitingReply else { return }
         hasLiveExchange = true
         let ids = store.appendUserTurn(text)
         Task {
+            // The pipeline hydrates the thread row regardless — that must
+            // always happen so the reply is there when the user returns to
+            // Type mode. But SPEAKING is gated on the call still being live:
+            // the reply resolves 1-3s later on the IMMessageSpeaker.shared
+            // singleton, so without this guard the coach's voice plays on
+            // whatever screen the user moved to after Leave/Type. Same
+            // TTS-when-it-must-not class the auto-rearm removal closed.
             let outcome = await CoachReplyPipeline.generate(coachID: ids.coachID)
+            guard loopActive else { return }
             let route = AskNoumSpokenMode.spokenRoute(
                 outcome: outcome,
                 spokenRepliesEnabled: voiceSettings.askNoumSpokenRepliesEnabled,

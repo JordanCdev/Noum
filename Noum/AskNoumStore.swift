@@ -289,6 +289,37 @@ final class AskNoumStore: ObservableObject {
         persist()
     }
 
+    /// Per-account lifecycle — mirrors every other UserDefaults-backed store
+    /// (CoachMemoryStore, PostRepCoachNoteStore, …) so `AuthManager`'s
+    /// account-switch / session-reset / data-deletion plumbing covers the
+    /// coach thread too. WITHOUT this registration, signing into account B
+    /// showed account A's entire dialogue (and the model replayed A's turns as
+    /// B's history via `replayForModel`), and account deletion never wiped the
+    /// thread from disk — a GDPR-deletion leak.
+    ///
+    /// Reload: drop the in-memory thread, then read the NEW account's key.
+    func reloadForCurrentAccount() {
+        clearInMemoryState()
+        loadFromDisk()
+    }
+
+    /// Session reset (sign-out): clear the in-memory thread. Disk is left
+    /// intact — the per-account key isolates users; hard deletion is
+    /// `AuthManager.clearAllUserData`.
+    func endSession() {
+        clearInMemoryState()
+    }
+
+    /// Empty all in-memory thread state without touching disk. Shared by the
+    /// reload (before re-reading the new account) and the session-reset paths.
+    private func clearInMemoryState() {
+        messages.removeAll()
+        aiChipsCache.removeAll()
+        starterChipsCache.removeAll()
+        pendingInjectedCoachID = nil
+        isAwaitingReply = false
+    }
+
     /// Cache an AI-generated chip set for a specific coach reply. Called
     /// by AskNoumView once the chip-generation request returns successfully.
     /// Idempotent — overwriting is a no-op if the chips match; we don't

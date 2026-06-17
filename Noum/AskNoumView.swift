@@ -538,6 +538,13 @@ struct AskNoumView: View {
             // calling `IMMessageSpeaker.shared.stop()` on `.onDisappear`. Cheap
             // no-op when nothing is playing.
             speaker.stop()
+            // Backing out mid-dictation must release the mic. Without this the
+            // AVAudioEngine keeps running, the cloud (Deepgram) websocket keeps
+            // streaming (billable), the audio session stays held in
+            // playAndRecord+duckOthers, and InteractionSoundEngine.recordingActive
+            // stays true — every tap/selection sound app-wide silenced until the
+            // 30s max-duration timer finally fires. Cheap no-op when idle.
+            voiceInput.cancelRecording()
             // Never let a half-written reveal mutate state after we've left.
             revealTask?.cancel()
         }
@@ -2429,6 +2436,13 @@ struct AskNoumView: View {
         // chips), so this guard is belt-and-braces — it keeps the invariant
         // true even if a future surface wires a send into the seeded window.
         guard !isDayZero else { return }
+        // Single-in-flight: every dispatch path (typed Send, voice transcript,
+        // starter/follow-up/goal/next-move chips, cross-surface inject) funnels
+        // through here. `trySend` checks isAwaitingReply but the chip/voice/menu
+        // paths call send() directly, so a rapid second chip or an already-open
+        // menu could mint a second pending row + a second CoachReplyPipeline run
+        // (double Gemini spend, racing replies). Guard once at the funnel.
+        guard !store.isAwaitingReply else { return }
         // S5 — barge-in: a new user turn supersedes the prior coach reply, so
         // stop any audio still playing from it before we dispatch. The reply
         // that lands for THIS turn will start its own clip via `runReply`. This

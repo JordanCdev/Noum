@@ -645,7 +645,7 @@ actor AICoachChatService {
         // must still touch a known source. Quote-free fabrication is the
         // gap Gate 2 cannot see.
         if let quoteGuard,
-           Self.claimsUserSpeechRead(in: trimmed),
+           Self.claimsVerbatimRead(in: trimmed),
            !quoteGuard.engagesAnySource(trimmed) {
             return .unengagedUserSpeechClaim
         }
@@ -885,10 +885,11 @@ actor AICoachChatService {
         return false
     }
 
-    /// Attribution phrases that claim a read of the user's actual words.
-    /// Shared by both halves of the dual gate: Gate 2 verifies any QUOTED
-    /// fragment that follows one of these; Gate 1 requires the reply to
-    /// engage a known source even when nothing is quoted.
+    /// Attribution phrases that may precede a QUOTED fragment. BROAD set, used
+    /// by Gate 2: if any quoted text follows one of these and isn't verified
+    /// against a source, it's a fabricated quote. Includes topic-reference
+    /// verbs ("you mentioned/described/talked about/argued") because a
+    /// fabricated quote after those is just as bad.
     private nonisolated static let userSpeechAttributionPhrases = [
         "you said", "you used", "your words", "your phrase",
         "you put it", "your line", "you opened with", "your opening line",
@@ -897,11 +898,32 @@ actor AICoachChatService {
         "your exact words", "your phrasing", "your wording"
     ]
 
+    /// VERBATIM-claim subset, used by Gate 1 (the no-quote presence check). A
+    /// reply that claims to read the user's actual WORDS without quoting must
+    /// engage a known source. Topic-reference verbs ("you mentioned the board
+    /// meeting", "you described the standup") are deliberately EXCLUDED: the
+    /// coach legitimately knows topics from the case file / BigMoment / standing
+    /// plan — content the quote-guard's transcript sources don't contain — so
+    /// gating those produced false `.unengagedUserSpeechClaim` trips on exactly
+    /// the grounded intelligence the recent COACH-* work surfaces.
+    private nonisolated static let verbatimReadPhrases = [
+        "you said", "you used", "your words", "your phrase",
+        "you put it", "your line", "you opened with", "your opening line",
+        "you closed with", "your closing line",
+        "your exact words", "your phrasing", "your wording"
+    ]
+
     /// True when the text claims to read the user's actual words (as opposed
     /// to citing a metric or prescribing a move). Pure + lexical, exposed for
-    /// tests alongside the dual gate it scopes.
+    /// tests alongside the dual gate it scopes. BROAD — scopes Gate 2.
     nonisolated static func claimsUserSpeechRead(in text: String) -> Bool {
         containsAny(text.lowercased(), userSpeechAttributionPhrases)
+    }
+
+    /// True when the text claims a VERBATIM read of the user's words. NARROW —
+    /// scopes Gate 1 so topic references to case-file content don't false-trip.
+    nonisolated static func claimsVerbatimRead(in text: String) -> Bool {
+        containsAny(text.lowercased(), verbatimReadPhrases)
     }
 
     nonisolated static func containsUnverifiedQuotedUserSpeech(
@@ -918,7 +940,16 @@ actor AICoachChatService {
     nonisolated static func quotedFragments(in text: String) -> [String] {
         let patterns = [
             "\"([^\"]{3,180})\"",
-            "'([^']{3,180})'",
+            // Straight single quote shares its glyph (U+0027) with the English
+            // contraction apostrophe (you're, I'd, can't). Without boundaries,
+            // a reply with two contractions captures the text BETWEEN them as a
+            // bogus "quote" ("re rushing the close, so I" from "you're rushing
+            // the close, so I'd hold"), which then fails Gate 2 and kills a
+            // grounded reply. Require the opening/closing quote to sit on a
+            // letter boundary: a contraction apostrophe is letter-flanked on
+            // both sides, so it can no longer open or close a capture, while a
+            // genuine 'quoted phrase' (space/punctuation-flanked) still matches.
+            "(?<!\\p{L})'([^']{3,180})'(?!\\p{L})",
             "\u{201C}([^\u{201D}]{3,180})\u{201D}",
             "\u{2018}([^\u{2019}]{3,180})\u{2019}"
         ]
@@ -946,16 +977,34 @@ actor AICoachChatService {
             || (lower.contains("we can ") && lower.contains(" or ") && lower.contains("?"))
     }
 
+    /// Abbreviations whose internal/trailing periods must NOT read as sentence
+    /// terminators. These are common in coaching copy — the system prompt
+    /// itself models "e.g." — and counting their periods inflated legal
+    /// 2-sentence replies into a `.tooLong` trip → canned fallback. Erring
+    /// permissive (a rare end-of-sentence "etc." may undercount by one) is the
+    /// correct direction for a gate whose failure mode has been over-firing.
+    private nonisolated static let sentenceCountAbbreviations = [
+        "e.g.", "i.e.", "etc.", "vs.", "a.m.", "p.m.",
+        "mr.", "mrs.", "ms.", "dr.", "u.s.", "ph.d.", "approx."
+    ]
+
     private nonisolated static func sentenceCount(in text: String) -> Int {
-        // Count runs of terminal punctuation followed by whitespace or
-        // end-of-text. A bare character count over ".!?" reads decimals in
-        // coaching stats ("3.5 fillers per rep") as sentence breaks and
-        // tooLong-trips legal 2-sentence replies — the model then gets
-        // punished for citing the user's own numbers.
+        // Neutralize known abbreviations so their periods don't count.
+        var scrubbed = text
+        for abbr in sentenceCountAbbreviations {
+            scrubbed = scrubbed.replacingOccurrences(
+                of: abbr,
+                with: abbr.replacingOccurrences(of: ".", with: ""),
+                options: [.caseInsensitive]
+            )
+        }
+        // Count runs of terminal punctuation (.!?) followed by whitespace or
+        // end-of-text. Decimals in coaching stats ("3.5 fillers per rep") are
+        // not followed by whitespace, so they never count.
         let endings = CharacterSet(charactersIn: ".!?")
         var count = 0
         var inRun = false
-        for scalar in text.unicodeScalars {
+        for scalar in scrubbed.unicodeScalars {
             if endings.contains(scalar) {
                 inRun = true
             } else {
@@ -966,7 +1015,7 @@ actor AICoachChatService {
             }
         }
         if inRun { count += 1 }
-        return max(count, text.isEmpty ? 0 : 1)
+        return max(count, scrubbed.isEmpty ? 0 : 1)
     }
 
     private nonisolated static func wordCount(in text: String) -> Int {
@@ -1346,7 +1395,11 @@ actor AICoachChatService {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 18
+        // 12s per attempt (was 18): a fast chat model (gemini-3.5-flash with
+        // thinkingBudget 0) answers in ~2-4s, so 12s still tolerates a slow
+        // network while bounding the worst case. With the optional repair pass
+        // this caps a turn near ~24s instead of the old ~40-58s "Thinking…" hang.
+        request.timeoutInterval = 12
         switch provider {
         case .openAI, .deepSeek:
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")

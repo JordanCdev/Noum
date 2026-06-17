@@ -634,15 +634,23 @@ final class AskNoumVoiceInput: ObservableObject {
     /// Hard ceiling so a stuck recognition doesn't camp on the mic.
     /// Shared by both engines.
     private func armMaxDurationTimer() {
-        maxDurationTimer = Task { @MainActor in
+        maxDurationTimer = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(Self.maxUtteranceDuration * 1_000_000_000))
+            guard let self else { return }
             if self.state == .recording {
                 self.endPressAndSend()
             }
         }
     }
 
-    /// Tear down the audio engine + tap. Safe to call multiple times.
+    /// Tear down the audio engine + tap, and release the audio session so the
+    /// soundscape un-ducks and other app sounds resume. Safe to call multiple
+    /// times. Deactivating here is safe even though a coach reply may speak
+    /// 1-3s later: `IMMessageSpeaker` sets its OWN `.playback` category and
+    /// `setActive(true)` before every reply (PracticeSupport.swift:4490/4855),
+    /// so it reactivates the session on its own terms. Without this release the
+    /// session stayed held in `.playAndRecord`+`.duckOthers` for the instance
+    /// lifetime, leaving the soundscape ducked after the first dictation.
     private func stopAudioEngine() {
         #if canImport(AVFoundation)
         if let engine = audioEngine {
@@ -651,6 +659,7 @@ final class AskNoumVoiceInput: ObservableObject {
         }
         audioEngine = nil
         InteractionSoundEngine.noteRecordingActive(false)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif
     }
 
@@ -662,6 +671,11 @@ final class AskNoumVoiceInput: ObservableObject {
         task = nil
         request = nil
         #endif
+        // The native auto-final path (recognitionTask isFinal) reaches here
+        // WITHOUT going through stopAndSend, so without this the AVAudioEngine
+        // kept running and `recordingActive` stayed true after every native
+        // turn. stopAudioEngine is idempotent and also releases the session.
+        stopAudioEngine()
         cloudListenerTask?.cancel()
         cloudListenerTask = nil
         cloudSession = nil
@@ -698,6 +712,13 @@ final class AskNoumVoiceInput: ObservableObject {
         let trimmed = textOverride.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.count >= Self.minUtteranceCharacters {
             hasDeliveredFinal = true
+            // A turn completed, so connectivity is plausibly back: clear the
+            // sticky cloud-unhealthy flag so the NEXT utterance retries the
+            // cloud engine. Without this, one transient Deepgram socket blip
+            // demoted the rest of a multi-minute call to Apple transcription
+            // even after the network recovered. A genuine cloud outage just
+            // fails setup fast again and falls back to native — bounded retry.
+            cloudUnhealthy = false
             onFinalTranscript?(trimmed)
         }
     }

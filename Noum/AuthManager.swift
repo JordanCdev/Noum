@@ -534,6 +534,9 @@ class AuthManager: ObservableObject {
             "postRepCoachNote.\(accountID)",
             // M25: Coach memory — durable working formulation for Ask Noum
             "coachMemory.\(accountID)",
+            // Ask Noum coach thread — the full per-account chat/call dialogue.
+            // Must be wiped on account deletion (GDPR) like every other store.
+            "askNoum.thread.\(accountID)",
             // M24 Track 3: Sudden Death run history — bounded per-account
             "suddenDeath.runHistory.\(accountID)",
         ]
@@ -614,6 +617,7 @@ class AuthManager: ObservableObject {
             CoachLetterStore.shared.reloadForCurrentAccount()
             PostRepCoachNoteStore.shared.reloadForCurrentAccount()
             CoachMemoryStore.shared.reloadForCurrentAccount()
+            AskNoumStore.shared.reloadForCurrentAccount()
             SuddenDeathRunHistoryStore.shared.reloadForCurrentAccount()
             completion?()
         }
@@ -634,6 +638,7 @@ class AuthManager: ObservableObject {
             CoachLetterStore.shared.endSession()
             PostRepCoachNoteStore.shared.endSession()
             CoachMemoryStore.shared.endSession()
+            AskNoumStore.shared.endSession()
             SuddenDeathRunHistoryStore.shared.endSession()
             AIRateLimiter.shared.endSession()
         }

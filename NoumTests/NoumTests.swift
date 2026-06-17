@@ -10541,6 +10541,52 @@ struct AskNoumStoreTests {
         #expect(!store.isAwaitingReply)
     }
 
+    /// HARDEN #1 (critical privacy) — the coach thread is per-account; switching
+    /// accounts and reloading must NOT bleed the prior user's dialogue, and the
+    /// prior account's thread must still be there when switched back.
+    @Test func threadIsolatedPerAccountAcrossReload() {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        var account = "alpha"
+        let store = AskNoumStore(defaults: suite, accountIDProvider: { account })
+
+        let ids = store.appendUserTurn("Alpha's private message")
+        store.completeCoachTurn(id: ids.coachID, outcome: .reply("Alpha-only reply"))
+        #expect(store.messages.count == 2)
+
+        // Switch to a different account and reload — A's thread must vanish.
+        account = "beta"
+        store.reloadForCurrentAccount()
+        #expect(store.messages.isEmpty, "Account B must not see account A's coach thread")
+
+        // Switch back to alpha — its persisted thread returns intact.
+        account = "alpha"
+        store.reloadForCurrentAccount()
+        #expect(store.messages.contains { $0.text == "Alpha's private message" },
+            "Account A's thread persists under its own per-account key")
+    }
+
+    /// HARDEN #1 — sign-out (endSession) clears the in-memory thread so the
+    /// next user never momentarily sees the prior dialogue before reload.
+    @Test func endSessionClearsInMemoryThread() {
+        let store = freshStore()
+        store.appendUserTurn("a private message")
+        #expect(!store.messages.isEmpty)
+        store.endSession()
+        #expect(store.messages.isEmpty)
+        #expect(!store.isAwaitingReply)
+    }
+
+    /// HARDEN #3 — the single-in-flight contract the send/handleUtterance
+    /// guards rely on: a dispatched turn flips isAwaitingReply true until it
+    /// resolves, so a guarded second dispatch is a no-op mid-flight.
+    @Test func awaitingReplyContractGatesSecondDispatch() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("first turn")
+        #expect(store.isAwaitingReply, "in-flight turn must block a second dispatch")
+        store.completeCoachTurn(id: ids.coachID, outcome: .reply("resolved"))
+        #expect(!store.isAwaitingReply, "input re-enables only after the turn resolves")
+    }
+
     @Test func completeCoachTurnWithEmptyTextBecomesSystemNotice() {
         // Empty reply (model failure / no provider) MUST not leave a
         // blank coach bubble — it converts to a system notice so the
@@ -23542,6 +23588,61 @@ struct AICoachChatReplyQualityGateTests {
     @Test func decimalsInStatsDoNotInflateSentenceCount() {
         let reply = "Your fillers sat at 3.5 per rep across the last 2 reps. Next rep, hold a beat before sentence two and cut the lead-in."
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == nil)
+    }
+
+    /// HARDEN #6b — common abbreviations ("e.g."/"i.e."/"vs.") carry periods
+    /// the system prompt itself models; counting them inflated a legal
+    /// 2-sentence reply into a `.tooLong` trip → canned fallback.
+    @Test func abbreviationPeriodsDoNotInflateSentenceCount() {
+        // Both replies are anchored (a metric) + prescribe an action, so the
+        // ONLY thing that could trip the gate is the abbreviation period
+        // wrongly inflating the 2-sentence count into a .tooLong.
+        let reply = "Your pace ran fast, e.g. 180 WPM in the open. Next rep, hold a beat before sentence two."
+        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == nil)
+        let reply2 = "You ran long at 95 words, i.e. about double the target. Next rep, cut to one clear point."
+        #expect(AICoachChatService.replyQualityIssue(in: reply2, latestUserTurn: "What next?") == nil)
+    }
+
+    /// HARDEN #1 — the straight apostrophe is the contraction glyph; a grounded
+    /// reply that reads the user's words AND uses normal contractions must not
+    /// be parsed as carrying a bogus cross-contraction "quote" and rejected.
+    @Test func contractionsWithAttributionDoNotTripQuoteGate() {
+        let guardCtx = CoachChatQuoteGuardContext(
+            transcripts: ["I keep rushing the close and trailing off"],
+            latestUserTurn: "I rush my endings"
+        )
+        // "you said" (attribution) + two contractions (you're, I'd). The old
+        // regex captured "re rushing the close, so I" between the apostrophes.
+        let reply = "You said you're rushing the close, so I'd hold one beat before the final line."
+        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "How do I fix my ending?", quoteGuard: guardCtx) != .unverifiedQuotedUserSpeech)
+    }
+
+    /// HARDEN #6a — Gate 1 (no-quote presence) must only fire on VERBATIM
+    /// claims. A topic-reference verb ("you mentioned the board meeting") about
+    /// case-file content the quote-guard sources don't contain must not be
+    /// rejected as an unengaged-speech claim.
+    @Test func topicReferenceVerbDoesNotTripGateOneWithoutVerbatimClaim() {
+        // Sources hold none of the reply's topic words — only a verbatim-claim
+        // phrase ("you said") should be able to trip Gate 1, not "you mentioned".
+        let guardCtx = CoachChatQuoteGuardContext(
+            transcripts: ["unrelated practice transcript about weekend plans"],
+            latestUserTurn: "how do I prep"
+        )
+        let reply = "You mentioned the board meeting, so anchor your open on the one decision they need."
+        let issue = AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "help me prep for the board", quoteGuard: guardCtx)
+        #expect(issue != .unengagedUserSpeechClaim)
+    }
+
+    /// HARDEN #6a guard — a VERBATIM claim with no engaged source STILL trips
+    /// Gate 1 (the narrowing must not disable the real protection).
+    @Test func verbatimClaimWithoutSourceStillTripsGateOne() {
+        let guardCtx = CoachChatQuoteGuardContext(
+            transcripts: ["unrelated practice transcript about weekend plans"],
+            latestUserTurn: "how do I prep"
+        )
+        let reply = "Your exact words buried the lede; lead with the decision instead."
+        let issue = AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "help me prep", quoteGuard: guardCtx)
+        #expect(issue == .unengagedUserSpeechClaim)
     }
 
     @Test func expandedPlanTurnAllowsLongerShape() {
