@@ -918,7 +918,16 @@ actor AICoachChatService {
     nonisolated static func quotedFragments(in text: String) -> [String] {
         let patterns = [
             "\"([^\"]{3,180})\"",
-            "'([^']{3,180})'",
+            // Straight single quote shares its glyph (U+0027) with the English
+            // contraction apostrophe (you're, I'd, can't). Without boundaries,
+            // a reply with two contractions captures the text BETWEEN them as a
+            // bogus "quote" ("re rushing the close, so I" from "you're rushing
+            // the close, so I'd hold"), which then fails Gate 2 and kills a
+            // grounded reply. Require the opening/closing quote to sit on a
+            // letter boundary: a contraction apostrophe is letter-flanked on
+            // both sides, so it can no longer open or close a capture, while a
+            // genuine 'quoted phrase' (space/punctuation-flanked) still matches.
+            "(?<!\\p{L})'([^']{3,180})'(?!\\p{L})",
             "\u{201C}([^\u{201D}]{3,180})\u{201D}",
             "\u{2018}([^\u{2019}]{3,180})\u{2019}"
         ]
