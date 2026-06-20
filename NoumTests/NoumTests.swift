@@ -23720,6 +23720,42 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == nil)
     }
 
+    @Test func gateTwoIgnoresContractionApostrophesAsQuotes() {
+        // Regression: the straight apostrophe (U+0027) is also the contraction
+        // glyph. A grounded reply with a "you said" attribution AND two
+        // contractions ("you're" … "I'd") used to have the text BETWEEN the two
+        // apostrophes ("re rushing the close, so I") scraped out as a bogus
+        // quoted fragment, which then failed Gate 2 and killed a legitimate
+        // reply into .unverifiedQuotedUserSpeech. The source engages the reply
+        // (shares "rushing"/"close") so Gate 1 passes, but does NOT contain that
+        // spurious fragment verbatim — so pre-fix this returned the issue.
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: ["I keep rushing the close on every rep."],
+            latestUserTurn: "How did that answer land?"
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You said you're rushing the close, so I'd hold a beat before sentence two.",
+            latestUserTurn: "How did that answer land?",
+            quoteGuard: guardContext
+        )
+
+        #expect(issue == nil)
+
+        // The fragment scraper no longer treats contraction apostrophes as
+        // quotation: no straight-single-quoted fragments come back at all.
+        let fragments = AICoachChatService.quotedFragments(
+            in: "You said you're rushing the close, so I'd hold a beat before sentence two."
+        )
+        #expect(fragments.isEmpty)
+
+        // A genuine straight-single-quoted phrase is still extracted, so Gate 2
+        // keeps catching fabricated 'quotes' — the boundary fix is surgical.
+        let realQuote = AICoachChatService.quotedFragments(
+            in: "You said 'let the silence work' before your close."
+        )
+        #expect(realQuote.contains("let the silence work"))
+    }
+
     @Test func quoteGuardAllowsVerifiedProofQuote() {
         let guardContext = CoachChatQuoteGuardContext(
             verifiedProofQuotes: ["we focused on three priorities"],

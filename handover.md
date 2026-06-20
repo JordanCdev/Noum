@@ -47,6 +47,57 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-20 continuation (autonomous `noum-1` run, real toolchain). Verified +
+committed stranded work, ran a fresh eval, recorded the roadmap; did NOT push:
+
+- **Shipped** (`b085d51` — `CHAT-QUOTE`): a real correctness bug in the live
+  chat quality gate. The straight apostrophe (U+0027) is also the contraction
+  glyph, so a grounded reply with a "you said" attribution plus two contractions
+  (`you're` … `I'd`) had the text BETWEEN the apostrophes scraped out as a bogus
+  quoted fragment, which then failed Gate 2 and silently killed a legitimate
+  reply into `.unverifiedQuotedUserSpeech` (the `chat_quality_gate.md` failure
+  mode). Fix requires the straight single quote to sit on a letter boundary
+  (`(?<!\p{L})'…'(?!\p{L})`) so a contraction (letter-flanked) can no longer open
+  or close a capture, while a genuine `'quoted phrase'` still matches and Gate 2
+  keeps catching fabrications. Found uncommitted in the working tree with its
+  test already written; regression test fails pre-fix / passes post-fix, genuine-
+  quote detection preserved. `AICoachChatReplyQualityGateTests` +
+  `AICoachChatDeterministicReplyTests` + `CrossSurfaceQuoteFabricationGuardTests`
+  green on iPhone 17 Pro, isolated `./DerivedData/Noum-quotegate`.
+- **Ran a fresh 33-agent `coach-parity-eval`** against HEAD (first eval since the
+  rank-1/rank-2 commits + this fix landed). Honest score: **6.5/10** (down from
+  06-14's 7.1 — a more critical, beginner-weighted panel, NOT a regression). 17
+  confirmed gaps. Full scorecard + prioritized roadmap + genuine limitations in
+  `docs/COACH_PARITY_EVAL_2026-06-20.md`. Headline blocker unchanged and
+  consistent across every prior eval: the real intelligence is **invisible at the
+  adoption + felt-coaching moments**; the gap is visibility-and-loop-closure, not
+  new analysis. Top moves: #1 close the first 60s (M, felt-QA gated), #2 transfer
+  debrief + plan-adaptation loop (L, north-star, buildable core), #3 visible
+  adaptation at landing (M), #4 visible coach confidence (S), #5 honesty-guard
+  hardening.
+- **Re-scoped Rank 5 after code verification** (did NOT blind-build it): the
+  level-up guard targets `RewardEngine.evaluateSession`, which is **dormant**
+  (called nowhere live — `SessionFinalizer` owns celebration; wiring it would
+  double-fire per the 06-11 note), so guarding it = a fix on dead code. Sealing
+  `ProofMoment` would break a **second legitimate grounded minter**
+  (`FirstRepCelebration.celebrationLocalProof`, verbatim-slice, surface-only) and
+  needs Jordan's architecture call to unify the two paths. The fabrication
+  fail-path is **already CI-tested** (`transcriptContainsRejectsFabrication` +
+  `deterministicProof*` + `CrossSurfaceQuoteFabricationGuardTests`). Net: no
+  clean zero-risk Rank-5 code slice to ship blind this run.
+- **Why nothing from Ranks 1-4 shipped this run:** each carries felt/flow/model
+  QA that an autonomous run cannot honestly verify (cold-start flow change, debrief
+  wording, double-naming overlap with the shipped rank-1/rank-2 opens) — the same
+  reason the prior six continuations deferred them with specs rather than blind
+  builds. The structural 10/10 ceiling is unchanged and intentional
+  (`CoachParityReadiness` caps at `.forming` — the trust moat; do not remove it).
+- ⚠️ **`noum-1` / `noum2` are STILL byte-identical task prompts** (re-confirmed).
+  They duplicate every fire. This run did NOT silently reconfigure Jordan's
+  automation. Ready-to-paste split still stands: noum-1 = ship code, noum2 =
+  eval/QA-only. Until split, whichever fires second should `git log` before
+  building. Connectors (Figma + Canva MCP) available but not exercised — no
+  concrete visual spec needed shipping this run.
+
 2026-06-16 continuation (autonomous `noum-1` run, real toolchain). Shipped the
 top remaining buildable deferred item; verified + committed; did NOT push:
 
