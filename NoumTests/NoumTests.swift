@@ -23508,6 +23508,82 @@ struct AICoachChatDeterministicReplyTests {
 
 /// Ask Noum live-reply quality gate.
 ///
+/// MARK: - Make It Stick (Winston memorability analyzer)
+///
+/// Pins `MemorabilityAnalyzer` — the deterministic opening/closing read drawn
+/// from Patrick Winston's "How to Speak". It must call only the reliably
+/// detectable bookends, never over-flag a clean rep, and never mistake a
+/// mid-talk "thank you" for a weak close.
+@Suite("MemorabilityAnalyzer")
+struct MemorabilityAnalyzerTests {
+
+    @Test func tooShortIsInsufficientBothEnds() {
+        let read = MemorabilityAnalyzer.analyze(transcript: "Hello there everyone.")
+        #expect(read.opening == .insufficient)
+        #expect(read.closing == .insufficient)
+        #expect(!read.hasActionableSignal)
+    }
+
+    @Test func orientedOpenWithPromiseCue() {
+        let t = "Today I'll show you why our close rate doubled, and the one change that did it. We rebuilt onboarding around a single first action."
+        let read = MemorabilityAnalyzer.analyze(transcript: t)
+        #expect(read.opening == .oriented)
+    }
+
+    @Test func orientedOpenWithQuestion() {
+        let t = "What makes a pitch land in the first ten seconds? It is one promise, stated plainly, before any detail at all comes out."
+        let read = MemorabilityAnalyzer.analyze(transcript: t)
+        #expect(read.opening == .oriented)
+    }
+
+    @Test func coldOpenIsDetectedButNotActionableAlone() {
+        // A direct detail-led open with a clean landing. The opening read is
+        // `.cold` (no framing cue), but that ABSENCE must NOT drive coaching —
+        // only a weak close is actionable. Guards against over-flagging strong
+        // direct openings.
+        let t = "The Q3 migration moved forty tables to the new schema, and we backfilled every record over one weekend with zero downtime."
+        let read = MemorabilityAnalyzer.analyze(transcript: t)
+        #expect(read.opening == .cold)
+        #expect(read.closing == .landed)
+        #expect(!read.hasActionableSignal)
+    }
+
+    @Test func trailedOffCloseOnYeah() {
+        let t = "Today I want to walk through the new pricing and why it helps retention. It lowers the entry tier and adds an annual plan. So yeah."
+        let read = MemorabilityAnalyzer.analyze(transcript: t)
+        if case .trailedOff = read.closing {} else { Issue.record("expected trailedOff close, got \(read.closing)") }
+        #expect(read.hasActionableSignal)
+    }
+
+    @Test func weakWholeTailThatsIt() {
+        let t = "Here's the key point about the redesign: fewer steps, clearer copy, faster load. We shipped it Tuesday to all users. That's it."
+        let read = MemorabilityAnalyzer.analyze(transcript: t)
+        if case .trailedOff(let tail) = read.closing { #expect(tail == "that's it") }
+        else { Issue.record("expected trailedOff, got \(read.closing)") }
+    }
+
+    @Test func thankYouEndingIsWeakClose() {
+        let t = "Let me show you the three wins from this sprint and what they unlock next. Search is faster and onboarding is simpler now. Thank you."
+        let read = MemorabilityAnalyzer.analyze(transcript: t)
+        if case .trailedOff = read.closing {} else { Issue.record("expected trailedOff for thank-you close") }
+    }
+
+    @Test func midTalkThankYouDoesNotFalseFlagClose() {
+        // "thank you" appears mid-talk, but the rep LANDS on a committed line.
+        let t = "Thank you for the intro. Here's the point: we cut latency in half this quarter. The fix was caching the hot path, and we ship it Monday."
+        let read = MemorabilityAnalyzer.analyze(transcript: t)
+        #expect(read.closing == .landed)
+    }
+
+    @Test func cleanRepProducesNoActionableSignal() {
+        let t = "Today I'll make the case for one metric over five. Teams that track a single north-star ship faster. Adopt it for next quarter and watch focus rise."
+        let read = MemorabilityAnalyzer.analyze(transcript: t)
+        #expect(read.opening == .oriented)
+        #expect(read.closing == .landed)
+        #expect(!read.hasActionableSignal)
+    }
+}
+
 /// The model can have the right context and still draft a reply that feels like
 /// a generic AI assistant. These tests pin the pure gate the service uses before
 /// a live reply reaches the store: obvious menus, bare clarification, robotic

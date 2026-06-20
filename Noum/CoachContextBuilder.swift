@@ -275,6 +275,19 @@ enum CoachContextBuilder {
            lines, when present, are hypothesis-grade reads from the user's \
            words — use them to choose your opening register (acknowledge \
            before advise), not as facts about the user's inner state.
+        18. When STRUCTURE READ is present, it reports the most-recent rep's \
+           CLOSE — a deterministic read of how the rep ended. On a "trailed \
+           off" close, make your one move landing the final sentence AS the \
+           point and stopping; never end on "thank you" or a trailing "yeah". \
+           If it also says the opening oriented the listener, affirm that \
+           briefly and keep the fix on the close. Separately, you may judge \
+           the OPENING and memorability yourself from the rep when it helps: a \
+           strong open makes an empowerment promise (names what the listener \
+           gains) before detail; and the "make it stick" lens asks whether a \
+           clean-but-forgettable point has a SYMBOL (one image), a SLOGAN (a \
+           short repeatable phrase), a SURPRISE, one SALIENT idea that stands \
+           out, or a STORY. Name at most ONE missing element as the move — \
+           never dump the list, and only when the numbers are already fine.
 
         When the user asks "why did my score change" or any data-question, \
         you cite the actual delta + the dimension that moved it (not \
@@ -989,6 +1002,19 @@ enum CoachContextBuilder {
                     lines.append("")
                     lines.append("ARGUMENT LOGIC (most-recent rep — is the answer built as an argument?)")
                     lines.append(contentsOf: argumentLines)
+                }
+
+                // STRUCTURE READ — Winston "make it stick" bookends (an
+                // empowerment-promise opening + a landed close). Deterministic
+                // (`MemorabilityAnalyzer`), emitted ONLY when there's an
+                // actionable signal — a cold open or a trailed-off close — so a
+                // rep that opened and landed cleanly adds nothing to the prompt.
+                let structureRead = MemorabilityAnalyzer.analyze(transcript: latest.transcript)
+                if structureRead.hasActionableSignal,
+                   let structureLines = structureReadLines(for: structureRead) {
+                    lines.append("")
+                    lines.append("STRUCTURE READ (most-recent rep — Winston bookends)")
+                    lines.append(contentsOf: structureLines)
                 }
             }
         }
@@ -1966,6 +1992,23 @@ enum CoachContextBuilder {
     // prompt or transcript, exactly as the rating defaults high there. The
     // verdict mapping is the SAME one the Timed three-part note reads, so the
     // chat coach and the post-rep note can never disagree about a rep.
+    /// Format a `MemorabilityAnalyzer.Read` into chat-context lines, framed as
+    /// observable structure (never a verdict on the person). Returns nil when
+    /// there's no actionable signal so the caller emits nothing on a clean rep.
+    static func structureReadLines(for read: MemorabilityAnalyzer.Read) -> [String]? {
+        // Only the close is asserted as a fault — it's the reliably detectable
+        // bookend. A positive opening read is affirmed (not nagged); a
+        // non-oriented opening says nothing (absence isn't proof of a cold open).
+        guard case .trailedOff(let tail) = read.closing else { return nil }
+        var lines: [String] = [
+            "- Close: trailed off on \"\(tail)\" — it did not land a committed final line."
+        ]
+        if case .oriented = read.opening {
+            lines.append("- Opening: did orient the listener up front — affirm the open worked; keep the one move on the close.")
+        }
+        return lines
+    }
+
     static func promptRelevanceLines(
         for read: PracticeEvaluator.PromptRelevanceRead,
         prompt: String?
