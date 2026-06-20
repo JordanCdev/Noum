@@ -70,12 +70,21 @@ enum MemorabilityAnalyzer {
     /// Weak ways to END a turn (Winston: a "thank you" close is a weak move;
     /// trailing off squanders the landing). Matched only against the TAIL of
     /// the transcript so a mid-talk "thank you for that" never false-flags.
+    ///
+    /// Deliberately EXCLUDES stance/uncertainty phrases — "i don't know",
+    /// "i'm not sure", "i guess" — and bare "anyway". Those are committed
+    /// semantic content, not a squandered landing: an honest "...honestly, I'm
+    /// not sure yet" IS a real point, and "...we shipped it anyway" is a
+    /// committed contrastive close. Flagging them would punish-shame
+    /// semantically valid speech (a coaching invariant), and hedging density is
+    /// already judged elsewhere (HedgeDetector / ClutchWordStore). Only true
+    /// trail-offs and the literal "thank you" move belong here.
     static let weakClosingTails: [String] = [
         "thank you", "thanks", "thank you for listening", "thanks for listening",
         "that's it", "that's all", "that's about it", "that's pretty much it",
         "i guess that's it", "i think that's it", "yeah", "so yeah",
-        "i don't know", "i'm not sure", "or something", "or something like that",
-        "anyway", "that's everything", "i guess"
+        "or something", "or something like that", "you know",
+        "so anyway", "but anyway", "that's everything"
     ]
 
     /// Cues that an opening ORIENTS the listener — an empowerment promise, a
@@ -85,7 +94,7 @@ enum MemorabilityAnalyzer {
         "today", "by the end", "what i want", "what i'm going to", "the point is",
         "here's why", "here's the", "the key", "what matters", "i'll show you",
         "let me show", "imagine", "the question is", "the big idea", "what you'll",
-        "the reason", "my goal", "i want to", "the thing is", "first", "this matters"
+        "the reason", "my goal", "i want to", "the thing is", "this matters"
     ]
 
     /// Analyze a transcript into a structural read.
@@ -96,29 +105,44 @@ enum MemorabilityAnalyzer {
             return Read(opening: .insufficient, closing: .insufficient)
         }
         return Read(
-            opening: openingRead(transcript: transcript, words: words),
+            opening: openingRead(transcript: transcript),
             closing: closingRead(transcript: transcript)
         )
     }
 
     // MARK: - Opening
 
-    private static func openingRead(transcript: String, words: [Substring]) -> Opening {
-        // Look at the first sentence, capped at the opening window so a long
+    private static func openingRead(transcript: String) -> Opening {
+        // A question as the very first beat orients (it frames the stakes).
+        // Check the transcript's FIRST terminal punctuation directly —
+        // `firstSentence` strips the terminator, so a "?" check on it is dead.
+        if transcript.first(where: { ".!?".contains($0) }) == "?" { return .oriented }
+        // Look at the first sentence, capped at an opening window so a long
         // first sentence can't drag in cues from deep in the talk.
         let firstSentence = firstSentence(in: transcript)
-        let window = firstSentence.isEmpty ? transcript : firstSentence
-        let openingWindow = window
+        let window = (firstSentence.isEmpty ? transcript : firstSentence)
             .split { $0 == " " || $0 == "\n" || $0 == "\t" }
             .prefix(20)
             .joined(separator: " ")
-            .lowercased()
-        // A question as the very first beat orients (it frames what's at stake).
-        if openingWindow.contains("?") { return .oriented }
-        if openingOrientationCues.contains(where: { openingWindow.contains($0) }) {
+        // Word-boundary match: normalize non-alphanumerics to spaces, collapse,
+        // and require each cue bounded by spaces so "the key" can't fire inside
+        // "keyboard" / "first" inside "First Republic". (The header promises no
+        // brittle substring matching — this honors it.)
+        let collapsed = " " + boundaryNormalized(window) + " "
+        // Normalize cues the same way so apostrophe cues ("i'll show you")
+        // still match a normalized haystack.
+        if openingOrientationCues.contains(where: { collapsed.contains(" \(boundaryNormalized($0)) ") }) {
             return .oriented
         }
         return .cold
+    }
+
+    /// Lowercase, replace every non-alphanumeric with a space, and collapse
+    /// runs of whitespace — so substring checks become word-boundary checks.
+    private static func boundaryNormalized(_ text: String) -> String {
+        String(text.lowercased().map { ($0.isLetter || $0.isNumber) ? $0 : " " })
+            .split(separator: " ")
+            .joined(separator: " ")
     }
 
     // MARK: - Closing
@@ -135,10 +159,14 @@ enum MemorabilityAnalyzer {
         if weakClosingTails.contains(trimmedTail) {
             return .trailedOff(tail: trimmedTail)
         }
-        // Tail ENDS on a weak closer ("...so that's pretty much it",
-        // "...and yeah", "...thank you"). Check suffix so the weak phrase has
-        // to be the actual ending, not buried mid-sentence.
-        if let match = weakClosingTails.first(where: { trimmedTail.hasSuffix($0) }) {
+        // Tail ENDS on a weak closer — but ONLY for MULTI-WORD trail-offs
+        // ("...so that's pretty much it", "...or something like that"). A
+        // single-word suffix is too loose: "...earned their thanks" or "...we
+        // said yeah to the deal" would false-flag a committed sentence, which
+        // would overclaim a weak close. Single-word weak tokens only count as a
+        // weak close when they ARE the whole tail (handled above).
+        let multiWordTails = weakClosingTails.filter { $0.contains(" ") }
+        if let match = multiWordTails.first(where: { trimmedTail.hasSuffix($0) }) {
             return .trailedOff(tail: match)
         }
         return .landed

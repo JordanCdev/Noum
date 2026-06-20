@@ -23530,10 +23530,19 @@ struct MemorabilityAnalyzerTests {
         #expect(read.opening == .oriented)
     }
 
-    @Test func orientedOpenWithQuestion() {
-        let t = "What makes a pitch land in the first ten seconds? It is one promise, stated plainly, before any detail at all comes out."
+    @Test func orientedOpenWithQuestionNoIncidentalCue() {
+        // Question opener with NO orientation cue word — proves the "?" path
+        // itself orients, not a coincidental cue match.
+        let t = "Why should anyone in that room care what we built? We lose a deal a week to slow follow-up, and that is the gap."
         let read = MemorabilityAnalyzer.analyze(transcript: t)
         #expect(read.opening == .oriented)
+    }
+
+    @Test func cueMatchRespectsWordBoundaries() {
+        // "first" must NOT fire inside "First Republic"; "the key" must NOT fire
+        // inside "keyboard". Both reps open cold (no real orientation cue).
+        let t1 = "First Republic shipped the keyboard remap to all seats this week, and the rollout finished without a single support ticket filed."
+        #expect(MemorabilityAnalyzer.analyze(transcript: t1).opening == .cold)
     }
 
     @Test func coldOpenIsDetectedButNotActionableAlone() {
@@ -23581,6 +23590,57 @@ struct MemorabilityAnalyzerTests {
         #expect(read.opening == .oriented)
         #expect(read.closing == .landed)
         #expect(!read.hasActionableSignal)
+    }
+
+    // Coaching-invariant guard: honest uncertainty + committed contrastive
+    // closes are SEMANTIC content, not trailed-off landings. Flagging them
+    // would punish-shame valid speech (CLAUDE.md), so they must read as landed.
+    @Test func honestUncertaintyCloseIsNotTrailedOff() {
+        let t = "Let me show you where the rollout stands and the one risk I'm watching. The migration is done; the data check is still running, so honestly I'm not sure yet."
+        let read = MemorabilityAnalyzer.analyze(transcript: t)
+        #expect(read.closing == .landed)
+        #expect(!read.hasActionableSignal)
+    }
+
+    @Test func committedAnywayCloseIsNotTrailedOff() {
+        let t = "Here's the call we made on the deadline and why it held. The data was incomplete and the room was split, but we shipped it anyway."
+        let read = MemorabilityAnalyzer.analyze(transcript: t)
+        #expect(read.closing == .landed)
+    }
+
+    @Test func trailingSoAnywayStaysWeak() {
+        // A genuine trail-off ("...so anyway") IS still caught.
+        let t = "Today I'll cover the three changes in this release and what they unlock. Search is faster and the editor is cleaner now. So anyway."
+        let read = MemorabilityAnalyzer.analyze(transcript: t)
+        if case .trailedOff = read.closing {} else { Issue.record("expected trailedOff for 'so anyway'") }
+    }
+
+    // Integration contract: structureReadLines (the CoachContextBuilder helper)
+    // stays silent on a clean rep and names the weak close otherwise.
+    @Test func structureReadLinesSilentOnCleanRep() {
+        let clean = MemorabilityAnalyzer.Read(opening: .oriented, closing: .landed)
+        #expect(CoachContextBuilder.structureReadLines(for: clean) == nil)
+    }
+
+    @Test func structureReadLinesNamesTheWeakClose() {
+        let weak = MemorabilityAnalyzer.Read(opening: .oriented, closing: .trailedOff(tail: "so yeah"))
+        let lines = CoachContextBuilder.structureReadLines(for: weak)
+        #expect(lines != nil)
+        #expect(lines?.contains(where: { $0.contains("so yeah") }) == true)
+    }
+
+    @Test func multiWordSuffixTrailOffIsCaught() {
+        let t = "Today I'll cover the migration plan and the rollback path in case we need it. We tested both this week, and that's pretty much it."
+        let read = MemorabilityAnalyzer.analyze(transcript: t)
+        if case .trailedOff = read.closing {} else { Issue.record("expected trailedOff for multi-word '...that's pretty much it'") }
+    }
+
+    @Test func singleWeakWordInCommittedCloseDoesNotFlag() {
+        // Ends with the word "thanks" as committed content, not a weak close —
+        // a single-word weak token only counts when it IS the whole tail.
+        let t = "Today, here's what shipped and why the team pulled it off under the deadline. The launch held, and that is what earned their thanks."
+        let read = MemorabilityAnalyzer.analyze(transcript: t)
+        #expect(read.closing == .landed)
     }
 }
 

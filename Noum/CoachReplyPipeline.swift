@@ -83,7 +83,18 @@ enum CoachReplyPipeline {
         // prologue so an offline / no-provider / locale-blocked turn still gets a
         // grounded, in-voice reply rather than an error notice.
         let voice = profileStore.profile?.chosenStyleGoal
-        let recentTimed = sessionStore.sessions.last(where: { $0.mode == .timed })
+        // The genuinely most-recent timed rep, by date. NOT `sessions.last(...)`:
+        // the store is newest-first (`sessions.insert(at: 0)` + descending
+        // sorts), so `.last(where:)` returned the OLDEST timed rep — which
+        // mislabeled the pace/WPM facts below as "recent" AND, crucially,
+        // sourced the quote guard from a stale transcript. That made the live
+        // coach's natural close-quote (from STRUCTURE READ, which describes the
+        // NEWEST rep) fail Gate 2 verification → canned fallback. Pick by date
+        // so it's correct regardless of array ordering, matching the newest-rep
+        // the context builder reads.
+        let recentTimed = sessionStore.sessions
+            .filter { $0.mode == .timed }
+            .max(by: { $0.date < $1.date })
         // Word count + WPM as one unit. The fallback gates the pace fact on the
         // count clearing the same evidence floor `paceSnapshot` uses; a sub-floor
         // rep (e.g. 1 word over a full minute → 1 WPM) must not surface a pace
