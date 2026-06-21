@@ -792,6 +792,8 @@ struct AskNoumView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            standingPlanLandingStrip
+
             caseReviewStarterChip
 
             starterPrimaryAction
@@ -875,6 +877,41 @@ struct AskNoumView: View {
             return "Start with your \(voice.title.lowercased())."
         }
         return "Start with a coaching read."
+    }
+
+    // MARK: - Standing plan landing strip
+
+    @ViewBuilder
+    private var standingPlanLandingStrip: some View {
+        if let line = Self.standingPlanLandingLine(caseFile: coachMemoryStore.currentMemory?.caseFile) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(AppColor.pro.opacity(0.70))
+                    .frame(width: 3)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("CURRENT CASE")
+                        .font(Typography.captionSmall.weight(.bold))
+                        .foregroundStyle(AppColor.pro)
+                    Text(line)
+                        .font(Typography.caption)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 2)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Current coaching case: \(line)")
+            .accessibilityIdentifier("askNoum.emptyState.standingPlan")
+        }
+    }
+
+    static func standingPlanLandingLine(caseFile: CoachCaseFile?) -> String? {
+        guard let raw = caseFile?.callLandingAnchor?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return nil }
+        return shortCaseLine(raw, maxLength: 150)
     }
 
     // MARK: - Case-review starter chip

@@ -34375,6 +34375,48 @@ struct AskNoumVoiceFirstDefaultTests {
         #expect(line == "Hold the close with one clean final\u{2026}")
         #expect(line.count <= 37)
     }
+
+    @Test func standingPlanLandingLineUsesTheCaseFileAnchor() {
+        guard #available(iOS 17.0, *) else { return }
+        let caseFile = CoachCaseFile(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            hypothesis: "Closings may be the highest-leverage focus.",
+            focus: .closingStrength,
+            evidenceSummary: "Forming read across 5 signals",
+            activeIntervention: "Timed for a decisive close",
+            observableTarget: "One clean final sentence",
+            successMeasure: nil,
+            reviewDueAt: nil,
+            subjectivePattern: nil,
+            transferRead: nil,
+            nextMove: .followIntervention,
+            nextQuestion: "What is the next followed rep that will test the success measure?"
+        )
+
+        let line = AskNoumView.standingPlanLandingLine(caseFile: caseFile)
+        #expect(line == "Picking up where we left off: Timed for a decisive close. Target: One clean final sentence.")
+    }
+
+    @Test func standingPlanLandingLineStaysHiddenWithoutAStandingPlan() {
+        guard #available(iOS 17.0, *) else { return }
+        let caseFile = CoachCaseFile(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            hypothesis: "Closings may be the highest-leverage focus.",
+            focus: .closingStrength,
+            evidenceSummary: "Forming read across 5 signals",
+            activeIntervention: nil,
+            observableTarget: nil,
+            successMeasure: nil,
+            reviewDueAt: nil,
+            subjectivePattern: nil,
+            transferRead: nil,
+            nextMove: .confirmHypothesis,
+            nextQuestion: "Does this working hypothesis match the user's lived experience?"
+        )
+
+        #expect(AskNoumView.standingPlanLandingLine(caseFile: nil) == nil)
+        #expect(AskNoumView.standingPlanLandingLine(caseFile: caseFile) == nil)
+    }
 }
 
 // MARK: - M26 Vocal Energy Metrics Tests
