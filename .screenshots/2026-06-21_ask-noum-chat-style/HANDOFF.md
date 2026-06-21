@@ -8,7 +8,7 @@ light
 - Noum/CoachContextBuilder.swift:110 - Text replies default to 1-4 short lines, usually under 75 words, with bold lead-ins, short bullets, or numbered steps only when useful.
 - Noum/AICoachChatService.swift:666 - Quality gate now caps normal replies by characters, sentences, words, and non-empty lines so formatted replies stay concise.
 - Noum/AskNoumView.swift:58 - Added a small Markdown formatter for coach replies: paragraphs, bullets, numbered steps, and `**bold**` inline segments.
-- Noum/AskNoumView.swift:157 - Coach message renderer uses larger Manrope text, bold emphasis, bullets, numbered rows, and accent markers.
+- Noum/AskNoumView.swift:207 - Coach message renderer uses the Figtree display family from the rating-card system for replies, while preserving bold emphasis, bullets, numbered rows, and accent markers.
 - Noum/AskNoumView.swift:2151 - Coach bubble restyled into a full-width calm card with a quiet left rail instead of repeated per-message orb noise.
 - Noum/AskNoumView.swift:2224 - Hydrated coach replies now fall back to full text if reveal state is armed with an empty prefix, preventing blank reply cards.
 - Noum/AskNoumView.swift:2637 - Typed send now dismisses composer focus so the answer has room to land.
@@ -22,10 +22,10 @@ light
 - 01_review_top.png - Review tab top, rendered correctly.
 - 01_profile_top.png - Profile tab top, rendered correctly.
 - 01_settings_top.png - Settings tab top, rendered correctly.
-- typed-turn-resolved.png - Ask Noum typed message -> coach reply -> formatted bubble + Next Move.
+- typed-turn-resolved.png - Ask Noum typed message -> coach reply -> Figtree-formatted bubble + Next Move.
 
 ## VISION gap
-The chat is now more readable and coach-like, but the Ask Noum surface still has remnants of the older generic voice/orb identity in the header. The message rows are improved; the larger product identity pass should still decide whether the header avatar should become a more human, target-specific mark.
+The chat is now more readable and coach-like, with Figtree extending the premium rating-card voice into Noum replies. The Ask Noum surface still has remnants of the older generic voice/orb identity in the header and typing state; the larger product identity pass should still decide whether the header avatar should become a more human, target-specific mark.
 
 ## Next steps to reach desired state
 1. Noum/AskNoumView.swift - Consider a dedicated Ask Noum header identity that aligns with saved voice-target icons instead of the generic waveform orb.

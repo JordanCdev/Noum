@@ -46,6 +46,8 @@ struct CoachingOnboardingView: View {
     @State private var screen: OnboardingScreen = .intro
     @State private var speakingContext: SpeakingContext = .work
     @State private var biggestChallenge: SpeakingChallenge = .fillerWords
+    @State private var usesCustomChallenge = false
+    @State private var customChallengeText = ""
     // No pre-selection — the voice goal drives the entire tailored coaching
     // persona, so the user must actively choose it rather than tap through a
     // defaulted "authoritative." nil until they pick; the continue button on
@@ -65,6 +67,7 @@ struct CoachingOnboardingView: View {
     private let isRealFirstRunUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_REAL_FIRST_RUN")
 
     private enum InputField: Hashable {
+        case customChallenge
         case goal
         case whyNow
         case successVision
@@ -323,7 +326,7 @@ struct CoachingOnboardingView: View {
                     case .context:
                         optionList(options: SpeakingContext.allCases, selectedID: speakingContext.id) { speakingContext = $0 }
                     case .challenge:
-                        optionList(options: SpeakingChallenge.allCases, selectedID: biggestChallenge.id) { biggestChallenge = $0 }
+                        challengeOptionList
                     case .style:
                         optionList(options: SpeakingStyleGoal.allCases, selectedID: speakingStyleGoal?.id) { speakingStyleGoal = $0 }
                     }
@@ -512,7 +515,7 @@ struct CoachingOnboardingView: View {
                         profileRow(
                             icon: "flame.fill",
                             label: "Biggest challenge",
-                            value: biggestChallenge.title
+                            value: displayedChallengeTitle
                         )
 
                         profileRow(
@@ -747,6 +750,157 @@ struct CoachingOnboardingView: View {
         }
     }
 
+    private var challengeOptionList: some View {
+        VStack(spacing: 8) {
+            ForEach(SpeakingChallenge.allCases, id: \.id) { challenge in
+                let isSelected = !usesCustomChallenge && challenge.id == biggestChallenge.id
+                Button {
+                    focusedField = nil
+                    animate(.snappySpring) {
+                        usesCustomChallenge = false
+                        biggestChallenge = challenge
+                    }
+                } label: {
+                    challengeOptionRow(
+                        title: challenge.title,
+                        detail: optionDetail(for: challenge),
+                        isSelected: isSelected,
+                        showsDetail: isSelected
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("coaching.option.\(challenge.id)")
+            }
+
+            customChallengeOption
+        }
+    }
+
+    private var customChallengeOption: some View {
+        let trimmed = customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return VStack(alignment: .leading, spacing: usesCustomChallenge ? 10 : 0) {
+            Button {
+                animate(.snappySpring) {
+                    usesCustomChallenge = true
+                    biggestChallenge = SpeakingChallenge.routingFallback(forCustomText: customChallengeText)
+                    focusedField = .customChallenge
+                }
+            } label: {
+                challengeOptionRow(
+                    title: trimmed.isEmpty ? "Something else" : trimmed,
+                    detail: "Tell Noum in your own words.",
+                    isSelected: usesCustomChallenge,
+                    showsDetail: usesCustomChallenge && trimmed.isEmpty,
+                    drawsContainer: !usesCustomChallenge
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("coaching.option.customChallenge")
+
+            if usesCustomChallenge {
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField(
+                        "Example: I sound defensive when challenged",
+                        text: limitedBinding($customChallengeText, maxLength: 90),
+                        axis: .vertical
+                    )
+                    .focused($focusedField, equals: .customChallenge)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .lineLimit(2...3)
+                    .submitLabel(.next)
+                    .onChange(of: customChallengeText) { _, newValue in
+                        biggestChallenge = SpeakingChallenge.routingFallback(forCustomText: newValue)
+                    }
+                    .onSubmit {
+                        if canAdvance(from: .challenge) {
+                            advance(from: .challenge)
+                        }
+                    }
+                    .accessibilityIdentifier("coaching.customChallenge.input")
+
+                    Text("Noum will keep this wording and choose the closest first drill.")
+                        .font(.caption)
+                        .foregroundStyle(Color(red: 0.43, green: 0.46, blue: 0.52))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 12)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .fill(usesCustomChallenge ? Color(red: 0.92, green: 0.96, blue: 1.00) : Color(red: 0.97, green: 0.98, blue: 1.00))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(
+                    usesCustomChallenge ? Color(red: 0.57, green: 0.76, blue: 0.98) : Color(red: 0.89, green: 0.92, blue: 0.96),
+                    lineWidth: usesCustomChallenge ? 2 : 1
+                )
+        )
+        .shadow(color: usesCustomChallenge ? Color(red: 0.18, green: 0.53, blue: 0.98).opacity(0.08) : .clear, radius: 10, y: 5)
+    }
+
+    private func challengeOptionRow(
+        title: String,
+        detail: String,
+        isSelected: Bool,
+        showsDetail: Bool,
+        drawsContainer: Bool = true
+    ) -> some View {
+        HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(Color(red: 0.14, green: 0.16, blue: 0.21))
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if showsDetail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(Color(red: 0.43, green: 0.46, blue: 0.52))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            ZStack {
+                Circle()
+                    .fill(isSelected ? AppColor.brandBlue : Color.clear)
+                    .frame(width: 28, height: 28)
+                Circle()
+                    .stroke(isSelected ? AppColor.brandBlue : Color(red: 0.80, green: 0.83, blue: 0.88), lineWidth: 2)
+                    .frame(width: 28, height: 28)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(minHeight: 54)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .fill(drawsContainer ? (isSelected ? Color(red: 0.92, green: 0.96, blue: 1.00) : Color(red: 0.97, green: 0.98, blue: 1.00)) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(
+                    drawsContainer ? (isSelected ? Color(red: 0.57, green: 0.76, blue: 0.98) : Color(red: 0.89, green: 0.92, blue: 0.96)) : Color.clear,
+                    lineWidth: drawsContainer ? (isSelected ? 2 : 1) : 0
+                )
+        )
+        .shadow(color: drawsContainer && isSelected ? Color(red: 0.18, green: 0.53, blue: 0.98).opacity(0.08) : .clear, radius: 10, y: 5)
+    }
+
     private func editorCard(
         prompt: String,
         text: Binding<String>,
@@ -810,6 +964,10 @@ struct CoachingOnboardingView: View {
         // Editor overlay is reused by `DeferredProfileCapture` (post-first-rep
         // prompts). The titles match the questions the deferred prompts ask.
         switch field {
+        case .customChallenge:
+            title = "What should Noum help with?"
+            prompt = "Example: I sound defensive when challenged."
+            binding = $customChallengeText
         case .goal:
             title = "What do you want to get better at?"
             prompt = "Example: lead updates in meetings without second-guessing every sentence."
@@ -999,7 +1157,12 @@ struct CoachingOnboardingView: View {
         switch stage {
         case .style:
             return speakingStyleGoal != nil
-        case .context, .challenge:
+        case .challenge:
+            if usesCustomChallenge {
+                return customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3
+            }
+            return true
+        case .context:
             return true
         }
     }
@@ -1055,13 +1218,18 @@ struct CoachingOnboardingView: View {
         // a user path — bail rather than persist a phantom default.
         guard let chosenVoice = speakingStyleGoal else { return }
         isSaving = true
+        let trimmedCustomChallenge = customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let savedChallenge = usesCustomChallenge
+            ? SpeakingChallenge.routingFallback(forCustomText: trimmedCustomChallenge)
+            : biggestChallenge
 
         coachingProfileStore.save(
             CoachingProfile(
                 speakingContext: speakingContext,
-                primaryGoal: biggestChallenge.recommendedPriority,
+                primaryGoal: savedChallenge.recommendedPriority,
                 confidenceLevel: .rebuilding,
-                biggestChallenge: biggestChallenge,
+                biggestChallenge: savedChallenge,
+                customChallengeText: usesCustomChallenge ? trimmedCustomChallenge : nil,
                 desiredOutcome: chosenVoice.recommendedOutcome,
                 speakingStyleGoal: chosenVoice,
                 styleReference: "",
@@ -1088,6 +1256,8 @@ struct CoachingOnboardingView: View {
         isEditingExistingProfile = true
         speakingContext = profile.speakingContext
         biggestChallenge = profile.biggestChallenge
+        customChallengeText = profile.customChallengeText ?? ""
+        usesCustomChallenge = !customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         // Pre-fill the picker from the user's real prior choice (nil-safe: a
         // legacy profile that was never genuinely chosen leaves the picker
         // empty so they pick deliberately when editing).
@@ -1095,6 +1265,16 @@ struct CoachingOnboardingView: View {
         coachingGoal = profile.coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines)
         whyNow = profile.motivationWhyNow.trimmingCharacters(in: .whitespacesAndNewlines)
         successVision = profile.successVision.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var displayedChallengeTitle: String {
+        if usesCustomChallenge {
+            let trimmed = customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return biggestChallenge.title
     }
 
     private func optionDetail<Option: Identifiable & Hashable>(for option: Option) -> String where Option: CustomStringConvertible {

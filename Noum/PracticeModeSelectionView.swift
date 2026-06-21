@@ -62,10 +62,6 @@ struct PracticeModePrescriptionCopy {
         "Begin \u{00B7} \(title)"
     }
 
-    static func escapeLabel() -> String {
-        "Pick another"
-    }
-
     static func prescriptionLine(focus: String?, target: String?) -> String? {
         let cleanTarget = target?.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanFocus = focus?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -371,25 +367,6 @@ struct PracticeModeSelectionView: View {
                 navigationPath.append(appDestination(for: option.mode))
             }
             .accessibilityIdentifier("practiceModes.recommendedHero.begin")
-
-            Button {
-                animateMode {
-                    showOtherWays = true
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .font(.subheadline.weight(.bold))
-                    Text(PracticeModePrescriptionCopy.escapeLabel())
-                        .font(.subheadline.weight(.semibold))
-                }
-                .foregroundStyle(option.tint)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("practiceModes.recommendedHero.pickAnother")
-            .accessibilityHint("Shows the other practice modes.")
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)

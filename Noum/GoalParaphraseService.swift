@@ -98,7 +98,7 @@ actor GoalParaphraseService {
             "Speaking context: \(profile.speakingContext.title)",
             "Style aim: \(profile.speakingStyleGoal.title)",
             "Desired outcome: \(profile.desiredOutcome.title)",
-            "Biggest challenge: \(profile.biggestChallenge.title)",
+            "Biggest challenge: \(profile.challengeDisplayTitle)",
             profile.styleReference.isEmpty ? "" : "Style reference: \(profile.styleReference)",
             profile.coachingBrief.isEmpty ? "" : "User wrote: \(profile.coachingBrief)",
             profile.motivationWhyNow.isEmpty ? "" : "Why now: \(profile.motivationWhyNow)",

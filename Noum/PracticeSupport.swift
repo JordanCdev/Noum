@@ -456,6 +456,25 @@ enum SpeakingChallenge: String, CaseIterable, Codable, Identifiable {
         case .rushing: return "slowing down under pressure"
         }
     }
+
+    /// Free-text onboarding still needs a stable routing bucket for drills.
+    /// The user's exact words are stored on `CoachingProfile`; this only picks
+    /// the nearest existing engine path so recommendation logic stays coherent.
+    static func routingFallback(forCustomText rawValue: String) -> SpeakingChallenge {
+        let text = rawValue.lowercased()
+        let ranked: [(SpeakingChallenge, [String])] = [
+            (.fillerWords, ["filler", "fillers", "um", "uh", "like", "hesitat"]),
+            (.freezing, ["blank", "freeze", "freez", "stuck", "panic", "spot", "improv", "think fast", "respond"]),
+            (.rushing, ["rush", "fast", "pace", "nerv", "anxious", "defensive", "calm", "composed", "interrupt"]),
+            (.rambling, ["rambl", "structure", "overexpl", "waffl", "concise", "drift", "long", "unclear", "point"])
+        ]
+
+        for (challenge, tokens) in ranked where tokens.contains(where: { text.contains($0) }) {
+            return challenge
+        }
+
+        return .rambling
+    }
 }
 
 enum SpeakingOutcome: String, CaseIterable, Codable, Identifiable {
@@ -523,6 +542,11 @@ struct CoachingProfile: Codable, Equatable {
     var primaryGoal: CoachingPriority
     var confidenceLevel: ConfidenceLevel
     var biggestChallenge: SpeakingChallenge
+    /// Optional user wording from the "Something else" onboarding path.
+    /// `biggestChallenge` remains the canonical routing bucket; this is the
+    /// human-facing problem statement the coach can read back without forcing
+    /// the user into the taxonomy.
+    var customChallengeText: String?
     var desiredOutcome: SpeakingOutcome
     /// The user's EFFECTIVE voice goal — always a concrete value so the many
     /// surfaces that tailor copy/persona to a voice never have to branch on nil.
@@ -587,6 +611,7 @@ struct CoachingProfile: Codable, Equatable {
         case primaryGoal
         case confidenceLevel
         case biggestChallenge
+        case customChallengeText
         case desiredOutcome
         case speakingStyleGoal
         case styleReference
@@ -604,6 +629,7 @@ struct CoachingProfile: Codable, Equatable {
         primaryGoal: CoachingPriority,
         confidenceLevel: ConfidenceLevel,
         biggestChallenge: SpeakingChallenge,
+        customChallengeText: String? = nil,
         desiredOutcome: SpeakingOutcome,
         speakingStyleGoal: SpeakingStyleGoal,
         styleReference: String,
@@ -619,6 +645,8 @@ struct CoachingProfile: Codable, Equatable {
         self.primaryGoal = primaryGoal
         self.confidenceLevel = confidenceLevel
         self.biggestChallenge = biggestChallenge
+        let trimmedCustomChallenge = customChallengeText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.customChallengeText = trimmedCustomChallenge?.isEmpty == false ? trimmedCustomChallenge : nil
         self.desiredOutcome = desiredOutcome
         self.speakingStyleGoal = speakingStyleGoal
         self.styleReference = styleReference
@@ -637,6 +665,9 @@ struct CoachingProfile: Codable, Equatable {
         primaryGoal = try container.decode(CoachingPriority.self, forKey: .primaryGoal)
         confidenceLevel = try container.decode(ConfidenceLevel.self, forKey: .confidenceLevel)
         biggestChallenge = try container.decode(SpeakingChallenge.self, forKey: .biggestChallenge)
+        let decodedCustomChallenge = try container.decodeIfPresent(String.self, forKey: .customChallengeText)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        customChallengeText = decodedCustomChallenge?.isEmpty == false ? decodedCustomChallenge : nil
         desiredOutcome = try container.decode(SpeakingOutcome.self, forKey: .desiredOutcome)
         // The effective voice always has a concrete value. The neutral default
         // is `.concise` (least editorialising register) and is only ever read
@@ -673,6 +704,7 @@ struct CoachingProfile: Codable, Equatable {
         try container.encode(primaryGoal, forKey: .primaryGoal)
         try container.encode(confidenceLevel, forKey: .confidenceLevel)
         try container.encode(biggestChallenge, forKey: .biggestChallenge)
+        try container.encodeIfPresent(customChallengeText, forKey: .customChallengeText)
         try container.encode(desiredOutcome, forKey: .desiredOutcome)
         try container.encode(speakingStyleGoal, forKey: .speakingStyleGoal)
         try container.encode(styleReference, forKey: .styleReference)
@@ -692,6 +724,22 @@ struct CoachingProfile: Codable, Equatable {
 }
 
 extension CoachingProfile {
+    var challengeDisplayTitle: String {
+        if let trimmed = customChallengeText?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !trimmed.isEmpty {
+            return trimmed
+        }
+        return biggestChallenge.title
+    }
+
+    var challengeContextLine: String {
+        if let customChallengeText,
+           !customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "\(customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines)) (nearest starting bucket: \(biggestChallenge.title.lowercased()))"
+        }
+        return biggestChallenge.title
+    }
+
     /// On-voice, single-sentence rendering of the user's goal — safe for any
     /// user-facing surface including lock-screen notifications, weekly digests,
     /// and result cards. Prefers the AI paraphrase set at onboarding by

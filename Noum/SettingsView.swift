@@ -593,7 +593,7 @@ struct SettingsView: View {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Spacing.xs) {
                     coachingTag(label: "Context", value: profile.speakingContext.title)
                     coachingTag(label: "Priority", value: profile.primaryGoal.title)
-                    coachingTag(label: "Challenge", value: profile.biggestChallenge.title)
+                    coachingTag(label: "Challenge", value: profile.challengeDisplayTitle)
                     coachingTag(
                         label: "Voice",
                         value: profile.speakingStyleGoal.title,

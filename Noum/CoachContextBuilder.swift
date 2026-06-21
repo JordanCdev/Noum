@@ -506,7 +506,13 @@ enum CoachContextBuilder {
             }
             // biggestChallenge — what the user named as their primary problem.
             // Coach can open with "you said <X> is your enemy — here's what I saw."
-            let challengeLabel = challengeDisplayLabel(profile.biggestChallenge)
+            let challengeLabel: String
+            if let customChallenge = profile.customChallengeText,
+               !customChallenge.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                challengeLabel = profile.challengeContextLine
+            } else {
+                challengeLabel = challengeDisplayLabel(profile.biggestChallenge)
+            }
             lines.append("- Their stated biggest challenge: \(challengeLabel)")
             // desiredOutcome — register-matching signal.
             lines.append("- Desired outcome: \(profile.desiredOutcome.title.lowercased())")

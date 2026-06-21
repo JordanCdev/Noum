@@ -11578,7 +11578,6 @@ struct PracticeModePrescriptionCopyTests {
     @Test func sectionTitlesDemoteTheCatalog() {
         #expect(PracticeModePrescriptionCopy.heroEyebrow == "Coach pick")
         #expect(PracticeModePrescriptionCopy.alternateSectionTitle == "Other ways to practice")
-        #expect(PracticeModePrescriptionCopy.escapeLabel() == "Pick another")
     }
 
     @Test func prescriptionLineCollapsesTargetAndFocusIntoOneRead() {
@@ -11602,7 +11601,6 @@ struct PracticeModePrescriptionCopyTests {
         let copy = [
             PracticeModePrescriptionCopy.heroEyebrow,
             PracticeModePrescriptionCopy.alternateSectionTitle,
-            PracticeModePrescriptionCopy.escapeLabel(),
             PracticeModePrescriptionCopy.beginLabel(for: PracticeMode.suddenDeath.displayLabel)
         ].joined(separator: " ")
         let banned = ["!", "hurry", "now", "crush", "nailed", "perfect"]
@@ -44190,5 +44188,67 @@ struct StreakFirstSightPolicyTests {
         let outcome = StreakFirstSight.evaluate(lastSeen: 2, current: 5)
         #expect(outcome.animate)
         #expect(outcome.persist == 5)
+    }
+}
+
+// MARK: - Coaching onboarding custom challenge
+
+struct CoachingOnboardingCustomChallengeTests {
+
+    @Test func customChallengeTextPersistsAndDrivesDisplay() throws {
+        let profile = profile(
+            biggestChallenge: .rushing,
+            customChallengeText: "I sound defensive when challenged"
+        )
+
+        #expect(profile.challengeDisplayTitle == "I sound defensive when challenged")
+        #expect(profile.challengeContextLine.contains("I sound defensive when challenged"))
+        #expect(profile.challengeContextLine.contains("nearest starting bucket"))
+
+        let data = try JSONEncoder().encode(profile)
+        let decoded = try JSONDecoder().decode(CoachingProfile.self, from: data)
+
+        #expect(decoded.customChallengeText == "I sound defensive when challenged")
+        #expect(decoded.challengeDisplayTitle == "I sound defensive when challenged")
+        #expect(decoded.biggestChallenge == .rushing)
+    }
+
+    @Test func blankCustomChallengeFallsBackToCanonicalChallenge() {
+        let profile = profile(
+            biggestChallenge: .freezing,
+            customChallengeText: "   "
+        )
+
+        #expect(profile.customChallengeText == nil)
+        #expect(profile.challengeDisplayTitle == SpeakingChallenge.freezing.title)
+        #expect(profile.challengeContextLine == SpeakingChallenge.freezing.title)
+    }
+
+    @Test func customChallengeRoutingKeepsExistingBucketsStable() {
+        #expect(SpeakingChallenge.routingFallback(forCustomText: "I use fillers and say um too much") == .fillerWords)
+        #expect(SpeakingChallenge.routingFallback(forCustomText: "I panic and blank on the spot") == .freezing)
+        #expect(SpeakingChallenge.routingFallback(forCustomText: "I sound defensive when challenged") == .rushing)
+        #expect(SpeakingChallenge.routingFallback(forCustomText: "I over-explain and lose the point") == .rambling)
+        #expect(SpeakingChallenge.routingFallback(forCustomText: "My problem is hard to describe") == .rambling)
+    }
+
+    private func profile(
+        biggestChallenge: SpeakingChallenge,
+        customChallengeText: String?
+    ) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: biggestChallenge.recommendedPriority,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: biggestChallenge,
+            customChallengeText: customChallengeText,
+            desiredOutcome: .composed,
+            speakingStyleGoal: .executive,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: "",
+            chosenStyleGoal: .executive
+        )
     }
 }

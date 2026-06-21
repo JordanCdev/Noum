@@ -193,7 +193,7 @@ private struct CoachFormattedMessageText: View {
         case .numbered(let index, let value):
             HStack(alignment: .firstTextBaseline, spacing: 9) {
                 Text("\(index).")
-                    .font(Typography.monoDigit(Typography.figtree(size: 16, weight: .bold, relativeTo: .body)))
+                    .font(Typography.monoDigit(Typography.figtree(size: 17, weight: .bold, relativeTo: .body)))
                     .foregroundStyle(accent)
                     .frame(width: 22, alignment: .trailing)
                 inlineText(value)
@@ -209,8 +209,8 @@ private struct CoachFormattedMessageText: View {
             partial + Text(segment.text)
                 .font(
                     segment.isStrong
-                    ? Typography.manrope(size: 17, weight: .bold, relativeTo: .body)
-                    : Typography.manrope(size: 17, weight: .medium, relativeTo: .body)
+                    ? Typography.figtree(size: 17, weight: .bold, relativeTo: .body)
+                    : Typography.figtree(size: 17, weight: .medium, relativeTo: .body)
                 )
         }
     }

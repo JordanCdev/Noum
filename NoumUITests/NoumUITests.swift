@@ -172,6 +172,54 @@ final class NoumUITests: XCTestCase {
     }
 
     @MainActor
+    func testOnboardingCustomChallengePath() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_REAL_FIRST_RUN"]
+        app.launch()
+
+        XCTAssertTrue(app.buttons["coaching.start"].waitForExistence(timeout: 15))
+        app.buttons["coaching.start"].tap()
+
+        try selectFirstOption(in: app, after: ["coaching.option.work", "coaching.option.interviews", "coaching.option.presentations", "coaching.option.social"])
+        XCTAssertTrue(app.buttons["coaching.continue"].waitForExistence(timeout: 5))
+        app.buttons["coaching.continue"].tap()
+
+        let custom = app.buttons["coaching.option.customChallenge"]
+        XCTAssertTrue(custom.waitForExistence(timeout: 5))
+        scrollUntilHittable(custom, in: app, attempts: 2)
+        let customHittable = expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: custom)
+        wait(for: [customHittable], timeout: 5)
+        custom.tap()
+
+        let input = app.descendants(matching: .any)["coaching.customChallenge.input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        input.tap()
+        input.typeText("I sound defensive when challenged")
+
+        let keyboardNext = app.keyboards.buttons["Next"]
+        if keyboardNext.waitForExistence(timeout: 1) {
+            keyboardNext.tap()
+        } else {
+            let next = app.buttons["coaching.continue"]
+            XCTAssertTrue(next.waitForExistence(timeout: 5))
+            scrollUntilHittable(next, in: app, attempts: 2)
+            next.tap()
+        }
+
+        try selectFirstOption(in: app, after: SpeakingStyleGoalOptionIDs.all)
+        app.buttons["coaching.continue"].tap()
+
+        XCTAssertTrue(app.staticTexts["I sound defensive when challenged"].waitForExistence(timeout: 25))
+
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "onboarding-custom-challenge-summary"
+        shot.lifetime = .keepAlways
+        add(shot)
+
+        XCTAssertTrue(app.buttons["coaching.startPracticing"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testFirstRunValueLoopReachesFirstVerdictWithInjectedTranscript() throws {
         let app = XCUIApplication()
         app.launchArguments += ["UI_TESTING", "UI_TESTING_REAL_FIRST_RUN", "UI_TESTING_FIRST_VALUE_LOOP"]
@@ -187,9 +235,9 @@ final class NoumUITests: XCTestCase {
 
         let timedMode = app.buttons["practiceMode.timed"]
         if !timedMode.waitForExistence(timeout: 2) {
-            let pickAnother = app.buttons["practiceModes.recommendedHero.pickAnother"]
-            if pickAnother.waitForExistence(timeout: 5) {
-                pickAnother.tap()
+            let otherWays = app.buttons["practiceModes.otherWays"]
+            if otherWays.waitForExistence(timeout: 5) {
+                otherWays.tap()
             }
         }
 
@@ -343,14 +391,9 @@ final class NoumUITests: XCTestCase {
 
         let modeButton = app.buttons[modeIdentifier]
         if !modeButton.waitForExistence(timeout: 2) {
-            let pickAnother = app.buttons["practiceModes.recommendedHero.pickAnother"]
-            if pickAnother.waitForExistence(timeout: 5) {
-                pickAnother.tap()
-            } else {
-                let otherWays = app.buttons["practiceModes.otherWays"]
-                if otherWays.waitForExistence(timeout: 2) {
-                    otherWays.tap()
-                }
+            let otherWays = app.buttons["practiceModes.otherWays"]
+            if otherWays.waitForExistence(timeout: 5) {
+                otherWays.tap()
             }
         }
         XCTAssertTrue(modeButton.waitForExistence(timeout: 5))

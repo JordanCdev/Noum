@@ -252,13 +252,6 @@ final class M17VerificationTour: XCTestCase {
         let modeRow = app.buttons[identifier]
         if modeRow.waitForExistence(timeout: 2) { return modeRow }
 
-        let pickAnother = app.buttons["practiceModes.recommendedHero.pickAnother"]
-        if pickAnother.waitForExistence(timeout: 3) {
-            pickAnother.tap()
-            Thread.sleep(forTimeInterval: 0.5)
-            if modeRow.waitForExistence(timeout: 3) { return modeRow }
-        }
-
         let otherWays = app.buttons["practiceModes.otherWays"]
         if otherWays.waitForExistence(timeout: 2) {
             otherWays.tap()
