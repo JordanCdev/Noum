@@ -47,6 +47,54 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-21 continuation (autonomous `noum-1` run, real toolchain + role-diverse
+adversarial workflow). Shipped the **buildable core of eval-06-20 move #2** — the
+north-star transfer loop's pure half; verified + committed; did NOT push:
+
+- **Shipped** (`PLAN-TRANSFER`): the 4-week `ForwardPlanService` now **reads
+  real-world transfer outcomes** so the next plan stops ignoring real results —
+  the eval's lowest real dimension (Transfer 4.5). `ForwardPlanInput` gained
+  `transferOutcomes` (defaulted empty → no call-site breakage); the coordinator
+  passes `BigMomentStore.shared.outcomeReports`. The AI path injects the existing
+  `BigMomentStore.transferTrends(...).contextLine` — the SAME honesty-gated,
+  no-causation aggregator the live coach already reads (`CoachContextBuilder`),
+  so plan + Ask Noum stay one coherent read — plus a planner system-prompt rule
+  to bridge rehearsal→room when prep hasn't been carrying. The deterministic
+  Week-4 mock gains a forward-looking, no-causation bridge clause when the active
+  moment's category shows a clear `.didNotTransfer` plurality (`.transferred`
+  never triggers a corrective tone; ties + thin data stay silent;
+  category-scoped; never echoes "fell short" — the never-punish-shame invariant).
+- **Adversarial review caught a real must-fix the unit tests masked:** the
+  honesty floor (`minimumReports: 3`) gates *total* report count, but the
+  prep-transfer read is optional in the check-in UI, so the bridge could fire off
+  a *single* transfer self-report. Fixed: `dominantTransferRead` now gates the
+  transfer-read count itself (`>= 3`), and a new regression test
+  (`dominantTransferReadIgnoresThinTransferReadsAboveReportFloor`) fails pre-fix.
+- **Verified:** 8 new tests; full `ForwardPlanServiceDeterministicTests` green on
+  the iPhone 17 sim, isolated `./DerivedData/Noum-transferplan`. Build compiled
+  clean (whole test target). Regression batch on neighboring suites
+  (`ForwardPlanRenderer/Progress`, `CoachContextBuilder`, `BigMomentStore`) run.
+- **Method:** a 4-agent role-diverse workflow (Swift correctness / coaching-
+  honesty auditor / Speeko-Orai-Yoodli-Duolingo competitive strategist →
+  synthesis) reviewed the diff. Verdict: SHIP-WITH-NITS after the one must-fix.
+  All three honesty checks pass; the loop genuinely **closes** (outcomes change
+  the next plan), moving Transfer off the floor.
+- **Deferred (the felt half — explicitly NOT autonomous-buildable):** (a)
+  `PostTransferCoachNote` report-time debrief, and (b) **adaptation provenance** —
+  a visible "you told me your interviews didn't carry → I pointed Week 4 at that
+  moment" receipt at `CoachingPlanCard.swift:178`. The loop closes in the engine
+  but is still **unfelt by the user** (the eval's Adaptation-6.0 invisibility);
+  the strategist named provenance the single highest-value next increment. Both
+  are visible-UI / felt-copy changes that need on-device QA — same reason the
+  prior continuations deferred felt slices, not a skip.
+- The structural 10/10 ceiling is unchanged and intentional
+  (`CoachParityReadiness` caps at `.forming` — the trust moat; do not remove it
+  to chase a literal "replaces a human coach" claim).
+- ⚠️ **`noum-1` / `noum2` are STILL byte-identical task prompts** (re-confirmed).
+  Split still pending (noum-1 = ship code, noum2 = eval/QA-only); until then,
+  whichever fires second should `git log` before building. Figma + Canva MCP
+  connected but not exercised — no concrete visual spec needed shipping this run.
+
 2026-06-20 continuation (autonomous `noum-1` run, real toolchain). Verified +
 committed stranded work, ran a fresh eval, recorded the roadmap; did NOT push:
 

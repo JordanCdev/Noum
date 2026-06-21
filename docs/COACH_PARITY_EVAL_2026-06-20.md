@@ -85,6 +85,25 @@ The beginner role (4.0) is the floor and the headline story: depth is real but
    **Buildable core, felt copy gated:** the `ForwardPlanInput` wiring is pure and
    unit-testable; the debrief *wording* wants felt QA. Highest north-star value.
 
+   **↳ CORE SHIPPED 2026-06-21** (`PLAN-TRANSFER`, autonomous `noum-1`,
+   adversarially reviewed): the pure half — wiring real-world outcomes into the
+   planner so the next plan *stops ignoring* real results. `ForwardPlanInput`
+   now carries `transferOutcomes`; the AI path injects the existing
+   `BigMomentStore.transferTrends` `contextLine` (the SAME honesty-gated,
+   no-causation aggregator the live coach reads) plus a planner rule to bridge
+   rehearsal→room when prep hasn't been carrying; the deterministic Week-4 mock
+   gains a forward-looking, no-causation bridge clause when the active moment's
+   category shows a clear `.didNotTransfer` plurality. Honesty floor enforced on
+   the transfer-read count itself (not just total reports — a leak the
+   adversarial review caught and that's now regression-tested). Strict-plurality
+   + category-scoped + never echoes "fell short." 8 new tests, full
+   `ForwardPlanServiceDeterministicTests` green. **Still owed (the felt half):**
+   (a) the `PostTransferCoachNote` report-time debrief, and (b) **adaptation
+   provenance** — a visible "you told me X → I changed the plan" receipt at the
+   plan card (`CoachingPlanCard.swift:178`); the loop now closes in the engine
+   but is still unfelt by the user (the eval's Adaptation-6.0 invisibility). The
+   strategist flagged provenance as the single highest-value next increment.
+
 3. **Make adaptation + remembered plan visible at call/chat landing** (M) — lead
    with one data-grounded line restating the standing plan and, when a multi-rep
    adaptation verdict exists, naming what changed ("Last 3 reps your pauses

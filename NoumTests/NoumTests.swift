@@ -18993,7 +18993,8 @@ struct ForwardPlanServiceDeterministicTests {
         trends: [SkillTrend] = [],
         bigMoment: BigMoment? = nil,
         bigMomentDays: Int? = nil,
-        weeklyReps: Int = 0
+        weeklyReps: Int = 0,
+        transferOutcomes: [BigMomentOutcomeReport] = []
     ) -> ForwardPlanInput {
         ForwardPlanInput(
             profile: profile,
@@ -19005,8 +19006,30 @@ struct ForwardPlanServiceDeterministicTests {
             bigMoment: bigMoment,
             bigMomentDaysUntil: bigMomentDays,
             trends: trends,
-            recentDrills: []
+            recentDrills: [],
+            transferOutcomes: transferOutcomes
         )
+    }
+
+    // Build N reports of one category with a fixed drill-transfer read so the
+    // honesty floor (transferTrends minimumReports: 3) is met deterministically.
+    private func transferReports(
+        category: BigMomentCategory,
+        transfer: ReportedDrillTransfer?,
+        outcome: ReportedMomentOutcome = .mixed,
+        count: Int
+    ) -> [BigMomentOutcomeReport] {
+        (0..<count).map { i in
+            let moment = BigMoment(title: "Moment \(i)", date: nil, category: category)
+            return BigMomentOutcomeReport(
+                moment: moment,
+                outcome: outcome,
+                audienceResponse: .unclear,
+                note: nil,
+                drillTransfer: transfer,
+                recordedAt: Date(timeIntervalSince1970: 1_700_000_000 + Double(i) * 86_400)
+            )
+        }
     }
 
     @Test func deterministicPlanAlwaysReturnsFourWeeks() {
@@ -19242,6 +19265,85 @@ struct ForwardPlanServiceDeterministicTests {
         )
         let result = ForwardPlanService.strongestSkillArea(baseline: baseline)
         #expect(result == .fillerReduction)
+    }
+
+    // MARK: - Real-world transfer adaptation (eval 06-20 move #2 core)
+
+    @Test func dominantTransferReadIsNilBelowHonestyFloor() {
+        // Two reports is below the minimumReports: 3 floor — no pattern,
+        // the planner must ignore transfer rather than react on thin data.
+        let reports = transferReports(category: .interview, transfer: .didNotTransfer, count: 2)
+        #expect(ForwardPlanService.dominantTransferRead(for: .interview, in: reports) == nil)
+    }
+
+    @Test func dominantTransferReadSurfacesClearPlurality() {
+        let reports = transferReports(category: .interview, transfer: .didNotTransfer, count: 3)
+        #expect(ForwardPlanService.dominantTransferRead(for: .interview, in: reports) == .didNotTransfer)
+    }
+
+    @Test func dominantTransferReadIgnoresThinTransferReadsAboveReportFloor() {
+        // The report-count floor (3) is cleared, but only ONE report actually
+        // carries a prep-transfer read — the transfer signal is still thin, so
+        // the planner must stay silent rather than react on a single self-report.
+        // (Regression for the honesty-floor leak the adversarial review caught:
+        // drillTransfer is optional in the check-in UI.)
+        var reports = transferReports(category: .interview, transfer: .didNotTransfer, count: 1)
+        reports += transferReports(category: .interview, transfer: nil, count: 2)
+        #expect(reports.count == 3) // clears the report-count floor
+        #expect(ForwardPlanService.dominantTransferRead(for: .interview, in: reports) == nil)
+    }
+
+    @Test func dominantTransferReadIsNilOnTie() {
+        // Equal split across reads = no strict plurality = no pattern.
+        var reports = transferReports(category: .interview, transfer: .didNotTransfer, count: 2)
+        reports += transferReports(category: .interview, transfer: .transferred, count: 2)
+        #expect(ForwardPlanService.dominantTransferRead(for: .interview, in: reports) == nil)
+    }
+
+    @Test func dominantTransferReadIsCategoryScoped() {
+        // A pattern in presentations must not leak into the interview read.
+        let reports = transferReports(category: .presentation, transfer: .didNotTransfer, count: 4)
+        #expect(ForwardPlanService.dominantTransferRead(for: .interview, in: reports) == nil)
+    }
+
+    @Test func weekFourBridgesWhenPrepHasNotBeenCarrying() {
+        // A clear "didn't carry" pattern for the active moment's category →
+        // Week 4's mock rationale gains the forward-looking bridge clause.
+        let moment = BigMoment(
+            title: "VP role",
+            date: Calendar.current.date(byAdding: .day, value: 7, to: Date()),
+            category: .interview
+        )
+        let reports = transferReports(category: .interview, transfer: .didNotTransfer, count: 4)
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput(
+            bigMoment: moment, bigMomentDays: 7, transferOutcomes: reports
+        ))
+        #expect(plan.weeks[3].rationale.contains("bridge"))
+        // Never punish-shame: the user's "fell short" verdict is never echoed back.
+        #expect(!plan.weeks[3].rationale.lowercased().contains("fell short"))
+    }
+
+    @Test func weekFourDoesNotBridgeWhenPrepIsCarrying() {
+        // A positive transfer pattern must not trigger a corrective tone.
+        let moment = BigMoment(
+            title: "VP role",
+            date: Calendar.current.date(byAdding: .day, value: 7, to: Date()),
+            category: .interview
+        )
+        let reports = transferReports(category: .interview, transfer: .transferred, count: 4)
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput(
+            bigMoment: moment, bigMomentDays: 7, transferOutcomes: reports
+        ))
+        #expect(!plan.weeks[3].rationale.contains("bridge"))
+    }
+
+    @Test func transferAdaptationDoesNotAlterPlanWithoutBigMoment() {
+        // No active moment → consolidation week is unchanged even if
+        // transfer reports exist (nothing to mock-bridge toward).
+        let reports = transferReports(category: .interview, transfer: .didNotTransfer, count: 4)
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput(transferOutcomes: reports))
+        #expect(plan.weeks[3].rationale.lowercased().contains("consolidation"))
+        #expect(!plan.weeks[3].rationale.contains("bridge"))
     }
 }
 

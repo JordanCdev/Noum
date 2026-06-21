@@ -32,6 +32,13 @@ struct ForwardPlanInput {
     /// remains in RecommendationLearningStore; the planner receives a
     /// snapshot so an AI-created plan can adjust instead of repeating.
     let recommendationOutcomes: [RecommendationOutcome]
+    /// Real-world transfer reports (how completed Big Moments actually
+    /// went, as the user reported them). Raw ownership stays in
+    /// `BigMomentStore.outcomeReports`; the planner receives a snapshot so
+    /// the next plan can adapt to what the user said carried into the room
+    /// — never as proof the training caused the result (the no-causation
+    /// contract; the honesty floor lives in `BigMomentStore.transferTrends`).
+    let transferOutcomes: [BigMomentOutcomeReport]
 
     init(
         profile: CoachingProfile?,
@@ -44,7 +51,8 @@ struct ForwardPlanInput {
         bigMomentDaysUntil: Int?,
         trends: [SkillTrend],
         recentDrills: [DrillHistoryStore.Entry],
-        recommendationOutcomes: [RecommendationOutcome] = []
+        recommendationOutcomes: [RecommendationOutcome] = [],
+        transferOutcomes: [BigMomentOutcomeReport] = []
     ) {
         self.profile = profile
         self.baseline = baseline
@@ -57,6 +65,7 @@ struct ForwardPlanInput {
         self.trends = trends
         self.recentDrills = recentDrills
         self.recommendationOutcomes = recommendationOutcomes
+        self.transferOutcomes = transferOutcomes
     }
 }
 
@@ -218,7 +227,12 @@ actor ForwardPlanService {
                 if days == 1 { return "One day out. Run one mock, sleep on it." }
                 return "\(days) days out. Treat each rep like the real moment."
             }()
-            let rationale = "Mock your \(moment.category.displayName). \(daysFragment) \(mode.displayLabel) most closely matches the shape of the event."
+            var rationale = "Mock your \(moment.category.displayName). \(daysFragment) \(mode.displayLabel) most closely matches the shape of the event."
+            // Adapt to what the user reported about earlier real moments of
+            // this kind — the plan should not ignore real-world results.
+            if let bridge = transferBridgeClause(for: moment.category, in: input.transferOutcomes) {
+                rationale += " \(bridge)"
+            }
             return PlanWeek(
                 weekIndex: 4,
                 focus: focus,
@@ -344,6 +358,57 @@ actor ForwardPlanService {
         }
     }
 
+    /// Qualifying real-world transfer read for `category`, when enough
+    /// reports exist to clear the honesty floor (`transferTrends`
+    /// minimumReports = 3). Returns the dominant `ReportedDrillTransfer`
+    /// only when one read is the strict plurality — a tie or thin data
+    /// returns nil so the planner ignores transfer rather than reacting on
+    /// noise. The reports are the user's own account; this is a self-report
+    /// pattern, never proof the training caused the result.
+    nonisolated static func dominantTransferRead(
+        for category: BigMomentCategory,
+        in reports: [BigMomentOutcomeReport]
+    ) -> ReportedDrillTransfer? {
+        guard let trend = BigMomentStore.transferTrends(
+            from: reports,
+            minimumReports: 3,
+            maxReportsPerCategory: 6,
+            limit: BigMomentCategory.allCases.count
+        ).first(where: { $0.category == category }) else { return nil }
+        let counts = trend.drillTransferCounts
+        // `transferTrends` gates `minimumReports: 3` against the TOTAL report
+        // count, but the prep-transfer read is optional in the check-in UI
+        // (`BigMomentOutcomeInlineCard` saves with no transfer selected), and
+        // `drillTransferCounts` is built only from the reports that specified
+        // one. So a 3-report category can carry a single transfer read — gate
+        // the transfer reads against the same floor here, or we'd react on one
+        // self-report, the exact thin-data reaction the floor exists to prevent.
+        let transferReadCount = counts.values.reduce(0, +)
+        guard transferReadCount >= 3 else { return nil }
+        guard let top = counts.max(by: { $0.value < $1.value }) else { return nil }
+        // A tie is not a pattern — require a strict plurality.
+        let tiedAtTop = counts.values.filter { $0 == top.value }.count
+        guard tiedAtTop == 1 else { return nil }
+        return top.key
+    }
+
+    /// One bounded, forward-looking, no-causation clause appended to the
+    /// Week-4 mock rationale when recent real-world reports say the prep
+    /// hasn't been carrying into the room. Frames the mock as the bridge
+    /// rather than passing a verdict on the user (never punish-shame); the
+    /// "hasn't fully carried" language is the user's own reported read.
+    /// Returns nil for any read other than `.didNotTransfer` so a positive
+    /// or partial pattern doesn't trigger a corrective tone.
+    nonisolated static func transferBridgeClause(
+        for category: BigMomentCategory,
+        in reports: [BigMomentOutcomeReport]
+    ) -> String? {
+        guard dominantTransferRead(for: category, in: reports) == .didNotTransfer else {
+            return nil
+        }
+        return "Recent \(category.displayName) check-ins suggest the prep hasn't fully carried into the room yet — treat this mock as the bridge between rehearsal and the real thing."
+    }
+
     /// Honest session target. Anchored on the user's actual weekly
     /// rep count so the plan isn't aspirational — a user averaging 2
     /// reps/week doesn't get a 5-target wall of failure.
@@ -429,6 +494,12 @@ actor ForwardPlanService {
         adapted before repeating, do not repeat it unchanged without \
         explaining a different purpose or adjustment in the rationale. \
         Observed response is association, not proof of causation.
+        - If REAL-WORLD TRANSFER PATTERNS say the user's prep has not been \
+        carrying into the room, the plan should bridge rehearsal to the real \
+        moment (e.g. mock the exact moment it slipped) rather than repeating \
+        the same drills unchanged. Transfer reports are the user's own read, \
+        association only — never claim the training caused any outcome, and \
+        never echo a "fell short" verdict back at the user.
         - No invented stats. If you don't have a number, don't claim a number.
         """
     }
@@ -513,6 +584,22 @@ actor ForwardPlanService {
                let verdictLine = RecommendationAdaptationAnalyzer.adaptationRationale(
                    mode: topSummary.mode, focus: topSummary.focus, in: input.recommendationOutcomes) {
                 lines.append(verdictLine)
+            }
+        }
+        // Real-world transfer patterns — how the user reported completed
+        // moments actually went. Honesty floor + no-causation framing live in
+        // `BigMomentStore.transferTrends` (minimumReports: 3), the same
+        // aggregator the live coach reads, so the plan and Ask Noum surface one
+        // coherent read. Omitted entirely below the floor. `limit: 2` matches
+        // the live coach's bound (intentional: the deterministic
+        // `dominantTransferRead` uses an unbounded limit so the active moment's
+        // category is never starved — only the AI context under-surfaces here).
+        let transferTrends = BigMomentStore.transferTrends(
+            from: input.transferOutcomes, minimumReports: 3, limit: 2)
+        if !transferTrends.isEmpty {
+            lines.append("Real-world transfer patterns (self-report only, association not proof):")
+            for trend in transferTrends {
+                lines.append("  - \(trend.contextLine)")
             }
         }
         lines.append("")

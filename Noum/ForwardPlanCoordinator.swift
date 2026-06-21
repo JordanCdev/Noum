@@ -56,7 +56,8 @@ enum ForwardPlanCoordinator {
             bigMomentDaysUntil: bigMomentDays,
             trends: trends,
             recentDrills: recentDrills,
-            recommendationOutcomes: RecommendationLearningStore.shared.outcomes
+            recommendationOutcomes: RecommendationLearningStore.shared.outcomes,
+            transferOutcomes: BigMomentStore.shared.outcomeReports
         )
     }
 
