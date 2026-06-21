@@ -1533,6 +1533,18 @@ struct SpeakingStyleGoalAlignmentTests {
         }
     }
 
+    @Test func voiceIconSystemNamesAreDistinctAndStable() {
+        let symbols = SpeakingStyleGoal.allCases.map(\.voiceIconSystemName)
+        #expect(Set(symbols).count == SpeakingStyleGoal.allCases.count,
+            "Voice targets should not collapse back to one generic icon.")
+        #expect(SpeakingStyleGoal.authoritative.voiceIconSystemName == "shield.fill")
+        #expect(SpeakingStyleGoal.warm.voiceIconSystemName == "heart.fill")
+        #expect(SpeakingStyleGoal.concise.voiceIconSystemName == "scissors")
+        #expect(SpeakingStyleGoal.persuasive.voiceIconSystemName == "megaphone.fill")
+        #expect(SpeakingStyleGoal.executive.voiceIconSystemName == "briefcase.fill")
+        #expect(SpeakingStyleGoal.storytelling.voiceIconSystemName == "book.closed.fill")
+    }
+
     // MARK: - Rhetorical-device alignment (mid-session HUD subtext)
 
     @Test func alignedEloquenceDevicesAreNonEmpty() {
@@ -8373,14 +8385,14 @@ struct AskNoumDayZeroGreetingTests {
             #expect(!line.contains("!"))
             #expect(!line.contains("Let's") && !line.contains("Let\u{2019}s"))
             // Honest zero-evidence framing must survive every variant.
-            #expect(line.contains("I don't have a read on you yet"))
+            #expect(line.contains("No read yet"))
         }
     }
 
     @Test func lockedComposerCopyIsPlainAndNonEmpty() {
         #expect(!AskNoumDayZeroGreeting.headline.isEmpty)
         #expect(!AskNoumDayZeroGreeting.firstRepCTATitle.isEmpty)
-        #expect(AskNoumDayZeroGreeting.inputLockedNote.contains("first rep"))
+        #expect(AskNoumDayZeroGreeting.inputLockedNote.contains("one rep"))
         #expect(!AskNoumDayZeroGreeting.inputLockedNote.contains("!"))
     }
 
@@ -8390,6 +8402,43 @@ struct AskNoumDayZeroGreetingTests {
             #expect(!fragment.isEmpty)
             #expect(fragment == fragment.lowercased(), "Fragments are mid-sentence copy — lowercase by contract.")
         }
+    }
+}
+
+struct CoachMessageTextFormatterTests {
+
+    @Test func parsesParagraphsBulletsAndNumberedSteps() {
+        let blocks = CoachMessageTextFormatter.blocks(from: """
+        **Read:** the close softened.
+        - **Move:** hold one beat before the final sentence.
+        1. Run one Timed rep.
+        2. Review the final line.
+        """)
+
+        #expect(blocks == [
+            .paragraph("**Read:** the close softened."),
+            .bullet("**Move:** hold one beat before the final sentence."),
+            .numbered(1, "Run one Timed rep."),
+            .numbered(2, "Review the final line.")
+        ])
+    }
+
+    @Test func parsesInlineBoldSegments() {
+        let segments = CoachMessageTextFormatter.inlineSegments(
+            from: "**Read:** 5 fillers. **Move:** hold the pause."
+        )
+
+        #expect(segments == [
+            .init(text: "Read:", isStrong: true),
+            .init(text: " 5 fillers. ", isStrong: false),
+            .init(text: "Move:", isStrong: true),
+            .init(text: " hold the pause.", isStrong: false)
+        ])
+    }
+
+    @Test func stripsMarkdownHeadingPrefixIntoPlainParagraph() {
+        let blocks = CoachMessageTextFormatter.blocks(from: "### Next move")
+        #expect(blocks == [.paragraph("Next move")])
     }
 }
 
@@ -9238,11 +9287,13 @@ struct CoachContextBuilderTests {
             with: " ",
             options: .regularExpression
         )
-        // Pins the prompt's length contract to the quality gate's 2-sentence
-        // cap (`replyQualityIssue` maxSentences) — a prompt that invites 3
-        // sentences guarantees a gate trip + repair round trip on every turn.
-        #expect(normalized.contains("text chat is AT MOST 2 short sentences"))
+        // Pins the prompt's length contract to the quality gate's compact
+        // line/word caps. The coach can format now, but the default answer
+        // should still be short enough to scan.
+        #expect(normalized.contains("Default to 1-4 short lines"))
         #expect(normalized.contains("Voice read-aloud should be tighter still"))
+        #expect(normalized.contains("bold lead-ins"))
+        #expect(normalized.contains("bullets for 2-3 options"))
         #expect(normalized.contains("report-style wording about scores being down"))
         #expect(!normalized.contains("recent reps show a decline"))
         #expect(normalized.contains("The pattern I'd watch is"))
@@ -11891,7 +11942,6 @@ struct HomeAccessibilityModalGateTests {
             HomeAccessibilityModalGate(leaguePromotionPresented: true),
             HomeAccessibilityModalGate(dailyGoalCelebrationPresented: true),
             HomeAccessibilityModalGate(pathCelebrationPresented: true),
-            HomeAccessibilityModalGate(goalRefreshPresented: true),
             HomeAccessibilityModalGate(notificationPromptPresented: true),
             HomeAccessibilityModalGate(bigMomentIntakePresented: true)
         ]
@@ -13460,6 +13510,72 @@ struct DevSeedCoachingProfileTests {
         let voices = Set(SeedProfile.allCases.map { DevSeedData.seedCoachingProfile(for: $0).speakingStyleGoal })
         #expect(voices.count >= 4,
                 "Seed profiles must cover at least 4 distinct voices for visual breadth, got: \(voices)")
+    }
+}
+
+@Suite("DevSeedCoachIntelligenceFixtureTests")
+struct DevSeedCoachIntelligenceFixtureTests {
+
+    @Test func populatedBaselineLightsUpCoachContextWithoutValidationOverclaim() {
+        let fixture = DevSeedData.coachIntelligenceFixture(for: .improvingIntermediate)
+        let context = fixture.context
+
+        #expect(fixture.baseline.overallConfidence.isReliable)
+        #expect(fixture.reflections.count >= 3)
+        #expect(fixture.transferReports.count >= 3)
+        #expect(fixture.recommendationOutcomes.count >= 3)
+        #expect(fixture.proofs.count == 3)
+        #expect(fixture.memory?.caseFile != nil)
+
+        for section in [
+            "BASELINE (rolling, last 30 days)",
+            "COACH MEMORY",
+            "COACH CASE FILE",
+            "INTERVENTION CYCLE",
+            "INTERVENTION RESPONSE",
+            "PROOFS",
+            "REAL-WORLD TRANSFER",
+            "WEEKLY CHECK-IN",
+            "COACHING READINESS"
+        ] {
+            #expect(context.contains(section), "Seeded context should include \(section)")
+        }
+
+        #expect(context.contains("Stakeholder review"))
+        #expect(context.contains("Cross-functional sync"))
+        #expect(context.contains("Short opener worked"))
+        #expect(context.contains("Never claim coach-parity"))
+        #expect(context.contains("not proof"))
+    }
+
+    @Test func pressureVulnerableFixtureProducesPressureSpecificRead() {
+        let fixture = DevSeedData.coachIntelligenceFixture(for: .pressureVulnerable)
+        let audit = fixture.intelligenceAudit
+        let context = fixture.context
+
+        #expect(fixture.bigMoment.title == "Investor Q&A")
+        #expect(fixture.bigMoment.category == .interview)
+        #expect(fixture.memory?.activeIntervention?.mode == .suddenDeath)
+        #expect(fixture.memory?.activeIntervention?.focus == "calm under challenge")
+        #expect(audit.contains("Pressure pace hold"))
+        #expect(context.contains("Investor dry run"))
+        #expect(context.contains("calm under challenge"))
+        #expect(context.contains("their prep didn't carry") || context.contains("prep didn't carry"))
+    }
+
+    @Test func everySeedCarriesRelationalEvidenceBeyondMetricHistory() {
+        for seed in SeedProfile.allCases {
+            let fixture = DevSeedData.coachIntelligenceFixture(for: seed)
+            let context = fixture.context
+
+            #expect(!fixture.checkIns.isEmpty, "\(seed) should seed a weekly check-in")
+            #expect(fixture.transferReports.count >= 3, "\(seed) should seed transfer reports")
+            #expect(fixture.recommendationOutcomes.count >= 2, "\(seed) should seed recommendation evidence")
+            #expect(fixture.proofs.count == 3, "\(seed) should seed proof moments")
+            #expect(fixture.memory != nil, "\(seed) should build coach memory")
+            #expect(context.contains("COACHING READINESS"), "\(seed) should expose claim-scaling")
+            #expect(context.contains("WEEKLY CHECK-IN"), "\(seed) should expose subjective evidence")
+        }
     }
 }
 #endif
@@ -23943,8 +24059,29 @@ struct AICoachChatReplyQualityGateTests {
         #expect(AICoachChatService.replyQualityIssue(in: reply) == .tooLong)
     }
 
-    @Test func normalTurnRejectsThreeSentenceReport() {
+    @Test func normalTurnAcceptsCompactThreeSentenceReport() {
         let reply = "Your last rep held the opening. The middle softened under pressure. Next rep, hold a beat before sentence two."
+        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == nil)
+    }
+
+    @Test func acceptsCompactFormattedCoachReply() {
+        let reply = """
+        **Read:** 5 fillers show the rush is happening near the close.
+        - **Move:** next rep, hold one beat before the final sentence.
+        - **Why:** that tests whether pace is driving the filler spike.
+        """
+        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == nil)
+    }
+
+    @Test func rejectsOverlongFormattedDump() {
+        let reply = """
+        - Your opening was useful.
+        - Your middle softened.
+        - Your pace climbed.
+        - Your close trailed off.
+        - Your fillers rose.
+        - Your next move is to practice everything at once.
+        """
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == .tooLong)
     }
 

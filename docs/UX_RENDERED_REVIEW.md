@@ -350,10 +350,11 @@ already exist).
   sharpen the read"`, `"Your first session is the hardest"` — one honest line +
   one CTA, zero fabricated numbers. Make this the cold-start STANDARD every other
   surface obeys, and converge the active states onto it.
-- **The restrained soft-sell sheets** — notification pre-prompt
+- **The restrained soft-sell surfaces** — notification pre-prompt
   (`27-notification-pre-prompt`: "No marketing, no spam" / "Maybe later") and the
-  goal-refresh sheet (`26-goal-refresh-sheet`: "Still your goal?"). Use their
-  tone/structure as the template for EVERY permission or upsell moment.
+  inline goal direction check (`26-goal-refresh-inline`). Use their
+  tone/structure as the template for EVERY permission or upsell moment, with
+  inline coaching preferred over modal interruption when the user can keep going.
 - **The genuine evidenced coaching signal that already exists but is buried** —
   e.g. "Across your last 5 Social Catch-Up reps your confident tone landed only
   0% of the time." This personal, evidenced read is the real product and the real

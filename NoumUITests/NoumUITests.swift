@@ -213,30 +213,9 @@ final class NoumUITests: XCTestCase {
 
         let begin = app.buttons["timedPractice.begin"]
         XCTAssertTrue(begin.waitForExistence(timeout: 10))
-        begin.tap()
+        tapTimedPracticeBegin(begin, in: app)
 
-        let verdict = app.descendants(matching: .any)["summary.postRepVerdict"]
-        if !verdict.waitForExistence(timeout: 2) {
-            let startNow = app.buttons["timedPractice.startNow"]
-            if startNow.waitForExistence(timeout: 4) {
-                startNow.tap()
-            }
-        }
-
-        let firstRepContinue = app.buttons["firstRep.celebration.continue"]
-        if firstRepContinue.waitForExistence(timeout: 12) {
-            firstRepContinue.tap()
-        }
-
-        let viewSummary = app.buttons["postSessionProgression.viewSummary"]
-        if viewSummary.waitForExistence(timeout: 12) {
-            viewSummary.tap()
-        } else {
-            let fallbackViewSummary = app.buttons["View Summary"]
-            if fallbackViewSummary.waitForExistence(timeout: 2) {
-                fallbackViewSummary.tap()
-            }
-        }
+        let verdict = advanceToPostRepVerdict(in: app)
 
         XCTAssertTrue(
             verdict.waitForExistence(timeout: 20),
@@ -248,6 +227,72 @@ final class NoumUITests: XCTestCase {
             || app.buttons["summary.postRepVerdict.startFullRetry"].exists,
             "The first verdict should include a concrete next action, not just explanatory text."
         )
+    }
+
+    @MainActor
+    private func advanceToPostRepVerdict(in app: XCUIApplication, timeout: TimeInterval = 45) -> XCUIElement {
+        let verdict = app.descendants(matching: .any)["summary.postRepVerdict"]
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            if verdict.exists { return verdict }
+
+            let begin = app.buttons["timedPractice.begin"]
+            if begin.exists {
+                tapTimedPracticeBegin(begin, in: app)
+                Thread.sleep(forTimeInterval: 0.5)
+                continue
+            }
+
+            let startNow = app.buttons["timedPractice.startNow"]
+            if startNow.exists && startNow.isHittable {
+                startNow.tap()
+                Thread.sleep(forTimeInterval: 0.4)
+                continue
+            }
+
+            let firstRepContinue = app.buttons["firstRep.celebration.continue"]
+            if firstRepContinue.exists && firstRepContinue.isHittable {
+                firstRepContinue.tap()
+                Thread.sleep(forTimeInterval: 0.5)
+                continue
+            }
+
+            let viewSummary = app.buttons["postSessionProgression.viewSummary"]
+            if viewSummary.exists && viewSummary.isHittable {
+                viewSummary.tap()
+                Thread.sleep(forTimeInterval: 0.5)
+                continue
+            }
+
+            let fallbackViewSummary = app.buttons["View Summary"]
+            if fallbackViewSummary.exists && fallbackViewSummary.isHittable {
+                fallbackViewSummary.tap()
+                Thread.sleep(forTimeInterval: 0.5)
+                continue
+            }
+
+            let continueButton = app.buttons["Continue"]
+            if continueButton.exists && continueButton.isHittable {
+                continueButton.tap()
+                Thread.sleep(forTimeInterval: 0.5)
+                continue
+            }
+
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+
+        return verdict
+    }
+
+    @MainActor
+    private func tapTimedPracticeBegin(_ begin: XCUIElement, in app: XCUIApplication) {
+        scrollUntilHittable(begin, in: app, attempts: 2)
+        if begin.isHittable {
+            begin.tap()
+        } else {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)).tap()
+        }
     }
 
     @MainActor

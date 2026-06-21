@@ -1066,17 +1066,28 @@ struct ProfileView: View {
 
     private var identityHeader: some View {
         VStack(spacing: 16) {
-            // Speaker character — abstract, breathing, brand-tinted.
-            // Replaces the letter avatar so the profile reads as
-            // "speaker presence" rather than account placeholder.
-            NoumCharacter(
-                mood: .calm,
-                tint: premium.isPremium ? AppColor.pro : AppColor.brandBlue,
-                size: 90
-            )
-            .padding(.bottom, -8)
-
             let identity = ProfileIdentityPresentation.make(profile: coachingProfileStore.profile)
+            let chosenVoice = coachingProfileStore.profile?.chosenStyleGoal
+
+            if let chosenVoice {
+                VoiceGoalIcon(
+                    goal: chosenVoice,
+                    size: 34,
+                    containerSize: 90,
+                    cornerRadius: 24
+                )
+                .padding(.bottom, -8)
+            } else {
+                // Neutral pre-goal presence. Once a user chooses a voice target,
+                // the header leads with that target instead of another generic
+                // character mark.
+                NoumCharacter(
+                    mood: .calm,
+                    tint: premium.isPremium ? AppColor.pro : AppColor.brandBlue,
+                    size: 90
+                )
+                .padding(.bottom, -8)
+            }
 
             VStack(spacing: 6) {
                 HStack(spacing: 8) {
@@ -1093,11 +1104,17 @@ struct ProfileView: View {
                     }
                 }
 
-                Text(identity.subtitle)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    if let chosenVoice {
+                        VoiceGoalIcon(goal: chosenVoice, size: 12)
+                    }
+
+                    Text(identity.subtitle)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
             }
         }
         .frame(maxWidth: .infinity)

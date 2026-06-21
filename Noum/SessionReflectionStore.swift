@@ -210,3 +210,19 @@ final class SessionReflectionStore: ObservableObject {
         return reflections
     }
 }
+
+#if DEBUG
+extension SessionReflectionStore {
+    /// Replace reflections for deterministic DEBUG seed personas. Uses the
+    /// current account when present and a guest key otherwise, matching the
+    /// debug session seed's guest fallback.
+    func replaceForDebug(_ reflections: [SessionReflection]) {
+        let bounded = Array(reflections.prefix(Self.historyCap))
+        history = bounded
+        let accountID = currentAccountID ?? "guest"
+        if let data = try? JSONEncoder().encode(bounded) {
+            UserDefaults.standard.set(data, forKey: historyKey(for: accountID))
+        }
+    }
+}
+#endif

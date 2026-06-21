@@ -47,8 +47,9 @@ final class NoumChatFlowUITests: XCTestCase {
     /// colon), so these predicates never match chrome.
     @MainActor
     private func coachBubbleCount(in app: XCUIApplication) -> Int {
-        let live = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Noum:")).count
-        let offline = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Noum, offline reply:")).count
+        let elements = app.descendants(matching: .any)
+        let live = elements.matching(NSPredicate(format: "label BEGINSWITH %@", "Noum:")).count
+        let offline = elements.matching(NSPredicate(format: "label BEGINSWITH %@", "Noum, offline reply:")).count
         return live + offline
     }
 
@@ -89,6 +90,7 @@ final class NoumChatFlowUITests: XCTestCase {
         XCTAssertGreaterThan(after, before,
             "A typed turn must resolve to a coach reply (live or offline) — never stay stuck thinking")
 
+        Thread.sleep(forTimeInterval: 2)
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "typed-turn-resolved"; shot.lifetime = .keepAlways; add(shot)
         app.terminate()

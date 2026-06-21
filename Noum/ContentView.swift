@@ -289,7 +289,6 @@ struct HomeAccessibilityModalGate: Equatable {
     var leaguePromotionPresented = false
     var dailyGoalCelebrationPresented = false
     var pathCelebrationPresented = false
-    var goalRefreshPresented = false
     var notificationPromptPresented = false
     var bigMomentIntakePresented = false
 
@@ -298,7 +297,6 @@ struct HomeAccessibilityModalGate: Equatable {
         || leaguePromotionPresented
         || dailyGoalCelebrationPresented
         || pathCelebrationPresented
-        || goalRefreshPresented
         || notificationPromptPresented
         || bigMomentIntakePresented
     }
@@ -368,7 +366,6 @@ struct ContentView: View {
             leaguePromotionPresented: league.pendingPromotion != nil,
             dailyGoalCelebrationPresented: showDailyGoalCelebration,
             pathCelebrationPresented: pendingPathCelebration != nil,
-            goalRefreshPresented: goalRefresh.shouldPresent,
             notificationPromptPresented: notificationPrePrompt.pendingPrompt,
             bigMomentIntakePresented: showBigMomentIntake
         ).suppressesUnderlyingHome
@@ -402,12 +399,16 @@ struct ContentView: View {
                             // profile — the thread is seeded/read-only until
                             // rep 1 (HomeSignalGate / AskNoumDayZeroGreeting).
                             let gate = homeCardGate
+                            if goalRefresh.shouldPresent {
+                                GoalRefreshInlineCard()
+                                    .cardEntrance(0)
+                            }
                             if gate.coachCard {
                                 HomeCoachCard(
                                     navigationPath: $navigationPath,
                                     scrollOffset: homeScrollOffset,
                                     showsPlanArc: gate.planArc
-                                ).cardEntrance(0)
+                                ).cardEntrance(goalRefresh.shouldPresent ? 1 : 0)
                             }
                             if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
                                 BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
@@ -495,12 +496,16 @@ struct ContentView: View {
                             // Begin CTA. The recommendation pipeline
                             // (RecommendationBiasEngine + CoachingPlanner)
                             // feeds it directly — no new coaching logic.
+                            if goalRefresh.shouldPresent {
+                                GoalRefreshInlineCard()
+                                    .cardEntrance(0)
+                            }
                             if gate.coachCard {
                                 HomeCoachCard(
                                     navigationPath: $navigationPath,
                                     scrollOffset: homeScrollOffset,
                                     showsPlanArc: gate.planArc
-                                ).cardEntrance(0)
+                                ).cardEntrance(goalRefresh.shouldPresent ? 1 : 0)
                             }
                             // Quiet streak status — the ONE status line the
                             // populated home keeps (roadmap Iter 4). Gated on
@@ -753,10 +758,9 @@ struct ContentView: View {
         // that the user can answer or scroll past — no modal block.
         // Captured text lands on Profile via the "In your own words"
         // section so users see their reflections being held by the app.
-        // Goal refresh — 2-week cadence "still your goal?" lightweight sheet.
-        .sheet(isPresented: $goalRefresh.shouldPresent) {
-            GoalRefreshSheet()
-        }
+        // Goal refresh now renders inline on Home (`GoalRefreshInlineCard`)
+        // instead of as a modal sheet. A direction check should feel like
+        // coaching, not a system interruption.
         // Notification pre-prompt — soft sell before iOS's hard prompt.
         // Fires once on session 1 with a 30-day cool-down on decline.
         .sheet(isPresented: $notificationPrePrompt.pendingPrompt) {

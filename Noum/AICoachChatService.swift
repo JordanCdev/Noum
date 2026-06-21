@@ -20,9 +20,9 @@ import os
 //   • Bounded replay — cap at 12 user-coach turn pairs in the request
 //     body (24 messages). Older context is summarised by virtue of
 //     being baked into the user context block.
-//   • Token-bounded — temperature 0.6, output cap 800. The system
-//     prompt brevity contract (2-4 sentences) is what actually keeps
-//     replies tight; the cap is a safety ceiling, not the length lever.
+//   • Token-bounded — temperature 0.6, output cap 520. The system
+//     prompt brevity contract (compact 1-4 line replies) is what actually
+//     keeps replies tight; the cap is a safety ceiling, not the length lever.
 //     History: a 350 cap silently truncated. The default provider is a
 //     *thinking* model (gemini-2.5-flash) whose budget is shared between
 //     invisible reasoning tokens and visible text, so terse/ambiguous
@@ -30,8 +30,7 @@ import os
 //     and guillotined the visible answer mid-word ("…guide you through
 //     the app'"). Fix: Gemini reasoning is disabled (thinkingConfig
 //     thinkingBudget 0) so the whole budget is visible text, and the cap
-//     is 800 (headroom over the 2-4 sentence contract, matching the
-//     never-truncating PostRepCoachNoteService which sets no cap).
+//     is 520 (headroom over the compact reply contract).
 //   • Truncation-honest — response extraction reads the provider finish
 //     reason (Gemini `finishReason`, OpenAI/DeepSeek `finish_reason`). A
 //     length-truncated completion (MAX_TOKENS / "length") stays an honest
@@ -125,7 +124,7 @@ enum CoachChatReplyQualityIssue: Equatable {
     var repairInstruction: String {
         switch self {
         case .tooLong:
-            return "The draft is too long for text-mode coaching. Rewrite it as 1-2 short sentences."
+            return "The draft is too long for text-mode coaching. Rewrite it as 1-4 short lines, usually under 75 words."
         case .roboticPhrase(let phrase):
             return "The draft uses robotic/template language: \(phrase). Rewrite it in a senior human coach register."
         case .bareClarification:
@@ -665,9 +664,14 @@ actor AICoachChatService {
         }
 
         let expandedAnswer = turnRequestsExpandedAnswer(latestUserTurn)
-        let maxCharacters = expandedAnswer ? 560 : 380
-        let maxSentences = expandedAnswer ? 5 : 2
-        if trimmed.count > maxCharacters || sentenceCount(in: trimmed) > maxSentences {
+        let maxCharacters = expandedAnswer ? 680 : 420
+        let maxSentences = expandedAnswer ? 7 : 4
+        let maxWords = expandedAnswer ? 150 : 85
+        let maxLines = expandedAnswer ? 9 : 5
+        if trimmed.count > maxCharacters
+            || sentenceCount(in: trimmed) > maxSentences
+            || wordCount(in: trimmed) > maxWords
+            || nonEmptyLineCount(in: trimmed) > maxLines {
             return .tooLong
         }
 
@@ -745,9 +749,14 @@ actor AICoachChatService {
         }
 
         let expandedAnswer = turnRequestsExpandedAnswer(latestUserTurn)
-        let maxCharacters = expandedAnswer ? 560 : 360
-        let maxSentences = expandedAnswer ? 5 : 2
-        if trimmed.count > maxCharacters || sentenceCount(in: trimmed) > maxSentences {
+        let maxCharacters = expandedAnswer ? 680 : 420
+        let maxSentences = expandedAnswer ? 7 : 4
+        let maxWords = expandedAnswer ? 150 : 85
+        let maxLines = expandedAnswer ? 9 : 5
+        if trimmed.count > maxCharacters
+            || sentenceCount(in: trimmed) > maxSentences
+            || wordCount(in: trimmed) > maxWords
+            || nonEmptyLineCount(in: trimmed) > maxLines {
             apply(.overlong, penalty: 2)
         }
 
@@ -1052,6 +1061,12 @@ actor AICoachChatService {
         text.split { !$0.isLetter && !$0.isNumber }.count
     }
 
+    private nonisolated static func nonEmptyLineCount(in text: String) -> Int {
+        text.split(separator: "\n").filter {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }.count
+    }
+
     private func repairLowQualityReply(
         issue: CoachChatReplyQualityIssue,
         draft: String,
@@ -1073,8 +1088,9 @@ actor AICoachChatService {
         \(draft)
 
         Rewrite from scratch. Requirements:
-        - 1-2 short sentences.
-        - No headers, bullets, or numbered lists.
+        - 1-4 short lines, usually under 75 words.
+        - Use **bold lead-ins**, up to 3 bullets, or numbered steps only when they reduce reading.
+        - No long paragraph and no decorative formatting.
         - No broad menu. Pick one coaching move.
         - If the user showed frustration, do not defend the app.
         - Sound like a senior communications coach, not an assistant explaining itself.
@@ -1483,9 +1499,9 @@ actor AICoachChatService {
         }
         return [
             "model": provider.model,
-            // 800 is a safety ceiling, not the length lever — the
-            // system-prompt brevity contract (2-4 sentences) governs length.
-            "max_tokens": 800,
+            // 520 is a safety ceiling, not the length lever — the compact
+            // reply contract governs length.
+            "max_tokens": 520,
             "system": system,
             "messages": msgs
         ]
@@ -1513,10 +1529,9 @@ actor AICoachChatService {
             return [
                 "model": provider.model,
                 "temperature": 0.6,
-                // 800 is a safety ceiling, not the length lever — the
-                // system-prompt brevity contract (2-4 sentences) governs
-                // length. A lower cap silently clipped replies mid-word.
-                "max_tokens": 800,
+                // 520 is a safety ceiling, not the length lever — the compact
+                // reply contract governs length.
+                "max_tokens": 520,
                 "messages": msgs
             ]
         case .gemini:
@@ -1546,9 +1561,9 @@ actor AICoachChatService {
                     // budget, guillotining the visible reply mid-word.
                     // thinkingBudget 0 spends the whole budget on text.
                     "thinkingConfig": ["thinkingBudget": 0],
-                    // 800 = safety ceiling; the 2-4 sentence system-prompt
+                    // 520 = safety ceiling; the compact system-prompt
                     // contract is what keeps replies tight.
-                    "maxOutputTokens": 800
+                    "maxOutputTokens": 520
                 ]
             ]
         case .none:

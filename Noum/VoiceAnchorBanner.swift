@@ -61,9 +61,7 @@ struct VoiceAnchorBanner: View {
         Group {
             if visible {
                 HStack(spacing: 8) {
-                    Image(systemName: "scope")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(AppColor.brandBlue)
+                    VoiceGoalIcon(goal: styleGoal, size: 12)
                     Text("Toward your \(styleGoal.shortVoiceLabel)")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.primary)

@@ -101,6 +101,171 @@ enum DevSeedData {
         // every gated surface, and the goal-aware coaching loop is
         // visible end-to-end in the seeded screenshot tour.
         CoachingProfileStore.shared.replaceForDebug(seedCoachingProfile(for: profile))
+
+        // Populate the coach-intelligence spine, not only the metric spine.
+        // This keeps seeded inspection honest: the coach context now has a
+        // baseline, subjective reflections, transfer reports, proof moments,
+        // and recommendation-response evidence to formulate from.
+        let fixture = coachIntelligenceFixture(
+            for: profile,
+            sessions: sessions,
+            baseline: BaselineStore.shared.baseline,
+            now: Date()
+        )
+        populateCoachIntelligenceFixture(fixture)
+    }
+
+    // MARK: - Coach-intelligence fixture
+
+    struct CoachIntelligenceFixture {
+        let seedProfile: SeedProfile
+        let profile: CoachingProfile
+        let sessions: [PracticeSession]
+        let baseline: CommunicationBaseline
+        let rating: SpeakingRating
+        let reflections: [SessionReflection]
+        let checkIns: [CoachCheckIn]
+        let bigMoment: BigMoment
+        let transferReports: [BigMomentOutcomeReport]
+        let recommendationOutcomes: [RecommendationOutcome]
+        let proofs: [ProofMomentRecord]
+        let memory: CoachMemory?
+
+        var context: String {
+            CoachContextBuilder.userContext(
+                profile: profile,
+                baseline: baseline,
+                rating: rating,
+                sessions: sessions,
+                currentStreak: PracticeSession.calculateStreak(from: sessions),
+                pathStatus: nil,
+                pathGatingPhrase: nil,
+                recentProofs: proofs,
+                bigMoment: bigMoment,
+                recentMomentOutcomes: transferReports,
+                coachMemory: memory,
+                recommendationOutcomes: recommendationOutcomes,
+                recentCheckIns: checkIns
+            )
+        }
+
+        var intelligenceAudit: String {
+            var lines: [String] = []
+            lines.append("Seed: \(seedProfile.displayName)")
+            lines.append("Sessions: \(sessions.count)")
+            lines.append("Baseline confidence: \(baseline.overallConfidence.label)")
+            lines.append("Filler baseline: \(String(format: "%.1f", baseline.fillerRate.value))/min")
+            lines.append("Pace baseline: \(String(format: "%.0f", baseline.pace.value)) WPM")
+            if let hypothesis = memory?.workingHypothesis {
+                lines.append("Working hypothesis: \(hypothesis)")
+            }
+            if let caseFile = memory?.caseFile {
+                lines.append("Case target: \(caseFile.observableTarget ?? "not set")")
+                lines.append("Next move: \(caseFile.nextMove.contextLabel)")
+            }
+            if let intervention = memory?.activeIntervention {
+                lines.append("Active intervention: \(intervention.title) -> \(intervention.reviewStatus.contextLabel)")
+            }
+            if let latestTransfer = transferReports.first {
+                lines.append("Latest transfer: \(latestTransfer.coachContextLine)")
+            }
+            if let latestCheckIn = checkIns.first {
+                lines.append("Latest check-in: \(latestCheckIn.coachContextLines.joined(separator: " "))")
+            }
+            lines.append("Proofs: \(proofs.count)")
+            lines.append("Limit: validation remains user/outcome tested; this fixture cannot prove coach parity.")
+            return lines.joined(separator: "\n")
+        }
+    }
+
+    static func coachIntelligenceFixture(
+        for seedProfile: SeedProfile,
+        now: Date = Date()
+    ) -> CoachIntelligenceFixture {
+        let sessions = sessions(for: seedProfile)
+        let baseline = BaselineEngine.compute(from: sessions)
+        return coachIntelligenceFixture(
+            for: seedProfile,
+            sessions: sessions,
+            baseline: baseline,
+            now: now
+        )
+    }
+
+    private static func coachIntelligenceFixture(
+        for seedProfile: SeedProfile,
+        sessions: [PracticeSession],
+        baseline: CommunicationBaseline,
+        now: Date
+    ) -> CoachIntelligenceFixture {
+        let profile = seedCoachingProfile(for: seedProfile)
+        let rating = seedRating(for: seedProfile)
+        let reflections = seedReflections(for: seedProfile, sessions: sessions)
+        let checkIns = [seedCheckIn(for: seedProfile, now: now)]
+        let bigMoment = seedBigMoment(for: seedProfile, now: now)
+        let transferReports = seedTransferReports(for: seedProfile, activeMoment: bigMoment, now: now)
+        let recommendationOutcomes = seedRecommendationOutcomes(for: seedProfile, sessions: sessions, now: now)
+        let proofs = seedProofs(for: seedProfile, sessions: sessions, now: now)
+        let memory = CoachMemoryEngine.build(
+            profile: profile,
+            baseline: baseline,
+            sessions: sessions,
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: sessions.sorted { $0.date > $1.date }.first?.id,
+            recommendationOutcomes: recommendationOutcomes,
+            latestReflection: reflections.first,
+            reflectionHistory: reflections,
+            latestTransferReport: transferReports.first,
+            upcomingMoment: bigMoment,
+            now: now
+        )
+        return CoachIntelligenceFixture(
+            seedProfile: seedProfile,
+            profile: profile,
+            sessions: sessions,
+            baseline: baseline,
+            rating: rating,
+            reflections: reflections,
+            checkIns: checkIns,
+            bigMoment: bigMoment,
+            transferReports: transferReports,
+            recommendationOutcomes: recommendationOutcomes,
+            proofs: proofs,
+            memory: memory
+        )
+    }
+
+    @MainActor
+    private static func populateCoachIntelligenceFixture(_ fixture: CoachIntelligenceFixture) {
+        SessionReflectionStore.shared.replaceForDebug(fixture.reflections)
+        CoachCheckInStore.shared.replaceForDebug(fixture.checkIns)
+        BigMomentStore.shared.replaceForDebug(
+            activeMoment: fixture.bigMoment,
+            outcomeReports: fixture.transferReports
+        )
+        RecommendationLearningStore.shared.replaceFromRemote(
+            pendingExposure: nil,
+            outcomes: fixture.recommendationOutcomes
+        )
+        if #available(iOS 17.0, macOS 12.0, *) {
+            ProofMomentStore.shared.replaceForDebug(fixture.proofs)
+        }
+        CoachMemoryStore.shared.clearAll()
+        CoachMemoryStore.shared.refresh(
+            profile: fixture.profile,
+            baseline: fixture.baseline,
+            sessions: fixture.sessions,
+            trends: [],
+            forwardPlan: nil,
+            lastSessionID: fixture.sessions.sorted { $0.date > $1.date }.first?.id,
+            recommendationOutcomes: fixture.recommendationOutcomes,
+            latestReflection: fixture.reflections.first,
+            reflectionHistory: fixture.reflections,
+            latestTransferReport: fixture.transferReports.first,
+            upcomingMoment: fixture.bigMoment
+        )
     }
 
     /// Voice + priority + challenge tuned to each seed narrative. The
@@ -279,6 +444,314 @@ enum DevSeedData {
             // to the calm hero rather than mis-celebrating.
             return .initial
         }
+    }
+
+    private static func seedReflections(
+        for profile: SeedProfile,
+        sessions: [PracticeSession]
+    ) -> [SessionReflection] {
+        let newest = sessions.sorted { $0.date > $1.date }
+        let reflections: [(ReflectionFeeling, String)] = {
+            switch profile {
+            case .beginner:
+                return [
+                    (.nervous, "I knew the answer, but I filled the silence."),
+                    (.heldBack, "I kept restarting instead of landing the first point."),
+                    (.notLikeMe, "It sounded more apologetic than I wanted.")
+                ]
+            case .improvingIntermediate:
+                return [
+                    (.strong, "I cut the preamble and got to the point faster."),
+                    (.heldBack, "The close still felt softer than the idea."),
+                    (.strong, "The second answer felt more like how I want to sound."),
+                    (.nervous, "I rushed when I imagined the room pushing back.")
+                ]
+            case .plateauedAdvanced:
+                return [
+                    (.heldBack, "The middle was strong, but the opener still eased in."),
+                    (.strong, "Once I named the frame, it felt controlled."),
+                    (.notLikeMe, "Polished, but a little rehearsed.")
+                ]
+            case .pressureVulnerable:
+                return [
+                    (.nervous, "The hard question made me speed up immediately."),
+                    (.heldBack, "I softened the answer instead of holding the line."),
+                    (.strong, "The calm rep felt much closer to my normal voice."),
+                    (.nervous, "I could feel the pace jump when the stakes went up.")
+                ]
+            case .fillerFree:
+                return [
+                    (.notLikeMe, "Clean, but a little too clipped."),
+                    (.strong, "The structure held and the transitions were simple."),
+                    (.heldBack, "I trimmed so much that one proof point disappeared.")
+                ]
+            }
+        }()
+
+        return zip(newest, reflections).map { session, reflection in
+            SessionReflection(
+                sessionID: session.id,
+                feeling: reflection.0,
+                note: reflection.1,
+                recordedAt: session.date.addingTimeInterval(600)
+            )
+        }
+    }
+
+    private static func seedCheckIn(for profile: SeedProfile, now: Date) -> CoachCheckIn {
+        let fields: (hardest: String, outside: String, verdict: CoachDrillVerdict)
+        switch profile {
+        case .beginner:
+            fields = (
+                "Letting a pause exist without apologizing for it.",
+                "Team standup. I had the point but padded it.",
+                .stalled
+            )
+        case .improvingIntermediate:
+            fields = (
+                "Keeping the first sentence short when a stakeholder asks a broad question.",
+                "Cross-functional sync. The short opener helped, but the close still softened.",
+                .helped
+            )
+        case .plateauedAdvanced:
+            fields = (
+                "Opening with a point of view instead of context-setting.",
+                "Leadership prep. The story was strong after the first 10 seconds.",
+                .stalled
+            )
+        case .pressureVulnerable:
+            fields = (
+                "Staying at the same pace when the question gets adversarial.",
+                "Investor dry run. I knew the material but sounded hurried under challenge.",
+                .missed
+            )
+        case .fillerFree:
+            fields = (
+                "Keeping warmth while cutting excess words.",
+                "Conference rehearsal. The points landed, but one answer felt too compressed.",
+                .helped
+            )
+        }
+        return CoachCheckIn(
+            recordedAt: now.addingTimeInterval(-86_400),
+            hardest: fields.hardest,
+            outsideApp: fields.outside,
+            drillVerdict: fields.verdict
+        )
+    }
+
+    private static func seedBigMoment(for profile: SeedProfile, now: Date) -> BigMoment {
+        let daysOut: Int
+        let title: String
+        let category: BigMomentCategory
+        switch profile {
+        case .beginner:
+            daysOut = 5
+            title = "Team standup"
+            category = .presentation
+        case .improvingIntermediate:
+            daysOut = 9
+            title = "Stakeholder review"
+            category = .review
+        case .plateauedAdvanced:
+            daysOut = 18
+            title = "Leadership offsite keynote"
+            category = .presentation
+        case .pressureVulnerable:
+            daysOut = 12
+            title = "Investor Q&A"
+            category = .interview
+        case .fillerFree:
+            daysOut = 28
+            title = "Conference keynote"
+            category = .publicSpeaking
+        }
+        let date = Calendar.current.date(byAdding: .day, value: daysOut, to: now) ?? now
+        return BigMoment(
+            title: title,
+            date: date,
+            category: category,
+            createdAt: now.addingTimeInterval(-10 * 86_400)
+        )
+    }
+
+    private static func seedTransferReports(
+        for profile: SeedProfile,
+        activeMoment: BigMoment,
+        now: Date
+    ) -> [BigMomentOutcomeReport] {
+        let pattern: [(ReportedMomentOutcome, ReportedAudienceResponse, ReportedDrillTransfer, String)]
+        switch profile {
+        case .beginner:
+            pattern = [
+                (.mixed, .unclear, .partly, "I paused once instead of saying um, but still rambled."),
+                (.fellShort, .resistant, .didNotTransfer, "I lost the first sentence when someone interrupted."),
+                (.mixed, .unclear, .partly, "The opener was clearer; the middle drifted.")
+            ]
+        case .improvingIntermediate:
+            pattern = [
+                (.mixed, .engaged, .partly, "Short opener worked; I softened the final recommendation."),
+                (.wentWell, .engaged, .transferred, "The one-sentence answer landed and questions were sharper."),
+                (.mixed, .unclear, .partly, "I was concise at first, then added caveats near the end.")
+            ]
+        case .plateauedAdvanced:
+            pattern = [
+                (.mixed, .engaged, .partly, "The body was strong, but the opener still needed a cleaner thesis."),
+                (.wentWell, .engaged, .transferred, "Once the opening claim landed, the room followed."),
+                (.mixed, .unclear, .partly, "Good material, too much runway before the point.")
+            ]
+        case .pressureVulnerable:
+            pattern = [
+                (.mixed, .resistant, .partly, "Prepared answer helped, but I sped up on the challenge."),
+                (.fellShort, .resistant, .didNotTransfer, "The pressure made me hedge the conclusion."),
+                (.mixed, .unclear, .partly, "Better recovery after pausing, still rushed the first response.")
+            ]
+        case .fillerFree:
+            pattern = [
+                (.wentWell, .engaged, .transferred, "The tighter answers were easy to follow."),
+                (.mixed, .unclear, .partly, "Clear, but one answer needed more connective tissue."),
+                (.wentWell, .engaged, .transferred, "The concise structure made the Q&A smoother.")
+            ]
+        }
+
+        return pattern.enumerated().map { index, item in
+            let recordedAt = now.addingTimeInterval(Double(-(index * 5 + 2)) * 86_400)
+            let moment = BigMoment(
+                title: "\(activeMoment.title) rehearsal \(index + 1)",
+                date: recordedAt.addingTimeInterval(-86_400),
+                category: activeMoment.category,
+                createdAt: recordedAt.addingTimeInterval(-8 * 86_400)
+            )
+            return BigMomentOutcomeReport(
+                moment: moment,
+                outcome: item.0,
+                audienceResponse: item.1,
+                note: item.3,
+                drillTransfer: item.2,
+                recordedAt: recordedAt
+            )
+        }
+    }
+
+    private static func seedRecommendationOutcomes(
+        for profile: SeedProfile,
+        sessions: [PracticeSession],
+        now: Date
+    ) -> [RecommendationOutcome] {
+        let newest = sessions.sorted { $0.date > $1.date }
+        let mode: PracticeMode
+        let title: String
+        let focus: String
+        let target: String
+        let scoreDeltas: [Double]
+        let fillerDeltas: [Double]
+        switch profile {
+        case .beginner:
+            mode = .timed
+            title = "Pause before the first sentence"
+            focus = "opening control"
+            target = "One clean opening sentence before any explanation."
+            scoreDeltas = [0.4, -0.2]
+            fillerDeltas = [-0.5, 0.4]
+        case .improvingIntermediate:
+            mode = .timed
+            title = "One-sentence answer structure"
+            focus = "concise stakeholder answers"
+            target = "Open with the answer, then add one proof point."
+            scoreDeltas = [1.2, 1.0, 0.8, 0.6]
+            fillerDeltas = [-2.0, -1.5, -1.0, -0.8]
+        case .plateauedAdvanced:
+            mode = .timed
+            title = "Thesis-first opening"
+            focus = "decisive openings"
+            target = "Lead with the claim before context."
+            scoreDeltas = [0.1, -0.1, 0.2, 0.0]
+            fillerDeltas = [0.0, -0.2, 0.1, 0.0]
+        case .pressureVulnerable:
+            mode = .suddenDeath
+            title = "Pressure pace hold"
+            focus = "calm under challenge"
+            target = "Answer hard questions without a pace spike."
+            scoreDeltas = [-1.1, -0.8, -0.4, 0.2]
+            fillerDeltas = [2.0, 1.4, 0.9, -0.2]
+        case .fillerFree:
+            mode = .timed
+            title = "Cut one extra clause"
+            focus = "precision without losing warmth"
+            target = "Keep the proof point while removing one qualifier."
+            scoreDeltas = [0.6, 0.3, 0.4, 0.5]
+            fillerDeltas = [-0.1, 0.0, -0.2, 0.0]
+        }
+
+        let scopedSessions = newest.filter { $0.mode == mode }
+        let fallbackSessions = scopedSessions.isEmpty ? newest : scopedSessions
+        return Array(fallbackSessions.prefix(scoreDeltas.count)).enumerated().map { index, session in
+            RecommendationOutcome(
+                id: UUID(),
+                fingerprint: "dev-seed.\(profile.rawValue).\(mode.rawValue).\(focus)",
+                title: title,
+                focus: focus,
+                target: target,
+                mode: mode,
+                sessionID: session.id,
+                followed: session.mode == mode,
+                completedAt: min(session.date.addingTimeInterval(3_600), now.addingTimeInterval(Double(-index) * 600)),
+                scoreDelta: scoreDeltas[index],
+                hasComparableScore: true,
+                fillerDelta: fillerDeltas[index],
+                durationDelta: 4
+            )
+        }
+    }
+
+    private static func seedProofs(
+        for profile: SeedProfile,
+        sessions: [PracticeSession],
+        now: Date
+    ) -> [ProofMomentRecord] {
+        let newest = sessions.sorted { $0.date > $1.date }
+        let technique: String
+        let claim: String
+        switch profile {
+        case .beginner:
+            technique = "Clean Pause"
+            claim = "A pause can replace a filler without losing the thread."
+        case .improvingIntermediate:
+            technique = "Answer First"
+            claim = "That is concise warmth: clear point, then support."
+        case .plateauedAdvanced:
+            technique = "Thesis First"
+            claim = "The opening starts carrying more authority."
+        case .pressureVulnerable:
+            technique = "Composure Reset"
+            claim = "A calmer beat gives the answer room under pressure."
+        case .fillerFree:
+            technique = "Lean Proof"
+            claim = "Precision works when the evidence still stays visible."
+        }
+
+        return newest.prefix(3).enumerated().map { index, session in
+            let proof = ProofMoment(
+                quote: proofQuote(from: session.transcript),
+                technique: technique,
+                claim: claim,
+                sessionDate: session.date,
+                isAIBacked: false,
+                generatedAt: now.addingTimeInterval(Double(-index) * 300)
+            )
+            return ProofMomentRecord(
+                sessionID: session.id,
+                proof: proof,
+                addedAt: now.addingTimeInterval(Double(-index) * 300)
+            )
+        }
+    }
+
+    private static func proofQuote(from transcript: String) -> String {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        let sentence = trimmed.split(separator: ".", maxSplits: 1).first.map(String.init) ?? trimmed
+        return String(sentence.prefix(120))
     }
 
     /// Generate a summary of what a seed profile produces (for debug display).

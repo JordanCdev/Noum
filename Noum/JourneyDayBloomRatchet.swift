@@ -8,8 +8,9 @@ import Security
 // Remembers the practiced-day count the journey page showed the user
 // last time they looked, per account. The page compares the live count
 // against this on appear and plays the day-bloom settle beat (reveal
-// band advances, a flower or two blooms, the walker steps forward) only
-// when the count has genuinely risen since the user last saw the page.
+// band advances, a flower or two blooms, the current-position marker
+// shifts forward) only when the count has genuinely risen since the user
+// last saw the page.
 //
 // Invariants (the league-promotion-guard lesson):
 //   • First sight seeds to the CURRENT count and reports `.seeded` —

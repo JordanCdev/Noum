@@ -101,7 +101,7 @@ struct PracticeModeAvailability: Equatable {
 /// - No profile → no line (nothing to ground against).
 /// - Goal-refresh cadence due (`GoalRefreshManager`, 2-week check-in) → no
 ///   line. We never claim distance against a goal the user hasn't
-///   reconfirmed; the refresh sheet owns that conversation.
+///   reconfirmed; the inline direction-check card owns that conversation.
 /// - Insufficient baseline evidence → no line (`measuredDistanceFromGoal`
 ///   returns nil rather than fabricating the 0.5 midpoint read).
 /// The label vocabulary ("On track" … "Early days") is forward-only —

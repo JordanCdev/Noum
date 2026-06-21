@@ -281,9 +281,9 @@ struct DeferredProfileCaptureSheet: View {
 
 // MARK: - Goal Refresh (recurring 2-week cadence)
 
-/// Fires a lightweight "still your goal?" sheet every 14+ days.
+/// Fires a lightweight direction check every 14+ days.
 /// The user confirms in one tap or updates their goal text.
-/// Never blocks — a skip stamps the date and stays quiet for another 14 days.
+/// Never blocks: a skip stamps the date and stays quiet for another 14 days.
 @MainActor
 @available(iOS 17.0, macOS 12.0, *)
 final class GoalRefreshManager: ObservableObject {
@@ -339,6 +339,19 @@ final class GoalRefreshManager: ObservableObject {
         shouldPresent = false
     }
 
+    /// Manual entry point from surfaces that already show the user's "why".
+    /// It deliberately uses the same `shouldPresent` state as the cadence so
+    /// Home, Path, and tests all observe one owner.
+    func requestReview() {
+        guard !shouldPresent else { return }
+        guard CoachingProfileStore.shared.profile != nil else { return }
+        shouldPresent = true
+    }
+
+    static func canSubmit(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
+    }
+
     private func stamp() {
         UserDefaults.standard.set(Date(), forKey: lastRefreshKey())
     }
@@ -348,144 +361,248 @@ final class GoalRefreshManager: ObservableObject {
     }
 }
 
-// MARK: - Goal Refresh Sheet
+// MARK: - Goal Refresh Inline Card
 
 @available(iOS 17.0, macOS 12.0, *)
-struct GoalRefreshSheet: View {
+struct GoalRefreshInlineCard: View {
     @StateObject private var manager = GoalRefreshManager.shared
     @StateObject private var profileStore = CoachingProfileStore.shared
     @State private var isEditing = false
     @State private var editText: String = ""
     @FocusState private var focused: Bool
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            Capsule()
-                .fill(Color.secondary.opacity(0.3))
-                .frame(width: 36, height: 4)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 6)
+        if manager.shouldPresent {
+            content
+                .transition(.opacity.combined(with: .move(edge: .top)))
+                .accessibilityIdentifier("goalRefresh.card")
+        }
+    }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Still your goal?")
-                    .font(Typography.cardTitle)
-                    .foregroundStyle(.primary)
-                Text("Noum stays useful when your goal is current. Confirm or update in 30 seconds.")
-                    .font(Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            // Current goal display / edit toggle
-            VStack(alignment: .leading, spacing: 8) {
-                if isEditing {
-                    ZStack(alignment: .topLeading) {
-                        if editText.isEmpty {
-                            Text("What are you working on right now?")
-                                .font(Typography.body)
-                                .foregroundStyle(.tertiary)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                        }
-                        TextEditor(text: $editText)
-                            .font(Typography.body)
-                            .focused($focused)
-                            .scrollContentBackground(.hidden)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .frame(minHeight: 100)
-                    }
-                    .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                            .stroke(focused ? AppColor.brandBlue.opacity(0.4) : Color.white.opacity(0.6), lineWidth: 1)
-                    )
-                } else {
-                    Text(profileStore.profile?.displayableGoal ?? "")
-                        .font(Typography.body)
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                }
-            }
-
-            Spacer()
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            header
 
             if isEditing {
-                HStack {
-                    Button("Cancel") {
-                        isEditing = false
-                        focused = false
-                    }
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                    Spacer()
-
-                    Button {
-                        manager.update(editText)
-                        dismiss()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text("Save goal")
-                                .font(Typography.headline)
-                            Image(systemName: "arrow.right")
-                                .font(.system(size: 13, weight: .bold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 11)
-                        .background(
-                            editText.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
-                                ? AppColor.brandBlue : Color.secondary.opacity(0.5),
-                            in: Capsule()
-                        )
-                    }
-                    .disabled(editText.trimmingCharacters(in: .whitespacesAndNewlines).count < 10)
-                }
+                editor
             } else {
-                HStack(spacing: 12) {
-                    Button {
-                        if let current = profileStore.profile?.coachingBrief, !current.isEmpty {
-                            editText = current
-                        }
-                        isEditing = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { focused = true }
-                    } label: {
-                        Text("Update it")
-                            .font(Typography.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Color.secondary.opacity(0.12), in: Capsule())
-                    }
-
-                    Spacer()
-
-                    Button {
-                        manager.confirm()
-                        dismiss()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 13, weight: .bold))
-                            Text("Still right")
-                                .font(Typography.headline)
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 11)
-                        .background(AppColor.brandBlue, in: Capsule())
-                    }
-                }
+                currentDirection
+                confirmationActions
             }
         }
         .padding(Spacing.lg)
-        .presentationDetents([.medium])
-        .presentationDragIndicator(.hidden)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [
+                    AppColor.brandBlue.opacity(0.065),
+                    AppColor.brandBlueLight.opacity(0.035)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(AppColor.brandBlue.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "scope")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .accessibilityHidden(true)
+
+                Text("Direction check")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+
+                Spacer()
+
+                Button {
+                    closeInline { manager.skip() }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 24, height: 24)
+                        .background(Color.secondary.opacity(0.10), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss direction check")
+                .accessibilityIdentifier("goalRefresh.skip")
+            }
+
+            Text("Is this still the conversation you want Noum to train for?")
+                .font(Typography.cardTitle)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("A good coach recalibrates before prescribing. If the real target moved, update it here.")
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var currentDirection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Current direction")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            Text(currentGoal)
+                .font(Typography.body.weight(.medium))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.84), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Current direction, \(currentGoal)")
+    }
+
+    private var confirmationActions: some View {
+        HStack(spacing: 12) {
+            Button {
+                beginEditing()
+            } label: {
+                Label("Adjust", systemImage: "pencil.line")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(AppColor.brandBlue.opacity(0.10), in: Capsule(style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("goalRefresh.edit")
+
+            Spacer(minLength: 12)
+
+            Button {
+                closeInline { manager.confirm() }
+            } label: {
+                Label("Still right", systemImage: "checkmark")
+                    .font(Typography.headline)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 11)
+                    .background(AppColor.brandBlue, in: Capsule(style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("goalRefresh.confirm")
+        }
+    }
+
+    private var editor: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ZStack(alignment: .topLeading) {
+                if editText.isEmpty {
+                    Text("What should Noum keep in mind now?")
+                        .font(Typography.body)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                }
+
+                TextEditor(text: $editText)
+                    .font(Typography.body)
+                    .focused($focused)
+                    .scrollContentBackground(.hidden)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .frame(minHeight: 104)
+                    .accessibilityIdentifier("goalRefresh.editor")
+            }
+            .background(Color.white.opacity(0.86), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                    .stroke(focused ? AppColor.brandBlue.opacity(0.40) : AppColor.brandBlue.opacity(0.16), lineWidth: 1)
+            )
+
+            HStack(spacing: 12) {
+                Button {
+                    editText = ""
+                    focused = false
+                    animate { isEditing = false }
+                } label: {
+                    Text("Keep current")
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+
+                Spacer(minLength: 12)
+
+                Button {
+                    closeInline { manager.update(editText) }
+                } label: {
+                    Label("Save direction", systemImage: "checkmark")
+                        .font(Typography.headline)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 11)
+                        .background(
+                            GoalRefreshManager.canSubmit(editText)
+                                ? AppColor.brandBlue
+                                : Color.secondary.opacity(0.50),
+                            in: Capsule(style: .continuous)
+                        )
+                }
+                .disabled(!GoalRefreshManager.canSubmit(editText))
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("goalRefresh.save")
+            }
+        }
+    }
+
+    private var currentGoal: String {
+        guard let profile = profileStore.profile else { return "Your current coaching direction." }
+        let displayable = profile.displayableGoal.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !displayable.isEmpty { return displayable }
+        return profile.primaryGoal.title
+    }
+
+    private func beginEditing() {
+        let current = profileStore.profile?.coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        editText = current.isEmpty ? currentGoal : current
+        animate { isEditing = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { focused = true }
+    }
+
+    private func closeInline(_ action: @escaping () -> Void) {
+        focused = false
+        if reduceMotion {
+            action()
+            isEditing = false
+        } else {
+            withAnimation(.easeInOut(duration: 0.20)) {
+                action()
+                isEditing = false
+            }
+        }
+    }
+
+    private func animate(_ updates: @escaping () -> Void) {
+        if reduceMotion {
+            updates()
+        } else {
+            withAnimation(.standardSpring, updates)
+        }
     }
 }
 

@@ -43,7 +43,7 @@ final class M17VerificationTour: XCTestCase {
         attach(sd, name: "00_mode_picker")
 
         // Tap Sudden Death row → reveals the setup screen with the Start CTA.
-        let sdRow = sd.buttons["practiceMode.suddenDeath"]
+        let sdRow = revealPracticeMode("practiceMode.suddenDeath", in: sd)
         XCTAssertTrue(sdRow.waitForExistence(timeout: 5), "Sudden Death mode row missing")
         sdRow.tap()
         Thread.sleep(forTimeInterval: 0.6)
@@ -248,8 +248,28 @@ final class M17VerificationTour: XCTestCase {
     }
 
     @MainActor
+    private func revealPracticeMode(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        let modeRow = app.buttons[identifier]
+        if modeRow.waitForExistence(timeout: 2) { return modeRow }
+
+        let pickAnother = app.buttons["practiceModes.recommendedHero.pickAnother"]
+        if pickAnother.waitForExistence(timeout: 3) {
+            pickAnother.tap()
+            Thread.sleep(forTimeInterval: 0.5)
+            if modeRow.waitForExistence(timeout: 3) { return modeRow }
+        }
+
+        let otherWays = app.buttons["practiceModes.otherWays"]
+        if otherWays.waitForExistence(timeout: 2) {
+            otherWays.tap()
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return modeRow
+    }
+
+    @MainActor
     private func attach(_ app: XCUIApplication, name: String) {
-        let shot = app.windows.firstMatch.screenshot()
+        let shot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: shot)
         attachment.name = name
         attachment.lifetime = .keepAlways

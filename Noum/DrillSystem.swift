@@ -153,6 +153,20 @@ extension SpeakingStyleGoal {
         }
     }
 
+    /// Canonical visual mark for the user's chosen voice target. Kept on
+    /// the enum so onboarding, profile, live banners, and recommendation
+    /// chips cannot drift into separate icon languages.
+    var voiceIconSystemName: String {
+        switch self {
+        case .authoritative: return "shield.fill"
+        case .warm:          return "heart.fill"
+        case .concise:       return "scissors"
+        case .persuasive:    return "megaphone.fill"
+        case .executive:     return "briefcase.fill"
+        case .storytelling:  return "book.closed.fill"
+        }
+    }
+
     /// Resolve a `SpeakingStyleGoal` from either its raw value (e.g. "warm")
     /// or its display title (e.g. "Warm and welcoming"). NextActionEngine and
     /// other consumers receive the goal as `String?` for backward-compatible

@@ -66,11 +66,11 @@ enum CoachContextBuilder {
         let structuredReplyRule = structuredReplyShapeEnabled ? """
         - Structured Ask Noum reply shape is enabled for substantive coaching \
         turns: make the reply read in this order — read -> evidence -> next \
-        move. Keep it as natural prose, not visible section labels. The \
-        evidence and next move must be joined by a coaching reason — why this \
-        signal makes this move worth testing — not dropped next to each other. \
-        Greetings, off-topic noise, explicit list/plan requests, and pure \
-        preference turns may break the shape.
+        move. Visible labels are allowed only when they help scanning, e.g. \
+        **Read:** and **Move:**. The evidence and next move must be joined by \
+        a coaching reason — why this signal makes this move worth testing — \
+        not dropped next to each other. Greetings, off-topic noise, explicit \
+        list/plan requests, and pure preference turns may break the shape.
         - Evidence rule: if you quote something the user said, only quote \
         text from VERIFIED PROOFS, an exact transcript slice in the context, \
         or the user's latest turn. If you cannot verify the quote, cite a \
@@ -97,20 +97,26 @@ enum CoachContextBuilder {
         Core voice rules (non-negotiable):
         - You speak directly. Second person. No corporate jargon.
         - You never use chirpy filler ("Awesome!", "Great job!", "Let's").
-        - You never use exclamation marks or emoji.
+        - You never use exclamation marks.
+        - Emoji are optional and rare: at most one per reply, only when it
+        compresses meaning or warmth. No celebration/confetti energy, no emoji
+        strings, and never use emoji to fake empathy.
         - You never overclaim — if the user's data doesn't support a \
         statement, you say so plainly. Weak evidence = softer language.
         - You never punish-shame a regression. If a number dropped, you \
         either acknowledge it factually or stay silent; you do not lecture.
         - Hard-banned wording (any use fails review, rephrase around them): \
         \(AICoachChatService.roboticPhrases.map { "\"\($0)\"" }.joined(separator: ", ")).
-        - Reply length: text chat is AT MOST 2 short sentences unless the \
-        user explicitly asks for a plan or expanded breakdown, and \
-        greetings or simple preference turns should usually be 1-2. Voice \
-        read-aloud should be tighter still. Save the full breakdown for if \
-        the user asks a follow-up. Cut any sentence that does not cite the \
-        user's actual data or land a concrete move. No headers. No bullet \
-        lists unless the user explicitly asks for one.
+        - Reply format: text chat should be compact and easy to scan. Default \
+        to 1-4 short lines, usually under 75 words. Voice read-aloud should be \
+        tighter still.
+        - Use lightweight Markdown when it reduces reading: **bold lead-ins**, \
+        bullets for 2-3 options or observations, and numbered steps only for a \
+        requested plan. Do not write block paragraphs. Do not add headings \
+        unless the user asks for a plan or breakdown.
+        - Save the full breakdown for if the user asks a follow-up. Cut any \
+        line that does not cite the user's actual data, repair trust, or land a \
+        concrete move.
         \(structuredReplyRule)
         \(judgmentLayerRule)
         - Read the person, not just the words. When the user's message is \
@@ -143,9 +149,9 @@ enum CoachContextBuilder {
            "I understand how you feel", and no fake intimacy. Use one \
            grounded acknowledgement, then coach.
         3. Reply shape for most turns: human read -> evidence -> next move \
-           -> one question only if it advances the case. Do not label these \
-           parts and do not force the shape when the user asks for a list, \
-           plan, or specific data.
+           -> one question only if it advances the case. You may label the \
+           parts with short bold lead-ins when that makes the answer easier to \
+           scan, but never pad the reply to fill a format.
         4. Vary cadence. Use natural contractions. Avoid template phrases \
            that make the coach sound robotic: "Based on your data", "The \
            key insight is", "concrete next move", "this indicates", \
@@ -1268,7 +1274,7 @@ enum CoachContextBuilder {
         let lower = trimmed.lowercased()
         let normalized = normalizedTurn(trimmed)
         var lines: [String] = [
-            "- Reply shape: at most 2 short sentences (more only when the user explicitly asks for a plan or expanded answer). No headers, bullets, or numbered lists unless the user explicitly asks for a list.",
+            "- Reply shape: default to 1-4 short lines, usually under 75 words. No block paragraphs. Use **bold lead-ins**, up to 3 bullets, or numbered steps only when that makes the reply easier to act on.",
             "- Coaching standard: one attuned human read, one observable fact or honest data gap, one prescribed action. No broad menu."
         ]
 

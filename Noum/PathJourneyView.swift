@@ -15,19 +15,16 @@ struct PathJourneyView: View {
     @StateObject private var pathProgress = PathProgressManager.shared
     @StateObject private var streakManager = StreakFreezeManager.shared
     @StateObject private var ratingStore = RatingStore.shared
+    @StateObject private var goalRefresh = GoalRefreshManager.shared
     @StateObject private var daylightModel = PathDaylightModel()
     @State private var selectedAchievementID: String?
     @State private var alongTheWayExpanded = false
     @State private var showWhyCapture = false
-    @State private var showGoalRefresh = false
     /// Day-bloom settle beat. While non-nil the artwork renders rewound
     /// to this practiced-day count; clearing it inside `withAnimation`
     /// advances the reveal band to the live fraction. Set only when
     /// `JourneyDayBloomRatchet` reports a genuine upward change.
     @State private var bloomBaselineDays: Int?
-    /// Bumped once per bloom so the walker fires a single mood pulse.
-    /// Stays raised afterwards — the pulse wrapper reverts on its own.
-    @State private var bloomPulseTick = 0
     @State private var bloomTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 #if DEBUG
@@ -138,8 +135,6 @@ struct PathJourneyView: View {
                                         sceneResolver: { date in
                                             daylightModel.sceneState(for: date)
                                         },
-                                        walkerStage: ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp),
-                                        walkerPulseTick: bloomPulseTick,
                                         onDestinationTap: {
                                             if reduceMotion {
                                                 scrollProxy.scrollTo("journey.why", anchor: .center)
@@ -203,9 +198,6 @@ struct PathJourneyView: View {
         .sheet(isPresented: $showWhyCapture) {
             DeferredProfileCaptureSheet(prompt: .whyNow)
         }
-        .sheet(isPresented: $showGoalRefresh) {
-            GoalRefreshSheet()
-        }
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -239,8 +231,8 @@ struct PathJourneyView: View {
     /// Compare the live practiced-day count against the per-account
     /// ratchet and, on a genuine increase, play the one-shot settle beat:
     /// hold the artwork at the last-seen fraction for a breath, then
-    /// advance the reveal band, stagger-bloom the new flowers, and step
-    /// the walker forward with a single mood pulse. Seeding, equal counts,
+    /// advance the reveal band and shift the current-position marker
+    /// forward. Seeding, equal counts,
     /// and window-slide decreases all return without animating — the
     /// ratchet commits inside `evaluate` either way.
     private func evaluateDayBloom() {
@@ -264,7 +256,6 @@ struct PathJourneyView: View {
                 withAnimation(.easeOut(duration: 0.8)) {
                     bloomBaselineDays = nil
                 }
-                bloomPulseTick += 1
             }
         }
     }
@@ -479,9 +470,9 @@ struct PathJourneyView: View {
                 HStack {
                     Spacer()
                     Button {
-                        showGoalRefresh = true
+                        goalRefresh.requestReview()
                     } label: {
-                        Text("Still true?")
+                        Label("Check direction", systemImage: "scope")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(AppColor.brandBlue.opacity(0.9))
                     }
@@ -510,6 +501,11 @@ struct PathJourneyView: View {
                 .buttonStyle(.plain)
                 .padding(.top, 4)
                 .accessibilityIdentifier("journey.why.capture")
+            }
+
+            if goalRefresh.shouldPresent {
+                GoalRefreshInlineCard()
+                    .padding(.top, 6)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1540,16 +1536,6 @@ struct PathJourneyArtwork: View {
     let snapshot: PracticeJourneySnapshot
     let compact: Bool
     let sceneResolver: (Date) -> PathSkyScene
-    /// Lifetime stage for the walker on the trail — pass
-    /// `ProgressionRatchet.resolvedStage(forXP:)` from the page so the
-    /// being standing on your days carries your whole arc. Defaults keep
-    /// existing call sites compiling.
-    var walkerStage: NoumCharacter.Stage = .awakening
-    /// Day-bloom hook: bump past zero to fire a single mood pulse on the
-    /// walker (the "step forward" beat). Defaults keep existing call
-    /// sites compiling; the page never resets it, so the pulse plays
-    /// exactly once per bump.
-    var walkerPulseTick: Int = 0
     /// Fired when the user taps the destination flag. The page scrolls
     /// to the why card — the flag IS the why.
     var onDestinationTap: (() -> Void)? = nil
@@ -1725,11 +1711,10 @@ struct PathJourneyArtwork: View {
                     goalMarker(size: size)
                 }
 
-                // The walker — you, on your trail, at the frontier your
-                // practiced days have revealed. Additive-only presence:
-                // mood stays calm, glow never dims with absence; the
-                // character's internal breathing is reduce-motion gated.
-                walker(size: size)
+                // Current position on the trail. A grounded marker keeps
+                // the "you are here" affordance without dropping the coach
+                // mascot into the landscape metaphor.
+                currentPositionMarker(size: size)
 
                 // Tap target over the flag → the why card. Rendered last
                 // so nothing occludes the hit area.
@@ -1847,7 +1832,7 @@ struct PathJourneyArtwork: View {
         .opacity(snapshot.revealProgress > 0.05 ? 1 : 0.35)
     }
 
-    // MARK: - Destination glow + walker
+    // MARK: - Destination glow + current position
 
     @ViewBuilder
     private func destinationGlow(size: CGSize, scene: PathSkyScene) -> some View {
@@ -1870,56 +1855,79 @@ struct PathJourneyArtwork: View {
         .allowsHitTesting(false)
     }
 
-    /// Where the walker stands: the frontier of the revealed trail,
-    /// following the path's S-curve, perspective-scaled. At day zero the
-    /// character waits at the trailhead — present before the first rep,
-    /// because the coach shows up first.
-    private func walkerMetrics(for size: CGSize) -> (x: CGFloat, y: CGFloat, size: CGFloat) {
+    /// Where the current-position marker stands: the frontier of the
+    /// revealed trail, following the path's S-curve and perspective-scaled.
+    /// At day zero it sits at the trailhead so the path has orientation
+    /// before the first rep.
+    private func currentPositionMetrics(for size: CGSize) -> (x: CGFloat, y: CGFloat, size: CGFloat) {
         let field = fieldMetrics(for: size)
         let frontierY = field.top + hiddenDepth(for: size)
 
         // Same depth mapping the grass rows use: 0 at the horizon end of
         // the field, 1 at the bottom edge.
         let yNorm = Double(frontierY / max(size.height, 1))
-        let walkerDepth = max(0, min(1, (yNorm - 0.55) / 0.39))
-        let curveShift = (1.0 - walkerDepth) * 0.015 - walkerDepth * 0.01
+        let markerDepth = max(0, min(1, (yNorm - 0.55) / 0.39))
+        let curveShift = (1.0 - markerDepth) * 0.015 - markerDepth * 0.01
         let x = size.width * CGFloat(0.5 + curveShift)
 
-        let characterSize = (compact ? 16.0 : 24.0) + (compact ? 18.0 : 30.0) * walkerDepth
-        // Feet on the frontier line, body above it; clamp so the orb
-        // never clips the artwork's bottom edge at day zero.
-        let rawY = frontierY - CGFloat(characterSize) * 0.45
-        let y = min(rawY, size.height - CGFloat(characterSize) * 0.95)
-        return (x, y, CGFloat(characterSize))
+        let markerSize = (compact ? 13.0 : 18.0) + (compact ? 14.0 : 22.0) * markerDepth
+        let rawY = frontierY - CGFloat(markerSize) * 0.30
+        let y = min(rawY, size.height - CGFloat(markerSize) * 0.72)
+        return (x, y, CGFloat(markerSize))
     }
 
     @ViewBuilder
-    private func walker(size: CGSize) -> some View {
-        let metrics = walkerMetrics(for: size)
+    private func currentPositionMarker(size: CGSize) -> some View {
+        let metrics = currentPositionMetrics(for: size)
+        let stoneSpacing = -max(1.2, metrics.size * 0.055)
 
-        // Ground shadow keeps the orb anchored to the trail instead of
-        // floating over it.
-        Ellipse()
-            .fill(Color.black.opacity(0.16))
-            .frame(width: metrics.size * 0.78, height: metrics.size * 0.20)
-            .blur(radius: 1.5)
-            .position(x: metrics.x, y: metrics.y + metrics.size * 0.58)
+        ZStack {
+            Ellipse()
+                .fill(Color.black.opacity(0.14))
+                .frame(width: metrics.size * 0.95, height: metrics.size * 0.20)
+                .blur(radius: 1.4)
+                .offset(y: metrics.size * 0.45)
 
-        // Same trigger pattern as FirstRepCelebration's notice flash:
-        // while no pulse has fired the bare character renders; a tick
-        // bump swaps in the pulse wrapper (re-keyed per tick) which
-        // flashes once on appear and then rests back to calm.
-        Group {
-            if walkerPulseTick > 0 {
-                NoumCharacter(mood: .calm, tint: AppColor.brandBlue, size: metrics.size, stage: walkerStage)
-                    .moodPulse(.excited, duration: 1.0)
-                    .id("journey.walker.pulse.\(walkerPulseTick)")
-            } else {
-                NoumCharacter(mood: .calm, tint: AppColor.brandBlue, size: metrics.size, stage: walkerStage)
+            VStack(spacing: stoneSpacing) {
+                trailMarkerStone(
+                    width: metrics.size * 0.48,
+                    height: metrics.size * 0.20,
+                    top: Color(red: 0.91, green: 0.85, blue: 0.72),
+                    bottom: Color(red: 0.70, green: 0.61, blue: 0.47)
+                )
+                trailMarkerStone(
+                    width: metrics.size * 0.68,
+                    height: metrics.size * 0.23,
+                    top: Color(red: 0.82, green: 0.74, blue: 0.59),
+                    bottom: Color(red: 0.58, green: 0.49, blue: 0.36)
+                )
+                trailMarkerStone(
+                    width: metrics.size * 0.90,
+                    height: metrics.size * 0.25,
+                    top: Color(red: 0.65, green: 0.56, blue: 0.42),
+                    bottom: Color(red: 0.43, green: 0.35, blue: 0.25)
+                )
             }
         }
         .position(x: metrics.x, y: metrics.y)
         .accessibilityHidden(true)
+    }
+
+    private func trailMarkerStone(width: CGFloat, height: CGFloat, top: Color, bottom: Color) -> some View {
+        Capsule(style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [top, bottom],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .frame(width: width, height: height)
+            .overlay {
+                Capsule(style: .continuous)
+                    .stroke(Color.white.opacity(0.20), lineWidth: max(0.6, height * 0.06))
+            }
+            .shadow(color: .black.opacity(0.12), radius: 1.4, y: 0.8)
     }
 
     @ViewBuilder

@@ -870,7 +870,7 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   context. After capture, `GoalParaphraseService` runs a single best-effort
   AI pass and stores the result as `CoachingProfile.paraphrasedGoal`. UI
   surfaces use the paraphrase via `displayableGoal`. **M5 additions:**
-  `GoalRefreshManager` fires a lightweight "still your goal?" sheet every
+  `GoalRefreshManager` fires a lightweight inline direction check every
   14 days (after session 20+); `CommunicationBaseline.distanceFromGoal(_:)`
   returns a normalized 0–1 proximity metric per `CoachingPriority`;
   `AIInsightInput.goalDistance` is passed to AI prompts so the session

@@ -206,13 +206,13 @@ final class ScreenshotTour: XCTestCase {
         leaderboardApp.terminate()
 
         // ============================================================
-        // SECTION D — Conditional sheets (forced via launch args)
+        // SECTION D — Conditional surfaces (forced via launch args)
         // ============================================================
 
-        // ----- GOAL REFRESH SHEET -----
+        // ----- GOAL REFRESH INLINE CARD -----
         let goalRefreshApp = launchSeededWith(extraArgs: ["FORCE_GOAL_REFRESH"])
-        Thread.sleep(forTimeInterval: 2.5) // sheet animates in after a beat
-        attach(goalRefreshApp, name: "26-goal-refresh-sheet")
+        Thread.sleep(forTimeInterval: 2.5)
+        attach(goalRefreshApp, name: "26-goal-refresh-inline")
         goalRefreshApp.terminate()
 
         // ----- NOTIFICATION PRE-PROMPT SHEET -----
@@ -220,6 +220,23 @@ final class ScreenshotTour: XCTestCase {
         Thread.sleep(forTimeInterval: 2.5)
         attach(notifPromptApp, name: "27-notification-pre-prompt")
         notifPromptApp.terminate()
+    }
+
+    @MainActor
+    func testCapturePathJourneyOnly() throws {
+        let pathApp = launchSeeded()
+        XCTAssertTrue(pathApp.otherElements["home.screen"].waitForExistence(timeout: 10))
+        let pathCard = pathApp.descendants(matching: .any)["home.path"].firstMatch
+        XCTAssertTrue(pathCard.waitForExistence(timeout: 8))
+        pathCard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let journeyScreen = pathApp.descendants(matching: .any)["journey.screen"].firstMatch
+        XCTAssertTrue(journeyScreen.waitForExistence(timeout: 10))
+        Thread.sleep(forTimeInterval: 1.5)
+        attach(pathApp, name: "path-marker-top")
+        pathApp.swipeUp(velocity: .slow)
+        Thread.sleep(forTimeInterval: 0.5)
+        attach(pathApp, name: "path-marker-bottom")
+        pathApp.terminate()
     }
 
     @MainActor
@@ -284,7 +301,7 @@ final class ScreenshotTour: XCTestCase {
     /// setup view it lands on. Idempotent — caller must end on the picker.
     @MainActor
     private func captureModeSetup(_ app: XCUIApplication, modeID: String, name: String) {
-        let modeRow = app.buttons[modeID]
+        let modeRow = revealPracticeMode(modeID, in: app)
         guard modeRow.waitForExistence(timeout: 3) else { return }
         modeRow.tap()
         Thread.sleep(forTimeInterval: 0.4)
@@ -309,7 +326,7 @@ final class ScreenshotTour: XCTestCase {
         reviewName: String? = nil
     ) {
         let app = launchSeededAt("noum://train", extraArgs: [launchArgument])
-        let modeRow = app.buttons["practiceMode.suddenDeath"]
+        let modeRow = revealPracticeMode("practiceMode.suddenDeath", in: app)
         XCTAssertTrue(modeRow.waitForExistence(timeout: 5))
         guard modeRow.exists else {
             app.terminate()
@@ -341,8 +358,8 @@ final class ScreenshotTour: XCTestCase {
             XCTAssertTrue(coachRead.waitForExistence(timeout: 3))
             if coachRead.exists {
                 coachRead.tap()
-                let reviewCard = app.descendants(matching: .any)["suddenDeath.review.card"]
-                XCTAssertTrue(reviewCard.waitForExistence(timeout: 5))
+                let reviewCard = waitForSuddenDeathReviewCard(in: app)
+                XCTAssertTrue(reviewCard.exists)
                 if reviewCard.exists {
                     Thread.sleep(forTimeInterval: 0.4)
                     attach(app, name: reviewName)
@@ -350,6 +367,46 @@ final class ScreenshotTour: XCTestCase {
             }
         }
         app.terminate()
+    }
+
+    @MainActor
+    private func revealPracticeMode(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        let modeRow = app.buttons[identifier]
+        if modeRow.waitForExistence(timeout: 2) { return modeRow }
+
+        let pickAnother = app.buttons["practiceModes.recommendedHero.pickAnother"]
+        if pickAnother.waitForExistence(timeout: 3) {
+            pickAnother.tap()
+            Thread.sleep(forTimeInterval: 0.5)
+            if modeRow.waitForExistence(timeout: 3) { return modeRow }
+        }
+
+        let otherWays = app.buttons["practiceModes.otherWays"]
+        if otherWays.waitForExistence(timeout: 2) {
+            otherWays.tap()
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return modeRow
+    }
+
+    @MainActor
+    private func waitForSuddenDeathReviewCard(in app: XCUIApplication) -> XCUIElement {
+        let reviewCard = app.descendants(matching: .any)["suddenDeath.review.card"]
+        let deadline = Date().addingTimeInterval(24)
+
+        while Date() < deadline {
+            if reviewCard.exists { return reviewCard }
+
+            let preSummary = app.descendants(matching: .any)["preSummary.celebration"]
+            let continueButton = app.buttons["Continue"]
+            if !preSummary.exists, continueButton.exists {
+                continueButton.tap()
+            }
+
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+
+        return reviewCard
     }
 
     @MainActor
@@ -370,7 +427,7 @@ final class ScreenshotTour: XCTestCase {
 
     @MainActor
     private func attach(_ app: XCUIApplication, name: String) {
-        let shot = app.windows.firstMatch.screenshot()
+        let shot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: shot)
         attachment.name = name
         attachment.lifetime = .keepAlways
@@ -528,10 +585,19 @@ final class ScreenshotTour: XCTestCase {
     @MainActor
     private func fullScrollCapture(_ app: XCUIApplication, base: String) {
         deepAttach(app, name: "\(base)-1top")
-        app.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        screenSwipeUp(in: app)
+        Thread.sleep(forTimeInterval: 0.5)
         deepAttach(app, name: "\(base)-2mid")
-        app.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        screenSwipeUp(in: app)
+        Thread.sleep(forTimeInterval: 0.5)
         deepAttach(app, name: "\(base)-3bottom")
+    }
+
+    @MainActor
+    private func screenSwipeUp(in app: XCUIApplication) {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.82))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.32))
+        start.press(forDuration: 0.01, thenDragTo: end)
     }
 
     @MainActor
@@ -612,7 +678,7 @@ final class ScreenshotTour: XCTestCase {
     /// QA / a11y fleet reads: labels, identifiers, hittable elements).
     @MainActor
     private func deepAttach(_ app: XCUIApplication, name: String) {
-        let shot = app.windows.firstMatch.screenshot()
+        let shot = XCUIScreen.main.screenshot()
         let img = XCTAttachment(screenshot: shot)
         img.name = name
         img.lifetime = .keepAlways

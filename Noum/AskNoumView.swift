@@ -53,6 +53,169 @@ private struct AskNoumScrollOffsetKey: PreferenceKey {
     }
 }
 
+// MARK: - Coach message formatting
+
+enum CoachMessageTextFormatter {
+    struct InlineSegment: Equatable {
+        let text: String
+        let isStrong: Bool
+    }
+
+    enum Block: Equatable {
+        case paragraph(String)
+        case bullet(String)
+        case numbered(Int, String)
+    }
+
+    static func blocks(from text: String) -> [Block] {
+        text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .compactMap { raw -> Block? in
+                let trimmed = String(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return nil }
+                if let bullet = bulletText(from: trimmed) {
+                    return .bullet(bullet)
+                }
+                if let numbered = numberedText(from: trimmed) {
+                    return .numbered(numbered.index, numbered.text)
+                }
+                return .paragraph(strippedHeadingPrefix(from: trimmed))
+            }
+    }
+
+    static func inlineSegments(from text: String) -> [InlineSegment] {
+        var segments: [InlineSegment] = []
+        var buffer = ""
+        var isStrong = false
+        var index = text.startIndex
+
+        func flush() {
+            guard !buffer.isEmpty else { return }
+            segments.append(InlineSegment(text: buffer, isStrong: isStrong))
+            buffer = ""
+        }
+
+        while index < text.endIndex {
+            let next = text.index(after: index)
+            if next < text.endIndex,
+               text[index] == "*",
+               text[next] == "*" {
+                flush()
+                isStrong.toggle()
+                index = text.index(after: next)
+            } else {
+                buffer.append(text[index])
+                index = next
+            }
+        }
+        flush()
+        return segments.isEmpty ? [InlineSegment(text: text, isStrong: false)] : segments
+    }
+
+    private static func bulletText(from trimmed: String) -> String? {
+        for marker in ["- ", "* ", "• "] where trimmed.hasPrefix(marker) {
+            let value = String(trimmed.dropFirst(marker.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        }
+        return nil
+    }
+
+    private static func numberedText(from trimmed: String) -> (index: Int, text: String)? {
+        guard let separator = trimmed.firstIndex(where: { $0 == "." || $0 == ")" }) else {
+            return nil
+        }
+        let prefix = trimmed[..<separator]
+        guard !prefix.isEmpty,
+              prefix.allSatisfy({ $0.isNumber }),
+              let index = Int(prefix),
+              index > 0 else {
+            return nil
+        }
+        let afterSeparator = trimmed.index(after: separator)
+        guard afterSeparator < trimmed.endIndex,
+              trimmed[afterSeparator].isWhitespace else {
+            return nil
+        }
+        let value = String(trimmed[afterSeparator...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : (index, value)
+    }
+
+    private static func strippedHeadingPrefix(from trimmed: String) -> String {
+        var value = trimmed
+        while value.first == "#" {
+            value.removeFirst()
+        }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+@available(iOS 17.0, macOS 12.0, *)
+private struct CoachFormattedMessageText: View {
+    let text: String
+    let textColor: Color
+    let accent: Color
+
+    private var blocks: [CoachMessageTextFormatter.Block] {
+        CoachMessageTextFormatter.blocks(from: text)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: CoachMessageTextFormatter.Block) -> some View {
+        switch block {
+        case .paragraph(let value):
+            inlineText(value)
+                .foregroundStyle(textColor)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+        case .bullet(let value):
+            HStack(alignment: .firstTextBaseline, spacing: 9) {
+                Text("•")
+                    .font(Typography.figtree(size: 18, weight: .bold, relativeTo: .body))
+                    .foregroundStyle(accent)
+                    .frame(width: 12, alignment: .center)
+                inlineText(value)
+                    .foregroundStyle(textColor)
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        case .numbered(let index, let value):
+            HStack(alignment: .firstTextBaseline, spacing: 9) {
+                Text("\(index).")
+                    .font(Typography.monoDigit(Typography.figtree(size: 16, weight: .bold, relativeTo: .body)))
+                    .foregroundStyle(accent)
+                    .frame(width: 22, alignment: .trailing)
+                inlineText(value)
+                    .foregroundStyle(textColor)
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func inlineText(_ raw: String) -> Text {
+        CoachMessageTextFormatter.inlineSegments(from: raw).reduce(Text("")) { partial, segment in
+            partial + Text(segment.text)
+                .font(
+                    segment.isStrong
+                    ? Typography.manrope(size: 17, weight: .bold, relativeTo: .body)
+                    : Typography.manrope(size: 17, weight: .medium, relativeTo: .body)
+                )
+        }
+    }
+}
+
 // MARK: - Spoken-coach-mode pure logic (S5, routes since C5)
 //
 // The decision of WHETHER (and through WHICH engines) to speak a
@@ -181,7 +344,7 @@ enum AskNoumDayZeroGreeting {
         challenge: SpeakingChallenge?,
         voice: SpeakingStyleGoal?
     ) -> String {
-        let evidenceInvite = "I don't have a read on you yet \u{2014} I coach from what I actually hear, not from a form. One short rep gives me real evidence, and I'll come back with the first lever worth training."
+        let evidenceInvite = "No read yet. One short rep gives me evidence; then I can name the first lever worth training."
         let acknowledgement: String?
         switch (challenge, voice) {
         case let (challenge?, voice?):
@@ -198,14 +361,14 @@ enum AskNoumDayZeroGreeting {
     }
 
     /// Headline over the seeded greeting card.
-    static let headline = "Before rep one."
+    static let headline = "Before rep one"
 
     /// Title for the first-rep CTA that stands in for the composer.
     static let firstRepCTATitle = "Run your first rep"
 
     /// One-line honest reason the composer is not there yet. Plain
     /// statement, no countdown, no shame.
-    static let inputLockedNote = "The full thread opens after your first rep \u{2014} so my answers come from evidence, not guesses."
+    static let inputLockedNote = "The thread opens after one rep, so the coaching starts from evidence."
 }
 
 @available(iOS 17.0, macOS 12.0, *)
@@ -1971,11 +2134,12 @@ struct AskNoumView: View {
         HStack(alignment: .top, spacing: 0) {
             Spacer(minLength: 40)
             Text(message.text)
-                .font(Typography.body)
+                .font(Typography.manrope(size: 16, weight: .medium, relativeTo: .body))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.leading)
-                .padding(.horizontal, Spacing.md)
-                .padding(.vertical, Spacing.sm)
+                .lineSpacing(3)
+                .padding(.horizontal, 15)
+                .padding(.vertical, 11)
                 .background(
                     AppColor.brandBlue,
                     in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
@@ -2002,31 +2166,40 @@ struct AskNoumView: View {
         // "Offline — reconnect for a full read" marker + a neutral grey stroke
         // and slightly muted text, so the user can trust that the purple-stroke
         // bubbles are the live coach and this one is the local stand-in.
-        VStack(alignment: .leading, spacing: 4) {
-            if message.isPending {
-                pendingDots
+        let accent = message.isOffline ? AppColor.textSecondary : AppColor.pro
+
+        return HStack(alignment: .top, spacing: 12) {
+            if !message.isPending {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(accent.opacity(message.isOffline ? 0.45 : 0.78))
+                    .frame(width: 3)
                     .padding(.vertical, 4)
-            } else {
-                if message.isOffline {
-                    offlineMarker
-                }
-                // Living-coach-presence: the just-landed reply reveals word by
-                // word (see `revealingMessageID`); every other row shows its
-                // full text. The accessibility label always reads the COMPLETE
-                // reply so VoiceOver is never handed a half-written sentence.
-                Text(message.id == revealingMessageID ? revealedText : message.text)
-                    .font(Typography.body)
-                    .foregroundStyle(message.isOffline ? .secondary : .primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel(
-                        message.isOffline
-                            ? "Noum, offline reply: \(message.text)"
-                            : "Noum: \(message.text)"
+                    .accessibilityHidden(true)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                if message.isPending {
+                    pendingDots
+                        .padding(.vertical, 4)
+                } else {
+                    if message.isOffline {
+                        offlineMarker
+                    }
+                    // Living-coach-presence: the just-landed reply reveals word
+                    // by word (see `revealingMessageID`); every other row shows
+                    // its full text. The renderer supports compact Markdown
+                    // (`**bold**`, bullets, numbered steps) without changing the
+                    // persisted thread schema.
+                    CoachFormattedMessageText(
+                        text: visibleCoachText(for: message),
+                        textColor: message.isOffline ? Color.secondary : Color.primary,
+                        accent: accent
                     )
+                }
             }
         }
         .padding(.horizontal, Spacing.md)
-        .padding(.vertical, Spacing.sm)
+        .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             message.isOffline ? AppColor.innerSurface : AppColor.cardBackground,
@@ -2039,6 +2212,19 @@ struct AskNoumView: View {
                     lineWidth: 1
                 )
         )
+        .shadow(color: Color.black.opacity(message.isOffline ? 0 : 0.035), radius: 12, x: 0, y: 6)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            message.isOffline
+                ? "Noum, offline reply: \(message.text)"
+                : "Noum: \(message.text)"
+        )
+    }
+
+    private func visibleCoachText(for message: CoachMessage) -> String {
+        guard message.id == revealingMessageID else { return message.text }
+        if !revealedText.isEmpty { return revealedText }
+        return message.isPending ? "" : message.text
     }
 
     /// Quiet "offline" chip shown above a `.deterministicReply`'s text. Honest
@@ -2448,6 +2634,7 @@ struct AskNoumView: View {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !store.isAwaitingReply else { return }
         draft = ""
+        inputFocused = false
         send(trimmed)
     }
 

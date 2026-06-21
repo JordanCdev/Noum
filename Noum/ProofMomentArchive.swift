@@ -221,4 +221,16 @@ final class ProofMomentStore: ObservableObject {
     }
 }
 
+#if DEBUG
+@available(iOS 17.0, macOS 12.0, *)
+extension ProofMomentStore {
+    /// Replace proof archive entries for deterministic DEBUG seed personas.
+    /// Production writes still flow through `ProofMomentService`.
+    func replaceForDebug(_ seededRecords: [ProofMomentRecord]) {
+        records = Array(seededRecords.prefix(Self.maxStoredRecords))
+        persist()
+    }
+}
+#endif
+
 #endif

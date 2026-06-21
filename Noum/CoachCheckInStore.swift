@@ -207,3 +207,16 @@ final class CoachCheckInStore: ObservableObject {
         return decoded
     }
 }
+
+#if DEBUG
+extension CoachCheckInStore {
+    /// Replace weekly check-ins for deterministic DEBUG seed personas.
+    /// Production capture still goes through `record(...)`; this is only for
+    /// local seeded inspection and UI-test launches.
+    func replaceForDebug(_ seeded: [CoachCheckIn]) {
+        checkIns = Array(seeded.prefix(Self.cap))
+        let accountID = currentAccountID ?? "guest"
+        persist(accountID: accountID)
+    }
+}
+#endif

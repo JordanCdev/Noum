@@ -594,7 +594,12 @@ struct SettingsView: View {
                     coachingTag(label: "Context", value: profile.speakingContext.title)
                     coachingTag(label: "Priority", value: profile.primaryGoal.title)
                     coachingTag(label: "Challenge", value: profile.biggestChallenge.title)
-                    coachingTag(label: "Voice", value: profile.speakingStyleGoal.title)
+                    coachingTag(
+                        label: "Voice",
+                        value: profile.speakingStyleGoal.title,
+                        icon: profile.speakingStyleGoal.voiceIconSystemName,
+                        tint: profile.speakingStyleGoal.voiceIconTint
+                    )
                 }
                 if !profile.personalGoalReference.isEmpty {
                     Text(profile.personalGoalReference)
@@ -631,18 +636,34 @@ struct SettingsView: View {
         }
     }
 
-    private func coachingTag(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.6)
-            Text(value)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .minimumScaleFactor(0.85)
+    private func coachingTag(
+        label: String,
+        value: String,
+        icon: String? = nil,
+        tint: Color = AppColor.brandBlue
+    ) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 22, height: 22)
+                    .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .accessibilityHidden(true)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                Text(value)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.sm)

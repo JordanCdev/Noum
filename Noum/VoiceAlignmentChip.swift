@@ -25,6 +25,56 @@ import SwiftUI
 // background rather than competing with the CTA.
 
 @available(iOS 17.0, macOS 12.0, *)
+struct VoiceGoalIcon: View {
+    let goal: SpeakingStyleGoal
+    var size: CGFloat = 16
+    var containerSize: CGFloat?
+    var tint: Color? = nil
+    var cornerRadius: CGFloat = 10
+
+    private var resolvedTint: Color {
+        tint ?? goal.voiceIconTint
+    }
+
+    var body: some View {
+        let icon = Image(systemName: goal.voiceIconSystemName)
+            .font(.system(size: size, weight: .semibold))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(resolvedTint)
+            .accessibilityHidden(true)
+
+        if let containerSize {
+            icon
+                .frame(width: containerSize, height: containerSize)
+                .background(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(resolvedTint.opacity(0.12))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(resolvedTint.opacity(0.18), lineWidth: 1)
+                )
+        } else {
+            icon
+        }
+    }
+}
+
+@available(iOS 17.0, macOS 12.0, *)
+extension SpeakingStyleGoal {
+    var voiceIconTint: Color {
+        switch self {
+        case .authoritative: return Color(red: 0.22, green: 0.34, blue: 0.76)
+        case .warm:          return Color(red: 0.86, green: 0.34, blue: 0.25)
+        case .concise:       return Color(red: 0.08, green: 0.52, blue: 0.50)
+        case .persuasive:    return Color(red: 0.48, green: 0.34, blue: 0.78)
+        case .executive:     return Color(red: 0.25, green: 0.39, blue: 0.45)
+        case .storytelling:  return Color(red: 0.74, green: 0.46, blue: 0.14)
+        }
+    }
+}
+
+@available(iOS 17.0, macOS 12.0, *)
 struct VoiceAlignmentChip: View {
     /// The user's chosen voice goal — `nil` is the no-onboarding-yet case
     /// and the chip stays hidden.
@@ -47,8 +97,7 @@ struct VoiceAlignmentChip: View {
         Group {
             if shouldShow, let goal = styleGoal {
                 HStack(spacing: 4) {
-                    Image(systemName: "scope")
-                        .font(.system(size: 9, weight: .bold))
+                    VoiceGoalIcon(goal: goal, size: 9, tint: tint)
                     Text("Toward your \(goal.shortVoiceLabel)")
                         .font(.caption2.weight(.semibold))
                         .lineLimit(1)

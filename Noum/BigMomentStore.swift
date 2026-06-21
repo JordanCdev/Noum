@@ -657,3 +657,30 @@ final class BigMomentStore: ObservableObject {
         }
     }
 }
+
+#if DEBUG
+extension BigMomentStore {
+    /// Replace active moment and transfer reports for deterministic DEBUG seed
+    /// personas. Keeps the same in-memory owners the live app reads.
+    func replaceForDebug(
+        activeMoment: BigMoment?,
+        outcomeReports seededReports: [BigMomentOutcomeReport]
+    ) {
+        let accountID = currentAccountID ?? "guest"
+        self.activeMoment = activeMoment
+        archive = []
+        outcomeReports = Array(seededReports.prefix(Self.outcomeReportCap))
+        pendingOutcomeAck = nil
+
+        if let activeMoment, let data = try? JSONEncoder().encode(activeMoment) {
+            defaults.set(data, forKey: activeMomentKey(for: accountID))
+        } else {
+            defaults.removeObject(forKey: activeMomentKey(for: accountID))
+        }
+        if let data = try? JSONEncoder().encode(outcomeReports) {
+            defaults.set(data, forKey: outcomesKey(for: accountID))
+        }
+        defaults.removeObject(forKey: archiveKey(for: accountID))
+    }
+}
+#endif

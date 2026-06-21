@@ -432,6 +432,14 @@ final class AchievementStore: ObservableObject {
         newlyUnlocked = []
     }
 
+#if DEBUG
+    func resetForDebug() {
+        unlocks = [:]
+        newlyUnlocked = []
+        UserDefaults.standard.removeObject(forKey: storageKey)
+    }
+#endif
+
     /// Returns display statuses for all tiers.
     func allStatuses(sessions: [PracticeSession], streak: Int) -> [PracticeAchievementStatus] {
         Self.allTiers.map { tier in

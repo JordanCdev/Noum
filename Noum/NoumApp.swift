@@ -72,9 +72,9 @@ struct NoumApp: App {
             }
         }
         // `FORCE_GOAL_REFRESH` / `FORCE_NOTIFICATION_PROMPT` flip the
-        // respective manager flags so ScreenshotTour can capture sheets
-        // that normally fire on a cadence (2-week goal refresh) or
-        // first-session-only (notification pre-prompt).
+        // respective manager flags so ScreenshotTour can capture conditional
+        // surfaces that normally fire on a cadence (2-week direction check)
+        // or first-session-only (notification pre-prompt).
         if args.contains("FORCE_GOAL_REFRESH") {
             DispatchQueue.main.async {
                 GoalRefreshManager.shared.shouldPresent = true
@@ -91,6 +91,9 @@ struct NoumApp: App {
             PracticeSessionStore.shared.endSession()
             ProfileManager.shared.replaceFromRemote(0)
             CoachingProfileStore.shared.replaceForDebug(nil)
+            AchievementStore.shared.resetForDebug()
+            SkillProgressionStore.shared.reset()
+            FirstRepCelebrationManager.shared.resetForDebug()
             FirstRunOnboardingManager.shared.resetForDebug()
         }
         // `-DeepLink noum://<host>` launch arg lets the noum-screenshots
@@ -159,48 +162,28 @@ struct NoumApp: App {
         #if DEBUG
         if let overlayHarness = OverlayScreenshotHarnessKind.requested() {
             OverlayScreenshotHarnessView(kind: overlayHarness)
-        } else if isRealFirstRunUITesting && !uiTestingFirstRunCoverDismissed {
-            // UI-test-only proof path. Rendering onboarding as the temporary
-            // root avoids a presentation race where child Home sheets can win
-            // before the app-level first-run cover appears on reused sims.
+        } else if shouldShowFirstRunOnboarding {
+            // First-run setup is the app's temporary root, not a cover above
+            // Home. This makes the intake feel deliberate and avoids a race
+            // where child sheets can win presentation on reused simulators.
             CoachingOnboardingView {
-                uiTestingFirstRunCoverDismissed = true
-                markFirstRunCompletedIfProfileExists()
+                completeFirstRunOnboarding()
             }
             .interactiveDismissDisabled(true)
         } else {
             ContentView()
-                .fullScreenCover(
-                    isPresented: firstRunOnboardingPresented,
-                    onDismiss: {
-                        markFirstRunCompletedIfProfileExists()
-                    }
-                ) {
-                    CoachingOnboardingView()
-                        .interactiveDismissDisabled(true)
-                }
         }
         #else
-        if isRealFirstRunUITesting && !uiTestingFirstRunCoverDismissed {
-            // UI-test-only proof path. Rendering onboarding as the temporary
-            // root avoids a presentation race where child Home sheets can win
-            // before the app-level first-run cover appears on reused sims.
+        if shouldShowFirstRunOnboarding {
+            // First-run setup is the app's temporary root, not a cover above
+            // Home. This makes the intake feel deliberate and avoids a race
+            // where child sheets can win presentation on reused simulators.
             CoachingOnboardingView {
-                uiTestingFirstRunCoverDismissed = true
-                markFirstRunCompletedIfProfileExists()
+                completeFirstRunOnboarding()
             }
             .interactiveDismissDisabled(true)
         } else {
             ContentView()
-                .fullScreenCover(
-                    isPresented: firstRunOnboardingPresented,
-                    onDismiss: {
-                        markFirstRunCompletedIfProfileExists()
-                    }
-                ) {
-                    CoachingOnboardingView()
-                        .interactiveDismissDisabled(true)
-                }
         }
         #endif
     }
@@ -210,25 +193,20 @@ struct NoumApp: App {
     /// opts back into the real app-level cover so the dismiss → Train route
     /// can be verified without the older pinned `UI_TESTING_ONBOARDING`
     /// harness.
-    private var firstRunOnboardingPresented: Binding<Bool> {
-        Binding(
-            get: {
-                if isRealFirstRunUITesting {
-                    return !uiTestingFirstRunCoverDismissed
-                }
-                return FirstRunOnboardingGate.shouldPresent(
-                    hasCompletedFirstRun: firstRunOnboarding.hasSeen,
-                    hasCoachingProfile: coachingProfileStore.profile != nil,
-                    isUITesting: isUITesting && !isRealFirstRunUITesting
-                )
-            },
-            set: { newValue in
-                if newValue == false {
-                    uiTestingFirstRunCoverDismissed = true
-                    markFirstRunCompletedIfProfileExists()
-                }
-            }
+    private var shouldShowFirstRunOnboarding: Bool {
+        if isRealFirstRunUITesting {
+            return !uiTestingFirstRunCoverDismissed
+        }
+        return FirstRunOnboardingGate.shouldPresent(
+            hasCompletedFirstRun: firstRunOnboarding.hasSeen,
+            hasCoachingProfile: coachingProfileStore.profile != nil,
+            isUITesting: isUITesting && !isRealFirstRunUITesting
         )
+    }
+
+    private func completeFirstRunOnboarding() {
+        uiTestingFirstRunCoverDismissed = true
+        markFirstRunCompletedIfProfileExists()
     }
 
     private func markFirstRunCompletedIfProfileExists() {

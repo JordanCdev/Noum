@@ -656,6 +656,13 @@ final class FirstRepCelebrationManager: ObservableObject {
         pendingSession = nil
     }
 
+#if DEBUG
+    func resetForDebug() {
+        pendingSession = nil
+        UserDefaults.standard.removeObject(forKey: seenKey)
+    }
+#endif
+
     var hasSeenCelebration: Bool {
         UserDefaults.standard.bool(forKey: seenKey)
     }

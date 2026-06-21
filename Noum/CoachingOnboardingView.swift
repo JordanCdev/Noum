@@ -154,7 +154,7 @@ struct CoachingOnboardingView: View {
     private var topBar: some View {
         HStack {
             if screen == .intro {
-                Text("Settings")
+                Text(isEditingExistingProfile ? "Settings" : "Noum")
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(Color(red: 0.35, green: 0.32, blue: 0.27))
             } else if screen != .summary {
@@ -191,17 +191,21 @@ struct CoachingOnboardingView: View {
         VStack(alignment: .leading, spacing: 24) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Coaching Profile")
+                    Text(isEditingExistingProfile ? "Coaching Profile" : "First, a few bearings")
                         .font(Typography.caption)
                         .foregroundStyle(Color.white.opacity(0.74))
                         .textCase(.uppercase)
 
-                    Text("Build a coaching profile that actually changes how you sound.")
+                    Text(isEditingExistingProfile
+                        ? "Tune the coaching profile behind your practice."
+                        : "Let Noum learn what kind of speaker you are becoming.")
                         .font(Typography.figtree(size: 31, weight: .bold, relativeTo: .title))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text("Noum will shape drills, prompts, and reminders around what matters in real conversations.")
+                    Text(isEditingExistingProfile
+                        ? "These choices shape drills, prompts, and reminders across the app."
+                        : "Three choices are enough to make the first rep feel personal. The deeper context can come after you have spoken.")
                         .font(Typography.headline.weight(.medium))
                         .foregroundStyle(Color.white.opacity(0.84))
                         .fixedSize(horizontal: false, vertical: true)
@@ -224,7 +228,7 @@ struct CoachingOnboardingView: View {
                     }
                 } label: {
                     HStack(spacing: 12) {
-                        Text("Begin")
+                        Text(isEditingExistingProfile ? "Review profile" : "Start setup")
                             .font(.headline.weight(.semibold))
 
                         Spacer()
@@ -512,9 +516,10 @@ struct CoachingOnboardingView: View {
                         )
 
                         profileRow(
-                            icon: "wand.and.stars",
+                            icon: speakingStyleGoal?.voiceIconSystemName ?? "wand.and.stars",
                             label: "Style goal",
-                            value: speakingStyleGoal?.title ?? "Not chosen yet"
+                            value: speakingStyleGoal?.title ?? "Not chosen yet",
+                            tint: speakingStyleGoal?.voiceIconTint ?? AppColor.brandBlue
                         )
 
                         if !coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -611,16 +616,16 @@ struct CoachingOnboardingView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func profileRow(icon: String, label: String, value: String) -> some View {
+    private func profileRow(icon: String, label: String, value: String, tint: Color = AppColor.brandBlue) -> some View {
         HStack(alignment: .top, spacing: Spacing.sm) {
             ZStack {
                 RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
-                    .fill(AppColor.brandBlue.opacity(0.10))
+                    .fill(tint.opacity(0.10))
                     .frame(width: 36, height: 36)
 
                 Image(systemName: icon)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AppColor.brandBlue)
+                    .foregroundStyle(tint)
             }
 
             VStack(alignment: .leading, spacing: Spacing.xxs) {
@@ -670,6 +675,7 @@ struct CoachingOnboardingView: View {
                 // taps (`option.id == nil` is always false).
                 let isSelected = selectedID != nil && option.id == selectedID
                 let detail = optionDetail(for: option)
+                let voiceGoal = option as? SpeakingStyleGoal
 
                 Button {
                     animate(.snappySpring) {
@@ -677,6 +683,15 @@ struct CoachingOnboardingView: View {
                     }
                 } label: {
                     HStack(spacing: 14) {
+                        if let voiceGoal {
+                            VoiceGoalIcon(
+                                goal: voiceGoal,
+                                size: 16,
+                                containerSize: 36,
+                                cornerRadius: CornerRadius.small
+                            )
+                        }
+
                         VStack(alignment: .leading, spacing: 4) {
                             Text(option.description)
                                 .font(.headline.weight(.semibold))
