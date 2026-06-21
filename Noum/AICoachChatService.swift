@@ -116,6 +116,7 @@ enum CoachChatReplyQualityIssue: Equatable {
     case menuInsteadOfDecision
     case missedTrustRepair
     case missingPrescribedAction
+    case missingInsightBridge
     case unanchoredCoaching
     case overclaimsEvidence
     case unverifiedQuotedUserSpeech
@@ -137,6 +138,8 @@ enum CoachChatReplyQualityIssue: Equatable {
             return "The user challenged the coaching quality. Repair trust first, name the friction briefly, and show the changed coaching move."
         case .missingPrescribedAction:
             return "The draft does not prescribe a concrete next move. Give one action the user can take in the next rep or review."
+        case .missingInsightBridge:
+            return "The draft gives an anchor and an action but does not connect them with a coaching read. Add the reason this move fits the signal."
         case .unanchoredCoaching:
             return "The draft is not anchored in an observable fact, recent user message, case-file target, or honest data gap. Add one grounded anchor."
         case .overclaimsEvidence:
@@ -159,6 +162,7 @@ enum CoachChatProfessionalRubricMiss: String, Equatable {
     case missedTrustRepair
     case missingObservableAnchor
     case missingPrescribedAction
+    case missingInsightBridge
     case overclaimsEvidence
     case menuInsteadOfDecision
 }
@@ -698,6 +702,10 @@ actor AICoachChatService {
            turnExpectsPrescribedAction(latestUserTurn) || rubric.score <= 6 {
             return .missingPrescribedAction
         }
+        if rubric.misses.contains(.missingInsightBridge),
+           turnExpectsCoaching(latestUserTurn) || rubric.score <= 6 {
+            return .missingInsightBridge
+        }
         if rubric.misses.contains(.missingObservableAnchor),
            turnExpectsCoaching(latestUserTurn) || rubric.score <= 6 {
             return .unanchoredCoaching
@@ -762,6 +770,14 @@ actor AICoachChatService {
 
         if turnExpectsPrescribedAction(latestUserTurn), !replyPrescribesAction(lower) {
             apply(.missingPrescribedAction, penalty: 2)
+        }
+
+        if turnExpectsCoaching(latestUserTurn),
+           !expandedAnswer,
+           replyHasObservableAnchor(lower),
+           replyPrescribesAction(lower),
+           !replyHasInsightBridge(lower) {
+            apply(.missingInsightBridge, penalty: 2)
         }
 
         if replyOverclaimsEvidence(lower) {
@@ -867,6 +883,20 @@ actor AICoachChatService {
             "answer", "send", "say ", "use ", "repeat", "do one", "focus",
             "start", "ask ", "replace", "keep the ", "keep this ", "cut ",
             "pause before", "one drill", "one rep", "review"
+        ])
+    }
+
+    private nonisolated static func replyHasInsightBridge(_ lower: String) -> Bool {
+        containsAny(lower, [
+            " so ", " because ", " therefore ", " which is why",
+            "that is why", "that's why", "that’s why", "that tests",
+            "tests whether", "tests if", "the pattern", "the signal",
+            "useful signal", "enough signal", "pressure cue", "the read",
+            "the move is", "the fix is", "the point arrived late",
+            "arrived late", "showing up", "carried", "softened", "held",
+            "light on", "not a summary", "not abandoning", "worth varying",
+            "hypothesis", "moved alongside", "trended down alongside",
+            "the gap", "what broke", "what held"
         ])
     }
 
@@ -1048,6 +1078,7 @@ actor AICoachChatService {
         - No broad menu. Pick one coaching move.
         - If the user showed frustration, do not defend the app.
         - Sound like a senior communications coach, not an assistant explaining itself.
+        - Connect the evidence to the move with one coaching reason; do not just list a metric and a drill.
         """
 
         let body = chatRequestBody(for: provider, system: repairSystem, messages: messages)
@@ -1164,7 +1195,7 @@ actor AICoachChatService {
             return .deterministicReply(candidate, cause: failure)
         }
         switch issue {
-        case .unanchoredCoaching, .missingPrescribedAction:
+        case .unanchoredCoaching, .missingPrescribedAction, .missingInsightBridge:
             // Turn-contextual checks, NOT objective quality failures. When the
             // model is unreachable AND there is no rep/case yet, the controlled
             // builder's honest "run one more rep, I'll read it when I'm back"

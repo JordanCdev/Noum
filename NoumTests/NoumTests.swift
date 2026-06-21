@@ -19624,6 +19624,133 @@ struct CoachingPlanCardVisibilityTests {
         let label = CoachingPlanCardVisibility.ctaLabel(state: state, voice: .warm)
         #expect(label.isEmpty)
     }
+
+    private func transferReports(
+        category: BigMomentCategory,
+        transfer: ReportedDrillTransfer?,
+        count: Int,
+        latestAt: Date
+    ) -> [BigMomentOutcomeReport] {
+        (0..<count).map { i in
+            let moment = BigMoment(title: "Moment \(i)", date: nil, category: category)
+            return BigMomentOutcomeReport(
+                moment: moment,
+                outcome: .mixed,
+                audienceResponse: .unclear,
+                note: nil,
+                drillTransfer: transfer,
+                recordedAt: latestAt.addingTimeInterval(-Double(i) * 60)
+            )
+        }
+    }
+
+    @Test func transferReceiptShowsWhenTransferPatternPredatesPlan() {
+        let generatedAt = Date(timeIntervalSince1970: 1_700_500_000)
+        let moment = BigMoment(id: UUID(), title: "VP interview", date: nil, category: .interview)
+        let plan = makeForwardPlan(generatedAt: generatedAt, bigMomentID: moment.id)
+        let reports = transferReports(
+            category: .interview,
+            transfer: .didNotTransfer,
+            count: 3,
+            latestAt: generatedAt.addingTimeInterval(-60)
+        )
+
+        let receipt = CoachingPlanCardVisibility.transferAdaptationReceipt(
+            plan: plan,
+            activeMoment: moment,
+            reports: reports
+        )
+
+        #expect(receipt?.contains("Plan adjusted") == true)
+        #expect(receipt?.contains("interview check-ins") == true)
+        #expect(receipt?.contains("Week 4 is the bridge") == true)
+        #expect(receipt?.contains("Self-report only") == true)
+        let lower = receipt?.lowercased() ?? ""
+        #expect(!lower.contains("caused"))
+        #expect(!lower.contains("proof"))
+        #expect(!lower.contains("fell short"))
+        #expect(!lower.contains("!"))
+    }
+
+    @Test func transferReceiptIsNilBelowTransferEvidenceFloor() {
+        let generatedAt = Date(timeIntervalSince1970: 1_700_500_000)
+        let moment = BigMoment(id: UUID(), title: "VP interview", date: nil, category: .interview)
+        let plan = makeForwardPlan(generatedAt: generatedAt, bigMomentID: moment.id)
+        let reports = transferReports(
+            category: .interview,
+            transfer: .didNotTransfer,
+            count: 2,
+            latestAt: generatedAt.addingTimeInterval(-60)
+        )
+
+        let receipt = CoachingPlanCardVisibility.transferAdaptationReceipt(
+            plan: plan,
+            activeMoment: moment,
+            reports: reports
+        )
+
+        #expect(receipt == nil)
+    }
+
+    @Test func transferReceiptIsNilWhenReportsArrivedAfterPlanGeneration() {
+        let generatedAt = Date(timeIntervalSince1970: 1_700_500_000)
+        let moment = BigMoment(id: UUID(), title: "VP interview", date: nil, category: .interview)
+        let plan = makeForwardPlan(generatedAt: generatedAt, bigMomentID: moment.id)
+        let reports = transferReports(
+            category: .interview,
+            transfer: .didNotTransfer,
+            count: 3,
+            latestAt: generatedAt.addingTimeInterval(60)
+        )
+
+        let receipt = CoachingPlanCardVisibility.transferAdaptationReceipt(
+            plan: plan,
+            activeMoment: moment,
+            reports: reports
+        )
+
+        #expect(receipt == nil)
+    }
+
+    @Test func transferReceiptIsNilWhenPrepCarried() {
+        let generatedAt = Date(timeIntervalSince1970: 1_700_500_000)
+        let moment = BigMoment(id: UUID(), title: "VP interview", date: nil, category: .interview)
+        let plan = makeForwardPlan(generatedAt: generatedAt, bigMomentID: moment.id)
+        let reports = transferReports(
+            category: .interview,
+            transfer: .transferred,
+            count: 3,
+            latestAt: generatedAt.addingTimeInterval(-60)
+        )
+
+        let receipt = CoachingPlanCardVisibility.transferAdaptationReceipt(
+            plan: plan,
+            activeMoment: moment,
+            reports: reports
+        )
+
+        #expect(receipt == nil)
+    }
+
+    @Test func transferReceiptIsNilWhenPlanNoLongerMatchesActiveMoment() {
+        let generatedAt = Date(timeIntervalSince1970: 1_700_500_000)
+        let activeMoment = BigMoment(id: UUID(), title: "VP interview", date: nil, category: .interview)
+        let plan = makeForwardPlan(generatedAt: generatedAt, bigMomentID: UUID())
+        let reports = transferReports(
+            category: .interview,
+            transfer: .didNotTransfer,
+            count: 3,
+            latestAt: generatedAt.addingTimeInterval(-60)
+        )
+
+        let receipt = CoachingPlanCardVisibility.transferAdaptationReceipt(
+            plan: plan,
+            activeMoment: activeMoment,
+            reports: reports
+        )
+
+        #expect(receipt == nil)
+    }
 }
 
 /// Home plan-arc line (coach-parity eval move 4): the compact "Week N of
@@ -23555,11 +23682,13 @@ struct AICoachChatDeterministicReplyTests {
     /// every line the controlled builder emits, across every handled cause ×
     /// voice (with a rep and bare), is free of OBJECTIVE quality failures
     /// (robotic / too long / defensive / menu / fabricated quote / overclaim).
-    /// A turn-contextual `.unanchoredCoaching` / `.missingPrescribedAction` on a
     /// cold no-data line is allowed — there is genuinely no data to anchor to,
     /// and that honest "run one more rep" line is the correct cold response.
+    /// `.missingInsightBridge` is also turn-contextual: a bare offline line may
+    /// be the best safe substitute when the model is unavailable, while the live
+    /// path still rejects metric-plus-drill replies that skip the coach read.
     @Test func deterministicLinesHaveNoObjectiveQualityFailure() {
-        let allowed: [CoachChatReplyQualityIssue] = [.unanchoredCoaching, .missingPrescribedAction]
+        let allowed: [CoachChatReplyQualityIssue] = [.unanchoredCoaching, .missingPrescribedAction, .missingInsightBridge]
         let causes: [ChatFailure] = [.network, .noProvider, .localeUnsupported, .empty]
         let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]
         for cause in causes {
@@ -23824,7 +23953,7 @@ struct AICoachChatReplyQualityGateTests {
     /// two-sentence replies — the model was punished for citing the user's
     /// own numbers, and every such turn burned a repair round trip.
     @Test func decimalsInStatsDoNotInflateSentenceCount() {
-        let reply = "Your fillers sat at 3.5 per rep across the last 2 reps. Next rep, hold a beat before sentence two and cut the lead-in."
+        let reply = "Your fillers sat at 3.5 per rep across the last 2 reps, so the first pause is the test. Next rep, hold a beat before sentence two and cut the lead-in."
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == nil)
     }
 
@@ -23835,9 +23964,9 @@ struct AICoachChatReplyQualityGateTests {
         // Both replies are anchored (a metric) + prescribe an action, so the
         // ONLY thing that could trip the gate is the abbreviation period
         // wrongly inflating the 2-sentence count into a .tooLong.
-        let reply = "Your pace ran fast, e.g. 180 WPM in the open. Next rep, hold a beat before sentence two."
+        let reply = "Your pace ran fast, e.g. 180 WPM in the open, so the pause is the useful test. Next rep, hold a beat before sentence two."
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == nil)
-        let reply2 = "You ran long at 95 words, i.e. about double the target. Next rep, cut to one clear point."
+        let reply2 = "You ran long at 95 words, i.e. about double the target, so the useful test is compression. Next rep, cut to one clear point."
         #expect(AICoachChatService.replyQualityIssue(in: reply2, latestUserTurn: "What next?") == nil)
     }
 
@@ -23920,6 +24049,22 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "How do I get better before my interview?"
         )
         #expect(issue == .unanchoredCoaching)
+    }
+
+    @Test func turnAwareGateRejectsMetricAndActionWithoutInsightBridge() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep had 5 fillers. Next rep, hold a beat before sentence two.",
+            latestUserTurn: "What next?"
+        )
+        #expect(issue == .missingInsightBridge)
+    }
+
+    @Test func turnAwareGateAcceptsMetricActionWithInsightBridge() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep had 5 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence.",
+            latestUserTurn: "What next?"
+        )
+        #expect(issue == nil)
     }
 
     @Test func turnAwareGateRejectsOverconfidentPersonalLabels() {
@@ -24098,7 +24243,7 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "I keep rambling when I get nervous."
         )
         let issue = AICoachChatService.replyQualityIssue(
-            in: "You said the rambling starts when nerves spike; next rep, cap every answer at two sentences.",
+            in: "You said the rambling starts when nerves spike, so the useful test is a hard cap. Next rep, cap every answer at two sentences.",
             latestUserTurn: "I keep rambling when I get nervous.",
             quoteGuard: guardContext
         )
@@ -43423,6 +43568,28 @@ struct BigMomentOutcomeAckTests {
         let bare = BigMomentOutcomeAck.line(for: report(outcome: .mixed, drillTransfer: nil))
         #expect(bare.contains("I've noted your read of the room"))
         #expect(!bare.contains("You felt"))
+    }
+
+    @Test func debriefHasThreeCoachingBeatsAndANextReviewMove() {
+        for combo in allCombos {
+            let line = BigMomentOutcomeAck.line(for: combo)
+            #expect(sentenceCount(line) == 3, "Expected 3-sentence debrief, got: \(line)")
+            #expect(line.contains("Next review:"))
+        }
+    }
+
+    @Test func nextReviewMoveTracksTheReportedOutcome() {
+        #expect(BigMomentOutcomeAck.line(for: report(outcome: .wentWell)).contains("name what held"))
+        #expect(BigMomentOutcomeAck.line(for: report(outcome: .mixed)).contains("compare what held with what broke"))
+        #expect(BigMomentOutcomeAck.line(for: report(outcome: .fellShort)).contains("isolate the first point that broke"))
+    }
+
+    private func sentenceCount(_ line: String) -> Int {
+        line
+            .split(separator: ".")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .count
     }
 }
 

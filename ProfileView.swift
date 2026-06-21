@@ -1991,6 +1991,11 @@ struct ProfileView: View {
         return CoachingPlanCard(
             state: state,
             voice: coachingProfileStore.profile?.speakingStyleGoal,
+            transferReceipt: CoachingPlanCardVisibility.transferAdaptationReceipt(
+                plan: forwardPlanStore.activePlan,
+                activeMoment: bigMomentStore.activeMoment,
+                reports: bigMomentStore.outcomeReports
+            ),
             onTap: {
                 let triggersGeneration: Bool
                 switch state {

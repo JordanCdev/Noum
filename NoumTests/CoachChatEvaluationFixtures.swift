@@ -163,6 +163,34 @@ enum CoachChatEvaluationCorpus {
             expectedBadIssue: .roboticPhrase("based on your data")
         ),
         CoachChatEvaluationFixture(
+            id: "metric-action-without-read",
+            pillar: .prescription,
+            expertBaseline: .pending,
+            profile: profile(voice: .authoritative, challenge: .fillerWords),
+            sessions: [
+                session(
+                    id: "66666666-6666-6666-6666-666666666666",
+                    transcript: "The recommendation is to hold the launch date, um, because the customer migration is not ready.",
+                    fillerCount: 5,
+                    duration: 61,
+                    daysAgo: 1,
+                    mode: .timed,
+                    score: 6,
+                    prompt: "Give a direct recommendation."
+                )
+            ],
+            trends: [],
+            latestUserTurn: "What should I do with that filler count?",
+            previousCoachReply: nil,
+            expectedContextNeedles: [
+                "RECENT (most-recent first)",
+                "5 fillers"
+            ],
+            referenceReply: "Last rep had 5 fillers; the signal is inside the recommendation, not before it. Next rep, hold one beat after the decision line and restart if a filler appears.",
+            knownBadReply: "Your last rep had 5 fillers. Next rep, hold one beat before sentence two.",
+            expectedBadIssue: .missingInsightBridge
+        ),
+        CoachChatEvaluationFixture(
             id: "critique-trust-repair",
             pillar: .adaptation,
             expertBaseline: .pending,

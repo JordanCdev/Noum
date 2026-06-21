@@ -98,6 +98,35 @@ enum CoachingPlanCardVisibility {
             }
         }
     }
+
+    /// Visible receipt for the transfer loop. Only returns copy when
+    /// real-world check-ins for the active Big Moment's category existed before
+    /// this plan was generated and cleared the same prep-transfer honesty floor
+    /// the planner uses. This avoids claiming a plan was shaped by reports that
+    /// arrived after generation.
+    static func transferAdaptationReceipt(
+        plan: ForwardPlan?,
+        activeMoment: BigMoment?,
+        reports: [BigMomentOutcomeReport]
+    ) -> String? {
+        guard let plan,
+              let activeMoment,
+              plan.bigMomentID == activeMoment.id,
+              !plan.isInvalidated(by: activeMoment.id),
+              BigMomentStore.dominantTransferRead(for: activeMoment.category, in: reports) == .didNotTransfer else {
+            return nil
+        }
+        guard let trend = BigMomentStore.transferTrends(
+            from: reports,
+            minimumReports: 3,
+            maxReportsPerCategory: 6,
+            limit: BigMomentCategory.allCases.count
+        ).first(where: { $0.category == activeMoment.category }),
+              trend.latestRecordedAt <= plan.generatedAt else {
+            return nil
+        }
+        return "Plan adjusted from your \(activeMoment.category.displayName) check-ins: you reported prep has not fully carried into the room yet, so Week 4 is the bridge. Self-report only."
+    }
 }
 
 // MARK: - View
@@ -106,6 +135,7 @@ enum CoachingPlanCardVisibility {
 struct CoachingPlanCard: View {
     let state: CoachingPlanCardState
     let voice: SpeakingStyleGoal?
+    let transferReceipt: String?
     /// Triggered when the user taps the card / CTA. The caller decides
     /// whether to deep-link to Ask Noum or open the regeneration sheet.
     var onTap: () -> Void
@@ -182,6 +212,10 @@ struct CoachingPlanCard: View {
 
                     progressRow(completed: completed, target: target, fraction: fraction)
 
+                    if let transferReceipt, !isStale {
+                        transferReceiptRow(transferReceipt)
+                    }
+
                     if isStale {
                         Text(CoachingPlanCardVisibility.ctaLabel(state: state, voice: voice))
                             .font(Typography.caption.weight(.semibold))
@@ -238,6 +272,33 @@ struct CoachingPlanCard: View {
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private func transferReceiptRow(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(Typography.captionSmall.weight(.bold))
+                .foregroundStyle(AppColor.pro)
+                .padding(.top, 2)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(Typography.captionSmall)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            AppColor.pro.opacity(0.06),
+            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(AppColor.pro.opacity(0.14), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(text))
+        .accessibilityIdentifier("profile.coachingPlanCard.transferReceipt")
     }
 }
 

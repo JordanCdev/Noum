@@ -369,27 +369,7 @@ actor ForwardPlanService {
         for category: BigMomentCategory,
         in reports: [BigMomentOutcomeReport]
     ) -> ReportedDrillTransfer? {
-        guard let trend = BigMomentStore.transferTrends(
-            from: reports,
-            minimumReports: 3,
-            maxReportsPerCategory: 6,
-            limit: BigMomentCategory.allCases.count
-        ).first(where: { $0.category == category }) else { return nil }
-        let counts = trend.drillTransferCounts
-        // `transferTrends` gates `minimumReports: 3` against the TOTAL report
-        // count, but the prep-transfer read is optional in the check-in UI
-        // (`BigMomentOutcomeInlineCard` saves with no transfer selected), and
-        // `drillTransferCounts` is built only from the reports that specified
-        // one. So a 3-report category can carry a single transfer read — gate
-        // the transfer reads against the same floor here, or we'd react on one
-        // self-report, the exact thin-data reaction the floor exists to prevent.
-        let transferReadCount = counts.values.reduce(0, +)
-        guard transferReadCount >= 3 else { return nil }
-        guard let top = counts.max(by: { $0.value < $1.value }) else { return nil }
-        // A tie is not a pattern — require a strict plurality.
-        let tiedAtTop = counts.values.filter { $0 == top.value }.count
-        guard tiedAtTop == 1 else { return nil }
-        return top.key
+        BigMomentStore.dominantTransferRead(for: category, in: reports)
     }
 
     /// One bounded, forward-looking, no-causation clause appended to the

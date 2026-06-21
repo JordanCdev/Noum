@@ -217,7 +217,7 @@ struct BigMomentOutcomeReport: Codable, Identifiable, Equatable {
 
 // MARK: - Coach acknowledgment (the receipt for a saved check-in)
 
-/// Deterministic coach acknowledgment for a just-saved outcome report —
+/// Deterministic post-transfer coach debrief for a just-saved outcome report —
 /// the human beat after the user tells their coach how the real moment
 /// went. Rendered in the Home card's slot the moment they save, and
 /// injected once into the Ask Noum thread so the coach has visibly
@@ -232,35 +232,54 @@ struct BigMomentOutcomeReport: Codable, Identifiable, Equatable {
 ///     repetition of "fell short" back at them.
 ///   • No quotes. The user's free-text note is never echoed, so no quote
 ///     verification is needed and nothing sensitive is repeated.
+///   • Debrief-shaped, not a bare receipt. The line has three beats:
+///     acknowledgement, the user's transfer read, and the next review move.
 ///   • Honest. "Noted" is literal: the report persists here and reaches
 ///     `CoachMemoryStore.noteTransferOutcome` at the save site.
 enum BigMomentOutcomeAck {
     static func line(for report: BigMomentOutcomeReport) -> String {
         let event = report.category.displayName
 
-        let opening: String
+        return [
+            opening(for: report, event: event),
+            transferRead(for: report),
+            nextReviewMove(for: report, event: event)
+        ].joined(separator: " ")
+    }
+
+    private static func opening(for report: BigMomentOutcomeReport, event: String) -> String {
         switch report.outcome {
         case .wentWell:
-            opening = "Good to hear the \(event) went well."
+            return "Good to hear the \(event) went well."
         case .mixed:
-            opening = "Thanks for the honest read on the \(event) — mixed moments are useful evidence."
+            return "Thanks for the honest read on the \(event) — mixed moments are useful evidence."
         case .fellShort:
-            opening = "Thanks for logging the \(event) honestly. One hard room doesn't change the work — it sharpens it."
+            return "Thanks for logging the \(event) honestly; one hard room doesn't change the work — it sharpens it."
         }
+    }
 
-        let transferClause: String
+    private static func transferRead(for report: BigMomentOutcomeReport) -> String {
         switch report.drillTransfer {
         case .transferred:
-            transferClause = "You felt the prep carry into the room — noted alongside your reps, as your read, not as proof either way."
+            return "You felt the prep carry into the room — noted alongside your reps, as your read, not proof either way."
         case .partly:
-            transferClause = "You felt part of the prep carry — noted, so the next reps can aim at the part that stayed behind."
+            return "You felt part of the prep carry — noted, so the next reps can aim at the part that stayed behind."
         case .didNotTransfer:
-            transferClause = "You felt the prep didn't carry this time — a useful read, noted as your account, never a verdict on you."
+            return "You felt the prep didn't carry this time — useful evidence, noted as your account, never a verdict on you."
         case nil:
-            transferClause = "I've noted your read of the room alongside your training."
+            return "I've noted your read of the room alongside your training."
         }
+    }
 
-        return opening + " " + transferClause
+    private static func nextReviewMove(for report: BigMomentOutcomeReport, event: String) -> String {
+        switch report.outcome {
+        case .wentWell:
+            return "Next review: name what held, then repeat one similar \(event) rep before the next similar moment."
+        case .mixed:
+            return "Next review: compare what held with what broke, then rehearse one narrower \(event) rep before the next similar moment."
+        case .fellShort:
+            return "Next review: isolate the first point that broke, then run one narrower \(event) rep before the next similar moment."
+        }
     }
 }
 
@@ -504,6 +523,33 @@ final class BigMomentStore: ObservableObject {
         }
 
         return Array(trends.sorted { $0.latestRecordedAt > $1.latestRecordedAt }.prefix(limit))
+    }
+
+    /// Qualifying prep-transfer read for `category`, when enough reports exist
+    /// to clear the same honesty floor as `transferTrends`. Returns a read only
+    /// when the prep-transfer answers themselves clear the floor and one answer
+    /// is the strict plurality. A tie, missing transfer answers, or thin data
+    /// returns nil so downstream coaching surfaces stay quiet.
+    nonisolated static func dominantTransferRead(
+        for category: BigMomentCategory,
+        in reports: [BigMomentOutcomeReport],
+        minimumReports: Int = 3,
+        maxReportsPerCategory: Int = 6
+    ) -> ReportedDrillTransfer? {
+        guard let trend = transferTrends(
+            from: reports,
+            minimumReports: minimumReports,
+            maxReportsPerCategory: maxReportsPerCategory,
+            limit: BigMomentCategory.allCases.count
+        ).first(where: { $0.category == category }) else { return nil }
+
+        let counts = trend.drillTransferCounts
+        let transferReadCount = counts.values.reduce(0, +)
+        guard transferReadCount >= minimumReports else { return nil }
+        guard let top = counts.max(by: { $0.value < $1.value }) else { return nil }
+        let tiedAtTop = counts.values.filter { $0 == top.value }.count
+        guard tiedAtTop == 1 else { return nil }
+        return top.key
     }
 
     @discardableResult

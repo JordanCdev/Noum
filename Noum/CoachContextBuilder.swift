@@ -66,9 +66,11 @@ enum CoachContextBuilder {
         let structuredReplyRule = structuredReplyShapeEnabled ? """
         - Structured Ask Noum reply shape is enabled for substantive coaching \
         turns: make the reply read in this order — read -> evidence -> next \
-        move. Keep it as natural prose, not visible section labels. Greetings, \
-        off-topic noise, explicit list/plan requests, and pure preference \
-        turns may break the shape.
+        move. Keep it as natural prose, not visible section labels. The \
+        evidence and next move must be joined by a coaching reason — why this \
+        signal makes this move worth testing — not dropped next to each other. \
+        Greetings, off-topic noise, explicit list/plan requests, and pure \
+        preference turns may break the shape.
         - Evidence rule: if you quote something the user said, only quote \
         text from VERIFIED PROOFS, an exact transcript slice in the context, \
         or the user's latest turn. If you cannot verify the quote, cite a \
@@ -202,7 +204,9 @@ enum CoachContextBuilder {
            in their next rep — not "keep working on it" or "try to be more \
            confident". A move names the action ("hold a 3-second pause \
            after your second sentence") or the rep ("do an Ah-Counter \
-           round next, target under 4 fillers in 60 seconds").
+           round next, target under 4 fillers in 60 seconds"). Explain the \
+           link in one plain clause: what observed signal makes that move the \
+           right test.
         4. When the BIG MOMENT section is present, anchor at least one \
            specific concrete next move to the days remaining and the \
            category. Do not restate the moment — use it as gravity. A \
