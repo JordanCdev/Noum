@@ -47,6 +47,44 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-22 continuation (autonomous `noum-1` run, real toolchain + role-diverse
+eval). **Verified the shipped iterations are real, re-measured the delta, fixed
+one safe gap, and spec'd the highest-value remaining one; did NOT push.**
+
+- **Verified GREEN (real toolchain, not text-output):** `build-for-testing` exit
+  0 (warnings only) on isolated `./DerivedData/Noum-eval-verify`, HEAD `ddff056`;
+  focused `test-without-building` = **39 passed / 0 failed** across the recently
+  shipped suites (`ForwardPlanServiceDeterministic`, `CoachingPlanCardVisibility`,
+  `CoachingOnboardingCustomChallenge`, `DevSeedCoachIntelligenceFixture`,
+  `AICoachChatDeterministicReply`, `CrossSurfaceQuoteFabricationGuard`,
+  `BigMomentTransferEnrichment/Store`, `CoachContextBuilderBigMoment`). The
+  iterations the concurrent session shipped (PLAN-TRANSFER, transfer-plan receipt,
+  goal-setup-inline, custom-onboarding, ask-noum-chat-style) are buildable + green.
+- **Fresh role-diverse eval → honest 7.2/10** (+0.7 vs 06-20's 6.5). Full
+  scorecard, code-grounded delta, verified gaps, genuine limitations in
+  `docs/COACH_PARITY_EVAL_2026-06-22.md`. ⚠️ **Panel-integrity caveat:** 4 of 6
+  role agents stalled on concurrent-load infra; 7.2 rests on the 2 returned role
+  scores (Trust 9.1, Market 7.0) + adversarial code-verified gaps + the prior
+  baseline — a grounded point estimate, not a full poll. The *gaps* are the
+  durable output (each confirmed against a file:line).
+- **Shipped** (`DOC-FIX`, `39d5d03`): corrected a **stale auto-rearm comment** in
+  `LiveCoachCallView` header — it still described HANDS-FREE auto re-arm,
+  contradicting the shipped push-to-talk code (lines ~71-73/200/613) and risking a
+  future dev reintroducing the echo-loop bug. Comment-only, zero behavior change.
+- **Spec'd, did NOT build** (`docs/SPEC_first_rep_auto_guided.md`): the auto-guided
+  first rep — the single biggest lever from 7.2 → ~8.5 (acquisition 5.5; first
+  spoken word still routes to the picker via `CoachingOnboardingView.swift:563` →
+  `ContentView.swift:1382` `.practiceSelection`). Felt-QA gated + overlaps the live
+  onboarding work, so spec'd for a device-owning session rather than blind-built.
+- **The 10/10 verdict, restated honestly:** the literal "replaces a human coach"
+  10/10 stays **refused by design** (`CoachParityReadiness` `.forming` = trust
+  moat). On the achievable axis — rival Speeko/Orai/Yoodli/Duolingo on substance +
+  trust — Noum is genuinely there (≈9 trust, 7–8 substance); the only thing below
+  A* is demo-moment legibility, which is gap #1, not new analysis.
+- ⚠️ Concurrency: an active ultracode session is the primary driver on the same
+  hot files; this run deliberately stayed to verify + report + one safe non-
+  colliding comment fix + specs, to avoid clobbering it.
+
 2026-06-21 continuation (autonomous `noum-1` run, real toolchain + role-diverse
 adversarial workflow). Shipped the **buildable core of eval-06-20 move #2** — the
 north-star transfer loop's pure half; verified + committed; did NOT push:
