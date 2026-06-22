@@ -43,11 +43,13 @@ enum LiveCallMicWatchdog {
 // coaching while it speaks back). Captions show the latest turn, not a scrolling
 // transcript.
 //
-// HANDS-FREE: tap the mic once to start. You talk; a ~2.2s pause auto-sends your
-// turn; the coach replies and speaks aloud; the mic re-arms itself for your next
-// turn — no tapping between turns. Tapping while it's speaking barges in; tapping
-// while listening ends the session. Mic stays off while the coach speaks so it
-// never hears itself.
+// PUSH-TO-TALK: tap the mic to start a turn. You talk; a ~2.2s pause auto-sends
+// your turn; the coach replies and speaks aloud. The mic does NOT re-arm itself —
+// you tap Talk again for your next turn. (Auto re-arm was deliberately removed: it
+// made the mic transcribe the coach's own TTS — an echo loop. See the push-to-talk
+// notes at `engaged`/line ~200 and the watchdog above; do not reintroduce it.)
+// Tapping while it's speaking barges in; tapping while listening ends the session.
+// Mic stays off while the coach speaks so it never hears itself.
 //
 // Reuses: `AskNoumStore` (same thread the chat reads/writes), `AskNoumVoiceInput`
 // (mic), `IMMessageSpeaker` (speak-aloud), `CoachReplyPipeline` (one brain with
