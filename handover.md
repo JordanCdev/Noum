@@ -47,6 +47,60 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-23 continuation (autonomous `noum-1` run, role-diverse eval, read-only).
+**Re-measured the delta with a clean 6-of-6 role panel, verified the concurrent
+session's three in-flight slices are complete (not half-done), found one new
+regression in them, and shipped NO code (concurrency-forced); did NOT push.**
+
+- **Fresh role-diverse eval → honest 7.4/10** (+0.2 vs 06-22's 7.2, *once the
+  in-flight diff lands*). Full scorecard + code-grounded delta + verified gaps +
+  genuine limitations in `docs/COACH_PARITY_EVAL_2026-06-23.md`. This was a clean
+  **6-of-6 role return** (vs 06-22's 4/6 stall) — achieved by holding the panel
+  strictly **read-only** so it added zero `xcodebuild` load to the concurrent
+  builds. Roles: market 7.5 · UX 7.0 · end-user 6.5 · Swift-eng 7.5 · honesty 8.0
+  · QA 7.4. Every gap re-verified against `file:line` incl. the uncommitted diff.
+- **The three in-flight slices are VERIFIED COMPLETE** (real end-to-end wiring +
+  new tests, no stubs): (1) organic focus check-in — strongest first-run win, the
+  blocking pre-rep "Today's focus?" sheet is fully removed
+  (`SessionIntentEngine.swift:135` hard-false) and re-homed as a due-only
+  non-blocking coach-context block; (2) baseline map + signup motivation —
+  honesty-tested Profile radar, but week-2 value (invisible in the first 60s);
+  (3) Impromptu redesign — default-first card + gear settings + locked Pro rows,
+  cleanly executed. Net once landed: **+~0.2, on retention/substance/trust — NOT
+  the acquisition gap the prior eval named #1.**
+- **⚠️ NEW REGRESSION found in the in-flight Impromptu redesign — DOUBLE-BEGIN.**
+  The redesigned hero CTA navigates **without arming `PracticeModeQuickStart`**, so
+  the first-rep path now needs *two* Begin taps + a 15s countdown: hero CTA
+  (`PracticeModeSelectionView.swift:367`, appends destination, no `.arm`; only
+  `:743` arms; picker `.task` at `:310-319` CLEARS the flag) → quick-start consume
+  fails (`TimedPracticeView.swift:862`) → user re-taps "Start Impromptu"
+  (`:2290`) → 15s thinking countdown (`:688/:2447`). Concept fix is small (arm
+  from the hero CTA, mirroring `:743`) but felt/QA-gated AND collides with the hot
+  `TimedPracticeView` rewrite → **flagged for whoever lands the diff, not
+  blind-patched.** This makes acquisition WORSE, not better, until fixed.
+- **Acquisition / first-rep (5.5) is unchanged** — the single biggest drag and the
+  whole gap to A*. The routing files (`ContentView.swift:1383`) aren't even in the
+  diff; the redesign polished friction *after* the picker, not the cold path
+  *through* it. `SPEC_first_rep_auto_guided.md` remains spec-only.
+- **Dead-code/debt to clear before merge** (low effort, left to the diff-landing
+  session to avoid index contention): orphaned `SessionIntentPromptView` (zero
+  external refs); now-tautological always-false `SessionIntentPromptPolicy` + its
+  tests; and a **git-TRACKED 2,068-line build log** `.derived-data-log-0CA5RPJ1`
+  (actively written by concurrent builds — `git rm --cached` + `.gitignore` it,
+  but not in a feature commit).
+- **The 10/10 verdict, restated honestly:** the literal "replaces a human coach"
+  10/10 stays **refused by design** (`CoachParityReadiness` `.forming` = the trust
+  moat). On the achievable axis (rival the leaders on substance + trust + an A*
+  demo moment) Noum is at a strong 7.4 — substance + trust are already
+  category-leading; the *only* thing below A* is the acquisition moment, which is
+  felt/QA-gated and currently collides with the in-flight rewrite. Sequenced after
+  the diff lands (see the eval doc's recommended sequence), not skipped.
+- **No safe non-colliding code slice to ship this run** — the in-flight diff
+  occupies most coach files (`TimedPracticeView` alone +962/-523), so every
+  high-value fix either collides or is felt/QA-gated. Same honest conclusion the
+  prior continuations reached under hot contention. Method: a 6-role workflow +
+  adversarial verification (`docs/COACH_PARITY_EVAL_2026-06-23.md`).
+
 2026-06-22 continuation (autonomous `noum-1` run, real toolchain + role-diverse
 eval). **Verified the shipped iterations are real, re-measured the delta, fixed
 one safe gap, and spec'd the highest-value remaining one; did NOT push.**
