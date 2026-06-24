@@ -240,12 +240,6 @@ enum AskNoumSpokenMode {
         /// system voice as the terminal fallback so a TTS outage degrades
         /// to an audible reply instead of a silent bubble.
         case fullChain
-        /// `.deterministicReply`: ON-DEVICE system voice ONLY. The grounded
-        /// offline line usually lands exactly when the network/provider is
-        /// down (so cloud TTS is moot), and honesty is preserved because
-        /// the system voice is audibly NOT the cloud coach voice — a canned
-        /// line is never passed off as the live coach speaking.
-        case onDeviceOnly
         /// Stay silent (toggle off, unsupported locale, failure, empty).
         case none
     }
@@ -259,12 +253,10 @@ enum AskNoumSpokenMode {
     ///     users stay clean text-only, matching the chat-reply locale gate,
     ///   • the outcome carries non-empty trimmed coach text.
     ///
-    /// A `.failure` (any cause) is NEVER spoken — a system-notice row is a
-    /// UI affordance, not the coach's voice, so reading "I couldn't reach my
-    /// model" aloud would be worse than silence. An all-whitespace reply is
-    /// also rejected (defensive; the store routes that to `.failure(.empty)`
-    /// anyway, but the predicate must not depend on that downstream
-    /// behavior).
+    /// A `.failure` (any cause) is NEVER spoken — it renders as a system notice
+    /// in the store, not the coach's voice. An all-whitespace reply is also
+    /// rejected (defensive; the store routes that to `.failure(.empty)` anyway,
+    /// but the predicate must not depend on that downstream behavior).
     static func spokenRoute(
         outcome: ChatOutcome,
         spokenRepliesEnabled: Bool,
@@ -274,19 +266,17 @@ enum AskNoumSpokenMode {
         switch outcome {
         case .reply(let text):
             return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .none : .fullChain
-        case .deterministicReply(let text, _):
-            return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .none : .onDeviceOnly
         case .failure:
             return .none
         }
     }
 
-    /// The coach text a non-`.none` route speaks. Nil for `.failure` and
-    /// empty outcomes — total, so callers can `if let` without re-deriving
-    /// the route's preconditions.
+    /// The coach text a non-`.none` route speaks. Nil for `.failure` and empty
+    /// outcomes — total, so callers can `if let` without re-deriving the
+    /// route's preconditions.
     static func spokenText(for outcome: ChatOutcome) -> String? {
         switch outcome {
-        case .reply(let text), .deterministicReply(let text, _):
+        case .reply(let text):
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed
         case .failure:
@@ -2179,13 +2169,10 @@ struct AskNoumView: View {
         // container's leading edge, so the ack / follow-up / proposal rows
         // below align to it without the old 34pt inset.
         //
-        // HONEST OFFLINE STATE (A3): a `.deterministicReply` (model
-        // unreachable) carries `isOffline`. It is a real, useful coach line —
-        // it still shows — but it is NOT the intelligent live coach, so it must
-        // never wear the brand-purple live treatment. Offline rows get a quiet
-        // "Offline — reconnect for a full read" marker + a neutral grey stroke
-        // and slightly muted text, so the user can trust that the purple-stroke
-        // bubbles are the live coach and this one is the local stand-in.
+        // LEGACY OFFLINE STATE: older builds could persist local fallback copy
+        // as `.coach` rows with `isOffline`. New turns no longer create those
+        // rows, but saved threads still deserve honest styling: neutral stroke,
+        // muted text, and a quiet "Offline — reconnect for a full read" marker.
         let accent = message.isOffline ? AppColor.textSecondary : AppColor.pro
 
         return HStack(alignment: .top, spacing: 12) {
@@ -2247,10 +2234,8 @@ struct AskNoumView: View {
         return message.isPending ? "" : message.text
     }
 
-    /// Quiet "offline" chip shown above a `.deterministicReply`'s text. Honest
-    /// states invariant: this row is the local stand-in, not the live coach, so
-    /// it says so plainly — and stays useful (the grounded line still renders
-    /// below). Uses neutral tokens only; never the brand-purple live treatment.
+    /// Quiet "offline" chip shown above legacy offline coach rows. New turns
+    /// become system notices instead; this remains for persisted history.
     private var offlineMarker: some View {
         HStack(spacing: 5) {
             Image(systemName: "wifi.slash")
@@ -2281,6 +2266,9 @@ struct AskNoumView: View {
             Color.orange.opacity(0.08),
             in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
         )
+        .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier("askNoum.systemNotice")
+        .accessibilityLabel("Notice: \(message.text)")
     }
 
     // MARK: - Pending typing indicator
@@ -2314,6 +2302,13 @@ struct AskNoumView: View {
 
     /// Shared tap action for the single trailing composer control.
     private func performInputAction(for mode: InputControlMode) {
+        // Tap-time truth beats a stale SwiftUI button closure: if the user has
+        // typed anything, this control is Send even if the action was captured
+        // on the previous mic frame.
+        if !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            trySend()
+            return
+        }
         switch mode {
         case .send, .sendOnly:
             trySend()
@@ -2409,6 +2404,8 @@ struct AskNoumView: View {
                     .lineLimit(1...4)
                     .submitLabel(.send)
                     .onSubmit { trySend() }
+                    .accessibilityLabel("Message Noum")
+                    .accessibilityIdentifier("askNoum.messageField")
             }
             .background(
                 AppColor.cardBackground,
@@ -2457,7 +2454,7 @@ struct AskNoumView: View {
     private var unifiedInputControl: some View {
         let mode = inputControlMode
         return Button {
-            performInputAction(for: mode)
+            performInputAction(for: inputControlMode)
         } label: {
             ZStack {
                 Circle()
@@ -2723,7 +2720,7 @@ struct AskNoumView: View {
                     targetTone: AskNoumSpokenMode.coachTone(for: voice)
                 ),
                 allowOnDeviceFallback: true,
-                onDeviceOnly: route == .onDeviceOnly
+                onDeviceOnly: false
             )
         }
     }

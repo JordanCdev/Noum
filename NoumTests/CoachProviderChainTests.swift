@@ -3,9 +3,7 @@
 //  NoumTests
 //
 //  Contracts behind the coach-chat provider failover: chain ordering with
-//  cooldowns, refusal classification, the Anthropic request/extract branch,
-//  and the deterministic repeat-guard that stops a provider outage from
-//  presenting as the coach saying the same line on every turn.
+//  cooldowns, refusal classification, and the Anthropic request/extract branch.
 //
 
 import Foundation
@@ -140,71 +138,5 @@ struct AnthropicExtractionTests {
         let viaWrapper = AICoachChatService.chatExtractReplyText(from: payload, provider: .openAI)
         let direct = AICoachChatService.extractReplyText(from: payload, provider: .openAI)
         #expect(viaWrapper == direct)
-    }
-}
-
-// MARK: - Deterministic repeat-guard
-
-struct DeterministicRepeatGuardTests {
-
-    @Test func identicalContextNeverRepeatsThePreviousBubble() {
-        let context = ChatFallbackContext()
-        let first = AICoachChatService.deterministicReplyOutcome(failure: .network, context: context)
-        guard case .deterministicReply(let firstText, _) = first else {
-            Issue.record("primary deterministic outcome should be a reply")
-            return
-        }
-
-        let second = AICoachChatService.deterministicReplyOutcome(
-            failure: .network,
-            context: context,
-            previousCoachText: firstText
-        )
-        guard case .deterministicReply(let secondText, _) = second else {
-            Issue.record("repeat-guarded outcome should still be a reply")
-            return
-        }
-        #expect(
-            AICoachChatService.normalizedFallbackText(firstText) != AICoachChatService.normalizedFallbackText(secondText),
-            "back-to-back outage turns must not produce the same bubble"
-        )
-    }
-
-    @Test func noRepeatGuardWhenPreviousDiffers() {
-        let context = ChatFallbackContext()
-        let outcome = AICoachChatService.deterministicReplyOutcome(
-            failure: .network,
-            context: context,
-            previousCoachText: "A genuinely different earlier reply."
-        )
-        guard case .deterministicReply(let text, _) = outcome else {
-            Issue.record("expected a deterministic reply")
-            return
-        }
-        let primary = AICoachChatService.deterministicReply(failure: .network, context: context)
-        #expect(text == primary, "the primary line stays when it doesn't repeat")
-    }
-
-    @Test func alternateAvoidsTheGivenText() {
-        let context = ChatFallbackContext()
-        let primary = AICoachChatService.deterministicReply(failure: .network, context: context)
-        let avoided = AICoachChatService.normalizedFallbackText(primary)!
-        let alternate = AICoachChatService.alternateDeterministicReply(context: context, avoidingNormalized: avoided)
-        #expect(AICoachChatService.normalizedFallbackText(alternate) != avoided)
-        #expect(!alternate.contains("!"), "fallback copy keeps the no-exclamation contract")
-        #expect(alternate.count <= 220)
-    }
-
-    @Test func alternateChainSurvivesAvoidingItsOwnFirstCandidate() {
-        let context = ChatFallbackContext()
-        // First call returns the lead+steady candidate; avoiding THAT must
-        // surface the neutral honest line — never an empty string or repeat.
-        let first = AICoachChatService.alternateDeterministicReply(context: context, avoidingNormalized: "never-matches")
-        let second = AICoachChatService.alternateDeterministicReply(
-            context: context,
-            avoidingNormalized: AICoachChatService.normalizedFallbackText(first) ?? "never-matches"
-        )
-        #expect(!second.isEmpty)
-        #expect(AICoachChatService.normalizedFallbackText(second) != AICoachChatService.normalizedFallbackText(first))
     }
 }

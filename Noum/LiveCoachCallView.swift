@@ -151,11 +151,9 @@ struct LiveCoachCallView: View {
         return store.messages.last(where: { $0.role == .coach && !$0.isPending })?.text
     }
 
-    /// True when the latest coach turn being captioned is the OFFLINE
-    /// deterministic stand-in (model unreachable). Honest states invariant
-    /// (A3): the live-call caption must mark it the same way the chat bubble
-    /// does, never passing the local line off as the live coach. Only relevant
-    /// when we're showing the coach's turn, not the user's live words.
+    /// True when the latest coach turn being captioned is a legacy offline row.
+    /// New live-call turns become system notices instead of local coach copy,
+    /// but old saved rows still need honest caption styling.
     private var captionIsOffline: Bool {
         guard voiceInput.state != .recording else { return false }
         return store.messages.last(where: { $0.role == .coach && !$0.isPending })?.isOffline ?? false
@@ -316,8 +314,8 @@ struct LiveCoachCallView: View {
                         .font(Typography.micro.weight(.bold))
                         .tracking(1)
                         .foregroundStyle(.white.opacity(0.4))
-                    // A3: the offline stand-in is marked in the live caption too,
-                    // so the local line is never read as the live coach speaking.
+                    // Legacy offline rows are marked in the live caption too,
+                    // so old local copy is never read as the live coach speaking.
                     if captionIsOffline {
                         HStack(spacing: 4) {
                             Image(systemName: "wifi.slash")
@@ -408,8 +406,7 @@ struct LiveCoachCallView: View {
     }
 
     /// Data-grounded landing fallback: the most recent TIMED rep's delivery
-    /// facts (the same evidence source the chat's deterministic fallback
-    /// reads — see `CoachReplyPipeline`), composed by the pure
+    /// facts, composed by the pure
     /// `CoachContextBuilder.liveCallLandingLine`. Nil when no timed rep with
     /// a measurable pace exists, so rep-0 fabricates nothing. Plain read,
     /// not observed — the landing renders before any exchange, and a rep
@@ -621,18 +618,18 @@ struct LiveCoachCallView: View {
                 localeSupportsAI: LocaleSettingsManager.shared.current.aiSupported
             )
             if route != .none, let spokenText = AskNoumSpokenMode.spokenText(for: outcome) {
-                speaker.speak(
-                    spokenText,
-                    setup: IMConversationSetup(
-                        scenario: .workUpdate,
-                        targetTone: AskNoumSpokenMode.coachTone(for: voice)
-                    ),
-                    allowOnDeviceFallback: true,
-                    onDeviceOnly: route == .onDeviceOnly
-                )
+                    speaker.speak(
+                        spokenText,
+                        setup: IMConversationSetup(
+                            scenario: .workUpdate,
+                            targetTone: AskNoumSpokenMode.coachTone(for: voice)
+                        ),
+                        allowOnDeviceFallback: true,
+                        onDeviceOnly: false
+                    )
+                }
             }
         }
-    }
 
     private func toggleAloud() {
         voiceSettings.askNoumSpokenRepliesEnabled.toggle()

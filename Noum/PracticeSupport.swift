@@ -4400,10 +4400,8 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
     ///     (network down, keys invalid, audio route broken), the on-device
     ///     `AVSpeechSynthesizer` becomes the terminal engine instead of a
     ///     silent skip.
-    ///   • `onDeviceOnly: true` for `.deterministicReply` outcomes — the
-    ///     grounded offline line is spoken ONLY in the system voice, never
-    ///     fetched from cloud TTS. Honesty holds both ways: the canned line
-    ///     is audibly NOT the cloud coach voice, and it needs no network.
+    /// `onDeviceOnly` remains available for explicit future engine choices,
+    /// but Ask Noum no longer uses it to speak local deterministic coach copy.
     /// If speech was requested and no engine at all produced audio,
     /// `voiceUnavailableNotice` is set so the UI can say so.
     ///
@@ -4427,9 +4425,9 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
         // chat-surface speech (the only callers that pass allowOnDeviceFallback)
         // routes straight to the system voice instead of paying for cloud TTS.
         // This affects only which voice ENGINE plays; the message itself is still
-        // whatever the caller decided (a real `.reply` stays a `.reply`), so it
-        // never masquerades as the honest offline stand-in. Production-safe: the
-        // flag is DEBUG-dev-gated and defaults OFF.
+        // whatever the caller decided (a real `.reply` stays a `.reply`), so
+        // changing the engine can never invent local coach content.
+        // Production-safe: the flag is DEBUG-dev-gated and defaults OFF.
         let forceOnDevice = allowOnDeviceFallback && playbackSettings.forceOnDeviceTTS
 
         speechTask = Task { [weak self] in

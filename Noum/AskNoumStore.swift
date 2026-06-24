@@ -46,13 +46,9 @@ struct CoachMessage: Identifiable, Codable, Equatable {
     /// True while the model is generating the reply. Only ever true for
     /// `.coach` rows; the UI renders a typing-style placeholder for these.
     var isPending: Bool
-    /// True ONLY for a `.coach` row hydrated from a `.deterministicReply` —
-    /// the grounded OFFLINE line built locally when the live model was
-    /// unreachable / unsupported. It is a real, useful coach line, but it is
-    /// NOT the intelligent live coach, so the UI must render it visibly
-    /// distinct (a quiet "offline" marker + de-emphasised styling) and never
-    /// in the brand-purple live-coach treatment. Honest-states invariant: a
-    /// fallback must never impersonate a live coach reply.
+    /// Legacy offline marker for coach rows persisted by older builds that
+    /// hydrated local fallback copy as `.coach`. New Ask Noum turns no longer
+    /// create offline coach rows; provider problems become `.systemNotice`.
     ///
     /// Kept as a flag on the EXISTING `.coach` role (rather than a new role)
     /// so every chip / word-reveal / continuation call site that keys off
@@ -194,33 +190,19 @@ final class AskNoumStore: ObservableObject {
         return (userMsg.id, coachMsg.id)
     }
 
-    /// Hydrate the pending coach row once the service returns. On
-    /// `.reply` the placeholder becomes a coach bubble; on `.failure`
-    /// it becomes a system notice with cause-specific copy so the user
-    /// knows what to actually fix (locale, network, provider, prompt)
-    /// instead of being told to "check Settings" no matter what broke.
+    /// Hydrate the pending coach row once the service returns. Only a live
+    /// `.reply` becomes a coach bubble. Any non-live outcome becomes a system
+    /// notice with cause-specific copy, so Ask Noum never presents a local
+    /// deterministic line as the intelligent coach.
     func completeCoachTurn(id: UUID, outcome: ChatOutcome) {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
         switch outcome {
-        case .reply(let text), .deterministicReply(let text, _):
-            // A live `.reply` and a grounded `.deterministicReply` both render
-            // as a real coach bubble — the deterministic offline line is the
-            // coach answering, NOT a system notice. (The spoken path treats
-            // them differently — see `AskNoumSpokenMode.spokenRoute` — a
-            // canned line speaks only in the on-device system voice, never
-            // the cloud coach voice, so it can't be mistaken for the live
-            // coach.) The VISIBLE bubble must honour the same honesty: a
-            // `.deterministicReply` wears the "offline" marker only when the
-            // model was genuinely unreachable — a `.contentRejected` turn
-            // happened fully online, and claiming otherwise is a lie.
-            let isOffline: Bool
-            if case .deterministicReply(_, let cause) = outcome { isOffline = cause.presentsAsOffline } else { isOffline = false }
+        case .reply(let text):
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
-                // Defensive: neither path should hand us empty content (a live
-                // empty returns `.failure(.empty)`; the deterministic builder
-                // is total and always non-empty), but if it does, route through
-                // the same notice rather than leaving a blank bubble.
+                // Defensive: a live empty should be `.failure(.empty)`, but if
+                // it reaches the store, route through the same notice instead
+                // of leaving a blank coach bubble.
                 replaceWithNotice(at: idx, id: id, failure: .empty)
             } else {
                 messages[idx] = CoachMessage(
@@ -229,7 +211,7 @@ final class AskNoumStore: ObservableObject {
                     text: trimmed,
                     createdAt: messages[idx].createdAt,
                     isPending: false,
-                    isOffline: isOffline
+                    isOffline: false
                 )
             }
         case .failure(let failure):
@@ -255,13 +237,13 @@ final class AskNoumStore: ObservableObject {
     private static func noticeCopy(for failure: ChatFailure) -> String {
         switch failure {
         case .noProvider:
-            return "I'm not set up with an AI provider yet. Add a key in Settings to continue."
+            return "Live coaching is not configured on this build. Add a provider key in Settings to continue."
         case .localeUnsupported:
-            return "I can only chat in English right now. Switch practice locale in Settings to continue."
+            return "I can only chat in English right now. Switch the practice language to English to continue."
         case .network:
-            return "I couldn't reach my model — check your connection and try again."
+            return "I couldn't get a live read right now. Check your connection and try again."
         case .empty, .contentRejected:
-            return "I came up empty on that one. Try rephrasing."
+            return "I couldn't shape a useful answer from that. Try one clearer sentence."
         }
     }
 

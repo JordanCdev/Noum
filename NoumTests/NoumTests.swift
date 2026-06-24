@@ -10788,69 +10788,37 @@ struct AskNoumStoreTests {
         store.completeCoachTurn(id: ids.coachID, outcome: .failure(.network))
         #expect(store.messages.count == 2)
         #expect(store.messages[1].role == .systemNotice)
-        #expect(store.messages[1].text.contains("couldn't reach"))
+        #expect(store.messages[1].text.contains("live read"))
         #expect(!store.isAwaitingReply)
     }
 
-    /// A1 — a `.deterministicReply` (the grounded OFFLINE coach line) is the
-    /// coach answering, so it hydrates the placeholder into a real `.coach`
-    /// bubble carrying the exact text — NEVER a `.systemNotice`. This is the
-    /// behavioral difference from `.failure`: the user sees a useful line, not
-    /// an error notice. Same branch shape as `.reply` (trim-guarded coach
-    /// bubble), and `isAwaitingReply` clears.
-    @Test func completeCoachTurnDeterministicReplyBecomesCoachBubble() {
+    /// Provider/model failures are system notices, never coach bubbles. This
+    /// keeps Ask Noum from presenting local or failed content as the live coach.
+    @Test func allChatFailuresBecomeSystemNotices() {
+        let failures: [ChatFailure] = [.network, .noProvider, .localeUnsupported, .empty, .contentRejected]
+        for failure in failures {
+            let store = freshStore()
+            let ids = store.appendUserTurn("How did my last rep go?")
+            store.completeCoachTurn(id: ids.coachID, outcome: .failure(failure))
+            #expect(store.messages.count == 2)
+            #expect(store.messages[1].role == .systemNotice)
+            #expect(store.messages[1].role != .coach)
+            #expect(store.messages[1].isPending == false)
+            #expect(store.messages[1].isOffline == false)
+            #expect(!store.isAwaitingReply)
+        }
+    }
+
+    /// Defensive: a live `.reply` with all-whitespace text still must not leave
+    /// a blank coach bubble. It routes to the same system notice as `.empty`.
+    @Test func completeCoachTurnWhitespaceLiveReplyBecomesNotice() {
         let store = freshStore()
         let ids = store.appendUserTurn("How did my last rep go?")
-        let line = "Here's what stood out: run one more rep when you're ready."
-        store.completeCoachTurn(id: ids.coachID, outcome: .deterministicReply(line, cause: .network))
+        store.completeCoachTurn(id: ids.coachID, outcome: .reply("   \n\t "))
         #expect(store.messages.count == 2)
-        #expect(store.messages[1].role == .coach)
-        #expect(store.messages[1].role != .systemNotice)
-        #expect(store.messages[1].isPending == false)
-        #expect(store.messages[1].text == line)
-        #expect(!store.isAwaitingReply)
-    }
-
-    /// A3 — honest OFFLINE marker. A `.deterministicReply` hydrates as a real
-    /// coach bubble (role `.coach`, useful text) BUT carries `isOffline = true`
-    /// so the UI renders it visibly distinct and never as the live coach. The
-    /// flag is the whole contract: same role (so chips/reveal keep working),
-    /// distinct truth (so the bubble can't impersonate the intelligent coach).
-    @Test func deterministicReplyIsFlaggedOffline() {
-        let store = freshStore()
-        let ids = store.appendUserTurn("How did my last rep go?")
-        store.completeCoachTurn(
-            id: ids.coachID,
-            outcome: .deterministicReply("Here's what stood out: run one more rep when you're ready.", cause: .network)
-        )
-        #expect(store.messages[1].role == .coach)
-        #expect(store.messages[1].isOffline == true)
-    }
-
-    /// A `.contentRejected` deterministic reply happened fully ONLINE — the
-    /// model answered and the local quality gate rejected the draft. The row
-    /// renders as a normal coach bubble WITHOUT the offline marker: telling
-    /// an online user they're offline reads as a broken product, not honesty.
-    @Test func contentRejectedDeterministicReplyIsNotFlaggedOffline() {
-        let store = freshStore()
-        let ids = store.appendUserTurn("How did my last rep go?")
-        store.completeCoachTurn(
-            id: ids.coachID,
-            outcome: .deterministicReply("Here's what stood out: run one more rep when you're ready.", cause: .contentRejected)
-        )
-        #expect(store.messages[1].role == .coach)
+        #expect(store.messages[1].role == .systemNotice)
         #expect(store.messages[1].isOffline == false)
-    }
-
-    /// Cause→offline mapping is the single source the store leans on: only
-    /// `.contentRejected` presents as online; every unreachable-model cause
-    /// keeps the honest offline marker.
-    @Test func presentsAsOfflineDistinguishesReachableFromUnreachable() {
-        #expect(ChatFailure.contentRejected.presentsAsOffline == false)
-        #expect(ChatFailure.network.presentsAsOffline == true)
-        #expect(ChatFailure.noProvider.presentsAsOffline == true)
-        #expect(ChatFailure.localeUnsupported.presentsAsOffline == true)
-        #expect(ChatFailure.empty.presentsAsOffline == true)
+        #expect(!store.isAwaitingReply)
     }
 
     /// A3 — a LIVE `.reply` is NOT offline: it must render in the full
@@ -10888,26 +10856,13 @@ struct AskNoumStoreTests {
         #expect(msg.isOffline == false)
     }
 
-    /// A3 — round-trip: an offline-flagged message survives encode → decode.
+    /// Back-compat: an offline-flagged legacy message survives encode → decode.
     @Test func coachMessageOfflineFlagRoundTrips() throws {
         let original = CoachMessage(role: .coach, text: "Offline line.", isOffline: true)
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(CoachMessage.self, from: data)
         #expect(decoded.isOffline == true)
         #expect(decoded.text == "Offline line.")
-    }
-
-    /// A1 — defensive: a `.deterministicReply` with all-whitespace text still
-    /// must not leave a blank coach bubble. The builder is total + always
-    /// non-empty, but the store must not depend on that, so an empty
-    /// deterministic line routes to the same notice as an empty live reply.
-    @Test func completeCoachTurnEmptyDeterministicReplyBecomesNotice() {
-        let store = freshStore()
-        let ids = store.appendUserTurn("How did my last rep go?")
-        store.completeCoachTurn(id: ids.coachID, outcome: .deterministicReply("   \n\t ", cause: .network))
-        #expect(store.messages.count == 2)
-        #expect(store.messages[1].role == .systemNotice)
-        #expect(!store.isAwaitingReply)
     }
 
     @Test func cancelPendingCoachTurnRemovesPlaceholder() {
@@ -23592,15 +23547,10 @@ struct S5SpokenModeRouteTests {
 
     /// Toggle OFF is an absolute veto even on an otherwise-speakable reply —
     /// text-only must stay fully silent. The user's mute choice is the one
-    /// voice preference that is ALWAYS respected, for every outcome shape.
+    /// voice preference that is ALWAYS respected.
     @Test func neverSpeaksWhenToggleOff() {
         #expect(AskNoumSpokenMode.spokenRoute(
             outcome: .reply("A perfectly good reply."),
-            spokenRepliesEnabled: false,
-            localeSupportsAI: true
-        ) == AskNoumSpokenMode.SpokenRoute.none)
-        #expect(AskNoumSpokenMode.spokenRoute(
-            outcome: .deterministicReply("A grounded offline line.", cause: .network),
             spokenRepliesEnabled: false,
             localeSupportsAI: true
         ) == AskNoumSpokenMode.SpokenRoute.none)
@@ -23609,15 +23559,9 @@ struct S5SpokenModeRouteTests {
     /// Locale gate: a non-AI locale stays text-only even with the toggle ON,
     /// mirroring the chat-reply locale gate so non-English users get a clean
     /// silent experience rather than an English voice over a localized UI.
-    /// Holds for the on-device deterministic route too.
     @Test func neverSpeaksWhenLocaleUnsupported() {
         #expect(AskNoumSpokenMode.spokenRoute(
             outcome: .reply("A perfectly good reply."),
-            spokenRepliesEnabled: true,
-            localeSupportsAI: false
-        ) == AskNoumSpokenMode.SpokenRoute.none)
-        #expect(AskNoumSpokenMode.spokenRoute(
-            outcome: .deterministicReply("A grounded offline line.", cause: .network),
             spokenRepliesEnabled: true,
             localeSupportsAI: false
         ) == AskNoumSpokenMode.SpokenRoute.none)
@@ -23628,7 +23572,7 @@ struct S5SpokenModeRouteTests {
     /// so a new cause can't silently become speakable, and `spokenText` is
     /// nil so no caller can even extract something to say.
     @Test func neverSpeaksAnyFailureCause() {
-        let causes: [ChatFailure] = [.noProvider, .localeUnsupported, .network, .empty]
+        let causes: [ChatFailure] = [.noProvider, .localeUnsupported, .network, .empty, .contentRejected]
         for cause in causes {
             #expect(AskNoumSpokenMode.spokenRoute(
                 outcome: .failure(cause),
@@ -23639,42 +23583,12 @@ struct S5SpokenModeRouteTests {
         }
     }
 
-    /// C5 — a `.deterministicReply` (the grounded offline line) speaks
-    /// through the ON-DEVICE system voice ONLY, never the cloud chain. Both
-    /// halves of the old A1 rationale are preserved structurally: no cloud
-    /// TTS request rides a network that's likely down, and the canned line
-    /// is audibly NOT the cloud coach voice — a fallback that can be heard
-    /// as a fallback, never passed off as the live coach. (Previously the
-    /// line was silenced entirely, which made every model hiccup look like
-    /// a muted coach in a voice-first surface.)
-    @Test func deterministicReplyRoutesToOnDeviceOnly() {
-        let outcome = ChatOutcome.deterministicReply("Here's what stood out: run one more rep when you're ready.", cause: .network)
-        #expect(AskNoumSpokenMode.spokenRoute(
-            outcome: outcome,
-            spokenRepliesEnabled: true,
-            localeSupportsAI: true
-        ) == .onDeviceOnly)
-        // Never the cloud chain — pinned as its own assertion so a future
-        // refactor can't quietly merge the two routes.
-        #expect(AskNoumSpokenMode.spokenRoute(
-            outcome: outcome,
-            spokenRepliesEnabled: true,
-            localeSupportsAI: true
-        ) != .fullChain)
-    }
-
     /// A whitespace-only reply is rejected even though it is nominally a
     /// `.reply`. The predicate must not depend on the store routing empties to
-    /// `.failure(.empty)` — it owns the empty check itself. Same for a
-    /// whitespace-only deterministic line (defensive; the builder is total).
+    /// `.failure(.empty)` — it owns the empty check itself.
     @Test func neverSpeaksWhitespaceOnlyReply() {
         #expect(AskNoumSpokenMode.spokenRoute(
             outcome: .reply("   \n\t  "),
-            spokenRepliesEnabled: true,
-            localeSupportsAI: true
-        ) == AskNoumSpokenMode.SpokenRoute.none)
-        #expect(AskNoumSpokenMode.spokenRoute(
-            outcome: .deterministicReply("   \n\t  ", cause: .network),
             spokenRepliesEnabled: true,
             localeSupportsAI: true
         ) == AskNoumSpokenMode.SpokenRoute.none)
@@ -23694,14 +23608,12 @@ struct S5SpokenModeRouteTests {
         }
     }
 
-    /// `spokenText` hands back the trimmed coach text for both speakable
-    /// outcome shapes and nil otherwise, so call sites can't drift from the
-    /// route decision by re-extracting text themselves.
+    /// `spokenText` hands back trimmed live coach text and nil otherwise, so
+    /// call sites can't drift from the route decision by re-extracting text.
     @Test func spokenTextMatchesSpeakableOutcomes() {
         #expect(AskNoumSpokenMode.spokenText(for: .reply("  Tighten the open.  ")) == "Tighten the open.")
-        #expect(AskNoumSpokenMode.spokenText(for: .deterministicReply("One more rep.", cause: .network)) == "One more rep.")
         #expect(AskNoumSpokenMode.spokenText(for: .reply("   ")) == nil)
-        #expect(AskNoumSpokenMode.spokenText(for: .deterministicReply("", cause: .network)) == nil)
+        #expect(AskNoumSpokenMode.spokenText(for: .failure(.network)) == nil)
     }
 }
 
@@ -23732,333 +23644,6 @@ struct S5SpokenModeCoachToneTests {
         let realTones = Set(IMTargetTone.allCases)
         for voice in SpeakingStyleGoal.allCases {
             #expect(realTones.contains(AskNoumSpokenMode.coachTone(for: voice)))
-        }
-    }
-}
-
-/// A1 — deterministic OFFLINE chat fallback (`AICoachChatService.deterministicReply`).
-///
-/// A real coach always responds. On the unreachable / unsupported failure
-/// paths (`.network` / `.noProvider` / `.localeUnsupported`) the service hands
-/// back a grounded, in-voice coach line built from the SAME shared context the
-/// LLM gets — the chosen voice's `CoachPersona`, the shared
-/// `PracticeEvaluator.promptAnswerVerdict` over the most-recent timed rep, and
-/// the already-summarized standing case — instead of an error notice. These
-/// tests pin the deterministic seam:
-///   • correct per-verdict / per-voice line above the evidence floor;
-///   • below the floor it states delivery FACTS only — no substance claim;
-///   • it never reproduces (quotes) the transcript text;
-///   • it is total — non-empty across every handled cause × every voice × nil;
-///   • output honors the brand-voice contract (no exclamations, bounded).
-/// Fixtures are hand-traced against the REAL relevance constants
-/// (`relevanceStrongOverlap = 0.30`, `relevanceWeakOverlap = 0.12`,
-/// `minTranscriptWordsForRelevance = 12`, `minPromptContentWordsForRelevance = 3`).
-struct AICoachChatDeterministicReplyTests {
-
-    // --- Hand-traced relevance fixtures (see suite doc for the trace) ---
-
-    /// 4 distinct content words: describe, biggest, professional, achievement.
-    private let prompt = "Describe your biggest professional achievement"
-
-    /// `.answered`: the prompt's key terms lead the first sentence.
-    /// firstSentenceOverlap = 3/4 = 0.75 ≥ 0.30. (>= 12 transcript words.)
-    private let answeredTranscript = "My biggest professional achievement was leading a team that shipped a payments platform under a tight deadline and we delivered it ahead of schedule."
-
-    /// `.buried`: key terms ABSENT from the first sentence (firstSentenceOverlap
-    /// = 0 < 0.12) but PRESENT overall (overlap = 3/4 = 0.75 ≥ 0.30).
-    private let buriedTranscript = "Well it was a really tough quarter overall and there were many moving parts. My biggest professional achievement was the payments platform."
-
-    /// `.partial`: none of the prompt's content words appear (overlap = 0), so
-    /// neither answered nor buried. (>= 12 transcript words.)
-    private let partialTranscript = "I think the weather today is quite pleasant and I enjoyed a long walk in the park near my house this morning."
-
-    /// The per-voice persona reflection lead the line must open with.
-    private func lead(for voice: SpeakingStyleGoal?) -> String {
-        CoachPersona.persona(for: voice).reflectionLead
-    }
-
-    @Test func answeredVerdictEmitsLeadWithPointLineInVoice() {
-        for voice in (SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]) {
-            let ctx = ChatFallbackContext(
-                voice: voice,
-                recentTimedTranscript: answeredTranscript,
-                recentTimedPrompt: prompt
-            )
-            let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
-            #expect(out.hasPrefix(lead(for: voice)), "voice \(String(describing: voice)) lead")
-            #expect(out.contains("led with the point"),
-                    "answered verdict line for voice \(String(describing: voice))")
-        }
-    }
-
-    @Test func buriedVerdictEmitsArrivedLateLine() {
-        let ctx = ChatFallbackContext(
-            voice: .authoritative,
-            recentTimedTranscript: buriedTranscript,
-            recentTimedPrompt: prompt
-        )
-        let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
-        #expect(out.hasPrefix("What I observed:"))
-        #expect(out.contains("arrived late"))
-    }
-
-    @Test func partialVerdictEmitsLeadWithFirstSentenceLine() {
-        let ctx = ChatFallbackContext(
-            voice: .concise,
-            recentTimedTranscript: partialTranscript,
-            recentTimedPrompt: prompt
-        )
-        let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
-        #expect(out.hasPrefix("What landed:"))
-        #expect(out.contains("didn't clearly lead"))
-    }
-
-    /// Below the SUBSTANCE floor (thin transcript, no prompt-relevance verdict)
-    /// but ABOVE the pace-fact word-count floor → NO substance verdict; the line
-    /// states a delivery FACT instead. A fast pace surfaces the WPM fact. The
-    /// transcript here is short on prompt-relevant content (so no substance
-    /// verdict) but long enough (>= 6 words) that a pace fact is honest.
-    @Test func belowSubstanceFloorEmitsDeliveryFactNotSubstanceClaim() {
-        let ctx = ChatFallbackContext(
-            voice: .warm,
-            recentTimedTranscript: "well I am not really sure where to begin honestly",
-            recentTimedPrompt: prompt,
-            recentWordsPerMinute: 180,
-            recentTimedWordCount: 10
-        )
-        let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
-        #expect(out.contains("180 WPM"))
-        // No positional substance claim may appear on thin evidence.
-        #expect(!out.contains("led with the point"))
-        #expect(!out.contains("arrived late"))
-        #expect(!out.contains("didn't clearly lead"))
-    }
-
-    /// A2 — REGRESSION GUARD: a degenerate near-empty rep (1 word over a full
-    /// minute → round(1.0) = 1 WPM) must NEVER produce "pace ran slow at 1 WPM."
-    /// Below the word-count floor the pace is unknown, so the line omits the
-    /// number entirely and falls through (here: to the steady in-voice line,
-    /// since there's no other fact). The owner's screen recording caught exactly
-    /// this fabrication.
-    @Test func degenerateOneWordRepNeverStatesNonsenseWPM() {
-        let ctx = ChatFallbackContext(
-            voice: .warm,
-            recentTimedTranscript: "Hi.",
-            recentTimedPrompt: prompt,
-            recentWordsPerMinute: 1,
-            recentTimedWordCount: 1
-        )
-        let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
-        #expect(!out.contains("1 WPM"))
-        #expect(!out.contains("WPM"), "no pace fact may be stated below the word-count floor: \(out)")
-        #expect(!out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        #expect(PostRepCoachNoteService.passesBrandVoiceContract(out))
-    }
-
-    /// A2 — boundary: exactly at the word-count floor (6 words) with a SANE WPM,
-    /// the pace fact IS stated; one word below it (5) the fact is suppressed.
-    @Test func paceFactGatedExactlyAtWordCountFloor() {
-        let aboveFloor = ChatFallbackContext(
-            voice: .concise,
-            recentTimedTranscript: "one two three four five six",
-            recentWordsPerMinute: 80,
-            recentTimedWordCount: 6
-        )
-        let aboveOut = AICoachChatService.deterministicReply(failure: .network, context: aboveFloor)
-        #expect(aboveOut.contains("80 WPM"))
-
-        let belowFloor = ChatFallbackContext(
-            voice: .concise,
-            recentTimedTranscript: "one two three four five",
-            recentWordsPerMinute: 80,
-            recentTimedWordCount: 5
-        )
-        let belowOut = AICoachChatService.deterministicReply(failure: .network, context: belowFloor)
-        #expect(!belowOut.contains("WPM"))
-    }
-
-    /// A2 — even ABOVE the word-count floor, a physically implausible WPM (a
-    /// sensor glitch / clipped duration) is never stated as a fact. 9 WPM and
-    /// 600 WPM both fall outside the believable speaking band and are omitted.
-    @Test func insaneWPMNeverStatedEvenAboveWordFloor() {
-        for absurd in [9, 600] {
-            let ctx = ChatFallbackContext(
-                voice: .authoritative,
-                recentTimedTranscript: "one two three four five six seven eight",
-                recentWordsPerMinute: absurd,
-                recentTimedWordCount: 8
-            )
-            let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
-            #expect(!out.contains("\(absurd) WPM"), "absurd \(absurd) WPM must not be stated: \(out)")
-            #expect(!out.contains("WPM"))
-        }
-    }
-
-    /// A2 — the sane-pace predicate is the single source of truth for the band.
-    @Test func sanePaceFactPredicateBoundaries() {
-        #expect(AICoachChatService.isSanePaceFact(40))
-        #expect(AICoachChatService.isSanePaceFact(260))
-        #expect(AICoachChatService.isSanePaceFact(140))
-        #expect(!AICoachChatService.isSanePaceFact(39))
-        #expect(!AICoachChatService.isSanePaceFact(261))
-        #expect(!AICoachChatService.isSanePaceFact(1))
-        #expect(!AICoachChatService.isSanePaceFact(0))
-    }
-
-    /// The fallback NEVER reproduces the transcript text — it states the
-    /// verdict and folds the summarized case in, but quotes nothing. The
-    /// distinctive transcript token ("payments") must not appear in the output.
-    @Test func neverQuotesTheTranscript() {
-        let ctx = ChatFallbackContext(
-            voice: .storytelling,
-            recentTimedTranscript: answeredTranscript,
-            recentTimedPrompt: prompt
-        )
-        let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
-        #expect(!out.lowercased().contains("payments"))
-        #expect(!out.lowercased().contains("platform"))
-    }
-
-    /// With NO recent rep at all, the line advances the standing case using the
-    /// already-phrased `nextQuestion` — it never fabricates a rep read.
-    @Test func noRecentRepAdvancesStandingCase() {
-        let ctx = ChatFallbackContext(
-            voice: nil,
-            nextQuestion: "What is the next followed rep that will test the success measure?"
-        )
-        let out = AICoachChatService.deterministicReply(failure: .noProvider, context: ctx)
-        #expect(out.hasPrefix("Here's what stood out:"))
-        #expect(out.contains("don't have a fresh rep"))
-        // lowerFirst applied to the next-question fragment.
-        #expect(out.contains("what is the next followed rep"))
-        #expect(!out.contains("led with the point"))
-    }
-
-    /// The standing case (success measure) is folded into the closing line in
-    /// association-only framing, grounded in the user's OWN summarized numbers.
-    @Test func successMeasureFoldedIntoClosingLine() {
-        let ctx = ChatFallbackContext(
-            voice: .executive,
-            recentTimedTranscript: answeredTranscript,
-            recentTimedPrompt: prompt,
-            successMeasure: "Hold filler under 4 per rep for 3 reps"
-        )
-        let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
-        #expect(out.contains("where we're aiming"))
-        #expect(out.contains("hold filler under 4 per rep for 3 reps"))
-    }
-
-    /// Totality: across every handled failure cause × every voice (incl. nil),
-    /// the builder returns a non-empty, brand-safe line. Never throws/empties.
-    @Test func totalAndBrandSafeAcrossCausesAndVoices() {
-        let causes: [ChatFailure] = [.network, .noProvider, .localeUnsupported]
-        let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]
-        for cause in causes {
-            for voice in voices {
-                // Exercise both the with-rep and no-rep-no-case branches.
-                let withRep = ChatFallbackContext(
-                    voice: voice,
-                    recentTimedTranscript: answeredTranscript,
-                    recentTimedPrompt: prompt,
-                    successMeasure: "Hold filler under 4 per rep for 3 reps"
-                )
-                let bare = ChatFallbackContext(voice: voice)
-                for ctx in [withRep, bare] {
-                    let out = AICoachChatService.deterministicReply(failure: cause, context: ctx)
-                    #expect(!out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                            "non-empty for \(cause) / \(String(describing: voice))")
-                    #expect(!out.contains("!"), "no exclamations")
-                    #expect(PostRepCoachNoteService.passesBrandVoiceContract(out),
-                            "brand contract for \(cause) / \(String(describing: voice))")
-                }
-            }
-        }
-    }
-
-    /// The default-empty context (the `reply(...)` default param) still yields
-    /// a non-empty, brand-safe, in-voice line — the steady fallback. No crash,
-    /// no fabrication, no error string.
-    @Test func emptyContextYieldsSteadyInVoiceLine() {
-        let out = AICoachChatService.deterministicReply(failure: .network, context: ChatFallbackContext())
-        #expect(out.hasPrefix("Here's what stood out:")) // nil-voice persona lead
-        #expect(!out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        #expect(PostRepCoachNoteService.passesBrandVoiceContract(out))
-    }
-
-    /// A very long summarized success measure is truncated so the rendered
-    /// bubble stays within the brand-voice ceiling (≤ 220 chars). The line is
-    /// still non-empty and brand-safe — truncation never breaks the contract.
-    @Test func longCaseStringTruncatesWithinBrandCeiling() {
-        let longMeasure = String(repeating: "hold the line and keep it tight ", count: 12)
-        let ctx = ChatFallbackContext(
-            voice: .persuasive,
-            recentTimedTranscript: answeredTranscript,
-            recentTimedPrompt: prompt,
-            successMeasure: longMeasure
-        )
-        let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
-        #expect(out.count <= 220)
-        #expect(PostRepCoachNoteService.passesBrandVoiceContract(out))
-    }
-
-    // --- Offline parity: the deterministic path is held to the SAME quality
-    // gate the live path uses (no second, looser standard offline). ---
-
-    /// The invariant that makes `deterministicReplyOutcome`'s safety net safe:
-    /// every line the controlled builder emits, across every handled cause ×
-    /// voice (with a rep and bare), is free of OBJECTIVE quality failures
-    /// (robotic / too long / defensive / menu / fabricated quote / overclaim).
-    /// cold no-data line is allowed — there is genuinely no data to anchor to,
-    /// and that honest "run one more rep" line is the correct cold response.
-    /// `.missingInsightBridge` is also turn-contextual: a bare offline line may
-    /// be the best safe substitute when the model is unavailable, while the live
-    /// path still rejects metric-plus-drill replies that skip the coach read.
-    @Test func deterministicLinesHaveNoObjectiveQualityFailure() {
-        let allowed: [CoachChatReplyQualityIssue] = [.unanchoredCoaching, .missingPrescribedAction, .missingInsightBridge]
-        let causes: [ChatFailure] = [.network, .noProvider, .localeUnsupported, .empty]
-        let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]
-        for cause in causes {
-            for voice in voices {
-                let withRep = ChatFallbackContext(
-                    voice: voice,
-                    recentTimedTranscript: answeredTranscript,
-                    recentTimedPrompt: prompt,
-                    successMeasure: "Hold filler under 4 per rep for 3 reps"
-                )
-                let bare = ChatFallbackContext(voice: voice)
-                for ctx in [withRep, bare] {
-                    let line = AICoachChatService.deterministicReply(failure: cause, context: ctx)
-                    if let issue = AICoachChatService.replyQualityIssue(in: line, latestUserTurn: nil) {
-                        #expect(allowed.contains(issue),
-                                "deterministic line hit an OBJECTIVE failure \(issue) for \(cause) / \(String(describing: voice)): \(line)")
-                    }
-                }
-            }
-        }
-    }
-
-    /// Because every deterministic line clears the gate (above), the gated
-    /// wrapper used by the five offline return paths always hands back a real
-    /// coach bubble (`.deterministicReply`) and never silently degrades to the
-    /// `.empty` notice for normal contexts — the offline experience is preserved.
-    @Test func deterministicOutcomeEmitsCoachBubbleAcrossCausesAndVoices() {
-        let causes: [ChatFailure] = [.network, .noProvider, .localeUnsupported, .empty]
-        let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]
-        for cause in causes {
-            for voice in voices {
-                let ctx = ChatFallbackContext(
-                    voice: voice,
-                    recentTimedTranscript: answeredTranscript,
-                    recentTimedPrompt: prompt
-                )
-                let outcome = AICoachChatService.deterministicReplyOutcome(failure: cause, context: ctx)
-                switch outcome {
-                case .deterministicReply(let text, _):
-                    #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                case .reply, .failure:
-                    Issue.record("gated wrapper degraded a normal deterministic line for \(cause) / \(String(describing: voice))")
-                }
-            }
         }
     }
 }
@@ -24306,7 +23891,7 @@ struct AICoachChatReplyQualityGateTests {
 
     /// HARDEN #6b — common abbreviations ("e.g."/"i.e."/"vs.") carry periods
     /// the system prompt itself models; counting them inflated a legal
-    /// 2-sentence reply into a `.tooLong` trip → canned fallback.
+    /// 2-sentence reply into a `.tooLong` trip and unnecessary repair.
     @Test func abbreviationPeriodsDoNotInflateSentenceCount() {
         // Both replies are anchored (a metric) + prescribe an action, so the
         // ONLY thing that could trip the gate is the abbreviation period
@@ -42008,33 +41593,6 @@ struct AICoachTruncationGuardTests {
             from: data(["unexpected": "shape"]),
             provider: .openAI
         ) == .empty)
-    }
-
-    @Test func missingExtractionOutcomeKeepsTruncationHonestButAnswersEmpty() {
-        let ctx = ChatFallbackContext(
-            recentTimedTranscript: "My biggest professional achievement was leading a team that shipped a payments platform under pressure and delivered ahead of schedule.",
-            recentTimedPrompt: "Describe your biggest professional achievement"
-        )
-
-        let emptyOutcome = AICoachChatService.outcomeForMissingExtractedReply(.empty, context: ctx)
-        switch emptyOutcome {
-        case .some(.deterministicReply(let text, _)):
-            #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        case .some(.reply), .some(.failure), nil:
-            Issue.record("non-truncated empty extraction should answer with a deterministic coach bubble")
-        }
-
-        let truncatedOutcome = AICoachChatService.outcomeForMissingExtractedReply(.lengthTruncated, context: ctx)
-        switch truncatedOutcome {
-        case .some(.failure(.empty)):
-            break
-        case .some(.reply), .some(.deterministicReply), .some(.failure), nil:
-            Issue.record("length-truncated extraction must remain the honest empty notice")
-        }
-
-        if AICoachChatService.outcomeForMissingExtractedReply(.text("Done."), context: ctx) != nil {
-            Issue.record("text extraction should not produce a missing-reply fallback outcome")
-        }
     }
 
     @Test func noneProviderIsNeverTruncated() {

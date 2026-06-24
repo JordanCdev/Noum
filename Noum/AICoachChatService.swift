@@ -6,8 +6,8 @@ import os
 // Multi-turn coaching chat — the model behind the "Ask Noum" surface.
 // Speaks a CHAIN of providers (Gemini → Anthropic → OpenAI → DeepSeek,
 // whichever have keys) with per-provider cooldowns, so a rate-limited or
-// refusing provider fails over to the next instead of silently degrading
-// every turn to the deterministic fallback. The rest of the AI layer
+// refusing provider fails over to the next instead of failing on the first
+// outage or synthesizing local coach copy. The rest of the AI layer
 // still uses the shared single-provider plumbing; this service is
 // *stateful per request* (it replays the conversation history every
 // turn) and always-text (no JSON response shape; the coach is supposed
@@ -34,9 +34,9 @@ import os
 //   • Truncation-honest — response extraction reads the provider finish
 //     reason (Gemini `finishReason`, OpenAI/DeepSeek `finish_reason`). A
 //     length-truncated completion (MAX_TOKENS / "length") stays an honest
-//     `.empty` notice instead of a sentence that stops dead. Other
-//     no-text responses use the grounded deterministic fallback rather than
-//     dead-ending the chat. Never commit a guillotined reply verbatim.
+//     `.empty` notice instead of a sentence that stops dead. Other no-text
+//     responses also stay typed failures; Ask Noum must never fake a coach
+//     answer locally.
 //   • Failure-typed — `reply(...)` returns `ChatOutcome` so the store
 //     can route to per-cause copy (locale-block vs. network vs. no
 //     provider vs. empty) instead of one generic "couldn't reach my
@@ -52,9 +52,9 @@ enum ChatFailure: Equatable {
     case localeUnsupported
     /// Transport / HTTP / JSON-encode failure.
     case network
-    /// A reply could not be safely committed: the provider returned a
-    /// length-truncated completion, or a deterministic substitute failed its
-    /// own quality gate. Distinct from `.network` because rephrasing might help.
+    /// A reply could not be safely committed: the provider returned empty or
+    /// length-truncated content. Distinct from `.network` because rephrasing
+    /// might help.
     case empty
     /// The model WAS reachable and replied, but every draft (and repair)
     /// failed the local quality gate. Distinct from `.network` so the UI
@@ -63,34 +63,12 @@ enum ChatFailure: Equatable {
     case contentRejected
 }
 
-/// Outcome of a chat turn — a live model reply, a *deterministic* offline
-/// reply, or a typed failure the store maps to per-cause copy.
+/// Outcome of a chat turn — either a live model reply or a typed failure the
+/// store maps to per-cause copy.
 enum ChatOutcome {
     /// A live, model-generated reply.
     case reply(String)
-    /// A deterministic, grounded, in-voice coach reply assembled locally
-    /// when the model is unreachable (`.network` / `.noProvider`), the
-    /// locale is unsupported (`.localeUnsupported`), or a successful provider
-    /// response contains no usable non-truncated text (`.empty`). A real coach
-    /// always responds, so these failure paths hand back a useful
-    /// association-only line instead of an error notice. Kept DISTINCT from
-    /// `.reply` so the spoken path stays silent (TTS needs the same
-    /// network/provider that is down) while the store still renders it as a
-    /// real coach bubble — never a system notice. Mirrors
-    /// `AICoachService.deterministicFeedback` /
-    /// `PostRepCoachNoteService.deterministicNote`.
-    ///
-    /// `cause` is why the live path didn't answer. The store uses it to
-    /// label the row honestly: `.contentRejected` (model reachable, draft
-    /// below bar) must NOT wear the "Offline" marker.
-    case deterministicReply(String, cause: ChatFailure)
     case failure(ChatFailure)
-}
-
-extension ChatFailure {
-    /// Whether a deterministic reply with this cause should present as
-    /// "offline" in the UI. Content rejection happens while fully online.
-    var presentsAsOffline: Bool { self != .contentRejected }
 }
 
 /// Provider response extraction result for Ask Noum text replies. Kept typed
@@ -202,9 +180,8 @@ struct CoachChatQuoteGuardContext: Equatable {
         // `recentUserTurns` carries the WHOLE replayed conversation's user
         // messages, not just the latest. A coach who says "you mentioned
         // interviews" about something the user typed three turns ago is
-        // reading real user words — without these sources Gate 1 rejected
-        // every such reply into the same deterministic fallback (owner bug
-        // report 2026-06-10: "chat says the same thing over and over").
+        // reading real user words — without these sources Gate 1 rejects useful
+        // replies and pushes the turn into a system notice.
         // Anti-fabrication holds: claims still must match something the
         // user actually said in a rep, a verified proof, or the chat.
         self.sourceTexts = (transcripts + verifiedProofQuotes.map { Optional($0) }
@@ -233,75 +210,22 @@ struct CoachChatQuoteGuardContext: Equatable {
     }
 }
 
-/// Decode-free, transient context the deterministic chat fallback reads to
-/// ground its reply. Assembled at the call site (`AskNoumView.runReply`) from
-/// owners already in scope — the user's chosen voice, the most-recent timed
-/// rep, and the already-summarized standing case (hypothesis / observable
-/// target / success measure / next question) off `CoachCaseFile`. Pure data;
-/// no I/O, no singletons, nothing persisted (so no Codable surface). Every
-/// field is optional and defaulted so the call site can pass exactly what it
-/// has and the builder degrades gracefully (no fabrication below a floor).
-struct ChatFallbackContext: Equatable {
-    /// The user's CHOSEN training voice (nil until they pick one). Selects
-    /// the `CoachPersona` register so the offline line speaks in-voice.
-    var voice: SpeakingStyleGoal?
-    /// The most-recent TIMED rep's transcript, when one exists. Drives the
-    /// SHARED `PracticeEvaluator.promptAnswerVerdict`; nil → no substance
-    /// verdict (delivery-fact-only). Never quoted directly (no fabrication).
+/// Decode-free, transient grounding context for live chat quote safety.
+/// Assembled at the call site from existing stores; never persisted.
+struct ChatGroundingContext: Equatable {
+    /// The most-recent timed rep's transcript, when one exists. The live model
+    /// may reference it, and the quote guard verifies any attributed quote.
     var recentTimedTranscript: String?
-    /// The prompt the most-recent timed rep answered, when known. Paired
-    /// with `recentTimedTranscript` for the positional verdict.
-    var recentTimedPrompt: String?
-    /// Whole-words-per-minute on that rep (0 when unknown) — a delivery fact
-    /// the fallback may state when the substance verdict is below its floor.
-    var recentWordsPerMinute: Int
-    /// Whole-word COUNT on that rep (0 when unknown). The delivery-fact branch
-    /// is gated on this clearing the SAME evidence floor `PracticeEvaluator`'s
-    /// own pace label uses (`>= 6` words). A degenerate near-empty rep
-    /// (e.g. 1 word over a full duration) yields a nonsensical "pace ran slow
-    /// at 1 WPM" line otherwise — the chat fallback must refuse to judge pace
-    /// on too little content, exactly as `paceSnapshot` does.
-    var recentTimedWordCount: Int
-    /// Filler-word COUNT on that rep (not a rate) — a delivery fact only.
-    var recentFillerCount: Int
-    /// The standing working hypothesis, already bounded/summarized on the
-    /// case file. Folded in association-only framing — never as a diagnosis.
-    var hypothesis: String?
-    /// The active intervention's observable target, already summarized.
-    var observableTarget: String?
-    /// The active intervention's success measure, already summarized.
-    var successMeasure: String?
-    /// The case file's next coaching question, already phrased. Used to
-    /// advance the case when there is no recent rep to read.
-    var nextQuestion: String?
     /// Quotes that have already passed the proof-moment guard elsewhere.
     /// The live chat may quote these back; anything else needs to appear in a
     /// transcript or the user's latest turn.
     var verifiedProofQuotes: [String]
 
     init(
-        voice: SpeakingStyleGoal? = nil,
         recentTimedTranscript: String? = nil,
-        recentTimedPrompt: String? = nil,
-        recentWordsPerMinute: Int = 0,
-        recentTimedWordCount: Int = 0,
-        recentFillerCount: Int = 0,
-        hypothesis: String? = nil,
-        observableTarget: String? = nil,
-        successMeasure: String? = nil,
-        nextQuestion: String? = nil,
         verifiedProofQuotes: [String] = []
     ) {
-        self.voice = voice
         self.recentTimedTranscript = recentTimedTranscript
-        self.recentTimedPrompt = recentTimedPrompt
-        self.recentWordsPerMinute = recentWordsPerMinute
-        self.recentTimedWordCount = recentTimedWordCount
-        self.recentFillerCount = recentFillerCount
-        self.hypothesis = hypothesis
-        self.observableTarget = observableTarget
-        self.successMeasure = successMeasure
-        self.nextQuestion = nextQuestion
         self.verifiedProofQuotes = verifiedProofQuotes
     }
 }
@@ -429,42 +353,35 @@ actor AICoachChatService {
 
     private init() {}
 
-    /// Send a turn to the model. Returns `.reply(text)` on a live success,
-    /// `.deterministicReply(text)` when the model is unreachable, the locale is
-    /// unsupported, or the provider returns no usable non-truncated text (a real
-    /// coach always answers — see `ChatFallbackContext`), or `.failure(cause)`
-    /// when a reply would be unsafe to commit (`.empty`: length-truncated or the
-    /// deterministic substitute itself failed the quality gate). Total function
-    /// — never throws.
-    ///
-    /// `fallback` is the LAST, defaulted parameter (arg-order rule) so the
-    /// single existing call site can opt in without reordering; with the
-    /// default empty context the deterministic reply degrades to an in-voice,
-    /// fabrication-free line.
+    /// Send a turn to the model. Returns `.reply(text)` on a live success or
+    /// `.failure(cause)` when the model cannot produce a safe answer. Total
+    /// function — never throws. The store turns failures into honest system
+    /// notices; Ask Noum must not synthesize local coach replies.
     func reply(
         history: [CoachMessage],
         systemPrompt: String,
         userContext: String,
-        fallback: ChatFallbackContext = ChatFallbackContext()
+        grounding: ChatGroundingContext = ChatGroundingContext()
     ) async -> ChatOutcome {
-        // The previous coach bubble — the repeat-guard input. A provider
-        // outage must never present as the coach saying the same line twice.
-        let previousCoachText = history.last(where: { $0.role == .coach })?.text
+        #if DEBUG
+        // UI harness only: lets simulator tests verify send -> pipeline ->
+        // store -> system-notice rendering without depending on live provider
+        // latency or keys. Production builds never see this branch.
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_CHAT_FORCE_NOTICE") {
+            return .failure(.network)
+        }
+        #endif
 
-        // M13: AI surfaces are English-only. The deterministic fallback is
-        // locale-agnostic English copy (layer-wide precedent), so a non-English
-        // user still gets a useful coach line rather than a config notice.
+        // M13: AI surfaces are English-only. Non-English chat now resolves as
+        // a typed notice rather than an English local coach substitute.
         guard await activeLocaleSupportsAI() else {
-            return Self.deterministicReplyOutcome(failure: .localeUnsupported, context: fallback, previousCoachText: previousCoachText)
+            return .failure(.localeUnsupported)
         }
 
         let keyed = Self.keyedProviders()
         guard !keyed.isEmpty else {
-            // No provider has a key — the model can't be reached at all.
-            // A real coach still answers, so hand back a grounded, in-voice
-            // deterministic line rather than an error notice.
-            Self.log.error("no chat provider has a key — deterministic fallback")
-            return Self.deterministicReplyOutcome(failure: .noProvider, context: fallback, previousCoachText: previousCoachText)
+            Self.log.error("no chat provider has a key")
+            return .failure(.noProvider)
         }
 
         // Compose the system prompt — voice + context block.
@@ -474,8 +391,8 @@ actor AICoachChatService {
         let trimmed = Array(history.suffix(Self.maxReplayMessages))
         let latestUserTurn = trimmed.last(where: { $0.role == .user })?.text
         let quoteGuard = CoachChatQuoteGuardContext(
-            transcripts: [fallback.recentTimedTranscript],
-            verifiedProofQuotes: fallback.verifiedProofQuotes,
+            transcripts: [grounding.recentTimedTranscript],
+            verifiedProofQuotes: grounding.verifiedProofQuotes,
             latestUserTurn: latestUserTurn,
             recentUserTurns: trimmed.filter { $0.role == .user }.map(\.text)
         )
@@ -506,18 +423,10 @@ actor AICoachChatService {
             }
         }
 
-        // Every keyed provider refused this turn — answer deterministically
-        // instead of dead-ending the user (a coach who can't reach their
-        // notes still gives a useful read). A content rejection means the
-        // model WAS reachable, so that cause must win over `.network` —
-        // the row must not claim "offline" to an online user.
-        Self.log.error("all \(chain.count) chat providers refused — deterministic fallback")
-        return Self.deterministicReplyOutcome(
-            failure: sawContentRejection ? .contentRejected : .network,
-            context: fallback,
-            latestUserTurn: latestUserTurn,
-            previousCoachText: previousCoachText
-        )
+        // Every keyed provider refused this turn. A content rejection means
+        // the model WAS reachable, so that cause must win over `.network`.
+        Self.log.error("all \(chain.count) chat providers refused")
+        return .failure(sawContentRejection ? .contentRejected : .network)
     }
 
     // MARK: - Provider chain
@@ -534,7 +443,7 @@ actor AICoachChatService {
 
     /// Pure ordering: ready providers first, cooling ones moved to the BACK —
     /// not dropped, because when everything is cooling the chain must still
-    /// try its best option rather than silently going deterministic.
+    /// try its best option rather than ending the turn early.
     nonisolated static func orderedChain(
         keyed: [CoachChatProvider],
         cooldowns: [CoachChatProvider: Date],
@@ -1019,9 +928,9 @@ actor AICoachChatService {
     /// Abbreviations whose internal/trailing periods must NOT read as sentence
     /// terminators. These are common in coaching copy — the system prompt
     /// itself models "e.g." — and counting their periods inflated legal
-    /// 2-sentence replies into a `.tooLong` trip → canned fallback. Erring
-    /// permissive (a rare end-of-sentence "etc." may undercount by one) is the
-    /// correct direction for a gate whose failure mode has been over-firing.
+    /// 2-sentence replies into a `.tooLong` trip. Erring permissive (a rare
+    /// end-of-sentence "etc." may undercount by one) is the correct direction
+    /// for a gate whose failure mode has been over-firing.
     private nonisolated static let sentenceCountAbbreviations = [
         "e.g.", "i.e.", "etc.", "vs.", "a.m.", "p.m.",
         "mr.", "mrs.", "ms.", "dr.", "u.s.", "ph.d.", "approx."
@@ -1120,294 +1029,6 @@ actor AICoachChatService {
             return nil
         }
         return text
-    }
-
-    // MARK: - Deterministic offline fallback
-    //
-    // A real coach always responds. When the model is unreachable
-    // (`.network` / `.noProvider`), the locale is unsupported
-    // (`.localeUnsupported`), or the provider returns no usable non-truncated
-    // text (`.empty`), this assembles a grounded, in-voice coach line
-    // from the same rich context the LLM gets — the chosen voice's persona,
-    // the SHARED prompt-answer verdict over the most-recent timed rep, and the
-    // standing case (hypothesis / target / success measure). It mirrors
-    // `AICoachService.deterministicFeedback` and
-    // `PostRepCoachNoteService.deterministicNote`:
-    //
-    //   • Pure + `nonisolated` + total — unit-testable, never throws/empties.
-    //   • Honors evidence floors — `promptAnswerVerdict == nil` (thin / absent
-    //     rep) yields a delivery-fact-only line, NEVER a substance claim; with
-    //     no recent rep at all it advances the standing case in association-only
-    //     framing instead of inventing a read.
-    //   • Never fabricates a quote — it states the verdict and delivery facts,
-    //     and folds the already-summarized case in; it never reproduces the
-    //     transcript text.
-    //   • Locale-agnostic English copy (the deterministic path is shared by the
-    //     non-English locale-block per layer-wide precedent).
-    //   • Brand-safe by construction — run through `ensureNoExclamations` /
-    //     `collapseWhitespace` / `truncate` (reused from
-    //     `PostRepCoachNoteService`), bounded to the brand-voice length ceiling.
-
-    /// Build the deterministic, in-voice coach reply for a handled failure
-    /// cause. The `failure` parameter is accepted for symmetry / future
-    /// per-cause shaping but the COPY is intentionally cause-agnostic: the user
-    /// shouldn't be able to tell whether the model was offline, unconfigured,
-    /// or locale-blocked — they just get a useful coach line. Pure + total.
-    nonisolated static func deterministicReply(
-        failure: ChatFailure,
-        context: ChatFallbackContext
-    ) -> String {
-        _ = failure // cause-agnostic copy today; kept for per-cause shaping later
-        let persona = CoachPersona.persona(for: context.voice)
-        let lead = persona.reflectionLead
-
-        // The grounded body: the SHARED substance verdict above its floor,
-        // else a delivery fact, else a case-advancing line, else a steady
-        // in-voice fallback. Exactly one body sentence — coach voice rule #1.
-        let body = bodySentence(context: context, persona: persona)
-
-        // The standing case, folded in association-only framing. Suppressed
-        // when there is no durable case (no hypothesis / target / measure /
-        // next question) so the line never gestures at a plan that isn't there.
-        let caseLine = standingCaseLine(context: context, persona: persona)
-
-        var text = caseLine.isEmpty ? "\(lead) \(body)" : "\(lead) \(body) \(caseLine)"
-        text = PostRepCoachNoteService.collapseWhitespace(in: text)
-        text = PostRepCoachNoteService.ensureNoExclamations(in: text)
-        // Bounded to the brand-voice ceiling so the rendered bubble stays tight
-        // and `passesBrandVoiceContract` holds (it rejects > 220 chars).
-        text = PostRepCoachNoteService.truncate(text, max: 220)
-        return text
-    }
-
-    /// Build a deterministic fallback line AND hold it to the same quality bar
-    /// the live path enforces (`replyQualityIssue`). The deterministic builder
-    /// emits controlled, in-voice copy that should always clear the bar, so this
-    /// is a safety net rather than a routine rejection: if a future copy change
-    /// ever produced a robotic / over-long / bare line, the user gets the honest
-    /// `.empty` "try rephrasing" notice instead of a sub-bar substitute. This
-    /// keeps the offline path under the SAME contract as the live path — there is
-    /// no second, looser quality standard for when the model is unreachable.
-    ///
-    /// The deterministic builder never quotes raw user speech (it composes from
-    /// the shared verdict / delivery facts / standing-case copy), so no quote
-    /// guard is threaded; the turn-aware lexical checks are what matter here.
-    nonisolated static func deterministicReplyOutcome(
-        failure: ChatFailure,
-        context: ChatFallbackContext,
-        latestUserTurn: String? = nil,
-        previousCoachText: String? = nil
-    ) -> ChatOutcome {
-        var candidate = deterministicReply(failure: failure, context: context)
-        // Repeat-guard: the deterministic line is a pure function of the
-        // fallback context, which rarely changes between turns — so a
-        // provider outage would otherwise present as the coach saying the
-        // SAME line on every turn. Never send the previous bubble verbatim.
-        if let previous = normalizedFallbackText(previousCoachText),
-           normalizedFallbackText(candidate) == previous {
-            candidate = alternateDeterministicReply(context: context, avoidingNormalized: previous)
-        }
-        guard let issue = replyQualityIssue(in: candidate, latestUserTurn: latestUserTurn) else {
-            return .deterministicReply(candidate, cause: failure)
-        }
-        switch issue {
-        case .unanchoredCoaching, .missingPrescribedAction, .missingInsightBridge:
-            // Turn-contextual checks, NOT objective quality failures. When the
-            // model is unreachable AND there is no rep/case yet, the controlled
-            // builder's honest "run one more rep, I'll read it when I'm back"
-            // line genuinely cannot anchor to data that does not exist — that is
-            // the correct cold coach response, so these do not block the offline
-            // path (the live path, with real data + a real turn, still enforces
-            // them on model output).
-            return .deterministicReply(candidate, cause: failure)
-        case .tooLong, .roboticPhrase, .bareClarification, .defensiveProductLanguage,
-             .menuInsteadOfDecision, .missedTrustRepair, .overclaimsEvidence,
-             .unverifiedQuotedUserSpeech, .unengagedUserSpeechClaim:
-            // Objective failures the deterministic builder must never produce on
-            // ANY path. If a future copy change ever did, the user gets the
-            // honest `.empty` notice instead of a sub-bar substitute.
-            return .failure(.empty)
-        }
-    }
-
-    /// Second-choice fallback when the primary deterministic line would repeat
-    /// the previous coach bubble verbatim. Composes lead + steady line
-    /// (skipping the verdict/case body the primary used); if even that matches
-    /// the previous bubble, falls to a neutral honest line. Every candidate is
-    /// held to the same whitespace/exclamation/length contract as the primary.
-    nonisolated static func alternateDeterministicReply(
-        context: ChatFallbackContext,
-        avoidingNormalized previous: String
-    ) -> String {
-        let persona = CoachPersona.persona(for: context.voice)
-        let candidates = [
-            "\(persona.reflectionLead) \(steadyFallback(persona: persona))",
-            "Still working without my full read here. Your reps are saved — run another and I'll compare them properly on the next pass."
-        ]
-        var last = candidates[candidates.count - 1]
-        for raw in candidates {
-            var text = PostRepCoachNoteService.collapseWhitespace(in: raw)
-            text = PostRepCoachNoteService.ensureNoExclamations(in: text)
-            text = PostRepCoachNoteService.truncate(text, max: 220)
-            last = text
-            if normalizedFallbackText(text) != previous { return text }
-        }
-        return last
-    }
-
-    /// Case/whitespace-insensitive comparison key for the repeat-guard.
-    nonisolated static func normalizedFallbackText(_ value: String?) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty else { return nil }
-        return trimmed.lowercased()
-    }
-
-    /// Evidence floor for stating a pace FACT in the offline fallback. Mirrors
-    /// the `wordCount >= 6` floor `PracticeEvaluator.paceSnapshot` uses to refuse
-    /// a pace label — below it the pace number is meaningless (1 word / 60s
-    /// rounds to 1 WPM), so the chat fallback must not assert one.
-    nonisolated static let minWordsForPaceFact = 6
-
-    /// A believable conversational-speech band. Even when the word-count floor
-    /// is met, a WPM outside human speaking range (a sensor glitch, a clipped
-    /// duration) must never be stated as a fact. The window is deliberately wide
-    /// — it only rejects values that are physically implausible for connected
-    /// speech, leaving the slow/fast COACHING bands (`< 95`, `> 170`) intact.
-    nonisolated static func isSanePaceFact(_ wpm: Int) -> Bool {
-        (40...260).contains(wpm)
-    }
-
-    /// The single body sentence. Priority:
-    /// 1. Substance verdict over the most-recent timed rep, when above floor.
-    /// 2. A delivery FACT (pace / fillers) when present but the verdict is below
-    ///    floor — never a substance claim, and never a pace number below the
-    ///    word-count floor or outside a believable speaking range.
-    /// 3. A case-advancing reflection when there's no rep to read.
-    /// 4. A steady in-voice fallback that asserts nothing it cannot support.
-    private nonisolated static func bodySentence(
-        context: ChatFallbackContext,
-        persona: CoachPersona
-    ) -> String {
-        // 1) Substance verdict — only above the shared evidence floor.
-        if let transcript = context.recentTimedTranscript,
-           !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let read = PracticeEvaluator.promptRelevance(
-                prompt: context.recentTimedPrompt?.isEmpty == false ? context.recentTimedPrompt : nil,
-                transcript: transcript
-            )
-            if let verdict = PracticeEvaluator.promptAnswerVerdict(for: read) {
-                return verdictSentence(verdict)
-            }
-            // Below the substance floor — fall through to a delivery fact.
-        }
-
-        // 2) Delivery fact (no substance claim). Pace band first, then fillers.
-        //
-        // GATE: only judge pace when the rep cleared the SAME evidence floor
-        // `PracticeEvaluator.paceSnapshot` uses to refuse a pace label
-        // (`wordCount >= 6`). A degenerate near-empty rep (1 word over a full
-        // minute → round(1.0) = 1 WPM) would otherwise emit "pace ran slow at
-        // 1 WPM" — a nonsensical number stated with false confidence. Below the
-        // floor the pace is simply unknown, so we omit the number entirely and
-        // fall through to the filler fact / case line / steady fallback. A
-        // 0-valued `recentTimedWordCount` (unknown rep length) is treated as
-        // below-floor for the same reason.
-        let paceJudgeable = context.recentTimedWordCount >= Self.minWordsForPaceFact
-            && Self.isSanePaceFact(context.recentWordsPerMinute)
-        if paceJudgeable {
-            if context.recentWordsPerMinute > 170 {
-                return "On your last timed rep the pace ran fast at \(context.recentWordsPerMinute) WPM, so add a beat between points and each one gets room to land."
-            }
-            if context.recentWordsPerMinute < 95 {
-                return "On your last timed rep the pace ran slow at \(context.recentWordsPerMinute) WPM, so lift the energy a touch and the line carries."
-            }
-        }
-        if context.recentFillerCount >= 4 {
-            return "Fillers crept into your last timed rep, so try a deliberate pause where one wants to go — silence reads as composure."
-        }
-
-        // 3) No rep to read — advance the standing case if we have one. (Copy
-        // deliberately avoids "let's", which the brand-voice contract rejects.)
-        if let next = bounded(context.nextQuestion) {
-            return "I don't have a fresh rep in front of me, so the open thread is still the one to pull on: \(lowerFirst(next))"
-        }
-        if bounded(context.hypothesis) != nil {
-            return "I don't have a fresh rep in front of me, but the working read still stands."
-        }
-
-        // 4) Steady in-voice fallback — asserts nothing it cannot support.
-        return steadyFallback(persona: persona)
-    }
-
-    /// Per-verdict body, mirroring the shared positional language used by
-    /// `AICoachService.deterministicFeedback` / the AI rubric so every surface
-    /// agrees. Association on the rep's own words only — never a confident
-    /// off-topic claim.
-    private nonisolated static func verdictSentence(_ verdict: PracticeEvaluator.PromptAnswerVerdict) -> String {
-        switch verdict {
-        case .answered:
-            return "Your last timed rep led with the point — the answer was right up front, so the work now is closing as cleanly as you opened."
-        case .partial:
-            return "On your last timed rep the question's key terms didn't clearly lead, so make your main point the first sentence and spend the rest supporting it."
-        case .buried:
-            return "Your last timed rep had the answer in it, but it arrived late — lead with the point in the first sentence, then build the case behind it."
-        }
-    }
-
-    /// The standing case folded into one association-only line. Order:
-    /// success measure (the most concrete target) > observable target >
-    /// hypothesis. Empty when there is no durable case so nothing is invented.
-    private nonisolated static func standingCaseLine(
-        context: ChatFallbackContext,
-        persona: CoachPersona
-    ) -> String {
-        if let measure = bounded(context.successMeasure) {
-            return "That ties to where we're aiming: \(lowerFirst(measure))."
-        }
-        if let target = bounded(context.observableTarget) {
-            return "Keep it pointed at the target we set: \(lowerFirst(target))."
-        }
-        if let hypothesis = bounded(context.hypothesis) {
-            return "It fits the read we're carrying: \(lowerFirst(hypothesis))."
-        }
-        return ""
-    }
-
-    /// A steady, in-voice fallback line when there is neither a rep nor a case
-    /// to ground against. Asserts nothing about the user's last rep.
-    private nonisolated static func steadyFallback(persona: CoachPersona) -> String {
-        switch persona.voice {
-        case .concise:
-            return "Pick one idea, make it the first sentence of your next rep, and cut the rest."
-        case .storytelling:
-            return "Run one more rep and give me the arc — open on the point, then carry it through."
-        // No connectivity claims in this copy: the same lines serve genuine
-        // offline turns AND online quality-gate fallbacks (the offline chip
-        // is what says "offline", when true — the text must not).
-        case .authoritative, .executive, .persuasive:
-            return "Run one more rep with a single clear point up front, and I'll give it a full read."
-        case .warm, .none:
-            return "Run one more rep when you're ready — lead with your point, and I'll give it a full read."
-        }
-    }
-
-    // MARK: - Small string helpers (deterministic fallback)
-
-    /// Trim + non-empty guard, returning nil for absent/blank input so the
-    /// builder never folds in an empty fragment. Mirrors the `bounded(_:)`
-    /// idiom used by `CoachCaseFile`.
-    private nonisolated static func bounded(_ value: String?) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty else { return nil }
-        return trimmed
-    }
-
-    /// Lowercase only the first character so a summarized fragment reads
-    /// naturally mid-sentence ("Hold under 4%…" → "hold under 4%…"). Leaves
-    /// the rest untouched so acronyms / numbers are preserved. Pure.
-    private nonisolated static func lowerFirst(_ value: String) -> String {
-        guard let first = value.first else { return value }
-        return first.lowercased() + value.dropFirst()
     }
 
     // MARK: - Provider plumbing
@@ -1638,24 +1259,6 @@ actor AICoachChatService {
             return joined.isEmpty ? .empty : .text(joined)
         case .none:
             return .empty
-        }
-    }
-
-    /// Maps no-text extraction states into user-visible outcomes. A successful
-    /// provider response with no usable text gets the grounded deterministic
-    /// coach bubble; a length-truncated response remains an honest notice.
-    static func outcomeForMissingExtractedReply(
-        _ extraction: ChatExtractionResult,
-        context: ChatFallbackContext,
-        latestUserTurn: String? = nil
-    ) -> ChatOutcome? {
-        switch extraction {
-        case .text:
-            return nil
-        case .empty:
-            return deterministicReplyOutcome(failure: .empty, context: context, latestUserTurn: latestUserTurn)
-        case .lengthTruncated:
-            return .failure(.empty)
         }
     }
 

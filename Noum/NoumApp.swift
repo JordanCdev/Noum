@@ -96,6 +96,13 @@ struct NoumApp: App {
             FirstRepCelebrationManager.shared.resetForDebug()
             FirstRunOnboardingManager.shared.resetForDebug()
         }
+        // Keep chat-flow UI tests deterministic. The seeded profile is
+        // intentionally rich, but the Ask Noum thread itself should start
+        // clean so tests don't inherit hand-test conversations from the
+        // simulator's per-account defaults.
+        if args.contains("UI_TESTING_CLEAR_ASK_NOUM") {
+            AskNoumStore.shared.clearThread()
+        }
         // `-DeepLink noum://<host>` launch arg lets the noum-screenshots
         // skill drive tab nav via `simctl launch --terminate-running-process`
         // without triggering iOS's "Open in Noum?" confirmation that blocks
