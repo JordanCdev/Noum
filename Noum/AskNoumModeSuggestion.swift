@@ -61,4 +61,22 @@ enum AskNoumModeSuggestion {
         default:                   return "Start this exercise"
         }
     }
+
+    /// PracticeModeQuickStart counterpart for a detected destination.
+    /// Ask Noum uses this before navigation so a coach-prescribed drill
+    /// behaves like a human coach handing you the rep, not another setup stop.
+    static func quickStartMode(for destination: AppDestination) -> PracticeMode? {
+        switch destination {
+        case .timedPractice:
+            return .timed
+        case .suddenDeathPractice:
+            return .suddenDeath
+        case .ahCounterPractice:
+            return .ahCounter
+        case .imPractice:
+            return .imConversation
+        default:
+            return nil
+        }
+    }
 }

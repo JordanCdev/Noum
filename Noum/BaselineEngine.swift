@@ -416,6 +416,311 @@ struct CommunicationBaseline: Codable, Equatable {
     }
 }
 
+// MARK: - Coach Baseline Map
+
+/// Coach-facing dimensions for a compact baseline map.
+///
+/// The map is intentionally about evidence coverage first. A human coach
+/// would say "I can now read your pace and filler patterns, but vocal range is
+/// still thin" before turning early telemetry into a confident verdict.
+enum BaselineCoachDimension: String, CaseIterable, Identifiable, Equatable {
+    case fillerControl
+    case paceControl
+    case structure
+    case clarity
+    case composure
+    case vocalRange
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .fillerControl: return "Filler control"
+        case .paceControl: return "Pace control"
+        case .structure: return "Structure"
+        case .clarity: return "Clarity"
+        case .composure: return "Composure"
+        case .vocalRange: return "Vocal range"
+        }
+    }
+
+    var shortTitle: String {
+        switch self {
+        case .fillerControl: return "Fillers"
+        case .paceControl: return "Pace"
+        case .structure: return "Structure"
+        case .clarity: return "Clarity"
+        case .composure: return "Composure"
+        case .vocalRange: return "Voice"
+        }
+    }
+}
+
+struct BaselineCoachDimensionRead: Equatable, Identifiable {
+    let dimension: BaselineCoachDimension
+    /// 0...1 evidence coverage. This is what the radar primarily visualises.
+    let evidenceProgress: Double
+    /// 0...1 current quality read, nil while the dimension is too thin.
+    let currentScore: Double?
+    let confidence: BaselineConfidence
+    let valueLabel: String?
+
+    var id: BaselineCoachDimension { dimension }
+    var isMeasured: Bool { currentScore != nil }
+}
+
+struct BaselineGoalGapRead: Equatable {
+    let goal: CoachingPriority
+    /// 0...1 proximity to the goal. 1 means at or beyond the target.
+    let proximity: Double
+    let currentLabel: String
+    let targetLabel: String
+
+    var percentLabel: String {
+        "\(Int((proximity * 100).rounded()))%"
+    }
+
+    var summary: String {
+        "\(percentLabel) toward \(goal.title.lowercased())"
+    }
+}
+
+struct BaselineCoachMap: Equatable {
+    static let establishedRepTarget = 10
+
+    let confidence: BaselineConfidence
+    let qualifyingSessionCount: Int
+    let formationProgress: Double
+    let repsUntilEstablished: Int
+    let dimensions: [BaselineCoachDimensionRead]
+    let goalGap: BaselineGoalGapRead?
+    let motivationAnchor: String?
+
+    var measuredDimensionCount: Int {
+        dimensions.filter(\.isMeasured).count
+    }
+
+    var statusTitle: String {
+        switch confidence {
+        case .insufficient: return "Baseline calibrating"
+        case .tentative: return "Early baseline"
+        case .moderate: return "Baseline forming"
+        case .established: return "Baseline established"
+        case .stable: return "Stable coaching read"
+        }
+    }
+
+    var statusDetail: String {
+        if confidence >= .established {
+            return "\(qualifyingSessionCount) qualifying reps. Noum can compare new reps against your own patterns."
+        }
+        if repsUntilEstablished == 1 {
+            return "1 more qualifying rep to establish the baseline."
+        }
+        return "\(repsUntilEstablished) more qualifying reps to establish the baseline."
+    }
+
+    static func make(baseline: CommunicationBaseline, profile: CoachingProfile?) -> BaselineCoachMap {
+        let count = baseline.qualifyingSessionCount
+        let repsUntilEstablished = max(0, establishedRepTarget - count)
+        let formationProgress = clamp(Double(count) / Double(establishedRepTarget))
+
+        return BaselineCoachMap(
+            confidence: baseline.overallConfidence,
+            qualifyingSessionCount: count,
+            formationProgress: formationProgress,
+            repsUntilEstablished: repsUntilEstablished,
+            dimensions: BaselineCoachDimension.allCases.map { read(for: $0, baseline: baseline) },
+            goalGap: profile.flatMap { gap(for: $0.primaryGoal, baseline: baseline) },
+            motivationAnchor: motivationAnchor(for: profile)
+        )
+    }
+
+    private static func read(
+        for dimension: BaselineCoachDimension,
+        baseline: CommunicationBaseline
+    ) -> BaselineCoachDimensionRead {
+        switch dimension {
+        case .fillerControl:
+            return singleStatRead(
+                dimension: dimension,
+                stat: baseline.fillerRate,
+                score: { 1.0 - min($0 / 8.0, 1.0) },
+                valueLabel: { String(format: "%.1f/min", $0) }
+            )
+        case .paceControl:
+            return singleStatRead(
+                dimension: dimension,
+                stat: baseline.pace,
+                score: { paceScore(wpm: $0) },
+                valueLabel: { "\(Int($0.rounded())) WPM" }
+            )
+        case .structure:
+            return singleStatRead(
+                dimension: dimension,
+                stat: baseline.structureQuality,
+                score: { categoryScore($0) },
+                valueLabel: { String(format: "%.1f/3", $0) }
+            )
+        case .clarity:
+            return singleStatRead(
+                dimension: dimension,
+                stat: baseline.clarity,
+                score: { categoryScore($0) },
+                valueLabel: { String(format: "%.1f/3", $0) }
+            )
+        case .composure:
+            return composureRead(baseline: baseline)
+        case .vocalRange:
+            return singleStatRead(
+                dimension: dimension,
+                stat: baseline.pitchVariation,
+                score: { 1.0 - clamp($0) },
+                valueLabel: { "\(Int(((1.0 - clamp($0)) * 100).rounded()))% range" }
+            )
+        }
+    }
+
+    private static func singleStatRead(
+        dimension: BaselineCoachDimension,
+        stat: BaselineStat,
+        score: (Double) -> Double,
+        valueLabel: (Double) -> String
+    ) -> BaselineCoachDimensionRead {
+        BaselineCoachDimensionRead(
+            dimension: dimension,
+            evidenceProgress: evidenceProgress(for: stat.confidence),
+            currentScore: stat.confidence == .insufficient ? nil : clamp(score(stat.value)),
+            confidence: stat.confidence,
+            valueLabel: stat.confidence == .insufficient ? nil : valueLabel(stat.value)
+        )
+    }
+
+    private static func composureRead(baseline: CommunicationBaseline) -> BaselineCoachDimensionRead {
+        var scores: [Double] = []
+        var confidences: [BaselineConfidence] = []
+        var labels: [String] = []
+
+        if baseline.pauseFilledRatio.confidence != .insufficient {
+            scores.append(1.0 - min(baseline.pauseFilledRatio.value / 0.8, 1.0))
+            confidences.append(baseline.pauseFilledRatio.confidence)
+            labels.append("\(Int((baseline.pauseFilledRatio.value * 100).rounded()))% filled pauses")
+        }
+        if baseline.hedgingRate.confidence != .insufficient {
+            scores.append(1.0 - min(baseline.hedgingRate.value / 4.0, 1.0))
+            confidences.append(baseline.hedgingRate.confidence)
+        }
+        if baseline.pauseRate.confidence != .insufficient {
+            // Pause count alone is not "bad"; it just adds weak composure
+            // signal. Keep the cap forgiving so deliberate pausers are not
+            // punished by the map.
+            scores.append(1.0 - min(baseline.pauseRate.value / 10.0, 1.0))
+            confidences.append(baseline.pauseRate.confidence)
+        }
+
+        guard !scores.isEmpty else {
+            return BaselineCoachDimensionRead(
+                dimension: .composure,
+                evidenceProgress: 0,
+                currentScore: nil,
+                confidence: .insufficient,
+                valueLabel: nil
+            )
+        }
+
+        let meanScore = scores.reduce(0, +) / Double(scores.count)
+        let confidence = confidences.max() ?? .insufficient
+        return BaselineCoachDimensionRead(
+            dimension: .composure,
+            evidenceProgress: evidenceProgress(for: confidence),
+            currentScore: clamp(meanScore),
+            confidence: confidence,
+            valueLabel: labels.first ?? "forming"
+        )
+    }
+
+    private static func gap(
+        for goal: CoachingPriority,
+        baseline: CommunicationBaseline
+    ) -> BaselineGoalGapRead? {
+        guard let distance = baseline.measuredDistanceFromGoal(goal) else { return nil }
+        let proximity = clamp(1.0 - distance)
+        let labels = goalLabels(for: goal, baseline: baseline)
+        return BaselineGoalGapRead(
+            goal: goal,
+            proximity: proximity,
+            currentLabel: labels.current,
+            targetLabel: labels.target
+        )
+    }
+
+    private static func goalLabels(
+        for goal: CoachingPriority,
+        baseline: CommunicationBaseline
+    ) -> (current: String, target: String) {
+        switch goal {
+        case .reduceFillers:
+            return (
+                String(format: "%.1f fillers/min", baseline.fillerRate.value),
+                "1.0/min or lower"
+            )
+        case .moreConcise:
+            return (
+                "\(Int(baseline.durationTendency.value.rounded()))s typical answer",
+                "about 45s or less"
+            )
+        case .thinkFaster:
+            return (
+                String(format: "%.1f/10 average score", baseline.averageScore.value),
+                "7.5/10 or higher"
+            )
+        case .calmerDelivery:
+            return (
+                "\(Int((baseline.pauseFilledRatio.value * 100).rounded()))% filled pauses",
+                "20% or lower"
+            )
+        }
+    }
+
+    private static func motivationAnchor(for profile: CoachingProfile?) -> String? {
+        guard let profile else { return nil }
+        let why = profile.whyNowReference
+        let vision = profile.successVisionReference
+        if !why.isEmpty && !vision.isEmpty {
+            return "You started because \(why). The payoff you named: \(vision)."
+        }
+        if !why.isEmpty {
+            return "You started because \(why)."
+        }
+        if !vision.isEmpty {
+            return "The payoff you named: \(vision)."
+        }
+        let brief = profile.coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !brief.isEmpty {
+            return "You wrote: \(brief)."
+        }
+        return nil
+    }
+
+    private static func paceScore(wpm: Double) -> Double {
+        let distance = ConversationalPaceBand.distanceFromTarget(wpm)
+        return 1.0 - min(distance / 70.0, 1.0)
+    }
+
+    private static func categoryScore(_ value: Double) -> Double {
+        clamp((value - 1.0) / 2.0)
+    }
+
+    private static func evidenceProgress(for confidence: BaselineConfidence) -> Double {
+        guard BaselineConfidence.stable.rawValue > 0 else { return 0 }
+        return clamp(Double(confidence.rawValue) / Double(BaselineConfidence.stable.rawValue))
+    }
+
+    private static func clamp(_ value: Double) -> Double {
+        min(max(value, 0), 1)
+    }
+}
+
 // MARK: - Pressure Profile
 
 struct PressureProfile: Codable, Equatable {

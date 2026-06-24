@@ -38,6 +38,7 @@ enum CoachReplyPipeline {
 
         let sessionStore = PracticeSessionStore.shared
         let coachMemoryStore = CoachMemoryStore.shared
+        let weeklyCheckInDue = !sessionStore.sessions.isEmpty && CoachCheckInStore.shared.isCheckInDue()
         let recentProofs = ProofMomentStore.shared.recent(limit: 3)
         let history = AskNoumStore.shared.replayForModel
         let latestUserIndex = history.lastIndex { $0.role == .user }
@@ -74,6 +75,7 @@ enum CoachReplyPipeline {
             snapshotsForTrends: snapshots,
             pendingGoalIntent: pendingGoalIntent,
             recentCheckIns: CoachCheckInStore.shared.recentForContext(limit: 2),
+            weeklyCheckInDue: weeklyCheckInDue,
             latestUserTurn: latestUserTurn,
             previousCoachReply: previousCoachReply,
             recentUserTurns: recentUserTurns

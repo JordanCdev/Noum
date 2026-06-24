@@ -240,6 +240,32 @@ final class ScreenshotTour: XCTestCase {
     }
 
     @MainActor
+    func testCaptureProfileBaselineMapOnly() throws {
+        let profileApp = launchSeededAt("noum://profile")
+        XCTAssertTrue(profileApp.descendants(matching: .any)["profile.screen"].waitForExistence(timeout: 10))
+
+        let evidenceToggle = profileApp.descendants(matching: .any)["profile.evidenceHub.toggle"].firstMatch
+        if !evidenceToggle.waitForExistence(timeout: 3) {
+            profileApp.swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertTrue(evidenceToggle.waitForExistence(timeout: 5))
+        guard evidenceToggle.exists else {
+            profileApp.terminate()
+            return
+        }
+
+        evidenceToggle.tap()
+        let baselineMap = profileApp.descendants(matching: .any)["profile.evidence.baselineMap"].firstMatch
+        scrollUntilVisible(baselineMap, in: profileApp, maxSwipes: 5)
+        XCTAssertTrue(baselineMap.exists)
+
+        Thread.sleep(forTimeInterval: 0.8)
+        attach(profileApp, name: "profile-baseline-map")
+        profileApp.terminate()
+    }
+
+    @MainActor
     func testCaptureSuddenDeathResults() throws {
         captureSuddenDeathResult(
             launchArgument: "UI_TESTING_SUDDEN_DEATH_RESULT_FILLER",
@@ -260,6 +286,49 @@ final class ScreenshotTour: XCTestCase {
         captureOverlayHarness(kind: "personalBest", name: "34-personal-best-celebration")
         captureOverlayHarness(kind: "levelUp", name: "35-level-up-celebration")
         captureOverlayHarness(kind: "achievementUnlock", name: "36-achievement-unlock-celebration")
+    }
+
+    /// Focused capture for the Impromptu setup surface. The full tour can fail
+    /// on unrelated screens, so this keeps the primary pressure-drill entry
+    /// independently verifiable.
+    @MainActor
+    func testCaptureTimedSetupOnly() throws {
+        let app = launchSeededAt("noum://train")
+
+        XCTAssertTrue(openModeSetup("practiceMode.timed", in: app))
+        guard app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 8) else {
+            app.terminate()
+            return
+        }
+
+        Thread.sleep(forTimeInterval: 1.2)
+        attach(app, name: "14-timed-setup")
+
+        let settingsToggle = app.buttons["timedPractice.settings.toggle"]
+        XCTAssertTrue(settingsToggle.waitForExistence(timeout: 3))
+        if settingsToggle.exists {
+            settingsToggle.tap()
+            XCTAssertTrue(app.descendants(matching: .any)["timedPractice.settings.liveTranscript.locked"].waitForExistence(timeout: 5))
+            Thread.sleep(forTimeInterval: 0.8)
+            attach(app, name: "14b-timed-settings")
+            app.swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 0.6)
+            attach(app, name: "14c-timed-settings-tools")
+
+            let lockedTranscript = app.buttons["timedPractice.settings.liveTranscript.locked"]
+            XCTAssertTrue(lockedTranscript.waitForExistence(timeout: 3))
+            if lockedTranscript.exists {
+                lockedTranscript.tap()
+                let paywallRoot = app.descendants(matching: .any)["paywall.root"]
+                let paywallTitle = app.staticTexts["Upgrade to Pro"]
+                XCTAssertTrue(
+                    paywallRoot.waitForExistence(timeout: 5)
+                    || paywallTitle.waitForExistence(timeout: 2)
+                )
+            }
+        }
+
+        app.terminate()
     }
 
     // MARK: - Helpers
@@ -301,13 +370,7 @@ final class ScreenshotTour: XCTestCase {
     /// setup view it lands on. Idempotent — caller must end on the picker.
     @MainActor
     private func captureModeSetup(_ app: XCUIApplication, modeID: String, name: String) {
-        let modeRow = revealPracticeMode(modeID, in: app)
-        guard modeRow.waitForExistence(timeout: 3) else { return }
-        modeRow.tap()
-        Thread.sleep(forTimeInterval: 0.4)
-        let startCTA = app.buttons["practiceModes.start"]
-        guard startCTA.waitForExistence(timeout: 3) else { return }
-        startCTA.tap()
+        guard openModeSetup(modeID, in: app) else { return }
         Thread.sleep(forTimeInterval: 1.5)
         attach(app, name: name)
         // Back to picker for the next mode capture
@@ -370,6 +433,28 @@ final class ScreenshotTour: XCTestCase {
     }
 
     @MainActor
+    private func openModeSetup(_ modeID: String, in app: XCUIApplication) -> Bool {
+        if modeID == "practiceMode.timed" {
+            let recommendedBegin = app.buttons["practiceModes.recommendedHero.begin"]
+            if recommendedBegin.waitForExistence(timeout: 2),
+               recommendedBegin.label.contains("Timed") {
+                recommendedBegin.tap()
+                return true
+            }
+        }
+
+        let modeRow = revealPracticeMode(modeID, in: app)
+        guard modeRow.waitForExistence(timeout: 3) else { return false }
+        modeRow.tap()
+        Thread.sleep(forTimeInterval: 0.4)
+
+        let startCTA = app.buttons["practiceModes.start"]
+        guard startCTA.waitForExistence(timeout: 3) else { return false }
+        startCTA.tap()
+        return true
+    }
+
+    @MainActor
     private func revealPracticeMode(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
         let modeRow = app.buttons[identifier]
         if modeRow.waitForExistence(timeout: 2) { return modeRow }
@@ -400,6 +485,19 @@ final class ScreenshotTour: XCTestCase {
         }
 
         return reviewCard
+    }
+
+    @MainActor
+    private func scrollUntilVisible(_ element: XCUIElement, in app: XCUIApplication, maxSwipes: Int) {
+        let visibleFrame = app.frame.insetBy(dx: 0, dy: 96)
+
+        for _ in 0..<maxSwipes {
+            if element.exists, visibleFrame.intersects(element.frame) {
+                return
+            }
+            app.swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 0.45)
+        }
     }
 
     @MainActor

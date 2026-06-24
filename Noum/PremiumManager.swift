@@ -481,6 +481,7 @@ struct PaywallView: View {
                 }
             }
         }
+        .accessibilityIdentifier("paywall.root")
     }
 
     private func featureRow(icon: String, title: String, description: String) -> some View {

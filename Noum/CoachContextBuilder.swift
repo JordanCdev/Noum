@@ -67,10 +67,11 @@ enum CoachContextBuilder {
         - Structured Ask Noum reply shape is enabled for substantive coaching \
         turns: make the reply read in this order — read -> evidence -> next \
         move. Visible labels are allowed only when they help scanning, e.g. \
-        **Read:** and **Move:**. The evidence and next move must be joined by \
-        a coaching reason — why this signal makes this move worth testing — \
-        not dropped next to each other. Greetings, off-topic noise, explicit \
-        list/plan requests, and pure preference turns may break the shape.
+        **Read:** and **Move:**. They are scanning aids, not visible section \
+        labels. The evidence and next move must be joined by a coaching reason \
+        — why this signal makes this move worth testing — not dropped next to \
+        each other. Greetings, off-topic noise, explicit list/plan requests, \
+        and pure preference turns may break the shape.
         - Evidence rule: if you quote something the user said, only quote \
         text from VERIFIED PROOFS, an exact transcript slice in the context, \
         or the user's latest turn. If you cannot verify the quote, cite a \
@@ -109,7 +110,8 @@ enum CoachContextBuilder {
         \(AICoachChatService.roboticPhrases.map { "\"\($0)\"" }.joined(separator: ", ")).
         - Reply format: text chat should be compact and easy to scan. Default \
         to 1-4 short lines, usually under 75 words. Voice read-aloud should be \
-        tighter still.
+        tighter still; greetings or simple preference turns should usually be \
+        1-2 lines.
         - Use lightweight Markdown when it reduces reading: **bold lead-ins**, \
         bullets for 2-3 options or observations, and numbered steps only for a \
         requested plan. Do not write block paragraphs. Do not add headings \
@@ -180,6 +182,11 @@ enum CoachContextBuilder {
            stronger celebration for wins, lighter load for fatigue. Use \
            plain language for emotions — never clinical labels, never "I \
            detect", never "your emotional state is".
+        9. When GOAL includes "Why now" or "Their vision of success", use it \
+           like a human coach would: sparingly, at moments of choice, fatigue, \
+           doubt, or recommitment. Mirror the user's own reason as an anchor, \
+           not as guilt or hype. Do not quote it every turn; do not weaponize \
+           it after a bad rep.
 
         Senior-coach examples to copy in shape, not words:
         - User: "Hi" -> "Good to have you back. The useful move is to stay \
@@ -420,6 +427,8 @@ enum CoachContextBuilder {
     ///   • REAL-WORLD TRANSFER — user-reported outcome and perceived
     ///     counterpart response from completed Big Moments. Bounded to
     ///     the most recent 2 and explicitly labelled subjective evidence.
+    ///   • CHECK-IN OPPORTUNITY — due-only guidance for organically asking
+    ///     one weekly check-in question inside chat instead of blocking setup.
     static func userContext(
         profile: CoachingProfile?,
         baseline: CommunicationBaseline,
@@ -459,6 +468,10 @@ enum CoachContextBuilder {
         // bidirectional answers (hardest / outside-app transfer / drill
         // verdict). Defaults to empty so existing callers compile unchanged.
         recentCheckIns: [CoachCheckIn] = [],
+        // F1b — due-only chat guidance. The store remains the cadence owner;
+        // this pure context line just tells the coach when a weekly check-in
+        // would be timely inside the conversation.
+        weeklyCheckInDue: Bool = false,
         // H1 — optional current-turn frame inputs. `CoachReplyPipeline`
         // derives these from the replay history so Ask Noum can tell the
         // model what coaching move THIS turn needs (repair, direct next move,
@@ -527,6 +540,13 @@ enum CoachContextBuilder {
             if !reference.isEmpty {
                 lines.append("- Style reference (who they want to sound like): \(reference)")
             }
+
+            let signupMemory = signupMemoryContextLines(for: profile)
+            if !signupMemory.isEmpty {
+                lines.append("")
+                lines.append("SIGNUP MEMORY")
+                lines.append(contentsOf: signupMemory)
+            }
         } else {
             lines.append("")
             lines.append("GOAL")
@@ -589,6 +609,12 @@ enum CoachContextBuilder {
             lines.append("WEEKLY CHECK-IN (user-reported)")
             lines.append(contentsOf: latestCheckIn.coachContextLines)
             lines.append("- Use these to ask a sharper follow-up or adapt the plan; treat the drill verdict as the user's read, not proof of causation.")
+        }
+
+        if weeklyCheckInDue {
+            lines.append("")
+            lines.append("CHECK-IN OPPORTUNITY")
+            lines.append("- A weekly check-in is due. Do not interrupt practice, force a form, or open with this if the user is trying to start a rep. In chat, if the user's turn is broad, ask one concise human-coach question about what felt hardest this week, where it showed up outside the app, or whether the current drill is still helping.")
         }
 
         let liveFrame = liveCoachingFrameLines(
@@ -4114,8 +4140,10 @@ enum CoachContextBuilder {
     //
     // Signal priority (first match wins, cap 3 chips at ≤60 chars each):
     //   1. BigMoment active → prep-for-event chips anchored to category
-    //   2. Persistent blockers from baseline → targeted weakness chip
-    //   3. Generic voice-default fallback
+    //   2. Weekly check-in due → optional reflective starter
+    //   3. Signup motivation present → reconnect-to-why starter
+    //   4. Persistent blockers from baseline → targeted weakness chip
+    //   5. Generic voice-default fallback
     //
     // This overload is what the view calls. The old `starterPrompts(for:)`
     // remains as the deterministic catalog for tests and the AI chip fallback.
@@ -4129,7 +4157,9 @@ enum CoachContextBuilder {
         bigMoment: BigMoment?,
         baseline: CommunicationBaseline,
         voice: SpeakingStyleGoal?,
-        rotation: Int = 0
+        rotation: Int = 0,
+        profile: CoachingProfile? = nil,
+        weeklyCheckInDue: Bool = false
     ) -> [String] {
         var chips: [String] = []
 
@@ -4148,7 +4178,21 @@ enum CoachContextBuilder {
             }
         }
 
-        // Signal 2 — weakest blocker from baseline. One chip max so it
+        // Signal 2 — weekly check-in. This replaces the old pre-rep modal
+        // rhythm with a chat-native, optional coach moment.
+        if weeklyCheckInDue, chips.count < 3 {
+            chips.append("Check in on this week.")
+        }
+
+        // Signal 3 — signup motivation. The user's why-now / success vision
+        // was captured when motivation was highest; surface it as an optional
+        // conversation starter, not as guilt.
+        if chips.count < 3,
+           let motivationPrompt = motivationStarterPrompt(for: profile) {
+            chips.append(motivationPrompt)
+        }
+
+        // Signal 4 — weakest blocker from baseline. One chip max so it
         // doesn't crowd out the BigMoment prompts. Phrasing alternates by
         // rotation parity so the line reads fresh across days.
         if chips.count < 3,
@@ -4179,6 +4223,17 @@ enum CoachContextBuilder {
         }
 
         return Array(chips.prefix(3))
+    }
+
+    private static func motivationStarterPrompt(for profile: CoachingProfile?) -> String? {
+        guard let profile else { return nil }
+        if !profile.successVisionReference.isEmpty {
+            return "Reconnect me to why I started."
+        }
+        if !profile.whyNowReference.isEmpty {
+            return "Remind me why this matters."
+        }
+        return nil
     }
 
     // MARK: - AI-tailored starter prompts (empty-state)
@@ -4213,6 +4268,8 @@ enum CoachContextBuilder {
         voice: SpeakingStyleGoal?,
         bigMoment: BigMoment?,
         baseline: CommunicationBaseline,
+        profile: CoachingProfile? = nil,
+        weeklyCheckInDue: Bool = false,
         recentSessionDigest: String? = nil,
         count: Int = 3
     ) async -> [String]? {
@@ -4229,6 +4286,8 @@ enum CoachContextBuilder {
             voice: voice,
             bigMoment: bigMoment,
             baseline: baseline,
+            profile: profile,
+            weeklyCheckInDue: weeklyCheckInDue,
             recentSessionDigest: recentSessionDigest,
             count: count
         )
@@ -4298,11 +4357,16 @@ enum CoachContextBuilder {
     - No leading directive verbs like "Tell me", "Describe", "Explain", \
     "Discuss" — write as the user's own opening question or short ask.
     - Anchor to the user's situation: if a real upcoming moment is given, at \
-    least one prompt preps for it; if a recent rep is given, at least one \
-    references what just happened (the score, theme, intent, or weak area). \
-    Otherwise lean on the weakest dimension and the voice tone.
+      least one prompt preps for it; if a recent rep is given, at least one \
+      references what just happened (the score, theme, intent, or weak area). \
+      Otherwise lean on the weakest dimension and the voice tone.
+    - If weekly check-in is due, one prompt may invite a check-in. Keep it \
+      optional and conversational, never like a form.
+    - If original motivation or success vision is provided and there is no \
+      urgent upcoming moment, one prompt may help the user reconnect to why \
+      they started. Do not use guilt, hype, or shame.
     - Tailor to the voice tone. A user training authoritative gets \
-    verdict-shaped openers; warm gets felt-experience asks; concise gets \
+      verdict-shaped openers; warm gets felt-experience asks; concise gets \
     clipped asks; persuasive gets reasoning asks; executive gets top-line \
     asks; storytelling gets arc-shaped asks.
     - Output only the prompts themselves, separated by newlines.
@@ -4312,6 +4376,8 @@ enum CoachContextBuilder {
         voice: SpeakingStyleGoal?,
         bigMoment: BigMoment?,
         baseline: CommunicationBaseline,
+        profile: CoachingProfile?,
+        weeklyCheckInDue: Bool,
         recentSessionDigest: String?,
         count: Int
     ) -> String {
@@ -4331,6 +4397,21 @@ enum CoachContextBuilder {
         // Weakest baseline dimension — single source of truth.
         if let weakest = PracticeTopics.weakestDimensionLabel(for: baseline) {
             lines.append("Weakest dimension right now: \(weakest).")
+        }
+
+        if weeklyCheckInDue {
+            lines.append("Weekly check-in: due. Keep it optional and conversational.")
+        }
+
+        if let profile {
+            let whyNow = profile.whyNowReference
+            if !whyNow.isEmpty {
+                lines.append("Original why-now: \(whyNow)")
+            }
+            let vision = profile.successVisionReference
+            if !vision.isEmpty {
+                lines.append("Original success vision: \(vision)")
+            }
         }
 
         // Recent-rep digest (already privacy-bounded by the caller —
@@ -5832,6 +5913,34 @@ enum CoachContextBuilder {
         case .freezing:    return "freezing"
         case .rushing:     return "rushing"
         }
+    }
+
+    /// Signup-memory lines for the coach context.
+    ///
+    /// This is not a motivational slogan generator. It preserves the user's
+    /// own capture-time wording and tells the coach when to use it: when
+    /// motivation, drift, fear, or "why am I doing this?" comes up. That keeps
+    /// the reminder human and situational rather than a nag.
+    static func signupMemoryContextLines(for profile: CoachingProfile) -> [String] {
+        var lines: [String] = []
+        let brief = profile.coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines)
+        let why = profile.whyNowReference
+        let vision = profile.successVisionReference
+
+        if !brief.isEmpty {
+            lines.append("- What they wrote at signup: \(brief)")
+        }
+        if !why.isEmpty {
+            lines.append("- Felt stakes / why it mattered then: \(why)")
+        }
+        if !vision.isEmpty {
+            lines.append("- Future they wanted practice to unlock: \(vision)")
+        }
+
+        if !lines.isEmpty {
+            lines.append("- Use this occasionally when motivation, avoidance, confidence, or drift is relevant. Quote their wording if useful; do not bring it up every turn and do not invent an emotion they did not state.")
+        }
+        return lines
     }
 
     // MARK: - Helpers

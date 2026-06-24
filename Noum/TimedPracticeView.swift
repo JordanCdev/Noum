@@ -167,48 +167,6 @@ private enum TimedSessionPhase: Equatable {
     case speaking
 }
 
-private enum ImpromptuSetupMode: String, CaseIterable, Identifiable {
-    case classic
-    case coach
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .classic: return "Classic"
-        case .coach: return "Coach"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .classic: return "Pure focus. No distractions."
-        case .coach: return "Full feedback and transcript."
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .classic: return "sparkles"
-        case .coach: return "text.magnifyingglass"
-        }
-    }
-
-    var badge: String {
-        switch self {
-        case .classic: return "Free"
-        case .coach: return "Pro"
-        }
-    }
-
-    var badgeColor: Color {
-        switch self {
-        case .classic: return AppColor.brandBlue
-        case .coach: return AppColor.pro
-        }
-    }
-}
-
 // MARK: - Background Layer (extracted for render isolation)
 
 @available(iOS 17.0, macOS 12.0, *)
@@ -392,131 +350,115 @@ private struct SpotlightOrbView: View {
     }
 }
 
-// MARK: - Settings Card (extracted for render isolation)
+// MARK: - Impromptu Settings Panel (extracted for render isolation)
 
 @available(iOS 17.0, macOS 12.0, *)
-private struct SettingsCardView: View {
-    @Binding var selectedMode: ImpromptuSetupMode
+private struct ImpromptuSettingsPanel: View {
     @Binding var keepPromptVisible: Bool
     @Binding var timerDisplay: TimerDisplayOption
     @Binding var enableThinkingTime: Bool
     @Binding var showLiveTranscript: Bool
     @Binding var showFillerWords: Bool
     @Binding var enableVideoRecording: Bool
+    @Binding var showPaywall: Bool
+    @ObservedObject var premium: PremiumManager
     @ObservedObject var videoManager: VideoRecordingManager
-    @AppStorage("timedPractice.showSettings") private var showSettings: Bool = true
+
+    private let accent = AppColor.modeTimed
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DisclosureGroup(isExpanded: $showSettings) {
-                Divider()
-                    .padding(.horizontal, 16)
+            HStack(spacing: 10) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(accent)
+                    .frame(width: 34, height: 34)
+                    .background(accent.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
 
-                // Shared settings — available in all modes
-                if selectedMode == .coach {
-                    toggleRow(
-                        icon: "brain.head.profile",
-                        iconColor: .blue,
-                        title: "Thinking time",
-                        caption: "15 seconds to prepare",
-                        isOn: $enableThinkingTime
-                    )
-
-                    thinDivider
-                }
-
-                toggleRow(
-                    icon: "eye",
-                    iconColor: .indigo,
-                    title: "Show prompt while speaking",
-                    caption: "Keep the topic visible",
-                    isOn: $keepPromptVisible
-                )
-
-                thinDivider
-
-                if selectedMode == .coach {
-                    toggleRow(
-                        icon: "waveform.badge.magnifyingglass",
-                        iconColor: .red,
-                        title: "Filler word tracking",
-                        caption: "Counts verbal crutches live",
-                        isOn: $showFillerWords
-                    )
-
-                    thinDivider
-                }
-
-                timerPicker
-
-                thinDivider
-
-                toggleRow(
-                    icon: "text.quote",
-                    iconColor: .teal,
-                    title: "Live transcript",
-                    caption: enableVideoRecording ? "Not available with video" : "See your words in real time",
-                    isOn: Binding(
-                        get: { showLiveTranscript },
-                        set: { newValue in
-                            showLiveTranscript = newValue
-                            if newValue { enableVideoRecording = false }
-                        }
-                    ),
-                    disabled: enableVideoRecording
-                )
-
-                thinDivider
-
-                toggleRow(
-                    icon: "video.fill",
-                    iconColor: .pink,
-                    title: "Record video",
-                    caption: showLiveTranscript ? "Not available with transcript" : "Full-screen camera while speaking",
-                    isOn: Binding(
-                        get: { enableVideoRecording },
-                        set: { newValue in
-                            enableVideoRecording = newValue
-                            if newValue {
-                                showLiveTranscript = false
-                                Task {
-                                    let hasPermission = await VideoRecordingManager.requestCameraPermission()
-                                    guard hasPermission else {
-                                        await MainActor.run { enableVideoRecording = false }
-                                        return
-                                    }
-                                    _ = await videoManager.prepareSession()
-                                }
-                            } else {
-                                videoManager.cleanup()
-                            }
-                        }
-                    ),
-                    disabled: showLiveTranscript
-                )
-
-                // Removed classic-only coach upsell since recording is now available in all modes
-            } label: {
-                HStack {
-                    Text("Preferences")
-                        .font(.subheadline.weight(.semibold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Rep settings")
+                        .font(Typography.cardLabel)
+                    Text("Defaults are ready.")
+                        .font(Typography.caption)
                         .foregroundStyle(.secondary)
-                    Spacer()
                 }
+
+                Spacer()
             }
-            .tint(.secondary)
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
-            .padding(.bottom, showSettings ? 0 : 18)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.top, Spacing.lg)
+            .padding(.bottom, Spacing.sm)
+
+            freeToggleRow(
+                icon: "timer",
+                iconColor: .orange,
+                title: "Prep countdown",
+                caption: "15 seconds",
+                isOn: $enableThinkingTime
+            )
+
+            thinDivider
+
+            freeToggleRow(
+                icon: "eye",
+                iconColor: .indigo,
+                title: "Prompt visible",
+                caption: "During the rep",
+                isOn: $keepPromptVisible
+            )
+
+            thinDivider
+
+            timerPicker
+
+            coachToolsHeader
+
+            premiumToggleRow(
+                icon: "text.quote",
+                iconColor: .teal,
+                title: "Live transcript",
+                caption: enableVideoRecording ? "Video is on" : "Words on screen",
+                isOn: Binding(
+                    get: { showLiveTranscript },
+                    set: handleLiveTranscriptChange
+                ),
+                disabled: enableVideoRecording,
+                accessibilityID: "timedPractice.settings.liveTranscript"
+            )
+
+            thinDivider
+
+            premiumToggleRow(
+                icon: "waveform.badge.magnifyingglass",
+                iconColor: .red,
+                title: "Filler tracking",
+                caption: "Live count",
+                isOn: $showFillerWords,
+                accessibilityID: "timedPractice.settings.fillerTracking"
+            )
+
+            thinDivider
+
+            premiumToggleRow(
+                icon: "video.fill",
+                iconColor: .pink,
+                title: "Record video",
+                caption: showLiveTranscript ? "Transcript is on" : "Camera review",
+                isOn: Binding(
+                    get: { enableVideoRecording },
+                    set: handleVideoRecordingChange
+                ),
+                disabled: showLiveTranscript,
+                accessibilityID: "timedPractice.settings.video"
+            )
         }
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(Color.black.opacity(0.06), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.04), radius: 12, y: 4)
-        .animation(.standardSpring, value: selectedMode)
-        .animation(.standardSpring, value: showSettings)
+        .shadow(color: Color.black.opacity(0.06), radius: 18, y: 8)
+        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
     private var timerPicker: some View {
@@ -524,14 +466,14 @@ private struct SettingsCardView: View {
             Image(systemName: "timer")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.orange)
-                .frame(width: 32, height: 32)
+                .frame(width: 34, height: 34)
                 .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Timer display")
-                    .font(.subheadline.weight(.medium))
+                    .font(Typography.body.weight(.semibold))
                 Text("Choose timing visibility")
-                    .font(.caption)
+                    .font(Typography.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -545,41 +487,166 @@ private struct SettingsCardView: View {
             .pickerStyle(.menu)
             .tint(.blue)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
     }
 
-    private func toggleRow(icon: String, iconColor: Color, title: String, caption: String, isOn: Binding<Bool>, disabled: Bool = false) -> some View {
+    private var coachToolsHeader: some View {
+        Text("Coach tools")
+            .font(Typography.micro)
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .tracking(0.8)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.top, Spacing.sm)
+            .padding(.bottom, Spacing.xs)
+    }
+
+    private func freeToggleRow(
+        icon: String,
+        iconColor: Color,
+        title: String,
+        caption: String,
+        isOn: Binding<Bool>
+    ) -> some View {
+        toggleRow(
+            icon: icon,
+            iconColor: iconColor,
+            title: title,
+            caption: caption,
+            isOn: isOn,
+            disabled: false
+        )
+    }
+
+    @ViewBuilder
+    private func premiumToggleRow(
+        icon: String,
+        iconColor: Color,
+        title: String,
+        caption: String,
+        isOn: Binding<Bool>,
+        disabled: Bool = false,
+        accessibilityID: String
+    ) -> some View {
+        if premium.isPremium {
+            toggleRow(
+                icon: icon,
+                iconColor: iconColor,
+                title: title,
+                caption: caption,
+                isOn: isOn,
+                disabled: disabled
+            )
+            .accessibilityIdentifier(accessibilityID)
+        } else {
+            Button {
+                showPaywall = true
+            } label: {
+                rowShell(
+                    icon: icon,
+                    iconColor: iconColor,
+                    title: title,
+                    caption: "Pro · \(caption)",
+                    disabled: false
+                ) {
+                    proBadge
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("\(accessibilityID).locked")
+            .accessibilityLabel("\(title), Pro feature. Upgrade to unlock.")
+        }
+    }
+
+    private func toggleRow(
+        icon: String,
+        iconColor: Color,
+        title: String,
+        caption: String,
+        isOn: Binding<Bool>,
+        disabled: Bool
+    ) -> some View {
+        rowShell(icon: icon, iconColor: iconColor, title: title, caption: caption, disabled: disabled) {
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .tint(accent)
+                .disabled(disabled)
+        }
+    }
+
+    private func rowShell<Trailing: View>(
+        icon: String,
+        iconColor: Color,
+        title: String,
+        caption: String,
+        disabled: Bool,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(disabled ? iconColor.opacity(0.4) : iconColor)
-                .frame(width: 32, height: 32)
+                .frame(width: 34, height: 34)
                 .background((disabled ? iconColor.opacity(0.04) : iconColor.opacity(0.1)), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.subheadline.weight(.medium))
+                    .font(Typography.body.weight(.semibold))
                     .foregroundStyle(disabled ? .secondary : .primary)
                 Text(caption)
-                    .font(.caption)
+                    .font(Typography.caption)
                     .foregroundStyle(disabled ? .tertiary : .secondary)
             }
 
             Spacer()
 
-            Toggle("", isOn: isOn)
-                .labelsHidden()
-                .tint(.blue)
-                .disabled(disabled)
+            trailing()
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
+    }
+
+    private var proBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "lock.fill")
+                .font(.caption2.weight(.bold))
+            Text("Pro")
+                .font(Typography.captionSmall.weight(.bold))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(AppColor.pro, in: Capsule())
     }
 
     private var thinDivider: some View {
         Divider()
             .padding(.horizontal, 16)
+    }
+
+    private func handleLiveTranscriptChange(_ newValue: Bool) {
+        showLiveTranscript = newValue
+        if newValue {
+            enableVideoRecording = false
+        }
+    }
+
+    private func handleVideoRecordingChange(_ newValue: Bool) {
+        enableVideoRecording = newValue
+        if newValue {
+            showLiveTranscript = false
+            Task {
+                let hasPermission = await VideoRecordingManager.requestCameraPermission()
+                guard hasPermission else {
+                    await MainActor.run { enableVideoRecording = false }
+                    return
+                }
+                _ = await videoManager.prepareSession()
+            }
+        } else {
+            videoManager.cleanup()
+        }
     }
 }
 
@@ -596,14 +663,8 @@ struct TimedPracticeView: View {
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var premium = PremiumManager.shared
-    // M21: Session Intent prompt — sheet-driven, one-shot per
-    // entry-to-setup. `forwardPlanStore` + `sessionIntentStore` are
-    // observed so the chip options refresh when the user regenerates
-    // their plan without leaving Timed.
-    @StateObject private var forwardPlanStore = ForwardPlanStore.shared
-    @StateObject private var sessionIntentStore = SessionIntentStore.shared
-    @State private var showIntentPrompt: Bool = false
-    @State private var intentPromptShownThisVisit: Bool = false
+    // Session intent can still be attached by future inline/chat-driven
+    // declarations, but Timed never auto-interrupts setup with a focus sheet.
 
     // Session state
     @AppStorage("timedPractice.selectedTheme") private var selectedThemeRaw: String = PromptTheme.all.rawValue
@@ -622,19 +683,12 @@ struct TimedPracticeView: View {
     @State private var speakingTask: Task<Void, Never>?
 
     // Settings (persisted via @AppStorage)
-    @AppStorage("timedPractice.selectedMode") private var selectedModeRaw: String = ImpromptuSetupMode.classic.rawValue
     @AppStorage("timedPractice.keepPromptVisible") private var keepPromptVisible: Bool = false
     @AppStorage("timedPractice.timerDisplay") private var timerDisplayRaw: String = TimerDisplayOption.none.rawValue
     @AppStorage("timedPractice.enableThinkingTime") private var enableThinkingTime: Bool = true
     @AppStorage("timedPractice.showLiveTranscript") private var showLiveTranscript: Bool = false
     @AppStorage("timedPractice.showFillerWords") private var showFillerWords: Bool = false
-    @AppStorage("timedPractice.classicInitialized") private var classicInitialized: Bool = false
-    @AppStorage("timedPractice.coachInitialized") private var coachInitialized: Bool = false
-
-    private var selectedMode: ImpromptuSetupMode {
-        get { ImpromptuSetupMode(rawValue: selectedModeRaw) ?? .classic }
-        nonmutating set { selectedModeRaw = newValue.rawValue }
-    }
+    @State private var showSetupSettings = false
 
     private var timerDisplay: TimerDisplayOption {
         get { TimerDisplayOption(rawValue: timerDisplayRaw) ?? .none }
@@ -677,7 +731,7 @@ struct TimedPracticeView: View {
     // Premium gating
     @State private var showPaywall = false
 
-    // Video recording (Coach mode only)
+    // Video recording
     @StateObject private var videoManager = VideoRecordingManager.shared
     @AppStorage("timedPractice.enableVideoRecording") private var enableVideoRecording: Bool = false
     @State private var showVideoPlayback = false
@@ -763,30 +817,6 @@ struct TimedPracticeView: View {
         } message: {
             Text("Your current session will be lost.")
         }
-        .sheet(isPresented: $showIntentPrompt) {
-            // M21: declared focus prompt. Sheet is shown at most once per
-            // visit to the setup phase. Dismissing without selecting drops
-            // cleanly — the rep finalizes with `intentFocus: nil`.
-            SessionIntentPromptView(
-                options: SessionIntentEngine.options(
-                    forwardPlan: forwardPlanStore.activePlan,
-                    trendFocus: TrendAnalyzer.primaryFocus(
-                        trends: TrendAnalyzer.analyze(snapshots: SkillTrendStore.shared.snapshots),
-                        currentSessionSnapshot: nil,
-                        recentDrills: DrillHistoryStore.shared.entries,
-                        styleGoal: coachingProfileStore.profile?.speakingStyleGoal
-                    ),
-                    profile: coachingProfileStore.profile
-                ),
-                onSelect: { intent in
-                    sessionIntentStore.setPending(intent)
-                },
-                onSkip: {
-                    sessionIntentStore.clearPending()
-                }
-            )
-            .presentationDetents([.medium])
-        }
         .task {
             // Batch initial setup into a single Task so SwiftUI
             // processes the state changes in one transaction.
@@ -811,6 +841,7 @@ struct TimedPracticeView: View {
             }
             speechVM.prepareForInteractiveUse()
             prewarmTTS()
+            enforcePremiumFeatureAvailability()
 
             // If video recording was previously enabled, prepare the camera session
             // prepareSession() starts the session internally before publishing captureSession
@@ -826,30 +857,16 @@ struct TimedPracticeView: View {
             // Quick Start handshake — if the picker armed Timed for a
             // one-tap launch, skip the setup card and go straight into
             // the existing begin flow. `beginSession` re-reads the
-            // persisted Classic/Coach + theme config, so the user's
-            // last settings still apply; "Start now" only saves taps,
-            // not their preferences.
+            // persisted theme + tool config, so the user's last settings
+            // still apply; "Start now" only saves taps, not preferences.
             if phase == .setup, PracticeModeQuickStart.consume(for: .timed) {
                 beginSession()
-            } else if phase == .setup,
-                      SessionIntentPromptPolicy.shouldPresent(
-                        completedSessionCount: sessionStore.sessions.count,
-                        hasPendingIntent: sessionIntentStore.pendingIntent != nil,
-                        hasPromptedThisVisit: intentPromptShownThisVisit
-                      ) {
-                // M21/MRevamp: surface the focus prompt only after Noum
-                // has enough completed reps to make a pre-rep focus feel
-                // earned. Quick Start stays one tap, and returning from a
-                // declined prompt stays quiet for this visit.
-                intentPromptShownThisVisit = true
-                showIntentPrompt = true
             }
         }
         .onDisappear {
             cleanup()
-            // M21: drop any pending intent that wasn't consumed by a
-            // finalize — keeps the next mode entry clean.
-            sessionIntentStore.clearPending()
+            // Drop any pending intent that wasn't consumed by a finalize.
+            SessionIntentStore.shared.clearPending()
         }
         .sheet(isPresented: $showPaywall) {
             PaywallView()
@@ -923,44 +940,26 @@ struct TimedPracticeView: View {
 
     private var setupContent: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 24) {
-                // Header — orb anchors the screen as a coach presence
-                // before the user even sees the timer; once recording
-                // starts the bound audioLevel reads as live.
-                HStack(alignment: .center, spacing: Spacing.md) {
-                    NoumCharacter(
-                        mood: speechVM.isRecording ? .listening : .calm,
-                        tint: AppColor.brandBlue,
-                        size: 44,
-                        audioLevel: speechVM.audioLevel,
-                        stage: characterStage
-                    )
-                    .accessibilityHidden(true)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Impromptu")
-                            .font(Typography.figtree(size: 34, weight: .bold, relativeTo: .largeTitle))
-                            .foregroundStyle(.primary)
-                        Text("Pick a theme. Think fast. Speak well.")
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                    }
+            VStack(spacing: Spacing.lg) {
+                if !showSetupSettings {
+                    setupHeader
+                        .padding(.top, 8)
+                } else {
+                    Color.clear
+                        .frame(height: 112)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 12)
 
                 if let wordOfTheDayTarget {
                     wordOfTheDaySetupCue(wordOfTheDayTarget)
                 }
 
-                // Mode selector
-                modeSelector
+                impromptuLaunchCard
 
-                // Theme selector
-                themeSelector
+                promptPoolRow
 
-                // Settings card
-                settingsCard
+                if showSetupSettings {
+                    settingsCard
+                }
 
                 // M14: live camera preview during setup so the user can
                 // see themselves and adjust framing BEFORE the rep starts.
@@ -974,9 +973,240 @@ struct TimedPracticeView: View {
 
                 Spacer(minLength: 100)
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, Spacing.screenH)
+            .id(showSetupSettings ? "timed-setup-settings" : "timed-setup-launch")
         }
         .accessibilityIdentifier("timedPractice.screen")
+    }
+
+    private var setupHeader: some View {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Impromptu")
+                    .font(Typography.figtree(size: 36, weight: .bold, relativeTo: .largeTitle))
+                    .foregroundStyle(.primary)
+                if !showSetupSettings {
+                    Text("Surprise prompt. One take. Clean landing.")
+                        .font(Typography.body)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            Button {
+                CoachHaptic.selectionTap()
+                animateSetupChange {
+                    showSetupSettings.toggle()
+                }
+            } label: {
+                Image(systemName: showSetupSettings ? "xmark" : "gearshape.fill")
+                    .font(Typography.headline)
+                    .foregroundStyle(showSetupSettings ? .secondary : AppColor.modeTimed)
+                    .frame(width: 48, height: 48)
+                    .background(AppColor.cardBackground, in: Circle())
+                    .overlay(
+                        Circle()
+                            .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.05), radius: 12, y: 5)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("timedPractice.settings.toggle")
+            .accessibilityLabel(showSetupSettings ? "Hide Impromptu settings" : "Show Impromptu settings")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var impromptuLaunchCard: some View {
+        if showSetupSettings {
+            compactImpromptuLaunchCard
+        } else {
+            fullImpromptuLaunchCard
+        }
+    }
+
+    private var compactImpromptuLaunchCard: some View {
+        HStack(spacing: Spacing.md) {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .background(Color.white.opacity(0.16), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Ready to start")
+                    .font(Typography.figtree(size: 20, weight: .bold, relativeTo: .title3))
+                    .foregroundStyle(.white)
+
+                Text("\(enableThinkingTime ? "15s prep" : "Instant start") · \(selectedTheme.rawValue) · \(keepPromptVisible ? "Prompt on" : "Prompt hidden")")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.76))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                CoachHaptic.selectionTap()
+                animateSetupChange {
+                    showSetupSettings = false
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.86))
+                    .frame(width: 34, height: 34)
+                    .background(Color.white.opacity(0.14), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("timedPractice.settings.toggle")
+            .accessibilityLabel("Hide Impromptu settings")
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(impromptuCardBackground)
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        )
+        .shadow(color: AppColor.modeTimed.opacity(0.18), radius: 18, y: 8)
+    }
+
+    private var fullImpromptuLaunchCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            HStack(alignment: .center) {
+                Label("Ready", systemImage: "bolt.fill")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.86))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .background(Color.white.opacity(0.16), in: Capsule())
+
+                Spacer()
+
+                Text(enableThinkingTime ? "15s prep" : "Instant start")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .background(Color.black.opacity(0.12), in: Capsule())
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Think fast. Land one answer.")
+                    .font(Typography.figtree(size: 28, weight: .bold, relativeTo: .title))
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("The prompt appears when the rep begins.")
+                    .font(Typography.subheadline)
+                    .foregroundStyle(.white.opacity(0.72))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 8) {
+                setupChip(icon: selectedTheme.icon, text: selectedTheme.rawValue)
+                setupChip(icon: keepPromptVisible ? "eye.fill" : "eye.slash.fill", text: keepPromptVisible ? "Prompt on" : "Prompt hidden")
+            }
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(impromptuCardBackground)
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        )
+        .shadow(color: AppColor.modeTimed.opacity(0.24), radius: 24, y: 12)
+    }
+
+    private var impromptuCardBackground: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.08, green: 0.12, blue: 0.22),
+                    AppColor.modeTimed,
+                    AppColor.modePace
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            Circle()
+                .fill(Color.white.opacity(0.16))
+                .frame(width: 190, height: 190)
+                .blur(radius: 22)
+                .offset(x: 120, y: -80)
+
+            Circle()
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                .frame(width: 170, height: 170)
+                .offset(x: -105, y: 82)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: showSetupSettings ? CornerRadius.large : CornerRadius.xl, style: .continuous))
+    }
+
+    private func setupChip(icon: String, text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption.weight(.bold))
+            Text(text)
+                .font(Typography.caption.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+        }
+        .foregroundStyle(.white.opacity(0.86))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color.white.opacity(0.13), in: Capsule())
+    }
+
+    private var promptPoolRow: some View {
+        Menu {
+            ForEach(PromptTheme.allCases) { theme in
+                Button {
+                    setPromptTheme(theme)
+                } label: {
+                    Label(theme.rawValue, systemImage: theme.icon)
+                }
+            }
+        } label: {
+            HStack(spacing: Spacing.md) {
+                Image(systemName: selectedTheme.icon)
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(themeTint(selectedTheme))
+                    .frame(width: 40, height: 40)
+                    .background(themeTint(selectedTheme).opacity(0.11), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Prompt pool")
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                    Text(selectedTheme.rawValue)
+                        .font(Typography.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.04), radius: 12, y: 5)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("timedPractice.themeMenu")
+        .accessibilityLabel("Prompt pool, \(selectedTheme.rawValue)")
     }
 
     @available(iOS 17.0, *)
@@ -1089,171 +1319,16 @@ struct TimedPracticeView: View {
         .accessibilityLabel("Today's word: \(word). Use it if it fits.")
     }
 
-    private var modeSelector: some View {
-        HStack(spacing: 12) {
-            ForEach(ImpromptuSetupMode.allCases) { mode in
-                modeCard(mode)
-            }
-        }
-    }
-
-    private var themeSelector: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Theme")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(PromptTheme.allCases) { theme in
-                        themeChip(theme)
-                    }
-                }
-                .padding(.horizontal, 2)
-            }
-        }
-    }
-
-    private func themeChip(_ theme: PromptTheme) -> some View {
-        let isSelected = selectedTheme == theme
-        return Button {
-            UISelectionFeedbackGenerator().selectionChanged()
-            withAnimation(.snappySpring) {
-                selectedTheme = theme
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: theme.icon)
-                    .font(.caption.weight(.semibold))
-                Text(theme.rawValue)
-                    .font(.subheadline.weight(.medium))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                isSelected
-                    ? Color.accentColor
-                    : Color(.systemGray6),
-                in: Capsule()
-            )
-            .foregroundStyle(isSelected ? .white : .primary)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func modeCard(_ mode: ImpromptuSetupMode) -> some View {
-        let isSelected = selectedMode == mode
-        return Button {
-            UISelectionFeedbackGenerator().selectionChanged()
-            withAnimation(.standardSpring) {
-                selectedMode = mode
-                applyModeDefaults(mode)
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Image(systemName: mode.icon)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(isSelected ? .white : mode.badgeColor)
-                        .frame(width: 36, height: 36)
-                        .background(
-                            isSelected ? mode.badgeColor : mode.badgeColor.opacity(0.12),
-                            in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
-                        )
-
-                    Spacer()
-
-                    HStack(spacing: 4) {
-                        if mode == .coach && !premium.canUseCoachMode {
-                            Text("PRO")
-                                .font(Typography.figtree(size: 9, weight: .heavy, relativeTo: .caption2))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Color.orange, in: Capsule())
-                        }
-                        Text(mode.badge)
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(isSelected ? .white.opacity(0.9) : mode.badgeColor)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        isSelected ? .white.opacity(0.2) : mode.badgeColor.opacity(0.1),
-                        in: Capsule()
-                    )
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(mode.title)
-                        .font(.headline)
-                        .foregroundStyle(isSelected ? .white : .primary)
-                    Text(mode.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(isSelected ? .white.opacity(0.7) : .secondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                if isSelected {
-                    LinearGradient(
-                        colors: [mode.badgeColor, mode.badgeColor.opacity(0.85)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                } else {
-                    LinearGradient(
-                        colors: [Color.white, Color.white],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                    .stroke(isSelected ? Color.clear : Color.black.opacity(0.06), lineWidth: 1)
-            )
-            .shadow(color: isSelected ? mode.badgeColor.opacity(0.25) : Color.black.opacity(0.04), radius: isSelected ? 12 : 6, y: isSelected ? 6 : 3)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func applyModeDefaults(_ mode: ImpromptuSetupMode) {
-        switch mode {
-        case .classic:
-            guard !classicInitialized else { return }
-            classicInitialized = true
-            showLiveTranscript = false
-            showFillerWords = false
-            keepPromptVisible = false
-            timerDisplay = .none
-            enableThinkingTime = true
-        case .coach:
-            guard !coachInitialized else { return }
-            coachInitialized = true
-            showLiveTranscript = true
-            showFillerWords = true
-            keepPromptVisible = true
-            timerDisplay = .elapsed
-            enableThinkingTime = true
-            enableVideoRecording = false  // Mutually exclusive with transcript
-        }
-    }
-
     private var settingsCard: some View {
-        SettingsCardView(
-            selectedMode: Binding(get: { selectedMode }, set: { selectedMode = $0 }),
+        ImpromptuSettingsPanel(
             keepPromptVisible: $keepPromptVisible,
             timerDisplay: Binding(get: { timerDisplay }, set: { timerDisplay = $0 }),
             enableThinkingTime: $enableThinkingTime,
             showLiveTranscript: $showLiveTranscript,
             showFillerWords: $showFillerWords,
             enableVideoRecording: $enableVideoRecording,
+            showPaywall: $showPaywall,
+            premium: premium,
             videoManager: videoManager
         )
     }
@@ -1261,6 +1336,38 @@ struct TimedPracticeView: View {
     private var thinDivider: some View {
         Divider()
             .padding(.horizontal, 16)
+    }
+
+    private func setPromptTheme(_ theme: PromptTheme) {
+        UISelectionFeedbackGenerator().selectionChanged()
+        animateSetupChange {
+            selectedTheme = theme
+            question = ""
+        }
+    }
+
+    private func animateSetupChange(_ changes: () -> Void) {
+        if reduceMotion {
+            changes()
+        } else {
+            withAnimation(.snappySpring) {
+                changes()
+            }
+        }
+    }
+
+    private func themeTint(_ theme: PromptTheme) -> Color {
+        switch theme {
+        case .all: return AppColor.pro
+        case .general: return AppColor.brandBlue
+        case .workCareer: return AppColor.modeSuddenDeath
+        case .personalStories: return AppColor.modeCrutch
+        case .leadership: return Color(red: 0.78, green: 0.18, blue: 0.22)
+        case .ethicsOpinions: return AppColor.modeIM
+        case .funRandom: return AppColor.modeAhCounter
+        case .interviewPrep: return AppColor.modePace
+        case .socialConfidence: return Color(red: 0.74, green: 0.50, blue: 0.08)
+        }
     }
 
     // MARK: - Thinking Phase
@@ -2182,9 +2289,9 @@ struct TimedPracticeView: View {
         VStack(spacing: 8) {
             Button(action: { beginSession() }) {
                 HStack(spacing: 10) {
-                    Image(systemName: selectedMode == .classic ? "sparkles" : "text.magnifyingglass")
+                    Image(systemName: "bolt.fill")
                         .font(.headline)
-                    Text("Begin Session")
+                    Text("Start Impromptu")
                         .font(.headline.weight(.semibold))
                 }
                 .frame(maxWidth: .infinity)
@@ -2192,14 +2299,14 @@ struct TimedPracticeView: View {
             }
             .background(
                 LinearGradient(
-                    colors: [selectedMode.badgeColor, selectedMode.badgeColor.opacity(0.85)],
+                    colors: [AppColor.modeTimed, AppColor.modePace],
                     startPoint: .leading,
                     endPoint: .trailing
                 ),
                 in: Capsule()
             )
             .foregroundStyle(.white)
-            .shadow(color: selectedMode.badgeColor.opacity(0.3), radius: 12, y: 4)
+            .shadow(color: AppColor.modeTimed.opacity(0.30), radius: 14, y: 5)
             .buttonStyle(.pressable)
             .accessibilityIdentifier("timedPractice.begin")
         }
@@ -2280,16 +2387,25 @@ struct TimedPracticeView: View {
         }
     }
 
+    private func enforcePremiumFeatureAvailability() {
+        guard !premium.isPremium else { return }
+        if showLiveTranscript {
+            showLiveTranscript = false
+        }
+        if showFillerWords {
+            showFillerWords = false
+        }
+        if enableVideoRecording {
+            enableVideoRecording = false
+            videoManager.cleanup()
+        }
+    }
+
     // MARK: - Actions
 
     private func beginSession() {
         guard phase == .setup else { return }
-
-        // Gate Coach mode behind premium
-        if selectedMode == .coach && !premium.canUseCoachMode {
-            showPaywall = true
-            return
-        }
+        enforcePremiumFeatureAvailability()
 
         // Haptic feedback for session start fires before the AI hop so the
         // tap feels immediate even if prompt selection takes a beat.
@@ -2315,18 +2431,19 @@ struct TimedPracticeView: View {
         // budget to attempt an AI-generated prompt without blocking. Falls
         // back to the curated pool on timeout/failure (≤ 3s).
         Task { @MainActor in
-            question = await PracticeTopics.next(
-                profile: coachingProfileStore.profile,
-                baseline: baselineStore.baseline,
-                theme: selectedTheme
-            )
+            if question.isEmpty {
+                question = await PracticeTopics.next(
+                    profile: coachingProfileStore.profile,
+                    baseline: baselineStore.baseline,
+                    theme: selectedTheme
+                )
+            }
 
             // Ensure TTS is ready (may already be prewarmed from onAppear)
             if ttsEngine.delegate == nil { configureTTSDelegate() }
 
-            // Classic always gets 15-second thinking time; Coach respects the toggle
-            // Pressure mode halves thinking time for increased challenge
-            let useThinkingTime = selectedMode == .classic ? true : enableThinkingTime
+            // Pressure mode halves thinking time for increased challenge.
+            let useThinkingTime = enableThinkingTime
             let thinkingDuration = practiceSettings.pressureModeEnabled ? 8 : 15
 
             if useThinkingTime {
@@ -2650,7 +2767,8 @@ struct TimedPracticeView: View {
         if ttsEngine.delegate == nil { configureTTSDelegate() }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
-        let useThinkingTime = selectedMode == .classic ? true : enableThinkingTime
+        enforcePremiumFeatureAvailability()
+        let useThinkingTime = enableThinkingTime
         let thinkingDuration = practiceSettings.pressureModeEnabled ? 8 : 15
         if useThinkingTime {
             thinkingCountdown = thinkingDuration

@@ -6538,6 +6538,134 @@ struct GoalProgressTests {
     }
 }
 
+// MARK: - Baseline Coach Map
+
+struct BaselineCoachMapTests {
+
+    private func stat(
+        _ value: Double,
+        samples: Int = 8,
+        confidence: BaselineConfidence = .moderate
+    ) -> BaselineStat {
+        BaselineStat(
+            value: value,
+            sampleCount: samples,
+            confidence: confidence,
+            trend: .stable,
+            percentile25: value * 0.8,
+            percentile75: value * 1.2
+        )
+    }
+
+    private func baseline(
+        sessionCount: Int = 8,
+        fillerRate: Double = 2.0,
+        confidence: BaselineConfidence = .moderate
+    ) -> CommunicationBaseline {
+        CommunicationBaseline(
+            lastUpdated: Date(),
+            sessionCount: sessionCount,
+            qualifyingSessionCount: sessionCount,
+            fillerRate: stat(fillerRate, samples: sessionCount, confidence: confidence),
+            pace: stat(130, samples: sessionCount, confidence: confidence),
+            paceVariance: .empty,
+            durationTendency: stat(48, samples: sessionCount, confidence: confidence),
+            pauseRate: stat(2.0, samples: sessionCount, confidence: confidence),
+            pauseFilledRatio: stat(0.25, samples: sessionCount, confidence: confidence),
+            openingStrength: .empty,
+            closingStrength: .empty,
+            structureQuality: stat(2.4, samples: sessionCount, confidence: confidence),
+            answerDepth: .empty,
+            clarity: stat(2.5, samples: sessionCount, confidence: confidence),
+            vocabularyRange: .empty,
+            hedgingRate: stat(0.5, samples: sessionCount, confidence: confidence),
+            pitchVariation: stat(0.22, samples: sessionCount, confidence: confidence),
+            averageScore: stat(7.0, samples: sessionCount, confidence: confidence),
+            clutchWordFrequencies: [:],
+            topStrengths: [],
+            persistentBlockers: []
+        )
+    }
+
+    private func profile(
+        why: String = "Investor Q&A is coming up.",
+        vision: String = "Sound calm when the question gets hard."
+    ) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .composed,
+            speakingStyleGoal: .executive,
+            styleReference: "",
+            coachingBrief: "Cut the ums before my point.",
+            motivationWhyNow: why,
+            successVision: vision,
+            chosenStyleGoal: .executive
+        )
+    }
+
+    @Test func baselineMapShowsFormationProgressWithoutClaimingStability() {
+        let map = BaselineCoachMap.make(baseline: baseline(sessionCount: 5, confidence: .moderate), profile: nil)
+
+        #expect(map.statusTitle == "Baseline forming")
+        #expect(abs(map.formationProgress - 0.5) < 0.001)
+        #expect(map.repsUntilEstablished == 5)
+        #expect(map.dimensions.count == BaselineCoachDimension.allCases.count)
+        #expect(map.measuredDimensionCount >= 5)
+    }
+
+    @Test func baselineMapGoalGapUsesMeasuredDistanceOnly() {
+        let empty = BaselineCoachMap.make(baseline: .empty, profile: profile())
+        #expect(empty.goalGap == nil)
+
+        let measured = BaselineCoachMap.make(baseline: baseline(fillerRate: 2.0, confidence: .established), profile: profile())
+        guard let gap = measured.goalGap else {
+            #expect(Bool(false), "Expected a goal gap when filler rate is measured.")
+            return
+        }
+        #expect(gap.goal == .reduceFillers)
+        #expect(abs(gap.proximity - 0.75) < 0.001)
+        #expect(gap.currentLabel.contains("2.0 fillers/min"))
+        #expect(gap.targetLabel.contains("1.0/min"))
+    }
+
+    @Test func baselineMapPreservesSignupMotivation() {
+        let map = BaselineCoachMap.make(baseline: baseline(), profile: profile())
+
+        #expect(map.motivationAnchor?.contains("Investor Q&A is coming up.") == true)
+        #expect(map.motivationAnchor?.contains("Sound calm when the question gets hard.") == true)
+    }
+
+    @Test func signupMemoryContextKeepsExactUserWordsAndRestraintInstruction() {
+        let lines = CoachContextBuilder.signupMemoryContextLines(for: profile())
+        let joined = lines.joined(separator: "\n")
+
+        #expect(joined.contains("Cut the ums before my point."))
+        #expect(joined.contains("Investor Q&A is coming up."))
+        #expect(joined.contains("Sound calm when the question gets hard."))
+        #expect(joined.contains("do not bring it up every turn"))
+        #expect(joined.contains("do not invent an emotion"))
+    }
+
+    @Test func userContextContainsDedicatedSignupMemorySection() {
+        let ctx = CoachContextBuilder.userContext(
+            profile: profile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+
+        #expect(ctx.contains("SIGNUP MEMORY"))
+        #expect(ctx.contains("Felt stakes / why it mattered then: Investor Q&A is coming up."))
+        #expect(ctx.contains("do not invent an emotion"))
+    }
+}
+
 // MARK: - Voice Alignment (M14: fifth surface in the goal-aware loop)
 //
 // Tests for the home-recommendation alignment chip. The chip extends the
@@ -7253,6 +7381,7 @@ struct ProfileCollapseContractTests {
             .rankProgress,
             .insightsBanked,
             .pressureHistoryShare,
+            .baselineMap,
             .coachingDirection,
             .coachLoopReadiness,
             .caseReview,
@@ -9174,6 +9303,18 @@ struct CoachContextBuilderTests {
         #expect(prompt.contains("fake intimacy"))
         #expect(prompt.contains("human read -> evidence -> next move"))
         #expect(prompt.contains("one question only if it advances the case"))
+    }
+
+    @Test func systemPromptUsesSignupMotivationWithoutWeaponizingIt() {
+        // The user's why-now / success vision is most emotionally live at
+        // signup. The coach should be able to reuse it as an anchor, but never
+        // as guilt, hype, or every-turn repetition.
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+        #expect(prompt.contains("Why now"))
+        #expect(prompt.contains("Their vision of success"))
+        #expect(prompt.contains("not as guilt or hype"))
+        #expect(prompt.contains("Do not quote it every turn"))
+        #expect(prompt.contains("do not weaponize"))
     }
 
     @Test func systemPromptIncludesFeatureFlaggedStructuredReplyShape() {
@@ -20173,8 +20314,8 @@ struct SessionIntentPromptPolicyTests {
         ))
     }
 
-    @Test func twoCompletedRepsCanShowPrompt() {
-        #expect(SessionIntentPromptPolicy.shouldPresent(
+    @Test func twoCompletedRepsStillDoNotAutoShowBlockingPrompt() {
+        #expect(!SessionIntentPromptPolicy.shouldPresent(
             completedSessionCount: 2,
             hasPendingIntent: false,
             hasPromptedThisVisit: false
@@ -20437,6 +20578,41 @@ struct CoachContextBuilderIntentTests {
             pathGatingPhrase: nil
         )
         #expect(!context.contains("Intent:"))
+    }
+}
+
+struct CoachContextBuilderWeeklyCheckInOpportunityTests {
+
+    @Test func dueWeeklyCheckInAddsOrganicChatCue() {
+        let context = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            weeklyCheckInDue: true
+        )
+
+        #expect(context.contains("CHECK-IN OPPORTUNITY"))
+        #expect(context.contains("Do not interrupt practice"))
+        #expect(context.contains("one concise human-coach question"))
+    }
+
+    @Test func quietWeeklyCadenceOmitsCheckInCue() {
+        let context = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            weeklyCheckInDue: false
+        )
+
+        #expect(!context.contains("CHECK-IN OPPORTUNITY"))
     }
 }
 
@@ -20926,6 +21102,42 @@ struct AskNoumChipFilterTests {
         #expect(chips.count <= 3)
         let hasBlockerChip = chips.contains { $0.lowercased().contains("pace") }
         #expect(hasBlockerChip)
+    }
+
+    @Test func starterPromptsCanLeadWithWeeklyCheckInWhenDue() {
+        let chips = CoachContextBuilder.starterPrompts(
+            bigMoment: nil,
+            baseline: .empty,
+            voice: .warm,
+            weeklyCheckInDue: true
+        )
+
+        #expect(chips.first == "Check in on this week.")
+        #expect(chips.count <= 3)
+    }
+
+    @Test func starterPromptsCanReconnectToSignupMotivation() {
+        let profile = CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .moreConcise,
+            confidenceLevel: .inconsistent,
+            biggestChallenge: .rambling,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .warm,
+            styleReference: "",
+            coachingBrief: "Help me speak clearly.",
+            motivationWhyNow: "I have started leading more senior meetings.",
+            successVision: "I can be concise without sounding cold."
+        )
+        let chips = CoachContextBuilder.starterPrompts(
+            bigMoment: nil,
+            baseline: .empty,
+            voice: .warm,
+            profile: profile
+        )
+
+        #expect(chips.contains("Reconnect me to why I started."))
+        #expect(chips.count <= 3)
     }
 
     @Test func starterPromptsCapAt3() {
@@ -34469,6 +34681,14 @@ struct AskNoumModeSuggestionTests {
         #expect(AskNoumModeSuggestion.label(for: .ahCounterPractice) == "Start an Ah-Counter round")
         #expect(AskNoumModeSuggestion.label(for: .suddenDeathPractice) == "Try a Pressure Drill round")
         #expect(AskNoumModeSuggestion.label(for: .imPractice(scenario: nil, tone: nil)).contains("conversation"))
+    }
+
+    @Test func launchableSuggestionsMapToQuickStartModes() {
+        #expect(AskNoumModeSuggestion.quickStartMode(for: .timedPractice) == .timed)
+        #expect(AskNoumModeSuggestion.quickStartMode(for: .suddenDeathPractice) == .suddenDeath)
+        #expect(AskNoumModeSuggestion.quickStartMode(for: .ahCounterPractice) == .ahCounter)
+        #expect(AskNoumModeSuggestion.quickStartMode(for: .imPractice(scenario: nil, tone: nil)) == .imConversation)
+        #expect(AskNoumModeSuggestion.quickStartMode(for: .settings) == nil)
     }
 }
 

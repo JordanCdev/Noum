@@ -46,6 +46,7 @@ enum ProfileEvidenceDetailSurface: String, Equatable {
     case ratingTrajectory
     case insightsBanked
     case pressureHistoryShare
+    case baselineMap
     case coachingDirection
     case coachLoopReadiness
     case weeklyCheckIn
@@ -72,6 +73,7 @@ struct ProfileEvidenceDetailPlan: Equatable {
             .rankProgress,
             .insightsBanked,
             .pressureHistoryShare,
+            .baselineMap,
             .coachingDirection,
             .coachLoopReadiness,
             .caseReview,
@@ -104,6 +106,346 @@ struct ProfileEvidenceHubPresentation: Equatable {
         usesCompactRows: true,
         showsDefaultHeader: false
     )
+}
+
+struct BaselineMapCard: View {
+    let map: BaselineCoachMap
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var measuredReads: [BaselineCoachDimensionRead] {
+        map.dimensions.filter(\.isMeasured)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            header
+            formationBar
+
+            HStack(alignment: .center, spacing: Spacing.md) {
+                BaselineRadarChart(reads: map.dimensions)
+                    .frame(width: 150, height: 150)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("\(map.measuredDimensionCount) of \(map.dimensions.count) coach reads active")
+                        .font(Typography.cardLabel)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(map.statusDetail)
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if !measuredReads.isEmpty {
+                        VStack(alignment: .leading, spacing: 5) {
+                            ForEach(measuredReads.prefix(3)) { read in
+                                dimensionLine(read)
+                            }
+                        }
+                        .padding(.top, 2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            goalGapSection
+
+            if let motivation = map.motivationAnchor {
+                motivationSection(motivation)
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "point.3.connected.trianglepath.dotted")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(AppColor.pro)
+            Text("Baseline map")
+                .font(Typography.micro)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.8)
+            Spacer()
+            Text(map.confidence.label)
+                .font(Typography.micro)
+                .foregroundStyle(AppColor.pro)
+                .textCase(.uppercase)
+                .tracking(0.7)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(AppColor.pro.opacity(0.10), in: Capsule())
+        }
+    }
+
+    private var formationBar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(map.statusTitle)
+                    .font(Typography.headline)
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text(formationCountLabel)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(AppColor.tagBackground)
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [AppColor.brandBlue, AppColor.pro],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: max(8, proxy.size.width * map.formationProgress))
+                }
+            }
+            .frame(height: 8)
+            .animation(reduceMotion ? nil : .standardSpring, value: map.formationProgress)
+        }
+    }
+
+    private var formationCountLabel: String {
+        if map.formationProgress >= 1 {
+            return "\(map.qualifyingSessionCount) reps"
+        }
+        return "\(map.qualifyingSessionCount)/\(BaselineCoachMap.establishedRepTarget)"
+    }
+
+    @ViewBuilder
+    private var goalGapSection: some View {
+        if let gap = map.goalGap {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Gap to goal")
+                        .font(Typography.micro)
+                        .foregroundStyle(.tertiary)
+                        .textCase(.uppercase)
+                        .tracking(0.8)
+                    Spacer()
+                    Text(gap.summary)
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.brandBlue)
+                }
+
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(AppColor.brandBlue.opacity(0.10))
+                        Capsule()
+                            .fill(AppColor.brandBlue)
+                            .frame(width: max(8, proxy.size.width * gap.proximity))
+                    }
+                }
+                .frame(height: 7)
+                .animation(reduceMotion ? nil : .standardSpring, value: gap.proximity)
+
+                Text("\(gap.currentLabel) · target: \(gap.targetLabel)")
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Spacing.md)
+            .background(AppColor.brandBlue.opacity(0.07), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        } else {
+            Text("Goal gap appears once the underlying metric has enough reps.")
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
+                .padding(Spacing.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        }
+    }
+
+    private func motivationSection(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "quote.opening")
+                .font(Typography.captionSmall.weight(.bold))
+                .foregroundStyle(AppColor.pro)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Original why")
+                    .font(Typography.micro)
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                Text(text)
+                    .font(Typography.caption)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(Spacing.md)
+        .background(AppColor.pro.opacity(0.07), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+    }
+
+    private func dimensionLine(_ read: BaselineCoachDimensionRead) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(read.confidence.isReliable ? AppColor.positive : AppColor.caution)
+                .frame(width: 6, height: 6)
+            Text(read.dimension.shortTitle)
+                .font(Typography.captionSmall)
+                .foregroundStyle(.secondary)
+            if let value = read.valueLabel {
+                Text(value)
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
+            }
+        }
+    }
+
+    private var accessibilityLabel: String {
+        var parts = [
+            "Baseline map.",
+            "\(map.statusTitle).",
+            "\(map.measuredDimensionCount) of \(map.dimensions.count) coach reads active."
+        ]
+        if let gap = map.goalGap {
+            parts.append("Gap to goal: \(gap.summary). Current \(gap.currentLabel), target \(gap.targetLabel).")
+        }
+        if let motivation = map.motivationAnchor {
+            parts.append("Original why: \(motivation)")
+        }
+        return parts.joined(separator: " ")
+    }
+}
+
+private struct BaselineRadarChart: View {
+    let reads: [BaselineCoachDimensionRead]
+
+    private var evidenceValues: [Double] {
+        reads.map(\.evidenceProgress)
+    }
+
+    private var measuredValues: [Double]? {
+        let values = reads.map { $0.currentScore }
+        guard values.compactMap({ $0 }).count >= 3 else { return nil }
+        return values.map { $0 ?? 0 }
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let side = min(proxy.size.width, proxy.size.height)
+            let rect = CGRect(
+                x: (proxy.size.width - side) / 2,
+                y: (proxy.size.height - side) / 2,
+                width: side,
+                height: side
+            )
+
+            ZStack {
+                ForEach([0.33, 0.66, 1.0], id: \.self) { scale in
+                    RadarPolygonShape(values: Array(repeating: scale, count: reads.count))
+                        .stroke(Color.black.opacity(scale == 1.0 ? 0.12 : 0.07), lineWidth: 1)
+                }
+
+                ForEach(reads.indices, id: \.self) { index in
+                    RadarAxisShape(index: index, count: reads.count)
+                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                }
+
+                RadarPolygonShape(values: evidenceValues)
+                    .fill(AppColor.brandBlue.opacity(0.18))
+                RadarPolygonShape(values: evidenceValues)
+                    .stroke(AppColor.brandBlue.opacity(0.85), lineWidth: 2)
+
+                if let measuredValues {
+                    RadarPolygonShape(values: measuredValues)
+                        .fill(AppColor.pro.opacity(0.12))
+                    RadarPolygonShape(values: measuredValues)
+                        .stroke(AppColor.pro.opacity(0.75), lineWidth: 1.8)
+                }
+
+                ForEach(Array(reads.enumerated()), id: \.offset) { index, read in
+                    Text(read.dimension.shortTitle)
+                        .font(Typography.micro)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                        .position(labelPoint(index: index, count: reads.count, rect: rect))
+                }
+            }
+        }
+    }
+
+    private func labelPoint(index: Int, count: Int, rect: CGRect) -> CGPoint {
+        let angle = angleFor(index: index, count: count)
+        let radius = min(rect.width, rect.height) * 0.47
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        return CGPoint(
+            x: center.x + cos(angle) * radius,
+            y: center.y + sin(angle) * radius
+        )
+    }
+}
+
+private struct RadarPolygonShape: Shape {
+    var values: [Double]
+
+    func path(in rect: CGRect) -> Path {
+        guard values.count >= 3 else { return Path() }
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) * 0.34
+        var path = Path()
+        for (index, value) in values.enumerated() {
+            let angle = angleFor(index: index, count: values.count)
+            let scaled = min(max(value, 0), 1)
+            let point = CGPoint(
+                x: center.x + cos(angle) * radius * scaled,
+                y: center.y + sin(angle) * radius * scaled
+            )
+            if index == 0 {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
+        }
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct RadarAxisShape: Shape {
+    let index: Int
+    let count: Int
+
+    func path(in rect: CGRect) -> Path {
+        guard count >= 3 else { return Path() }
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) * 0.34
+        let angle = angleFor(index: index, count: count)
+        var path = Path()
+        path.move(to: center)
+        path.addLine(to: CGPoint(
+            x: center.x + cos(angle) * radius,
+            y: center.y + sin(angle) * radius
+        ))
+        return path
+    }
+}
+
+private func angleFor(index: Int, count: Int) -> CGFloat {
+    guard count > 0 else { return -.pi / 2 }
+    return -.pi / 2 + (CGFloat(index) / CGFloat(count)) * 2 * .pi
 }
 
 struct ProfileIdentityPresentation: Equatable {
@@ -877,7 +1219,6 @@ struct ProfileView: View {
                     .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
             }
         }
-        .accessibilityIdentifier("profile.evidenceHub")
     }
 
     private var profileEvidenceToggleLabel: some View {
@@ -1016,6 +1357,9 @@ struct ProfileView: View {
             }
 
             clusterHeader("Coaching evidence")
+            if plan.surfaces.contains(.baselineMap) {
+                baselineMapCard
+            }
             if plan.surfaces.contains(.coachingDirection) {
                 coachingDirectionCard
             }
@@ -1060,6 +1404,16 @@ struct ProfileView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("profile.evidenceDetails")
+    }
+
+    private var baselineMapCard: some View {
+        BaselineMapCard(
+            map: BaselineCoachMap.make(
+                baseline: baselineStore.baseline,
+                profile: coachingProfileStore.profile
+            )
+        )
+        .accessibilityIdentifier("profile.evidence.baselineMap")
     }
 
     // MARK: - Identity Header

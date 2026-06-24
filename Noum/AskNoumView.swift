@@ -393,6 +393,7 @@ struct AskNoumView: View {
     @StateObject private var postRepCoachNoteStore = PostRepCoachNoteStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    @StateObject private var coachCheckInStore = CoachCheckInStore.shared
 
     @State private var draft: String = ""
     @State private var didLandFirstAppear = false
@@ -1428,7 +1429,9 @@ struct AskNoumView: View {
             bigMoment: bigMomentStore.activeMoment,
             baseline: baselineStore.baseline,
             voice: voice,
-            rotation: starterRotation
+            rotation: starterRotation,
+            profile: coachingProfileStore.profile,
+            weeklyCheckInDue: weeklyCheckInDueForChat
         )
     }
 
@@ -1444,9 +1447,19 @@ struct AskNoumView: View {
             return "\(moment.category.rawValue)#\(days)"
         } ?? "nomoment"
         let weakPart = PracticeTopics.weakestDimensionLabel(for: baselineStore.baseline) ?? "noweak"
+        let checkInPart = weeklyCheckInDueForChat ? "checkinDue" : "checkinQuiet"
+        let hasMotivation = {
+            guard let profile = coachingProfileStore.profile else { return false }
+            return !profile.whyNowReference.isEmpty || !profile.successVisionReference.isEmpty
+        }()
+        let motivationPart = hasMotivation ? "motivation" : "nomotivation"
         // Day-bucket component: the AI-tailored starters re-roll daily too,
         // not only when voice/moment/weakness change.
-        return "\(voicePart)|\(momentPart)|\(weakPart)|r\(starterRotation)"
+        return "\(voicePart)|\(momentPart)|\(weakPart)|\(checkInPart)|\(motivationPart)|r\(starterRotation)"
+    }
+
+    private var weeklyCheckInDueForChat: Bool {
+        !sessionStore.sessions.isEmpty && coachCheckInStore.isCheckInDue()
     }
 
     /// Starters shown in the empty state. Prefers the cached AI set for the
@@ -1468,6 +1481,8 @@ struct AskNoumView: View {
         let voiceCapture = voice
         let momentCapture = bigMomentStore.activeMoment
         let baselineCapture = baselineStore.baseline
+        let profileCapture = coachingProfileStore.profile
+        let weeklyCheckInDueCapture = weeklyCheckInDueForChat
         // Same privacy-bounded recent-rep digest as the follow-up chips.
         let digestCapture = CoachContextBuilder.recentSessionDigestForChips(
             sessions: sessionStore.sessions,
@@ -1477,6 +1492,8 @@ struct AskNoumView: View {
             voice: voiceCapture,
             bigMoment: momentCapture,
             baseline: baselineCapture,
+            profile: profileCapture,
+            weeklyCheckInDue: weeklyCheckInDueCapture,
             recentSessionDigest: digestCapture
         )
         // Cache only on success — nil leaves the deterministic catalog in
@@ -2017,6 +2034,9 @@ struct AskNoumView: View {
                 Button {
                     CoachHaptic.selectionTap()
                     if let destination {
+                        if let quickStartMode = AskNoumModeSuggestion.quickStartMode(for: destination) {
+                            PracticeModeQuickStart.arm(for: quickStartMode)
+                        }
                         navigationPath.append(destination)
                     } else if let primary = layout.primary {
                         send(primary)

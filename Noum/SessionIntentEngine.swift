@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Session Intent Engine
 //
-// Pure-function options builder for the pre-rep "Today's focus?" sheet.
+// Pure-function options builder for declared-focus surfaces.
 // Takes the active forward plan, the user's trend focus, and their
 // coaching profile; produces 3 ordered `SessionIntent` options the
 // prompt can render as chip buttons.
@@ -25,7 +25,7 @@ import Foundation
 
 enum SessionIntentEngine {
 
-    /// Build the option set the pre-rep prompt should render. Pure
+    /// Build the option set a declared-focus surface should render. Pure
     /// function — inputs in, ordered options out — so the tests can
     /// pin every branch without spinning up a SwiftUI runtime.
     ///
@@ -99,8 +99,8 @@ enum SessionIntentEngine {
         }
 
         // 4) Generic — always present, always last. Gives the user a
-        //    concrete "I just want to speak" option so they never have
-        //    to dismiss the sheet awkwardly.
+        //    concrete "I just want to speak" option so any future
+        //    declared-focus surface can stay low-friction.
         let genericLabel = "Open rep"
         let generic = SessionIntent(
             // Pick a default priority for the generic option — pick the
@@ -120,9 +120,10 @@ enum SessionIntentEngine {
 
 // MARK: - Session Intent Prompt Policy
 //
-// The intent sheet is useful once Noum has a small amount of memory.
-// Before that it competes with the first-value loop by asking the user
-// to configure a rep before the app has proven it can coach one.
+// The old blocking pre-rep sheet competed with the moment a user had
+// chosen to speak. Keep the policy seam so historical tests and future
+// inline/chat capture can reuse the threshold, but never auto-present a
+// setup sheet from practice entry.
 enum SessionIntentPromptPolicy {
     static let minimumCompletedSessions = 2
 
@@ -131,9 +132,6 @@ enum SessionIntentPromptPolicy {
         hasPendingIntent: Bool,
         hasPromptedThisVisit: Bool
     ) -> Bool {
-        guard completedSessionCount >= minimumCompletedSessions else { return false }
-        guard !hasPendingIntent else { return false }
-        guard !hasPromptedThisVisit else { return false }
-        return true
+        false
     }
 }
