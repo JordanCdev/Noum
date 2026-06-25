@@ -1355,6 +1355,29 @@ Preserve these unless the owner explicitly says to clean them.
 
 ## Current UX iteration status
 
+**2026-06-25 snapshot (HEAD `46b92d5`, branch `ux-overhaul`):**
+- **Score holding at 7.4/10** — see `docs/COACH_PARITY_EVAL_2026-06-25.md`. The three
+  06-23 slices (organic focus check-in, baseline evidence radar + signup motivation,
+  Impromptu redesign) have **landed/committed** and are verified end-to-end; their +0.2
+  was already pre-credited at 06-23, so no new movement. 6-of-6 role agents returned;
+  16/16 verified gaps survived adversarial verification.
+- **Single biggest drag is unchanged: acquisition / first-rep (5.5).** The double-Begin
+  regression is **LIVE at HEAD** (hero CTA `PracticeModeSelectionView.swift:362-368`
+  navigates without `PracticeModeQuickStart.arm()`; consume at `TimedPracticeView.swift:862`
+  fails → second Begin + 15s thinking countdown). Fix is **compile-verified and ready**:
+  `docs/PATCH_double_begin_first_rep.md` (`xcodebuild build` SUCCEEDED this run).
+- **Why nothing shipped:** a concurrent session holds a STAGED coach-chat/markdown/TTS
+  diff (10 coach source files + all 4 test files + `Localizable.xcstrings`) and was
+  re-verifying the full UI suite. The double-Begin source fix alone reds
+  `testFirstRunValueLoopReachesFirstVerdictWithInjectedTranscript` (`NoumUITests.swift:223`),
+  so source + test must land **atomically** once that staged diff merges. Concurrency-forced,
+  honest — same conclusion as the prior continuations.
+- **Next session sequence (device-owning):** (1) let the staged coach-chat diff land;
+  (2) apply the double-Begin patch atomically + on-device QA; (3) build the auto-guided
+  first rep (`docs/SPEC_first_rep_auto_guided.md`, the dominant +0.7–1.0 lever);
+  (4) `ProfileView` transfer-loop teaser (no n=3 floor change); (5) thread onboarding
+  answers into picker `whyNow` (`PracticeSupport.swift:9776-9790`); (6) clear dead code.
+
 Iteration 1 - post-rep verdict:
 
 - Functionally landed. Summary now leads with one read, verified proof where
