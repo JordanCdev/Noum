@@ -1,5 +1,27 @@
 # Ready-to-apply patch — double-Begin fix on the recommended-hero CTA
 
+> ## ⚠️ SUPERSEDED — landed differently in commit `aaf7061` (2026-06-25)
+> This patch was **arm-only and compile-verified, never run**. The first real
+> sim run exposed two bugs it would have shipped, so the fix that actually
+> landed differs:
+> 1. **Setup-page flash.** Arming + consuming in `TimedPracticeView.task` *after*
+>    `await PracticeTopics.next(...)` left the setup page (and a 2nd Begin)
+>    visible for up to ~3s before auto-begin. Fix: the quick-start consume +
+>    `beginSession()` moved to the **top of the `.task`**, before the yield/await.
+> 2. **Lost config access.** One-tap removed the *only* setup entry for the
+>    recommended mode (it has no row in "other ways"). Fix: a restrained
+>    **"Adjust this rep"** affordance (`practiceModes.recommendedHero.adjust`)
+>    that opens setup without arming. Hero `Begin` now always one-tap auto-begins.
+>
+> Also note: NO app-state gate (`hasRatedEvidence` / `masteryStore.isEmpty` /
+> `sessions.isEmpty`) reliably reads "real first run" — `UI_TESTING_REAL_FIRST_RUN`
+> resets get undone by `AuthManager.deferStoreReloadForCurrentAccount` reloading
+> account-keyed stores post-init on reused sims. The gear/Adjust design needs no
+> gate. Verified green on the iPhone 17 sim: `testFirstRunValueLoop…`,
+> `testCaptureTimedSetupOnly`, `testPracticeModesOpenAvailableScreens`.
+> **Do not re-apply the patch below as-is.** Kept for the diagnosis history.
+
+
 Status: **specced + compile-verified, NOT committed** (2026-06-25). Change 1 (source)
 was applied and **`xcodebuild build` SUCCEEDED**, then reverted to keep the tree clean
 for the concurrent session. It is **not** safe to ship the source alone:
