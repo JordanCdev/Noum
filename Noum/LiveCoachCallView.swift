@@ -1,5 +1,6 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import os
 
 // MARK: - Live-call dead-mic watchdog (pure decision logic)
 //
@@ -57,6 +58,8 @@ enum LiveCallMicWatchdog {
 
 @available(iOS 17.0, macOS 12.0, *)
 struct LiveCoachCallView: View {
+    private static let speechLog = Logger(subsystem: "com.jordancoaten.noum", category: "AskNoumSpeech")
+
     /// Switch to the typed chat view (the "Type instead" affordance).
     var onSwitchToType: () -> Void
     /// Leave the coach surface entirely.
@@ -85,6 +88,9 @@ struct LiveCoachCallView: View {
     @State private var recordingArmedAt: Date? = nil
     /// Set when the dead-mic watchdog fires; cleared on the next Talk tap.
     @State private var deadMicNotice: String? = nil
+    /// UI harness only: seed the live caption once for deterministic caption
+    /// rendering tests without faking microphone input.
+    @State private var didSeedDebugCaption = false
 
     /// Polls for end-of-turn silence. Cheap no-op unless we're recording.
     private let tick = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
@@ -148,7 +154,10 @@ struct LiveCoachCallView: View {
         }
         if store.isAwaitingReply { return nil }
         guard hasLiveExchange || speaker.isSpeaking else { return nil }
-        return store.messages.last(where: { $0.role == .coach && !$0.isPending })?.text
+        guard let text = store.messages.last(where: { $0.role == .coach && !$0.isPending })?.text else {
+            return nil
+        }
+        return CoachReplyTextSanitizer.displayText(from: text)
     }
 
     /// True when the latest coach turn being captioned is a legacy offline row.
@@ -192,7 +201,10 @@ struct LiveCoachCallView: View {
             .padding(.bottom, Spacing.lg)
         }
         .toolbar(.hidden, for: .navigationBar)
-        .onAppear { voiceInput.onFinalTranscript = { text in handleUtterance(text) } }
+        .onAppear {
+            voiceInput.onFinalTranscript = { text in handleUtterance(text) }
+            seedDebugCaptionIfNeeded()
+        }
         .onDisappear { endLoop() }
         // Silence detection — ends the turn after a natural pause.
         .onReceive(tick) { _ in silenceTick() }
@@ -329,11 +341,13 @@ struct LiveCoachCallView: View {
                     }
                 }
                 ScrollView {
-                    Text(caption)
-                        .font(Typography.body)
-                        .foregroundStyle(.white.opacity(captionIsOffline ? 0.72 : 0.92))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
+                    CoachFormattedMessageText(
+                        text: caption,
+                        textColor: .white.opacity(captionIsOffline ? 0.72 : 0.92),
+                        accent: .white.opacity(captionIsOffline ? 0.46 : 0.72)
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
                 // Raised from 150 so the recent multi-sentence coaching reads
                 // don't clip into a cramped nested scroll under larger Dynamic
@@ -343,6 +357,7 @@ struct LiveCoachCallView: View {
                 .frame(maxHeight: 220)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(captionIsOffline ? "Noum, offline reply: \(caption)" : "Noum: \(caption)")
+                .accessibilityIdentifier("askNoum.live.caption")
             }
             .padding(Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -431,6 +446,21 @@ struct LiveCoachCallView: View {
         if trimmed.count <= maximumLength { return trimmed }
         let clipped = String(trimmed.prefix(maximumLength)).trimmingCharacters(in: .whitespacesAndNewlines)
         return clipped + "..."
+    }
+
+    private func seedDebugCaptionIfNeeded() {
+        let launchArguments = ProcessInfo.processInfo.arguments
+        guard !didSeedDebugCaption,
+              launchArguments.contains("UI_TESTING"),
+              launchArguments.contains("UI_TESTING_LIVE_FORCE_MARKDOWN_CAPTION")
+        else { return }
+        didSeedDebugCaption = true
+        hasLiveExchange = true
+        _ = store.injectCoachTurn("""
+        **Read:** You want it straight. Your baseline says fillers rise near the close.
+
+        **Move:** Give one 30-second update, state the recommendation first, then stop.
+        """)
     }
 
     // MARK: - Control bar (Zoom-style)
@@ -617,17 +647,24 @@ struct LiveCoachCallView: View {
                 spokenRepliesEnabled: voiceSettings.askNoumSpokenRepliesEnabled,
                 localeSupportsAI: LocaleSettingsManager.shared.current.aiSupported
             )
-            if route != .none, let spokenText = AskNoumSpokenMode.spokenText(for: outcome) {
-                    speaker.speak(
-                        spokenText,
-                        setup: IMConversationSetup(
-                            scenario: .workUpdate,
-                            targetTone: AskNoumSpokenMode.coachTone(for: voice)
-                        ),
-                        allowOnDeviceFallback: true,
-                        onDeviceOnly: false
-                    )
-                }
+            guard route != .none else {
+                Self.speechLog.debug("live coach speech skipped route=none")
+                return
+            }
+            guard let spokenText = AskNoumSpokenMode.spokenText(for: outcome) else {
+                Self.speechLog.notice("live coach speech skipped after sanitizer emptied reply")
+                return
+            }
+            Self.speechLog.info("live coach speech starting chars=\(spokenText.count, privacy: .public)")
+            speaker.speak(
+                spokenText,
+                setup: IMConversationSetup(
+                    scenario: .workUpdate,
+                    targetTone: AskNoumSpokenMode.coachTone(for: voice)
+                ),
+                allowOnDeviceFallback: true,
+                onDeviceOnly: false
+            )
             }
         }
 

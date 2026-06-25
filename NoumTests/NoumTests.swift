@@ -8538,21 +8538,32 @@ struct CoachMessageTextFormatterTests {
 
     @Test func parsesParagraphsBulletsAndNumberedSteps() {
         let blocks = CoachMessageTextFormatter.blocks(from: """
-        **Read:** the close softened.
-        - **Move:** hold one beat before the final sentence.
+        Read: the close softened.
+        - Move: hold one beat before the final sentence.
         1. Run one Timed rep.
         2. Review the final line.
         """)
 
         #expect(blocks == [
-            .paragraph("**Read:** the close softened."),
-            .bullet("**Move:** hold one beat before the final sentence."),
+            .paragraph("Read: the close softened."),
+            .bullet("Move: hold one beat before the final sentence."),
             .numbered(1, "Run one Timed rep."),
             .numbered(2, "Review the final line.")
         ])
     }
 
-    @Test func parsesInlineBoldSegments() {
+    @Test func plainLeadInsRenderAsStrongSegments() {
+        let segments = CoachMessageTextFormatter.inlineSegments(
+            from: "Read: 5 fillers. Move: hold the pause."
+        )
+
+        #expect(segments == [
+            .init(text: "Read:", isStrong: true),
+            .init(text: " 5 fillers. Move: hold the pause.", isStrong: false)
+        ])
+    }
+
+    @Test func stillParsesLegacyInlineBoldSegments() {
         let segments = CoachMessageTextFormatter.inlineSegments(
             from: "**Read:** 5 fillers. **Move:** hold the pause."
         )
@@ -8565,9 +8576,111 @@ struct CoachMessageTextFormatterTests {
         ])
     }
 
+    @Test func sanitizedLegacyMarkdownStillRendersCoachLeadInStrong() {
+        let display = CoachReplyTextSanitizer.displayText(from: "**Read:** 5 fillers show the rush.")
+        let segments = CoachMessageTextFormatter.inlineSegments(from: display)
+
+        #expect(display == "Read: 5 fillers show the rush.")
+        #expect(segments == [
+            .init(text: "Read:", isStrong: true),
+            .init(text: " 5 fillers show the rush.", isStrong: false)
+        ])
+    }
+
     @Test func stripsMarkdownHeadingPrefixIntoPlainParagraph() {
         let blocks = CoachMessageTextFormatter.blocks(from: "### Next move")
         #expect(blocks == [.paragraph("Next move")])
+    }
+}
+
+struct CoachReplyTextSanitizerTests {
+
+    @Test func displayTextStripsRawMarkdownMarkers() {
+        let raw = """
+        ### Coach read
+        **Read:** You want it straight.
+        * **Move:** hold the final pause.
+        """
+        let display = CoachReplyTextSanitizer.displayText(from: raw)
+
+        #expect(display == """
+        Coach read
+        Read: You want it straight.
+        - Move: hold the final pause.
+        """)
+        #expect(!display.contains("**"))
+        #expect(!display.contains("###"))
+    }
+
+    @Test func displayTextStripsCommonMarkdownArtifacts() {
+        let raw = """
+        > **Focus:** Use *one sentence* for the close.
+        + Try `pause-first` before [the answer](https://example.com).
+        _Keep the last line plain._
+        """
+        let display = CoachReplyTextSanitizer.displayText(from: raw)
+
+        #expect(display == """
+        Focus: Use one sentence for the close.
+        - Try pause-first before the answer.
+        Keep the last line plain.
+        """)
+        for marker in ["**", "*one sentence*", "`", "[", "](", "https://", ">"] {
+            #expect(!display.contains(marker), "display text should not expose \(marker)")
+        }
+    }
+
+    @Test func spokenTextDropsFormattingAndScaffoldLabels() {
+        let raw = """
+        **Read:** You want it straight.
+        - **Move:** Hit record and give a 30-second update.
+        - **Why:** that tests the rushed close.
+        """
+        let spoken = CoachReplyTextSanitizer.spokenText(from: raw)
+
+        #expect(spoken == "You want it straight. Hit record and give a 30-second update. that tests the rushed close.")
+        #expect(!spoken.contains("**"))
+        #expect(!spoken.lowercased().contains("read:"))
+        #expect(!spoken.lowercased().contains("move:"))
+    }
+
+    @Test func spokenTextDropsMarkdownArtifactsBeforeTTS() {
+        let raw = """
+        > **Focus:** Use *one sentence*.
+        + **Move:** Say `recommendation, reason, stop`.
+        [Why](https://example.com): it keeps the close clean.
+        """
+        let spoken = CoachReplyTextSanitizer.spokenText(from: raw)
+
+        #expect(spoken == "Use one sentence. Say recommendation, reason, stop. it keeps the close clean.")
+        let value = spoken
+        for marker in ["**", "*", "`", "[", "](", "https://", "focus:", "move:", "why:"] {
+            #expect(!value.lowercased().contains(marker), "spoken text should not expose \(marker)")
+        }
+    }
+
+    @Test func spokenTextDropsSameLineScaffoldLabels() {
+        let spoken = CoachReplyTextSanitizer.spokenText(
+            from: "Read: your close is rushed. Move: stop after the recommendation. Why: it tests control."
+        )
+
+        #expect(spoken == "your close is rushed. stop after the recommendation. it tests control.")
+        #expect(!spoken.lowercased().contains("read:"))
+        #expect(!spoken.lowercased().contains("move:"))
+        #expect(!spoken.lowercased().contains("why:"))
+    }
+
+    @Test func spokenTextDropsEmojiAndDecorativeSymbolsBeforeTTS() {
+        let raw = "Read: fair push 🎯. Move: one clean close, then stop ✅"
+        let display = CoachReplyTextSanitizer.displayText(from: raw)
+        let spoken = CoachReplyTextSanitizer.spokenText(from: raw)
+
+        #expect(display.contains("🎯"))
+        #expect(display.contains("✅"))
+        #expect(spoken == "fair push. one clean close, then stop")
+        #expect(!spoken.contains("🎯"))
+        #expect(!spoken.contains("✅"))
+        #expect(!spoken.lowercased().contains("move:"))
     }
 }
 
@@ -9322,7 +9435,8 @@ struct CoachContextBuilderTests {
 
         #expect(prompt.contains("Structured Ask Noum reply shape is enabled"))
         #expect(prompt.contains("read -> evidence -> next move"))
-        #expect(prompt.contains("not visible section labels"))
+        #expect(prompt.contains("do not expose the scaffold by default"))
+        #expect(prompt.contains("Fixed labels like Read, Evidence"))
         #expect(prompt.contains("VERIFIED PROOFS"))
         #expect(prompt.contains("If you cannot verify the quote"))
         // The shape is for SUBSTANTIVE turns only — greetings / off-topic /
@@ -9330,7 +9444,7 @@ struct CoachContextBuilderTests {
         // read -> evidence -> next-move template (it reads robotic there).
         // Pin the carve-out so a prompt edit can't silently drop it.
         #expect(prompt.contains(
-            "Greetings, off-topic noise, explicit list/plan requests, and pure preference turns may break the shape"
+            "Greetings, off-topic noise, explicit list/plan requests, explicit shortness requests, and pure preference turns may break the shape"
         ))
     }
 
@@ -9372,7 +9486,7 @@ struct CoachContextBuilderTests {
 
         #expect(normalized.contains("greetings or simple preference turns should usually be 1-2"))
         #expect(prompt.contains(
-            "Greetings, off-topic noise, explicit list/plan requests, and pure preference turns may break the shape"
+            "Greetings, off-topic noise, explicit list/plan requests, explicit shortness requests, and pure preference turns may break the shape"
         ))
     }
 
@@ -9415,6 +9529,9 @@ struct CoachContextBuilderTests {
         #expect(normalized.contains("concrete next move"))
         #expect(normalized.contains("this indicates"))
         #expect(normalized.contains("as an AI"))
+        #expect(normalized.contains("i understand your frustration"))
+        #expect(normalized.contains("here are some tips"))
+        #expect(normalized.contains("in order to improve"))
         #expect(normalized.contains("not a dashboard"))
     }
 
@@ -9433,11 +9550,18 @@ struct CoachContextBuilderTests {
         // should still be short enough to scan.
         #expect(normalized.contains("Default to 1-4 short lines"))
         #expect(normalized.contains("Voice read-aloud should be tighter still"))
-        #expect(normalized.contains("bold lead-ins"))
+        #expect(normalized.contains("short plain lead-ins"))
         #expect(normalized.contains("bullets for 2-3 options"))
+        #expect(normalized.contains("Do not emit literal Markdown markers"))
         #expect(normalized.contains("report-style wording about scores being down"))
         #expect(!normalized.contains("recent reps show a decline"))
         #expect(normalized.contains("The pattern I'd watch is"))
+    }
+
+    @Test func systemPromptForbidsLiteralMarkdownMarkersBecauseTTSReadsSharedText() {
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+        #expect(prompt.contains("the app and TTS share the text"))
+        #expect(prompt.contains("literal Markdown markers"))
     }
 
     @Test func systemPromptReferencesLiveCoachingFrame() {
@@ -10733,6 +10857,22 @@ struct AskNoumStoreTests {
         #expect(!store.isAwaitingReply)
     }
 
+    @Test func completeCoachTurnNormalizesMarkdownBeforePersistence() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("Keep it short.")
+        store.completeCoachTurn(id: ids.coachID, outcome: .reply("""
+        **Read:** You want it straight.
+        - **Move:** Give one 30-second update and stop.
+        """))
+
+        #expect(store.messages[1].role == .coach)
+        #expect(store.messages[1].text == """
+        Read: You want it straight.
+        - Move: Give one 30-second update and stop.
+        """)
+        #expect(!store.messages[1].text.contains("**"))
+    }
+
     /// HARDEN #1 (critical privacy) — the coach thread is per-account; switching
     /// accounts and reloading must NOT bleed the prior user's dialogue, and the
     /// prior account's thread must still be there when switched back.
@@ -10807,6 +10947,33 @@ struct AskNoumStoreTests {
             #expect(store.messages[1].isOffline == false)
             #expect(!store.isAwaitingReply)
         }
+    }
+
+    @Test func contentRejectedNoticeDoesNotBlameUserClarity() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("Why can't you shape a useful answer?")
+        store.completeCoachTurn(id: ids.coachID, outcome: .failure(.contentRejected))
+
+        let notice = store.messages[1].text.lowercased()
+        #expect(store.messages[1].role == .systemNotice)
+        #expect(notice.contains("held that one back"))
+        #expect(notice.contains("one clear move"))
+        #expect(!notice.contains("missed the coaching bar"))
+        #expect(!notice.contains("clearer sentence"))
+        #expect(!notice.contains("your question"))
+        #expect(!notice.contains("model"))
+    }
+
+    @Test func emptyNoticeDoesNotExposeModelJargon() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("Give me one honest read.")
+        store.completeCoachTurn(id: ids.coachID, outcome: .failure(.empty))
+
+        let notice = store.messages[1].text.lowercased()
+        #expect(store.messages[1].role == .systemNotice)
+        #expect(notice.contains("rather than guessing"))
+        #expect(!notice.contains("model"))
+        #expect(!notice.contains("usable coach text"))
     }
 
     /// Defensive: a live `.reply` with all-whitespace text still must not leave
@@ -23608,12 +23775,36 @@ struct S5SpokenModeRouteTests {
         }
     }
 
+    @Test func scaffoldOnlyReplyNeverStartsSpeechRoute() {
+        let outcome = ChatOutcome.reply("**Read:**\n- **Move:**")
+
+        #expect(AskNoumSpokenMode.spokenRoute(
+            outcome: outcome,
+            spokenRepliesEnabled: true,
+            localeSupportsAI: true
+        ) == AskNoumSpokenMode.SpokenRoute.none)
+        #expect(AskNoumSpokenMode.spokenText(for: outcome) == nil)
+    }
+
     /// `spokenText` hands back trimmed live coach text and nil otherwise, so
     /// call sites can't drift from the route decision by re-extracting text.
     @Test func spokenTextMatchesSpeakableOutcomes() {
         #expect(AskNoumSpokenMode.spokenText(for: .reply("  Tighten the open.  ")) == "Tighten the open.")
         #expect(AskNoumSpokenMode.spokenText(for: .reply("   ")) == nil)
         #expect(AskNoumSpokenMode.spokenText(for: .failure(.network)) == nil)
+    }
+
+    @Test func spokenTextNeverReadsMarkdownOrScaffoldLabels() {
+        let spoken = AskNoumSpokenMode.spokenText(for: .reply("""
+        **Read:** You want it straight.
+        - **Move:** Give one 30-second update and stop.
+        """))
+
+        #expect(spoken == "You want it straight. Give one 30-second update and stop.")
+        let value = spoken ?? ""
+        #expect(!value.contains("**"))
+        #expect(!value.lowercased().contains("read:"))
+        #expect(!value.lowercased().contains("move:"))
     }
 }
 
@@ -23826,6 +24017,20 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .roboticPhrase("let's"))
     }
 
+    @Test func rejectsAssistantExplainerRegister() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "I understand your frustration. Here are some tips to communicate more clearly: be clear and concise."
+        )
+        #expect(issue == .roboticPhrase("i understand your frustration"))
+    }
+
+    @Test func rejectsPatronizingSimplificationRegister() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Effective communication is important. In order to improve, try to be more confident."
+        )
+        #expect(issue == .roboticPhrase("in order to improve"))
+    }
+
     @Test func rejectsBareClarification() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Can you clarify what you mean?"
@@ -23859,13 +24064,25 @@ struct AICoachChatReplyQualityGateTests {
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == nil)
     }
 
-    @Test func acceptsCompactFormattedCoachReply() {
+    @Test func acceptsCompactStructuredCoachReplyWithoutRawMarkdown() {
         let reply = """
+        Read: 5 fillers show the rush is happening near the close.
+        - Move: next rep, hold one beat before the final sentence.
+        - Why: that tests whether pace is driving the filler spike.
+        """
+        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == nil)
+    }
+
+    @Test func sanitizerTurnsLegacyMarkdownReplyIntoAcceptedPlainReply() {
+        let raw = """
         **Read:** 5 fillers show the rush is happening near the close.
         - **Move:** next rep, hold one beat before the final sentence.
         - **Why:** that tests whether pace is driving the filler spike.
         """
-        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == nil)
+        let normalized = CoachReplyTextSanitizer.displayText(from: raw)
+
+        #expect(!normalized.contains("**"))
+        #expect(AICoachChatService.replyQualityIssue(in: normalized, latestUserTurn: "What next?") == nil)
     }
 
     @Test func rejectsOverlongFormattedDump() {
@@ -23949,6 +24166,14 @@ struct AICoachChatReplyQualityGateTests {
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "Give me a 7-day plan.") == nil)
     }
 
+    @Test func shortnessTurnDoesNotAccidentallyExpandBecauseItMentionsOverexplaining() {
+        let reply = "First, your opening should become more direct. Second, your middle needs clearer evidence. Third, your close needs a firmer ask. Fourth, your pacing needs a pause. Fifth, your next practice should combine all of that."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "Stop overexplaining and keep it short."
+        ) == .tooLong)
+    }
+
     @Test func seniorCoachRubricAcceptsAttunedAnchoredAction() {
         let reply = "Fair push: that answer read too generic. Your last rep already has the signal; next rep, hold one beat before sentence two and make the close the whole target."
         let result = AICoachChatService.professionalCoachRubric(
@@ -23965,6 +24190,34 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "This sounds robotic and too much writing."
         )
         #expect(issue == .missedTrustRepair)
+    }
+
+    @Test func trustRepairFallbackAnswersShortnessCritiqueWithoutNoticeCopy() {
+        let turn = "That’s too much writing, man. I just keep it short."
+        let fallback = AICoachChatService.trustRepairFallbackReply(for: turn)
+
+        #expect(fallback != nil)
+        #expect(fallback?.contains("Fair push") == true)
+        #expect(fallback?.contains("one read, one drill") == true)
+        #expect(fallback?.contains("I couldn’t shape") != true)
+        #expect(fallback?.contains("clearer sentence") != true)
+        #expect(AICoachChatService.replyQualityIssue(in: fallback ?? "", latestUserTurn: turn) == nil)
+    }
+
+    @Test func trustRepairFallbackAnswersWhyUsefulAnswerQuestionWithoutBlamingUser() {
+        let turn = "Why can’t you shape a useful answer?"
+        let fallback = AICoachChatService.trustRepairFallbackReply(for: turn)
+
+        #expect(fallback != nil)
+        #expect(fallback?.contains("my draft, not your ask") == true)
+        #expect(fallback?.lowercased().contains("model") != true)
+        #expect(fallback?.lowercased().contains("your question") != true)
+        #expect(AICoachChatService.replyQualityIssue(in: fallback ?? "", latestUserTurn: turn) == nil)
+    }
+
+    @Test func trustRepairFallbackRequiresExplicitQualityComplaint() {
+        #expect(AICoachChatService.trustRepairFallbackReply(for: "What should I focus on next?") == nil)
+        #expect(AICoachChatService.trustRepairFallbackReply(for: nil) == nil)
     }
 
     @Test func turnAwareGateRejectsWhatNextWithoutConcreteAction() {

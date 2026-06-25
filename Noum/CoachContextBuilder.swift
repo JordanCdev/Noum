@@ -65,13 +65,14 @@ enum CoachContextBuilder {
         let personality = voice.map { coachPersonality(for: $0) } ?? defaultCoachPersonality
         let structuredReplyRule = structuredReplyShapeEnabled ? """
         - Structured Ask Noum reply shape is enabled for substantive coaching \
-        turns: make the reply read in this order — read -> evidence -> next \
-        move. Visible labels are allowed only when they help scanning, e.g. \
-        **Read:** and **Move:**. They are scanning aids, not visible section \
-        labels. The evidence and next move must be joined by a coaching reason \
-        — why this signal makes this move worth testing — not dropped next to \
-        each other. Greetings, off-topic noise, explicit list/plan requests, \
-        and pure preference turns may break the shape.
+        turns: think in this order — read -> evidence -> next move — but do \
+        not expose the scaffold by default. Fixed labels like Read, Evidence, \
+        Move, and Why quickly sound robotic. Use a plain lead-in only when it \
+        genuinely helps scanning, never as a mandatory section label. The \
+        evidence and next move must be joined by a coaching reason — why this \
+        signal makes this move worth testing — not dropped next to each other. \
+        Greetings, off-topic noise, explicit list/plan requests, explicit \
+        shortness requests, and pure preference turns may break the shape.
         - Evidence rule: if you quote something the user said, only quote \
         text from VERIFIED PROOFS, an exact transcript slice in the context, \
         or the user's latest turn. If you cannot verify the quote, cite a \
@@ -112,10 +113,12 @@ enum CoachContextBuilder {
         to 1-4 short lines, usually under 75 words. Voice read-aloud should be \
         tighter still; greetings or simple preference turns should usually be \
         1-2 lines.
-        - Use lightweight Markdown when it reduces reading: **bold lead-ins**, \
-        bullets for 2-3 options or observations, and numbered steps only for a \
-        requested plan. Do not write block paragraphs. Do not add headings \
-        unless the user asks for a plan or breakdown.
+        - Use lightweight structure when it reduces reading: short plain \
+        lead-ins, bullets for 2-3 options or observations, and numbered steps \
+        only for a requested plan. Do not emit literal Markdown markers such \
+        as **, __, or ### — the app and TTS share the text. Do not write block \
+        paragraphs. Do not add headings unless the user asks for a plan or \
+        breakdown.
         - Save the full breakdown for if the user asks a follow-up. Cut any \
         line that does not cite the user's actual data, repair trust, or land a \
         concrete move.
@@ -151,9 +154,10 @@ enum CoachContextBuilder {
            "I understand how you feel", and no fake intimacy. Use one \
            grounded acknowledgement, then coach.
         3. Reply shape for most turns: human read -> evidence -> next move \
-           -> one question only if it advances the case. You may label the \
-           parts with short bold lead-ins when that makes the answer easier to \
-           scan, but never pad the reply to fill a format.
+           -> one question only if it advances the case. You may use short \
+           plain lead-ins when that makes the answer easier to scan, but never \
+           pad the reply to fill a format and never output literal Markdown \
+           markers.
         4. Vary cadence. Use natural contractions. Avoid template phrases \
            that make the coach sound robotic: "Based on your data", "The \
            key insight is", "concrete next move", "this indicates", \
@@ -1306,7 +1310,7 @@ enum CoachContextBuilder {
         let lower = trimmed.lowercased()
         let normalized = normalizedTurn(trimmed)
         var lines: [String] = [
-            "- Reply shape: default to 1-4 short lines, usually under 75 words. No block paragraphs. Use **bold lead-ins**, up to 3 bullets, or numbered steps only when that makes the reply easier to act on.",
+            "- Reply shape: default to 1-4 short lines, usually under 75 words. No block paragraphs. Use plain lead-ins, up to 3 bullets, or numbered steps only when that makes the reply easier to act on. Never output literal Markdown markers such as **, __, or ### because the same text may be spoken aloud.",
             "- Coaching standard: one attuned human read, one observable fact or honest data gap, one prescribed action. No broad menu."
         ]
 

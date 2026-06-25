@@ -80,6 +80,171 @@ enum ChatExtractionResult: Equatable {
     case lengthTruncated
 }
 
+/// Normalizes live coach text before it is stored, rendered in the live call,
+/// or sent to TTS. The model may still occasionally emit Markdown-ish text;
+/// Noum's app surfaces should never expose raw scaffolding like `**Read:**`,
+/// and spoken replies should not read formatting labels aloud.
+enum CoachReplyTextSanitizer {
+
+    nonisolated static func displayText(from raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return "" }
+
+        value = replace(pattern: "\\[([^\\]\\n]+?)\\]\\([^\\)\\n]+?\\)", in: value, template: "$1")
+        value = replace(pattern: "`([^`\\n]+?)`", in: value, template: "$1")
+        value = replace(pattern: "\\*\\*([^\\n*]+?)\\*\\*", in: value, template: "$1")
+        value = replace(pattern: "__([^\\n_]+?)__", in: value, template: "$1")
+        value = replace(pattern: "\\*([^\\n*]+?)\\*", in: value, template: "$1")
+        value = replace(pattern: "(?<![A-Za-z0-9])_([^\\n_]+?)_(?![A-Za-z0-9])", in: value, template: "$1")
+        value = value
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "__", with: "")
+            .replacingOccurrences(of: "`", with: "")
+
+        let lines = value
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { normalizeDisplayLine(String($0)) }
+
+        return collapseBlankLines(lines)
+    }
+
+    nonisolated static func spokenText(from raw: String) -> String {
+        let display = displayText(from: raw)
+        guard !display.isEmpty else { return "" }
+
+        let parts = display
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                var value = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+                value = stripBulletMarker(from: value)
+                value = stripNumberMarker(from: value)
+                value = stripCoachLeadIn(from: value)
+                return value.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            .filter { !$0.isEmpty }
+
+        let speechSafe = stripSpokenOnlyDecorations(from: parts.joined(separator: " "))
+            .replacingOccurrences(of: "\\s+([,.!?;:])", with: "$1", options: .regularExpression)
+        return stripInlineCoachLeadIns(from: speechSafe)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private nonisolated static func replace(
+        pattern: String,
+        in value: String,
+        template: String
+    ) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return value }
+        return regex.stringByReplacingMatches(
+            in: value,
+            range: NSRange(value.startIndex..., in: value),
+            withTemplate: template
+        )
+    }
+
+    private nonisolated static func normalizeDisplayLine(_ line: String) -> String {
+        var value = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        while value.hasPrefix("#") {
+            value.removeFirst()
+            value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        while value.hasPrefix(">") {
+            value.removeFirst()
+            value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if value.hasPrefix("* ") {
+            value = "- " + String(value.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if value.hasPrefix("+ ") {
+            value = "- " + String(value.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return value
+    }
+
+    private nonisolated static func collapseBlankLines(_ lines: [String]) -> String {
+        var output: [String] = []
+        var previousBlank = false
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                if !previousBlank, !output.isEmpty {
+                    output.append("")
+                }
+                previousBlank = true
+            } else {
+                output.append(trimmed)
+                previousBlank = false
+            }
+        }
+        return output.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private nonisolated static func stripBulletMarker(from value: String) -> String {
+        for marker in ["- ", "* ", "+ ", "• "] where value.hasPrefix(marker) {
+            return String(value.dropFirst(marker.count))
+        }
+        return value
+    }
+
+    private nonisolated static func stripNumberMarker(from value: String) -> String {
+        guard let separator = value.firstIndex(where: { $0 == "." || $0 == ")" }) else {
+            return value
+        }
+        let prefix = value[..<separator]
+        guard !prefix.isEmpty,
+              prefix.allSatisfy({ $0.isNumber }),
+              let number = Int(prefix),
+              number > 0 else {
+            return value
+        }
+        let after = value.index(after: separator)
+        guard after < value.endIndex, value[after].isWhitespace else { return value }
+        return String(value[after...])
+    }
+
+    private nonisolated static func stripCoachLeadIn(from value: String) -> String {
+        let pattern = #"(?i)^(read|the read|coach read|next move|move|why|evidence|try this|try|focus):\s*"#
+        return replace(pattern: pattern, in: value, template: "")
+    }
+
+    private nonisolated static func stripInlineCoachLeadIns(from value: String) -> String {
+        let pattern = #"(?i)(^|[.!?]\s+|\s+[—-]\s+)(read|the read|coach read|next move|move|why|evidence|try this|try|focus):\s*"#
+        return replace(pattern: pattern, in: value, template: "$1")
+    }
+
+    /// Keep visual warmth available in chat, but never send emoji/decorative
+    /// symbols to TTS where they can be read aloud as literal names.
+    private nonisolated static func stripSpokenOnlyDecorations(from value: String) -> String {
+        var output = ""
+        for character in value {
+            if character.unicodeScalars.contains(where: isSpokenEmojiScalar) {
+                continue
+            }
+            output.append(character)
+        }
+        return output
+    }
+
+    private nonisolated static func isSpokenEmojiScalar(_ scalar: Unicode.Scalar) -> Bool {
+        if scalar.properties.isEmojiPresentation ||
+            scalar.properties.isEmojiModifier ||
+            scalar.properties.isEmojiModifierBase {
+            return true
+        }
+        switch scalar.value {
+        case 0xFE0F, 0x200D:
+            return true
+        case 0x1F000...0x1FAFF, 0x2600...0x27BF:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 /// Obvious ways a live Ask-Noum reply can fail the professional-coach contract.
 /// This is intentionally conservative: it catches drafts that are plainly too
 /// long, robotic, defensive, menu-shaped, or asking for bare clarification. It
@@ -334,6 +499,19 @@ enum CoachChatProviderRefusal: Equatable {
     }
 }
 
+/// Redacted provider state for debug tooling and future support screens.
+/// Never stores API keys, request bodies, user prompts, or response text.
+struct CoachChatProviderDiagnostic: Equatable {
+    let provider: CoachChatProvider
+    let displayName: String
+    let hasUsableKey: Bool
+    let model: String
+    let endpointHost: String?
+    let endpointPath: String?
+    let isCoolingDown: Bool
+    let cooldownRemainingSeconds: Int?
+}
+
 actor AICoachChatService {
 
     static let shared = AICoachChatService()
@@ -344,6 +522,10 @@ actor AICoachChatService {
     /// this date — never dropped entirely, because a cooling provider is
     /// still better than no provider when it's the only one keyed.
     private var providerCooldowns: [CoachChatProvider: Date] = [:]
+    private let keyedProvidersOverride: (() -> [CoachChatProvider])?
+    private let keyLookupOverride: ((CoachChatProvider) -> String?)?
+    private let localeSupportsAIOverride: (() -> Bool)?
+    private let providerHTTPOverride: ((CoachChatProvider, URL, String, [String: Any]) async throws -> ProviderHTTPResult)?
 
     /// Cap on the number of chat messages we replay to the model per
     /// request. The user context block carries the long-arc summary,
@@ -351,34 +533,70 @@ actor AICoachChatService {
     /// tokens without adding signal.
     private static let maxReplayMessages = 24
 
-    private init() {}
+    private init() {
+        self.keyedProvidersOverride = nil
+        self.keyLookupOverride = nil
+        self.localeSupportsAIOverride = nil
+        self.providerHTTPOverride = nil
+    }
+
+    init(
+        keyedProviders: @escaping () -> [CoachChatProvider],
+        keyLookup: @escaping (CoachChatProvider) -> String?,
+        localeSupportsAI: @escaping () -> Bool,
+        providerHTTP: @escaping (CoachChatProvider, URL, String, [String: Any]) async throws -> ProviderHTTPResult
+    ) {
+        self.keyedProvidersOverride = keyedProviders
+        self.keyLookupOverride = keyLookup
+        self.localeSupportsAIOverride = localeSupportsAI
+        self.providerHTTPOverride = providerHTTP
+    }
 
     /// Send a turn to the model. Returns `.reply(text)` on a live success or
     /// `.failure(cause)` when the model cannot produce a safe answer. Total
     /// function — never throws. The store turns failures into honest system
-    /// notices; Ask Noum must not synthesize local coach replies.
+    /// notices. The only local reply is a narrow trust-repair fallback after a
+    /// reachable model produced low-quality drafts for an explicit critique.
     func reply(
         history: [CoachMessage],
         systemPrompt: String,
         userContext: String,
         grounding: ChatGroundingContext = ChatGroundingContext()
     ) async -> ChatOutcome {
-        #if DEBUG
         // UI harness only: lets simulator tests verify send -> pipeline ->
         // store -> system-notice rendering without depending on live provider
-        // latency or keys. Production builds never see this branch.
-        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_CHAT_FORCE_NOTICE") {
-            return .failure(.network)
+        // latency or keys. Runtime-gated by `UI_TESTING` rather than
+        // compile-gated so UI tests stay deterministic across build configs.
+        let launchArguments = ProcessInfo.processInfo.arguments
+        if launchArguments.contains("UI_TESTING") {
+            if launchArguments.contains("UI_TESTING_CHAT_FORCE_GOAL_REPLY") {
+                return .reply("I can help with that shift. Confirm the voice card below, then I will tune the next rep around it.")
+            }
+            if launchArguments.contains("UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY") {
+                return .reply("""
+                **Read:** You want it straight.
+
+                **Move:** Give one 30-second update, state the recommendation first, then stop.
+                """)
+            }
+            if launchArguments.contains("UI_TESTING_CHAT_FORCE_NOTICE") {
+                return .failure(.network)
+            }
         }
-        #endif
 
         // M13: AI surfaces are English-only. Non-English chat now resolves as
         // a typed notice rather than an English local coach substitute.
-        guard await activeLocaleSupportsAI() else {
+        let localeSupportsAI: Bool
+        if let localeSupportsAIOverride {
+            localeSupportsAI = localeSupportsAIOverride()
+        } else {
+            localeSupportsAI = await activeLocaleSupportsAI()
+        }
+        guard localeSupportsAI else {
             return .failure(.localeUnsupported)
         }
 
-        let keyed = Self.keyedProviders()
+        let keyed = keyedProvidersOverride?() ?? Self.keyedProviders()
         guard !keyed.isEmpty else {
             Self.log.error("no chat provider has a key")
             return .failure(.noProvider)
@@ -398,6 +616,8 @@ actor AICoachChatService {
         )
 
         let chain = Self.orderedChain(keyed: keyed, cooldowns: providerCooldowns, now: Date())
+        Self.log.debug("chat turn start providers=\(chain.count, privacy: .public) replay=\(trimmed.count, privacy: .public) proofs=\(grounding.verifiedProofQuotes.count, privacy: .public) latestUserChars=\(latestUserTurn?.count ?? 0, privacy: .public)")
+        Self.log.debug("chat provider chain=\(Self.providerChainDescription(chain), privacy: .public)")
         var sawContentRejection = false
         for provider in chain {
             guard let endpoint = provider.endpoint, let key = key(for: provider) else { continue }
@@ -413,6 +633,7 @@ actor AICoachChatService {
             switch outcome {
             case .reply(let text):
                 providerCooldowns[provider] = nil
+                Self.log.info("chat turn succeeded via \(provider.displayName, privacy: .public) chars=\(text.count, privacy: .public)")
                 return .reply(text)
             case .refused(let refusal):
                 if refusal == .contentRejected { sawContentRejection = true }
@@ -426,6 +647,11 @@ actor AICoachChatService {
         // Every keyed provider refused this turn. A content rejection means
         // the model WAS reachable, so that cause must win over `.network`.
         Self.log.error("all \(chain.count) chat providers refused")
+        if sawContentRejection,
+           let fallback = Self.trustRepairFallbackReply(for: latestUserTurn) {
+            Self.log.notice("using trust-repair fallback after content rejection latestUserChars=\(latestUserTurn?.count ?? 0, privacy: .public)")
+            return .reply(fallback)
+        }
         return .failure(sawContentRejection ? .contentRejected : .network)
     }
 
@@ -436,8 +662,29 @@ actor AICoachChatService {
         env: [String: String] = ProcessInfo.processInfo.environment
     ) -> [CoachChatProvider] {
         CoachChatProvider.allCases.filter { provider in
-            if let value = env[provider.keyName], !value.isEmpty { return true }
-            return LocalConfigLoader.value(forKey: provider.keyName, plistNamed: "AIConfig") != nil
+            if usableAPIKey(env[provider.keyName]) != nil { return true }
+            return usableAPIKey(LocalConfigLoader.value(forKey: provider.keyName, plistNamed: "AIConfig")) != nil
+        }
+    }
+
+    /// Redacted snapshot for support/debug flows. It answers "what can the
+    /// app try right now?" without exposing credentials or user content.
+    func diagnosticSnapshot(now: Date = Date()) -> [CoachChatProviderDiagnostic] {
+        CoachChatProvider.allCases.map { provider in
+            let cooldownUntil = providerCooldowns[provider]
+            let remaining = cooldownUntil.map { max(0, Int(ceil($0.timeIntervalSince(now)))) } ?? 0
+            let isCooling = remaining > 0
+            let endpoint = provider.endpoint
+            return CoachChatProviderDiagnostic(
+                provider: provider,
+                displayName: provider.displayName,
+                hasUsableKey: key(for: provider) != nil,
+                model: provider.model,
+                endpointHost: endpoint?.host,
+                endpointPath: endpoint?.path,
+                isCoolingDown: isCooling,
+                cooldownRemainingSeconds: isCooling ? remaining : nil
+            )
         }
     }
 
@@ -452,6 +699,31 @@ actor AICoachChatService {
         let ready = keyed.filter { (cooldowns[$0] ?? .distantPast) <= now }
         let cooling = keyed.filter { (cooldowns[$0] ?? .distantPast) > now }
         return ready + cooling
+    }
+
+    nonisolated static func usableAPIKey(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let placeholder = trimmed.uppercased()
+        if [
+            "REPLACE_ME",
+            "YOUR_API_KEY",
+            "YOUR_KEY",
+            "PASTE_KEY_HERE",
+            "INSERT_API_KEY"
+        ].contains(placeholder) {
+            return nil
+        }
+        if trimmed.hasPrefix("<"), trimmed.hasSuffix(">") {
+            return nil
+        }
+        return trimmed
+    }
+
+    private nonisolated static func providerChainDescription(_ providers: [CoachChatProvider]) -> String {
+        providers.map(\.displayName).joined(separator: " > ")
     }
 
     private enum AttemptOutcome {
@@ -471,6 +743,7 @@ actor AICoachChatService {
         latestUserTurn: String?
     ) async -> AttemptOutcome {
         do {
+            Self.log.debug("attempting chat provider \(provider.displayName, privacy: .public)")
             let body = chatRequestBody(for: provider, system: system, messages: messages)
             var result = try await providerHTTP(provider: provider, endpoint: endpoint, key: key, body: body)
 
@@ -492,15 +765,23 @@ actor AICoachChatService {
                 let extraction = Self.chatExtractReplyText(from: data, provider: provider)
                 switch extraction {
                 case .text(let text):
+                    let normalized = CoachReplyTextSanitizer.displayText(from: text)
+                    guard !normalized.isEmpty else {
+                        Self.log.error("\(provider.displayName, privacy: .public) reply normalized to empty text")
+                        return .refused(.transient)
+                    }
+                    if normalized != text.trimmingCharacters(in: .whitespacesAndNewlines) {
+                        Self.log.notice("\(provider.displayName, privacy: .public) reply normalized before storage and speech")
+                    }
                     if let issue = Self.replyQualityIssue(
-                        in: text,
+                        in: normalized,
                         latestUserTurn: latestUserTurn,
                         quoteGuard: quoteGuard
                     ) {
                         Self.log.notice("\(provider.displayName, privacy: .public) reply tripped quality gate (\(String(describing: issue), privacy: .public)) — repairing")
                         if let repaired = await repairLowQualityReply(
                             issue: issue,
-                            draft: text,
+                            draft: normalized,
                             provider: provider,
                             endpoint: endpoint,
                             key: key,
@@ -514,7 +795,7 @@ actor AICoachChatService {
                         // next provider in the chain take the question.
                         return .refused(.contentRejected)
                     }
-                    return .reply(text)
+                    return .reply(normalized)
                 case .empty, .lengthTruncated:
                     Self.log.error("\(provider.displayName, privacy: .public) returned no usable text (\(extraction == .lengthTruncated ? "truncated" : "empty", privacy: .public))")
                     return .refused(.transient)
@@ -722,7 +1003,17 @@ actor AICoachChatService {
         "as an ai",
         "as your ai",
         "optimize your",
-        "utilize"
+        "utilize",
+        "i understand your frustration",
+        "here are some tips",
+        "here are a few tips",
+        "it's important to",
+        "it is important to",
+        "in order to improve",
+        "effective communication",
+        "to communicate more clearly",
+        "be clear and concise",
+        "try to be more confident"
     ]
 
     private nonisolated static let defensiveProductPhrases = [
@@ -741,17 +1032,70 @@ actor AICoachChatService {
             "robotic", "generic", "not ideal", "not a fan", "no where near",
             "nowhere near", "annoy", "frustrat", "sucks", "poop",
             "not human", "doesn't feel", "does not feel", "too much writing",
-            "hardcoded", "low eq", "not high eq"
-        ])
+            "too long", "shorter", "less writing", "less text",
+            "straight to the point", "straight to point", "get to the point",
+            "overexplain", "over-explain", "over explaining", "overexplaining",
+            "hardcoded", "low eq", "not high eq",
+            "why can't", "why can’t", "why cannot",
+            "couldn't shape", "couldn’t shape", "shape a useful answer"
+        ]) || turnRequestsShortness(lower)
     }
 
     private nonisolated static func turnRequestsExpandedAnswer(_ turn: String?) -> Bool {
         guard let lower = turn?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
               !lower.isEmpty else { return false }
+        guard !turnRequestsShortness(lower) else { return false }
         return containsAny(lower, [
             "plan", "full", "breakdown", "detail", "explain", "list",
             "7-day", "7 day", "week", "roadmap", "step by step"
         ])
+    }
+
+    private nonisolated static func turnRequestsShortness(_ lower: String) -> Bool {
+        containsAny(lower, [
+            "keep it short", "keep this short", "make it short", "shorter",
+            "too much writing", "too long", "less writing", "less text",
+            "straight to the point", "straight to point", "get to the point",
+            "to the point", "brief", "concise", "one sentence",
+            "stop overexplaining", "stop over explaining", "overexplain",
+            "over-explain", "over explaining", "overexplaining"
+        ])
+    }
+
+    nonisolated static func trustRepairFallbackReply(for latestUserTurn: String?) -> String? {
+        guard let lower = latestUserTurn?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !lower.isEmpty,
+              isCritiqueTurn(lower) || turnRequestsShortness(lower) else {
+            return nil
+        }
+
+        let raw: String
+        if containsAny(lower, ["why can't", "why can’t", "why cannot", "shape a useful answer"]) {
+            raw = """
+            Fair question. The friction was my draft, not your ask.
+            - Move: I’ll keep the next answer to one read and one drill.
+            - Try: send the situation in one line so I can aim the coaching.
+            """
+        } else if turnRequestsShortness(lower) {
+            raw = """
+            Fair push. Your message is asking for less writing, not a lecture.
+            - Move: I’ll answer with one read, one drill, and stop.
+            - Try: send the moment you’re preparing for in one line so the coaching stays usable.
+            """
+        } else {
+            raw = """
+            Fair push. That read was too generic.
+            - Move: I’ll give one observable read, one drill, and stop.
+            - Try: send the moment you’re preparing for in one line so the coaching has a target.
+            """
+        }
+
+        let normalized = CoachReplyTextSanitizer.displayText(from: raw)
+        guard !normalized.isEmpty,
+              Self.replyQualityIssue(in: normalized, latestUserTurn: latestUserTurn) == nil else {
+            return nil
+        }
+        return normalized
     }
 
     private nonisolated static func turnExpectsCoaching(_ latestUserTurn: String?) -> Bool {
@@ -998,10 +1342,12 @@ actor AICoachChatService {
 
         Rewrite from scratch. Requirements:
         - 1-4 short lines, usually under 75 words.
-        - Use **bold lead-ins**, up to 3 bullets, or numbered steps only when they reduce reading.
-        - No long paragraph and no decorative formatting.
+        - Use plain lead-ins, up to 3 bullets, or numbered steps only when they reduce reading.
+        - Never output literal Markdown markers such as **, __, ###, or decorative formatting.
+        - No long paragraph.
         - No broad menu. Pick one coaching move.
         - If the user showed frustration, do not defend the app.
+        - If the user asked for shortness, make the answer shorter before making it smarter.
         - Sound like a senior communications coach, not an assistant explaining itself.
         - Connect the evidence to the move with one coaching reason; do not just list a metric and a drill.
         """
@@ -1020,29 +1366,40 @@ actor AICoachChatService {
             Self.log.error("repair pass got no usable text from \(provider.displayName, privacy: .public)")
             return nil
         }
+        let normalized = CoachReplyTextSanitizer.displayText(from: text)
+        guard !normalized.isEmpty else {
+            Self.log.error("repair pass normalized to empty text from \(provider.displayName, privacy: .public)")
+            return nil
+        }
+        if normalized != text.trimmingCharacters(in: .whitespacesAndNewlines) {
+            Self.log.notice("repair pass normalized reply from \(provider.displayName, privacy: .public)")
+        }
         if let remainingIssue = Self.replyQualityIssue(
-            in: text,
+            in: normalized,
             latestUserTurn: messages.last(where: { $0.role == .user })?.text,
             quoteGuard: quoteGuard
         ) {
             Self.log.error("repair pass still tripped the gate (\(String(describing: remainingIssue), privacy: .public))")
             return nil
         }
-        return text
+        return normalized
     }
 
     // MARK: - Provider plumbing
 
     @MainActor
     private func activeLocaleSupportsAI() -> Bool {
-        LocaleSettingsManager.shared.current.aiSupported
+        return LocaleSettingsManager.shared.current.aiSupported
     }
 
     private func key(for provider: CoachChatProvider) -> String? {
-        if let value = ProcessInfo.processInfo.environment[provider.keyName], !value.isEmpty {
+        if let keyLookupOverride {
+            return Self.usableAPIKey(keyLookupOverride(provider))
+        }
+        if let value = Self.usableAPIKey(ProcessInfo.processInfo.environment[provider.keyName]) {
             return value
         }
-        return LocalConfigLoader.value(forKey: provider.keyName, plistNamed: "AIConfig")
+        return Self.usableAPIKey(LocalConfigLoader.value(forKey: provider.keyName, plistNamed: "AIConfig"))
     }
 
     // MARK: - Transport
@@ -1060,6 +1417,10 @@ actor AICoachChatService {
         key: String,
         body: [String: Any]
     ) async throws -> ProviderHTTPResult {
+        if let providerHTTPOverride {
+            return try await providerHTTPOverride(provider, endpoint, key, body)
+        }
+
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1079,12 +1440,18 @@ actor AICoachChatService {
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
+        let started = Date()
+        let bodyBytes = request.httpBody?.count ?? 0
+        Self.log.debug("transport start provider=\(provider.displayName, privacy: .public) host=\(endpoint.host ?? "unknown", privacy: .public) path=\(endpoint.path, privacy: .public) bodyBytes=\(bodyBytes, privacy: .public)")
         let (data, response) = try await URLSession.shared.data(for: request)
+        let elapsedMs = Int(Date().timeIntervalSince(started) * 1_000)
         guard let http = response as? HTTPURLResponse else {
+            Self.log.error("transport non-http response provider=\(provider.displayName, privacy: .public) ms=\(elapsedMs, privacy: .public) bytes=\(data.count, privacy: .public)")
             return .refused(status: -1, retryAfter: nil)
         }
+        let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
+        Self.log.info("transport response provider=\(provider.displayName, privacy: .public) status=\(http.statusCode, privacy: .public) ms=\(elapsedMs, privacy: .public) bytes=\(data.count, privacy: .public) retryAfter=\(retryAfter != nil, privacy: .public)")
         guard (200..<300).contains(http.statusCode) else {
-            let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
             return .refused(status: http.statusCode, retryAfter: retryAfter)
         }
         return .success(data)

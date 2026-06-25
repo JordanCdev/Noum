@@ -40,6 +40,10 @@ struct MistakeReplayCard: View {
 
     @State private var hasAppeared = false
 
+    private var shouldReduceMotion: Bool {
+        reduceMotion || ProcessInfo.processInfo.arguments.contains("UI_TESTING")
+    }
+
     static func hasReviewRows(in sessions: [PracticeSession], now: Date = Date()) -> Bool {
         let cutoff14 = now.addingTimeInterval(-14 * 24 * 3600)
         let cutoff7  = now.addingTimeInterval(-7  * 24 * 3600)
@@ -161,7 +165,7 @@ struct MistakeReplayCard: View {
             .opacity(hasAppeared ? 1 : 0)
             .onAppear {
                 guard !hasAppeared else { return }
-                if reduceMotion {
+                if shouldReduceMotion {
                     hasAppeared = true
                 } else {
                     withAnimation(.standardSpring.delay(0.04)) { hasAppeared = true }

@@ -23,6 +23,10 @@ struct ProgressionChartsCard: View {
     @State private var selectedSeries: ChartSeries = .score
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var shouldReduceMotion: Bool {
+        reduceMotion || ProcessInfo.processInfo.arguments.contains("UI_TESTING")
+    }
+
     private var dataPoints: [ChartPoint] {
         let calendar = Calendar.current
         let cutoff = calendar.date(byAdding: .day, value: -30, to: Date()) ?? Date()
@@ -53,7 +57,7 @@ struct ProgressionChartsCard: View {
             .opacity(hasAppeared ? 1 : 0)
             .onAppear {
                 // Respect Reduce Motion: appear instantly with no scale pop.
-                if reduceMotion {
+                if shouldReduceMotion {
                     hasAppeared = true
                 } else {
                     withAnimation(.standardSpring.delay(0.05)) { hasAppeared = true }
@@ -95,7 +99,7 @@ struct ProgressionChartsCard: View {
             HStack(spacing: 6) {
                 ForEach(ChartSeries.allCases, id: \.self) { series in
                     Button {
-                        if reduceMotion {
+                        if shouldReduceMotion {
                             selectedSeries = series
                         } else {
                             withAnimation(.snappySpring) {

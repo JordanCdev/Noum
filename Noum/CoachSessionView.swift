@@ -42,12 +42,20 @@ struct CoachSessionView: View {
         // we land in the readable typed chat (which carries the honest
         // deterministic day-0 greeting) instead of stranding a nervous,
         // permission-blocked beginner in a "Listening…" state.
-        let resolved = Self.resolvedInitialMode(
-            requested: initialMode,
-            voiceAccessible: Self.voiceAccessibleNow(),
-            hasCompletedReps: !sessionStore.sessions.isEmpty,
-            hasVoiceProfile: coachingProfileStore.profile?.chosenStyleGoal != nil
-        )
+        let resolved: Mode = {
+            #if DEBUG
+            if initialMode == .live,
+               ProcessInfo.processInfo.arguments.contains("UI_TESTING_FORCE_LIVE_COACH") {
+                return .live
+            }
+            #endif
+            return Self.resolvedInitialMode(
+                requested: initialMode,
+                voiceAccessible: Self.voiceAccessibleNow(),
+                hasCompletedReps: !sessionStore.sessions.isEmpty,
+                hasVoiceProfile: coachingProfileStore.profile?.chosenStyleGoal != nil
+            )
+        }()
         self._mode = State(initialValue: resolved)
     }
 

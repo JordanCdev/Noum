@@ -1,6 +1,7 @@
 #if canImport(SwiftUI)
 import Foundation
 import Combine
+import os
 #if canImport(Security)
 import Security
 #endif
@@ -97,6 +98,7 @@ struct CoachMessage: Identifiable, Codable, Equatable {
 final class AskNoumStore: ObservableObject {
 
     static let shared = AskNoumStore()
+    private static let log = Logger(subsystem: "com.jordancoaten.noum", category: "AskNoumStore")
 
     /// Cap on the number of messages held on disk. Older messages drop
     /// off the front when the cap is exceeded. 40 covers ~20 turns of
@@ -198,13 +200,17 @@ final class AskNoumStore: ObservableObject {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
         switch outcome {
         case .reply(let text):
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = CoachReplyTextSanitizer.displayText(from: text)
             if trimmed.isEmpty {
                 // Defensive: a live empty should be `.failure(.empty)`, but if
                 // it reaches the store, route through the same notice instead
                 // of leaving a blank coach bubble.
+                Self.log.error("coach turn completed with empty normalized text")
                 replaceWithNotice(at: idx, id: id, failure: .empty)
             } else {
+                if trimmed != text.trimmingCharacters(in: .whitespacesAndNewlines) {
+                    Self.log.notice("normalized coach turn before persistence id=\(id.uuidString, privacy: .public)")
+                }
                 messages[idx] = CoachMessage(
                     id: id,
                     role: .coach,
@@ -213,8 +219,10 @@ final class AskNoumStore: ObservableObject {
                     isPending: false,
                     isOffline: false
                 )
+                Self.log.info("coach turn stored as live reply chars=\(trimmed.count, privacy: .public)")
             }
         case .failure(let failure):
+            Self.log.notice("coach turn resolved as system notice cause=\(String(describing: failure), privacy: .public)")
             replaceWithNotice(at: idx, id: id, failure: failure)
         }
         isAwaitingReply = false
@@ -242,8 +250,10 @@ final class AskNoumStore: ObservableObject {
             return "I can only chat in English right now. Switch the practice language to English to continue."
         case .network:
             return "I couldn't get a live read right now. Check your connection and try again."
-        case .empty, .contentRejected:
-            return "I couldn't shape a useful answer from that. Try one clearer sentence."
+        case .empty:
+            return "I didn't get enough back to coach from, so I'm holding off rather than guessing. Try again and I'll give you one clear move."
+        case .contentRejected:
+            return "I held that one back because it wasn't useful enough. Try once more and I'll keep it to one clear move."
         }
     }
 
@@ -398,7 +408,7 @@ final class AskNoumStore: ObservableObject {
     /// hydrated, non-pending `.coach` row immediately.
     @discardableResult
     func injectCoachTurn(_ text: String) -> UUID? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = CoachReplyTextSanitizer.displayText(from: text)
         guard !trimmed.isEmpty else { return nil }
         let msg = CoachMessage(role: .coach, text: trimmed, isPending: false)
         messages.append(msg)
@@ -438,8 +448,23 @@ final class AskNoumStore: ObservableObject {
         // dead. Drop it.
         var didCleanLegacyCoachNotes = false
         messages = decoded.filter { !$0.isPending }.map { message in
-            guard message.role == .coach,
-                  Self.shouldCleanLegacyCoachMessage(message.text) else {
+            guard message.role == .coach else {
+                return message
+            }
+            let normalized = CoachReplyTextSanitizer.displayText(from: message.text)
+            if normalized != message.text.trimmingCharacters(in: .whitespacesAndNewlines),
+               !normalized.isEmpty {
+                didCleanLegacyCoachNotes = true
+                return CoachMessage(
+                    id: message.id,
+                    role: .coach,
+                    text: normalized,
+                    createdAt: message.createdAt,
+                    isPending: false,
+                    isOffline: message.isOffline
+                )
+            }
+            guard Self.shouldCleanLegacyCoachMessage(message.text) else {
                 return message
             }
             didCleanLegacyCoachNotes = true

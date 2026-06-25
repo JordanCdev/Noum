@@ -1,6 +1,7 @@
 # Xcode build and user data
 DerivedData/
 .derivedData/
+.derived-data/
 .derived-data-log-*
 build/
 xcuserdata/

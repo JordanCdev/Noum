@@ -456,13 +456,26 @@ final class ScreenshotTour: XCTestCase {
 
     @MainActor
     private func revealPracticeMode(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        let picker = app.descendants(matching: .any)["practiceModes.screen"]
+        _ = picker.waitForExistence(timeout: 8)
+
         let modeRow = app.buttons[identifier]
-        if modeRow.waitForExistence(timeout: 2) { return modeRow }
+        if modeRow.waitForExistence(timeout: 2) {
+            scrollUntilVisible(modeRow, in: app, maxSwipes: 2)
+            return modeRow
+        }
 
         let otherWays = app.buttons["practiceModes.otherWays"]
+        if !otherWays.waitForExistence(timeout: 2) {
+            scrollUntilVisible(otherWays, in: app, maxSwipes: 3)
+        }
         if otherWays.waitForExistence(timeout: 2) {
+            scrollUntilVisible(otherWays, in: app, maxSwipes: 2)
             otherWays.tap()
             Thread.sleep(forTimeInterval: 0.5)
+        }
+        if modeRow.waitForExistence(timeout: 2) {
+            scrollUntilVisible(modeRow, in: app, maxSwipes: 4)
         }
         return modeRow
     }
@@ -473,13 +486,24 @@ final class ScreenshotTour: XCTestCase {
         let deadline = Date().addingTimeInterval(24)
 
         while Date() < deadline {
-            if reviewCard.exists { return reviewCard }
-
             let preSummary = app.descendants(matching: .any)["preSummary.celebration"]
             let continueButton = app.buttons["Continue"]
-            if !preSummary.exists, continueButton.exists {
+            let viewResultsButton = app.buttons["View Results"]
+            if preSummary.exists {
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                Thread.sleep(forTimeInterval: 0.5)
+                continue
+            } else if continueButton.exists {
                 continueButton.tap()
+                Thread.sleep(forTimeInterval: 0.5)
+                continue
+            } else if viewResultsButton.exists {
+                viewResultsButton.tap()
+                Thread.sleep(forTimeInterval: 0.5)
+                continue
             }
+
+            if reviewCard.exists { return reviewCard }
 
             Thread.sleep(forTimeInterval: 0.5)
         }
@@ -627,26 +651,26 @@ final class ScreenshotTour: XCTestCase {
     private struct AuditSurface {
         let host: String?
         let name: String
-        let scroll: Bool
+        let scrollCaptures: Int
     }
 
     @MainActor
     private func captureState(profile: String?, prefix: String) {
         let surfaces: [AuditSurface] = [
-            AuditSurface(host: nil,                 name: "home",      scroll: true),
-            AuditSurface(host: "noum://profile",   name: "profile",   scroll: true),
-            AuditSurface(host: "noum://review",    name: "review",    scroll: true),
-            AuditSurface(host: "noum://train",     name: "train",     scroll: false),
-            AuditSurface(host: "noum://league",    name: "league",    scroll: true),
-            AuditSurface(host: "noum://path",      name: "path",      scroll: true),
-            AuditSurface(host: "noum://ask",       name: "ask",       scroll: false),
-            AuditSurface(host: "noum://bigmoment", name: "bigmoment", scroll: true),
-            AuditSurface(host: "noum://settings",  name: "settings",  scroll: true),
+            AuditSurface(host: nil,                 name: "home",      scrollCaptures: 3),
+            AuditSurface(host: "noum://profile",   name: "profile",   scrollCaptures: 3),
+            AuditSurface(host: "noum://review",    name: "review",    scrollCaptures: 2),
+            AuditSurface(host: "noum://train",     name: "train",     scrollCaptures: 1),
+            AuditSurface(host: "noum://league",    name: "league",    scrollCaptures: 3),
+            AuditSurface(host: "noum://path",      name: "path",      scrollCaptures: 3),
+            AuditSurface(host: "noum://ask",       name: "ask",       scrollCaptures: 1),
+            AuditSurface(host: "noum://bigmoment", name: "bigmoment", scrollCaptures: 3),
+            AuditSurface(host: "noum://settings",  name: "settings",  scrollCaptures: 3),
         ]
         for s in surfaces {
             let app = launchState(profile: profile, deepLink: s.host)
-            if s.scroll {
-                fullScrollCapture(app, base: "\(prefix)-\(s.name)")
+            if s.scrollCaptures > 1 {
+                scrollCapture(app, base: "\(prefix)-\(s.name)", captures: s.scrollCaptures)
             } else {
                 deepAttach(app, name: "\(prefix)-\(s.name)")
             }
@@ -674,18 +698,24 @@ final class ScreenshotTour: XCTestCase {
     }
 
     @MainActor
-    private func fullScrollCapture(_ app: XCUIApplication, base: String) {
+    private func scrollCapture(_ app: XCUIApplication, base: String, captures: Int) {
         deepAttach(app, name: "\(base)-1top")
+        guard captures > 1 else { return }
         screenSwipeUp(in: app)
         Thread.sleep(forTimeInterval: 0.5)
-        deepAttach(app, name: "\(base)-2mid")
+        deepAttach(app, name: "\(base)-2mid", includeAccessibility: false)
+        guard captures > 2 else { return }
         screenSwipeUp(in: app)
         Thread.sleep(forTimeInterval: 0.5)
-        deepAttach(app, name: "\(base)-3bottom")
+        deepAttach(app, name: "\(base)-3bottom", includeAccessibility: false)
     }
 
     @MainActor
     private func screenSwipeUp(in app: XCUIApplication) {
+        if app.state != .runningForeground {
+            app.activate()
+            Thread.sleep(forTimeInterval: 0.3)
+        }
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.82))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.32))
         start.press(forDuration: 0.01, thenDragTo: end)
@@ -765,15 +795,18 @@ final class ScreenshotTour: XCTestCase {
         app.terminate()
     }
 
-    /// Screenshot + full accessibility-tree dump (the structured truth the
-    /// QA / a11y fleet reads: labels, identifiers, hittable elements).
+    /// Screenshot + optional full accessibility-tree dump (the structured
+    /// truth the QA / a11y fleet reads: labels, identifiers, hittable elements).
+    /// Scrolled positions keep visual evidence but skip redundant tree dumps;
+    /// XCUITest can become unstable serializing large offscreen review trees.
     @MainActor
-    private func deepAttach(_ app: XCUIApplication, name: String) {
+    private func deepAttach(_ app: XCUIApplication, name: String, includeAccessibility: Bool = true) {
         let shot = XCUIScreen.main.screenshot()
         let img = XCTAttachment(screenshot: shot)
         img.name = name
         img.lifetime = .keepAlways
         add(img)
+        guard includeAccessibility else { return }
         let ax = XCTAttachment(string: app.debugDescription)
         ax.name = "\(name)__ax"
         ax.lifetime = .keepAlways

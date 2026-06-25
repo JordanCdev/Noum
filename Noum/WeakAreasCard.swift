@@ -29,6 +29,10 @@ struct WeakAreasCard: View {
 
     @State private var hasAppeared = false
 
+    private var shouldReduceMotion: Bool {
+        reduceMotion || ProcessInfo.processInfo.arguments.contains("UI_TESTING")
+    }
+
     static func hasTargets(
         baseline: CommunicationBaseline,
         topClutchWords: [ClutchWordEntry],
@@ -167,7 +171,7 @@ struct WeakAreasCard: View {
             .opacity(hasAppeared ? 1 : 0)
             .onAppear {
                 guard !hasAppeared else { return }
-                if reduceMotion {
+                if shouldReduceMotion {
                     hasAppeared = true
                 } else {
                     withAnimation(.standardSpring.delay(0.05)) { hasAppeared = true }

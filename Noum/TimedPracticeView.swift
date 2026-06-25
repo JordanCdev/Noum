@@ -700,11 +700,9 @@ struct TimedPracticeView: View {
         nonmutating set { selectedThemeRaw = newValue.rawValue }
     }
 
-#if DEBUG
     private var usesInjectedFirstValueLoop: Bool {
         ProcessInfo.processInfo.arguments.contains("UI_TESTING_FIRST_VALUE_LOOP")
     }
-#endif
 
     // TTS — persistent synthesizer + delegate, premium voice for warm, coach-like delivery
     private let ttsEngine = AVSpeechSynthesizer()
@@ -2415,7 +2413,6 @@ struct TimedPracticeView: View {
         // we resolve the prompt + warm up TTS.
         SoundscapeEngine.shared.startPreferredMode()
 
-#if DEBUG
         if usesInjectedFirstValueLoop {
             question = "Brief the team on a customer handoff risk."
             if ttsEngine.delegate == nil { configureTTSDelegate() }
@@ -2425,7 +2422,6 @@ struct TimedPracticeView: View {
             completeInjectedFirstValueLoopRep()
             return
         }
-#endif
 
         // Resolve the prompt asynchronously — gives PracticeTopics.next() a
         // budget to attempt an AI-generated prompt without blocking. Falls
@@ -2505,7 +2501,6 @@ struct TimedPracticeView: View {
         lastMilestoneState = .neutral
         milestoneScale = 1.0
 
-#if DEBUG
         if usesInjectedFirstValueLoop {
             speakingTask?.cancel()
             speakingTask = Task { @MainActor in
@@ -2514,7 +2509,6 @@ struct TimedPracticeView: View {
             }
             return
         }
-#endif
 
         speechVM.sessionPrompt = question
         speechVM.prepareSession(mode: .timed)
@@ -2550,7 +2544,6 @@ struct TimedPracticeView: View {
         }
     }
 
-#if DEBUG
     private func completeInjectedFirstValueLoopRep() {
         guard usesInjectedFirstValueLoop, !isStopping else { return }
 
@@ -2661,7 +2654,6 @@ struct TimedPracticeView: View {
         SummaryDataStore.shared.store(entry, for: payloadId)
         navigationPath.append(AppDestination.summary(SummaryPayload(id: payloadId, mode: .timed)))
     }
-#endif
 
     private func stopSession() {
         guard !isStopping else { return }

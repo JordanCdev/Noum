@@ -472,9 +472,13 @@ final class NoumUITests: XCTestCase {
     /// `ScreenshotTour.launchSeededAt` — duplicated here to keep `NoumUITests`
     /// self-contained.
     @MainActor
-    private func launchSeededAt(_ deepLink: String) -> XCUIApplication {
+    private func launchSeededAt(_ deepLink: String, extraArgs: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE", "-DeepLink", deepLink]
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_SEED_FORCE",
+            "UI_TESTING_CLEAR_ASK_NOUM"
+        ] + extraArgs + ["-DeepLink", deepLink]
         app.launch()
         // Home screen is the deep-link consumption point; wait for it then
         // give the routing one beat to flip the navigation path.
@@ -529,7 +533,7 @@ final class NoumUITests: XCTestCase {
     // a silent write or a refusal.
     @MainActor
     func testAskNoumGoalChangeSurfacesConfirmationCard() throws {
-        let app = launchSeededAt("noum://ask/type")
+        let app = launchSeededAt("noum://ask/type", extraArgs: ["UI_TESTING_CHAT_FORCE_GOAL_REPLY"])
 
         // Land on the chat.
         let input = app.descendants(matching: .any)["askNoum.inputControl"]
@@ -587,7 +591,7 @@ final class NoumUITests: XCTestCase {
     /// authoritative, so a change request yields switch/blend storytelling chips.
     @MainActor
     func testNonCanonicalVoiceDescriptorSurfacesCard() throws {
-        let app = launchSeededAt("noum://ask/type")
+        let app = launchSeededAt("noum://ask/type", extraArgs: ["UI_TESTING_CHAT_FORCE_GOAL_REPLY"])
 
         let input = app.descendants(matching: .any)["askNoum.inputControl"]
         XCTAssertTrue(input.waitForExistence(timeout: 10), "Ask Noum input control should exist")

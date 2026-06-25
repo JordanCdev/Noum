@@ -220,6 +220,66 @@ enum CoachChatEvaluationCorpus {
             expectedBadIssue: .missedTrustRepair
         ),
         CoachChatEvaluationFixture(
+            id: "markdown-tts-trust-repair",
+            pillar: .adaptation,
+            expertBaseline: .pending,
+            profile: profile(voice: .authoritative, challenge: .fillerWords),
+            sessions: [
+                session(
+                    id: "77777777-7777-7777-7777-777777777777",
+                    transcript: "My recommendation is to hold the date, um, because the launch risk is still unresolved.",
+                    fillerCount: 4,
+                    duration: 52,
+                    daysAgo: 0,
+                    mode: .timed,
+                    score: 6,
+                    prompt: "Give a direct stakeholder recommendation."
+                )
+            ],
+            trends: [],
+            latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach.",
+            previousCoachReply: "**Read:** Your last rep has fillers. **Move:** practice more.",
+            expectedContextNeedles: [
+                "repair trust first",
+                "specific friction",
+                "Never output literal Markdown markers",
+                "same text may be spoken aloud"
+            ],
+            referenceReply: "Fair push: the stars should never reach you or the voice. I’ll keep the read plain: last rep points to the close, so next rep state the recommendation first and stop after one proof.",
+            knownBadReply: "The app is designed to provide AI coaching, and formatting like **Read:** may appear while the system improves.",
+            expectedBadIssue: .defensiveProductLanguage
+        ),
+        CoachChatEvaluationFixture(
+            id: "assistant-explainer-register",
+            pillar: .adaptation,
+            expertBaseline: .pending,
+            profile: profile(voice: .warm, challenge: .rambling),
+            sessions: [
+                session(
+                    id: "88888888-8888-8888-8888-888888888888",
+                    transcript: "I wanted to reassure the client first, but I took too long to say the actual recommendation.",
+                    fillerCount: 1,
+                    duration: 66,
+                    daysAgo: 0,
+                    mode: .timed,
+                    score: 6,
+                    prompt: "Answer a client concern with warmth."
+                )
+            ],
+            trends: [],
+            latestUserTurn: "This still sounds cold and overexplained, like generic AI tips.",
+            previousCoachReply: "Here are some tips to communicate more clearly: be clear and concise and practice often.",
+            expectedContextNeedles: [
+                "repair trust first",
+                "specific friction",
+                "RECENT (most-recent first)",
+                "1 filler"
+            ],
+            referenceReply: "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance.",
+            knownBadReply: "I understand your frustration. Here are some tips to communicate more clearly: be clear and concise, structure your thoughts, and practice confidence.",
+            expectedBadIssue: .roboticPhrase("i understand your frustration")
+        ),
+        CoachChatEvaluationFixture(
             id: "what-next-single-move",
             pillar: .validation,
             expertBaseline: .pending,

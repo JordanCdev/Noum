@@ -1,5 +1,6 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import os
 
 // MARK: - Ask Noum view
 //
@@ -86,6 +87,10 @@ enum CoachMessageTextFormatter {
     }
 
     static func inlineSegments(from text: String) -> [InlineSegment] {
+        if let leadIn = plainLeadInSegments(from: text) {
+            return leadIn
+        }
+
         var segments: [InlineSegment] = []
         var buffer = ""
         var isStrong = false
@@ -112,6 +117,23 @@ enum CoachMessageTextFormatter {
         }
         flush()
         return segments.isEmpty ? [InlineSegment(text: text, isStrong: false)] : segments
+    }
+
+    private static func plainLeadInSegments(from text: String) -> [InlineSegment]? {
+        let leadIns = [
+            "Read:", "The read:", "Coach read:", "Move:", "Next move:",
+            "Why:", "Evidence:", "Try:", "Try this:", "Focus:"
+        ]
+        let lower = text.lowercased()
+        guard let match = leadIns.first(where: { lower.hasPrefix($0.lowercased()) }) else {
+            return nil
+        }
+        let split = text.index(text.startIndex, offsetBy: match.count)
+        let rest = String(text[split...])
+        return [
+            InlineSegment(text: String(text[..<split]), isStrong: true),
+            InlineSegment(text: rest, isStrong: false)
+        ].filter { !$0.text.isEmpty }
     }
 
     private static func bulletText(from trimmed: String) -> String? {
@@ -154,7 +176,7 @@ enum CoachMessageTextFormatter {
 }
 
 @available(iOS 17.0, macOS 12.0, *)
-private struct CoachFormattedMessageText: View {
+struct CoachFormattedMessageText: View {
     let text: String
     let textColor: Color
     let accent: Color
@@ -251,7 +273,8 @@ enum AskNoumSpokenMode {
     ///   • the voice-mode toggle is ON (`spokenRepliesEnabled`),
     ///   • the active locale supports AI (`localeSupportsAI`) — non-English
     ///     users stay clean text-only, matching the chat-reply locale gate,
-    ///   • the outcome carries non-empty trimmed coach text.
+    ///   • the outcome carries non-empty spoken coach text after sanitizer
+    ///     removes UI-only formatting and scaffold labels.
     ///
     /// A `.failure` (any cause) is NEVER spoken — it renders as a system notice
     /// in the store, not the coach's voice. An all-whitespace reply is also
@@ -265,7 +288,7 @@ enum AskNoumSpokenMode {
         guard spokenRepliesEnabled, localeSupportsAI else { return .none }
         switch outcome {
         case .reply(let text):
-            return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .none : .fullChain
+            return CoachReplyTextSanitizer.spokenText(from: text).isEmpty ? .none : .fullChain
         case .failure:
             return .none
         }
@@ -277,7 +300,7 @@ enum AskNoumSpokenMode {
     static func spokenText(for outcome: ChatOutcome) -> String? {
         switch outcome {
         case .reply(let text):
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = CoachReplyTextSanitizer.spokenText(from: text)
             return trimmed.isEmpty ? nil : trimmed
         case .failure:
             return nil
@@ -363,6 +386,8 @@ enum AskNoumDayZeroGreeting {
 
 @available(iOS 17.0, macOS 12.0, *)
 struct AskNoumView: View {
+    private static let speechLog = Logger(subsystem: "com.jordancoaten.noum", category: "AskNoumSpeech")
+
     @StateObject private var store = AskNoumStore.shared
     @ObservedObject var sessionStore: PracticeSessionStore
     @ObservedObject var ratingStore: RatingStore
@@ -2194,9 +2219,9 @@ struct AskNoumView: View {
                     }
                     // Living-coach-presence: the just-landed reply reveals word
                     // by word (see `revealingMessageID`); every other row shows
-                    // its full text. The renderer supports compact Markdown
-                    // (`**bold**`, bullets, numbered steps) without changing the
-                    // persisted thread schema.
+                    // its full text. Provider text is normalized before storage,
+                    // so the renderer can make plain lead-ins bold without raw
+                    // `**` ever reaching the live call or TTS.
                     CoachFormattedMessageText(
                         text: visibleCoachText(for: message),
                         textColor: message.isOffline ? Color.secondary : Color.primary,
@@ -2712,17 +2737,24 @@ struct AskNoumView: View {
             spokenRepliesEnabled: voiceSettings.askNoumSpokenRepliesEnabled,
             localeSupportsAI: LocaleSettingsManager.shared.current.aiSupported
         )
-        if route != .none, let spokenText = AskNoumSpokenMode.spokenText(for: outcome) {
-            speaker.speak(
-                spokenText,
-                setup: IMConversationSetup(
-                    scenario: .workUpdate,
-                    targetTone: AskNoumSpokenMode.coachTone(for: voice)
-                ),
-                allowOnDeviceFallback: true,
-                onDeviceOnly: false
-            )
+        guard route != .none else {
+            Self.speechLog.debug("typed chat speech skipped route=none")
+            return
         }
+        guard let spokenText = AskNoumSpokenMode.spokenText(for: outcome) else {
+            Self.speechLog.notice("typed chat speech skipped after sanitizer emptied reply")
+            return
+        }
+        Self.speechLog.info("typed chat speech starting chars=\(spokenText.count, privacy: .public)")
+        speaker.speak(
+            spokenText,
+            setup: IMConversationSetup(
+                scenario: .workUpdate,
+                targetTone: AskNoumSpokenMode.coachTone(for: voice)
+            ),
+            allowOnDeviceFallback: true,
+            onDeviceOnly: false
+        )
     }
 
     /// Progressively reveal a just-landed coach reply, word by word, so the

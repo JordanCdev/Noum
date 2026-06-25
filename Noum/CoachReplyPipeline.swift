@@ -1,5 +1,6 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import os
 
 // MARK: - Coach reply pipeline
 //
@@ -14,6 +15,8 @@ import SwiftUI
 
 @available(iOS 17.0, macOS 12.0, *)
 enum CoachReplyPipeline {
+
+    private static let log = Logger(subsystem: "com.jordancoaten.noum", category: "CoachReplyPipeline")
 
     /// Assemble context from the shared stores, call the model, and hydrate the
     /// pending coach row identified by `coachID`. Returns the outcome so the
@@ -97,12 +100,19 @@ enum CoachReplyPipeline {
             verifiedProofQuotes: recentProofs.map(\.proof.quote)
         )
 
+        Self.log.debug("generating coach reply history=\(history.count, privacy: .public) sessions=\(sessionStore.sessions.count, privacy: .public) proofs=\(recentProofs.count, privacy: .public) weeklyCheckInDue=\(weeklyCheckInDue, privacy: .public)")
         let outcome = await AICoachChatService.shared.reply(
             history: history,
             systemPrompt: systemPrompt,
             userContext: context,
             grounding: groundingContext
         )
+        switch outcome {
+        case .reply(let text):
+            Self.log.info("coach pipeline produced live reply chars=\(text.count, privacy: .public)")
+        case .failure(let failure):
+            Self.log.notice("coach pipeline produced failure=\(String(describing: failure), privacy: .public)")
+        }
         AskNoumStore.shared.completeCoachTurn(id: coachID, outcome: outcome)
         return outcome
     }
