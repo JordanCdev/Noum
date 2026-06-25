@@ -434,11 +434,17 @@ final class ScreenshotTour: XCTestCase {
 
     @MainActor
     private func openModeSetup(_ modeID: String, in app: XCUIApplication) -> Bool {
+        // The recommended-hero "Begin" now auto-begins (one tap), so it can no
+        // longer reach the SETUP page. The recommended mode has no row in "other
+        // ways", so its setup is reached via the hero's "Adjust this rep" CTA,
+        // which navigates to setup without arming quick-start.
         if modeID == "practiceMode.timed" {
             let recommendedBegin = app.buttons["practiceModes.recommendedHero.begin"]
+            let adjust = app.buttons["practiceModes.recommendedHero.adjust"]
             if recommendedBegin.waitForExistence(timeout: 2),
-               recommendedBegin.label.contains("Timed") {
-                recommendedBegin.tap()
+               recommendedBegin.label.contains("Timed"),
+               adjust.waitForExistence(timeout: 2) {
+                adjust.tap()
                 return true
             }
         }

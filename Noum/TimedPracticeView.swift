@@ -816,6 +816,31 @@ struct TimedPracticeView: View {
             Text("Your current session will be lost.")
         }
         .task {
+            // Quick Start handshake FIRST — before the yield and the awaited
+            // prompt resolution below. When the picker armed a one-tap launch,
+            // begin immediately so the setup page (and its own Begin button)
+            // never renders: otherwise that page is visible for the duration of
+            // `await PracticeTopics.next(...)` (up to a ~3s budget), flashing a
+            // redundant second Begin at the flagship first-rep moment.
+            // `beginSession()` resolves the prompt and configures TTS itself,
+            // so the work skipped here is not lost — just not done twice.
+            if phase == .setup, PracticeModeQuickStart.consume(for: .timed) {
+                if let seeded = consumeSeededPrompt() { question = seeded }
+                wordOfTheDayTarget = consumeSeededWord()
+                speechVM.prepareForInteractiveUse()
+                prewarmTTS()
+                enforcePremiumFeatureAvailability()
+                if enableVideoRecording && videoManager.captureSession == nil {
+                    if await VideoRecordingManager.requestCameraPermission() {
+                        _ = await videoManager.prepareSession()
+                    } else {
+                        enableVideoRecording = false
+                    }
+                }
+                beginSession()
+                return
+            }
+
             // Batch initial setup into a single Task so SwiftUI
             // processes the state changes in one transaction.
             // Yield first so the view renders its initial frame immediately.
@@ -852,14 +877,8 @@ struct TimedPracticeView: View {
                 }
             }
 
-            // Quick Start handshake — if the picker armed Timed for a
-            // one-tap launch, skip the setup card and go straight into
-            // the existing begin flow. `beginSession` re-reads the
-            // persisted theme + tool config, so the user's last settings
-            // still apply; "Start now" only saves taps, not preferences.
-            if phase == .setup, PracticeModeQuickStart.consume(for: .timed) {
-                beginSession()
-            }
+            // (Quick Start consume is handled at the top of this `.task` so the
+            // setup page never renders for an armed one-tap launch.)
         }
         .onDisappear {
             cleanup()

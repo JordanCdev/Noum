@@ -54,6 +54,7 @@ struct PracticeModeExpansionCopy {
 struct PracticeModePrescriptionCopy {
     static let heroEyebrow = "Coach pick"
     static let alternateSectionTitle = "Other ways to practice"
+    static let adjustLabel = "Adjust this rep"
     static let pressureLockedHint = "Run one rated rep before Pressure Drill."
     static let cutTheCrutchTitle = "Cut the Crutch"
     static let cutTheCrutchSubtitle = "Avoid one specific word for 60 seconds. Three slips ends the rep."
@@ -70,11 +71,11 @@ struct PracticeModePrescriptionCopy {
 
         switch (targetValue, focusValue) {
         case let (target?, focus?) where target.localizedCaseInsensitiveCompare(focus) != .orderedSame:
-            return "Target \(target) \u{00B7} Focus \(focus)"
+            return "Target: \(target) \u{00B7} Focus: \(focus)"
         case let (target?, _):
-            return "Target \(target)"
+            return "Target: \(target)"
         case let (nil, focus?):
-            return "Focus \(focus)"
+            return "Focus: \(focus)"
         case (nil, nil):
             return nil
         }
@@ -364,9 +365,38 @@ struct PracticeModeSelectionView: View {
                 crutchSelected = false
                 paceSelected = false
                 recommendationLearningStore.markTapped(mode: option.mode)
+                // The recommended rep is a prescription: one tap launches it.
+                // Arm quick-start so the destination auto-begins instead of
+                // flashing its own setup page + a second Begin (the acquisition /
+                // time-to-first-word lever). `beginSession` re-reads the persisted
+                // theme + tool config, so the user's last settings still apply —
+                // one-tap saves taps, not preferences. The destination consumes-
+                // and-clears the flag in its `.task`; the picker's own `.task`
+                // clears any stale flag on re-entry so a back-out can't re-trigger.
+                PracticeModeQuickStart.arm(for: option.mode)
                 navigationPath.append(appDestination(for: option.mode))
             }
             .accessibilityIdentifier("practiceModes.recommendedHero.begin")
+
+            // Config access for the recommended mode WITHOUT losing the one-tap
+            // Begin above. The recommended mode has no row in "other ways", so
+            // this is its only setup entry point — navigate to the setup page
+            // (no arm()) for users who want to tweak theme / pace / tools before
+            // this rep. Restrained, mirrors the Impromptu redesign's gear-hidden
+            // settings rather than a second loud button.
+            Button {
+                selectedMode = option.mode
+                crutchSelected = false
+                paceSelected = false
+                navigationPath.append(appDestination(for: option.mode))
+            } label: {
+                Label(PracticeModePrescriptionCopy.adjustLabel, systemImage: "slider.horizontal.3")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .accessibilityIdentifier("practiceModes.recommendedHero.adjust")
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -391,7 +421,6 @@ struct PracticeModeSelectionView: View {
                     Text(line)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, Spacing.sm)

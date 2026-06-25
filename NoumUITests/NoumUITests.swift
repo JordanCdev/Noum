@@ -250,18 +250,26 @@ final class NoumUITests: XCTestCase {
 
             XCTAssertTrue(app.buttons["practiceModes.start"].waitForExistence(timeout: 5))
             app.buttons["practiceModes.start"].tap()
+            // Mode-row + Start CTA does NOT arm quick-start, so the setup page's
+            // Begin still appears and must be tapped to start the rep.
+            let begin = app.buttons["timedPractice.begin"]
+            XCTAssertTrue(begin.waitForExistence(timeout: 10))
+            tapTimedPracticeBegin(begin, in: app)
         } else {
             let recommendedBegin = app.buttons["practiceModes.recommendedHero.begin"]
             XCTAssertTrue(
                 recommendedBegin.waitForExistence(timeout: 5) && recommendedBegin.label.contains("Timed"),
                 "Timed Practice should be selectable from the collapsed picker, or be the recommended hero."
             )
+            // Recommended hero now arms one-tap quick-start: the destination
+            // auto-begins, so there is NO second Begin to tap. Asserting its
+            // absence is the regression guard for the double-Begin fix.
             recommendedBegin.tap()
+            XCTAssertFalse(
+                app.buttons["timedPractice.begin"].waitForExistence(timeout: 3),
+                "Recommended-hero path must auto-begin (one tap), not show a second Begin."
+            )
         }
-
-        let begin = app.buttons["timedPractice.begin"]
-        XCTAssertTrue(begin.waitForExistence(timeout: 10))
-        tapTimedPracticeBegin(begin, in: app)
 
         let verdict = advanceToPostRepVerdict(in: app)
 
@@ -431,7 +439,13 @@ final class NoumUITests: XCTestCase {
               recommendedBegin.label.contains(expectedTitle) else {
             return false
         }
-        recommendedBegin.tap()
+        // The hero "Begin" now auto-begins the rep (one-tap prescription), so it
+        // no longer lands on the mode's SETUP screen. Reach the setup screen via
+        // the hero's "Adjust this rep" affordance, which navigates to setup
+        // without arming quick-start — still confirms the mode's screen opens.
+        let adjust = app.buttons["practiceModes.recommendedHero.adjust"]
+        guard adjust.waitForExistence(timeout: 3) else { return false }
+        adjust.tap()
         let destination = app.descendants(matching: .any)[screenIdentifier]
         XCTAssertTrue(destination.waitForExistence(timeout: 20))
         return true
