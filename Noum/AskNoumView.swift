@@ -891,15 +891,15 @@ struct AskNoumView: View {
         if let target = caseFile.observableTarget?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !target.isEmpty {
-            return "Target: \(Self.shortCaseLine(target, maxLength: 64))"
+            return "Working on: \(Self.shortCaseLine(target, maxLength: 64))"
         }
         if let focus = caseFile.focus {
-            return "Focus: \(focus.displayName)"
+            return "Current focus: \(focus.displayName)"
         }
         if let intervention = caseFile.activeIntervention?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !intervention.isEmpty {
-            return "Drill: \(Self.shortCaseLine(intervention, maxLength: 64))"
+            return "Current practice: \(Self.shortCaseLine(intervention, maxLength: 64))"
         }
         return nil
     }
@@ -996,11 +996,9 @@ struct AskNoumView: View {
                 .stroke(AppColor.pro.opacity(0.20), lineWidth: 1)
         )
         // Fire the AI starter generation once per input signature while the
-        // empty state is on screen. The deterministic data-grounded
-        // `starterPrompts(...)` renders immediately via `displayedStarters`;
-        // this upgrades them to a tailored set if a provider is configured
-        // and the locale supports AI. Idempotent + signature-gated, so an
-        // unchanged empty state never re-rolls.
+        // empty state is on screen. Opening suggestions are AI-only: until a
+        // provider returns a clean tailored set, the composer remains the
+        // honest affordance instead of surfacing canned coach copy.
         .task(id: starterSignature) {
             await requestAIStartersIfNeeded()
         }
@@ -1095,7 +1093,9 @@ struct AskNoumView: View {
         guard let raw = caseFile?.callLandingAnchor?
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty else { return nil }
-        return shortCaseLine(raw, maxLength: 150)
+        let clean = CoachReplyTextSanitizer.liveLandingText(from: raw)
+        guard !clean.isEmpty else { return nil }
+        return shortCaseLine(clean, maxLength: 150)
     }
 
     // MARK: - Case-review starter chip
@@ -1262,19 +1262,11 @@ struct AskNoumView: View {
     // MARK: - Follow-up chips
     //
     // Quiet "keep the thread alive" suggestions surfaced beneath the
-    // most-recent coach reply. Two-tier sourcing:
-    //   1. AI-tailored (preferred) — `CoachContextBuilder.generateAIFollowUpChips`
-    //      fires once per landed reply and caches the result on
-    //      `AskNoumStore.aiChipsCache[coachID]`. Tailored to the actual
-    //      last-user-turn + last-coach-reply + voice tone.
-    //   2. Deterministic catalog (fallback + skeleton) —
-    //      `CoachContextBuilder.followUpSuggestions(...)`. Renders
-    //      instantly while the AI request is in flight, and stays as the
-    //      final state if the AI returns nil (no provider, locale block,
-    //      network failure, or all chips failed the brand-voice filter).
-    //
-    // Chips never disappear once a reply lands. They may upgrade from
-    // deterministic to AI when the cached entry arrives.
+    // most-recent coach reply. User-visible chips are AI-only. The
+    // deterministic `followUpSuggestions(...)` path still acts as an
+    // eligibility guard so generic replies do not sprout a chip tray just
+    // because a model can invent one, but those deterministic strings are
+    // never rendered as the coach.
     //
     // Visibility contract:
     //   • Latest message must be a coach reply.
@@ -1308,14 +1300,10 @@ struct AskNoumView: View {
             lastUserTurn: lastUserTurn,
             voice: voice
         )
-        guard !deterministic.isEmpty else { return [] }
-        // Prefer cached AI chips only after the deterministic policy says this
-        // reply earned a continuation. This prevents generic replies from
-        // sprouting a chip tray just because the provider invented one.
-        if let cached = store.aiChips(for: last.id), !cached.isEmpty {
-            return cached
-        }
-        return deterministic
+        return Self.aiGeneratedSuggestions(
+            cached: store.aiChips(for: last.id),
+            eligible: !deterministic.isEmpty
+        )
     }
 
     /// A3: the single launchable practice destination the LATEST coach reply
@@ -1407,8 +1395,8 @@ struct AskNoumView: View {
                 voice: voiceCapture,
                 recentSessionDigest: digestCapture
             )
-            // Cache only on success — nil leaves the deterministic
-            // fallback in place (no UI flicker, no dead chip row).
+            // Cache only on success — nil means no chip row. Deterministic
+            // suggestions stay eligibility-only and are not user-visible.
             if let chips = generated, !chips.isEmpty {
                 await MainActor.run {
                     store.setAIChips(chips, for: coachID)
@@ -1417,23 +1405,14 @@ struct AskNoumView: View {
         }
     }
 
-    // MARK: - Empty-state starter prompts (two-tier sourcing)
+    // MARK: - Empty-state starter prompts (AI-only)
     //
-    // Mirrors the follow-up chip machinery above. Two-tier:
-    //   1. AI-tailored (preferred) — `CoachContextBuilder.generateAIStarterPrompts`
-    //      fires once per input signature and caches on
-    //      `AskNoumStore.starterChipsCache[signature]`. Tailored to the
-    //      chosen voice + active BigMoment + weakest baseline dimension +
-    //      a privacy-bounded recent-rep digest.
-    //   2. Deterministic catalog (fallback + skeleton) —
-    //      `CoachContextBuilder.starterPrompts(bigMoment:baseline:voice:)`.
-    //      Renders instantly while the AI request is in flight, and stays
-    //      as the final state if the AI returns nil (no provider, locale
-    //      block, network failure, or fewer than 3 chips survived the
-    //      brand-voice filter).
-    //
-    // Starters never disappear — they upgrade from deterministic to AI
-    // when the cached entry arrives.
+    // Opening prompts are useful only when they feel like the coach has read
+    // the user's actual state. The old deterministic catalog still exists as
+    // a pure context/safety primitive, but this view no longer renders it as
+    // a "Recommended ask." If the AI path has not produced clean prompts, the
+    // empty state simply leaves the user with the composer and case-review
+    // affordances.
 
     /// Slow-changing rotation seed (day-of-year): the starter trio re-rolls
     /// daily instead of being identical on every open (owner feedback
@@ -1442,24 +1421,9 @@ struct AskNoumView: View {
         Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0
     }
 
-    /// The deterministic data-grounded starters. Always non-empty; this is
-    /// both the instant skeleton and the final fallback.
-    private var deterministicStarters: [String] {
-        CoachContextBuilder.starterPrompts(
-            bigMoment: bigMomentStore.activeMoment,
-            baseline: baselineStore.baseline,
-            voice: voice,
-            rotation: starterRotation,
-            profile: coachingProfileStore.profile,
-            weeklyCheckInDue: weeklyCheckInDueForChat
-        )
-    }
-
     /// Stable signature of the inputs that shape the starters. A change to
     /// the chosen voice, the active upcoming moment, or the weakest
     /// dimension re-rolls the AI starters; idle re-renders reuse the cache.
-    /// The deterministic starters are folded in so two states that produce
-    /// the same catalog also share a cache slot.
     private var starterSignature: String {
         let voicePart = voice?.rawValue ?? "none"
         let momentPart = bigMomentStore.activeMoment.map { moment -> String in
@@ -1482,13 +1446,10 @@ struct AskNoumView: View {
         !sessionStore.sessions.isEmpty && coachCheckInStore.isCheckInDue()
     }
 
-    /// Starters shown in the empty state. Prefers the cached AI set for the
-    /// current signature; otherwise the deterministic catalog.
+    /// Starters shown in the empty state. AI-generated or hidden; never a
+    /// deterministic coach-like fallback.
     private var displayedStarters: [String] {
-        if let cached = store.starterChips(for: starterSignature), !cached.isEmpty {
-            return cached
-        }
-        return deterministicStarters
+        Self.aiGeneratedSuggestions(cached: store.starterChips(for: starterSignature), eligible: true)
     }
 
     /// Fire an AI starter generation request for the current signature if
@@ -1516,8 +1477,8 @@ struct AskNoumView: View {
             weeklyCheckInDue: weeklyCheckInDueCapture,
             recentSessionDigest: digestCapture
         )
-        // Cache only on success — nil leaves the deterministic catalog in
-        // place (no flicker, no error surfaced to the user).
+        // Cache only on success — nil leaves no suggested ask. That is
+        // quieter and more honest than showing canned coach copy.
         if let chips = generated, !chips.isEmpty {
             await MainActor.run {
                 store.setStarterChips(chips, for: signature)
@@ -2037,6 +1998,11 @@ struct AskNoumView: View {
             return trimmed
         }
         return CoachOptionLayout(primary: cleaned.first, overflow: Array(cleaned.dropFirst()))
+    }
+
+    static func aiGeneratedSuggestions(cached: [String]?, eligible: Bool) -> [String] {
+        guard eligible, let cached, !cached.isEmpty else { return [] }
+        return cached
     }
 
     @ViewBuilder

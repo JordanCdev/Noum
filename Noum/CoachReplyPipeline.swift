@@ -18,6 +18,28 @@ enum CoachReplyPipeline {
 
     private static let log = Logger(subsystem: "com.jordancoaten.noum", category: "CoachReplyPipeline")
 
+    nonisolated static func brainDiagnosticReason(
+        cards: [CoachKnowledgeCard],
+        latestUserTurn: String?,
+        hasDiagnosis: Bool
+    ) -> String {
+        if !cards.isEmpty {
+            let ids = cards.prefix(3).map(\.id).joined(separator: ", ")
+            let remaining = cards.count > 3 ? " +\(cards.count - 3)" : ""
+            let noun = cards.count == 1 ? "card" : "cards"
+            return "Retrieved \(cards.count) \(noun): \(ids)\(remaining)"
+        }
+
+        let turn = latestUserTurn?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if turn.isEmpty {
+            return "No cards: empty user turn"
+        }
+        if !hasDiagnosis && !KnowledgeRetriever.isTechniqueSeekingTurn(turn) {
+            return "No cards: cold non-technique turn"
+        }
+        return "No cards matched turn"
+    }
+
     /// Assemble context from the shared stores, call the model, and hydrate the
     /// pending coach row identified by `coachID`. Returns the outcome so the
     /// caller can decide whether to speak it. `@MainActor`: the store reads run
@@ -64,6 +86,7 @@ enum CoachReplyPipeline {
         // reply path (it can't load in the Simulator); retrieval never waits on
         // it and degrades to BM25 until it's ready.
         let activeLever = coachMemoryStore.currentMemory?.currentLever
+        let hasDiagnosis = activeLever != nil
         if KnowledgeBrainFlags.semanticRerankEnabled {
             Task { await KnowledgeSemanticReranker.shared.warmUpIfNeeded() }
         }
@@ -71,7 +94,18 @@ enum CoachReplyPipeline {
             query: latestUserTurn ?? "",
             lever: activeLever,
             voice: profileStore.profile?.speakingStyleGoal,
-            hasDiagnosis: activeLever != nil
+            hasDiagnosis: hasDiagnosis
+        )
+        AICallDiagnostics.record(
+            surface: "Coach brain retrieval",
+            providerName: "On-device brain",
+            model: KnowledgeBrainFlags.semanticRerankEnabled ? "BM25 + semantic rerank" : "BM25",
+            outcome: coachingExpertise.isEmpty ? .skipped : .success,
+            reason: Self.brainDiagnosticReason(
+                cards: coachingExpertise,
+                latestUserTurn: latestUserTurn,
+                hasDiagnosis: hasDiagnosis
+            )
         )
 
         let context = CoachContextBuilder.userContext(

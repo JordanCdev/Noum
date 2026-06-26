@@ -143,7 +143,8 @@ final class AskNoumStore: ObservableObject {
     ///
     /// In-memory only — same rationale as `aiChipsCache`: starters are
     /// pre-conversation ephemera, not a persistence surface. A relaunch
-    /// re-rolls once against the deterministic catalog skeleton.
+    /// re-rolls once; until a clean AI set arrives the view simply shows no
+    /// suggested ask rather than a deterministic coach-like fallback.
     ///
     /// Cleared by `clearThread()` alongside the reply chip cache.
     @Published private(set) var starterChipsCache: [String: [String]] = [:]
@@ -200,7 +201,7 @@ final class AskNoumStore: ObservableObject {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
         switch outcome {
         case .reply(let text):
-            let trimmed = CoachReplyTextSanitizer.displayText(from: text)
+            let trimmed = CoachReplyTextSanitizer.coachReplyText(from: text)
             if trimmed.isEmpty {
                 // Defensive: a live empty should be `.failure(.empty)`, but if
                 // it reaches the store, route through the same notice instead
@@ -245,7 +246,7 @@ final class AskNoumStore: ObservableObject {
     private static func noticeCopy(for failure: ChatFailure) -> String {
         switch failure {
         case .noProvider:
-            return "Live coaching is not configured on this build. Add a provider key in Settings to continue."
+            return "I can’t reach the live coach from this install yet. Check AI setup in Settings, then try again."
         case .localeUnsupported:
             return "I can only chat in English right now. Switch the practice language to English to continue."
         case .network:
@@ -253,7 +254,7 @@ final class AskNoumStore: ObservableObject {
         case .empty:
             return "I didn't get enough back to coach from, so I'm holding off rather than guessing. Try again and I'll give you one clear move."
         case .contentRejected:
-            return "I held that one back because it wasn't useful enough. Try once more and I'll keep it to one clear move."
+            return "I held that response because it wasn’t grounded enough to show as coaching. Try again and I’ll keep it to one clear move."
         }
     }
 
@@ -322,8 +323,8 @@ final class AskNoumStore: ObservableObject {
     }
 
     /// Read cached chips for a coach reply, if any. Returns nil when the
-    /// reply has no cached entry yet — the view falls back to the
-    /// deterministic chip catalog in the meantime.
+    /// reply has no cached entry yet — the view shows no chip row in the
+    /// meantime. Deterministic chip logic remains request eligibility only.
     func aiChips(for coachID: UUID) -> [String]? {
         aiChipsCache[coachID]
     }
@@ -337,8 +338,8 @@ final class AskNoumStore: ObservableObject {
 
     /// Read cached starter prompts for a given input signature, if any.
     /// Returns nil when nothing has hydrated for this signature yet — the
-    /// view shows the deterministic data-grounded `starterPrompts(...)` in
-    /// the meantime, and the request fires once per new signature.
+    /// view shows no suggested ask in the meantime, and the request fires
+    /// once per new signature.
     func starterChips(for signature: String) -> [String]? {
         starterChipsCache[signature]
     }
@@ -408,7 +409,7 @@ final class AskNoumStore: ObservableObject {
     /// hydrated, non-pending `.coach` row immediately.
     @discardableResult
     func injectCoachTurn(_ text: String) -> UUID? {
-        let trimmed = CoachReplyTextSanitizer.displayText(from: text)
+        let trimmed = CoachReplyTextSanitizer.coachReplyText(from: text)
         guard !trimmed.isEmpty else { return nil }
         let msg = CoachMessage(role: .coach, text: trimmed, isPending: false)
         messages.append(msg)
@@ -451,7 +452,7 @@ final class AskNoumStore: ObservableObject {
             guard message.role == .coach else {
                 return message
             }
-            let normalized = CoachReplyTextSanitizer.displayText(from: message.text)
+            let normalized = CoachReplyTextSanitizer.coachReplyText(from: message.text)
             if normalized != message.text.trimmingCharacters(in: .whitespacesAndNewlines),
                !normalized.isEmpty {
                 didCleanLegacyCoachNotes = true
@@ -484,7 +485,7 @@ final class AskNoumStore: ObservableObject {
     nonisolated static func shouldCleanLegacyCoachMessage(_ text: String) -> Bool {
         guard let issue = AICoachChatService.replyQualityIssue(in: text) else { return false }
         switch issue {
-        case .roboticPhrase, .bareClarification, .defensiveProductLanguage, .menuInsteadOfDecision, .unverifiedQuotedUserSpeech:
+        case .roboticPhrase, .bareClarification, .defensiveProductLanguage, .menuInsteadOfDecision, .unrequestedNamedTechnique, .scaffoldLabel, .unverifiedQuotedUserSpeech:
             return true
         case .tooLong, .missedTrustRepair, .missingPrescribedAction, .missingInsightBridge, .unanchoredCoaching, .overclaimsEvidence, .unengagedUserSpeechClaim:
             // `.unengagedUserSpeechClaim` can only fire with a quote-guard

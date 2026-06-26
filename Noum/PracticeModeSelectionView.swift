@@ -71,11 +71,11 @@ struct PracticeModePrescriptionCopy {
 
         switch (targetValue, focusValue) {
         case let (target?, focus?) where target.localizedCaseInsensitiveCompare(focus) != .orderedSame:
-            return "Target: \(target) \u{00B7} Focus: \(focus)"
+            return "\(target) \u{00B7} \(focus)"
         case let (target?, _):
-            return "Target: \(target)"
+            return target
         case let (nil, focus?):
-            return "Focus: \(focus)"
+            return focus
         case (nil, nil):
             return nil
         }

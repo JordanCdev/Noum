@@ -118,7 +118,57 @@ enum CoachReplyTextSanitizer {
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { normalizeDisplayLine(String($0)) }
 
+        return lines
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Stored coach replies should be clean user-facing speech, not the
+    /// model's internal planning scaffold. Unlike `liveDisplayText`, this
+    /// keeps bullets / numbered steps so text chat can still scan well.
+    nonisolated static func coachReplyText(from raw: String) -> String {
+        let display = displayText(from: raw)
+        guard !display.isEmpty else { return "" }
+
+        let lines = display
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { stripCoachScaffoldForStoredReplyLine(String($0)) }
+
         return collapseBlankLines(lines)
+    }
+
+    /// Live-call captions should read like the coach is speaking in the room,
+    /// not like a transcript of the model's planning scaffold. Keep the chat
+    /// display sanitizer permissive for formatted text bubbles; make the call
+    /// surface stricter and strip labels the user should never have to parse
+    /// mid-conversation.
+    nonisolated static func liveDisplayText(from raw: String) -> String {
+        let display = coachReplyText(from: raw)
+        guard !display.isEmpty else { return "" }
+
+        let lines = display
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                var value = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+                value = stripBulletMarker(from: value)
+                value = stripNumberMarker(from: value)
+                value = stripCoachLeadIn(from: value)
+                value = stripInlineCoachLeadIns(from: value)
+                value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                return isScaffoldOnlyDisplayLine(value) ? "" : value
+            }
+
+        return collapseBlankLines(lines)
+    }
+
+    /// The call landing is a single focus line. Strip scaffolds with the live
+    /// sanitizer, then collapse line breaks so a stored case-file note cannot
+    /// render as a mini brief before the user speaks.
+    nonisolated static func liveLandingText(from raw: String) -> String {
+        liveDisplayText(from: raw)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     nonisolated static func spokenText(from raw: String) -> String {
@@ -216,6 +266,50 @@ enum CoachReplyTextSanitizer {
         return String(value[after...])
     }
 
+    private nonisolated static func stripCoachScaffoldForStoredReplyLine(_ line: String) -> String {
+        var value = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return "" }
+
+        var prefix = ""
+        if let marker = ["- ", "* ", "+ ", "• "].first(where: { value.hasPrefix($0) }) {
+            prefix = marker
+            value = String(value.dropFirst(marker.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if let list = numberedListPrefix(in: value) {
+            prefix = list.prefix
+            value = list.body
+        }
+
+        value = stripCoachLeadIn(from: value)
+        value = stripInlineCoachLeadIns(from: value)
+        value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !value.isEmpty, !isScaffoldOnlyDisplayLine(value) else { return "" }
+        return prefix.isEmpty ? value : "\(prefix)\(value)"
+    }
+
+    private nonisolated static func numberedListPrefix(in value: String) -> (prefix: String, body: String)? {
+        guard let separator = value.firstIndex(where: { $0 == "." || $0 == ")" }) else {
+            return nil
+        }
+        let prefix = value[..<separator]
+        guard !prefix.isEmpty,
+              prefix.allSatisfy({ $0.isNumber }),
+              Int(prefix) != nil else {
+            return nil
+        }
+        let afterSeparator = value.index(after: separator)
+        guard afterSeparator < value.endIndex,
+              value[afterSeparator].isWhitespace else {
+            return nil
+        }
+        let bodyStart = value.index(after: afterSeparator)
+        guard bodyStart <= value.endIndex else { return nil }
+        return (
+            "\(prefix)\(value[separator]) ",
+            String(value[bodyStart...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
     private nonisolated static func stripCoachLeadIn(from value: String) -> String {
         let pattern = #"(?i)^(read|the read|coach read|next move|next rep|move|why|evidence|try this|try|focus|target|drill):\s*"#
         return replace(pattern: pattern, in: value, template: "")
@@ -224,6 +318,17 @@ enum CoachReplyTextSanitizer {
     private nonisolated static func stripInlineCoachLeadIns(from value: String) -> String {
         let pattern = #"(?i)(^|[.!?]\s+|\s+[—-]\s+)(read|the read|coach read|next move|next rep|move|why|evidence|try this|try|focus|target|drill):\s*"#
         return replace(pattern: pattern, in: value, template: "$1")
+    }
+
+    private nonisolated static func isScaffoldOnlyDisplayLine(_ value: String) -> Bool {
+        let lower = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ":."))
+            .lowercased()
+        return [
+            "read", "the read", "coach read", "move", "next move",
+            "next rep", "why", "evidence", "try this", "try",
+            "focus", "target", "drill"
+        ].contains(lower)
     }
 
     /// Keep visual warmth available in chat, but never send emoji/decorative
@@ -272,6 +377,8 @@ enum CoachChatReplyQualityIssue: Equatable {
     case missingInsightBridge
     case unanchoredCoaching
     case overclaimsEvidence
+    case unrequestedNamedTechnique
+    case scaffoldLabel
     case unverifiedQuotedUserSpeech
     case unengagedUserSpeechClaim
 
@@ -296,7 +403,11 @@ enum CoachChatReplyQualityIssue: Equatable {
         case .unanchoredCoaching:
             return "The draft is not anchored in an observable fact, recent user message, case-file target, or honest data gap. Add one grounded anchor."
         case .overclaimsEvidence:
-            return "The draft overclaims from limited evidence or labels the user. Reframe as a tentative coaching hypothesis the user can confirm or reject."
+            return "The draft overclaims from limited evidence, labels the user, or treats a drill as guaranteed to cause improvement. Reframe as a testable coaching hypothesis the user can confirm or reject."
+        case .unrequestedNamedTechnique:
+            return "The draft turns the move into an app-like drill or framework label the user did not ask for. Rewrite it as plain action; name a framework only when the user explicitly asks for one."
+        case .scaffoldLabel:
+            return "The draft exposes planning labels such as Read, Move, Target, or Next rep. Remove the labels and write the same coaching in natural user-facing language."
         case .unverifiedQuotedUserSpeech:
             return "The draft quotes user speech that is not verified against a transcript or the latest user turn. Remove the quote and cite a metric, pattern, or honest data gap instead."
         case .unengagedUserSpeechClaim:
@@ -690,8 +801,8 @@ actor AICoachChatService {
     /// Send a turn to the model. Returns `.reply(text)` on a live success or
     /// `.failure(cause)` when the model cannot produce a safe answer. Total
     /// function — never throws. The store turns failures into honest system
-    /// notices. The only local reply is a narrow trust-repair fallback after a
-    /// reachable model produced low-quality drafts for an explicit critique.
+    /// notices; local deterministic coach copy must never masquerade as the
+    /// senior AI coach.
     func reply(
         history: [CoachMessage],
         systemPrompt: String,
@@ -711,8 +822,8 @@ actor AICoachChatService {
                 return .reply("""
                 **Fair.** I’ll keep it direct.
 
-                - **Target:** answer first, proof second.
-                - **Next rep:** 30-second update, so the recommendation lands before the explanation: recommendation, one proof point, stop.
+                - Answer first, proof second.
+                - Give one 30-second update, so the recommendation lands before the explanation: recommendation, one proof point, stop.
                 """)
             }
             if launchArguments.contains("UI_TESTING_CHAT_FORCE_NOTICE") {
@@ -794,12 +905,6 @@ actor AICoachChatService {
         // Every keyed provider refused this turn. A content rejection means
         // the model WAS reachable, so that cause must win over `.network`.
         Self.log.error("all \(chain.count) chat providers refused")
-        if sawContentRejection,
-           let fallback = Self.trustRepairFallbackReply(for: latestUserTurn) {
-            Self.log.notice("using trust-repair fallback after content rejection latestUserChars=\(latestUserTurn?.count ?? 0, privacy: .public)")
-            recordChatDiagnostic(.fallback, "Trust-repair fallback used after rejected model drafts")
-            return .reply(fallback)
-        }
         recordChatDiagnostic(
             .failure,
             sawContentRejection ? "All chat providers failed quality gate" : "All chat providers refused"
@@ -1011,24 +1116,24 @@ actor AICoachChatService {
                 let extraction = Self.chatExtractReplyText(from: data, provider: provider)
                 switch extraction {
                 case .text(let text):
-                    let normalized = CoachReplyTextSanitizer.displayText(from: text)
-                    guard !normalized.isEmpty else {
+                    let display = CoachReplyTextSanitizer.displayText(from: text)
+                    guard !display.isEmpty else {
                         Self.log.error("\(provider.displayName, privacy: .public) reply normalized to empty text")
                         recordChatDiagnostic(.fallback, "Reply normalized to empty", provider: provider)
                         return .refused(.transient)
                     }
-                    if normalized != text.trimmingCharacters(in: .whitespacesAndNewlines) {
+                    if display != text.trimmingCharacters(in: .whitespacesAndNewlines) {
                         Self.log.notice("\(provider.displayName, privacy: .public) reply normalized before storage and speech")
                     }
                     if let issue = Self.replyQualityIssue(
-                        in: normalized,
+                        in: display,
                         latestUserTurn: latestUserTurn,
                         quoteGuard: quoteGuard
                     ) {
                         Self.log.notice("\(provider.displayName, privacy: .public) reply tripped quality gate (\(String(describing: issue), privacy: .public)) — repairing")
                         if let repaired = await repairLowQualityReply(
                             issue: issue,
-                            draft: normalized,
+                            draft: display,
                             provider: provider,
                             endpoint: endpoint,
                             key: key,
@@ -1043,6 +1148,12 @@ actor AICoachChatService {
                         // next provider in the chain take the question.
                         recordChatDiagnostic(.fallback, "Reply failed professional-coach gate", provider: provider)
                         return .refused(.contentRejected)
+                    }
+                    let normalized = CoachReplyTextSanitizer.coachReplyText(from: display)
+                    guard !normalized.isEmpty else {
+                        Self.log.error("\(provider.displayName, privacy: .public) reply scaffold normalized to empty text")
+                        recordChatDiagnostic(.fallback, "Reply scaffold normalized to empty", provider: provider)
+                        return .refused(.transient)
                     }
                     recordChatDiagnostic(.success, "Reply accepted", provider: provider)
                     return .reply(normalized)
@@ -1108,6 +1219,10 @@ actor AICoachChatService {
             return .roboticPhrase(phrase)
         }
 
+        if replyUsesCoachScaffoldLabel(trimmed) {
+            return .scaffoldLabel
+        }
+
         let expandedAnswer = turnRequestsExpandedAnswer(latestUserTurn)
         let maxCharacters = expandedAnswer ? 680 : 420
         let maxSentences = expandedAnswer ? 7 : 4
@@ -1138,6 +1253,10 @@ actor AICoachChatService {
             || lower.contains("what is your priority")
             || (lower.contains("we can ") && lower.contains(" or ") && lower.contains("?")) {
             return .menuInsteadOfDecision
+        }
+
+        if replyUsesUnrequestedNamedTechnique(lower, latestUserTurn: latestUserTurn) {
+            return .unrequestedNamedTechnique
         }
 
         let rubric = professionalCoachRubric(reply: trimmed, latestUserTurn: latestUserTurn)
@@ -1289,11 +1408,11 @@ actor AICoachChatService {
             "not human", "doesn't feel", "does not feel", "too much writing",
             "too long", "shorter", "less writing", "less text",
             "straight to the point", "straight to point", "get to the point",
-            "overexplain", "over-explain", "over explaining", "overexplaining",
             "hardcoded", "low eq", "not high eq",
             "why can't", "why can’t", "why cannot",
             "couldn't shape", "couldn’t shape", "shape a useful answer"
         ]) || turnRequestsShortness(lower)
+            || turnCritiquesCoachOverexplaining(lower)
     }
 
     private nonisolated static func turnRequestsExpandedAnswer(_ turn: String?) -> Bool {
@@ -1304,6 +1423,41 @@ actor AICoachChatService {
             "plan", "full", "breakdown", "detail", "explain", "list",
             "7-day", "7 day", "week", "roadmap", "step by step"
         ])
+    }
+
+    private nonisolated static func turnRequestsNamedTechnique(_ turn: String?) -> Bool {
+        guard let lower = turn?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !lower.isEmpty else { return false }
+        if containsAny(lower, [
+            "don't name", "do not name", "without naming", "no drill name",
+            "not a drill name", "plain action"
+        ]) {
+            return false
+        }
+        return containsAny(lower, [
+            "drill", "framework", "method", "technique", "exercise",
+            "what is it called", "what's it called", "name it", "name the",
+            "pyramid", "star"
+        ])
+    }
+
+    private nonisolated static func replyUsesCoachScaffoldLabel(_ text: String) -> Bool {
+        let display = CoachReplyTextSanitizer.displayText(from: text)
+        guard !display.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+
+        let labels = #"read|the read|coach read|next move|next rep|move|target"#
+        let linePattern = #"(?im)^\s*(?:[-*+•]\s*|\d+[.)]\s*)?(?:"# + labels + #"):\s*"#
+        let inlinePattern = #"(?i)(?:[.!?]\s+|\s+[—-]\s+)(?:"# + labels + #"):\s*"#
+
+        return [linePattern, inlinePattern].contains { pattern in
+            (try? NSRegularExpression(pattern: pattern))?
+                .firstMatch(
+                    in: display,
+                    range: NSRange(display.startIndex..., in: display)
+                ) != nil
+        }
     }
 
     private nonisolated static let directnessRequestPhrases = [
@@ -1320,52 +1474,26 @@ actor AICoachChatService {
             "keep it short", "keep this short", "make it short", "shorter",
             "too much writing", "too long", "less writing", "less text",
             "straight to the point", "straight to point", "get to the point",
-            "to the point", "brief", "concise", "one sentence",
-            "stop overexplaining", "stop over explaining", "overexplain",
-            "over-explain", "over explaining", "overexplaining"
+            "to the point", "brief", "concise", "one sentence"
         ])
     }
 
-    nonisolated static func trustRepairFallbackReply(for latestUserTurn: String?) -> String? {
-        guard let lower = latestUserTurn?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-              !lower.isEmpty,
-              isCritiqueTurn(lower) || turnRequestsShortness(lower) else {
-            return nil
+    private nonisolated static func turnCritiquesCoachOverexplaining(_ lower: String) -> Bool {
+        guard containsAny(lower, [
+            "stop overexplaining", "stop over explaining",
+            "you overexplain", "you over-explain", "you are overexplaining",
+            "you're overexplaining", "you’re overexplaining",
+            "your reply overexplained", "your answer overexplained"
+        ]) else {
+            return false
         }
 
-        let raw: String
-        if containsAny(lower, ["why can't", "why can’t", "why cannot", "shape a useful answer"]) {
-            raw = """
-            Fair question. The friction was my draft, not your ask.
-            - Move: I’ll keep the next answer to one read and one drill.
-            - Try: send the situation in one line so I can aim the coaching.
-            """
-        } else if turnRequestsDirectness(lower) {
-            raw = """
-            Fair. I’ll keep it direct.
-            - Target: answer first, proof second.
-            - Next rep: 30-second update, so the recommendation lands before the explanation: recommendation, one proof point, stop.
-            """
-        } else if turnRequestsShortness(lower) {
-            raw = """
-            Fair push. Your message is asking for less writing, not a lecture.
-            - Move: I’ll answer with one read, one drill, and stop.
-            - Try: send the moment you’re preparing for in one line so the coaching stays usable.
-            """
-        } else {
-            raw = """
-            Fair push. That read was too generic.
-            - Move: I’ll give one observable read, one drill, and stop.
-            - Try: send the moment you’re preparing for in one line so the coaching has a target.
-            """
-        }
-
-        let normalized = CoachReplyTextSanitizer.displayText(from: raw)
-        guard !normalized.isEmpty,
-              Self.replyQualityIssue(in: normalized, latestUserTurn: latestUserTurn) == nil else {
-            return nil
-        }
-        return normalized
+        return !containsAny(lower, [
+            "i overexplain", "i over-explain", "i over explain",
+            "i keep overexplaining", "i keep over-explaining", "i keep over explaining",
+            "when i overexplain", "when i over-explain", "when i over explain",
+            "because i overexplain", "because i over-explain", "because i over explain"
+        ])
     }
 
     private nonisolated static func turnExpectsCoaching(_ latestUserTurn: String?) -> Bool {
@@ -1439,12 +1567,55 @@ actor AICoachChatService {
         ]) {
             return true
         }
+        if containsAny(lower, [
+            "guarantees", "guarantee that", "will ensure", "ensures that",
+            "automatically improves", "automatically reduces",
+            "naturally drops", "naturally reduces", "will drop your pace",
+            "will reduce your fillers", "will make you sound"
+        ]) {
+            return true
+        }
+        if containsAny(lower, [
+            "you signal that you", "you signal you", "you actually signal",
+            "you are signaling that", "you're signaling that", "you’re signaling that",
+            "this signals that you", "this invites the", "this invites challenges",
+            "silence forces", "this forces stakeholders", "stakeholders will think",
+            "stakeholders will assume", "stakeholders will see", "listeners will think",
+            "listeners will assume", "audience will think", "audience will assume",
+            "they will think", "they will assume", "defending a weak position"
+        ]) {
+            return true
+        }
         let sensitiveLabels = ["evasive", "timid", "detached", "defensive", "insecure"]
         if containsAny(lower, sensitiveLabels),
            containsAny(lower, ["clearly", "obviously", "you are ", "you’re "]) {
             return true
         }
         return false
+    }
+
+    private nonisolated static func replyUsesUnrequestedNamedTechnique(
+        _ lower: String,
+        latestUserTurn: String?
+    ) -> Bool {
+        guard turnExpectsPrescribedAction(latestUserTurn),
+              !turnRequestsExpandedAnswer(latestUserTurn),
+              !turnRequestsNamedTechnique(latestUserTurn) else {
+            return false
+        }
+        if containsAny(lower, [
+            "pyramid drill", "pyramid-drill", "star drill",
+            "star method drill", "answer-first drill", "bottom-line drill",
+            "bottom line drill"
+        ]) {
+            return true
+        }
+        let pattern = #"\b(try|run|do|use|practice)\s+(the\s+)?([a-z][a-z-]*(\s+[a-z][a-z-]*){0,3})\s+(drill|framework|method|exercise)\b"#
+        return (try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]))?
+            .firstMatch(
+                in: lower,
+                range: NSRange(lower.startIndex..., in: lower)
+            ) != nil
     }
 
     /// Attribution phrases that may precede a QUOTED fragment. BROAD set, used
@@ -1614,8 +1785,10 @@ actor AICoachChatService {
         - 1-4 short lines, usually under 75 words.
         - Use plain lead-ins, up to 3 bullets, or numbered steps only when they reduce reading.
         - Never output literal Markdown markers such as **, __, ###, or decorative formatting.
+        - Do not label the reply with Read, Move, Target, or Next rep.
         - No long paragraph.
         - No broad menu. Pick one coaching move.
+        - Do not name a drill/framework unless the user explicitly asked for a named drill or plan. Translate the technique into plain action.
         - If the user showed frustration, do not defend the app.
         - If the user asked for shortness, make the answer shorter before making it smarter.
         - Sound like a senior communications coach, not an assistant explaining itself.
@@ -1637,22 +1810,28 @@ actor AICoachChatService {
             recordChatDiagnostic(.fallback, "Repair response missing content", provider: provider)
             return nil
         }
-        let normalized = CoachReplyTextSanitizer.displayText(from: text)
-        guard !normalized.isEmpty else {
+        let display = CoachReplyTextSanitizer.displayText(from: text)
+        guard !display.isEmpty else {
             Self.log.error("repair pass normalized to empty text from \(provider.displayName, privacy: .public)")
             recordChatDiagnostic(.fallback, "Repair reply normalized to empty", provider: provider)
             return nil
         }
-        if normalized != text.trimmingCharacters(in: .whitespacesAndNewlines) {
+        if display != text.trimmingCharacters(in: .whitespacesAndNewlines) {
             Self.log.notice("repair pass normalized reply from \(provider.displayName, privacy: .public)")
         }
         if let remainingIssue = Self.replyQualityIssue(
-            in: normalized,
+            in: display,
             latestUserTurn: messages.last(where: { $0.role == .user })?.text,
             quoteGuard: quoteGuard
         ) {
             Self.log.error("repair pass still tripped the gate (\(String(describing: remainingIssue), privacy: .public))")
             recordChatDiagnostic(.fallback, "Repair reply failed professional-coach gate", provider: provider)
+            return nil
+        }
+        let normalized = CoachReplyTextSanitizer.coachReplyText(from: display)
+        guard !normalized.isEmpty else {
+            Self.log.error("repair pass scaffold-normalized to empty text from \(provider.displayName, privacy: .public)")
+            recordChatDiagnostic(.fallback, "Repair reply scaffold-normalized to empty", provider: provider)
             return nil
         }
         return normalized

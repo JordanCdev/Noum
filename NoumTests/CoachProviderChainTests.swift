@@ -187,7 +187,7 @@ struct CoachProviderChainTests {
     @Test func acceptedReplyWritesPersistentDiagnostic() async {
         let diagnostics = CoachDiagnosticRecorderProbe()
         let userTurn = "Give me one move for the next rep."
-        let acceptedReply = "Your message asks for one move, so keep the test narrow. Next rep: answer first, give one proof point, then stop. That tests whether structure holds when the timer is tight."
+        let acceptedReply = "Your message asks for one move, so keep the test narrow. In the next rep, answer first, give one proof point, then stop. That tests whether structure holds when the timer is tight."
         #expect(AICoachChatService.replyQualityIssue(in: acceptedReply, latestUserTurn: userTurn) == nil)
 
         let service = AICoachChatService(
@@ -233,7 +233,66 @@ struct CoachProviderChainTests {
         #expect(acceptedRecord?.model == CoachChatProvider.openAI.model)
     }
 
-    @Test func contentRejectedCritiqueFallsBackToTrustRepairReply() async {
+    @Test func agentPlatformGeminiReplyUsesThinkingDisabledFlashPath() async throws {
+        let diagnostics = CoachDiagnosticRecorderProbe()
+        let bodyProbe = CoachBodyProbe()
+        let userTurn = "Give me one move for the next rep."
+        let acceptedReply = "Your message asks for one move, so keep the test narrow. Next rep, answer first and stop after one proof point. That tests whether pressure is making you over-explain."
+        #expect(AICoachChatService.replyQualityIssue(in: acceptedReply, latestUserTurn: userTurn) == nil)
+
+        let service = AICoachChatService(
+            keyedProviders: { [.agentPlatform] },
+            keyLookup: { _ in "test-google-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { provider, endpoint, _, body in
+                bodyProbe.capture(provider: provider, endpoint: endpoint, body: body)
+                return .success(Self.geminiData(acceptedReply))
+            },
+            diagnosticRecorder: { surface, providerName, model, outcome, reason, statusCode, startedAt, now in
+                diagnostics.record(
+                    surface: surface,
+                    providerName: providerName,
+                    model: model,
+                    outcome: outcome,
+                    reason: reason,
+                    statusCode: statusCode,
+                    startedAt: startedAt,
+                    now: now
+                )
+            }
+        )
+
+        let outcome = await service.reply(
+            history: [
+                CoachMessage(role: .user, text: userTurn)
+            ],
+            systemPrompt: "You are Noum.",
+            userContext: "RATING\n- Total rated sessions: 12."
+        )
+
+        guard case .reply(let text) = outcome else {
+            Issue.record("Expected Gemini-backed reply, got \(outcome)")
+            return
+        }
+
+        #expect(text == acceptedReply)
+        let captured = try #require(bodyProbe.captured)
+        #expect(captured.provider == .agentPlatform)
+        #expect(captured.endpointHost == "aiplatform.googleapis.com")
+        #expect(captured.thinkingBudget == 0)
+        #expect(captured.maxOutputTokens == 520)
+
+        #expect(diagnostics.records.contains { record in
+            record.surface == "Ask Noum chat" &&
+            record.provider == "Google Cloud" &&
+            record.model == CoachChatProvider.agentPlatform.model &&
+            record.outcome == .success &&
+            record.reason == "Reply accepted"
+        })
+    }
+
+    @Test func contentRejectedCritiqueResolvesAsNoticeNotLocalCoachReply() async {
+        let diagnostics = CoachDiagnosticRecorderProbe()
         let scripted = ScriptedCoachHTTP(results: [
             .success(Self.openAIData("I understand your frustration. Here are some tips to communicate more clearly: be concise.")),
             .success(Self.openAIData("Can you clarify what you mean?"))
@@ -244,6 +303,18 @@ struct CoachProviderChainTests {
             localeSupportsAI: { true },
             providerHTTP: { provider, endpoint, key, body in
                 await scripted.next(provider: provider, endpoint: endpoint, key: key, body: body)
+            },
+            diagnosticRecorder: { surface, providerName, model, outcome, reason, statusCode, startedAt, now in
+                diagnostics.record(
+                    surface: surface,
+                    providerName: providerName,
+                    model: model,
+                    outcome: outcome,
+                    reason: reason,
+                    statusCode: statusCode,
+                    startedAt: startedAt,
+                    now: now
+                )
             }
         )
 
@@ -255,17 +326,20 @@ struct CoachProviderChainTests {
             userContext: "No recent sessions."
         )
 
-        guard case .reply(let text) = outcome else {
-            Issue.record("Expected trust-repair reply, got \(outcome)")
+        guard case .failure(.contentRejected) = outcome else {
+            Issue.record("Expected content-rejected notice outcome, got \(outcome)")
             return
         }
 
         #expect(await scripted.callCount == 2)
-        #expect(text.contains("my draft, not your ask"))
-        #expect(!text.contains("I couldn’t shape"))
-        #expect(!text.contains("clearer sentence"))
-        #expect(!text.contains("**"))
-        #expect(AICoachChatService.replyQualityIssue(in: text, latestUserTurn: "Why can’t you shape a useful answer?") == nil)
+        #expect(diagnostics.records.contains { record in
+            record.surface == "Ask Noum chat" &&
+            record.outcome == .failure &&
+            record.reason == "All chat providers failed quality gate"
+        })
+        #expect(!diagnostics.records.contains { record in
+            record.reason.localizedCaseInsensitiveContains("trust-repair fallback")
+        })
     }
 
     private static func openAIData(_ content: String) -> Data {
@@ -274,6 +348,20 @@ struct CoachProviderChainTests {
                 [
                     "message": ["content": content],
                     "finish_reason": "stop"
+                ]
+            ]
+        ]
+        return try! JSONSerialization.data(withJSONObject: payload)
+    }
+
+    private static func geminiData(_ content: String) -> Data {
+        let payload: [String: Any] = [
+            "candidates": [
+                [
+                    "content": [
+                        "parts": [["text": content]]
+                    ],
+                    "finishReason": "STOP"
                 ]
             ]
         ]
@@ -300,6 +388,38 @@ private actor ScriptedCoachHTTP {
             return .refused(status: 500, retryAfter: nil)
         }
         return results.removeFirst()
+    }
+}
+
+private final class CoachBodyProbe: @unchecked Sendable {
+    struct Captured {
+        let provider: CoachChatProvider
+        let endpointHost: String?
+        let thinkingBudget: Int?
+        let maxOutputTokens: Int?
+    }
+
+    private let lock = NSLock()
+    private var storedCaptured: Captured?
+
+    var captured: Captured? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedCaptured
+    }
+
+    func capture(provider: CoachChatProvider, endpoint: URL, body: [String: Any]) {
+        let generationConfig = body["generationConfig"] as? [String: Any]
+        let thinkingConfig = generationConfig?["thinkingConfig"] as? [String: Any]
+        let next = Captured(
+            provider: provider,
+            endpointHost: endpoint.host,
+            thinkingBudget: thinkingConfig?["thinkingBudget"] as? Int,
+            maxOutputTokens: generationConfig?["maxOutputTokens"] as? Int
+        )
+        lock.lock()
+        storedCaptured = next
+        lock.unlock()
     }
 }
 

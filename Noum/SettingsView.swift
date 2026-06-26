@@ -1431,7 +1431,7 @@ struct SettingsView: View {
     private var aiCallDiagnosticsCard: some View {
         let latest = aiCallDiagnostics.latest
         return cardContainer(spacing: Spacing.md) {
-            Text("Recent model-call health for internal QA. Prompts, transcripts, API keys, and raw responses are never stored.")
+            Text("Recent model-call and coach-brain health for internal QA. Prompts, transcripts, API keys, and raw responses are never stored.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

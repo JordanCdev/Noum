@@ -99,6 +99,26 @@ final class NoumChatFlowUITests: XCTestCase {
     }
 
     @MainActor
+    private func waitForCoachBubbleLabel(
+        in app: XCUIApplication,
+        containing snippets: [String],
+        timeout: TimeInterval = 10
+    ) -> String? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let label = coachBubbleLabels(in: app).first(where: { label in
+                snippets.contains(where: { label.contains($0) })
+            }) {
+                return label
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        return coachBubbleLabels(in: app).first(where: { label in
+            snippets.contains(where: { label.contains($0) })
+        })
+    }
+
+    @MainActor
     private func noticeCount(in app: XCUIApplication) -> Int {
         app.descendants(matching: .any)
             .matching(identifier: "askNoum.systemNotice")
@@ -193,16 +213,20 @@ final class NoumChatFlowUITests: XCTestCase {
         XCTAssertEqual(afterCoach, beforeCoach + 1, "Forced markdown reply should land as one coach bubble")
         XCTAssertEqual(noticeCount(in: app), 0, "Forced markdown reply should not degrade into a notice")
 
-        guard let latest = coachBubbleLabels(in: app).last else {
-            XCTFail("Expected a rendered coach bubble")
+        guard let latest = waitForCoachBubbleLabel(
+            in: app,
+            containing: ["Answer first, proof second.", "Give one 30-second update"]
+        ) else {
+            XCTFail("Expected the forced markdown reply among coach labels: \(coachBubbleLabels(in: app))")
             app.terminate()
             return
         }
         XCTAssertFalse(latest.contains("**"), "Raw markdown markers must not be visible or exposed to accessibility")
         XCTAssertFalse(latest.contains("__"), "Raw emphasis markers must not be visible or exposed to accessibility")
-        XCTAssertTrue(latest.contains("Fair."), "Directness preference should get a brief human acknowledgement")
-        XCTAssertTrue(latest.contains("Target:"), "The forced reply should expose the current coaching target")
-        XCTAssertTrue(latest.contains("Next rep:"), "The forced reply should end with one usable rep")
+        XCTAssertTrue(latest.contains("Answer first, proof second."), "The forced reply should expose the current coaching target plainly")
+        XCTAssertTrue(latest.contains("Give one 30-second update"), "The forced reply should end with one usable rep")
+        XCTAssertFalse(latest.localizedCaseInsensitiveContains("Target:"), "Chat reply should not expose scaffold labels")
+        XCTAssertFalse(latest.localizedCaseInsensitiveContains("Next rep:"), "Chat reply should not expose scaffold labels")
         XCTAssertEqual(
             app.descendants(matching: .any)
                 .matching(NSPredicate(format: "label CONTAINS %@", "**"))
@@ -211,6 +235,7 @@ final class NoumChatFlowUITests: XCTestCase {
             "No visible/accessibility label in the chat should expose raw markdown markers"
         )
 
+        Thread.sleep(forTimeInterval: 2)
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "markdown-reply-normalized"; shot.lifetime = .keepAlways; add(shot)
         app.terminate()
@@ -230,11 +255,33 @@ final class NoumChatFlowUITests: XCTestCase {
         XCTAssertTrue(label.hasPrefix("Noum:"), "Live caption should be exposed as Noum speaking")
         XCTAssertFalse(label.contains("**"), "Live caption must not expose raw markdown markers")
         XCTAssertFalse(label.contains("__"), "Live caption must not expose raw emphasis markers")
-        XCTAssertTrue(label.contains("Read:"), "Plain lead-ins can remain for visual emphasis")
-        XCTAssertTrue(label.contains("Move:"), "Plain lead-ins can remain for visual emphasis")
+        XCTAssertFalse(label.localizedCaseInsensitiveContains("Read:"), "Live caption should not expose scaffold labels")
+        XCTAssertFalse(label.localizedCaseInsensitiveContains("Move:"), "Live caption should not expose scaffold labels")
+        XCTAssertTrue(label.contains("You want it straight."), "Live caption should keep the useful coaching content")
+        XCTAssertTrue(label.contains("Give one 30-second update"), "Live caption should keep the prescribed move")
 
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "live-caption-markdown-normalized"; shot.lifetime = .keepAlways; add(shot)
+        app.terminate()
+    }
+
+    /// Owner-visible screenshot regression: plain `Read:` / `Move:` labels
+    /// leaked into the live-call card after markdown had already been stripped.
+    @MainActor
+    func testLiveCallCaptionStripsPlainScaffoldLabels() throws {
+        let app = launchLiveCall(forceArguments: ["UI_TESTING_LIVE_FORCE_PLAIN_SCAFFOLD_CAPTION"])
+        let caption = app.descendants(matching: .any)["askNoum.live.caption"]
+        XCTAssertTrue(caption.waitForExistence(timeout: 10), "Forced live caption should render")
+
+        let label = caption.label
+        XCTAssertTrue(label.hasPrefix("Noum:"), "Live caption should be exposed as Noum speaking")
+        XCTAssertFalse(label.localizedCaseInsensitiveContains("Read:"), "Live caption should not expose plain Read scaffold")
+        XCTAssertFalse(label.localizedCaseInsensitiveContains("Move:"), "Live caption should not expose plain Move scaffold")
+        XCTAssertTrue(label.contains("You want it straight."), "Live caption should keep the useful coaching content")
+        XCTAssertTrue(label.contains("Give one 30-second update"), "Live caption should keep the prescribed move")
+
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "live-caption-plain-scaffold-normalized"; shot.lifetime = .keepAlways; add(shot)
         app.terminate()
     }
 

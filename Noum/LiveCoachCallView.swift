@@ -157,7 +157,7 @@ struct LiveCoachCallView: View {
         guard let text = store.messages.last(where: { $0.role == .coach && !$0.isPending })?.text else {
             return nil
         }
-        return CoachReplyTextSanitizer.displayText(from: text)
+        return CoachReplyTextSanitizer.liveDisplayText(from: text)
     }
 
     /// True when the latest coach turn being captioned is a legacy offline row.
@@ -170,6 +170,21 @@ struct LiveCoachCallView: View {
 
     private var captionSpeaker: String {
         voiceInput.state == .recording ? "YOU" : "NOUM"
+    }
+
+    /// The live call is a spoken-caption surface, not the rich text chat.
+    /// User partials stay verbatim; coach turns get a final sanitizer pass
+    /// immediately before visible rendering so old persisted rows, UI-test
+    /// seeds, or renderer changes cannot leak prompt scaffolds like "Read:".
+    private var visibleCaption: String? {
+        guard let text = caption else { return nil }
+        let value: String
+        if voiceInput.state == .recording {
+            value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            value = CoachReplyTextSanitizer.liveDisplayText(from: text)
+        }
+        return value.isEmpty ? nil : value
     }
 
     private var shouldShowCoachingBrief: Bool {
@@ -270,7 +285,7 @@ struct LiveCoachCallView: View {
             // alternative. Disabled when speech input isn't available so it
             // never offers a dead tap.
             Button(action: micTapped) {
-                NoumCharacter(mood: orbMood, tint: AppColor.pro, size: 168, stage: characterStage)
+                NoumCharacter(mood: orbMood, tint: AppColor.pro, size: 136, stage: characterStage)
                     .accessibilityHidden(true)
             }
             .buttonStyle(.plain)
@@ -284,7 +299,7 @@ struct LiveCoachCallView: View {
             // something honest to say.
             if let stateLine {
                 Text(stateLine)
-                    .font(Typography.body)
+                    .font(Typography.caption)
                     .foregroundStyle(.white.opacity(0.55))
                     .multilineTextAlignment(.center)
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: stateLine)
@@ -319,7 +334,7 @@ struct LiveCoachCallView: View {
 
     @ViewBuilder
     private var captionArea: some View {
-        if let caption, !caption.isEmpty {
+        if let caption = visibleCaption {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(captionSpeaker)
@@ -341,28 +356,26 @@ struct LiveCoachCallView: View {
                     }
                 }
                 ScrollView {
-                    CoachFormattedMessageText(
-                        text: caption,
-                        textColor: .white.opacity(captionIsOffline ? 0.72 : 0.92),
-                        accent: .white.opacity(captionIsOffline ? 0.46 : 0.72)
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text(caption)
+                        .font(Typography.figtree(size: 17, weight: .medium, relativeTo: .body))
+                        .foregroundStyle(.white.opacity(captionIsOffline ? 0.72 : 0.92))
+                        .lineSpacing(5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                // Raised from 150 so the recent multi-sentence coaching reads
-                // don't clip into a cramped nested scroll under larger Dynamic
-                // Type. The whole caption is exposed to VoiceOver as one grouped
-                // element so a muted user (or anyone) can read the full reply —
-                // mirrors the chat coachBubble's "Noum: …" a11y label.
-                .frame(maxHeight: 220)
+                // Compact by default so short coach turns don't sit inside a
+                // giant empty panel; still scrolls for larger Dynamic Type or a
+                // longer coach turn. VoiceOver gets the whole caption as one
+                // grouped element, mirroring the chat bubble's "Noum: …" label.
+                .frame(maxHeight: 148)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(captionIsOffline ? "Noum, offline reply: \(caption)" : "Noum: \(caption)")
                 .accessibilityIdentifier("askNoum.live.caption")
             }
             .padding(Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-            .padding(.top, Spacing.lg)
+            .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .padding(.top, Spacing.md)
             .transition(.opacity)
         }
     }
@@ -441,8 +454,11 @@ struct LiveCoachCallView: View {
     }
 
     private func bounded(_ value: String?, maximumLength: Int = 96) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty else { return nil }
+        guard let raw = value,
+              !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let cleaned = CoachReplyTextSanitizer.liveLandingText(from: raw)
+        let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
         if trimmed.count <= maximumLength { return trimmed }
         let clipped = String(trimmed.prefix(maximumLength)).trimmingCharacters(in: .whitespacesAndNewlines)
         return clipped + "..."
@@ -453,14 +469,23 @@ struct LiveCoachCallView: View {
         guard !didSeedDebugCaption,
               launchArguments.contains("UI_TESTING"),
               launchArguments.contains("UI_TESTING_LIVE_FORCE_MARKDOWN_CAPTION")
+                || launchArguments.contains("UI_TESTING_LIVE_FORCE_PLAIN_SCAFFOLD_CAPTION")
         else { return }
         didSeedDebugCaption = true
         hasLiveExchange = true
-        _ = store.injectCoachTurn("""
-        **Read:** You want it straight. Your baseline says fillers rise near the close.
+        if launchArguments.contains("UI_TESTING_LIVE_FORCE_PLAIN_SCAFFOLD_CAPTION") {
+            _ = store.injectCoachTurn("""
+            Read: You want it straight.
 
-        **Move:** Give one 30-second update, state the recommendation first, then stop.
-        """)
+            Move: Give one 30-second update, state the recommendation first, then stop.
+            """)
+        } else {
+            _ = store.injectCoachTurn("""
+            **Read:** You want it straight. Your baseline says fillers rise near the close.
+
+            **Move:** Give one 30-second update, state the recommendation first, then stop.
+            """)
+        }
     }
 
     // MARK: - Control bar (Zoom-style)

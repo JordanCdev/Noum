@@ -9423,6 +9423,24 @@ struct CoachReplyTextSanitizerTests {
         }
     }
 
+    @Test func coachReplyTextDropsScaffoldLabelsButPreservesListShape() {
+        let raw = """
+        **Read:** You want it straight.
+        - **Move:** Give one 30-second update and stop.
+        2. **Target:** recommendation in the first sentence.
+        """
+        let display = CoachReplyTextSanitizer.coachReplyText(from: raw)
+
+        #expect(display == """
+        You want it straight.
+        - Give one 30-second update and stop.
+        2. recommendation in the first sentence.
+        """)
+        #expect(!display.lowercased().contains("read:"))
+        #expect(!display.lowercased().contains("move:"))
+        #expect(!display.lowercased().contains("target:"))
+    }
+
     @Test func spokenTextDropsFormattingAndScaffoldLabels() {
         let raw = """
         **Read:** You want it straight.
@@ -9435,6 +9453,82 @@ struct CoachReplyTextSanitizerTests {
         #expect(!spoken.contains("**"))
         #expect(!spoken.lowercased().contains("read:"))
         #expect(!spoken.lowercased().contains("move:"))
+    }
+
+    @Test func liveDisplayTextDropsScaffoldLabelsForCallCaption() {
+        let raw = """
+        **Read:** You want it straight.
+
+        **Move:** Give one 30-second update, state the recommendation first, then stop.
+        """
+        let display = CoachReplyTextSanitizer.liveDisplayText(from: raw)
+
+        #expect(display == """
+        You want it straight.
+        Give one 30-second update, state the recommendation first, then stop.
+        """)
+        #expect(!display.contains("**"))
+        #expect(!display.lowercased().contains("read:"))
+        #expect(!display.lowercased().contains("move:"))
+    }
+
+    @Test func liveDisplayTextDropsPlainScaffoldLabelsForCallCaption() {
+        let raw = """
+        Read: You want it straight.
+
+        Move: Give one 30-second update, state the recommendation first, then stop.
+        """
+        let display = CoachReplyTextSanitizer.liveDisplayText(from: raw)
+
+        #expect(display == """
+        You want it straight.
+        Give one 30-second update, state the recommendation first, then stop.
+        """)
+        #expect(!display.lowercased().contains("read:"))
+        #expect(!display.lowercased().contains("move:"))
+    }
+
+    @Test func liveDisplayTextStaysCleanAfterStoredReplyNormalization() {
+        let stored = CoachReplyTextSanitizer.coachReplyText(from: """
+        **Read:** You want it straight.
+
+        **Move:** Give one 30-second update, state the recommendation first, then stop.
+        """)
+        let display = CoachReplyTextSanitizer.liveDisplayText(from: stored)
+
+        #expect(display == """
+        You want it straight.
+        Give one 30-second update, state the recommendation first, then stop.
+        """)
+        #expect(!display.lowercased().contains("read:"))
+        #expect(!display.lowercased().contains("move:"))
+    }
+
+    @Test func liveDisplayTextDropsScaffoldOnlyHeadings() {
+        let raw = """
+        ### Coach read
+        Read:
+        - Move: stop after the recommendation.
+        """
+        let display = CoachReplyTextSanitizer.liveDisplayText(from: raw)
+
+        #expect(display == "stop after the recommendation.")
+        #expect(!display.lowercased().contains("coach read"))
+        #expect(!display.lowercased().contains("move:"))
+    }
+
+    @Test func liveLandingTextDropsScreenshotScaffoldAndCollapsesLines() {
+        let raw = """
+        Read: You want it straight.
+
+        Move: Give one 30-second update, state the recommendation first, then stop.
+        """
+        let display = CoachReplyTextSanitizer.liveLandingText(from: raw)
+
+        #expect(display == "You want it straight. Give one 30-second update, state the recommendation first, then stop.")
+        #expect(!display.lowercased().contains("read:"))
+        #expect(!display.lowercased().contains("move:"))
+        #expect(!display.contains("\n"))
     }
 
     @Test func spokenTextDropsMarkdownArtifactsBeforeTTS() {
@@ -10200,6 +10294,10 @@ struct CoachContextBuilderTests {
         #expect(prompt.contains("never use chirpy filler"))
         #expect(prompt.contains("never use exclamation marks"))
         #expect(prompt.contains("never overclaim"))
+        #expect(prompt.contains("frame drills as tests"))
+        #expect(prompt.contains("Observed improvement is association, not proof"))
+        #expect(prompt.contains("Do not write app-like labels"))
+        #expect(prompt.contains("Pyramid Drill"))
         #expect(prompt.contains("never punish-shame"))
     }
 
@@ -11700,10 +11798,12 @@ struct AskNoumStoreTests {
 
         #expect(store.messages[1].role == .coach)
         #expect(store.messages[1].text == """
-        Read: You want it straight.
-        - Move: Give one 30-second update and stop.
+        You want it straight.
+        - Give one 30-second update and stop.
         """)
         #expect(!store.messages[1].text.contains("**"))
+        #expect(!store.messages[1].text.lowercased().contains("read:"))
+        #expect(!store.messages[1].text.lowercased().contains("move:"))
     }
 
     /// HARDEN #1 (critical privacy) — the coach thread is per-account; switching
@@ -11789,7 +11889,8 @@ struct AskNoumStoreTests {
 
         let notice = store.messages[1].text.lowercased()
         #expect(store.messages[1].role == .systemNotice)
-        #expect(notice.contains("held that one back"))
+        #expect(notice.contains("held that response"))
+        #expect(notice.contains("grounded enough"))
         #expect(notice.contains("one clear move"))
         #expect(!notice.contains("missed the coaching bar"))
         #expect(!notice.contains("clearer sentence"))
@@ -12682,15 +12783,15 @@ struct PracticeModePrescriptionCopyTests {
             target: "30s+"
         )
 
-        #expect(line == "Target: 30s+ \u{00B7} Focus: Longer answer")
+        #expect(line == "30s+ \u{00B7} Longer answer")
     }
 
     @Test func prescriptionLineSuppressesEmptyOrDuplicateSignals() {
         #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: nil, target: nil) == nil)
         #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: "  ", target: "\n") == nil)
-        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: "Longer answer", target: nil) == "Focus: Longer answer")
-        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: nil, target: "30s+") == "Target: 30s+")
-        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: "Longer answer", target: "longer answer") == "Target: longer answer")
+        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: "Longer answer", target: nil) == "Longer answer")
+        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: nil, target: "30s+") == "30s+")
+        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: "Longer answer", target: "longer answer") == "longer answer")
     }
 
     @Test func prescriptionCopyAvoidsUrgencyAndFanfare() {
@@ -21301,6 +21402,21 @@ struct AskNoumStoreInjectCoachTurnTests {
         _ = store.injectCoachTurn("  Plan body.  \n")
         #expect(store.messages.first?.text == "Plan body.")
     }
+
+    @Test func injectCoachTurnDropsCoachScaffoldLabels() {
+        let store = freshStore()
+        _ = store.injectCoachTurn("""
+        Read: You want it straight.
+        Move: Give one 30-second update, recommendation first, then stop.
+        """)
+
+        #expect(store.messages.first?.text == """
+        You want it straight.
+        Give one 30-second update, recommendation first, then stop.
+        """)
+        #expect(store.messages.first?.text.lowercased().contains("read:") == false)
+        #expect(store.messages.first?.text.lowercased().contains("move:") == false)
+    }
 }
 
 // MARK: - M21 — Session Intent: priority/SkillArea bridge
@@ -22671,8 +22787,8 @@ struct AskNoumStarterDigestTests {
     // without a provider, but its grounding gate IS `parseAndFilterChips`
     // — identical to the follow-up chip path. These assert the contract the
     // caller relies on: a full clean batch parses; a short/dirty batch
-    // returns nil, at which point `AskNoumView.displayedStarters` falls back
-    // to the deterministic `starterPrompts(...)` catalog.
+    // returns nil, at which point Ask Noum shows no suggested ask rather than
+    // surfacing the deterministic `starterPrompts(...)` catalog.
 
     @Test func aiStarterCleanBatchParsesToExactCount() {
         let raw = """
@@ -22684,20 +22800,12 @@ struct AskNoumStarterDigestTests {
         #expect(chips?.count == 3)
     }
 
-    @Test func aiStarterShortBatchReturnsNilSoCallerFallsBack() {
+    @Test func aiStarterShortBatchReturnsNilSoCallerShowsNoSuggestedAsk() {
         // Only two survive (the exclamation line is dropped) → nil → the
-        // empty-state ForEach renders the deterministic catalog instead.
+        // empty-state suggestion row stays hidden.
         let raw = "Open my pitch?\nGreat work today!\nNext 7 days?"
         let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
         #expect(chips == nil)
-        // And the deterministic catalog the caller falls back to is always
-        // non-empty for any voice.
-        let fallback = CoachContextBuilder.starterPrompts(
-            bigMoment: nil,
-            baseline: .empty,
-            voice: .authoritative
-        )
-        #expect(!fallback.isEmpty)
     }
 }
 
@@ -25264,13 +25372,13 @@ struct AICoachChatReplyQualityGateTests {
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == nil)
     }
 
-    @Test func acceptsCompactStructuredCoachReplyWithoutRawMarkdown() {
+    @Test func rejectsCompactCoachReplyWithScaffoldLabels() {
         let reply = """
         Read: 5 fillers show the rush is happening near the close.
         - Move: next rep, hold one beat before the final sentence.
         - Why: that tests whether pace is driving the filler spike.
         """
-        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == nil)
+        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == .scaffoldLabel)
     }
 
     @Test func sanitizerTurnsLegacyMarkdownReplyIntoAcceptedPlainReply() {
@@ -25279,9 +25387,18 @@ struct AICoachChatReplyQualityGateTests {
         - **Move:** next rep, hold one beat before the final sentence.
         - **Why:** that tests whether pace is driving the filler spike.
         """
-        let normalized = CoachReplyTextSanitizer.displayText(from: raw)
+        let display = CoachReplyTextSanitizer.displayText(from: raw)
+        let normalized = CoachReplyTextSanitizer.coachReplyText(from: raw)
 
-        #expect(!normalized.contains("**"))
+        #expect(!display.contains("**"))
+        #expect(AICoachChatService.replyQualityIssue(in: display, latestUserTurn: "What next?") == .scaffoldLabel)
+        #expect(normalized == """
+        5 fillers show the rush is happening near the close.
+        - next rep, hold one beat before the final sentence.
+        - that tests whether pace is driving the filler spike.
+        """)
+        #expect(!normalized.lowercased().contains("read:"))
+        #expect(!normalized.lowercased().contains("move:"))
         #expect(AICoachChatService.replyQualityIssue(in: normalized, latestUserTurn: "What next?") == nil)
     }
 
@@ -25385,27 +25502,14 @@ struct AICoachChatReplyQualityGateTests {
 
     @Test func directnessRequestAcceptsCompactTargetAndRepShape() {
         let reply = """
-        Fair. I’ll keep it direct.
-        - Target: answer first, proof second.
-        - Next rep: 30-second update, so the recommendation lands before the explanation: recommendation, one proof point, stop.
+        Fair push: I’ll keep it direct.
+        Answer first, proof second.
+        Next rep, give one 30-second update: recommendation, one proof point, stop. That tests whether the close can land without extra explanation.
         """
 
         #expect(AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "Be direct with me."
-        ) == nil)
-    }
-
-    @Test func trustRepairFallbackAnswersDirectnessPreferenceWithUsableRep() {
-        let fallback = AICoachChatService.trustRepairFallbackReply(for: "Give it to me straight.")
-
-        #expect(fallback != nil)
-        #expect(fallback?.contains("I’ll keep it direct") == true)
-        #expect(fallback?.contains("Target: answer first") == true)
-        #expect(fallback?.contains("Next rep: 30-second update") == true)
-        #expect(AICoachChatService.replyQualityIssue(
-            in: fallback ?? "",
-            latestUserTurn: "Give it to me straight."
         ) == nil)
     }
 
@@ -25425,34 +25529,6 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "This sounds robotic and too much writing."
         )
         #expect(issue == .missedTrustRepair)
-    }
-
-    @Test func trustRepairFallbackAnswersShortnessCritiqueWithoutNoticeCopy() {
-        let turn = "That’s too much writing, man. I just keep it short."
-        let fallback = AICoachChatService.trustRepairFallbackReply(for: turn)
-
-        #expect(fallback != nil)
-        #expect(fallback?.contains("Fair push") == true)
-        #expect(fallback?.contains("one read, one drill") == true)
-        #expect(fallback?.contains("I couldn’t shape") != true)
-        #expect(fallback?.contains("clearer sentence") != true)
-        #expect(AICoachChatService.replyQualityIssue(in: fallback ?? "", latestUserTurn: turn) == nil)
-    }
-
-    @Test func trustRepairFallbackAnswersWhyUsefulAnswerQuestionWithoutBlamingUser() {
-        let turn = "Why can’t you shape a useful answer?"
-        let fallback = AICoachChatService.trustRepairFallbackReply(for: turn)
-
-        #expect(fallback != nil)
-        #expect(fallback?.contains("my draft, not your ask") == true)
-        #expect(fallback?.lowercased().contains("model") != true)
-        #expect(fallback?.lowercased().contains("your question") != true)
-        #expect(AICoachChatService.replyQualityIssue(in: fallback ?? "", latestUserTurn: turn) == nil)
-    }
-
-    @Test func trustRepairFallbackRequiresExplicitQualityComplaint() {
-        #expect(AICoachChatService.trustRepairFallbackReply(for: "What should I focus on next?") == nil)
-        #expect(AICoachChatService.trustRepairFallbackReply(for: nil) == nil)
     }
 
     @Test func turnAwareGateRejectsWhatNextWithoutConcreteAction() {
@@ -25493,6 +25569,78 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "Why did that answer land badly?"
         )
         #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func turnAwareGateRejectsAudiencePerceptionCertaintyFromThinEvidence() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: """
+            When you over-explain, you signal that you are defending a weak position before anyone has attacked it. This invites the very challenges you are trying to avoid. State the recommendation first, give one proof point, then stop.
+            """,
+            latestUserTurn: "In stakeholder updates I keep over-explaining because I worry they will challenge the recommendation."
+        )
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func turnAwareGateRejectsSilenceAsForcedOutcome() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: """
+            Silence forces stakeholders to process your decision rather than challenge it. In the next update, state the decision in one sentence, give one proof point, then pause.
+            """,
+            latestUserTurn: "I over-explain because I worry they will challenge the recommendation."
+        )
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func turnAwareGateAcceptsAudiencePerceptionFramedAsHypothesis() {
+        let reply = """
+        From your message, the over-explaining can read as defense before the recommendation lands. In the next update, lead with the decision, give one proof point, then pause. That tests whether the challenge is real or just anticipated.
+        """
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "In stakeholder updates I keep over-explaining because I worry they will challenge the recommendation."
+        ) == nil)
+    }
+
+    @Test func turnAwareGateRejectsCausalCertaintyFromDrill() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: """
+            You buried your recommendation at second 34 of your last 64-second update, then trailed off at the end. Your pace hit 172 words per minute because you were over-explaining.
+
+            Record a 30-second project update now where you state the final decision in the first ten seconds. This forces you to lead with the recommendation and naturally drops your pace to your target range.
+            """,
+            latestUserTurn: "What should I do next?"
+        )
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func turnAwareGateAcceptsDrillFramedAsTestableHypothesis() {
+        let reply = "Your last update buried the recommendation at second 34 and ended soft. Record a 30-second update with the decision inside the first ten seconds. That tests whether leading with the recommendation lowers the rush without pretending the drill caused it."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "What should I do next?"
+        ) == nil)
+    }
+
+    @Test func turnAwareGateRejectsNamedDrillLabelWhenUserAskedForNextMove() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: """
+            You waited until second 34 to give the recommendation, so the update sounded like a search instead of a verdict.
+            Try the Pyramid Drill on your next update: recommendation first, two proof points, then stop. That tests whether answer-first compression cuts the ramble.
+            """,
+            latestUserTurn: "What should I do next?"
+        )
+        #expect(issue == .unrequestedNamedTechnique)
+    }
+
+    @Test func turnAwareGateAllowsNamedDrillWhenUserAsksForOne() {
+        let reply = """
+        Your last update buried the recommendation at second 34, so the useful drill is answer-first compression.
+        Try the Pyramid Drill: recommendation first, two proof points, then stop. That tests whether the structure cuts the ramble without pretending one rep proves it.
+        """
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "What drill should I run next?"
+        ) == nil)
     }
 
     @Test func quoteGuardRejectsUnverifiedYouSaidQuote() {
@@ -36267,6 +36415,22 @@ struct AskNoumVoiceFirstDefaultTests {
         #expect(layout.overflow == ["Use my last rep", "Define the success metric"])
     }
 
+    @Test func aiGeneratedSuggestionsHideUntilCleanAISetIsCached() {
+        guard #available(iOS 17.0, *) else { return }
+        #expect(AskNoumView.aiGeneratedSuggestions(cached: nil, eligible: true).isEmpty)
+        #expect(AskNoumView.aiGeneratedSuggestions(cached: [], eligible: true).isEmpty)
+        #expect(AskNoumView.aiGeneratedSuggestions(cached: ["Give me the drill"], eligible: false).isEmpty)
+    }
+
+    @Test func aiGeneratedSuggestionsSurfaceCachedAIOnlyWhenEligible() {
+        guard #available(iOS 17.0, *) else { return }
+        let chips = AskNoumView.aiGeneratedSuggestions(
+            cached: ["Give me the drill", "Use my last rep"],
+            eligible: true
+        )
+        #expect(chips == ["Give me the drill", "Use my last rep"])
+    }
+
     @Test func shortCaseLineKeepsCurrentFocusCompact() {
         guard #available(iOS 17.0, *) else { return }
         let line = AskNoumView.shortCaseLine(
@@ -36295,8 +36459,8 @@ struct AskNoumVoiceFirstDefaultTests {
         )
 
         let line = AskNoumView.currentFocusLine(caseFile: caseFile)
-        #expect(line == "Target: Open with the answer, then add one proof point")
-        #expect(line?.contains("Working on") == false)
+        #expect(line == "Working on: Open with the answer, then add one proof point")
+        #expect(line?.contains("Target:") == false)
     }
 
     @Test func currentFocusLineFallsBackToFocusThenDrill() {
@@ -36316,7 +36480,7 @@ struct AskNoumVoiceFirstDefaultTests {
             nextQuestion: "Does this read match the user's experience?"
         )
 
-        #expect(AskNoumView.currentFocusLine(caseFile: focusOnly) == "Focus: Closings")
+        #expect(AskNoumView.currentFocusLine(caseFile: focusOnly) == "Current focus: Closings")
 
         let drillOnly = CoachCaseFile(
             updatedAt: Date(timeIntervalSince1970: 1_000),
@@ -36333,7 +36497,7 @@ struct AskNoumVoiceFirstDefaultTests {
             nextQuestion: "What rep will test this drill next?"
         )
 
-        #expect(AskNoumView.currentFocusLine(caseFile: drillOnly) == "Drill: Pace ladder for steadier delivery")
+        #expect(AskNoumView.currentFocusLine(caseFile: drillOnly) == "Current practice: Pace ladder for steadier delivery")
     }
 
     @Test func standingPlanLandingLineUsesTheCaseFileAnchor() {
@@ -36354,7 +36518,8 @@ struct AskNoumVoiceFirstDefaultTests {
         )
 
         let line = AskNoumView.standingPlanLandingLine(caseFile: caseFile)
-        #expect(line == "Picking up where we left off: Timed for a decisive close. Target: One clean final sentence.")
+        #expect(line == "Picking up where we left off: Timed for a decisive close. One clean final sentence.")
+        #expect(line?.contains("Target:") == false)
     }
 
     @Test func standingPlanLandingLineStaysHiddenWithoutAStandingPlan() {

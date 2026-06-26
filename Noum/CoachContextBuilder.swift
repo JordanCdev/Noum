@@ -105,6 +105,13 @@ enum CoachContextBuilder {
         strings, and never use emoji to fake empathy.
         - You never overclaim — if the user's data doesn't support a \
         statement, you say so plainly. Weak evidence = softer language.
+        - Do not state audience perception as fact from one message: avoid \
+        "you signal that...", "this invites...", "stakeholders will think...", \
+        or "silence forces...". Use "can read as", "risks inviting", "may land \
+        as", or ask for evidence.
+        - You frame drills as tests, not guarantees. Prefer "that tests \
+        whether..." over "this will fix", "this will ensure", or "this \
+        naturally reduces". Observed improvement is association, not proof.
         - You never punish-shame a regression. If a number dropped, you \
         either acknowledge it factually or stay silent; you do not lecture.
         - Hard-banned wording (any use fails review, rephrase around them): \
@@ -119,6 +126,9 @@ enum CoachContextBuilder {
         as **, __, or ### — the app and TTS share the text. Do not write block \
         paragraphs. Do not add headings unless the user asks for a plan or \
         breakdown.
+        - Live-call replies should sound spoken, not formatted. Do not label \
+        short coach replies with "Read:", "Move:", "Target:", or "Next rep:"; \
+        write the same idea as one or two plain sentences.
         - Save the full breakdown for if the user asks a follow-up. Cut any \
         line that does not cite the user's actual data, repair trust, or land a \
         concrete move.
@@ -311,10 +321,13 @@ enum CoachContextBuilder {
            never dump the list, and only when the numbers are already fine.
         19. When COACHING EXPERTISE is present, it is curated communication- \
            coaching technique — craft reference, NOT a reading of the user. Use \
-           it to ground the concrete move you prescribe: name the technique \
-           plainly, hand over the one action, and (when it fits) the observable \
-           sign it is working. Honor the evidence qualifier in brackets: a \
-           "rule of thumb" is a suggestion, not a fact. A card never overrides \
+           it to ground the concrete move you prescribe, but translate the \
+           technique into plain action first. Do not write app-like labels such \
+           as "Pyramid Drill" on ordinary next-move turns; name a framework only \
+           when the user explicitly asks for a drill/framework name or the name \
+           genuinely reduces confusion. Hand over the one action and (when it \
+           fits) the observable sign it is working. Honor the evidence qualifier \
+           in brackets: a "rule of thumb" is a suggestion, not a fact. A card never overrides \
            the user's own data — when a technique conflicts with what the \
            CONTEXT shows about this user, the user's observed signal wins, and \
            you never claim a technique caused a result or state a card as a \
@@ -4219,8 +4232,9 @@ enum CoachContextBuilder {
     //   4. Persistent blockers from baseline → targeted weakness chip
     //   5. Generic voice-default fallback
     //
-    // This overload is what the view calls. The old `starterPrompts(for:)`
-    // remains as the deterministic catalog for tests and the AI chip fallback.
+    // This overload is retained as a deterministic signal/catalog primitive
+    // for tests and non-coach surfaces. Ask Noum no longer renders these
+    // strings as suggested asks; visible starter suggestions are AI-only.
     /// `rotation` varies which catalog prompts fill the non-contextual
     /// slots (owner feedback 2026-06-10: "the suggested prompts are just
     /// the same ones every time"). Callers pass a slow-changing seed
@@ -4326,8 +4340,8 @@ enum CoachContextBuilder {
     //   • Returns nil on EVERY cold path — locale-blocked, no provider,
     //     network failure, model returned empty/unparseable output, or
     //     fewer than `count` chips survive the brand-voice filter. The
-    //     caller (`AskNoumView`) keeps the deterministic data-grounded
-    //     `starterPrompts(...)` visible and never shows an error.
+    //     caller (`AskNoumView`) shows no suggested ask and never surfaces
+    //     a provider error in the empty state.
     //   • Returns exactly `count` chips on success (default 3). Each chip
     //     is written AS THE USER's opening ask — second person, ≤ ~60
     //     chars, no exclamation, no emoji, no leading directive, no
@@ -4335,9 +4349,9 @@ enum CoachContextBuilder {
     //   • Bounded request — 8s timeout, 120 max-tokens, temperature 0.7,
     //     reused verbatim from the follow-up chip path.
     //
-    // The deterministic fallback (`starterPrompts(bigMoment:baseline:
-    // voice:)`) stays the source of truth for offline / non-English /
-    // no-provider / no-signal — zero regression.
+    // The deterministic catalog (`starterPrompts(bigMoment:baseline:voice:)`)
+    // stays available for pure tests and future non-coach UI, but Ask Noum's
+    // visible starter row is hydrated only by this AI path.
     static func generateAIStarterPrompts(
         voice: SpeakingStyleGoal?,
         bigMoment: BigMoment?,
@@ -4394,9 +4408,8 @@ enum CoachContextBuilder {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         // Same tight timeout as the follow-up chips — starters are a
-        // friction-remover, not a blocker; a stalled request shouldn't
-        // hold the network while the deterministic catalog is already on
-        // screen.
+        // friction-remover, not a blocker; a stalled request should not make
+        // the chat feel busy or expose canned coach copy.
         request.timeoutInterval = 8
 
         do {
@@ -4449,7 +4462,7 @@ enum CoachContextBuilder {
             }
             // Same grounding gate as the follow-up chips: a partial /
             // ungrounded batch (fewer than `count` survive the filter)
-            // loses to the deterministic catalog.
+            // means no suggested ask is shown.
             guard let chips = parseAndFilterChips(raw, count: count) else {
                 record(.fallback, "Starter chips failed content filter", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
                 return nil
@@ -5103,9 +5116,8 @@ enum CoachContextBuilder {
     // Contract:
     //   • Returns nil on any cold path — no provider, network failure,
     //     locale-blocked, model returned empty/unparseable output, or any
-    //     chip fails the brand-voice filter. AskNoumView keeps the
-    //     deterministic chips visible during the request and reuses them
-    //     unchanged on nil — chips never disappear mid-conversation.
+    //     chip fails the brand-voice filter. AskNoumView shows no chip row
+    //     until a clean AI set is cached.
     //   • Returns exactly `count` chips on success (default 3). Each chip
     //     trimmed, ≤ ~60 chars, no exclamation marks, no emoji, no leading
     //     "Let's" / "Tell me" directives — same voice rules as everywhere
@@ -5184,8 +5196,7 @@ enum CoachContextBuilder {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         // Tight timeout — chips are a fast-path nice-to-have; a stalled
-        // request shouldn't keep the network in flight while the user is
-        // already reading the deterministic fallback.
+        // request should not keep the chat feeling artificially busy.
         request.timeoutInterval = 8
 
         do {
@@ -5343,8 +5354,8 @@ enum CoachContextBuilder {
 
     /// Parse the model's newline-separated chip output, apply brand-voice
     /// rules per chip, and return exactly `count` chips. Returns nil if
-    /// fewer than `count` chips survive filtering — the caller's
-    /// deterministic fallback is better than a partial set.
+    /// fewer than `count` chips survive filtering — no visible chips is
+    /// better than a partial or generic set.
     ///
     /// Exposed `internal` (default) so the test suite can exercise the
     /// filter shape without needing a provider stub.

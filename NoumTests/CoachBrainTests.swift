@@ -260,3 +260,50 @@ struct CoachContextExpertiseInjectionTests {
     }
 }
 
+// MARK: - Pipeline diagnostics
+
+@Suite("CoachReplyPipelineBrainDiagnosticTests")
+struct CoachReplyPipelineBrainDiagnosticTests {
+
+    private func card(_ id: String) -> CoachKnowledgeCard {
+        CoachKnowledgeBase.cards.first { $0.id == id }!
+    }
+
+    @Test func diagnosticNamesRetrievedCardsWithoutUserText() {
+        let reason = CoachReplyPipeline.brainDiagnosticReason(
+            cards: [
+                card("filler-pause-beats-filler"),
+                card("filler-anchor-word"),
+                card("pacing-target-band"),
+                card("structure-answer-first")
+            ],
+            latestUserTurn: "how do i stop saying um in interviews",
+            hasDiagnosis: false
+        )
+
+        #expect(reason.contains("Retrieved 4 cards"))
+        #expect(reason.contains("filler-pause-beats-filler"))
+        #expect(reason.contains("+1"))
+        #expect(!reason.contains("how do i stop"))
+    }
+
+    @Test func diagnosticExplainsColdNonTechniqueGate() {
+        let reason = CoachReplyPipeline.brainDiagnosticReason(
+            cards: [],
+            latestUserTurn: "hey",
+            hasDiagnosis: false
+        )
+
+        #expect(reason == "No cards: cold non-technique turn")
+    }
+
+    @Test func diagnosticExplainsEmptyTurn() {
+        let reason = CoachReplyPipeline.brainDiagnosticReason(
+            cards: [],
+            latestUserTurn: "   ",
+            hasDiagnosis: true
+        )
+
+        #expect(reason == "No cards: empty user turn")
+    }
+}
