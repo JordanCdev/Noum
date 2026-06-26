@@ -1380,7 +1380,25 @@ struct ContentView: View {
                   LessonsCatalog.lesson(id: lessonID) != nil else { return }
             navigationPath.append(AppDestination.lesson(id: lessonID))
         case "practice", "train":
-            replaceNavigationPath(with: .practiceSelection)
+            // First-run only: skip the picker and drop the brand-new user
+            // straight into one guided non-pressure micro-rep, reusing the
+            // existing QuickStart auto-begin handshake so `TimedPracticeView`
+            // starts the rep once and pushes its honest fillers+wpm read. Mark
+            // the one-shot BEFORE launching so an app-kill mid-rep can't
+            // re-trigger the auto-guide / re-arm the mic. Non-pressure keeps
+            // `isRated` false → no overclaim. Returning users and the
+            // edit-from-Settings branch are untouched (they keep the picker).
+            // Default-OFF behind `AutoGuidedFirstRep.enabled` until felt-QA.
+            if AutoGuidedFirstRep.shouldAutoGuide(
+                hasSeenOnboarding: FirstRunOnboardingManager.shared.hasSeen
+            ) {
+                AutoGuidedFirstRep.markFirstRepCompleted()
+                AutoGuidedFirstRep.seedFramingPrompt()
+                PracticeModeQuickStart.arm(for: .timed)
+                replaceNavigationPath(with: .timedPractice)
+            } else {
+                replaceNavigationPath(with: .practiceSelection)
+            }
         case "review", "history":
             replaceNavigationPath(with: .sessionHistory)
         case "profile", "social":
