@@ -47,6 +47,44 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-26 continuation #2 (autonomous `noum2` run). **Forward-looking role-diverse
+synthesis (not a 9th scorecard) + one collision-safe, build-verified code slice; no push.**
+
+- **Score holds at 7.5/10** — no movement claimed. The big lever (`AutoGuidedFirstRep`)
+  is still `defaultEnabled = false`; only a device felt-QA pass moves the number. Full
+  write-up: `docs/COACH_PARITY_EVAL_2026-06-26_noum2.md`.
+- **Method:** the noum-1 run earlier today already re-scored 7.5 on this HEAD, so this
+  run aimed a 5-role workflow (market · cold end-user · UX · Swift-eng/QA · product-honesty)
+  at the *next* question — the collision-safe path to the realistic ceiling + what only
+  Jordan can unblock — and shipped the one safe slice it surfaced.
+- **Shipped (build-verified, isolated worktree at HEAD, `XCODEBUILD_EXIT=0`):** the
+  post-first-rep celebration CTA **"Continue" → "See the full read"**
+  (`Noum/FirstRepCelebration.swift:272`). Fixes the "dead Continue" the role panel flagged;
+  names the reward beneath (dismiss reveals the full `SummaryView` read). Honest to the
+  action (does NOT promise a rep-2 the button doesn't start), no clutter (file's design rule
+  is "a single resonant frame"), `hasRatedEvidence`-respecting, reduce-motion + a11y intact.
+  Fires on `totalSessionCount == 1` incl. the non-pressure auto-guided rep. The file is clean
+  (in neither in-flight diff) and presented from the staged `SummaryView.swift:907`; the slice
+  keeps the `init(session:onContinue:)` signature stable so it never touches a staged file.
+- **Collision map (verified live):** coach surface occupied by TWO concurrent diffs — staged
+  ~28-file AI-diagnostics + dock layout (incl. `SummaryView`, `ProfileView`, `PracticeSupport`,
+  `NoumTests.swift`) AND an unstaged **mic-readiness-guard** slice (`PracticeMicrophonePermissionState`
+  in `SpeechRecognizerViewModel.swift` + `TimedPracticeView.swift` + untracked
+  `NoumTests/PracticeMicrophonePermissionStateTests.swift`). Sequence items #3 mic-soft-ask =
+  IN-PROGRESS (that slice), #4 ProfileView teaser + #5 onboarding→picker copy = BLOCKED (staged),
+  #6 delete `SessionIntentPromptView.swift` = SAFE (verified zero external refs) but low value.
+- **Spec'd, blocked:** the highest-leverage first-rep move — instant-start (suppress the 15s
+  prep countdown + keep the seeded prompt visible for the auto-guided rep) — needs a per-rep
+  one-shot override consumed at `TimedPracticeView.swift:838` (do NOT clobber the user's persistent
+  `enableThinkingTime`/`keepPromptVisible` AppStorage prefs). Build-ready: `docs/SPEC_first_rep_fast_start.md`.
+  Land it WITH the mic-guard slice + the flag-flip felt-QA (one device-owning work session).
+- **10/10 answer, restated:** literal "with no doubt replaces a human coach" stays REFUSED by
+  design (`CoachParityReadiness` `.forming` cap, `Noum/CoachParityReadiness.swift:21`) — the trust
+  moat, do NOT remove. Achievable axis honest 7.5 today, realistic ~9 ceiling after the flag-flip +
+  fast-start + mic-guard land. Human-only levers (only Jordan can do): (1) flip the flag + device
+  felt-QA [highest leverage], (2) cloud-STT on-device fallback decision, (3) deferred-signup
+  decision, (4) video-into-coach-memory decision.
+
 2026-06-26 continuation (autonomous `noum-1` run). **Broke the six-cycle
 "eval-but-never-ship" loop: shipped a verified, default-OFF code slice — the
 auto-guided first-rep routing — without touching the concurrent session's diff.**

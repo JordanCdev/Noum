@@ -269,7 +269,12 @@ struct FirstRepCelebration: View {
     private var continueButton: some View {
         Button(action: onContinue) {
             HStack(spacing: Spacing.xs) {
-                Text("Continue")
+                // Names the reward waiting underneath instead of a generic
+                // "Continue": dismissing this cover reveals the full Summary
+                // read (the celebration shows only a one-line observation).
+                // Honest to the action — it does not promise a second rep the
+                // button doesn't start.
+                Text("See the full read")
                     .font(Typography.headline)
                 Image(systemName: "arrow.right")
                     .font(Typography.headline)
