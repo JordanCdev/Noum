@@ -26926,6 +26926,75 @@ struct AIInsightsPromptAnchorTests {
     }
 }
 
+struct AIInsightsDeterministicFallbackTests {
+
+    private func session(score: Int = 9, fillers: Int = 0) -> PracticeSession {
+        PracticeSession(
+            transcript: "The launch should proceed because the blocker is owned, the customer risk is low, and the rollback plan is ready.",
+            fillerWordCount: fillers,
+            duration: 54,
+            date: Date(),
+            mode: .timed,
+            score: score
+        )
+    }
+
+    private func input(
+        kind: AIInsightKind = .sessionDebrief,
+        sessions: [PracticeSession] = [],
+        weeklyDelta: Int = 0,
+        weeklyReps: Int = 1
+    ) -> AIInsightInput {
+        AIInsightInput(
+            kind: kind,
+            sessions: sessions,
+            baseline: .empty,
+            rating: SpeakingRating(overall: 1200, peakRating: 1200, ratingHistory: [], personalBests: [], totalRatedSessions: 0),
+            weeklyDelta: weeklyDelta,
+            weeklyReps: weeklyReps,
+            topFillerWord: nil,
+            goalParaphrase: nil,
+            currentStreak: 0,
+            goalDistance: nil
+        )
+    }
+
+    @Test func sessionDebriefFallbackDoesNotClaimProofFromOneRep() {
+        let insight = AIInsightsService.templatedFallback(for: input(sessions: [session(score: 9, fillers: 0)]))
+        let body = insight.body.lowercased()
+
+        #expect(insight.kind == .sessionDebrief)
+        #expect(insight.isAIBacked == false)
+        #expect(!body.contains("prove"))
+        #expect(!body.contains("proof"))
+        #expect(!body.contains("caused"))
+        #expect(body.contains("suggests"))
+        #expect(body.contains("again"))
+    }
+
+    @Test func sessionDebriefFallbackDoesNotCallHighFillerRepLowFiller() {
+        let insight = AIInsightsService.templatedFallback(for: input(sessions: [session(score: 9, fillers: 6)]))
+        let body = insight.body.lowercased()
+
+        #expect(insight.headline == "Fillers crept in")
+        #expect(!body.contains("low filler count"))
+        #expect(body.contains("6 fillers"))
+    }
+
+    @Test func weeklyFallbackFramesSlippageAsSuspectNotCause() {
+        let insight = AIInsightsService.templatedFallback(
+            for: input(kind: .weeklyNarrative, weeklyDelta: -8, weeklyReps: 3)
+        )
+        let body = insight.body.lowercased()
+
+        #expect(insight.kind == .weeklyNarrative)
+        #expect(insight.isAIBacked == false)
+        #expect(!body.contains("cause"))
+        #expect(!body.contains("diagnos"))
+        #expect(body.contains("clearest suspect"))
+    }
+}
+
 // MARK: - M24 deferred-slate (round 5) — best-this-week chips, WPM zone band, IM scenario detail
 
 // Locks the "this week" window contracts on the three per-mode summary

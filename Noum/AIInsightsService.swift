@@ -112,7 +112,7 @@ actor AIInsightsService {
             return cached
         }
 
-        let templated = templatedFallback(for: input)
+        let templated = Self.templatedFallback(for: input)
         let surface = "AI insight \(input.kind.rawValue)"
         let geminiInsightsModel = "gemini-2.5-pro"
         func diagnosticsModel(for provider: AIProvider?) -> String? {
@@ -521,18 +521,18 @@ actor AIInsightsService {
 
     // MARK: - Templated fallback
 
-    private func templatedFallback(for input: AIInsightInput) -> AIInsight {
+    static func templatedFallback(for input: AIInsightInput) -> AIInsight {
         switch input.kind {
         case .weeklyNarrative:
-            return weeklyTemplate(input: input)
+            return Self.weeklyTemplate(input: input)
         case .sessionDebrief:
-            return debriefTemplate(input: input)
+            return Self.debriefTemplate(input: input)
         case .patternBreak:
-            return patternBreakTemplate(input: input)
+            return Self.patternBreakTemplate(input: input)
         }
     }
 
-    private func weeklyTemplate(input: AIInsightInput) -> AIInsight {
+    private static func weeklyTemplate(input: AIInsightInput) -> AIInsight {
         let evidence: [String] = [
             "\(input.weeklyReps) rep\(input.weeklyReps == 1 ? "" : "s") this week",
             "\(input.weeklyDelta >= 0 ? "+" : "")\(input.weeklyDelta) rating",
@@ -548,11 +548,11 @@ actor AIInsightsService {
             action = "Run one rep today to keep the streak open."
         } else if input.weeklyDelta > 5 {
             headline = "Strong upward week"
-            body = "Your rating moved up notably and the reps came in steady. Pace and structure are doing the work."
+            body = "Your rating moved up notably and the reps came in steady. Pace and structure look like the likely levers."
             action = "Push one harder rep — Pressure Drill or a longer Timed answer."
         } else if input.weeklyDelta < -5 {
             headline = "Pressure caught you"
-            body = "Rating slipped this week. Most likely cause is fillers under pressure. The fix is calmer pacing, not more reps."
+            body = "Rating slipped this week. Fillers under pressure are the clearest suspect. Reset the pace before adding more reps."
             action = "Run a Land the Pause drill to reset filler control."
         } else if input.weeklyReps >= 4 {
             headline = "Consistent week"
@@ -574,7 +574,7 @@ actor AIInsightsService {
         )
     }
 
-    private func debriefTemplate(input: AIInsightInput) -> AIInsight {
+    private static func debriefTemplate(input: AIInsightInput) -> AIInsight {
         guard let session = input.focusSessions.first else {
             return AIInsight(
                 kind: .sessionDebrief,
@@ -595,9 +595,9 @@ actor AIInsightsService {
         let headline: String
         let body: String
         let action: String
-        if score >= 8 {
+        if score >= 8 && session.fillerWordCount <= 2 {
             headline = "Clean delivery landed"
-            body = "Score of \(score) with low filler count means structure and pace held under load. That's the rep that proves the technique works."
+            body = "Score of \(score) with low filler count suggests structure and pace held under load. Run it again under more pressure before calling it solved."
             action = "Repeat the same mode at higher pressure tomorrow."
         } else if session.fillerWordCount >= 5 {
             headline = "Fillers crept in"
@@ -619,7 +619,7 @@ actor AIInsightsService {
         )
     }
 
-    private func patternBreakTemplate(input: AIInsightInput) -> AIInsight {
+    private static func patternBreakTemplate(input: AIInsightInput) -> AIInsight {
         AIInsight(
             kind: .patternBreak,
             headline: "Pattern hold",
