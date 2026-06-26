@@ -337,13 +337,14 @@ struct ReviewCoachReadTests {
     private func trend(
         _ area: SkillArea,
         direction: TrendDirection,
-        confidence: TrendConfidence
+        confidence: TrendConfidence,
+        windowSize: Int = 8
     ) -> SkillTrend {
         SkillTrend(
             skillArea: area,
             direction: direction,
             confidence: confidence,
-            windowSize: 8,
+            windowSize: windowSize,
             currentLevel: .developing,
             recentDelta: nil
         )
@@ -377,6 +378,40 @@ struct ReviewCoachReadTests {
         #expect(!lowered.contains("fail"))
         #expect(!lowered.contains("bad"))
         #expect(!lowered.contains("worse"))
+    }
+
+    @Test func evidenceCaptionAvoidsPageWideHistoryLanguage() {
+        let caption = ReviewCoachRead.evidenceCaption(
+            improving: trend(.structure, direction: .improving, confidence: .high, windowSize: 8),
+            focus: nil
+        )
+
+        #expect(caption == "Uses your newest measured reps")
+        #expect(caption?.contains("last 8 reps") == false)
+        #expect(caption?.contains("8-rep") == false)
+    }
+
+    @Test func evidenceCaptionHandlesTwoRowsWithSharedWindowWithoutExtraMath() {
+        let caption = ReviewCoachRead.evidenceCaption(
+            improving: trend(.structure, direction: .improving, confidence: .high, windowSize: 8),
+            focus: trend(.paceControl, direction: .declining, confidence: .medium, windowSize: 8)
+        )
+
+        #expect(caption == "Uses your newest measured reps")
+    }
+
+    @Test func evidenceCaptionAvoidsWindowRangeWhenTrendWindowsDiffer() {
+        let caption = ReviewCoachRead.evidenceCaption(
+            improving: trend(.structure, direction: .improving, confidence: .high, windowSize: 12),
+            focus: trend(.paceControl, direction: .declining, confidence: .medium, windowSize: 8)
+        )
+
+        #expect(caption == "Uses your newest measured reps")
+        #expect(caption?.contains("8-12") == false)
+    }
+
+    @Test func evidenceCaptionOmitsWhenNoTrendsSurface() {
+        #expect(ReviewCoachRead.evidenceCaption(improving: nil, focus: nil) == nil)
     }
 }
 

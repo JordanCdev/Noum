@@ -200,8 +200,9 @@ final class NoumChatFlowUITests: XCTestCase {
         }
         XCTAssertFalse(latest.contains("**"), "Raw markdown markers must not be visible or exposed to accessibility")
         XCTAssertFalse(latest.contains("__"), "Raw emphasis markers must not be visible or exposed to accessibility")
-        XCTAssertTrue(latest.contains("Read:"), "Plain lead-ins can remain for visual emphasis")
-        XCTAssertTrue(latest.contains("Move:"), "Plain lead-ins can remain for visual emphasis")
+        XCTAssertTrue(latest.contains("Fair."), "Directness preference should get a brief human acknowledgement")
+        XCTAssertTrue(latest.contains("Target:"), "The forced reply should expose the current coaching target")
+        XCTAssertTrue(latest.contains("Next rep:"), "The forced reply should end with one usable rep")
         XCTAssertEqual(
             app.descendants(matching: .any)
                 .matching(NSPredicate(format: "label CONTAINS %@", "**"))

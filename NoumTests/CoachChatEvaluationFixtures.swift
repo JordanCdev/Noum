@@ -102,8 +102,60 @@ struct CoachChatEvaluationCIReportRow: Codable, Equatable {
     let contextNeedleCount: Int
 }
 
+struct CoachChatExpertReviewPacket: Codable, Equatable {
+    let schemaVersion: String
+    let rubricVersion: String
+    let instructions: String
+    let responseSchema: String
+    let fixtureCount: Int
+    let rows: [CoachChatExpertReviewPacketRow]
+
+    static func make(from fixtures: [CoachChatEvaluationFixture]) -> CoachChatExpertReviewPacket {
+        CoachChatExpertReviewPacket(
+            schemaVersion: CoachChatEvaluationCorpus.expertReviewPacketSchemaVersion,
+            rubricVersion: "coach-chat-eval-v1",
+            instructions: [
+                "Write the answer an excellent human communication coach would give for each case.",
+                "Use only the supplied user turn, prior coach reply, and Noum context.",
+                "Name one highest-leverage next move; avoid broad menus, trait labels, diagnoses, or claims that the app is validated.",
+                "Mark thin evidence as a hypothesis and include what evidence would change your view.",
+                "Do not score Noum in this packet; this captures an independent expert baseline for later blinded comparison."
+            ].joined(separator: " "),
+            responseSchema: "Return one JSON object per fixture: {\"fixtureID\": string, \"coachSummary\": string, \"recommendedReply\": string, \"evidenceUsed\": [string], \"uncertainty\": string, \"qualityNotes\": [string]}.",
+            fixtureCount: fixtures.count,
+            rows: fixtures.map { fixture in
+                CoachChatExpertReviewPacketRow(
+                    fixtureID: fixture.id,
+                    pillar: fixture.pillar.rawValue,
+                    expertBaselineStatus: fixture.expertBaseline.status.rawValue,
+                    latestUserTurn: fixture.latestUserTurn,
+                    previousCoachReply: fixture.previousCoachReply,
+                    coachContext: CoachChatEvaluationCorpus.renderedContext(for: fixture)
+                )
+            }
+        )
+    }
+
+    func encodedSortedJSON() throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(self)
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+}
+
+struct CoachChatExpertReviewPacketRow: Codable, Equatable {
+    let fixtureID: String
+    let pillar: String
+    let expertBaselineStatus: String
+    let latestUserTurn: String
+    let previousCoachReply: String?
+    let coachContext: String
+}
+
 enum CoachChatEvaluationCorpus {
     static let reportSchemaVersion = "coach-chat-eval-report-v1"
+    static let expertReviewPacketSchemaVersion = "coach-chat-expert-review-packet-v1"
 
     static let fixtures: [CoachChatEvaluationFixture] = [
         CoachChatEvaluationFixture(

@@ -192,6 +192,24 @@ final class ScreenshotTour: XCTestCase {
         attach(askApp, name: "25b-ask-noum")
         askApp.terminate()
 
+        let askTypedApp = launchSeededAt(
+            "noum://ask/type",
+            extraArgs: [
+                "UI_TESTING_CLEAR_ASK_NOUM",
+                "UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY"
+            ]
+        )
+        let askField = askTypedApp.textViews.firstMatch.exists
+            ? askTypedApp.textViews.firstMatch : askTypedApp.textFields.firstMatch
+        if askField.waitForExistence(timeout: 6) {
+            askField.tap()
+            askField.typeText("Be direct with me.")
+            askTypedApp.buttons["askNoum.inputControl"].tap()
+            Thread.sleep(forTimeInterval: 2.0)
+        }
+        attach(askTypedApp, name: "25d-ask-noum-typed")
+        askTypedApp.terminate()
+
         // ----- FRIEND LEADERBOARD (via Profile → leaderboard NavigationLink) -----
         let leaderboardApp = launchSeededAt("noum://profile")
         Thread.sleep(forTimeInterval: 1.2)
@@ -220,6 +238,8 @@ final class ScreenshotTour: XCTestCase {
         Thread.sleep(forTimeInterval: 2.5)
         attach(notifPromptApp, name: "27-notification-pre-prompt")
         notifPromptApp.terminate()
+
+        captureWeeklyCheckInSheet(name: "28-weekly-check-in-sheet")
     }
 
     @MainActor
@@ -244,25 +264,35 @@ final class ScreenshotTour: XCTestCase {
         let profileApp = launchSeededAt("noum://profile")
         XCTAssertTrue(profileApp.descendants(matching: .any)["profile.screen"].waitForExistence(timeout: 10))
 
-        let evidenceToggle = profileApp.descendants(matching: .any)["profile.evidenceHub.toggle"].firstMatch
-        if !evidenceToggle.waitForExistence(timeout: 3) {
+        let baselineRow = profileApp.descendants(matching: .any)["profile.evidence.baselineMap.row"].firstMatch
+        if !baselineRow.waitForExistence(timeout: 3) {
             profileApp.swipeUp(velocity: .slow)
             Thread.sleep(forTimeInterval: 0.5)
         }
-        XCTAssertTrue(evidenceToggle.waitForExistence(timeout: 5))
-        guard evidenceToggle.exists else {
+        XCTAssertTrue(baselineRow.waitForExistence(timeout: 5))
+        guard baselineRow.exists else {
             profileApp.terminate()
             return
         }
 
-        evidenceToggle.tap()
+        baselineRow.tap()
         let baselineMap = profileApp.descendants(matching: .any)["profile.evidence.baselineMap"].firstMatch
-        scrollUntilVisible(baselineMap, in: profileApp, maxSwipes: 5)
+        // The expanded readout renders below the compact evidence hub rows.
+        // Move past the hub first so the attachment proves the card body, not
+        // merely the expanded launcher row.
+        profileApp.swipeUp(velocity: .slow)
+        Thread.sleep(forTimeInterval: 0.5)
+        scrollUntilCentered(baselineMap, in: profileApp, maxSwipes: 6)
         XCTAssertTrue(baselineMap.exists)
 
         Thread.sleep(forTimeInterval: 0.8)
         attach(profileApp, name: "profile-baseline-map")
         profileApp.terminate()
+    }
+
+    @MainActor
+    func testCaptureWeeklyCheckInSheetOnly() throws {
+        captureWeeklyCheckInSheet(name: "profile-weekly-check-in-sheet")
     }
 
     @MainActor
@@ -487,6 +517,43 @@ final class ScreenshotTour: XCTestCase {
     }
 
     @MainActor
+    private func captureWeeklyCheckInSheet(name: String) {
+        let profileApp = launchSeededAt("noum://profile", extraArgs: ["FORCE_WEEKLY_CHECKIN"])
+        XCTAssertTrue(profileApp.descendants(matching: .any)["profile.screen"].waitForExistence(timeout: 10))
+
+        let evidenceToggle = profileApp.descendants(matching: .any)["profile.evidenceHub.toggle"].firstMatch
+        if !evidenceToggle.waitForExistence(timeout: 3) {
+            profileApp.swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertTrue(evidenceToggle.waitForExistence(timeout: 5))
+        guard evidenceToggle.exists else {
+            attach(profileApp, name: "\(name)-missing-toggle")
+            profileApp.terminate()
+            return
+        }
+
+        evidenceToggle.tap()
+        Thread.sleep(forTimeInterval: 0.5)
+
+        let checkInCard = profileApp.descendants(matching: .any)["profile.weeklyCheckIn.start"].firstMatch
+        scrollUntilVisible(checkInCard, in: profileApp, maxSwipes: 6)
+        XCTAssertTrue(checkInCard.waitForExistence(timeout: 5))
+        guard checkInCard.exists else {
+            attach(profileApp, name: "\(name)-missing-card")
+            profileApp.terminate()
+            return
+        }
+
+        checkInCard.tap()
+        let sheet = profileApp.descendants(matching: .any)["weeklyCheckIn.sheet"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+        Thread.sleep(forTimeInterval: 0.8)
+        attach(profileApp, name: name)
+        profileApp.terminate()
+    }
+
+    @MainActor
     private func waitForSuddenDeathReviewCard(in app: XCUIApplication) -> XCUIElement {
         let reviewCard = app.descendants(matching: .any)["suddenDeath.review.card"]
         let deadline = Date().addingTimeInterval(24)
@@ -523,6 +590,19 @@ final class ScreenshotTour: XCTestCase {
 
         for _ in 0..<maxSwipes {
             if element.exists, visibleFrame.intersects(element.frame) {
+                return
+            }
+            app.swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 0.45)
+        }
+    }
+
+    @MainActor
+    private func scrollUntilCentered(_ element: XCUIElement, in app: XCUIApplication, maxSwipes: Int) {
+        let visibleFrame = app.frame.insetBy(dx: 0, dy: 120)
+
+        for _ in 0..<maxSwipes {
+            if element.exists, visibleFrame.contains(CGPoint(x: element.frame.midX, y: element.frame.midY)) {
                 return
             }
             app.swipeUp(velocity: .slow)

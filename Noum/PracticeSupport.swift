@@ -872,7 +872,7 @@ extension CoachingProfile {
     }
 }
 
-enum AIProvider: String, CaseIterable, Codable, Identifiable {
+enum AIProvider: String, CaseIterable, Codable, Identifiable, Sendable {
     case none
     case openAI
     case deepSeek
@@ -894,7 +894,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
         case .none: return ""
         case .openAI: return "gpt-4o-mini"
         case .deepSeek: return "deepseek-chat"
-        case .gemini: return "gemini-2.5-flash"
+        case .gemini: return Self.geminiModel()
         }
     }
 
@@ -907,7 +907,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
         case .deepSeek:
             return URL(string: "https://api.deepseek.com/chat/completions")
         case .gemini:
-            return URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")
+            return Self.geminiEndpoint()
         }
     }
 
@@ -918,6 +918,663 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
         case .deepSeek: return "DEEPSEEK_API_KEY"
         case .gemini: return "GEMINI_API_KEY"
         }
+    }
+
+    nonisolated static let geminiDirectKeyName = "GEMINI_API_KEY"
+    nonisolated static let geminiAgentPlatformKeyNames = [
+        "GOOGLE_AGENT_PLATFORM_API_KEY",
+        "GOOGLE_CLOUD_AGENT_PLATFORM_API_KEY",
+        "VERTEX_AI_API_KEY"
+    ]
+
+    nonisolated static func geminiModel(
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        localValue: (String) -> String? = { keyName in
+            LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        }
+    ) -> String {
+        if directGeminiAPIKey(env: env, localValue: localValue) == nil,
+           agentPlatformAPIKey(env: env, localValue: localValue) != nil {
+            return configurationValue(
+                forKeys: [
+                    "GOOGLE_AGENT_PLATFORM_MODEL",
+                    "GOOGLE_CLOUD_AGENT_MODEL",
+                    "VERTEX_AI_GEMINI_MODEL",
+                    "GEMINI_CHAT_MODEL"
+                ],
+                env: env,
+                localValue: localValue
+            ) ?? "gemini-3.5-flash"
+        }
+        return configurationValue(
+            forKeys: ["GEMINI_MODEL"],
+            env: env,
+            localValue: localValue
+        ) ?? "gemini-2.5-flash"
+    }
+
+    nonisolated static func geminiEndpoint(
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        localValue: (String) -> String? = { keyName in
+            LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        }
+    ) -> URL? {
+        if directGeminiAPIKey(env: env, localValue: localValue) == nil,
+           agentPlatformAPIKey(env: env, localValue: localValue) != nil,
+           let endpoint = geminiAgentPlatformEndpoint(env: env, localValue: localValue) {
+            return endpoint
+        }
+        let model = geminiModel(env: env, localValue: localValue)
+        return URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")
+    }
+
+    nonisolated static func geminiAgentPlatformEndpoint(
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        localValue: (String) -> String? = { keyName in
+            LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        }
+    ) -> URL? {
+        let model = configurationValue(
+            forKeys: [
+                "GOOGLE_AGENT_PLATFORM_MODEL",
+                "GOOGLE_CLOUD_AGENT_MODEL",
+                "VERTEX_AI_GEMINI_MODEL",
+                "GEMINI_CHAT_MODEL"
+            ],
+            env: env,
+            localValue: localValue
+        ) ?? "gemini-3.5-flash"
+        return agentPlatformEndpoint(model: model)
+    }
+
+    nonisolated static func agentPlatformEndpoint(model: String) -> URL? {
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModel.isEmpty else { return nil }
+
+        let modelPath = trimmedModel.hasPrefix("publishers/google/models/")
+            ? String(trimmedModel.dropFirst("publishers/google/models/".count))
+            : trimmedModel
+        return URL(
+            string: "https://aiplatform.googleapis.com/v1/publishers/google/models/\(modelPath):generateContent"
+        )
+    }
+
+    private nonisolated static func directGeminiAPIKey(
+        env: [String: String],
+        localValue: (String) -> String?
+    ) -> String? {
+        AIProviderCredential.usableAPIKey(env[geminiDirectKeyName]) ??
+            AIProviderCredential.usableAPIKey(localValue(geminiDirectKeyName))
+    }
+
+    private nonisolated static func agentPlatformAPIKey(
+        env: [String: String],
+        localValue: (String) -> String?
+    ) -> String? {
+        for keyName in geminiAgentPlatformKeyNames {
+            if let value = AIProviderCredential.usableAPIKey(env[keyName]) {
+                return value
+            }
+            if let value = AIProviderCredential.usableAPIKey(localValue(keyName)) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private nonisolated static func configurationValue(
+        forKeys keys: [String],
+        env: [String: String],
+        localValue: (String) -> String?
+    ) -> String? {
+        for key in keys {
+            if let value = AIProviderCredential.usableAPIKey(env[key]) {
+                return value
+            }
+            if let value = AIProviderCredential.usableAPIKey(localValue(key)) {
+                return value
+            }
+        }
+        return nil
+    }
+}
+
+enum AIProviderCredential {
+    nonisolated static func usableAPIKey(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let placeholder = trimmed.uppercased()
+        if [
+            "REPLACE_ME",
+            "YOUR_API_KEY",
+            "YOUR_KEY",
+            "PASTE_KEY_HERE",
+            "INSERT_API_KEY"
+        ].contains(placeholder) {
+            return nil
+        }
+        if trimmed.hasPrefix("<"), trimmed.hasSuffix(">") {
+            return nil
+        }
+        return trimmed
+    }
+
+    nonisolated static func apiKey(
+        for provider: AIProvider,
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        localValue: (String) -> String? = { keyName in
+            LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        }
+    ) -> String? {
+        if provider == .gemini {
+            if let directKey = usableAPIKey(env[AIProvider.geminiDirectKeyName]) ??
+                usableAPIKey(localValue(AIProvider.geminiDirectKeyName)) {
+                return directKey
+            }
+            for keyName in AIProvider.geminiAgentPlatformKeyNames {
+                if let value = usableAPIKey(env[keyName]) {
+                    return value
+                }
+                if let value = usableAPIKey(localValue(keyName)) {
+                    return value
+                }
+            }
+            return nil
+        }
+        guard let keyName = provider.environmentKey else { return nil }
+        if let envKey = usableAPIKey(env[keyName]) {
+            return envKey
+        }
+        return usableAPIKey(localValue(keyName))
+    }
+
+    nonisolated static func hasAPIKey(for provider: AIProvider) -> Bool {
+        apiKey(for: provider) != nil
+    }
+
+    nonisolated static func configurationSummary(
+        providers: [AIProvider] = AISettingsManager.diagnosticProviderOrder,
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        localValue: (String) -> String? = { keyName in
+            LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        }
+    ) -> String {
+        providers
+            .filter { $0 != .none }
+            .map { provider in
+                let state = apiKey(for: provider, env: env, localValue: localValue) == nil
+                    ? "missing key"
+                    : "key present"
+                return "\(provider.title): \(state)"
+            }
+            .joined(separator: " | ")
+    }
+}
+
+enum AICallDiagnosticOutcome: String, Codable, CaseIterable {
+    case success
+    case fallback
+    case failure
+    case skipped
+
+    var title: String {
+        switch self {
+        case .success: return "Success"
+        case .fallback: return "Fallback"
+        case .failure: return "Failure"
+        case .skipped: return "Skipped"
+        }
+    }
+}
+
+struct AICallDiagnosticRecord: Codable, Equatable, Identifiable {
+    let id: UUID
+    let createdAt: Date
+    let surface: String
+    let provider: String
+    let model: String?
+    let outcome: AICallDiagnosticOutcome
+    let reason: String
+    let statusCode: Int?
+    let latencyMs: Int?
+
+    var statusLabel: String {
+        statusCode.map { "HTTP \($0)" } ?? outcome.title
+    }
+
+    static func make(
+        id: UUID = UUID(),
+        createdAt: Date = Date(),
+        surface: String,
+        provider: String?,
+        model: String?,
+        outcome: AICallDiagnosticOutcome,
+        reason: String,
+        statusCode: Int? = nil,
+        latencyMs: Int? = nil
+    ) -> AICallDiagnosticRecord {
+        AICallDiagnosticRecord(
+            id: id,
+            createdAt: createdAt,
+            surface: bounded(surface, fallback: "Unknown surface", maxLength: 48),
+            provider: bounded(provider, fallback: "No provider", maxLength: 32),
+            model: boundedOptional(model, maxLength: 48),
+            outcome: outcome,
+            reason: bounded(reason, fallback: outcome.title, maxLength: 96),
+            statusCode: statusCode,
+            latencyMs: latencyMs
+        )
+    }
+
+    private static func bounded(_ value: String?, fallback: String, maxLength: Int) -> String {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return fallback }
+        return String(trimmed.prefix(maxLength))
+    }
+
+    private static func boundedOptional(_ value: String?, maxLength: Int) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+        return String(trimmed.prefix(maxLength))
+    }
+}
+
+@MainActor
+final class AICallDiagnosticsStore: ObservableObject {
+    static let shared = AICallDiagnosticsStore()
+    nonisolated static let defaultStorageKey = "aiCallDiagnostics.recent"
+    nonisolated static let defaultMaxRecords = 30
+
+    @Published private(set) var records: [AICallDiagnosticRecord] = []
+
+    private let defaults: UserDefaults
+    private let storageKey: String
+    private let maxRecords: Int
+
+    init(
+        defaults: UserDefaults = .standard,
+        storageKey: String = AICallDiagnosticsStore.defaultStorageKey,
+        maxRecords: Int = AICallDiagnosticsStore.defaultMaxRecords
+    ) {
+        self.defaults = defaults
+        self.storageKey = storageKey
+        self.maxRecords = max(1, maxRecords)
+        load()
+    }
+
+    var latest: AICallDiagnosticRecord? {
+        records.first
+    }
+
+    func record(_ record: AICallDiagnosticRecord) {
+        records.insert(record, at: 0)
+        records = Array(records.prefix(maxRecords))
+        persist()
+    }
+
+    func reset() {
+        records = []
+        defaults.removeObject(forKey: storageKey)
+    }
+
+    func replaceForDebug(_ seeded: [AICallDiagnosticRecord]) {
+        records = Array(seeded.sorted { $0.createdAt > $1.createdAt }.prefix(maxRecords))
+        persist()
+    }
+
+    func exportDiagnostics() -> String {
+        guard !records.isEmpty else { return "No AI call diagnostics recorded." }
+        let formatter = ISO8601DateFormatter()
+        return records.map { record in
+            [
+                formatter.string(from: record.createdAt),
+                record.surface,
+                record.provider,
+                record.model ?? "model unknown",
+                record.outcome.rawValue,
+                record.statusCode.map { "HTTP \($0)" } ?? "no HTTP status",
+                record.latencyMs.map { "\($0)ms" } ?? "latency unknown",
+                record.reason
+            ].joined(separator: " | ")
+        }.joined(separator: "\n")
+    }
+
+    private func load() {
+        guard let data = defaults.data(forKey: storageKey),
+              let decoded = try? JSONDecoder().decode([AICallDiagnosticRecord].self, from: data) else {
+            records = []
+            return
+        }
+        records = Array(decoded.sorted { $0.createdAt > $1.createdAt }.prefix(maxRecords))
+    }
+
+    private func persist() {
+        guard let data = try? JSONEncoder().encode(records) else { return }
+        defaults.set(data, forKey: storageKey)
+    }
+}
+
+enum AICallDiagnostics {
+    nonisolated static func record(
+        surface: String,
+        provider: AIProvider?,
+        outcome: AICallDiagnosticOutcome,
+        reason: String,
+        statusCode: Int? = nil,
+        startedAt: Date? = nil,
+        now: Date = Date()
+    ) {
+        record(
+            surface: surface,
+            providerName: provider?.title,
+            model: provider?.model,
+            outcome: outcome,
+            reason: reason,
+            statusCode: statusCode,
+            startedAt: startedAt,
+            now: now
+        )
+    }
+
+    nonisolated static func record(
+        surface: String,
+        providerName: String?,
+        model: String?,
+        outcome: AICallDiagnosticOutcome,
+        reason: String,
+        statusCode: Int? = nil,
+        startedAt: Date? = nil,
+        now: Date = Date()
+    ) {
+        let latencyMs = startedAt.map { max(0, Int(now.timeIntervalSince($0) * 1_000)) }
+        let record = AICallDiagnosticRecord.make(
+            createdAt: now,
+            surface: surface,
+            provider: providerName,
+            model: model,
+            outcome: outcome,
+            reason: reason,
+            statusCode: statusCode,
+            latencyMs: latencyMs
+        )
+        Task { @MainActor in
+            AICallDiagnosticsStore.shared.record(record)
+        }
+    }
+}
+
+struct AIProviderHealthProbeResult: Equatable {
+    let provider: AIProvider?
+    let outcome: AICallDiagnosticOutcome
+    let reason: String
+    let statusCode: Int?
+    var providerName: String? = nil
+    var model: String? = nil
+
+    var isHealthy: Bool { outcome == .success }
+
+    var displayProvider: String {
+        providerName ?? provider?.title ?? "No provider"
+    }
+
+    var statusSummary: String {
+        let modelLabel = model.map { " (\($0))" } ?? ""
+        if let statusCode {
+            return "\(displayProvider)\(modelLabel) - HTTP \(statusCode)"
+        }
+        return "\(displayProvider)\(modelLabel) - \(outcome.title)"
+    }
+}
+
+struct AIProviderHealthGuidance: Equatable {
+    let title: String
+    let detail: String
+
+    static func make(for results: [AIProviderHealthProbeResult]) -> AIProviderHealthGuidance? {
+        guard !results.isEmpty else { return nil }
+        if results.contains(where: \.isHealthy) {
+            return AIProviderHealthGuidance(
+                title: "Model path ready",
+                detail: "At least one provider returned the health-check sentinel."
+            )
+        }
+
+        if let result = results.first(where: { $0.reason.contains("NOT_FOUND") || $0.statusCode == 404 }) {
+            return AIProviderHealthGuidance(
+                title: "Model endpoint not found",
+                detail: "Check the model ID, enabled API surface, and key type for \(result.displayProvider)."
+            )
+        }
+
+        if let result = results.first(where: { $0.reason.contains("PERMISSION_DENIED") || $0.statusCode == 403 }) {
+            return AIProviderHealthGuidance(
+                title: "Provider permission blocked",
+                detail: "Enable the API, review key restrictions, or rotate the key for \(result.displayProvider)."
+            )
+        }
+
+        if results.contains(where: { $0.reason.contains("RESOURCE_EXHAUSTED") || $0.statusCode == 429 }) {
+            return AIProviderHealthGuidance(
+                title: "Provider quota blocked",
+                detail: "Check billing, quota, or rate limits before relying on live coaching."
+            )
+        }
+
+        if results.allSatisfy({ $0.outcome == .skipped && $0.reason.localizedCaseInsensitiveContains("missing api key") }) {
+            return AIProviderHealthGuidance(
+                title: "No AI key configured",
+                detail: "Add a Gemini, Google Cloud, OpenAI, or Claude key before relying on live coach replies."
+            )
+        }
+
+        return AIProviderHealthGuidance(
+            title: "AI provider check needs attention",
+            detail: "Copy the non-secret AI log and inspect provider, model, HTTP status, and latency."
+        )
+    }
+}
+
+enum AIProviderHealthProbe {
+    static let surface = "Provider health check"
+
+    private static let sentinel = "NOUM_AI_OK"
+    private static let prompt = "Reply with exactly: \(sentinel)"
+    private static let systemPrompt = "You are a private API health check. Return the requested sentinel only."
+
+    @MainActor
+    static func runActiveProviderProbe(
+        settings providedSettings: AISettingsManager? = nil,
+        session: URLSession = .shared
+    ) async -> AIProviderHealthProbeResult {
+        let settings = providedSettings ?? .shared
+        settings.resetIfNeeded()
+        let configuredProvider = settings.activeProvider
+        guard let provider = configuredProvider else {
+            return record(.skipped, "No active provider", provider: nil)
+        }
+        return await runProbe(for: provider, session: session)
+    }
+
+    static func runConfiguredProviderProbes(
+        providers: [AIProvider] = AISettingsManager.diagnosticProviderOrder,
+        session: URLSession = .shared
+    ) async -> [AIProviderHealthProbeResult] {
+        var results: [AIProviderHealthProbeResult] = []
+        for provider in providers where provider != .none {
+            results.append(await runProbe(for: provider, session: session))
+        }
+        return results
+    }
+
+    private static func runProbe(
+        for provider: AIProvider,
+        session: URLSession
+    ) async -> AIProviderHealthProbeResult {
+        guard let endpoint = provider.endpoint else {
+            return record(.skipped, "Missing provider endpoint", provider: provider)
+        }
+        guard let apiKey = AIProviderCredential.apiKey(for: provider) else {
+            return record(.skipped, "Missing API key", provider: provider)
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 20
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        do {
+            request.httpBody = try requestBody(for: provider)
+        } catch {
+            return record(.failure, "Could not build health-check request", provider: provider)
+        }
+
+        switch provider {
+        case .none:
+            return record(.skipped, "Provider set to off", provider: provider)
+        case .openAI, .deepSeek:
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        case .gemini:
+            request.setGoogleAPIKey(apiKey)
+        }
+
+        let startedAt = Date()
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                return record(.failure, "Non-HTTP response", provider: provider, startedAt: startedAt)
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                return record(
+                    .failure,
+                    failureReason(forHTTPStatus: http.statusCode, data: data, provider: provider),
+                    provider: provider,
+                    statusCode: http.statusCode,
+                    startedAt: startedAt
+                )
+            }
+            guard responseContainsSentinel(data, provider: provider) else {
+                return record(.failure, "Sentinel missing from provider response", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+            }
+            return record(.success, "Provider returned health-check sentinel", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+        } catch {
+            return record(.failure, "Transport error", provider: provider, startedAt: startedAt)
+        }
+    }
+
+    nonisolated static func summary(for results: [AIProviderHealthProbeResult]) -> String {
+        guard !results.isEmpty else { return "No providers checked." }
+        return results
+            .map { result in
+                let prefix = result.isHealthy ? "Healthy" : result.outcome.title
+                return "\(prefix): \(result.statusSummary). \(result.reason)"
+            }
+            .joined(separator: "\n")
+    }
+
+    nonisolated static func requestBody(for provider: AIProvider) throws -> Data {
+        switch provider {
+        case .none:
+            return Data()
+        case .openAI, .deepSeek:
+            let body = AIProviderHealthChatRequest(
+                model: provider.model,
+                messages: [
+                    .init(role: "system", content: systemPrompt),
+                    .init(role: "user", content: prompt)
+                ],
+                temperature: 0,
+                maxTokens: 16
+            )
+            return try JSONEncoder().encode(body)
+        case .gemini:
+            let body = AIProviderHealthGeminiRequest(
+                systemInstruction: .init(parts: [.init(text: systemPrompt)]),
+                contents: [.init(role: "user", parts: [.init(text: prompt)])],
+                generationConfig: .init(
+                    temperature: 0,
+                    maxOutputTokens: 16,
+                    thinkingConfig: .init(thinkingBudget: 0)
+                )
+            )
+            return try JSONEncoder().encode(body)
+        }
+    }
+
+    nonisolated static func responseContainsSentinel(_ data: Data, provider: AIProvider) -> Bool {
+        let text: String?
+        switch provider {
+        case .none:
+            text = nil
+        case .openAI, .deepSeek:
+            let completion = try? JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
+            text = completion?.choices.first?.message.content
+        case .gemini:
+            let completion = try? JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+            text = completion?.candidates
+                .first?
+                .content
+                .parts
+                .compactMap(\.text)
+                .joined()
+        }
+        return text?.contains(sentinel) == true
+    }
+
+    nonisolated static func failureReason(forHTTPStatus statusCode: Int, data: Data, provider: AIProvider) -> String {
+        if provider == .gemini, statusCode == 404 {
+            return "Provider error: NOT_FOUND (model or endpoint)"
+        }
+        if provider == .gemini,
+           let error = (try? JSONDecoder().decode(GeminiErrorResponse.self, from: data))?.error,
+           let status = error.status,
+           !status.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let message = error.message.lowercased()
+            if status == "PERMISSION_DENIED" {
+                if message.contains("blocked") {
+                    return "Provider error: PERMISSION_DENIED (API blocked)"
+                }
+                if message.contains("disabled") || message.contains("not been used") {
+                    return "Provider error: PERMISSION_DENIED (API disabled)"
+                }
+            }
+            return "Provider error: \(status)"
+        }
+        if provider == .openAI || provider == .deepSeek,
+           let error = (try? JSONDecoder().decode(OpenAICompatibleErrorResponse.self, from: data))?.error {
+            if let type = error.type?.trimmingCharacters(in: .whitespacesAndNewlines), !type.isEmpty {
+                return "Provider error: \(type)"
+            }
+            if let code = error.code?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty {
+                return "Provider error: \(code)"
+            }
+        }
+        return "Provider returned HTTP \(statusCode)"
+    }
+
+    private static func record(
+        _ outcome: AICallDiagnosticOutcome,
+        _ reason: String,
+        provider: AIProvider?,
+        statusCode: Int? = nil,
+        startedAt: Date? = nil
+    ) -> AIProviderHealthProbeResult {
+        AICallDiagnostics.record(
+            surface: surface,
+            provider: provider,
+            outcome: outcome,
+            reason: reason,
+            statusCode: statusCode,
+            startedAt: startedAt
+        )
+        return AIProviderHealthProbeResult(
+            provider: provider,
+            outcome: outcome,
+            reason: reason,
+            statusCode: statusCode,
+            model: provider?.model
+        )
     }
 }
 
@@ -3946,6 +4603,11 @@ final class IMRelationshipStore: ObservableObject {
 final class AISettingsManager: ObservableObject {
     static let shared = AISettingsManager()
 
+    // DeepSeek remains available for developer-only diagnostics, but is
+    // deliberately excluded from the user-facing provider rotation.
+    nonisolated static let providerPreferenceOrder: [AIProvider] = [.gemini, .openAI]
+    nonisolated static let diagnosticProviderOrder: [AIProvider] = [.gemini, .openAI, .deepSeek]
+
     @Published private(set) var analysisCountThisMonth: Int {
         didSet { UserDefaults.standard.set(analysisCountThisMonth, forKey: countKey) }
     }
@@ -3976,7 +4638,16 @@ final class AISettingsManager: ObservableObject {
     }
 
     var activeProvider: AIProvider? {
-        [.gemini, .openAI].first(where: hasAPIKey(for:))
+        Self.preferredProvider(hasAPIKey: hasAPIKey(for:))
+    }
+
+    nonisolated static func preferredProvider(
+        providers: [AIProvider] = providerPreferenceOrder,
+        hasAPIKey: (AIProvider) -> Bool
+    ) -> AIProvider? {
+        providers.first { provider in
+            provider != .none && hasAPIKey(provider)
+        }
     }
 
     /// Current monthly limit based on subscription tier.
@@ -4057,18 +4728,13 @@ final class AISettingsManager: ObservableObject {
         switch activeProvider {
         case .gemini: return "Google Gemini"
         case .openAI: return "OpenAI"
+        case .deepSeek: return "DeepSeek"
         default: return "a cloud AI provider"
         }
     }
 
     private func hasAPIKey(for provider: AIProvider) -> Bool {
-        guard let keyName = provider.environmentKey else { return false }
-
-        if let value = ProcessInfo.processInfo.environment[keyName], !value.isEmpty {
-            return true
-        }
-
-        return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig") != nil
+        AIProviderCredential.hasAPIKey(for: provider)
     }
 }
 
@@ -7522,6 +8188,8 @@ final class PracticeSessionStore: ObservableObject {
 
     @discardableResult
     func append(_ draft: PracticeSessionDraft) -> PracticeSession {
+        // Live ingestion builds sessions from drafts, which have no fixture
+        // fields. Evaluation fixtures must stay in the test harness only.
         let session = PracticeSession(
             transcript: draft.transcript,
             fillerWordCount: draft.fillerWordCount,
@@ -7585,7 +8253,9 @@ final class PracticeSessionStore: ObservableObject {
     }
 
     func replaceFromRemote(_ remoteSessions: [PracticeSession]) {
-        sessions = remoteSessions.sorted { $0.date > $1.date }
+        sessions = remoteSessions
+            .filter { !$0.isEvaluationFixture }
+            .sorted { $0.date > $1.date }
         persist()
     }
 
@@ -7611,6 +8281,7 @@ final class PracticeSessionStore: ObservableObject {
     }
 
     private func syncSessionIfPossible(_ session: PracticeSession) {
+        guard !session.isEvaluationFixture else { return }
         guard let accountID = currentAccountID, let providerRawValue = currentProviderRawValue else { return }
         Task {
             await BackendSyncManager.shared.syncSession(session, accountID: accountID, providerRawValue: providerRawValue)
@@ -7620,7 +8291,9 @@ final class PracticeSessionStore: ObservableObject {
     private static func loadSessions(forKey key: String) -> [PracticeSession] {
         guard let data = UserDefaults.standard.data(forKey: key),
               let sessions = try? JSONDecoder().decode([PracticeSession].self, from: data) else { return [] }
-        return sessions.sorted { $0.date > $1.date }
+        return sessions
+            .filter { !$0.isEvaluationFixture }
+            .sorted { $0.date > $1.date }
     }
 }
 #endif
@@ -7661,6 +8334,252 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable {
     let hasComparableScore: Bool?
     let fillerDelta: Double
     let durationDelta: Double
+}
+
+// MARK: - Evaluation Corpus (validation substrate only)
+
+/// Version-controlled practice-session fixtures for regression-checking the
+/// live coaching logic. This is a substrate, not calibration: no fixture or
+/// passing snapshot proves human-coach parity.
+enum EvaluationPillar: String, CaseIterable, Codable {
+    case fillerHeavy
+    case pace
+    case structureCollapseUnderPressure
+    case strongBaseline
+    case coldStart
+}
+
+struct EvaluationFixture: Identifiable {
+    let id: String
+    let pillar: EvaluationPillar
+    let sessions: [PracticeSession]
+    let seedOutcomes: [RecommendationOutcome]
+    let trends: [SkillTrend]
+    let contextNeedles: [String]
+}
+
+enum EvaluationCorpus {
+    static let epoch = Date(timeIntervalSince1970: 1_735_689_600) // 2025-01-01T00:00:00Z
+
+    static let all: [EvaluationFixture] = [
+        fixture(
+            id: "filler-heavy-01",
+            pillar: .fillerHeavy,
+            sessions: [
+                session(1001, "filler-heavy-01", -5, "I think the plan is strong um but I need to explain the risk before Friday because the team needs a cleaner decision and I keep softening the ask before it lands.", 7, 60, .timed, 5),
+                session(1002, "filler-heavy-01", -4, "The roadmap is basically on track but um I guess the migration risk means we should hold the launch until support confirms the customer list is ready.", 6, 62, .timed, 5),
+                session(1003, "filler-heavy-01", -3, "I think we can keep momentum but um the decision is that we pause hiring until the cash forecast is clearer and the team has capacity.", 6, 58, .timed, 6),
+                session(1004, "filler-heavy-01", -2, "The update is that delivery is moving but um I need approval on scope today so engineering can protect the release date without adding risk.", 5, 59, .timed, 6)
+            ],
+            trends: [trend(.fillerReduction, .declining, .high, .weak, "fillers increased in the recent window")],
+            contextNeedles: ["RECENT (most-recent first)", "fillers", "TRENDS"]
+        ),
+        fixture(
+            id: "filler-heavy-02",
+            pillar: .fillerHeavy,
+            sessions: [
+                session(1011, "filler-heavy-02", -6, "The client should choose option two because it protects the implementation date but um I keep adding caveats before I state the recommendation clearly.", 6, 55, .timed, 5),
+                session(1012, "filler-heavy-02", -5, "My recommendation is to keep the pilot narrow because it gives us evidence faster um and avoids spending time on a feature customers have not asked for.", 5, 56, .timed, 6),
+                session(1013, "filler-heavy-02", -4, "I would frame the decision as risk control rather than delay because um the team needs permission to sequence the work safely.", 5, 54, .timed, 6)
+            ],
+            seedOutcomes: replaceOutcomes(fixtureID: "filler-heavy-02", mode: .timed),
+            trends: [trend(.fillerReduction, .improving, .medium, .developing, "one cleaner rep after a rough run")],
+            contextNeedles: ["INTERVENTION RESPONSE", "association only"]
+        ),
+        fixture(
+            id: "pace-01",
+            pillar: .pace,
+            sessions: [
+                session(2001, "pace-01", -5, "The answer is yes because launch risk is manageable customer onboarding is ready support volume is steady finance approved the plan and the only remaining blocker is the migration checklist which has an owner today.", 1, 35, .timed, 6),
+                session(2002, "pace-01", -4, "We should approve the rollout now because the risk is known the mitigation is owned and delaying another week creates more churn for the customers already waiting.", 1, 34, .timed, 6),
+                session(2003, "pace-01", -3, "My view is ship the narrow version now keep the rollback simple watch the support queue and review the second phase when the adoption numbers settle.", 0, 33, .timed, 7)
+            ],
+            trends: [trend(.paceControl, .declining, .high, .weak, "pace keeps running fast")],
+            contextNeedles: ["pace", "TRENDS"]
+        ),
+        fixture(
+            id: "pace-02",
+            pillar: .pace,
+            sessions: [
+                session(2011, "pace-02", -5, "The decision is to move forward. The reason is customer demand. The risk is known. The next step is approval today.", 0, 80, .timed, 6),
+                session(2012, "pace-02", -4, "I would keep the scope small. Then review the result. Then decide whether the next release deserves more investment.", 0, 78, .timed, 6),
+                session(2013, "pace-02", -3, "The team needs one answer. We either protect quality now or pay for confusion later. My recommendation is quality now.", 0, 76, .timed, 7)
+            ],
+            trends: [trend(.paceControl, .newIssue, .medium, .developing, "delivery slowed below conversational range")],
+            contextNeedles: ["pace", "RECENT (most-recent first)"]
+        ),
+        fixture(
+            id: "structure-pressure-01",
+            pillar: .structureCollapseUnderPressure,
+            sessions: [
+                session(3001, "structure-pressure-01", -7, "The update has three parts: adoption is ahead, support is down, and the decision needed today is approval for the rollout date.", 0, 62, .timed, 8, .casual),
+                session(3002, "structure-pressure-01", -6, "My answer is simple: keep scope tight, protect launch quality, and ask for approval on the date before more dependencies appear.", 0, 60, .timed, 8, .casual),
+                session(3003, "structure-pressure-01", -2, "I think there are a few things and the team is moving but the timeline and the customer stuff and the support details all matter so we should discuss the whole picture.", 2, 61, .suddenDeath, 5, .high),
+                session(3004, "structure-pressure-01", -1, "The situation is complicated because there are customer issues and roadmap issues and staffing questions so I want to give context before I make the recommendation.", 2, 60, .suddenDeath, 5, .high)
+            ],
+            trends: [trend(.structure, .declining, .high, .weak, "structure collapses under pressure")],
+            contextNeedles: ["Pressure Drill", "Structure"]
+        ),
+        fixture(
+            id: "structure-pressure-02",
+            pillar: .structureCollapseUnderPressure,
+            sessions: [
+                session(3011, "structure-pressure-02", -8, "Recommendation first: do not expand scope this sprint. Reason one is quality. Reason two is support load. Next step is a Friday review.", 0, 58, .timed, 8, .casual),
+                session(3012, "structure-pressure-02", -7, "The message is narrow: hold scope, protect the launch, and reopen the decision when the adoption signal is clear.", 0, 57, .timed, 8, .casual),
+                session(3013, "structure-pressure-02", -3, "There is a lot to consider and I do not want to oversimplify because the scope question connects to support and onboarding and maybe sales expectations.", 1, 52, .suddenDeath, 5, .high)
+            ],
+            trends: [trend(.structure, .declining, .medium, .developing, "pressure reps lose the lead")],
+            contextNeedles: ["pressure", "RECENT (most-recent first)"]
+        ),
+        fixture(
+            id: "strong-baseline-01",
+            pillar: .strongBaseline,
+            sessions: [
+                session(4001, "strong-baseline-01", -6, "The recommendation is to launch the pilot with three accounts, measure adoption by Friday, and decide the broader rollout after support reviews the first signals.", 0, 60, .timed, 8),
+                session(4002, "strong-baseline-01", -5, "The point is straightforward: keep the plan narrow, protect quality, and give the team one decision before noon.", 0, 58, .timed, 8),
+                session(4003, "strong-baseline-01", -4, "I would approve the rollout date because the risk is owned, the customer list is ready, and the rollback plan is simple.", 0, 57, .timed, 8),
+                session(4004, "strong-baseline-01", -3, "My ask is approval today. The reason is momentum: onboarding is ahead, support volume is stable, and delay would create avoidable churn.", 0, 59, .timed, 9),
+                session(4005, "strong-baseline-01", -2, "Keep the close clean: approve the date, hold scope, and review customer impact after the first week of rollout.", 0, 55, .timed, 9)
+            ],
+            contextNeedles: ["0 fillers", "RECENT (most-recent first)"]
+        ),
+        fixture(
+            id: "strong-baseline-02",
+            pillar: .strongBaseline,
+            sessions: [
+                session(4011, "strong-baseline-02", -6, "The answer is no for this sprint. We protect the launch, learn from the first cohort, and revisit the request with actual adoption data.", 0, 60, .timed, 8),
+                session(4012, "strong-baseline-02", -5, "I recommend a narrow release. It gives customers value now, keeps the rollback simple, and avoids confusing support.", 0, 56, .timed, 8),
+                session(4013, "strong-baseline-02", -4, "The decision needed is approval on the pilot. The success measure is adoption by Friday and a support review next Monday.", 0, 57, .timed, 8),
+                session(4014, "strong-baseline-02", -3, "I would keep the message direct: the plan is ready, the risk is managed, and the next step is signoff today.", 0, 54, .timed, 9),
+                session(4015, "strong-baseline-02", -2, "The team has done the work. Approve the launch date, keep scope fixed, and use customer feedback to shape phase two.", 0, 55, .timed, 9)
+            ],
+            contextNeedles: ["0 fillers", "RECENT (most-recent first)"]
+        ),
+        fixture(
+            id: "cold-start-01",
+            pillar: .coldStart,
+            sessions: [],
+            contextNeedles: ["No voice set yet", "No rated sessions yet", "Not enough data for a stable baseline yet"]
+        ),
+        fixture(
+            id: "cold-start-02",
+            pillar: .coldStart,
+            sessions: [
+                session(5001, "cold-start-02", -1, "Too short to count.", 0, 8, .timed, nil, .standard, 0.9)
+            ],
+            contextNeedles: ["No voice set yet", "Not enough data for a stable baseline yet"]
+        )
+    ]
+
+    static func fixtures(for pillar: EvaluationPillar) -> [EvaluationFixture] {
+        all.filter { $0.pillar == pillar }
+    }
+
+    static func date(dayOffset: Int) -> Date {
+        epoch.addingTimeInterval(TimeInterval(dayOffset) * 86_400)
+    }
+
+    static func session(
+        fixtureID: String,
+        dayOffset: Int,
+        transcript: String,
+        fillers: Int,
+        duration: TimeInterval,
+        mode: PracticeMode,
+        score: Int?,
+        pressure: PressureLevel = .standard,
+        confidence: Double? = 0.9
+    ) -> PracticeSession {
+        session(9_999, fixtureID, dayOffset, transcript, fillers, duration, mode, score, pressure, confidence)
+    }
+
+    private static func fixture(
+        id: String,
+        pillar: EvaluationPillar,
+        sessions: [PracticeSession],
+        seedOutcomes: [RecommendationOutcome] = [],
+        trends: [SkillTrend] = [],
+        contextNeedles: [String]
+    ) -> EvaluationFixture {
+        EvaluationFixture(
+            id: id,
+            pillar: pillar,
+            sessions: sessions,
+            seedOutcomes: seedOutcomes,
+            trends: trends,
+            contextNeedles: contextNeedles
+        )
+    }
+
+    private static func session(
+        _ ordinal: Int,
+        _ fixtureID: String,
+        _ dayOffset: Int,
+        _ transcript: String,
+        _ fillers: Int,
+        _ duration: TimeInterval,
+        _ mode: PracticeMode,
+        _ score: Int?,
+        _ pressure: PressureLevel = .standard,
+        _ confidence: Double? = 0.9
+    ) -> PracticeSession {
+        PracticeSession(
+            id: stableUUID(ordinal),
+            transcript: transcript,
+            fillerWordCount: fillers,
+            duration: duration,
+            date: date(dayOffset: dayOffset),
+            mode: mode,
+            score: score,
+            transcriptConfidence: confidence,
+            pressureLevel: pressure,
+            isRated: score != nil,
+            isEvaluationFixture: true,
+            fixtureID: String(fixtureID.prefix(64))
+        )
+    }
+
+    private static func trend(
+        _ area: SkillArea,
+        _ direction: TrendDirection,
+        _ confidence: TrendConfidence,
+        _ currentLevel: SkillLevel,
+        _ delta: String
+    ) -> SkillTrend {
+        SkillTrend(
+            skillArea: area,
+            direction: direction,
+            confidence: confidence,
+            windowSize: 5,
+            currentLevel: currentLevel,
+            recentDelta: delta
+        )
+    }
+
+    private static func replaceOutcomes(fixtureID: String, mode: PracticeMode) -> [RecommendationOutcome] {
+        (0..<6).map { index in
+            RecommendationOutcome(
+                id: stableUUID(7_000 + index),
+                fingerprint: "\(fixtureID)|\(mode.rawValue)",
+                title: "Evaluation prescription",
+                focus: nil,
+                target: nil,
+                mode: mode,
+                sessionID: stableUUID(7_100 + index),
+                followed: true,
+                completedAt: date(dayOffset: -10 + index),
+                scoreDelta: -0.9,
+                hasComparableScore: true,
+                fillerDelta: 0,
+                durationDelta: 0
+            )
+        }
+    }
+
+    private static func stableUUID(_ ordinal: Int) -> UUID {
+        let suffix = String(format: "%012d", ordinal)
+        return UUID(uuidString: "00000000-0000-0000-0000-\(suffix)") ?? UUID()
+    }
 }
 
 enum RecommendationResponseAssessment: Equatable {
@@ -9579,6 +10498,9 @@ enum RecommendationBiasEngine {
             return "The case file has \(observed) of \(minimum) followed reps. \(remaining) more reps make the review more honest."
         case .continueAndVerify:
             if let status = intervention.criterionStatus {
+                if status == .pending {
+                    return "Early response needs one more observed rep before Noum can judge it honestly."
+                }
                 return "Early response is \(status.contextLabel); run one more rep to verify it holds."
             }
             return "Early response looks promising; run one more rep to verify it holds."
@@ -9775,7 +10697,14 @@ enum RecommendationBiasEngine {
 
     private static func whyNow(for mode: PracticeMode, profile: CoachingProfile, input: AIHomeRecommendationInput) -> String {
         if input.daysSinceLastSession > 2 {
+            if let profileLine = profileAwareWhyNow(for: mode, profile: profile) {
+                return "You've been away from the rhythm, so this reconnects to the work you chose. \(profileLine)"
+            }
             return "You've been away from the rhythm, so this drill reconnects the next rep to the communication goal you chose."
+        }
+
+        if let profileLine = profileAwareWhyNow(for: mode, profile: profile) {
+            return profileLine
         }
 
         switch mode {
@@ -9788,6 +10717,66 @@ enum RecommendationBiasEngine {
         case .imConversation:
             return "Your goal depends on sounding right with another person, not just speaking cleanly in isolation."
         }
+    }
+
+    private static func profileAwareWhyNow(for mode: PracticeMode, profile: CoachingProfile) -> String? {
+        let context = profile.speakingContext.title.lowercased()
+        let challenge = profile.biggestChallenge.trainingFocusFragment
+        let register = profileRegisterPhrase(for: profile)
+        let modeClause = profileModeClause(for: mode)
+
+        let base = "For \(context), this \(modeClause) while you work on \(challenge), toward your \(register)."
+        guard let motivation = boundedMotivationLead(for: profile) else {
+            return base
+        }
+        return "\(motivation) \(base)"
+    }
+
+    private static func profileModeClause(for mode: PracticeMode) -> String {
+        switch mode {
+        case .timed:
+            return "builds structure"
+        case .suddenDeath:
+            return "puts pressure first"
+        case .ahCounter:
+            return "makes fillers visible live"
+        case .imConversation:
+            return "practices tone with another person"
+        }
+    }
+
+    private static func profileRegisterPhrase(for profile: CoachingProfile) -> String {
+        let voice = profile.chosenStyleGoal ?? profile.speakingStyleGoal
+        let name = CoachPersona.persona(for: voice).registerName
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != "default" else {
+            return "target voice"
+        }
+        return "\(name) register"
+    }
+
+    private static func boundedMotivationLead(for profile: CoachingProfile) -> String? {
+        let candidates = [
+            profile.whyNowReference,
+            profile.successVisionReference,
+            profile.personalGoalReference
+        ]
+        guard let raw = candidates.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+            return nil
+        }
+
+        let normalized = raw
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        guard !normalized.isEmpty else { return nil }
+
+        let words = normalized.split(separator: " ")
+        let bounded = words.prefix(12).joined(separator: " ")
+        let punctuated = bounded.hasSuffix(".") || bounded.hasSuffix("?") || bounded.hasSuffix("!")
+            ? bounded
+            : "\(bounded)."
+        return punctuated
     }
 
     private static func playbookEntry(for mode: PracticeMode) -> PracticeModePlaybookEntry {
@@ -9821,9 +10810,28 @@ struct IMConversationService: IMConversationServicing {
             throw IMModeServiceError.unavailable
         }
 
-        guard let provider = settings.activeProvider,
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            statusCode: Int? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "IM conversation reply",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+        }
+
+        let configuredProvider = settings.activeProvider
+        guard let provider = configuredProvider,
               let apiKey = apiKey(for: provider),
               let endpoint = provider.endpoint else {
+            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
             if let backendReply = try? await backendReply(
                 setup: setup,
                 turns: turns,
@@ -9853,6 +10861,7 @@ struct IMConversationService: IMConversationServicing {
         )
         switch provider {
         case .none:
+            record(.skipped, "Provider set to off", provider: provider)
             throw IMModeServiceError.unavailable
         case .openAI, .deepSeek:
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -9870,7 +10879,7 @@ struct IMConversationService: IMConversationServicing {
             request.setGoogleAPIKey(apiKey)
             let body = GeminiGenerateContentRequest(
                 systemInstruction: .init(parts: [.init(text: systemPrompt)]),
-                contents: [.init(parts: [.init(text: prompt)])],
+                contents: [.init(role: "user", parts: [.init(text: prompt)])],
                 generationConfig: .init(
                     temperature: 0.7,
                     responseMimeType: "application/json"
@@ -9879,14 +10888,62 @@ struct IMConversationService: IMConversationServicing {
             request.httpBody = try JSONEncoder().encode(body)
         }
 
+        let startedAt = Date()
+        let data: Data
+        let response: URLResponse
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
-                throw IMModeServiceError.replyGenerationFailed("HTTP request failed")
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            if let backendReply = try? await backendReply(
+                setup: setup,
+                turns: turns,
+                state: state,
+                profile: profile,
+                relationship: relationship,
+                context: context,
+                latestUserSignal: latestUserSignal
+            ) {
+                record(.fallback, "Transport error; backend reply used", provider: provider, startedAt: startedAt)
+                return backendReply
             }
+            record(.failure, "Transport error", provider: provider, startedAt: startedAt)
+            throw IMModeServiceError.replyGenerationFailed(error.localizedDescription)
+        }
 
+        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            if let backendReply = try? await backendReply(
+                setup: setup,
+                turns: turns,
+                state: state,
+                profile: profile,
+                relationship: relationship,
+                context: context,
+                latestUserSignal: latestUserSignal
+            ) {
+                record(
+                    .fallback,
+                    statusCode.map { "Provider returned HTTP \($0); backend reply used" } ?? "Non-HTTP response; backend reply used",
+                    provider: provider,
+                    statusCode: statusCode,
+                    startedAt: startedAt
+                )
+                return backendReply
+            }
+            record(
+                .failure,
+                statusCode.map { "Provider returned HTTP \($0)" } ?? "Non-HTTP response",
+                provider: provider,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+            throw IMModeServiceError.replyGenerationFailed("HTTP request failed")
+        }
+
+        do {
             let jsonData = try extractJSONData(from: data, provider: provider)
             let decoded = try decodeIMConversationReply(from: jsonData)
+            record(.success, "IM reply accepted", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
             return IMConversationReply(
                 message: decoded.message.truncatedToWordLimit(30),
                 shouldWrapUp: decoded.shouldWrapUp,
@@ -9907,8 +10964,10 @@ struct IMConversationService: IMConversationServicing {
                 context: context,
                 latestUserSignal: latestUserSignal
             ) {
+                record(.fallback, "Decode or schema error; backend reply used", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
                 return backendReply
             }
+            record(.failure, "Decode or schema error", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
             throw IMModeServiceError.replyGenerationFailed(error.localizedDescription)
         }
     }
@@ -10078,18 +11137,7 @@ struct IMConversationService: IMConversationServicing {
     }
 
     private func apiKey(for provider: AIProvider) -> String? {
-        if let keyName = provider.environmentKey,
-           let value = ProcessInfo.processInfo.environment[keyName],
-           !value.isEmpty {
-            return value
-        }
-
-        if let keyName = provider.environmentKey,
-           let value = LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig") {
-            return value
-        }
-
-        return nil
+        AIProviderCredential.apiKey(for: provider)
     }
 
     private func extractJSONData(from data: Data, provider: AIProvider) throws -> Data {
@@ -10278,15 +11326,36 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
             recentSessions: recentSessions,
             relationship: relationship
         )
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            statusCode: Int? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "IM conversation evaluation",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+        }
 
         // Locale gate — the same one-liner the rest of PracticeSupport.swift
         // uses for English-only AI coaching. A Spanish/French IM rep gets the deterministic grounded
         // read, not an English LLM grade that would be worse than the template.
-        guard activeLocaleSupportsAI() else { return fallback }
+        guard activeLocaleSupportsAI() else {
+            record(.skipped, "Locale not AI-supported")
+            return fallback
+        }
 
-        guard let provider = settings.activeProvider,
+        let configuredProvider = settings.activeProvider
+        guard let provider = configuredProvider,
               let apiKey = apiKey(for: provider),
               let endpoint = provider.endpoint else {
+            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
             if let backendEvaluation = try? await backendEvaluation(
                 setup: setup,
                 turns: turns,
@@ -10323,6 +11392,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
 
         switch provider {
         case .none:
+            record(.skipped, "Provider set to off", provider: provider)
             return fallback
         case .openAI, .deepSeek:
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -10340,7 +11410,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
             request.setGoogleAPIKey(apiKey)
             let body = GeminiGenerateContentRequest(
                 systemInstruction: .init(parts: [.init(text: systemPrompt)]),
-                contents: [.init(parts: [.init(text: prompt)])],
+                contents: [.init(role: "user", parts: [.init(text: prompt)])],
                 generationConfig: .init(
                     temperature: 0.2,
                     responseMimeType: "application/json"
@@ -10349,12 +11419,44 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
             request.httpBody = try JSONEncoder().encode(body)
         }
 
+        let startedAt = Date()
+        let data: Data
+        let response: URLResponse
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
-                return fallback
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            if let backendEvaluation = try? await backendEvaluation(
+                setup: setup,
+                turns: turns,
+                finalState: finalState,
+                transcript: transcript,
+                fillerCount: fillerCount,
+                duration: duration,
+                recentSessions: recentSessions,
+                profile: profile,
+                relationship: relationship,
+                context: context
+            ), Self.evaluationEngagesTranscript(backendEvaluation, transcript: transcript) {
+                record(.fallback, "Transport error; backend evaluation used", provider: provider, startedAt: startedAt)
+                return backendEvaluation
             }
+            record(.fallback, "Transport error; deterministic evaluation used", provider: provider, startedAt: startedAt)
+            return fallback
+        }
 
+        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            record(
+                .fallback,
+                statusCode.map { "Provider returned HTTP \($0); deterministic evaluation used" } ?? "Non-HTTP response; deterministic evaluation used",
+                provider: provider,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+            return fallback
+        }
+
+        do {
             let jsonData = try extractJSONData(from: data, provider: provider)
             let evaluation = try JSONDecoder().decode(IMConversationEvaluation.self, from: jsonData)
             // Grounding gate (mirrors PostRepCoachNoteService.engagesTranscript
@@ -10365,8 +11467,10 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
             // return the grounded deterministic fallback. Empty transcript ->
             // passes (nothing to quote).
             guard Self.evaluationEngagesTranscript(evaluation, transcript: transcript) else {
+                record(.fallback, "Evaluation failed transcript-grounding gate", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
                 return fallback
             }
+            record(.success, "IM evaluation accepted", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
             return evaluation
         } catch {
             if let backendEvaluation = try? await backendEvaluation(
@@ -10381,8 +11485,10 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
                 relationship: relationship,
                 context: context
             ), Self.evaluationEngagesTranscript(backendEvaluation, transcript: transcript) {
+                record(.fallback, "Decode or schema error; backend evaluation used", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
                 return backendEvaluation
             }
+            record(.fallback, "Decode or schema error; deterministic evaluation used", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
             return fallback
         }
     }
@@ -10598,18 +11704,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
     }
 
     private func apiKey(for provider: AIProvider) -> String? {
-        if let keyName = provider.environmentKey,
-           let value = ProcessInfo.processInfo.environment[keyName],
-           !value.isEmpty {
-            return value
-        }
-
-        if let keyName = provider.environmentKey,
-           let value = LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig") {
-            return value
-        }
-
-        return nil
+        AIProviderCredential.apiKey(for: provider)
     }
 
     private func extractJSONData(from data: Data, provider: AIProvider) throws -> Data {
@@ -11000,25 +12095,48 @@ struct AICoachService: AICoachServicing {
         // stops throwing on the gated paths.
         settings.resetIfNeeded()
         let fallback = Self.deterministicFeedback(input: input)
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            statusCode: Int? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "Post-rep Coach Read",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+        }
 
         // Locale gate — the one-liner the whole of PracticeSupport.swift was
         // missing (verified 0 prior occurrences). A Spanish/French rep gets the
         // deterministic grounded read, never English LLM coaching.
-        guard activeLocaleSupportsAI() else { return fallback }
+        guard activeLocaleSupportsAI() else {
+            record(.skipped, "Locale not AI-supported")
+            return fallback
+        }
 
         // Defense-in-depth: SummaryView already pre-checks short transcripts,
         // but a thin transcript here returns the deterministic read rather
         // than throwing .transcriptTooShort.
         guard input.transcript.split(whereSeparator: \.isWhitespace).count >= Self.minimumTranscriptWordCount else {
+            record(.skipped, "Transcript below word floor")
             return fallback
         }
-        guard let provider = settings.activeProvider,
+        let configuredProvider = settings.activeProvider
+        guard let provider = configuredProvider,
               let apiKey = apiKey(for: provider),
               let endpoint = provider.endpoint else {
+            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
             return fallback
         }
 
         do {
+            let startedAt = Date()
             var request = URLRequest(url: endpoint)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -11044,7 +12162,7 @@ struct AICoachService: AICoachServicing {
                 request.setGoogleAPIKey(apiKey)
                 let body = GeminiGenerateContentRequest(
                     systemInstruction: .init(parts: [.init(text: system)]),
-                    contents: [.init(parts: [.init(text: prompt)])],
+                    contents: [.init(role: "user", parts: [.init(text: prompt)])],
                     generationConfig: .init(
                         temperature: 0.3,
                         responseMimeType: "application/json"
@@ -11056,6 +12174,14 @@ struct AICoachService: AICoachServicing {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse,
                   (200..<300).contains(httpResponse.statusCode) else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                record(
+                    .fallback,
+                    statusCode.map { "Provider returned HTTP \($0)" } ?? "Non-HTTP response",
+                    provider: provider,
+                    statusCode: statusCode,
+                    startedAt: startedAt
+                )
                 return fallback
             }
 
@@ -11067,6 +12193,7 @@ struct AICoachService: AICoachServicing {
                 let completion = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
                 guard let content = completion.choices.first?.message.content,
                       let contentData = content.data(using: .utf8) else {
+                    record(.fallback, "Missing response content", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
                     return fallback
                 }
                 jsonData = contentData
@@ -11079,17 +12206,22 @@ struct AICoachService: AICoachServicing {
                     .compactMap(\.text)
                     .joined()
                 guard let content, let contentData = content.data(using: .utf8) else {
+                    record(.fallback, "Missing response content", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
                     return fallback
                 }
                 jsonData = contentData
             }
 
             guard let feedback = try? JSONDecoder().decode(AICoachFeedback.self, from: jsonData) else {
+                record(.fallback, "Response JSON did not match Coach Read schema", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
                 return fallback
             }
             // Brand-voice contract: no exclamation, no chirpy filler, bounded
             // length. A policy-violating read falls back rather than rendering.
-            guard Self.passesBrandVoiceContract(feedback) else { return fallback }
+            guard Self.passesBrandVoiceContract(feedback) else {
+                record(.fallback, "Coach Read failed brand-voice gate", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
+                return fallback
+            }
             // Transcript-grounding gate (mirrors PostRepCoachNoteService
             // .engagesTranscript + GrammarFeedbackService's excerpt
             // check): keyImprovement OR revisedOpening must actually engage
@@ -11097,13 +12229,16 @@ struct AICoachService: AICoachServicing {
             // note and we return the deterministic fallback. Empty transcript
             // -> passes (nothing to quote).
             guard Self.engagesTranscript(feedback, transcript: input.transcript) else {
+                record(.fallback, "Coach Read failed transcript-grounding gate", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
                 return fallback
             }
             await MainActor.run {
                 settings.recordAnalysis()
             }
+            record(.success, "Coach Read accepted", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
             return feedback
         } catch {
+            record(.failure, "Transport or decode error", provider: provider)
             return fallback
         }
     }
@@ -11286,16 +12421,7 @@ struct AICoachService: AICoachServicing {
     }
 
     private func apiKey(for provider: AIProvider) -> String? {
-        if let keyName = provider.environmentKey,
-           let value = ProcessInfo.processInfo.environment[keyName],
-           !value.isEmpty {
-            return value
-        }
-        if let keyName = provider.environmentKey,
-           let value = LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig") {
-            return value
-        }
-        return nil
+        AIProviderCredential.apiKey(for: provider)
     }
 
     /// Locale gate — `true` only when the active locale supports an English
@@ -11617,11 +12743,41 @@ struct AIHomeRecommendationService: AIHomeRecommendationServicing {
         profile: CoachingProfile?,
         plan: CoachingPlan?
     ) async throws -> AIHomeRecommendation {
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            statusCode: Int? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "Home recommendation",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+        }
+
         settings.resetIfNeeded()
-        guard let provider = settings.activeProvider else { throw AICoachError.missingAPIKey }
-        guard settings.canRequestAnalysis else { throw AICoachError.providerDisabled }
-        guard let apiKey = apiKey(for: provider) else { throw AICoachError.missingAPIKey }
-        guard let endpoint = provider.endpoint else { throw AICoachError.providerDisabled }
+        let configuredProvider = settings.activeProvider
+        guard let provider = configuredProvider else {
+            record(.skipped, "No active provider")
+            throw AICoachError.missingAPIKey
+        }
+        guard settings.canRequestAnalysis else {
+            record(.skipped, "Analysis allowance unavailable", provider: provider)
+            throw AICoachError.providerDisabled
+        }
+        guard let apiKey = apiKey(for: provider) else {
+            record(.skipped, "Missing API key", provider: provider)
+            throw AICoachError.missingAPIKey
+        }
+        guard let endpoint = provider.endpoint else {
+            record(.skipped, "Missing provider endpoint", provider: provider)
+            throw AICoachError.providerDisabled
+        }
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
@@ -11647,7 +12803,7 @@ struct AIHomeRecommendationService: AIHomeRecommendationServicing {
             request.setGoogleAPIKey(apiKey)
             let body = GeminiGenerateContentRequest(
                 systemInstruction: .init(parts: [.init(text: systemPrompt)]),
-                contents: [.init(parts: [.init(text: prompt)])],
+                contents: [.init(role: "user", parts: [.init(text: prompt)])],
                 generationConfig: .init(
                     temperature: 0.2,
                     responseMimeType: "application/json"
@@ -11656,47 +12812,79 @@ struct AIHomeRecommendationService: AIHomeRecommendationServicing {
             request.httpBody = try JSONEncoder().encode(body)
         }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let startedAt = Date()
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            record(.failure, "Transport error", provider: provider, startedAt: startedAt)
+            throw error
+        }
         guard let httpResponse = response as? HTTPURLResponse else {
+            record(.failure, "Non-HTTP response", provider: provider, startedAt: startedAt)
             throw AICoachError.invalidResponse
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
+            record(.failure, "Provider returned HTTP \(httpResponse.statusCode)", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
             throw apiError(from: data, provider: provider)
         }
 
         let jsonData: Data
-        switch provider {
-        case .none:
-            throw AICoachError.providerDisabled
-        case .openAI, .deepSeek:
-            let completion = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
-            guard let content = completion.choices.first?.message.content,
-                  let contentData = content.data(using: .utf8) else {
-                throw AICoachError.invalidResponse
+        var extractionFailureRecorded = false
+        do {
+            switch provider {
+            case .none:
+                extractionFailureRecorded = true
+                record(.skipped, "Provider set to off", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
+                throw AICoachError.providerDisabled
+            case .openAI, .deepSeek:
+                let completion = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
+                guard let content = completion.choices.first?.message.content,
+                      let contentData = content.data(using: .utf8) else {
+                    extractionFailureRecorded = true
+                    record(.failure, "Missing response content", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
+                    throw AICoachError.invalidResponse
+                }
+                jsonData = contentData
+            case .gemini:
+                let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+                let content = completion.candidates
+                    .first?
+                    .content
+                    .parts
+                    .compactMap(\.text)
+                    .joined()
+                guard let content, let contentData = content.data(using: .utf8) else {
+                    extractionFailureRecorded = true
+                    record(.failure, "Missing response content", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
+                    throw AICoachError.invalidResponse
+                }
+                jsonData = contentData
             }
-            jsonData = contentData
-        case .gemini:
-            let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
-            let content = completion.candidates
-                .first?
-                .content
-                .parts
-                .compactMap(\.text)
-                .joined()
-            guard let content, let contentData = content.data(using: .utf8) else {
-                throw AICoachError.invalidResponse
+        } catch {
+            if !extractionFailureRecorded {
+                record(.failure, "Provider response decode failed", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
             }
-            jsonData = contentData
+            throw error
         }
 
-        let recommendation = try JSONDecoder().decode(AIHomeRecommendation.self, from: jsonData)
+        let recommendation: AIHomeRecommendation
+        do {
+            recommendation = try JSONDecoder().decode(AIHomeRecommendation.self, from: jsonData)
+        } catch {
+            record(.failure, "Response JSON did not match recommendation schema", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
+            throw error
+        }
         guard let normalizedRecommendation = AIHomeRecommendationContract.normalized(
             recommendation,
             input: input
         ) else {
+            record(.fallback, "Recommendation failed normalization", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
             throw AICoachError.invalidResponse
         }
         settings.recordAnalysis()
+        record(.success, "Home recommendation accepted", provider: provider, statusCode: httpResponse.statusCode, startedAt: startedAt)
         return normalizedRecommendation
     }
 
@@ -11759,16 +12947,7 @@ struct AIHomeRecommendationService: AIHomeRecommendationServicing {
     }
 
     private func apiKey(for provider: AIProvider) -> String? {
-        if let keyName = provider.environmentKey,
-           let value = ProcessInfo.processInfo.environment[keyName],
-           !value.isEmpty {
-            return value
-        }
-        if let keyName = provider.environmentKey,
-           let value = LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig") {
-            return value
-        }
-        return nil
+        AIProviderCredential.apiKey(for: provider)
     }
 
     private func apiError(from data: Data, provider: AIProvider) -> AICoachError {
@@ -11810,6 +12989,71 @@ private struct OpenAICompatibleChatRequest: Codable {
     }
 }
 
+private struct AIProviderHealthChatRequest: Codable {
+    struct Message: Codable {
+        let role: String
+        let content: String
+    }
+
+    let model: String
+    let messages: [Message]
+    let temperature: Double
+    let maxTokens: Int
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case messages
+        case temperature
+        case maxTokens = "max_tokens"
+    }
+}
+
+private struct AIProviderHealthGeminiRequest: Codable {
+    struct Content: Codable {
+        let role: String?
+        let parts: [Part]
+
+        init(role: String? = nil, parts: [Part]) {
+            self.role = role
+            self.parts = parts
+        }
+    }
+
+    struct Part: Codable {
+        let text: String
+    }
+
+    struct GenerationConfig: Codable {
+        struct ThinkingConfig: Codable {
+            let thinkingBudget: Int
+        }
+
+        let temperature: Double
+        let maxOutputTokens: Int
+        let thinkingConfig: ThinkingConfig?
+
+        init(
+            temperature: Double,
+            maxOutputTokens: Int,
+            thinkingConfig: ThinkingConfig? = .init(thinkingBudget: 0)
+        ) {
+            self.temperature = temperature
+            self.maxOutputTokens = maxOutputTokens
+            self.thinkingConfig = thinkingConfig
+        }
+    }
+
+    let systemInstruction: Content
+    let contents: [Content]
+    let generationConfig: GenerationConfig
+
+    enum CodingKeys: String, CodingKey {
+        case systemInstruction = "system_instruction"
+        case contents
+        case generationConfig
+    }
+}
+
 private extension String {
     func truncatedToWordLimit(_ limit: Int) -> String {
         let words = split(whereSeparator: \.isWhitespace)
@@ -11834,6 +13078,8 @@ private struct OpenAICompatibleChatResponse: Codable {
 private struct OpenAICompatibleErrorResponse: Codable {
     struct ErrorBody: Codable {
         let message: String
+        let type: String?
+        let code: String?
     }
 
     let error: ErrorBody
@@ -11841,7 +13087,13 @@ private struct OpenAICompatibleErrorResponse: Codable {
 
 private struct GeminiGenerateContentRequest: Codable {
     struct Content: Codable {
+        let role: String?
         let parts: [Part]
+
+        init(role: String? = nil, parts: [Part]) {
+            self.role = role
+            self.parts = parts
+        }
     }
 
     struct Part: Codable {
@@ -11849,8 +13101,23 @@ private struct GeminiGenerateContentRequest: Codable {
     }
 
     struct GenerationConfig: Codable {
+        struct ThinkingConfig: Codable {
+            let thinkingBudget: Int
+        }
+
         let temperature: Double
         let responseMimeType: String
+        let thinkingConfig: ThinkingConfig?
+
+        init(
+            temperature: Double,
+            responseMimeType: String,
+            thinkingConfig: ThinkingConfig? = .init(thinkingBudget: 0)
+        ) {
+            self.temperature = temperature
+            self.responseMimeType = responseMimeType
+            self.thinkingConfig = thinkingConfig
+        }
     }
 
     let systemInstruction: Content
@@ -11883,6 +13150,7 @@ private struct GeminiGenerateContentResponse: Codable {
 private struct GeminiErrorResponse: Codable {
     struct ErrorBody: Codable {
         let message: String
+        let status: String?
     }
 
     let error: ErrorBody
@@ -11903,26 +13171,47 @@ final class VideoAnalysisService {
     private init() {}
 
     func analyzeRecording(at url: URL) async throws -> VideoAnalysisResult {
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "Video analysis",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                startedAt: startedAt
+            )
+        }
+
         settings.resetIfNeeded()
         guard VideoAnalysisContract.localeSupportsAI(LocaleSettingsManager.shared.current) else {
+            record(.skipped, "Locale not AI-supported")
             throw VideoAnalysisError.localeUnsupported
         }
         guard let provider = settings.activeProvider else {
+            record(.skipped, "No active provider")
             throw AICoachError.missingAPIKey
         }
         guard VideoAnalysisContract.providerSupportsVision(provider) else {
+            record(.skipped, "Provider is not vision-capable", provider: provider)
             throw VideoAnalysisError.providerNotVisionCapable
         }
         guard settings.canRequestAnalysis else {
+            record(.skipped, "Analysis allowance unavailable", provider: provider)
             throw AICoachError.providerDisabled
         }
         guard let apiKey = apiKey(for: provider) else {
+            record(.skipped, "Missing API key", provider: provider)
             throw AICoachError.missingAPIKey
         }
 
         // Extract frames from video
         let frames = try await extractFrames(from: url)
         guard !frames.isEmpty else {
+            record(.skipped, "No usable frames", provider: provider)
             throw VideoAnalysisError.noUsableFrames
         }
 
@@ -11932,27 +13221,49 @@ final class VideoAnalysisService {
             return data.base64EncodedString()
         }
         guard !base64Frames.isEmpty else {
+            record(.skipped, "Frames could not be encoded", provider: provider)
             throw VideoAnalysisError.noUsableFrames
         }
 
         // Build API request based on provider
         let jsonData: Data
+        let startedAt = Date()
         switch provider {
         case .none:
+            record(.skipped, "Provider set to off", provider: provider)
             throw AICoachError.providerDisabled
         case .openAI:
-            jsonData = try await callOpenAIVision(apiKey: apiKey, frames: base64Frames)
+            do {
+                jsonData = try await callOpenAIVision(apiKey: apiKey, frames: base64Frames)
+            } catch {
+                record(.failure, "Transport or provider error", provider: provider, startedAt: startedAt)
+                throw error
+            }
         case .deepSeek:
+            record(.skipped, "Provider is not vision-capable", provider: provider)
             throw VideoAnalysisError.providerNotVisionCapable
         case .gemini:
-            jsonData = try await callGeminiVision(apiKey: apiKey, frames: base64Frames)
+            do {
+                jsonData = try await callGeminiVision(apiKey: apiKey, frames: base64Frames)
+            } catch {
+                record(.failure, "Transport or provider error", provider: provider, startedAt: startedAt)
+                throw error
+            }
         }
 
-        let result = try JSONDecoder().decode(VideoAnalysisResult.self, from: jsonData)
+        let result: VideoAnalysisResult
+        do {
+            result = try JSONDecoder().decode(VideoAnalysisResult.self, from: jsonData)
+        } catch {
+            record(.failure, "Response JSON did not match video schema", provider: provider, startedAt: startedAt)
+            throw error
+        }
         guard let normalized = VideoAnalysisContract.normalized(result) else {
+            record(.fallback, "Video analysis failed normalization", provider: provider, startedAt: startedAt)
             throw VideoAnalysisError.invalidProviderRead
         }
         await MainActor.run { settings.recordAnalysis() }
+        record(.success, "Video analysis accepted", provider: provider, startedAt: startedAt)
         return normalized
     }
 
@@ -12054,9 +13365,10 @@ final class VideoAnalysisService {
 
         let body: [String: Any] = [
             "system_instruction": ["parts": [["text": videoAnalysisSystemPrompt]]],
-            "contents": [["parts": parts]],
+            "contents": [["role": "user", "parts": parts]],
             "generationConfig": [
                 "temperature": 0.3,
+                "thinkingConfig": ["thinkingBudget": 0],
                 "responseMimeType": "application/json"
             ]
         ]
@@ -12109,16 +13421,7 @@ final class VideoAnalysisService {
     // MARK: - Helpers
 
     private func apiKey(for provider: AIProvider) -> String? {
-        if let keyName = provider.environmentKey,
-           let value = ProcessInfo.processInfo.environment[keyName],
-           !value.isEmpty {
-            return value
-        }
-        if let keyName = provider.environmentKey,
-           let value = LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig") {
-            return value
-        }
-        return nil
+        AIProviderCredential.apiKey(for: provider)
     }
 }
 #endif

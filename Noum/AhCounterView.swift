@@ -280,21 +280,11 @@ struct AhCounterView: View {
                         ErrorCard(message: error)
                     }
 
-                    // MARK: Transcript
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        Text("Transcript")
-                            .font(.headline)
-                        ScrollView {
-                            Text(speechVM.highlightedText)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(Spacing.md)
-                                .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                        }
-                        .frame(minHeight: 260)
+                    if shouldShowTranscriptCard {
+                        transcriptCard
+                    } else {
+                        preRepListeningCard
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(Spacing.lg)
-                    .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
                     } // end setup dashboard
                 }
                 .padding(.horizontal, Spacing.screenH)
@@ -429,6 +419,52 @@ struct AhCounterView: View {
             checkTimeMilestones(elapsed: newElapsed)
         }
         // Summary navigation is handled by path-based .navigationDestination(for:) in ContentView
+    }
+
+    private var shouldShowTranscriptCard: Bool {
+        speechVM.isRecording
+            || elapsedSeconds > 0
+            || !speechVM.highlightedText.characters.isEmpty
+    }
+
+    private var preRepListeningCard: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: "ear.and.waveform")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(AppColor.modeAhCounter)
+                .frame(width: 34, height: 34)
+                .background(AppColor.modeAhCounter.opacity(0.11), in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Noum listens live")
+                    .font(Typography.cardLabel)
+                Text("Start when ready. Fillers, clean time, and your transcript appear as you speak.")
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .accessibilityIdentifier("ahCounter.prepCard")
+    }
+
+    private var transcriptCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("Transcript")
+                .font(.headline)
+            ScrollView {
+                Text(speechVM.highlightedText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(Spacing.md)
+                    .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            }
+            .frame(minHeight: 220)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     // MARK: - Focused Rep Surface (recording)

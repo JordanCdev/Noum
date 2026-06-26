@@ -104,9 +104,26 @@ actor ProofMomentService {
         if let cached = cache[input.session.id] {
             return cached
         }
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            statusCode: Int? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "Proof moment",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+        }
 
         guard !input.session.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               input.session.duration > 8 else {
+            record(.skipped, "Session below proof signal floor")
             return nil
         }
 
@@ -117,6 +134,7 @@ actor ProofMomentService {
         // M13: AI surfaces are English-only. Non-English locales get
         // the deterministic proof, no model call.
         guard await activeLocaleSupportsAI() else {
+            record(.skipped, fallback == nil ? "Locale not AI-supported; no deterministic proof" : "Locale not AI-supported")
             if let fallback = fallback {
                 cache[input.session.id] = fallback
                 await persistToArchive(fallback, sessionID: input.session.id)
@@ -124,10 +142,12 @@ actor ProofMomentService {
             return fallback
         }
 
-        guard let provider = await currentProvider(),
+        let configuredProvider = await currentProvider()
+        guard let provider = configuredProvider,
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider)
         else {
+            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
             if let fallback = fallback {
                 cache[input.session.id] = fallback
                 await persistToArchive(fallback, sessionID: input.session.id)
@@ -151,6 +171,7 @@ actor ProofMomentService {
             case .gemini:
                 request.setGoogleAPIKey(key)
             case .none:
+                record(.skipped, "Provider set to off", provider: provider)
                 if let fallback = fallback {
                     cache[input.session.id] = fallback
                     await persistToArchive(fallback, sessionID: input.session.id)
@@ -159,20 +180,37 @@ actor ProofMomentService {
             }
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
+            let startedAt = Date()
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-                  let parsed = Self.parse(data: data, provider: provider, input: input)
-            else {
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                record(
+                    .fallback,
+                    statusCode.map { "Provider returned HTTP \($0)" } ?? "Non-HTTP response",
+                    provider: provider,
+                    statusCode: statusCode,
+                    startedAt: startedAt
+                )
                 if let fallback = fallback {
                     cache[input.session.id] = fallback
                     await persistToArchive(fallback, sessionID: input.session.id)
                 }
                 return fallback
             }
+            guard let parsed = Self.parse(data: data, provider: provider, input: input) else {
+                record(.fallback, fallback == nil ? "Proof response failed grounding; no fallback proof" : "Proof response failed grounding", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+                if let fallback = fallback {
+                    cache[input.session.id] = fallback
+                    await persistToArchive(fallback, sessionID: input.session.id)
+                }
+                return fallback
+            }
+            record(.success, "Proof moment accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
             cache[input.session.id] = parsed
             await persistToArchive(parsed, sessionID: input.session.id)
             return parsed
         } catch {
+            record(.failure, "Transport or decode error", provider: provider)
             if let fallback = fallback {
                 cache[input.session.id] = fallback
                 await persistToArchive(fallback, sessionID: input.session.id)
@@ -211,11 +249,7 @@ actor ProofMomentService {
     }
 
     private func apiKey(for provider: AIProvider) -> String? {
-        guard let keyName = provider.environmentKey else { return nil }
-        if let value = ProcessInfo.processInfo.environment[keyName], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        AIProviderCredential.apiKey(for: provider)
     }
 
     // MARK: - Prompt construction
@@ -292,9 +326,10 @@ actor ProofMomentService {
         case .gemini:
             return [
                 "systemInstruction": ["parts": [["text": system]]],
-                "contents": [["parts": [["text": prompt]]]],
+                "contents": [["role": "user", "parts": [["text": prompt]]]],
                 "generationConfig": [
                     "temperature": 0.4,
+                    "thinkingConfig": ["thinkingBudget": 0],
                     "responseMimeType": "application/json"
                 ]
             ]

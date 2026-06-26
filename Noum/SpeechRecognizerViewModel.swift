@@ -10,6 +10,40 @@ import AudioToolbox
 #endif
 
 #if canImport(AVFoundation)
+enum PracticeMicrophonePermissionState: Equatable {
+    case unknown
+    case undetermined
+    case denied
+    case granted
+
+    var blocksRecording: Bool {
+        switch self {
+        case .denied, .unknown: return true
+        case .undetermined, .granted: return false
+        }
+    }
+
+    var userFacingRecoveryMessage: String? {
+        switch self {
+        case .denied:
+            return "Microphone access is blocked. Open iOS Settings and allow Noum to use the microphone, then start the rep again."
+        case .unknown:
+            return "Microphone access is unavailable on this device. Check the audio route and try again."
+        case .undetermined, .granted:
+            return nil
+        }
+    }
+
+    static func current() -> PracticeMicrophonePermissionState {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted: return .granted
+        case .denied: return .denied
+        case .undetermined: return .undetermined
+        @unknown default: return .unknown
+        }
+    }
+}
+
 @MainActor
 class SpeechRecognizerViewModel: ObservableObject {
     @Published var transcribedText: String = ""
@@ -28,6 +62,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var pastSessions: [PracticeSession] = []
     @Published var connectionError: String?
     @Published var activeProviderName: String = ""
+    @Published var microphonePermissionState: PracticeMicrophonePermissionState = .current()
 
     /// The session prompt (topic). Used by ALL modes for prompt-echo exclusion
     /// in semantic filler detection. Set this before recording starts.
@@ -195,7 +230,16 @@ class SpeechRecognizerViewModel: ObservableObject {
         guard !hasPreparedInteractiveUse else { return }
         hasPreparedInteractiveUse = true
         loadSessions()
-        requestRecordAuthorization()
+        refreshRecordPermission()
+    }
+
+    func refreshRecordPermission() {
+        microphonePermissionState = .current()
+    }
+
+    @discardableResult
+    func requestMicrophoneAccessForPractice() async -> Bool {
+        await ensureRecordPermission()
     }
 
     func annotateLatestSession(
@@ -231,12 +275,18 @@ class SpeechRecognizerViewModel: ObservableObject {
     func startRecording() {
         guard !isRecording else { return }
         prepareForInteractiveUse()
+        refreshRecordPermission()
+        if microphonePermissionState.blocksRecording {
+            connectionError = microphonePermissionState.userFacingRecoveryMessage
+            return
+        }
 
         // Re-resolve provider in case user changed settings
         provider = Self.resolveProvider()
         activeProviderName = provider.name
 
         Task {
+            guard await ensureRecordPermission() else { return }
             print("Starting transcription with \(provider.name)")
             await startRecordingWithProvider()
         }
@@ -371,12 +421,28 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     // MARK: - Audio Engine (provider-agnostic)
 
-    private func requestRecordAuthorization() {
-        AVAudioApplication.requestRecordPermission { granted in
-            DispatchQueue.main.async {
-                if granted { print("Microphone access granted.") }
-                else { print("Microphone access denied.") }
+    private func ensureRecordPermission() async -> Bool {
+        refreshRecordPermission()
+        switch microphonePermissionState {
+        case .granted:
+            connectionError = nil
+            return true
+        case .denied, .unknown:
+            connectionError = microphonePermissionState.userFacingRecoveryMessage
+            return false
+        case .undetermined:
+            let granted = await withCheckedContinuation { continuation in
+                AVAudioApplication.requestRecordPermission { granted in
+                    continuation.resume(returning: granted)
+                }
             }
+            refreshRecordPermission()
+            if granted {
+                connectionError = nil
+                return true
+            }
+            connectionError = PracticeMicrophonePermissionState.denied.userFacingRecoveryMessage
+            return false
         }
     }
 
@@ -697,6 +763,13 @@ struct PracticeSession: Identifiable, Codable {
     /// Feeds the coach context block so the AI can comment on HOW the
     /// user sounded, not only what they said.
     var vocalEnergyMetrics: VocalEnergyMetrics? = nil
+    /// True only for version-controlled evaluation-corpus sessions. These
+    /// sessions are test substrate and must never enter live user history,
+    /// baselines, ratings, league surfaces, or backend sync.
+    var isEvaluationFixture: Bool = false
+    /// Stable, human-readable fixture key for evaluation snapshots. Nil for
+    /// every real user session.
+    var fixtureID: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -725,6 +798,8 @@ struct PracticeSession: Identifiable, Codable {
         case intentFocus
         case intentLabel
         case vocalEnergyMetrics
+        case isEvaluationFixture
+        case fixtureID
     }
 
     init(
@@ -753,7 +828,9 @@ struct PracticeSession: Identifiable, Codable {
         grammarFindings: [GrammarFinding]? = nil,
         intentFocus: CoachingPriority? = nil,
         intentLabel: String? = nil,
-        vocalEnergyMetrics: VocalEnergyMetrics? = nil
+        vocalEnergyMetrics: VocalEnergyMetrics? = nil,
+        isEvaluationFixture: Bool = false,
+        fixtureID: String? = nil
     ) {
         self.id = id
         self.transcript = transcript
@@ -781,6 +858,8 @@ struct PracticeSession: Identifiable, Codable {
         self.intentFocus = intentFocus
         self.intentLabel = intentLabel
         self.vocalEnergyMetrics = vocalEnergyMetrics
+        self.isEvaluationFixture = isEvaluationFixture
+        self.fixtureID = fixtureID
     }
 
     init(from decoder: Decoder) throws {
@@ -811,5 +890,7 @@ struct PracticeSession: Identifiable, Codable {
         intentFocus = try container.decodeIfPresent(CoachingPriority.self, forKey: .intentFocus)
         intentLabel = try container.decodeIfPresent(String.self, forKey: .intentLabel)
         vocalEnergyMetrics = try container.decodeIfPresent(VocalEnergyMetrics.self, forKey: .vocalEnergyMetrics)
+        isEvaluationFixture = try container.decodeIfPresent(Bool.self, forKey: .isEvaluationFixture) ?? false
+        fixtureID = try container.decodeIfPresent(String.self, forKey: .fixtureID)
     }
 }

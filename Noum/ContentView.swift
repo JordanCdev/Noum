@@ -284,6 +284,11 @@ struct HomeBottomShortcut: Identifiable, Equatable {
     ]
 }
 
+enum HomeShortcutDockLayout {
+    static let scrollBottomPadding: CGFloat = 152
+    static let backdropTopPadding: CGFloat = 18
+}
+
 struct HomeAccessibilityModalGate: Equatable {
     var onboardingPresented = false
     var leaguePromotionPresented = false
@@ -576,7 +581,7 @@ struct ContentView: View {
                     // in `safeAreaInset(edge: .bottom)` further below; if
                     // we trim this any tighter the populated home's
                     // bottom card gets clipped on first paint.
-                    .padding(.bottom, 96)
+                    .padding(.bottom, HomeShortcutDockLayout.scrollBottomPadding)
                 }
             }
             .coordinateSpace(name: "homeScroll")
@@ -1225,21 +1230,36 @@ struct ContentView: View {
     // indicator. The dock only exists on the home root; pushed screens
     // cover it, which is honest for push navigation.
     private var bottomShortcutDock: some View {
-        HStack(spacing: Spacing.xs) {
-            ForEach(HomeBottomShortcut.all) { shortcut in
-                Button {
-                    navigationPath.append(shortcut.destination)
-                } label: {
-                    shortcutItem(shortcut)
+        VStack(spacing: 0) {
+            HStack(spacing: Spacing.xs) {
+                ForEach(HomeBottomShortcut.all) { shortcut in
+                    Button {
+                        navigationPath.append(shortcut.destination)
+                    } label: {
+                        shortcutItem(shortcut)
+                    }
+                    .buttonStyle(ShortcutDockButtonStyle(reduceMotion: reduceMotion))
+                    .accessibilityIdentifier(shortcut.accessibilityIdentifier)
+                    .accessibilityLabel(shortcut.accessibilityLabel)
                 }
-                .buttonStyle(ShortcutDockButtonStyle(reduceMotion: reduceMotion))
-                .accessibilityIdentifier(shortcut.accessibilityIdentifier)
-                .accessibilityLabel(shortcut.accessibilityLabel)
             }
+            .padding(.horizontal, Spacing.md)
+            .padding(.top, Spacing.xs)
+            .padding(.bottom, Spacing.sm)
         }
-        .padding(.horizontal, Spacing.md)
-        .padding(.top, Spacing.xs)
-        .padding(.bottom, Spacing.sm)
+        .padding(.top, HomeShortcutDockLayout.backdropTopPadding)
+        .frame(maxWidth: .infinity)
+        .background(alignment: .bottom) {
+            LinearGradient(
+                colors: [
+                    AppColor.lightGradientEnd.opacity(0),
+                    AppColor.lightGradientEnd.opacity(0.96)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .bottom)
+        }
         .accessibilityElement(children: .contain)
     }
 

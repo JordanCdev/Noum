@@ -6,9 +6,51 @@ import SwiftUI
 // The Profile coaching-cluster entry to the weekly check-in: a human coach
 // asks questions, and these ANSWERS become durable context. The card shows
 // only when the cadence is DUE (no-nag — once a week, never twice; hidden
-// otherwise). Tapping opens a calm sheet with three short, OPTIONAL questions;
+// otherwise). Tapping opens a calm sheet with short, OPTIONAL questions;
 // saving records a CoachCheckIn that feeds the coach context. An all-empty
 // submission is a no-op (the store refuses a hollow "checked in").
+
+struct WeeklyCheckInPrompt: Equatable, Identifiable {
+    let id: String
+    let title: String
+    let helper: String
+    let placeholder: String
+}
+
+enum WeeklyCheckInCopy {
+    static let cardTitle = "Your weekly read"
+    static let cardBody = "One minute for the part metrics cannot hear."
+    static let sheetTitle = "What should Noum know?"
+    static let sheetBody = "Answer one thing or all of it. These stay as your words, so the coach can ask better questions without guessing."
+    static let noteTitle = "No score. No diagnosis."
+    static let noteBody = "This is self-report: what felt hard, where it showed up, and whether the current drill still fits."
+
+    static let hardest = WeeklyCheckInPrompt(
+        id: "hardest",
+        title: "What felt hard?",
+        helper: "A moment, pattern, or feeling you kept noticing.",
+        placeholder: "I tightened up when..."
+    )
+
+    static let outsideApp = WeeklyCheckInPrompt(
+        id: "outsideApp",
+        title: "Where did it show up?",
+        helper: "A real conversation, meeting, call, pitch, or conflict.",
+        placeholder: "In my..."
+    )
+
+    static let avoidedSaying = WeeklyCheckInPrompt(
+        id: "avoidedSaying",
+        title: "What did you avoid saying?",
+        helper: "Only if something stayed unsaid.",
+        placeholder: "I avoided saying..."
+    )
+
+    static let confidenceQuestion = "How steady did you feel?"
+    static let confidenceHelper = "Your read matters more than the score here."
+    static let drillQuestion = "Did the drill still fit?"
+    static let drillHelper = "This helps Noum keep, vary, or replace the intervention."
+}
 
 struct WeeklyCheckInCard: View {
     @ObservedObject var store: CoachCheckInStore
@@ -41,10 +83,10 @@ struct WeeklyCheckInCard: View {
                 .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Weekly check-in")
+                Text(WeeklyCheckInCopy.cardTitle)
                     .font(Typography.cardLabel)
                     .foregroundStyle(.primary)
-                Text("A few quick questions for your coach — what was hardest, where it showed up, and whether the drill is working.")
+                Text(WeeklyCheckInCopy.cardBody)
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -75,6 +117,8 @@ struct WeeklyCheckInSheet: View {
     @State private var hardest: String = ""
     @State private var outsideApp: String = ""
     @State private var drillVerdict: CoachDrillVerdict? = nil
+    @State private var confidenceShift: CoachConfidenceShift? = nil
+    @State private var avoidedSaying: String = ""
 
     var body: some View {
         NavigationStack {
@@ -84,17 +128,19 @@ struct WeeklyCheckInSheet: View {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: Spacing.lg) {
                         header
+                        coachNote
                         question(
-                            "What felt hardest this week?",
-                            placeholder: "A moment, a pattern, a feeling…",
+                            WeeklyCheckInCopy.hardest,
                             text: $hardest,
-                            id: "hardest"
                         )
                         question(
-                            "Where did this show up outside the app?",
-                            placeholder: "A meeting, a call, a conversation…",
+                            WeeklyCheckInCopy.outsideApp,
                             text: $outsideApp,
-                            id: "outsideApp"
+                        )
+                        confidenceSection
+                        question(
+                            WeeklyCheckInCopy.avoidedSaying,
+                            text: $avoidedSaying,
                         )
                         drillVerdictSection
                         Spacer(minLength: Spacing.lg)
@@ -117,7 +163,9 @@ struct WeeklyCheckInSheet: View {
                         store.record(
                             hardest: hardest.nilIfBlank,
                             outsideApp: outsideApp.nilIfBlank,
-                            drillVerdict: drillVerdict
+                            drillVerdict: drillVerdict,
+                            confidenceShift: confidenceShift,
+                            avoidedSaying: avoidedSaying.nilIfBlank
                         )
                         dismiss()
                     }
@@ -127,6 +175,7 @@ struct WeeklyCheckInSheet: View {
                     .accessibilityIdentifier("weeklyCheckIn.save")
                 }
             }
+            .accessibilityIdentifier("weeklyCheckIn.sheet")
         }
     }
 
@@ -134,10 +183,10 @@ struct WeeklyCheckInSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text("Weekly check-in")
+            Text(WeeklyCheckInCopy.sheetTitle)
                 .font(Typography.sectionHero)
                 .foregroundStyle(.primary)
-            Text("Answer what's useful — every field is optional. Your coach uses these to ask sharper questions and adapt the plan.")
+            Text(WeeklyCheckInCopy.sheetBody)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -145,22 +194,90 @@ struct WeeklyCheckInSheet: View {
         .padding(.top, Spacing.sm)
     }
 
-    private func question(_ prompt: String, placeholder: String, text: Binding<String>, id: String) -> some View {
+    private var coachNote: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: "quote.bubble.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(AppColor.pro)
+                .frame(width: 24, height: 24)
+                .background(AppColor.pro.opacity(0.10), in: Circle())
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(WeeklyCheckInCopy.noteTitle)
+                    .font(Typography.caption)
+                    .foregroundStyle(.primary)
+                Text(WeeklyCheckInCopy.noteBody)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.pro.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func question(_ prompt: WeeklyCheckInPrompt, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            sectionLabel(prompt)
-            TextField(placeholder, text: text, axis: .vertical)
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(prompt.title)
+                    .font(Typography.cardLabel)
+                    .foregroundStyle(.primary)
+                Text(prompt.helper)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            TextField(prompt.placeholder, text: text, axis: .vertical)
                 .font(.subheadline)
                 .padding(Spacing.md)
                 .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                 .lineLimit(2...4)
-                .accessibilityIdentifier("weeklyCheckIn.field.\(id)")
+                .accessibilityIdentifier("weeklyCheckIn.field.\(prompt.id)")
         }
+    }
+
+    private var confidenceSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            sectionLabel(WeeklyCheckInCopy.confidenceQuestion, helper: WeeklyCheckInCopy.confidenceHelper)
+            FlowLayout(spacing: Spacing.sm, runSpacing: Spacing.sm) {
+                ForEach(CoachConfidenceShift.allCases) { shift in
+                    confidenceChip(shift)
+                }
+            }
+        }
+    }
+
+    private func confidenceChip(_ shift: CoachConfidenceShift) -> some View {
+        let isSelected = confidenceShift == shift
+        return Button {
+            confidenceShift = isSelected ? nil : shift
+            CoachHaptic.selectionTap()
+        } label: {
+            Text(shift.chipLabel)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(isSelected ? AppColor.pro : .secondary)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .fixedSize(horizontal: true, vertical: false)
+                .background(
+                    isSelected ? AppColor.pro.opacity(0.08) : AppColor.cardBackground,
+                    in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
+                        .strokeBorder(isSelected ? AppColor.pro.opacity(0.3) : Color.clear, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("weeklyCheckIn.confidence.\(shift.rawValue)")
     }
 
     private var drillVerdictSection: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            sectionLabel("Is the current drill working?")
-            HStack(spacing: Spacing.sm) {
+            sectionLabel(WeeklyCheckInCopy.drillQuestion, helper: WeeklyCheckInCopy.drillHelper)
+            FlowLayout(spacing: Spacing.sm, runSpacing: Spacing.sm) {
                 ForEach(CoachDrillVerdict.allCases) { verdict in
                     verdictChip(verdict)
                 }
@@ -180,7 +297,7 @@ struct WeeklyCheckInSheet: View {
                 .foregroundStyle(isSelected ? AppColor.brandBlue : .secondary)
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, Spacing.sm)
-                .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: true, vertical: false)
                 .background(
                     isSelected ? AppColor.brandBlue.opacity(0.08) : AppColor.cardBackground,
                     in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
@@ -194,15 +311,24 @@ struct WeeklyCheckInSheet: View {
         .accessibilityIdentifier("weeklyCheckIn.verdict.\(verdict.rawValue)")
     }
 
-    private func sectionLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+    private func sectionLabel(_ text: String, helper: String) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text(text)
+                .font(Typography.cardLabel)
+                .foregroundStyle(.primary)
+            Text(helper)
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var canSave: Bool {
-        hardest.nilIfBlank != nil || outsideApp.nilIfBlank != nil || drillVerdict != nil
+        hardest.nilIfBlank != nil
+            || outsideApp.nilIfBlank != nil
+            || drillVerdict != nil
+            || confidenceShift != nil
+            || avoidedSaying.nilIfBlank != nil
     }
 }
 

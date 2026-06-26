@@ -63,6 +63,21 @@ class AuthManager: ObservableObject {
     var currentAuthProviderTitle: String? { authProvider?.title }
     var currentAuthProviderRawValue: String? { KeychainHelper.load(key: accountProviderKey) }
 
+    nonisolated static func userFacingDisplayName(
+        from rawName: String?,
+        fallback: String = "Your profile"
+    ) -> String {
+        let trimmed = rawName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return fallback }
+
+        switch trimmed.lowercased() {
+        case "guest speaker", "speaker":
+            return fallback
+        default:
+            return trimmed
+        }
+    }
+
     /// `true` when the signed-in account matches a developer ID listed in `AIConfig.plist`.
     var isDeveloper: Bool {
         guard let accountID = currentAccountID else { return false }
@@ -184,7 +199,7 @@ class AuthManager: ObservableObject {
 #if canImport(FirebaseAuth)
         Task {
             guard isFirebaseAuthConfigured else {
-                completeSignIn(accountID: UUID().uuidString, name: "Guest Speaker", provider: .guest)
+                completeSignIn(accountID: UUID().uuidString, name: nil, provider: .guest)
                 return
             }
             do {
@@ -192,7 +207,7 @@ class AuthManager: ObservableObject {
                 await MainActor.run {
                     self.completeSignIn(
                         accountID: authResult.user.uid,
-                        name: "Guest Speaker",
+                        name: nil,
                         provider: .guest
                     )
                 }
@@ -203,7 +218,7 @@ class AuthManager: ObservableObject {
             }
         }
 #else
-        completeSignIn(accountID: UUID().uuidString, name: "Guest Speaker", provider: .guest)
+        completeSignIn(accountID: UUID().uuidString, name: nil, provider: .guest)
 #endif
     }
 

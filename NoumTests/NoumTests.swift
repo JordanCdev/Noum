@@ -2903,13 +2903,63 @@ struct RecommendationBiasCopyContractTests {
 
         #expect(blueprint.whyNow.contains("You've been away from the rhythm"))
         #expect(blueprint.whyNow.contains("you chose"))
+        #expect(blueprint.whyNow.contains("work conversations"))
+        #expect(blueprint.whyNow.contains("tightening your structure"))
         #expect(!blueprint.whyNow.contains("The user"))
+    }
+
+    @Test func goalBiasedWhyNowUsesOnboardingAnswersAtPicker() {
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: profile(
+                .thinkFaster,
+                .freezing,
+                .interviews,
+                whyNow: "Investor Q&A is coming up.",
+                successVision: "I can answer cleanly when the question gets sharp.",
+                voice: .executive
+            ),
+            input: input(),
+            plan: nil
+        )
+
+        #expect(blueprint.recommendedMode == .suddenDeath)
+        #expect(blueprint.whyNow.contains("Investor Q&A is coming up."))
+        #expect(blueprint.whyNow.contains("interviews"))
+        #expect(blueprint.whyNow.contains("thinking faster on the spot"))
+        #expect(blueprint.whyNow.contains("executive register"))
+        #expect(!blueprint.whyNow.contains("signed up"))
+        #expect(!blueprint.whyNow.contains("The user"))
+    }
+
+    @Test func goalBiasedWhyNowBoundsLongMotivationText() {
+        let longWhy = "Investor Q&A is coming up with three partners and I keep feeling my throat tighten when the follow-up question turns sharp"
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: profile(
+                .calmerDelivery,
+                .rushing,
+                .work,
+                whyNow: longWhy,
+                voice: .warm
+            ),
+            input: input(),
+            plan: nil
+        )
+
+        #expect(blueprint.recommendedMode == .imConversation)
+        #expect(blueprint.whyNow.contains("Investor Q&A is coming up with three partners and I keep feeling"))
+        #expect(!blueprint.whyNow.contains("follow-up question turns sharp"))
+        #expect(blueprint.whyNow.contains("work conversations"))
+        #expect(blueprint.whyNow.contains("slowing down under pressure"))
+        #expect(blueprint.whyNow.contains("warm register"))
     }
 
     private func profile(
         _ priority: CoachingPriority,
         _ challenge: SpeakingChallenge,
-        _ context: SpeakingContext
+        _ context: SpeakingContext,
+        whyNow: String = "A real conversation is coming up.",
+        successVision: String = "I answer cleanly.",
+        voice: SpeakingStyleGoal = .concise
     ) -> CoachingProfile {
         CoachingProfile(
             speakingContext: context,
@@ -2917,12 +2967,12 @@ struct RecommendationBiasCopyContractTests {
             confidenceLevel: .inconsistent,
             biggestChallenge: challenge,
             desiredOutcome: priority == .thinkFaster ? .spontaneous : .concise,
-            speakingStyleGoal: .concise,
+            speakingStyleGoal: voice,
             styleReference: "weekly update",
             coachingBrief: "I want to sound clear under pressure.",
-            motivationWhyNow: "A real conversation is coming up.",
-            successVision: "I answer cleanly.",
-            chosenStyleGoal: .concise
+            motivationWhyNow: whyNow,
+            successVision: successVision,
+            chosenStyleGoal: voice
         )
     }
 
@@ -3751,6 +3801,560 @@ struct WeekPeakRatingTests {
         #expect(decoded.peakRating == 600)
         #expect(decoded.weekPeakRating == 525)  // defaulted to current overall
         #expect(decoded.isWeekPeakCurrent == true)
+    }
+}
+
+// MARK: - AI provider credentials
+
+struct AIProviderCredentialTests {
+
+    @Test func usableKeyRejectsEmptyAndPlaceholderValues() {
+        #expect(AIProviderCredential.usableAPIKey(nil) == nil)
+        #expect(AIProviderCredential.usableAPIKey("") == nil)
+        #expect(AIProviderCredential.usableAPIKey("  REPLACE_ME  ") == nil)
+        #expect(AIProviderCredential.usableAPIKey("YOUR_API_KEY") == nil)
+        #expect(AIProviderCredential.usableAPIKey("<paste key here>") == nil)
+    }
+
+    @Test func usableKeyTrimsRealCredential() {
+        #expect(AIProviderCredential.usableAPIKey("  live-key  ") == "live-key")
+    }
+
+    @Test func providerKeyPrefersUsableEnvironmentValue() {
+        let key = AIProviderCredential.apiKey(
+            for: .openAI,
+            env: ["OPENAI_API_KEY": " env-key "],
+            localValue: { _ in "local-key" }
+        )
+        #expect(key == "env-key")
+    }
+
+    @Test func providerKeyFallsBackWhenEnvironmentIsPlaceholder() {
+        let key = AIProviderCredential.apiKey(
+            for: .gemini,
+            env: ["GEMINI_API_KEY": "REPLACE_ME"],
+            localValue: { name in name == "GEMINI_API_KEY" ? " local-gemini " : nil }
+        )
+        #expect(key == "local-gemini")
+    }
+
+    @Test func geminiProviderFallsBackToAgentPlatformKeyWhenDirectKeyMissing() {
+        let key = AIProviderCredential.apiKey(
+            for: .gemini,
+            env: ["GOOGLE_AGENT_PLATFORM_API_KEY": " agent-key "],
+            localValue: { _ in nil }
+        )
+
+        #expect(key == "agent-key")
+    }
+
+    @Test func directGeminiKeyWinsOverAgentPlatformKey() {
+        let key = AIProviderCredential.apiKey(
+            for: .gemini,
+            env: [
+                "GEMINI_API_KEY": " direct-gemini ",
+                "GOOGLE_AGENT_PLATFORM_API_KEY": " agent-key "
+            ],
+            localValue: { _ in nil }
+        )
+
+        #expect(key == "direct-gemini")
+    }
+
+    @Test func geminiEndpointUsesAgentPlatformWhenDirectKeyMissing() {
+        let endpoint = AIProvider.geminiEndpoint(
+            env: [
+                "GOOGLE_AGENT_PLATFORM_API_KEY": "agent-key",
+                "GOOGLE_AGENT_PLATFORM_MODEL": "gemini-3.5-flash"
+            ],
+            localValue: { _ in nil }
+        )
+
+        #expect(endpoint?.absoluteString == "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.5-flash:generateContent")
+    }
+
+    @Test func geminiEndpointKeepsDirectEndpointWhenDirectKeyExists() {
+        let endpoint = AIProvider.geminiEndpoint(
+            env: [
+                "GEMINI_API_KEY": "direct-key",
+                "GOOGLE_AGENT_PLATFORM_API_KEY": "agent-key"
+            ],
+            localValue: { _ in nil }
+        )
+
+        #expect(endpoint?.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
+    }
+
+    @Test func geminiEndpointUsesDirectEndpointWhenNoAgentKeyExists() {
+        let endpoint = AIProvider.geminiEndpoint(
+            env: [:],
+            localValue: { _ in nil }
+        )
+
+        #expect(endpoint?.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
+    }
+
+    @Test func noneProviderHasNoCredential() {
+        let key = AIProviderCredential.apiKey(
+            for: .none,
+            env: ["OPENAI_API_KEY": "env-key"],
+            localValue: { _ in "local-key" }
+        )
+        #expect(key == nil)
+    }
+
+    @Test func configurationSummaryShowsPresenceWithoutKeyValues() {
+        let summary = AIProviderCredential.configurationSummary(
+            providers: [.gemini, .openAI, .deepSeek],
+            env: [
+                "GEMINI_API_KEY": " live-gemini ",
+                "OPENAI_API_KEY": "REPLACE_ME"
+            ],
+            localValue: { name in
+                name == "DEEPSEEK_API_KEY" ? "" : nil
+            }
+        )
+
+        #expect(summary == "Gemini: key present | OpenAI: missing key | DeepSeek: missing key")
+        #expect(!summary.contains("live-gemini"))
+        #expect(!summary.contains("REPLACE_ME"))
+    }
+
+    @Test func defaultConfigurationSummaryUsesDiagnosticProviderOrder() {
+        let summary = AIProviderCredential.configurationSummary(
+            env: [
+                "GEMINI_API_KEY": " live-gemini ",
+                "OPENAI_API_KEY": "",
+                "DEEPSEEK_API_KEY": " deepseek-dev "
+            ],
+            localValue: { _ in nil }
+        )
+
+        #expect(summary.contains("Gemini: key present"))
+        #expect(summary.contains("OpenAI: missing key"))
+        #expect(summary.contains("DeepSeek: key present"))
+        #expect(!summary.contains("live-gemini"))
+        #expect(!summary.contains("deepseek-dev"))
+    }
+}
+
+struct AISettingsManagerProviderSelectionTests {
+
+    @Test func preferredProviderUsesConfiguredPreferenceOrder() {
+        let provider = AISettingsManager.preferredProvider(
+            providers: [.gemini, .openAI, .deepSeek],
+            hasAPIKey: { $0 == .openAI || $0 == .deepSeek }
+        )
+
+        #expect(provider == .openAI)
+    }
+
+    @Test func defaultPreferenceDoesNotUseDeepSeekForUserFacingRotation() {
+        let provider = AISettingsManager.preferredProvider(
+            hasAPIKey: { $0 == .deepSeek }
+        )
+
+        #expect(provider == nil)
+    }
+
+    @Test func diagnosticProviderOrderIncludesDeepSeekWithoutChangingUserRotation() {
+        #expect(AISettingsManager.providerPreferenceOrder == [.gemini, .openAI])
+        #expect(AISettingsManager.diagnosticProviderOrder == [.gemini, .openAI, .deepSeek])
+    }
+
+    @Test func explicitProviderListCanStillProbeDeepSeekForDeveloperDiagnostics() {
+        let provider = AISettingsManager.preferredProvider(
+            providers: [.deepSeek],
+            hasAPIKey: { $0 == .deepSeek }
+        )
+
+        #expect(provider == .deepSeek)
+    }
+
+    @Test func preferredProviderIgnoresOffProvider() {
+        let provider = AISettingsManager.preferredProvider(
+            providers: [.none, .deepSeek],
+            hasAPIKey: { _ in true }
+        )
+
+        #expect(provider == .deepSeek)
+    }
+}
+
+@MainActor
+struct AICallDiagnosticsStoreTests {
+
+    @Test func recordMakeBoundsDisplayFields() {
+        let record = AICallDiagnosticRecord.make(
+            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            createdAt: Date(timeIntervalSince1970: 1_000),
+            surface: "  \(String(repeating: "surface", count: 20))  ",
+            provider: "  Gemini  ",
+            model: "  gemini-2.5-flash  ",
+            outcome: .fallback,
+            reason: "  \(String(repeating: "HTTP failure ", count: 20))  ",
+            statusCode: 429,
+            latencyMs: 123
+        )
+
+        #expect(record.surface.count <= 48)
+        #expect(record.provider == "Gemini")
+        #expect(record.model == "gemini-2.5-flash")
+        #expect(record.reason.count <= 96)
+        #expect(record.statusLabel == "HTTP 429")
+    }
+
+    @Test func storeKeepsNewestRecordsAndPersists() {
+        let defaults = UserDefaults(suiteName: "ai-call-diagnostics-\(UUID().uuidString)")!
+        let storageKey = "aiCallDiagnostics.test.\(UUID().uuidString)"
+        defaults.removeObject(forKey: storageKey)
+
+        let store = AICallDiagnosticsStore(defaults: defaults, storageKey: storageKey, maxRecords: 2)
+        let oldest = AICallDiagnosticRecord.make(
+            createdAt: Date(timeIntervalSince1970: 1),
+            surface: "Old",
+            provider: "OpenAI",
+            model: "gpt",
+            outcome: .success,
+            reason: "ok"
+        )
+        let middle = AICallDiagnosticRecord.make(
+            createdAt: Date(timeIntervalSince1970: 2),
+            surface: "Middle",
+            provider: "Gemini",
+            model: "gemini",
+            outcome: .fallback,
+            reason: "fallback"
+        )
+        let newest = AICallDiagnosticRecord.make(
+            createdAt: Date(timeIntervalSince1970: 3),
+            surface: "Newest",
+            provider: "DeepSeek",
+            model: "deepseek",
+            outcome: .failure,
+            reason: "failure"
+        )
+
+        store.record(oldest)
+        store.record(middle)
+        store.record(newest)
+
+        #expect(store.records.map(\.surface) == ["Newest", "Middle"])
+
+        let reloaded = AICallDiagnosticsStore(defaults: defaults, storageKey: storageKey, maxRecords: 2)
+        #expect(reloaded.records.map(\.surface) == ["Newest", "Middle"])
+
+        reloaded.reset()
+        #expect(reloaded.records.isEmpty)
+        #expect(defaults.data(forKey: storageKey) == nil)
+    }
+
+    @Test func exportIsCompactAndNonEmpty() {
+        let defaults = UserDefaults(suiteName: "ai-call-diagnostics-export-\(UUID().uuidString)")!
+        let storageKey = "aiCallDiagnostics.export.\(UUID().uuidString)"
+        let store = AICallDiagnosticsStore(defaults: defaults, storageKey: storageKey, maxRecords: 5)
+
+        store.record(AICallDiagnosticRecord.make(
+            createdAt: Date(timeIntervalSince1970: 10),
+            surface: "Ask Noum chat",
+            provider: "Gemini",
+            model: "gemini-2.5-flash",
+            outcome: .success,
+            reason: "Transport succeeded",
+            statusCode: 200,
+            latencyMs: 842
+        ))
+
+        let export = store.exportDiagnostics()
+        #expect(export.contains("Ask Noum chat"))
+        #expect(export.contains("Gemini"))
+        #expect(export.contains("HTTP 200"))
+        #expect(export.contains("842ms"))
+    }
+}
+
+struct AIProviderHealthProbeTests {
+
+    @Test func openAIHealthRequestCarriesSentinelWithoutRawResponseLogging() throws {
+        let body = try AIProviderHealthProbe.requestBody(for: .openAI)
+        let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+
+        #expect(object["model"] as? String == AIProvider.openAI.model)
+        #expect(object["temperature"] as? Double == 0)
+        #expect(object["max_tokens"] as? Int == 16)
+
+        let messages = try #require(object["messages"] as? [[String: Any]])
+        #expect(messages.contains { message in
+            (message["content"] as? String)?.contains("NOUM_AI_OK") == true
+        })
+    }
+
+    @Test func geminiHealthRequestCarriesSentinelAndTinyTokenBudget() throws {
+        let body = try AIProviderHealthProbe.requestBody(for: .gemini)
+        let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let contents = try #require(object["contents"] as? [[String: Any]])
+        let firstContent = try #require(contents.first)
+        #expect(firstContent["role"] as? String == "user")
+
+        let parts = try #require(firstContent["parts"] as? [[String: Any]])
+
+        #expect(parts.contains { part in
+            (part["text"] as? String)?.contains("NOUM_AI_OK") == true
+        })
+
+        let generationConfig = try #require(object["generationConfig"] as? [String: Any])
+        #expect(generationConfig["temperature"] as? Double == 0)
+        #expect(generationConfig["maxOutputTokens"] as? Int == 16)
+
+        let thinkingConfig = try #require(generationConfig["thinkingConfig"] as? [String: Any])
+        #expect(thinkingConfig["thinkingBudget"] as? Int == 0)
+    }
+
+    @Test func deepSeekHealthRequestUsesChatShapeAndTinyTokenBudget() throws {
+        let body = try AIProviderHealthProbe.requestBody(for: .deepSeek)
+        let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+
+        #expect(object["model"] as? String == AIProvider.deepSeek.model)
+        #expect(object["temperature"] as? Double == 0)
+        #expect(object["max_tokens"] as? Int == 16)
+
+        let messages = try #require(object["messages"] as? [[String: Any]])
+        #expect(messages.contains { message in
+            (message["content"] as? String)?.contains("NOUM_AI_OK") == true
+        })
+    }
+
+    @Test func responseSentinelParserAcceptsOpenAIAndGeminiShapes() throws {
+        let openAIData = try JSONSerialization.data(withJSONObject: [
+            "choices": [
+                ["message": ["role": "assistant", "content": "NOUM_AI_OK"]]
+            ]
+        ])
+        let geminiData = try JSONSerialization.data(withJSONObject: [
+            "candidates": [
+                ["content": ["parts": [["text": "NOUM_AI_OK"]]]]
+            ]
+        ])
+
+        #expect(AIProviderHealthProbe.responseContainsSentinel(openAIData, provider: .openAI))
+        #expect(AIProviderHealthProbe.responseContainsSentinel(geminiData, provider: .gemini))
+    }
+
+    @Test func responseSentinelParserRejectsWrongOrUnexpectedPayloads() throws {
+        let wrongText = try JSONSerialization.data(withJSONObject: [
+            "choices": [
+                ["message": ["role": "assistant", "content": "OK"]]
+            ]
+        ])
+        let wrongShape = try JSONSerialization.data(withJSONObject: ["ok": true])
+
+        #expect(!AIProviderHealthProbe.responseContainsSentinel(wrongText, provider: .openAI))
+        #expect(!AIProviderHealthProbe.responseContainsSentinel(wrongShape, provider: .gemini))
+    }
+
+    @Test func geminiHTTPFailureReasonUsesProviderErrorClassNotLongMessage() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "error": [
+                "message": "The provider returned a long billing message.",
+                "status": "RESOURCE_EXHAUSTED"
+            ]
+        ])
+
+        let reason = AIProviderHealthProbe.failureReason(forHTTPStatus: 429, data: data, provider: .gemini)
+        #expect(reason == "Provider error: RESOURCE_EXHAUSTED")
+        #expect(!reason.contains("billing message"))
+    }
+
+    @Test func geminiPermissionDeniedReasonKeepsSanitizedBlockedCategory() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "error": [
+                "message": "Requests to this API generativelanguage.googleapis.com method GenerateContent are blocked.",
+                "status": "PERMISSION_DENIED"
+            ]
+        ])
+
+        let reason = AIProviderHealthProbe.failureReason(forHTTPStatus: 403, data: data, provider: .gemini)
+        #expect(reason == "Provider error: PERMISSION_DENIED (API blocked)")
+        #expect(!reason.contains("GenerateContent"))
+    }
+
+    @Test func geminiPermissionDeniedReasonKeepsSanitizedDisabledCategory() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "error": [
+                "message": "Gemini API has not been used in project 123 before or it is disabled.",
+                "status": "PERMISSION_DENIED"
+            ]
+        ])
+
+        let reason = AIProviderHealthProbe.failureReason(forHTTPStatus: 403, data: data, provider: .gemini)
+        #expect(reason == "Provider error: PERMISSION_DENIED (API disabled)")
+        #expect(!reason.contains("project 123"))
+    }
+
+    @Test func geminiNotFoundReasonNamesModelOrEndpointWithoutValues() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "error": [
+                "message": "The model projects/private/locations/global/publishers/google/models/private-model was not found.",
+                "status": "NOT_FOUND"
+            ]
+        ])
+
+        let reason = AIProviderHealthProbe.failureReason(forHTTPStatus: 404, data: data, provider: .gemini)
+        #expect(reason == "Provider error: NOT_FOUND (model or endpoint)")
+        #expect(!reason.contains("private-model"))
+        #expect(!reason.contains("projects/private"))
+    }
+
+    @Test func openAIHTTPFailureReasonUsesProviderErrorClassNotLongMessage() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "error": [
+                "message": "The provider returned a long authentication message.",
+                "type": "invalid_request_error",
+                "code": "missing_api_key"
+            ]
+        ])
+
+        let reason = AIProviderHealthProbe.failureReason(forHTTPStatus: 401, data: data, provider: .openAI)
+        #expect(reason == "Provider error: invalid_request_error")
+        #expect(!reason.contains("authentication message"))
+    }
+
+    @Test func healthProbeResultSummarizesProviderAndStatus() {
+        let result = AIProviderHealthProbeResult(
+            provider: .gemini,
+            outcome: .failure,
+            reason: "Provider error: RESOURCE_EXHAUSTED",
+            statusCode: 429
+        )
+
+        #expect(!result.isHealthy)
+        #expect(result.displayProvider == "Gemini")
+        #expect(result.statusSummary == "Gemini - HTTP 429")
+    }
+
+    @Test func healthProbeResultCanNameExactModelForOperationalDebugging() {
+        let result = AIProviderHealthProbeResult(
+            provider: .gemini,
+            outcome: .failure,
+            reason: "Provider error: PERMISSION_DENIED",
+            statusCode: 403,
+            providerName: "Ask Noum Gemini",
+            model: "gemini-3.5-flash"
+        )
+
+        #expect(result.displayProvider == "Ask Noum Gemini")
+        #expect(result.statusSummary == "Ask Noum Gemini (gemini-3.5-flash) - HTTP 403")
+        #expect(!result.statusSummary.contains("AIza"))
+    }
+
+    @Test func healthProbeSummaryReportsEveryProviderWithoutSecrets() {
+        let summary = AIProviderHealthProbe.summary(for: [
+            AIProviderHealthProbeResult(
+                provider: .gemini,
+                outcome: .failure,
+                reason: "Provider error: PERMISSION_DENIED",
+                statusCode: 403
+            ),
+            AIProviderHealthProbeResult(
+                provider: .openAI,
+                outcome: .skipped,
+                reason: "Missing API key",
+                statusCode: nil
+            ),
+            AIProviderHealthProbeResult(
+                provider: .deepSeek,
+                outcome: .success,
+                reason: "Provider returned health-check sentinel",
+                statusCode: 200
+            )
+        ])
+
+        #expect(summary.contains("Failure: Gemini - HTTP 403. Provider error: PERMISSION_DENIED"))
+        #expect(summary.contains("Skipped: OpenAI - Skipped. Missing API key"))
+        #expect(summary.contains("Healthy: DeepSeek - HTTP 200. Provider returned health-check sentinel"))
+        #expect(!summary.contains("sk-"))
+    }
+
+    @Test func healthGuidancePrefersHealthyPathWhenAnyProviderPasses() {
+        let guidance = AIProviderHealthGuidance.make(for: [
+            AIProviderHealthProbeResult(
+                provider: .gemini,
+                outcome: .failure,
+                reason: "Provider error: NOT_FOUND (model or endpoint)",
+                statusCode: 404
+            ),
+            AIProviderHealthProbeResult(
+                provider: .openAI,
+                outcome: .success,
+                reason: "Provider returned health-check sentinel",
+                statusCode: 200
+            )
+        ])
+
+        #expect(guidance?.title == "Model path ready")
+        #expect(guidance?.detail.contains("sentinel") == true)
+    }
+
+    @Test func healthGuidanceNamesMissingKeysOnlyWhenEveryProviderSkippedForKeys() {
+        let guidance = AIProviderHealthGuidance.make(for: [
+            AIProviderHealthProbeResult(
+                provider: .gemini,
+                outcome: .skipped,
+                reason: "Missing API key",
+                statusCode: nil
+            ),
+            AIProviderHealthProbeResult(
+                provider: .openAI,
+                outcome: .skipped,
+                reason: "Missing API key",
+                statusCode: nil
+            )
+        ])
+
+        #expect(guidance?.title == "No AI key configured")
+        #expect(guidance?.detail.contains("live coach replies") == true)
+    }
+
+    @Test func healthGuidanceTurnsNotFoundIntoModelEndpointAction() {
+        let guidance = AIProviderHealthGuidance.make(for: [
+            AIProviderHealthProbeResult(
+                provider: .gemini,
+                outcome: .failure,
+                reason: "Provider error: NOT_FOUND (model or endpoint)",
+                statusCode: 404,
+                providerName: "Ask Noum Google Cloud",
+                model: "gemini-3.5-flash"
+            )
+        ])
+
+        #expect(guidance?.title == "Model endpoint not found")
+        #expect(guidance?.detail.contains("model ID") == true)
+        #expect(guidance?.detail.contains("Ask Noum Google Cloud") == true)
+        #expect(guidance?.detail.contains("gemini-3.5-flash") == false)
+    }
+
+    @Test func healthGuidanceTurnsPermissionAndQuotaIntoDistinctActions() {
+        let permission = AIProviderHealthGuidance.make(for: [
+            AIProviderHealthProbeResult(
+                provider: .gemini,
+                outcome: .failure,
+                reason: "Provider error: PERMISSION_DENIED (API blocked)",
+                statusCode: 403
+            )
+        ])
+        let quota = AIProviderHealthGuidance.make(for: [
+            AIProviderHealthProbeResult(
+                provider: .gemini,
+                outcome: .failure,
+                reason: "Provider error: RESOURCE_EXHAUSTED",
+                statusCode: 429
+            )
+        ])
+
+        #expect(permission?.title == "Provider permission blocked")
+        #expect(permission?.detail.contains("Enable the API") == true)
+        #expect(quota?.title == "Provider quota blocked")
+        #expect(quota?.detail.contains("billing") == true)
     }
 }
 
@@ -6610,10 +7214,71 @@ struct BaselineCoachMapTests {
         let map = BaselineCoachMap.make(baseline: baseline(sessionCount: 5, confidence: .moderate), profile: nil)
 
         #expect(map.statusTitle == "Baseline forming")
+        #expect(map.coachHeadline == "Your baseline is taking shape")
         #expect(abs(map.formationProgress - 0.5) < 0.001)
         #expect(map.repsUntilEstablished == 5)
         #expect(map.dimensions.count == BaselineCoachDimension.allCases.count)
         #expect(map.measuredDimensionCount >= 5)
+    }
+
+    @Test func baselineMapNamesWeakestMeasuredReadAsCoachPriority() {
+        let map = BaselineCoachMap.make(
+            baseline: baseline(sessionCount: 12, fillerRate: 6.0, confidence: .established),
+            profile: nil
+        )
+
+        #expect(map.coachHeadline == "Your baseline is usable")
+        #expect(map.weakestMeasuredDimension?.dimension == .fillerControl)
+        #expect(map.coachPriorityLine == "Filler control is the clearest gap to work next.")
+    }
+
+    @Test func baselineMapPriorityFallsBackToNextEvidenceGap() {
+        let map = BaselineCoachMap.make(baseline: .empty, profile: nil)
+
+        #expect(map.measuredDimensionCount == 0)
+        #expect(map.nextEvidenceDimension?.dimension == .fillerControl)
+        #expect(map.coachPriorityLine == "Filler control still needs more signal.")
+        #expect(map.readoutFocusDimension?.dimension == .fillerControl)
+        #expect(map.readoutStrengthDimension == nil)
+    }
+
+    @Test func baselineDimensionStateLabelsStaySoftAndEvidenceBounded() {
+        let emptyMap = BaselineCoachMap.make(baseline: .empty, profile: nil)
+        #expect(emptyMap.dimensions.first?.coachStateLabel == "Needs signal")
+
+        let measuredMap = BaselineCoachMap.make(baseline: baseline(fillerRate: 0.5, confidence: .established), profile: nil)
+        let fillerRead = measuredMap.dimensions.first { $0.dimension == .fillerControl }
+        #expect(fillerRead?.coachStateLabel == "Strong")
+
+        let focusMap = BaselineCoachMap.make(baseline: baseline(fillerRate: 7.0, confidence: .established), profile: nil)
+        let focusRead = focusMap.dimensions.first { $0.dimension == .fillerControl }
+        #expect(focusRead?.coachStateLabel == "Focus")
+    }
+
+    @Test func baselineReadoutPrioritizesWorstGapThenStrongestSignal() {
+        let map = BaselineCoachMap.make(
+            baseline: baseline(sessionCount: 12, fillerRate: 6.0, confidence: .established),
+            profile: nil
+        )
+
+        #expect(map.readoutFocusDimension?.dimension == .fillerControl)
+        #expect(map.readoutStrengthDimension?.dimension == .paceControl)
+        #expect(!map.supportingReadoutDimensions.contains { $0.dimension == .fillerControl })
+        #expect(!map.supportingReadoutDimensions.contains { $0.dimension == .paceControl })
+        #expect(map.supportingReadoutDimensions.count == BaselineCoachDimension.allCases.count - 2)
+    }
+
+    @Test func baselineReadoutOmitsDuplicateStrengthWhenOnlyOneMeasuredDimensionExists() {
+        var partial = CommunicationBaseline.empty
+        partial.sessionCount = 3
+        partial.qualifyingSessionCount = 3
+        partial.fillerRate = stat(2.0, samples: 3, confidence: .tentative)
+
+        let map = BaselineCoachMap.make(baseline: partial, profile: nil)
+
+        #expect(map.readoutFocusDimension?.dimension == .fillerControl)
+        #expect(map.readoutStrengthDimension == nil)
+        #expect(map.supportingReadoutDimensions.count == BaselineCoachDimension.allCases.count - 1)
     }
 
     @Test func baselineMapGoalGapUsesMeasuredDistanceOnly() {
@@ -7384,6 +8049,7 @@ struct ProfileCollapseContractTests {
             .baselineMap,
             .coachingDirection,
             .coachLoopReadiness,
+            .weeklyCheckIn,
             .caseReview,
             .deliveryProfile,
             .speechPatterns
@@ -7391,8 +8057,7 @@ struct ProfileCollapseContractTests {
         #expect(plan.ratingStorySurfaceCount == 1)
         #expect(plan.optionalSystemSurfaceCount == 0)
         for dashboardSurface in [
-            ProfileEvidenceDetailSurface.weeklyCheckIn,
-            .skillProgress,
+            ProfileEvidenceDetailSurface.skillProgress,
             .activeChallenge,
             .feedbackInbox,
             .league,
@@ -7400,6 +8065,21 @@ struct ProfileCollapseContractTests {
             .achievements
         ] {
             #expect(!plan.surfaces.contains(dashboardSurface))
+        }
+    }
+
+    @Test func weeklyCheckInLivesInsideCoachEvidenceCluster() {
+        let plan = ProfileEvidenceDetailPlan.valueFirst
+        let readinessIndex = plan.surfaces.firstIndex(of: .coachLoopReadiness)
+        let checkInIndex = plan.surfaces.firstIndex(of: .weeklyCheckIn)
+        let caseReviewIndex = plan.surfaces.firstIndex(of: .caseReview)
+
+        #expect(readinessIndex != nil)
+        #expect(checkInIndex != nil)
+        #expect(caseReviewIndex != nil)
+        if let readinessIndex, let checkInIndex, let caseReviewIndex {
+            #expect(readinessIndex < checkInIndex)
+            #expect(checkInIndex < caseReviewIndex)
         }
     }
 
@@ -7417,10 +8097,10 @@ struct ProfileCollapseContractTests {
         }
     }
 
-    @Test func profileEvidenceHubDefaultsToProofThenHistoryRows() {
+    @Test func profileEvidenceHubLeadsWithBaselineThenProofAndHistoryRows() {
         let hub = ProfileEvidenceHubPresentation.valueFirst
 
-        #expect(hub.linkOrder == [.growthLibrary, .history])
+        #expect(hub.linkOrder == [.baselineMap, .growthLibrary, .history])
         #expect(hub.usesCompactRows)
     }
 
@@ -7451,6 +8131,30 @@ struct ProfileCollapseContractTests {
         #expect(chosen.subtitle == "Voice target: Authoritative")
     }
 
+    @Test func settingsProfileHeroLeadsWithVoiceTargetWhenChosen() {
+        let hero = SettingsProfileHeroPresentation.make(
+            displayName: "Your profile",
+            chosenVoice: .authoritative,
+            xp: 1_250
+        )
+
+        #expect(hero.subtitle == "Voice target: Authoritative")
+        #expect(hero.subtitleIcon == SpeakingStyleGoal.authoritative.voiceIconSystemName)
+        #expect(hero.accessibilityLabel == "Your profile, voice target Authoritative, Practice level 2")
+    }
+
+    @Test func settingsProfileHeroFallsBackToPracticeLevelBeforeVoiceChoice() {
+        let hero = SettingsProfileHeroPresentation.make(
+            displayName: "Your profile",
+            chosenVoice: nil,
+            xp: 999
+        )
+
+        #expect(hero.subtitle == "Practice level 1")
+        #expect(hero.subtitleIcon == "chart.bar.fill")
+        #expect(hero.accessibilityLabel == "Your profile, Practice level 1")
+    }
+
     @Test func coachReadColdStartIsHonestAndActionable() {
         let content = ProfileCoachReadContent.make(
             sessionCount: 0,
@@ -7466,6 +8170,32 @@ struct ProfileCollapseContractTests {
         #expect(content.proofQuote == nil)
         #expect(!content.read.localizedCaseInsensitiveContains("highest rating"))
         #expect(!content.read.localizedCaseInsensitiveContains("30 days"))
+    }
+
+    @Test func coachReadTurnsEngineHypothesisIntoUserFacingLanguage() {
+        let memory = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 2_000),
+            evidenceCount: 12,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: "Filler Words appears to be the highest-leverage focus because persistent blocker in the rolling baseline; keep checking against future reps.",
+            hypothesisWatchStartedAt: Date(timeIntervalSince1970: 1_000)
+        )
+
+        let content = ProfileCoachReadContent.make(
+            sessionCount: 12,
+            plan: nil,
+            memory: memory,
+            proof: nil,
+            now: Date(timeIntervalSince1970: 2_000)
+        )
+
+        #expect(content.read == "Filler-word control looks like the strongest lever right now. It keeps showing up in the rolling baseline, so keep testing it against future reps.")
+        #expect(!content.read.contains("highest-leverage"))
+        #expect(!content.read.contains("persistent blocker"))
     }
 
     @Test func coachReadCarriesOneVerifiedProofPointWhenAvailable() {
@@ -7787,7 +8517,7 @@ struct ProfileCollapseContractTests {
         #expect(status?.actionTitle == "Check in")
     }
 
-    @Test func transferStatusRendersNothingWithoutTransferEvidence() {
+    @Test func transferStatusShowsSetupTeaserWithoutTransferEvidence() {
         let status = ProfileTransferStatusContent.make(
             activeMoment: nil,
             pendingOutcomeMoment: nil,
@@ -7796,7 +8526,52 @@ struct ProfileCollapseContractTests {
             voice: nil
         )
 
-        #expect(status == nil)
+        #expect(status?.kind == .setupTeaser)
+        #expect(status?.eyebrow == "Real-world loop")
+        #expect(status?.title == "Bring Noum a real moment")
+        #expect(status?.detail.localizedCaseInsensitiveContains("how it actually landed") == true)
+        #expect(status?.actionTitle == "Set moment")
+        #expect(status?.destination == .bigMomentIntake)
+        #expect(status?.moment == nil)
+        for banned in ["caused", "proved", "validated", "coach-parity"] {
+            #expect(status?.detail.localizedCaseInsensitiveContains(banned) == false)
+        }
+    }
+
+    @Test func transferStatusDoesNotPromoteThinReportsToPattern() {
+        let now = Date()
+        let reports = [
+            BigMomentOutcomeReport(
+                moment: BigMoment(title: "Panel 2", category: .interview),
+                outcome: .wentWell,
+                audienceResponse: .engaged,
+                drillTransfer: .transferred,
+                recordedAt: now
+            ),
+            BigMomentOutcomeReport(
+                moment: BigMoment(title: "Panel 1", category: .interview),
+                outcome: .wentWell,
+                audienceResponse: .engaged,
+                drillTransfer: .transferred,
+                recordedAt: now.addingTimeInterval(-86_400)
+            )
+        ]
+
+        let trend = BigMomentStore.transferTrends(from: reports, limit: 1).first
+        let status = ProfileTransferStatusContent.make(
+            activeMoment: nil,
+            pendingOutcomeMoment: nil,
+            recentOutcome: reports.first,
+            transferTrend: trend,
+            sessions: [],
+            voice: .executive
+        )
+
+        #expect(trend == nil)
+        #expect(status?.kind == .recentOutcome)
+        #expect(status?.eyebrow == "Last transfer read")
+        #expect(status?.detail.localizedCaseInsensitiveContains("self-report only") == false)
+        #expect(status?.detail.localizedCaseInsensitiveContains("pattern") == false)
     }
 }
 
@@ -8563,6 +9338,24 @@ struct CoachMessageTextFormatterTests {
         ])
     }
 
+    @Test func targetAndNextRepLeadInsRenderAsStrongSegments() {
+        let target = CoachMessageTextFormatter.inlineSegments(
+            from: "Target: answer first, proof second."
+        )
+        let nextRep = CoachMessageTextFormatter.inlineSegments(
+            from: "Next rep: 30-second update, then stop."
+        )
+
+        #expect(target == [
+            .init(text: "Target:", isStrong: true),
+            .init(text: " answer first, proof second.", isStrong: false)
+        ])
+        #expect(nextRep == [
+            .init(text: "Next rep:", isStrong: true),
+            .init(text: " 30-second update, then stop.", isStrong: false)
+        ])
+    }
+
     @Test func stillParsesLegacyInlineBoldSegments() {
         let segments = CoachMessageTextFormatter.inlineSegments(
             from: "**Read:** 5 fillers. **Move:** hold the pause."
@@ -8668,6 +9461,20 @@ struct CoachReplyTextSanitizerTests {
         #expect(!spoken.lowercased().contains("read:"))
         #expect(!spoken.lowercased().contains("move:"))
         #expect(!spoken.lowercased().contains("why:"))
+    }
+
+    @Test func spokenTextDropsTargetAndNextRepLabelsBeforeTTS() {
+        let raw = """
+        **Fair.** I’ll keep it direct.
+        - **Target:** answer first, proof second.
+        - **Next rep:** 30-second update, so the recommendation lands before the explanation: recommendation, one proof point, stop.
+        """
+        let spoken = CoachReplyTextSanitizer.spokenText(from: raw)
+
+        #expect(spoken == "Fair. I’ll keep it direct. answer first, proof second. 30-second update, so the recommendation lands before the explanation: recommendation, one proof point, stop.")
+        #expect(!spoken.lowercased().contains("target:"))
+        #expect(!spoken.lowercased().contains("next rep:"))
+        #expect(!spoken.contains("**"))
     }
 
     @Test func spokenTextDropsEmojiAndDecorativeSymbolsBeforeTTS() {
@@ -10142,7 +10949,7 @@ struct CoachContextBuilderTests {
 
         #expect(ctx.contains("INTERVENTION CYCLE (prescribe → observe → adapt)"))
         #expect(ctx.contains("Evidence depth for this intervention: 2 followed reps; review threshold 2."))
-        #expect(ctx.contains("Success criterion: 3 or fewer fillers per rep across 2 reps — criterion currently met."))
+        #expect(ctx.contains("Success criterion: 3 or fewer fillers per rep across 2 reps — already meeting the target."))
         #expect(ctx.contains("Review cadence: revisit by"))
         #expect(ctx.contains("Last course change: Shifted focus from Pace to Filler Words. (declining trend in recent reps)."))
     }
@@ -10258,6 +11065,16 @@ struct CoachContextBuilderTests {
                 evidenceDepth: 5,
                 tentativeLine: "Across the last 5 reps the delivery has read as clear — composure holding and few tentative markers. A read of these reps, not a fixed trait."
             ),
+            visualDeliveryRead: VisualDeliveryRead(
+                recordedAt: Date(timeIntervalSince1970: 1_000),
+                sessionID: UUID(),
+                posture: .good,
+                eyeContact: .ok,
+                gestureUse: .ok,
+                presenceDelivery: .good,
+                summary: "Your visual delivery looks composed. Keep the eye line steadier on the next rep.",
+                primaryImprovement: "Eye contact: Eye line returns to the lens often enough."
+            ),
             nextMove: .reviewIntervention,
             nextQuestion: "Should the current intervention continue, adapt, or be replaced?"
         )
@@ -10269,7 +11086,14 @@ struct CoachContextBuilderTests {
             goalFit: .aligned,
             strengths: [],
             blockers: [],
-            caseFile: caseFile
+            caseFile: caseFile,
+            deliveryProfile: DeliveryProfile(
+                pattern: .clear,
+                evidenceDepth: 5,
+                improvedLine: "Composure has improved — 0.54 to 0.72 across your recent reps.",
+                pressureLine: "Under Pressure Drill conditions your delivery reads lower than in calmer reps — composure and confidence markers dip when the clock is on.",
+                nextTargetLine: "Confidence markers are the next target — easing the tentative phrasing so more reps read as clear."
+            )
         )
 
         let ctx = CoachContextBuilder.userContext(
@@ -10285,8 +11109,17 @@ struct CoachContextBuilderTests {
 
         #expect(ctx.contains("COACH CASE FILE (durable strategy)"))
         #expect(ctx.contains("Case hypothesis: Closings may be the highest-leverage focus"))
+        #expect(ctx.contains("Visual/presence read: User-initiated video read"))
+        #expect(ctx.contains("opt-in visual evidence from one recording"))
+        #expect(ctx.contains("not a trait or diagnosis"))
         #expect(ctx.contains("Delivery read: Across the last 5 reps the delivery has read as clear"))
         #expect(ctx.contains("not a fixed trait"))
+        #expect(ctx.contains("Delivery profile: improved — Composure has improved"))
+        #expect(ctx.contains("under pressure — Under Pressure Drill conditions"))
+        #expect(ctx.contains("next target — Confidence markers are the next target"))
+        #expect(ctx.contains("Treat as hypotheses about recent reps, not a trait or diagnosis."))
+        #expect(!ctx.contains("Delivery profile: recurring read —"),
+                "Case-file delivery read already carries the recurring pattern; delivery profile should not duplicate it.")
         #expect(ctx.contains("Next coach move: Review the intervention"))
         #expect(ctx.contains("Should the current intervention continue, adapt, or be replaced?"))
         #expect(ctx.contains("self-report, not diagnosis"))
@@ -11849,15 +12682,15 @@ struct PracticeModePrescriptionCopyTests {
             target: "30s+"
         )
 
-        #expect(line == "Target 30s+ \u{00B7} Focus Longer answer")
+        #expect(line == "Target: 30s+ \u{00B7} Focus: Longer answer")
     }
 
     @Test func prescriptionLineSuppressesEmptyOrDuplicateSignals() {
         #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: nil, target: nil) == nil)
         #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: "  ", target: "\n") == nil)
-        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: "Longer answer", target: nil) == "Focus Longer answer")
-        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: nil, target: "30s+") == "Target 30s+")
-        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: "Longer answer", target: "longer answer") == "Target longer answer")
+        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: "Longer answer", target: nil) == "Focus: Longer answer")
+        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: nil, target: "30s+") == "Target: 30s+")
+        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: "Longer answer", target: "longer answer") == "Target: longer answer")
     }
 
     @Test func prescriptionCopyAvoidsUrgencyAndFanfare() {
@@ -11907,6 +12740,21 @@ struct PracticeModePrescriptionCopyTests {
 
         #expect(PracticeModeAvailability.isUnlocked(.suddenDeath, rating: rated))
         #expect(PracticeModePrescriptionCopy.pressureLockedHint == "Run one rated rep before Pressure Drill.")
+    }
+}
+
+struct AuthDisplayNameTests {
+
+    @Test func guestPlaceholdersRenderAsUserProfile() {
+        #expect(AuthManager.userFacingDisplayName(from: nil) == "Your profile")
+        #expect(AuthManager.userFacingDisplayName(from: "") == "Your profile")
+        #expect(AuthManager.userFacingDisplayName(from: " Guest Speaker ") == "Your profile")
+        #expect(AuthManager.userFacingDisplayName(from: "Speaker") == "Your profile")
+    }
+
+    @Test func realAccountNameIsPreserved() {
+        #expect(AuthManager.userFacingDisplayName(from: "Jordan") == "Jordan")
+        #expect(AuthManager.userFacingDisplayName(from: "  Priya Shah  ") == "Priya Shah")
     }
 }
 
@@ -12176,6 +13024,11 @@ struct HomeBottomShortcutContractTests {
         #expect(!copy.contains("tab"))
         #expect(!copy.contains("selected"))
         #expect(!copy.contains("active"))
+    }
+
+    @Test func shortcutDockReservesReadableBottomBand() {
+        #expect(HomeShortcutDockLayout.scrollBottomPadding >= 144)
+        #expect(HomeShortcutDockLayout.backdropTopPadding >= 16)
     }
 }
 
@@ -16812,6 +17665,29 @@ struct CoachMemoryEngineTests {
         #expect(memory?.currentLeverBasis?.contains("stated voice goal") == true)
     }
 
+    @Test func persistentBlockerHypothesisUsesUserFacingBasis() {
+        var baseline = CommunicationBaseline.empty
+        baseline.sessionCount = 8
+        baseline.qualifyingSessionCount = 8
+        baseline.persistentBlockers = ["Filler words"]
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .authoritative),
+            baseline: baseline,
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.currentLever == .fillerReduction)
+        #expect(memory?.currentLeverBasis == "it keeps showing up in the rolling baseline")
+        #expect(memory?.workingHypothesis?.contains("because it keeps showing up in the rolling baseline") == true)
+        #expect(memory?.workingHypothesis?.contains("persistent blocker") == false)
+    }
+
     @Test func buildCarriesCurrentForwardPlanWeek() {
         let now = Date(timeIntervalSince1970: 1_000)
         let plan = ForwardPlan(
@@ -18104,6 +18980,8 @@ struct CoachMemoryEngineTests {
         let criterion = memory?.activeIntervention?.successCriterion
         #expect(criterion?.metric == .fillersPerRep)
         #expect(criterion?.threshold == 5)
+        #expect(criterion?.baselineSnapshot?.sampleDepth == 3)
+        #expect(criterion?.baselineSnapshot?.priorAverage == 6.333333333333333)
         // Grounded copy — the user's own number, COUNT unit, window = 2.
         #expect(criterion?.summary == "your last 3 reps averaged 6.3 fillers — hold at 5 or fewer per rep across 2 reps")
     }
@@ -18137,6 +19015,8 @@ struct CoachMemoryEngineTests {
         let criterion = memory?.activeIntervention?.successCriterion
         #expect(criterion?.metric == .sessionScore)
         #expect(criterion?.threshold == 6)
+        #expect(criterion?.baselineSnapshot?.sampleDepth == 3)
+        #expect(criterion?.baselineSnapshot?.priorAverage == 5)
         #expect(criterion?.summary == "your last 3 reps averaged 5 — hold a 6 or higher across 2 reps")
     }
 
@@ -18164,6 +19044,7 @@ struct CoachMemoryEngineTests {
             now: Date(timeIntervalSince1970: 1_000)
         )
         #expect(fillerMemory?.activeIntervention?.successCriterion?.threshold == 4)
+        #expect(fillerMemory?.activeIntervention?.successCriterion?.baselineSnapshot == nil)
         #expect(fillerMemory?.activeIntervention?.successCriterion?.summary == "4 or fewer fillers per rep across 2 reps")
 
         // Score metric, same thin-evidence shape. scores 8, 8, 5, 5 →
@@ -18188,7 +19069,84 @@ struct CoachMemoryEngineTests {
             now: Date(timeIntervalSince1970: 1_000)
         )
         #expect(scoreMemory?.activeIntervention?.successCriterion?.threshold == 6)
+        #expect(scoreMemory?.activeIntervention?.successCriterion?.baselineSnapshot == nil)
         #expect(scoreMemory?.activeIntervention?.successCriterion?.summary == "score of 6 or higher across 2 reps")
+    }
+
+    @Test func groundedCriterionCarriesForwardStableSnapshotOnSamePrescription() {
+        let olderSessions = [
+            ahCounterSession(fillers: 1, at: 1_000),
+            ahCounterSession(fillers: 1, at: 900),
+            ahCounterSession(fillers: 7, at: 800),
+            ahCounterSession(fillers: 6, at: 700),
+            ahCounterSession(fillers: 6, at: 600),
+        ]
+        let outcomes = [
+            interventionOutcome(mode: .ahCounter, followed: true, completedAt: 1_000, scoreDelta: 0, fillerDelta: -1)
+        ]
+        let first = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: olderSessions,
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: outcomes,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        let changedHistory = [
+            ahCounterSession(fillers: 1, at: 1_100),
+            ahCounterSession(fillers: 1, at: 1_000),
+            ahCounterSession(fillers: 3, at: 900),
+            ahCounterSession(fillers: 3, at: 800),
+            ahCounterSession(fillers: 3, at: 700),
+        ]
+        let rebuilt = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: changedHistory,
+            trends: [],
+            forwardPlan: nil,
+            previous: first,
+            lastSessionID: nil,
+            recommendationOutcomes: outcomes,
+            now: Date(timeIntervalSince1970: 1_100)
+        )
+
+        #expect(first?.activeIntervention?.successCriterion?.summary == "your last 3 reps averaged 6.3 fillers — hold at 5 or fewer per rep across 2 reps")
+        #expect(rebuilt?.activeIntervention?.successCriterion?.summary == first?.activeIntervention?.successCriterion?.summary)
+        #expect(rebuilt?.activeIntervention?.successCriterion?.baselineSnapshot == first?.activeIntervention?.successCriterion?.baselineSnapshot)
+    }
+
+    @Test func scoreCriterionSnapshotClampsOutOfRangeAverage() {
+        let timedSessions: [PracticeSession] = [
+            PracticeSession(transcript: "rep", fillerWordCount: 0, duration: 60, date: Date(timeIntervalSince1970: 1_000), mode: .timed, score: 9),
+            PracticeSession(transcript: "rep", fillerWordCount: 0, duration: 60, date: Date(timeIntervalSince1970: 900), mode: .timed, score: 9),
+            PracticeSession(transcript: "rep", fillerWordCount: 0, duration: 60, date: Date(timeIntervalSince1970: 800), mode: .timed, score: 15),
+            PracticeSession(transcript: "rep", fillerWordCount: 0, duration: 60, date: Date(timeIntervalSince1970: 700), mode: .timed, score: 15),
+            PracticeSession(transcript: "rep", fillerWordCount: 0, duration: 60, date: Date(timeIntervalSince1970: 600), mode: .timed, score: 15),
+        ]
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: timedSessions,
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: [
+                interventionOutcome(mode: .timed, followed: true, completedAt: 1_000, scoreDelta: 1, fillerDelta: 0)
+            ],
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        let criterion = memory?.activeIntervention?.successCriterion
+        #expect(criterion?.threshold == 10)
+        #expect(criterion?.baselineSnapshot?.priorAverage == 10)
+        #expect(criterion?.summary == "your last 3 reps averaged 10 — hold a 10 or higher across 2 reps")
     }
 
     // MARK: - B1 #2 — Case-file upcoming BigMoment line
@@ -18822,6 +19780,27 @@ struct CoachSuccessCriterionTests {
         let c = criterion(.atMost, threshold: 3, window: 0)
         #expect(c.status(forFollowedValues: [1, 1]) == .pending)
     }
+
+    @Test func legacyCriterionWithoutBaselineSnapshotDecodesWithNilSnapshot() throws {
+        let legacy = """
+        {
+          "metric": "fillersPerRep",
+          "comparator": "atMost",
+          "threshold": 3,
+          "evaluationWindow": 2,
+          "summary": "3 or fewer fillers per rep across 2 reps"
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(CoachSuccessCriterion.self, from: legacy)
+
+        #expect(decoded.metric == .fillersPerRep)
+        #expect(decoded.comparator == .atMost)
+        #expect(decoded.threshold == 3)
+        #expect(decoded.evaluationWindow == 2)
+        #expect(decoded.summary == "3 or fewer fillers per rep across 2 reps")
+        #expect(decoded.baselineSnapshot == nil)
+    }
 }
 
 @MainActor
@@ -19016,6 +19995,72 @@ struct CoachMemoryStoreTests {
         #expect(store.currentMemory?.caseFile?.upcomingMomentLine == nil)
     }
 
+    @Test func noteVisualDeliveryReadPersistsOptInCaseEvidence() {
+        let suite = "coach-memory-visual-delivery-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "account-\(UUID().uuidString)"
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        let sessionID = UUID()
+
+        store.refresh(
+            profile: profile(voice: .executive),
+            baseline: baseline(count: 5),
+            sessions: [session(id: sessionID)],
+            trends: [],
+            forwardPlan: nil,
+            lastSessionID: sessionID,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        let recorded = Date(timeIntervalSince1970: 1_500)
+        let didPersist = store.noteVisualDeliveryRead(
+            from: videoResult(),
+            sessionID: sessionID,
+            recordedAt: recorded,
+            upcomingMoment: .some(nil)
+        )
+
+        #expect(didPersist)
+        #expect(store.currentMemory?.visualDeliveryRead?.sessionID == sessionID)
+        #expect(store.currentMemory?.visualDeliveryRead?.recordedAt == recorded)
+        #expect(store.currentMemory?.caseFile?.visualDeliveryRead == store.currentMemory?.visualDeliveryRead)
+        #expect(store.currentMemory?.caseFile?.visualDeliveryRead?.coachContextLine.contains("not a trait or diagnosis") == true)
+
+        let reloaded = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        #expect(reloaded.currentMemory?.visualDeliveryRead?.sessionID == sessionID)
+        #expect(reloaded.currentMemory?.caseFile?.visualDeliveryRead?.summary.contains("visual delivery looks composed") == true)
+    }
+
+    @Test func noteVisualDeliveryReadRejectsInvalidProviderText() {
+        let suite = "coach-memory-visual-invalid-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "account-\(UUID().uuidString)"
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+
+        store.refresh(
+            profile: profile(voice: .concise),
+            baseline: baseline(count: 5),
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        let didPersist = store.noteVisualDeliveryRead(
+            from: videoResult(overallNote: "As an AI, I cannot see the frames, but speakers often improve posture."),
+            sessionID: nil,
+            recordedAt: Date(timeIntervalSince1970: 1_500),
+            upcomingMoment: .some(nil)
+        )
+
+        #expect(!didPersist)
+        #expect(store.currentMemory?.visualDeliveryRead == nil)
+        #expect(store.currentMemory?.caseFile?.visualDeliveryRead == nil)
+    }
+
     private func baseline(count: Int) -> CommunicationBaseline {
         var baseline = CommunicationBaseline.empty
         baseline.qualifyingSessionCount = count
@@ -19037,14 +20082,35 @@ struct CoachMemoryStoreTests {
         )
     }
 
-    private func session() -> PracticeSession {
+    private func session(id: UUID = UUID()) -> PracticeSession {
         PracticeSession(
+            id: id,
             transcript: "A short practice rep.",
             fillerWordCount: 2,
             duration: 60,
             date: Date(timeIntervalSince1970: 1_000),
             mode: .timed,
             score: 6
+        )
+    }
+
+    private func videoResult(
+        overallNote: String = "Your visual delivery looks composed. Keep the eye line steadier on the next rep."
+    ) -> VideoAnalysisResult {
+        VideoAnalysisResult(
+            posture: .good,
+            postureNote: "Shoulders stay open and stable on camera.",
+            eyeContact: .ok,
+            eyeContactNote: "Eye line returns to the lens often enough.",
+            facialExpression: .good,
+            facialExpressionNote: "Expression reads engaged and calm.",
+            gestureUse: .ok,
+            gestureNote: "Gestures look contained and deliberate.",
+            energyConfidence: .good,
+            energyNote: "Upper-body energy stays present without rushing.",
+            presenceDelivery: .good,
+            presenceNote: "Presence reads steady and composed.",
+            overallNote: overallNote
         )
     }
 }
@@ -20719,7 +21785,10 @@ struct CoachContextBuilderWeeklyCheckInOpportunityTests {
 
         #expect(context.contains("CHECK-IN OPPORTUNITY"))
         #expect(context.contains("Do not interrupt practice"))
-        #expect(context.contains("one concise human-coach question"))
+        #expect(context.contains("at most one concise human-coach question"))
+        #expect(context.contains("Suggested question"))
+        #expect(context.contains("What felt hardest in a real conversation this week?"))
+        #expect(!context.contains("what felt hardest this week, what they avoided saying"))
     }
 
     @Test func quietWeeklyCadenceOmitsCheckInCue() {
@@ -20735,6 +21804,105 @@ struct CoachContextBuilderWeeklyCheckInOpportunityTests {
         )
 
         #expect(!context.contains("CHECK-IN OPPORTUNITY"))
+    }
+
+    @Test func weeklyCheckInQuestionPrioritizesMissedDrillForAdaptation() {
+        let checkIn = CoachCheckIn(
+            hardest: "Holding the room",
+            outsideApp: "Leadership update",
+            drillVerdict: .missed,
+            confidenceShift: .lessSteady,
+            avoidedSaying: "I softened the direct ask"
+        )
+
+        let question = CoachContextBuilder.weeklyCheckInQuestionHint(for: checkIn)
+
+        #expect(question == "What did the current drill miss that you actually needed this week?")
+    }
+
+    @Test func weeklyCheckInQuestionPrioritizesStalledDrillBeforeAvoidance() {
+        let checkIn = CoachCheckIn(
+            drillVerdict: .stalled,
+            confidenceShift: .lessSteady,
+            avoidedSaying: "I avoided naming the risk clearly"
+        )
+
+        let question = CoachContextBuilder.weeklyCheckInQuestionHint(for: checkIn)
+
+        #expect(question.contains("Where did the current drill stall"))
+        #expect(!question.contains("avoided"))
+    }
+
+    @Test func weeklyCheckInQuestionUsesAvoidanceWhenDrillDidNotStall() {
+        let checkIn = CoachCheckIn(
+            drillVerdict: .helped,
+            confidenceShift: .lessSteady,
+            avoidedSaying: "I avoided naming the risk clearly"
+        )
+
+        let question = CoachContextBuilder.weeklyCheckInQuestionHint(for: checkIn)
+
+        #expect(question.contains("avoided saying"))
+        #expect(question.contains("cleanly"))
+    }
+
+    @Test func weeklyCheckInQuestionUsesConfidenceWhenAvoidanceAbsent() {
+        let lessSteady = CoachCheckIn(confidenceShift: .lessSteady)
+        let moreSteady = CoachCheckIn(confidenceShift: .moreSteady)
+
+        #expect(CoachContextBuilder.weeklyCheckInQuestionHint(for: lessSteady).contains("confidence dip"))
+        #expect(CoachContextBuilder.weeklyCheckInQuestionHint(for: moreSteady).contains("more steady"))
+    }
+
+    @Test func dueContextCarriesSelectedQuestionFromLatestCheckIn() {
+        let checkIn = CoachCheckIn(
+            drillVerdict: .helped,
+            avoidedSaying: "I avoided naming the risk clearly"
+        )
+
+        let context = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentCheckIns: [checkIn],
+            weeklyCheckInDue: true
+        )
+
+        #expect(context.contains("Suggested question"))
+        #expect(context.contains("Is the thing you avoided saying still worth saying"))
+        #expect(context.contains("Do not diagnose a trait"))
+    }
+
+    @Test func recentCheckInCarriesConfidenceAndAvoidanceIntoContext() {
+        let checkIn = CoachCheckIn(
+            hardest: "Holding the room",
+            outsideApp: "Leadership update",
+            drillVerdict: .helped,
+            confidenceShift: .moreSteady,
+            avoidedSaying: "I avoided naming the risk clearly"
+        )
+
+        let context = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentCheckIns: [checkIn]
+        )
+
+        #expect(context.contains("WEEKLY CHECK-IN"))
+        #expect(context.contains("Confidence this week"))
+        #expect(context.contains("more steady"))
+        #expect(context.contains("What they avoided saying"))
+        #expect(context.contains("I avoided naming the risk clearly"))
+        #expect(context.contains("user-reported"))
     }
 }
 
@@ -20854,6 +22022,38 @@ struct VideoAnalysisContractTests {
         ))
 
         #expect(normalized == nil)
+    }
+
+    @Test func visualDeliveryReadUsesNormalizedOptInVideoRead() throws {
+        let sessionID = UUID()
+        let read = try #require(VisualDeliveryRead.make(
+            from: result(
+                eyeContactNote: "Eye line returns to the lens often enough.",
+                overallNote: "Your visual delivery looks composed. Keep the eye line steadier on the next rep."
+            ),
+            sessionID: sessionID,
+            recordedAt: Date(timeIntervalSince1970: 2_000)
+        ))
+
+        #expect(read.sessionID == sessionID)
+        #expect(read.recordedAt == Date(timeIntervalSince1970: 2_000))
+        #expect(read.eyeContact == .ok)
+        #expect(read.primaryImprovement?.contains("Eye contact") == true)
+        #expect(read.coachContextLine.contains("User-initiated video read"))
+        #expect(read.coachContextLine.contains("opt-in visual evidence from one recording"))
+        #expect(read.coachContextLine.contains("not a trait or diagnosis"))
+    }
+
+    @Test func visualDeliveryReadRejectsInvalidProviderRead() {
+        let read = VisualDeliveryRead.make(
+            from: result(
+                overallNote: "As an AI, I cannot see the frames, but posture is usually worth improving."
+            ),
+            sessionID: UUID(),
+            recordedAt: Date(timeIntervalSince1970: 2_000)
+        )
+
+        #expect(read == nil)
     }
 
     private func result(
@@ -24174,6 +25374,41 @@ struct AICoachChatReplyQualityGateTests {
         ) == .tooLong)
     }
 
+    @Test func directnessRequestRejectsUnattunedGenericAction() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your current target is answer-first, proof second. Next rep, give a 30-second update.",
+            latestUserTurn: "Be direct with me."
+        )
+
+        #expect(issue == .missedTrustRepair)
+    }
+
+    @Test func directnessRequestAcceptsCompactTargetAndRepShape() {
+        let reply = """
+        Fair. I’ll keep it direct.
+        - Target: answer first, proof second.
+        - Next rep: 30-second update, so the recommendation lands before the explanation: recommendation, one proof point, stop.
+        """
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "Be direct with me."
+        ) == nil)
+    }
+
+    @Test func trustRepairFallbackAnswersDirectnessPreferenceWithUsableRep() {
+        let fallback = AICoachChatService.trustRepairFallbackReply(for: "Give it to me straight.")
+
+        #expect(fallback != nil)
+        #expect(fallback?.contains("I’ll keep it direct") == true)
+        #expect(fallback?.contains("Target: answer first") == true)
+        #expect(fallback?.contains("Next rep: 30-second update") == true)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: fallback ?? "",
+            latestUserTurn: "Give it to me straight."
+        ) == nil)
+    }
+
     @Test func seniorCoachRubricAcceptsAttunedAnchoredAction() {
         let reply = "Fair push: that answer read too generic. Your last rep already has the signal; next rep, hold one beat before sentence two and make the close the whole target."
         let result = AICoachChatService.professionalCoachRubric(
@@ -24676,6 +25911,307 @@ struct CoachChatEvaluationFixtureTests {
         #expect(encoded.contains(#""schemaVersion":"coach-chat-eval-report-v1""#))
         #expect(encoded.contains(#""fixtureID":"cold-start-interview-baseline""#))
         #expect(encoded.contains(#""referenceReplyPassesRubric":true"#))
+    }
+
+    @Test func expertReviewPacketCoversEveryFixtureWithoutClaimingValidation() throws {
+        let packet = CoachChatExpertReviewPacket.make(from: CoachChatEvaluationCorpus.fixtures)
+
+        #expect(packet.schemaVersion == CoachChatEvaluationCorpus.expertReviewPacketSchemaVersion)
+        #expect(packet.rubricVersion == "coach-chat-eval-v1")
+        #expect(packet.fixtureCount == CoachChatEvaluationCorpus.fixtures.count)
+        #expect(packet.rows.map(\.fixtureID) == CoachChatEvaluationCorpus.fixtures.map(\.id))
+        #expect(packet.rows.allSatisfy { $0.expertBaselineStatus == "pendingExpertReview" })
+        #expect(packet.instructions.localizedCaseInsensitiveContains("independent expert baseline"))
+        #expect(packet.instructions.localizedCaseInsensitiveContains("Do not score Noum"))
+        #expect(packet.instructions.localizedCaseInsensitiveContains("avoid"))
+        #expect(packet.instructions.localizedCaseInsensitiveContains("validated"))
+        #expect(!packet.instructions.localizedCaseInsensitiveContains("replaces a coach"))
+
+        let encoded = try packet.encodedSortedJSON()
+        #expect(encoded.contains(#""schemaVersion":"coach-chat-expert-review-packet-v1""#))
+        #expect(encoded.contains(#""responseSchema":"Return one JSON object per fixture"#))
+    }
+
+    @Test func expertReviewPacketIncludesContextButNotInternalAnswers() throws {
+        let packet = CoachChatExpertReviewPacket.make(from: CoachChatEvaluationCorpus.fixtures)
+        let encoded = try packet.encodedSortedJSON()
+
+        for (fixture, row) in zip(CoachChatEvaluationCorpus.fixtures, packet.rows) {
+            #expect(row.latestUserTurn == fixture.latestUserTurn)
+            #expect(row.previousCoachReply == fixture.previousCoachReply)
+            #expect(CoachChatEvaluationCorpus.contains(row.coachContext, "PROFESSIONAL TURN CONTRACT"))
+            #expect(CoachChatEvaluationCorpus.contains(row.coachContext, "No broad menu"))
+            #expect(!encoded.contains(fixture.referenceReply),
+                    "\(fixture.id) expert packet must not include the internal reference reply.")
+            #expect(!encoded.contains(fixture.knownBadReply),
+                    "\(fixture.id) expert packet must not include known-bad anti-examples.")
+        }
+    }
+
+    @Test func expertReviewPacketEncodingIsDeterministic() throws {
+        let first = CoachChatExpertReviewPacket.make(from: CoachChatEvaluationCorpus.fixtures)
+        let second = CoachChatExpertReviewPacket.make(from: CoachChatEvaluationCorpus.fixtures)
+
+        #expect(first == second)
+        let firstJSON = try first.encodedSortedJSON()
+        let secondJSON = try second.encodedSortedJSON()
+        #expect(firstJSON == secondJSON)
+    }
+}
+
+/// Practice-session evaluation corpus.
+///
+/// This is VALIDATION SUBSTRATE ONLY: it runs representative session histories
+/// through the live deterministic engines so decision drift is visible. It is
+/// not expert calibration and it never claims human-coach parity.
+@Suite("EvaluationCorpusSnapshotTests")
+struct EvaluationCorpusSnapshotTests {
+
+    private struct CoachingSnapshot: Equatable, CustomStringConvertible {
+        let fixtureID: String
+        let pillar: EvaluationPillar
+        let qualifyingSessionCount: Int
+        let overallConfidence: String
+        let primaryKey: String
+        let primaryReason: String
+        let secondaryKey: String?
+        let recommendationConfidence: String
+
+        var description: String {
+            [
+                "fixture=\(fixtureID)",
+                "pillar=\(pillar.rawValue)",
+                "qualifying=\(qualifyingSessionCount)",
+                "baseline=\(overallConfidence)",
+                "primary=\(primaryKey)",
+                "reason=\(primaryReason)",
+                "secondary=\(secondaryKey ?? "none")",
+                "recommendationConfidence=\(recommendationConfidence)"
+            ].joined(separator: "\n")
+        }
+    }
+
+    @Test func fixtureFieldsDefaultSafelyOnLegacyDecode() throws {
+        struct LegacySession: Codable {
+            let transcript: String
+            let fillerWordCount: Int
+            let duration: TimeInterval
+            let date: Date
+            let mode: PracticeMode
+            let score: Int?
+            let transcriptConfidence: Double?
+            let pressureLevel: PressureLevel
+            let isRated: Bool
+        }
+
+        let legacy = LegacySession(
+            transcript: "The recommendation is to keep the rollout narrow and review adoption after Friday.",
+            fillerWordCount: 0,
+            duration: 45,
+            date: EvaluationCorpus.date(dayOffset: 0),
+            mode: .timed,
+            score: 8,
+            transcriptConfidence: 0.9,
+            pressureLevel: .standard,
+            isRated: true
+        )
+        let data = try JSONEncoder().encode(legacy)
+        let decoded = try JSONDecoder().decode(PracticeSession.self, from: data)
+
+        #expect(decoded.isEvaluationFixture == false)
+        #expect(decoded.fixtureID == nil)
+        #expect(decoded.transcript == legacy.transcript)
+        #expect(decoded.mode == .timed)
+    }
+
+    @Test func fixtureFieldsRoundTripStable() throws {
+        let fixture = EvaluationCorpus.fixtures(for: .fillerHeavy).first!
+        let session = fixture.sessions.first!
+        let data = try JSONEncoder().encode(session)
+        let decoded = try JSONDecoder().decode(PracticeSession.self, from: data)
+
+        #expect(decoded.isEvaluationFixture == true)
+        #expect(decoded.fixtureID == fixture.id)
+        #expect(decoded.id == session.id)
+        #expect(decoded.date == session.date)
+    }
+
+    @Test func corpusIntegrityEveryFixtureWellFormed() {
+        let fixtures = EvaluationCorpus.all
+        #expect((10...20).contains(fixtures.count))
+        #expect(Set(fixtures.map(\.id)).count == fixtures.count)
+
+        for pillar in EvaluationPillar.allCases {
+            #expect(EvaluationCorpus.fixtures(for: pillar).count >= 2, "\(pillar) should have at least two fixtures.")
+        }
+
+        for fixture in fixtures {
+            #expect(fixture.id.range(of: #"^[a-z0-9]+(-[a-z0-9]+)*$"#, options: .regularExpression) != nil)
+            for session in fixture.sessions {
+                #expect(session.isEvaluationFixture)
+                #expect(session.fixtureID == fixture.id)
+                #expect(session.date <= EvaluationCorpus.date(dayOffset: 0))
+                #expect(!session.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            for outcome in fixture.seedOutcomes {
+                #expect(outcome.followed)
+                #expect(outcome.completedAt <= EvaluationCorpus.date(dayOffset: 0))
+            }
+        }
+    }
+
+    @Test func coldStartFixtureYieldsHonestFloor() {
+        let fixture = EvaluationCorpus.fixtures(for: .coldStart).first { $0.id == "cold-start-01" }!
+        let snapshot = makeSnapshot(for: fixture)
+        let context = renderContext(for: fixture)
+
+        #expect(snapshot.qualifyingSessionCount == 0)
+        #expect(snapshot.primaryKey == "n/a")
+        #expect(context.localizedCaseInsensitiveContains("No rated sessions yet"))
+        #expect(context.localizedCaseInsensitiveContains("No voice set yet"))
+        #expect(!context.localizedCaseInsensitiveContains("INTERVENTION RESPONSE"))
+        #expect(!snapshot.description.localizedCaseInsensitiveContains("coach-parity"))
+    }
+
+    @Test func perFixtureProjectionIsDeterministicAndMachineReadable() {
+        for fixture in EvaluationCorpus.all {
+            let first = makeSnapshot(for: fixture)
+            let second = makeSnapshot(for: fixture)
+
+            #expect(first == second, "\(fixture.id) snapshot should be deterministic.")
+            #expect(first.description.contains("fixture=\(fixture.id)"))
+            #expect(first.description.contains("pillar=\(fixture.pillar.rawValue)"))
+            #expect(!first.description.localizedCaseInsensitiveContains("validated"))
+            #expect(!first.description.localizedCaseInsensitiveContains("replaces a coach"))
+
+            if first.qualifyingSessionCount >= 2 {
+                #expect(first.primaryKey != "n/a", "\(fixture.id) should exercise the recommendation engine.")
+            } else {
+                #expect(first.primaryKey == "n/a", "\(fixture.id) should stay below the recommendation gate.")
+            }
+        }
+    }
+
+    @Test func fixtureContextNeedlesFlowThroughCoachContextBuilder() {
+        for fixture in EvaluationCorpus.all {
+            let context = renderContext(for: fixture)
+            #expect(context.localizedCaseInsensitiveContains("=== USER CONTEXT"))
+            for needle in fixture.contextNeedles {
+                #expect(context.localizedCaseInsensitiveContains(needle),
+                        "\(fixture.id) missing context needle '\(needle)'\n\(context)")
+            }
+        }
+    }
+
+    @Test func adaptationLedgerFixtureSurfacesAssociationOnlyVerdict() {
+        let fixture = EvaluationCorpus.all.first { $0.id == "filler-heavy-02" }!
+        let context = renderContext(for: fixture)
+
+        #expect(context.localizedCaseInsensitiveContains("INTERVENTION RESPONSE"))
+        #expect(context.localizedCaseInsensitiveContains("association only"))
+        #expect(context.localizedCaseInsensitiveContains("time to swap"))
+        #expect(!context.localizedCaseInsensitiveContains("caused"))
+        #expect(!context.localizedCaseInsensitiveContains("proved"))
+    }
+
+    @MainActor
+    @Test func fixtureSessionsNeverLeakToLiveStoreFromRemoteReplacement() {
+        let store = PracticeSessionStore.shared
+        let original = store.sessions
+        defer { store.replaceFromRemote(original) }
+
+        let fixtureSession = EvaluationCorpus.fixtures(for: .strongBaseline).first!.sessions.first!
+        let realSession = PracticeSession(
+            id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            transcript: "The recommendation is to keep scope narrow and approve the launch date today.",
+            fillerWordCount: 0,
+            duration: 45,
+            date: EvaluationCorpus.date(dayOffset: 1),
+            mode: .timed,
+            score: 8,
+            transcriptConfidence: 0.9,
+            pressureLevel: .standard,
+            isRated: true
+        )
+
+        store.replaceFromRemote([fixtureSession, realSession])
+
+        #expect(store.sessions.count == 1)
+        #expect(store.sessions.first?.id == realSession.id)
+        #expect(store.sessions.allSatisfy { !$0.isEvaluationFixture })
+    }
+
+    private func makeSnapshot(for fixture: EvaluationFixture) -> CoachingSnapshot {
+        let baseline = BaselineEngine.compute(from: fixture.sessions)
+        let latest = fixture.sessions.sorted { $0.date > $1.date }.first
+        let action: NextAction? = {
+            guard let latest, baseline.qualifyingSessionCount >= 2 else { return nil }
+            let input = NextActionInput(
+                fillerCount: latest.fillerWordCount,
+                duration: latest.duration,
+                wordCount: latest.wordCount,
+                wpm: Double(latest.wordsPerMinute),
+                score: latest.score ?? 0,
+                categoryRatings: ["Opening": "OK", "Structure": "OK", "Depth": "OK"],
+                mode: latest.mode,
+                pressureLevel: latest.pressureLevel,
+                baseline: baseline,
+                pressureProfile: pressureProfile(from: fixture.sessions),
+                trends: fixture.trends,
+                drillHistory: [],
+                sessionCount: fixture.sessions.count,
+                streakDays: 0,
+                styleGoal: nil,
+                recommendationOutcomes: fixture.seedOutcomes
+            )
+            return NextActionEngine.recommend(input: input)
+        }()
+
+        return CoachingSnapshot(
+            fixtureID: fixture.id,
+            pillar: fixture.pillar,
+            qualifyingSessionCount: baseline.qualifyingSessionCount,
+            overallConfidence: baseline.overallConfidence.label,
+            primaryKey: action.map { stableActionKey($0.primary) } ?? "n/a",
+            primaryReason: action?.primary.displayReason ?? "n/a",
+            secondaryKey: action?.secondary.map(stableActionKey),
+            recommendationConfidence: action?.confidenceLevel.label ?? "n/a"
+        )
+    }
+
+    private func stableActionKey(_ action: ActionRecommendation) -> String {
+        switch action {
+        case .drill(let rec):
+            return "drill:\(rec.skillArea.rawValue)"
+        case .confidenceRebuilding(let rec):
+            return "confidence:\(rec.skillArea.rawValue)"
+        case .practiceMode(let mode, _):
+            return "practice:\(mode.rawValue)"
+        case .pressureExposure(let mode, _):
+            return "pressure:\(mode.rawValue)"
+        case .stabilizingRep(let mode, _):
+            return "stabilize:\(mode.rawValue)"
+        }
+    }
+
+    private func renderContext(for fixture: EvaluationFixture) -> String {
+        CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: BaselineEngine.compute(from: fixture.sessions),
+            rating: .initial,
+            sessions: fixture.sessions,
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recommendationOutcomes: fixture.seedOutcomes,
+            trends: fixture.trends
+        )
+    }
+
+    private func pressureProfile(from sessions: [PracticeSession]) -> PressureProfile {
+        sessions.reduce(PressureProfile.empty) { profile, session in
+            BaselineEngine.updatePressureProfile(profile, session: session, pressure: session.pressureLevel)
+        }
     }
 }
 
@@ -34127,6 +35663,62 @@ struct DeliveryProfileTests {
 // the no-nag cadence gate, the all-empty no-op, and the user-reported /
 // non-causal shape of the coach-context lines.
 
+@Suite("WeeklyCheckInCopy")
+struct WeeklyCheckInCopyTests {
+
+    @Test func copyFramesCheckInAsSelfReportNotDiagnosis() {
+        let combined = [
+            WeeklyCheckInCopy.sheetBody,
+            WeeklyCheckInCopy.noteTitle,
+            WeeklyCheckInCopy.noteBody,
+            WeeklyCheckInCopy.confidenceHelper,
+            WeeklyCheckInCopy.drillHelper
+        ].joined(separator: " ")
+
+        #expect(combined.contains("your words"))
+        #expect(combined.contains("self-report"))
+        #expect(combined.contains("without guessing"))
+        #expect(combined.contains("No score. No diagnosis."))
+        #expect(!combined.lowercased().contains("we know"))
+        #expect(!combined.lowercased().contains("proof that"))
+    }
+
+    @Test func promptIDsMatchPersistedCheckInFields() {
+        #expect(WeeklyCheckInCopy.hardest.id == "hardest")
+        #expect(WeeklyCheckInCopy.outsideApp.id == "outsideApp")
+        #expect(WeeklyCheckInCopy.avoidedSaying.id == "avoidedSaying")
+    }
+
+    @Test func freeTextPromptsStayShortAndCoachLike() {
+        let prompts = [
+            WeeklyCheckInCopy.hardest,
+            WeeklyCheckInCopy.outsideApp,
+            WeeklyCheckInCopy.avoidedSaying
+        ]
+
+        for prompt in prompts {
+            #expect(prompt.title.count <= 32)
+            #expect(prompt.helper.count <= 72)
+            #expect(prompt.placeholder.count <= 28)
+            #expect(!prompt.title.contains("?") || prompt.title.hasSuffix("?"))
+            #expect(!prompt.helper.lowercased().contains("score"))
+        }
+    }
+
+    @Test func choiceQuestionsAvoidPerformanceReviewLanguage() {
+        let combined = [
+            WeeklyCheckInCopy.confidenceQuestion,
+            WeeklyCheckInCopy.confidenceHelper,
+            WeeklyCheckInCopy.drillQuestion,
+            WeeklyCheckInCopy.drillHelper
+        ].joined(separator: " ").lowercased()
+
+        #expect(!combined.contains("performance review"))
+        #expect(!combined.contains("grade"))
+        #expect(!combined.contains("rate yourself"))
+    }
+}
+
 @MainActor
 @Suite("CoachCheckIn")
 struct CoachCheckInStoreTests {
@@ -34154,7 +35746,7 @@ struct CoachCheckInStoreTests {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = CoachCheckInStore(defaults: defaults, accountIDProvider: { "a" })
-        let result = store.record(hardest: "   ", outsideApp: nil, drillVerdict: nil)
+        let result = store.record(hardest: "   ", outsideApp: nil, drillVerdict: nil, confidenceShift: nil, avoidedSaying: "   ")
         #expect(result == nil)
         #expect(store.checkIns.isEmpty)
     }
@@ -34184,20 +35776,67 @@ struct CoachCheckInStoreTests {
         let checkIn = CoachCheckIn(
             hardest: "Pushback in reviews",
             outsideApp: "1:1 with my manager",
-            drillVerdict: .stalled
+            drillVerdict: .stalled,
+            confidenceShift: .lessSteady,
+            avoidedSaying: "I softened the direct ask"
         )
         let lines = checkIn.coachContextLines
-        #expect(lines.count == 3)
+        #expect(lines.count == 5)
         #expect(lines.contains { $0.contains("Hardest this week") && $0.contains("Pushback in reviews") })
         #expect(lines.contains { $0.contains("outside the app") && $0.contains("1:1 with my manager") })
         #expect(lines.contains { $0.contains("the current drill felt stalled") })
+        #expect(lines.contains { $0.contains("Confidence this week") && $0.contains("less steady") })
+        #expect(lines.contains { $0.contains("What they avoided saying") && $0.contains("softened the direct ask") })
+        #expect(!lines.joined(separator: " ").lowercased().contains("diagnosed"))
     }
 
     @Test func fieldsAreTrimmedAndBounded() {
         let long = String(repeating: "a", count: 500)
-        let checkIn = CoachCheckIn(hardest: "  spaced   out  ", outsideApp: long)
+        let checkIn = CoachCheckIn(hardest: "  spaced   out  ", outsideApp: long, avoidedSaying: "  direct   ask  ")
         #expect(checkIn.hardest == "spaced out")
         #expect(checkIn.outsideApp?.count == CoachCheckIn.fieldCharacterLimit)
+        #expect(checkIn.avoidedSaying == "direct ask")
+    }
+
+    @Test func recordPersistsConfidenceAndAvoidance() {
+        let suite = "coachCheckIn-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "acct-\(UUID().uuidString)"
+        let store = CoachCheckInStore(defaults: defaults, accountIDProvider: { accountID })
+
+        let saved = store.record(
+            confidenceShift: .moreSteady,
+            avoidedSaying: "I avoided disagreeing in the meeting",
+            at: Date(timeIntervalSince1970: 2_000)
+        )
+
+        #expect(saved?.confidenceShift == .moreSteady)
+        #expect(saved?.avoidedSaying == "I avoided disagreeing in the meeting")
+
+        let reloaded = CoachCheckInStore(defaults: defaults, accountIDProvider: { accountID })
+        reloaded.reloadForCurrentAccount()
+        #expect(reloaded.latest?.confidenceShift == .moreSteady)
+        #expect(reloaded.latest?.avoidedSaying == "I avoided disagreeing in the meeting")
+    }
+
+    @Test func legacyCheckInDecodesWithoutConfidenceAndAvoidance() throws {
+        let legacy = """
+        {
+            "id": "\(UUID().uuidString)",
+            "recordedAt": 1700000000,
+            "hardest": "Saying no",
+            "outsideApp": "Team standup",
+            "drillVerdict": "helped"
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(CoachCheckIn.self, from: legacy)
+        #expect(decoded.hardest == "Saying no")
+        #expect(decoded.outsideApp == "Team standup")
+        #expect(decoded.drillVerdict == .helped)
+        #expect(decoded.confidenceShift == nil)
+        #expect(decoded.avoidedSaying == nil)
     }
 }
 
@@ -34567,6 +36206,65 @@ struct AskNoumVoiceFirstDefaultTests {
         )
         #expect(line == "Hold the close with one clean final\u{2026}")
         #expect(line.count <= 37)
+    }
+
+    @Test func currentFocusLineReadsLikeCoachContextNotRawState() {
+        guard #available(iOS 17.0, *) else { return }
+        let caseFile = CoachCaseFile(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            hypothesis: "Openings may be the highest-leverage focus.",
+            focus: .openingStrength,
+            evidenceSummary: "Forming read across 4 signals",
+            activeIntervention: "Timed practice for sharper openings",
+            observableTarget: "Open with the answer, then add one proof point",
+            successMeasure: nil,
+            reviewDueAt: nil,
+            subjectivePattern: nil,
+            transferRead: nil,
+            nextMove: .followIntervention,
+            nextQuestion: "What rep will test this target next?"
+        )
+
+        let line = AskNoumView.currentFocusLine(caseFile: caseFile)
+        #expect(line == "Target: Open with the answer, then add one proof point")
+        #expect(line?.contains("Working on") == false)
+    }
+
+    @Test func currentFocusLineFallsBackToFocusThenDrill() {
+        guard #available(iOS 17.0, *) else { return }
+        let focusOnly = CoachCaseFile(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            hypothesis: "Closings may be the highest-leverage focus.",
+            focus: .closingStrength,
+            evidenceSummary: "Forming read across 3 signals",
+            activeIntervention: nil,
+            observableTarget: nil,
+            successMeasure: nil,
+            reviewDueAt: nil,
+            subjectivePattern: nil,
+            transferRead: nil,
+            nextMove: .confirmHypothesis,
+            nextQuestion: "Does this read match the user's experience?"
+        )
+
+        #expect(AskNoumView.currentFocusLine(caseFile: focusOnly) == "Focus: Closings")
+
+        let drillOnly = CoachCaseFile(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            hypothesis: "Pace may be the highest-leverage focus.",
+            focus: nil,
+            evidenceSummary: "Forming read across 3 signals",
+            activeIntervention: "Pace ladder for steadier delivery",
+            observableTarget: nil,
+            successMeasure: nil,
+            reviewDueAt: nil,
+            subjectivePattern: nil,
+            transferRead: nil,
+            nextMove: .followIntervention,
+            nextQuestion: "What rep will test this drill next?"
+        )
+
+        #expect(AskNoumView.currentFocusLine(caseFile: drillOnly) == "Drill: Pace ladder for steadier delivery")
     }
 
     @Test func standingPlanLandingLineUsesTheCaseFileAnchor() {
@@ -35645,15 +37343,18 @@ struct FusedDeliveryReadTests {
         let data = try JSONEncoder().encode(memory)
         let decoded = try JSONDecoder().decode(CoachMemory.self, from: data)
         #expect(decoded.coachDeliveryRead == nil)
+        #expect(decoded.visualDeliveryRead == nil)
 
         // Strip the key from the JSON object to simulate a pre-D2 blob.
         var object = try #require(
             try JSONSerialization.jsonObject(with: data) as? [String: Any]
         )
         object.removeValue(forKey: "coachDeliveryRead")
+        object.removeValue(forKey: "visualDeliveryRead")
         let strippedData = try JSONSerialization.data(withJSONObject: object)
         let strippedDecoded = try JSONDecoder().decode(CoachMemory.self, from: strippedData)
         #expect(strippedDecoded.coachDeliveryRead == nil)
+        #expect(strippedDecoded.visualDeliveryRead == nil)
     }
 
     @Test func memoryRoundTripPreservesCharacterizedRead() throws {
@@ -35733,6 +37434,39 @@ struct FusedDeliveryReadTests {
         #expect(caseFile.activeIntervention == nil)
         #expect(caseFile.nextMove == .gatherEvidence)
         #expect(caseFile.deliveryRead?.tentativeLine?.contains("not a label on the person") == true)
+    }
+
+    @Test func caseFileBuildCarriesVisualDeliveryReadAsOptInCaseSignal() throws {
+        let read = VisualDeliveryRead(
+            recordedAt: Date(timeIntervalSince1970: 1_000),
+            sessionID: UUID(),
+            posture: .good,
+            eyeContact: .ok,
+            gestureUse: .ok,
+            presenceDelivery: .good,
+            summary: "Your visual delivery looks composed. Keep the eye line steadier on the next rep.",
+            primaryImprovement: "Eye contact: Eye line returns to the lens often enough."
+        )
+        let memory = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            evidenceCount: 1,
+            evidenceConfidence: .tentative,
+            goalFit: .noLever,
+            strengths: [],
+            blockers: [],
+            visualDeliveryRead: read
+        )
+
+        let caseFile = try #require(CoachCaseFile.build(
+            from: memory,
+            now: Date(timeIntervalSince1970: 1_100)
+        ))
+
+        #expect(caseFile.visualDeliveryRead == read)
+        #expect(caseFile.hypothesis == nil)
+        #expect(caseFile.activeIntervention == nil)
+        #expect(caseFile.nextMove == CoachCaseNextMove.gatherEvidence)
+        #expect(caseFile.visualDeliveryRead?.coachContextLine.contains("opt-in visual evidence") == true)
     }
 
     @Test func buildCarriesPreviousReadForwardOnThinWindow() throws {
@@ -44076,6 +45810,7 @@ struct C5VoiceUnavailableNoticeTests {
 
     /// The note is factual + quiet: names the state, promises nothing,
     /// blames nobody, and never claims the text itself failed.
+    @MainActor
     @Test func noticeCopyIsFactualAndBlameFree() {
         let notice = IMMessageSpeaker.voiceUnavailableNoticeText
         #expect(!notice.isEmpty)

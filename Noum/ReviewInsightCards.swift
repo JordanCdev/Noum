@@ -50,6 +50,18 @@ enum ReviewCoachRead {
         }
     }
 
+    static func evidenceCaption(improving: SkillTrend?, focus: SkillTrend?) -> String? {
+        let hasEvidence = [improving, focus]
+            .compactMap { $0?.windowSize }
+            .contains { $0 > 0 }
+
+        guard hasEvidence else {
+            return nil
+        }
+
+        return "Uses your newest measured reps"
+    }
+
     static func confidenceRank(_ confidence: TrendConfidence) -> Int {
         switch confidence {
         case .low: return 0
@@ -67,8 +79,8 @@ struct ReviewCoachReadCard: View {
     private var improving: SkillTrend? { ReviewCoachRead.improvingTrend(in: trends) }
     private var focus: SkillTrend? { ReviewCoachRead.focusTrend(in: trends) }
 
-    private var evidenceWindow: Int {
-        max(improving?.windowSize ?? 0, focus?.windowSize ?? 0)
+    private var evidenceCaption: String? {
+        ReviewCoachRead.evidenceCaption(improving: improving, focus: focus)
     }
 
     var body: some View {
@@ -95,9 +107,11 @@ struct ReviewCoachReadCard: View {
                     )
                 }
 
-                Text("Based on your last \(evidenceWindow) reps")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                if let evidenceCaption {
+                    Text(evidenceCaption)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
             }
             .padding(Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)

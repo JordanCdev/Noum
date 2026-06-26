@@ -433,6 +433,44 @@ enum CoachContextBuilder {
     ///     the most recent 2 and explicitly labelled subjective evidence.
     ///   • CHECK-IN OPPORTUNITY — due-only guidance for organically asking
     ///     one weekly check-in question inside chat instead of blocking setup.
+    static func weeklyCheckInQuestionHint(for latestCheckIn: CoachCheckIn?) -> String {
+        guard let latestCheckIn else {
+            return "What felt hardest in a real conversation this week?"
+        }
+
+        switch latestCheckIn.drillVerdict {
+        case .missed:
+            return "What did the current drill miss that you actually needed this week?"
+        case .stalled:
+            return "Where did the current drill stall: confidence, clarity, or using it in a real moment?"
+        case .helped, .none:
+            break
+        }
+
+        if latestCheckIn.avoidedSaying != nil {
+            return "Is the thing you avoided saying still worth saying, and how would you say it cleanly now?"
+        }
+
+        switch latestCheckIn.confidenceShift {
+        case .lessSteady:
+            return "Where did your confidence dip this week, and what did that do to your delivery?"
+        case .moreSteady:
+            return "Where did you feel more steady this week, and what should we repeat?"
+        case .aboutSame, .none:
+            break
+        }
+
+        if latestCheckIn.outsideApp != nil {
+            return "What happened in the real moment you mentioned, and what would you handle differently next time?"
+        }
+
+        if latestCheckIn.hardest != nil {
+            return "What made that the hardest part this week?"
+        }
+
+        return "What felt hardest in a real conversation this week?"
+    }
+
     static func userContext(
         profile: CoachingProfile?,
         baseline: CommunicationBaseline,
@@ -469,8 +507,9 @@ enum CoachContextBuilder {
         // unchanged and non-goal turns emit no extra lines.
         pendingGoalIntent: GoalIntent? = nil,
         // F1 — recent weekly check-ins (newest-first): the user's own
-        // bidirectional answers (hardest / outside-app transfer / drill
-        // verdict). Defaults to empty so existing callers compile unchanged.
+        // bidirectional answers (confidence / hardest / avoidance /
+        // outside-app transfer / drill verdict). Defaults to empty so
+        // existing callers compile unchanged.
         recentCheckIns: [CoachCheckIn] = [],
         // F1b — due-only chat guidance. The store remains the cadence owner;
         // this pure context line just tells the coach when a weekly check-in
@@ -604,8 +643,8 @@ enum CoachContextBuilder {
         }
 
         // WEEKLY CHECK-IN (F1) — the user's own answers from the most-recent
-        // weekly check-in: what felt hardest, where it showed up outside the
-        // app, and their read on whether the current drill is working.
+        // weekly check-in: confidence, what felt hardest, what they avoided,
+        // where it showed up outside the app, and their read on the drill.
         // User-reported, never inferred; the drill verdict guides review but
         // never proves the drill caused anything.
         if let latestCheckIn = recentCheckIns.first(where: { !$0.coachContextLines.isEmpty }) {
@@ -618,7 +657,10 @@ enum CoachContextBuilder {
         if weeklyCheckInDue {
             lines.append("")
             lines.append("CHECK-IN OPPORTUNITY")
-            lines.append("- A weekly check-in is due. Do not interrupt practice, force a form, or open with this if the user is trying to start a rep. In chat, if the user's turn is broad, ask one concise human-coach question about what felt hardest this week, where it showed up outside the app, or whether the current drill is still helping.")
+            let latestCheckIn = recentCheckIns.first(where: { !$0.coachContextLines.isEmpty })
+            lines.append("- A weekly check-in is due. Do not interrupt practice, force a form, or open with this if the user is trying to start a rep. In chat, if the user's turn is broad and there is no clearer urgent need, ask at most one concise human-coach question.")
+            lines.append("- Suggested question: \"\(weeklyCheckInQuestionHint(for: latestCheckIn))\"")
+            lines.append("- Treat any answer as user-reported evidence. Do not diagnose a trait or claim the drill caused a result.")
         }
 
         let liveFrame = liveCoachingFrameLines(
@@ -4277,13 +4319,37 @@ enum CoachContextBuilder {
         recentSessionDigest: String? = nil,
         count: Int = 3
     ) async -> [String]? {
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            statusCode: Int? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "Ask Noum starter chips",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+        }
+
         // Locale + provider gates first — match `generateAIFollowUpChips`,
         // `AICoachChatService`, and `AIPromptGeneratorService`. Reading
         // state on the main actor since both stores live there.
-        guard await activeLocaleSupportsAI() else { return nil }
-        guard let provider = await currentProvider(),
+        guard await activeLocaleSupportsAI() else {
+            record(.skipped, "Locale not AI-supported")
+            return nil
+        }
+        let configuredProvider = await currentProvider()
+        guard let provider = configuredProvider,
               let endpoint = provider.endpoint,
-              let key = apiKey(for: provider) else { return nil }
+              let key = apiKey(for: provider) else {
+            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
+            return nil
+        }
 
         let system = aiStarterSystemPrompt
         let user = aiStarterUserPrompt(
@@ -4308,6 +4374,7 @@ enum CoachContextBuilder {
         do {
             switch provider {
             case .none:
+                record(.skipped, "Provider set to off", provider: provider)
                 return nil
             case .openAI, .deepSeek:
                 request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
@@ -4328,22 +4395,41 @@ enum CoachContextBuilder {
                     "contents": [["role": "user", "parts": [["text": user]]]],
                     "generationConfig": [
                         "temperature": 0.7,
-                        "maxOutputTokens": 120
+                        "maxOutputTokens": 120,
+                        "thinkingConfig": ["thinkingBudget": 0]
                     ]
                 ]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
             }
 
+            let startedAt = Date()
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                record(
+                    .fallback,
+                    statusCode.map { "Provider returned HTTP \($0)" } ?? "Non-HTTP response",
+                    provider: provider,
+                    statusCode: statusCode,
+                    startedAt: startedAt
+                )
                 return nil
             }
-            guard let raw = extractAIChipsText(from: data, provider: provider) else { return nil }
+            guard let raw = extractAIChipsText(from: data, provider: provider) else {
+                record(.fallback, "Missing response content", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+                return nil
+            }
             // Same grounding gate as the follow-up chips: a partial /
             // ungrounded batch (fewer than `count` survive the filter)
             // loses to the deterministic catalog.
-            return parseAndFilterChips(raw, count: count)
+            guard let chips = parseAndFilterChips(raw, count: count) else {
+                record(.fallback, "Starter chips failed content filter", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+                return nil
+            }
+            record(.success, "Starter chips accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+            return chips
         } catch {
+            record(.failure, "Transport or decode error", provider: provider)
             return nil
         }
     }
@@ -5018,17 +5104,44 @@ enum CoachContextBuilder {
         recentSessionDigest: String? = nil,
         count: Int = 3
     ) async -> [String]? {
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            statusCode: Int? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "Ask Noum follow-up chips",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+        }
+
         let trimmedReply = lastCoachReply.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedTurn = lastUserTurn.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedReply.isEmpty, !trimmedTurn.isEmpty else { return nil }
+        guard !trimmedReply.isEmpty, !trimmedTurn.isEmpty else {
+            record(.skipped, "Missing conversation context")
+            return nil
+        }
 
         // Locale + provider gates first — match what AICoachChatService
         // and AIPromptGeneratorService do. Reading state on the main
         // actor since both stores live there.
-        guard await activeLocaleSupportsAI() else { return nil }
-        guard let provider = await currentProvider(),
+        guard await activeLocaleSupportsAI() else {
+            record(.skipped, "Locale not AI-supported")
+            return nil
+        }
+        let configuredProvider = await currentProvider()
+        guard let provider = configuredProvider,
               let endpoint = provider.endpoint,
-              let key = apiKey(for: provider) else { return nil }
+              let key = apiKey(for: provider) else {
+            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
+            return nil
+        }
 
         let system = aiChipsSystemPrompt
         let user = aiChipsUserPrompt(
@@ -5050,6 +5163,7 @@ enum CoachContextBuilder {
         do {
             switch provider {
             case .none:
+                record(.skipped, "Provider set to off", provider: provider)
                 return nil
             case .openAI, .deepSeek:
                 request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
@@ -5073,24 +5187,43 @@ enum CoachContextBuilder {
                     "contents": [["role": "user", "parts": [["text": user]]]],
                     "generationConfig": [
                         "temperature": 0.7,
-                        "maxOutputTokens": 120
+                        "maxOutputTokens": 120,
+                        "thinkingConfig": ["thinkingBudget": 0]
                     ]
                 ]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
             }
 
+            let startedAt = Date()
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                record(
+                    .fallback,
+                    statusCode.map { "Provider returned HTTP \($0)" } ?? "Non-HTTP response",
+                    provider: provider,
+                    statusCode: statusCode,
+                    startedAt: startedAt
+                )
                 return nil
             }
-            guard let raw = extractAIChipsText(from: data, provider: provider) else { return nil }
-            return parseAndFilterChips(
+            guard let raw = extractAIChipsText(from: data, provider: provider) else {
+                record(.fallback, "Missing response content", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+                return nil
+            }
+            guard let chips = parseAndFilterChips(
                 raw,
                 count: count,
                 lastUserTurn: trimmedTurn,
                 lastCoachReply: trimmedReply
-            )
+            ) else {
+                record(.fallback, "Follow-up chips failed content filter", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+                return nil
+            }
+            record(.success, "Follow-up chips accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+            return chips
         } catch {
+            record(.failure, "Transport or decode error", provider: provider)
             return nil
         }
     }
@@ -5373,11 +5506,7 @@ enum CoachContextBuilder {
     }
 
     private static func apiKey(for provider: AIProvider) -> String? {
-        guard let keyName = provider.environmentKey else { return nil }
-        if let value = ProcessInfo.processInfo.environment[keyName], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        AIProviderCredential.apiKey(for: provider)
     }
 
     // MARK: - Derived confidence
@@ -5505,6 +5634,15 @@ enum CoachContextBuilder {
         if let delivery = caseFile.deliveryRead?.tentativeLine {
             lines.append("- Delivery read: \(delivery)")
         }
+        if let profileLine = deliveryProfileCaseLine(
+            for: memory.deliveryProfile,
+            includePattern: caseFile.deliveryRead?.tentativeLine == nil
+        ) {
+            lines.append("- Delivery profile: \(profileLine)")
+        }
+        if let visualDelivery = caseFile.visualDeliveryRead?.coachContextLine {
+            lines.append("- Visual/presence read: \(visualDelivery)")
+        }
         if let active = caseFile.activeIntervention {
             lines.append("- Intervention: \(active).")
         }
@@ -5528,7 +5666,30 @@ enum CoachContextBuilder {
         }
         lines.append("- Next coach move: \(caseFile.nextMove.contextLabel). \(caseFile.nextMove.contextInstruction) \(caseFile.nextQuestion)")
 
-        return Array(lines.prefix(11))
+        return Array(lines.prefix(12))
+    }
+
+    private static func deliveryProfileCaseLine(
+        for profile: DeliveryProfile?,
+        includePattern: Bool
+    ) -> String? {
+        guard let profile else { return nil }
+
+        var clauses: [String] = []
+        if includePattern, let pattern = profile.patternLine {
+            clauses.append("recurring read — \(pattern)")
+        }
+        if let improved = profile.improvedLine {
+            clauses.append("improved — \(improved)")
+        }
+        if let pressure = profile.pressureLine {
+            clauses.append("under pressure — \(pressure)")
+        }
+        if let next = profile.nextTargetLine {
+            clauses.append("next target — \(next)")
+        }
+        guard !clauses.isEmpty else { return nil }
+        return clauses.prefix(3).joined(separator: " ") + " Treat as hypotheses about recent reps, not a trait or diagnosis."
     }
 
     private static func coachCaseFormulationLines(

@@ -534,13 +534,32 @@ actor PostRepCoachNoteService {
     /// Callers use `result.isAIBacked` to know which path ran.
     func generate(input: PostRepCoachNoteInput) async -> PostRepCoachNote {
         let fallback = Self.deterministicNote(input: input)
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            statusCode: Int? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "Post-rep coach note",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+        }
 
         guard await activeLocaleSupportsAI() else {
+            record(.skipped, "Locale not AI-supported")
             return fallback
         }
-        guard let provider = await currentProvider(),
+        let configuredProvider = await currentProvider()
+        guard let provider = configuredProvider,
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider) else {
+            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
             return fallback
         }
 
@@ -551,6 +570,7 @@ actor PostRepCoachNoteService {
         // already what the surface would have shown without an AI
         // provider configured — silent, honest degradation.
         guard await rateLimiterAllows() else {
+            record(.skipped, "AI rate limit denied", provider: provider)
             return fallback
         }
 
@@ -566,21 +586,33 @@ actor PostRepCoachNoteService {
             case .gemini:
                 request.setGoogleAPIKey(key)
             case .none:
+                record(.skipped, "Provider set to off", provider: provider)
                 return fallback
             }
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
+            let startedAt = Date()
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                record(
+                    .fallback,
+                    statusCode.map { "Provider returned HTTP \($0)" } ?? "Non-HTTP response",
+                    provider: provider,
+                    statusCode: statusCode,
+                    startedAt: startedAt
+                )
                 return fallback
             }
             guard let noteText = parseNoteText(from: data, provider: provider) else {
+                record(.fallback, "Response JSON did not match coach-note schema", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
                 return fallback
             }
             // Validate brand-voice contract: no exclamations, no chirpy
             // filler, length cap. If the model misbehaves, fall back
             // rather than render policy-violating text.
             guard Self.passesBrandVoiceContract(noteText) else {
+                record(.fallback, "Coach note failed brand-voice gate", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
                 return fallback
             }
             // Presence gate (mirrors GrammarFeedbackService's excerpt-must-
@@ -590,6 +622,7 @@ actor PostRepCoachNoteService {
             // read and we fall back to the deterministic note. Empty
             // transcript (IM / silent rep) -> nothing to quote -> gate passes.
             guard Self.engagesTranscript(noteText, input: input) else {
+                record(.fallback, "Coach note failed transcript-grounding gate", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
                 return fallback
             }
             // Fabrication gate: `engagesTranscript` proves the note TOUCHES the
@@ -606,8 +639,10 @@ actor PostRepCoachNoteService {
                 in: noteText,
                 quoteGuard: quoteGuard
             ) else {
+                record(.fallback, "Coach note failed quote-grounding gate", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
                 return fallback
             }
+            record(.success, "Coach note accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
             return PostRepCoachNote(
                 sessionID: input.sessionID,
                 voice: input.voice,
@@ -615,6 +650,7 @@ actor PostRepCoachNoteService {
                 isAIBacked: true
             )
         } catch {
+            record(.failure, "Transport or decode error", provider: provider)
             return fallback
         }
     }
@@ -1588,9 +1624,10 @@ actor PostRepCoachNoteService {
         case .gemini:
             return [
                 "systemInstruction": ["parts": [["text": system]]],
-                "contents": [["parts": [["text": user]]]],
+                "contents": [["role": "user", "parts": [["text": user]]]],
                 "generationConfig": [
                     "temperature": 0.5,
+                    "thinkingConfig": ["thinkingBudget": 0],
                     "responseMimeType": "application/json"
                 ]
             ]
@@ -1667,10 +1704,6 @@ actor PostRepCoachNoteService {
     }
 
     private func apiKey(for provider: AIProvider) -> String? {
-        guard let keyName = provider.environmentKey else { return nil }
-        if let value = ProcessInfo.processInfo.environment[keyName], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        AIProviderCredential.apiKey(for: provider)
     }
 }

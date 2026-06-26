@@ -883,36 +883,41 @@ struct IMPracticeView: View {
             targetTone = nil
             setupStep = .tone
         } label: {
-            HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
-                        .fill((scenario == option ? Color.blue : Color.gray).opacity(scenario == option ? 0.14 : 0.10))
-                        .frame(width: 50, height: 50)
-                    Image(systemName: scenarioIconName(for: option))
-                        .font(.headline)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
+                            .fill((scenario == option ? Color.blue : Color.gray).opacity(scenario == option ? 0.14 : 0.10))
+                            .frame(width: 48, height: 48)
+                        Image(systemName: scenarioIconName(for: option))
+                            .font(.headline)
+                            .foregroundStyle(scenario == option ? .blue : .secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(option.title)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(option.summary)
+                            .font(Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Image(systemName: scenario == option ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
                         .foregroundStyle(scenario == option ? .blue : .secondary)
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(option.title)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    Text(option.summary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-
-                    HStack(spacing: 8) {
-                        detailPill(title: option.personaName, systemImage: "person.fill")
-                        detailPill(title: option.stakes, systemImage: "sparkles")
-                    }
+                HStack(spacing: 8) {
+                    detailPill(title: option.personaName, systemImage: "person.fill")
+                    detailPill(title: option.stakes, systemImage: "sparkles")
                 }
-
-                Spacer()
-
-                Image(systemName: scenario == option ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(scenario == option ? .blue : .secondary)
             }
             .padding(Spacing.cardGap)
             .background(
@@ -966,9 +971,10 @@ struct IMPracticeView: View {
 
     private func detailPill(title: String, systemImage: String) -> some View {
         Label(title, systemImage: systemImage)
-            .font(.caption.weight(.medium))
+            .font(Typography.micro.weight(.semibold))
             .foregroundStyle(.secondary)
             .lineLimit(1)
+            .minimumScaleFactor(0.72)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(Color.black.opacity(0.04), in: Capsule())

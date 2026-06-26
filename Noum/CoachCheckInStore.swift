@@ -48,6 +48,32 @@ enum CoachDrillVerdict: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// The user's own read on confidence across the week. This is deliberately
+/// self-report, not inferred from score or delivery metrics.
+enum CoachConfidenceShift: String, Codable, CaseIterable, Identifiable {
+    case moreSteady
+    case aboutSame
+    case lessSteady
+
+    var id: String { rawValue }
+
+    var chipLabel: String {
+        switch self {
+        case .moreSteady: return "More steady"
+        case .aboutSame:  return "About the same"
+        case .lessSteady: return "Less steady"
+        }
+    }
+
+    var coachClause: String {
+        switch self {
+        case .moreSteady: return "more steady"
+        case .aboutSame:  return "about the same"
+        case .lessSteady: return "less steady"
+        }
+    }
+}
+
 struct CoachCheckIn: Codable, Identifiable, Equatable {
     static let fieldCharacterLimit = 200
 
@@ -60,25 +86,33 @@ struct CoachCheckIn: Codable, Identifiable, Equatable {
     let outsideApp: String?
     /// The user's read on the current drill. nil when skipped.
     let drillVerdict: CoachDrillVerdict?
+    /// The user's read on confidence this week. nil when skipped.
+    let confidenceShift: CoachConfidenceShift?
+    /// What the user avoided saying, if anything. nil when skipped.
+    let avoidedSaying: String?
 
     init(
         id: UUID = UUID(),
         recordedAt: Date = Date(),
         hardest: String? = nil,
         outsideApp: String? = nil,
-        drillVerdict: CoachDrillVerdict? = nil
+        drillVerdict: CoachDrillVerdict? = nil,
+        confidenceShift: CoachConfidenceShift? = nil,
+        avoidedSaying: String? = nil
     ) {
         self.id = id
         self.recordedAt = recordedAt
         self.hardest = Self.normalize(hardest)
         self.outsideApp = Self.normalize(outsideApp)
         self.drillVerdict = drillVerdict
+        self.confidenceShift = confidenceShift
+        self.avoidedSaying = Self.normalize(avoidedSaying)
     }
 
     /// True when the user actually said something — an all-empty check-in is
     /// never recorded (no hollow "checked in" with no content).
     var hasContent: Bool {
-        hardest != nil || outsideApp != nil || drillVerdict != nil
+        hardest != nil || outsideApp != nil || drillVerdict != nil || confidenceShift != nil || avoidedSaying != nil
     }
 
     private static func normalize(_ text: String?) -> String? {
@@ -95,6 +129,8 @@ struct CoachCheckIn: Codable, Identifiable, Equatable {
         if let hardest { out.append("- Hardest this week (user's words): \"\(hardest)\".") }
         if let outsideApp { out.append("- Where it showed up outside the app: \"\(outsideApp)\".") }
         if let drillVerdict { out.append("- On the current drill, the user reported \(drillVerdict.coachClause).") }
+        if let confidenceShift { out.append("- Confidence this week (user-reported): \(confidenceShift.coachClause).") }
+        if let avoidedSaying { out.append("- What they avoided saying (user's words): \"\(avoidedSaying)\".") }
         return out
     }
 }
@@ -165,6 +201,8 @@ final class CoachCheckInStore: ObservableObject {
         hardest: String? = nil,
         outsideApp: String? = nil,
         drillVerdict: CoachDrillVerdict? = nil,
+        confidenceShift: CoachConfidenceShift? = nil,
+        avoidedSaying: String? = nil,
         at now: Date = Date()
     ) -> CoachCheckIn? {
         guard let accountID = currentAccountID else { return nil }
@@ -172,7 +210,9 @@ final class CoachCheckInStore: ObservableObject {
             recordedAt: now,
             hardest: hardest,
             outsideApp: outsideApp,
-            drillVerdict: drillVerdict
+            drillVerdict: drillVerdict,
+            confidenceShift: confidenceShift,
+            avoidedSaying: avoidedSaying
         )
         // An all-empty check-in is a no-op — never record a hollow "checked in".
         guard checkIn.hasContent else { return nil }

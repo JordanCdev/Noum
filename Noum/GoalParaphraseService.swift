@@ -15,10 +15,29 @@ actor GoalParaphraseService {
     private init() {}
 
     func paraphrase(profile: CoachingProfile) async -> String? {
-        guard let provider = await currentProvider(),
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            statusCode: Int? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "Goal paraphrase",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+        }
+
+        let configuredProvider = await currentProvider()
+        guard let provider = configuredProvider,
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider)
         else {
+            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
             return nil
         }
 
@@ -32,6 +51,7 @@ actor GoalParaphraseService {
         do {
             switch provider {
             case .none:
+                record(.skipped, "Provider set to off", provider: provider)
                 return nil
             case .openAI, .deepSeek:
                 request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
@@ -48,20 +68,41 @@ actor GoalParaphraseService {
                 request.setGoogleAPIKey(key)
                 let body: [String: Any] = [
                     "systemInstruction": ["parts": [["text": Self.systemPrompt]]],
-                    "contents": [["parts": [["text": prompt]]]],
-                    "generationConfig": ["temperature": 0.4]
+                    "contents": [["role": "user", "parts": [["text": prompt]]]],
+                    "generationConfig": [
+                        "temperature": 0.4,
+                        "thinkingConfig": ["thinkingBudget": 0]
+                    ]
                 ]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
             }
 
+            let startedAt = Date()
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                record(
+                    .fallback,
+                    statusCode.map { "Provider returned HTTP \($0)" } ?? "Non-HTTP response",
+                    provider: provider,
+                    statusCode: statusCode,
+                    startedAt: startedAt
+                )
                 return nil
             }
-            return decodeText(from: data, provider: provider)
-                .map(sanitize)
-                .flatMap { $0.isEmpty ? nil : $0 }
+            guard let decoded = decodeText(from: data, provider: provider) else {
+                record(.fallback, "Missing response content", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+                return nil
+            }
+            let sanitized = sanitize(decoded)
+            guard !sanitized.isEmpty else {
+                record(.fallback, "Paraphrase sanitized to empty", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+                return nil
+            }
+            record(.success, "Paraphrase accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+            return sanitized
         } catch {
+            record(.failure, "Transport or decode error", provider: provider)
             return nil
         }
     }
@@ -74,11 +115,7 @@ actor GoalParaphraseService {
     }
 
     private func apiKey(for provider: AIProvider) -> String? {
-        guard let keyName = provider.environmentKey else { return nil }
-        if let value = ProcessInfo.processInfo.environment[keyName], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        AIProviderCredential.apiKey(for: provider)
     }
 
     // MARK: - Prompt

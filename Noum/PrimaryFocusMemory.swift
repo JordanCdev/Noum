@@ -145,8 +145,8 @@ enum CoachCriterionStatus: String, Codable, Equatable {
     var contextLabel: String {
         switch self {
         case .pending: return "not enough followed reps yet to judge"
-        case .met: return "criterion currently met"
-        case .notYetMet: return "criterion not yet met"
+        case .met: return "already meeting the target"
+        case .notYetMet: return "not meeting the target yet"
         }
     }
 }
@@ -156,11 +156,23 @@ enum CoachCriterionStatus: String, Codable, Equatable {
 /// intervention is prescribed and kept stable across rebuilds; only its
 /// `status` is recomputed from the user's followed reps.
 struct CoachSuccessCriterion: Codable, Equatable {
+    struct BaselineSnapshot: Codable, Equatable {
+        /// The user's own pre-prescription average for this metric, captured
+        /// when the bar was set.
+        var priorAverage: Double
+        /// The number of prior reps behind the average. Numeric copy is only
+        /// emitted when this meets the named evidence floor.
+        var sampleDepth: Int
+    }
+
     var metric: CoachCaseMetric
     var comparator: CoachCaseComparator
     var threshold: Double
     var evaluationWindow: Int
     var summary: String
+    /// Bounded evidence behind the success bar. nil means "thin sample; use
+    /// generic copy." Optional for decode safety with older memories.
+    var baselineSnapshot: BaselineSnapshot? = nil
 
     /// Pure judgement: given the metric values from the most-recent
     /// followed reps (newest first), decide met / not-yet-met / pending.
@@ -748,6 +760,59 @@ enum CoachCaseNextMove: String, Codable, Equatable {
     }
 }
 
+/// The most recent opt-in visual delivery read from AI video analysis.
+///
+/// This is deliberately small: no frames, no raw images, no trait language.
+/// It carries only the normalized ratings/notes the user explicitly requested
+/// from the summary screen, so the coach can remember "what the video read
+/// showed" without pretending it diagnosed the person.
+struct VisualDeliveryRead: Codable, Equatable {
+    var recordedAt: Date
+    var sessionID: UUID?
+    var posture: FeedbackRating
+    var eyeContact: FeedbackRating
+    var gestureUse: FeedbackRating
+    var presenceDelivery: FeedbackRating
+    var summary: String
+    var primaryImprovement: String?
+
+    static func make(
+        from result: VideoAnalysisResult,
+        sessionID: UUID?,
+        recordedAt: Date = Date()
+    ) -> VisualDeliveryRead? {
+        guard let normalized = VideoAnalysisContract.normalized(result) else { return nil }
+        return VisualDeliveryRead(
+            recordedAt: recordedAt,
+            sessionID: sessionID,
+            posture: normalized.posture,
+            eyeContact: normalized.eyeContact,
+            gestureUse: normalized.gestureUse,
+            presenceDelivery: normalized.presenceDelivery,
+            summary: normalized.overallNote,
+            primaryImprovement: primaryImprovement(from: normalized)
+        )
+    }
+
+    var coachContextLine: String {
+        let improvement = primaryImprovement.map { " Next watch point: \($0)." } ?? ""
+        return "User-initiated video read: posture \(posture.rawValue.lowercased()), eye contact \(eyeContact.rawValue.lowercased()), gestures \(gestureUse.rawValue.lowercased()), presence \(presenceDelivery.rawValue.lowercased()). \(summary)\(improvement) Treat as opt-in visual evidence from one recording, not a trait or diagnosis."
+    }
+
+    private static func primaryImprovement(from result: VideoAnalysisResult) -> String? {
+        let candidates: [(FeedbackRating, String, String)] = [
+            (result.eyeContact, "Eye contact", result.eyeContactNote),
+            (result.presenceDelivery, "Presence", result.presenceNote),
+            (result.gestureUse, "Gestures", result.gestureNote),
+            (result.posture, "Posture", result.postureNote),
+            (result.energyConfidence, "Energy", result.energyNote),
+            (result.facialExpression, "Expression", result.facialExpressionNote),
+        ]
+        guard let candidate = candidates.first(where: { $0.0 != .good }) else { return nil }
+        return "\(candidate.1): \(candidate.2)"
+    }
+}
+
 struct CoachMemory: Codable, Equatable {
     var updatedAt: Date
     var lastSessionID: UUID?
@@ -860,6 +925,11 @@ struct CoachMemory: Codable, Equatable {
     // decode to nil via `decodeIfPresent`.
     var deliveryProfile: DeliveryProfile?
 
+    // The most-recent opt-in video/presence read. Persisted beside the other
+    // delivery reads so post-hoc caseFile mutators keep it, and framed in
+    // context as one user-initiated recording rather than a durable trait.
+    var visualDeliveryRead: VisualDeliveryRead?
+
     // Explicit memberwise init — required because the custom
     // `init(from:)` below suppresses the synthesized one.
     init(
@@ -898,7 +968,8 @@ struct CoachMemory: Codable, Equatable {
         weeklyRepCount: Int? = nil,
         isLatestSessionPersonalBest: Bool? = nil,
         coachDeliveryRead: CoachDeliveryRead? = nil,
-        deliveryProfile: DeliveryProfile? = nil
+        deliveryProfile: DeliveryProfile? = nil,
+        visualDeliveryRead: VisualDeliveryRead? = nil
     ) {
         self.updatedAt = updatedAt
         self.lastSessionID = lastSessionID
@@ -936,6 +1007,7 @@ struct CoachMemory: Codable, Equatable {
         self.isLatestSessionPersonalBest = isLatestSessionPersonalBest
         self.coachDeliveryRead = coachDeliveryRead
         self.deliveryProfile = deliveryProfile
+        self.visualDeliveryRead = visualDeliveryRead
     }
 
     // Custom Decodable for backward compatibility — all momentum
@@ -959,6 +1031,7 @@ struct CoachMemory: Codable, Equatable {
         case isLatestSessionPersonalBest
         case coachDeliveryRead
         case deliveryProfile
+        case visualDeliveryRead
     }
 
     init(from decoder: Decoder) throws {
@@ -999,6 +1072,7 @@ struct CoachMemory: Codable, Equatable {
         isLatestSessionPersonalBest = try c.decodeIfPresent(Bool.self, forKey: .isLatestSessionPersonalBest)
         coachDeliveryRead = try c.decodeIfPresent(CoachDeliveryRead.self, forKey: .coachDeliveryRead)
         deliveryProfile = try c.decodeIfPresent(DeliveryProfile.self, forKey: .deliveryProfile)
+        visualDeliveryRead = try c.decodeIfPresent(VisualDeliveryRead.self, forKey: .visualDeliveryRead)
     }
 }
 
@@ -1025,6 +1099,9 @@ struct CoachCaseFile: Codable, Equatable {
     /// read without needing raw sessions. Optional for decode safety and nil
     /// below the delivery consistency floor.
     var deliveryRead: CoachDeliveryRead? = nil
+    /// The most-recent opt-in video/presence read. Optional and explicitly
+    /// framed as a user-initiated single-recording read in context.
+    var visualDeliveryRead: VisualDeliveryRead? = nil
     /// The soonest upcoming real-world moment the user is preparing for, as a
     /// bounded one-line clause ("Preparing for: Q3 review (performance review),
     /// 5 days away."). Derived at the call site from `BigMomentStore` and
@@ -1049,13 +1126,15 @@ struct CoachCaseFile: Codable, Equatable {
         let subjectivePattern = memory.reflectionPattern?.reportedLine
         let transferRead = memory.lastTransferReview?.reportedOutcomeLine
         let deliveryRead = memory.coachDeliveryRead
+        let visualDeliveryRead = memory.visualDeliveryRead
 
         guard hypothesis != nil ||
                 focus != nil ||
                 activeIntervention != nil ||
                 subjectivePattern != nil ||
                 transferRead != nil ||
-                deliveryRead?.tentativeLine != nil else {
+                deliveryRead?.tentativeLine != nil ||
+                visualDeliveryRead != nil else {
             return nil
         }
 
@@ -1072,6 +1151,7 @@ struct CoachCaseFile: Codable, Equatable {
             subjectivePattern: subjectivePattern,
             transferRead: transferRead,
             deliveryRead: deliveryRead,
+            visualDeliveryRead: visualDeliveryRead,
             upcomingMomentLine: upcomingMomentLine,
             nextMove: move,
             nextQuestion: nextQuestion(for: move)
@@ -1564,6 +1644,7 @@ enum CoachMemoryEngine {
             paceBaseline: baselinePace,
             deliveryRead: memory.coachDeliveryRead
         ) ?? previous?.deliveryProfile
+        memory.visualDeliveryRead = previous?.visualDeliveryRead
         // Derive the upcoming-moment line HERE (not inside the pure build) so
         // the case file knows what the user is preparing for. Mirrors the
         // `lastTransferReview` wiring: the store is read at the SessionFinalizer
@@ -1614,7 +1695,7 @@ enum CoachMemoryEngine {
             selection = LeverSelection(
                 area: area,
                 confidence: nil,
-                basis: "persistent blocker in the rolling baseline"
+                basis: "it keeps showing up in the rolling baseline"
             )
         } else if let voice = profile?.speakingStyleGoal {
             selection = LeverSelection(
@@ -1941,6 +2022,15 @@ enum CoachMemoryEngine {
             threshold = (priorAverage ?? 45).rounded()
         }
 
+        let baselineSnapshot: CoachSuccessCriterion.BaselineSnapshot? =
+            priorAverage.flatMap { average in
+                guard priorValues.count >= minPriorRepsForGroundedCriterion else { return nil }
+                return CoachSuccessCriterion.BaselineSnapshot(
+                    priorAverage: clampedAverage(average, for: metric),
+                    sampleDepth: priorValues.count
+                )
+            }
+
         return CoachSuccessCriterion(
             metric: metric,
             comparator: comparator,
@@ -1950,9 +2040,9 @@ enum CoachMemoryEngine {
                 metric: metric,
                 threshold: threshold,
                 window: window,
-                priorAverage: priorAverage,
-                priorRepCount: priorValues.count
-            )
+                baseline: baselineSnapshot
+            ),
+            baselineSnapshot: baselineSnapshot
         )
     }
 
@@ -1963,6 +2053,15 @@ enum CoachMemoryEngine {
     /// Gated on the PRE-WINDOW count (`priorValues.count`), never the full
     /// followed-rep count, so the real number never appears on thin data.
     private static let minPriorRepsForGroundedCriterion = 3
+
+    private static func clampedAverage(_ value: Double, for metric: CoachCaseMetric) -> Double {
+        switch metric {
+        case .fillersPerRep, .durationSeconds:
+            return max(0, value)
+        case .sessionScore:
+            return min(10, max(0, value))
+        }
+    }
 
     /// Formats a metric average for criterion copy: drops a trailing `.0` so a
     /// whole number reads as "6" (not "6.0"), otherwise rounds to one decimal
@@ -1989,24 +2088,22 @@ enum CoachMemoryEngine {
         metric: CoachCaseMetric,
         threshold: Double,
         window: Int,
-        priorAverage: Double? = nil,
-        priorRepCount: Int = 0
+        baseline: CoachSuccessCriterion.BaselineSnapshot? = nil
     ) -> String {
         let count = Int(threshold)
         let reps = window <= 1 ? "the next rep" : "\(window) reps"
 
         // Grounded path: enough pre-window history AND a real average to quote.
-        if priorRepCount >= minPriorRepsForGroundedCriterion,
-           let priorAverage {
-            let avg = formattedAverage(priorAverage)
+        if let baseline {
+            let avg = formattedAverage(baseline.priorAverage)
             switch metric {
             case .fillersPerRep:
                 let fillers = count == 1 ? "filler" : "fillers"
-                return "your last \(priorRepCount) reps averaged \(avg) \(fillers) — hold at \(count) or fewer per rep across \(reps)"
+                return "your last \(baseline.sampleDepth) reps averaged \(avg) \(fillers) — hold at \(count) or fewer per rep across \(reps)"
             case .sessionScore:
-                return "your last \(priorRepCount) reps averaged \(avg) — hold a \(count) or higher across \(reps)"
+                return "your last \(baseline.sampleDepth) reps averaged \(avg) — hold a \(count) or higher across \(reps)"
             case .durationSeconds:
-                return "your last \(priorRepCount) reps averaged ~\(avg)s — hold ~\(count)s of structured delivery across \(reps)"
+                return "your last \(baseline.sampleDepth) reps averaged ~\(avg)s — hold ~\(count)s of structured delivery across \(reps)"
             }
         }
 
@@ -2412,6 +2509,37 @@ final class CoachMemoryStore: ObservableObject {
         )
         currentMemory = memory
         persist(memory)
+    }
+
+    /// Fold a user-initiated AI video analysis into the durable case. This is
+    /// opt-in visual evidence from one recording, not a trait label; the
+    /// `VisualDeliveryRead` builder reuses `VideoAnalysisContract.normalized`
+    /// so generic/invalid provider text never reaches coach memory.
+    @discardableResult
+    func noteVisualDeliveryRead(
+        from result: VideoAnalysisResult,
+        sessionID: UUID?,
+        recordedAt: Date = Date(),
+        // Outer `nil` (the default) re-reads the LIVE nearest moment from the
+        // store on every rebuild, matching the other incremental case updates.
+        upcomingMoment: BigMoment?? = .none
+    ) -> Bool {
+        guard var memory = currentMemory,
+              let read = VisualDeliveryRead.make(
+                from: result,
+                sessionID: sessionID,
+                recordedAt: recordedAt
+              ) else { return false }
+        memory.visualDeliveryRead = read
+        memory.updatedAt = recordedAt
+        memory.caseFile = CoachCaseFile.build(
+            from: memory,
+            now: recordedAt,
+            upcomingMomentLine: CoachCaseFile.upcomingMomentLine(for: upcomingMoment ?? BigMomentStore.shared.activeMoment)
+        )
+        currentMemory = memory
+        persist(memory)
+        return true
     }
 
     func replaceForTesting(_ memory: CoachMemory?) {

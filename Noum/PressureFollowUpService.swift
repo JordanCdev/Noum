@@ -104,19 +104,38 @@ final class PressureFollowUpService: PressureFollowUpProviding {
         round: Int,
         profile: CoachingProfile?
     ) async -> String {
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "Pressure follow-up",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                startedAt: startedAt
+            )
+        }
+
         guard PressureFollowUpContract.localeSupportsAI(LocaleSettingsManager.shared.current) else {
             print("[PressureFollowUp] Locale does not support AI follow-ups, using template")
+            record(.skipped, "Locale not AI-supported")
             return PressureFollowUpTemplates.random()
         }
 
         // Guard: need an AI provider
-        guard let provider = settings.activeProvider,
+        let configuredProvider = settings.activeProvider
+        guard let provider = configuredProvider,
               let apiKey = resolveAPIKey(for: provider),
               let endpoint = provider.endpoint else {
             print("[PressureFollowUp] No AI provider available, using template")
+            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
             return PressureFollowUpTemplates.random()
         }
 
+        let startedAt = Date()
         do {
             let followUp = try await callGemini(
                 provider: provider,
@@ -132,11 +151,14 @@ final class PressureFollowUpService: PressureFollowUpProviding {
                 transcript: userTranscript
             ) else {
                 print("[PressureFollowUp] AI follow-up was ungrounded, using template")
+                record(.fallback, "Follow-up failed grounding gate", provider: provider, startedAt: startedAt)
                 return PressureFollowUpTemplates.random()
             }
+            record(.success, "Follow-up accepted", provider: provider, startedAt: startedAt)
             return normalized
         } catch {
             print("[PressureFollowUp] Gemini call failed: \(error.localizedDescription), using template")
+            record(.failure, "Transport or decode error", provider: provider, startedAt: startedAt)
             return PressureFollowUpTemplates.random()
         }
     }
@@ -169,7 +191,7 @@ final class PressureFollowUpService: PressureFollowUpProviding {
             request.setGoogleAPIKey(apiKey)
             let body = GeminiRequest(
                 systemInstruction: .init(parts: [.init(text: systemPrompt)]),
-                contents: [.init(parts: [.init(text: userPrompt)])],
+                contents: [.init(role: "user", parts: [.init(text: userPrompt)])],
                 generationConfig: .init(temperature: 0.8, responseMimeType: "application/json")
             )
             request.httpBody = try JSONEncoder().encode(body)
@@ -296,27 +318,42 @@ final class PressureFollowUpService: PressureFollowUpProviding {
     // MARK: - API Key Resolution
 
     private func resolveAPIKey(for provider: AIProvider) -> String? {
-        guard let keyName = provider.environmentKey else { return nil }
-        // Environment variable first
-        if let value = ProcessInfo.processInfo.environment[keyName], !value.isEmpty {
-            return value
-        }
-        // Then AIConfig.plist
-        return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        AIProviderCredential.apiKey(for: provider)
     }
 
     // MARK: - Gemini Request/Response Structs (mirrored from IM service)
 
     private struct GeminiRequest: Codable {
         struct Content: Codable {
+            let role: String?
             let parts: [Part]
+
+            init(role: String? = nil, parts: [Part]) {
+                self.role = role
+                self.parts = parts
+            }
         }
         struct Part: Codable {
             let text: String
         }
         struct GenerationConfig: Codable {
+            struct ThinkingConfig: Codable {
+                let thinkingBudget: Int
+            }
+
             let temperature: Double
             let responseMimeType: String
+            let thinkingConfig: ThinkingConfig?
+
+            init(
+                temperature: Double,
+                responseMimeType: String,
+                thinkingConfig: ThinkingConfig? = .init(thinkingBudget: 0)
+            ) {
+                self.temperature = temperature
+                self.responseMimeType = responseMimeType
+                self.thinkingConfig = thinkingConfig
+            }
         }
 
         let systemInstruction: Content

@@ -122,7 +122,8 @@ enum CoachMessageTextFormatter {
     private static func plainLeadInSegments(from text: String) -> [InlineSegment]? {
         let leadIns = [
             "Read:", "The read:", "Coach read:", "Move:", "Next move:",
-            "Why:", "Evidence:", "Try:", "Try this:", "Focus:"
+            "Why:", "Evidence:", "Try:", "Try this:", "Focus:",
+            "Target:", "Next rep:", "Drill:"
         ]
         let lower = text.lowercased()
         guard let match = leadIns.first(where: { lower.hasPrefix($0.lowercased()) }) else {
@@ -783,7 +784,8 @@ struct AskNoumView: View {
                 Text(line)
                     .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, Spacing.lg)
@@ -881,20 +883,23 @@ struct AskNoumView: View {
     }
 
     private var activeCaseSubtitle: String? {
-        guard let memory = coachMemoryStore.currentMemory,
-              let caseFile = memory.caseFile else { return nil }
+        Self.currentFocusLine(caseFile: coachMemoryStore.currentMemory?.caseFile)
+    }
+
+    static func currentFocusLine(caseFile: CoachCaseFile?) -> String? {
+        guard let caseFile else { return nil }
         if let target = caseFile.observableTarget?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !target.isEmpty {
-            return "Working on \(Self.shortCaseLine(target).lowercased())"
+            return "Target: \(Self.shortCaseLine(target, maxLength: 64))"
         }
         if let focus = caseFile.focus {
-            return "Working on \(focus.displayName.lowercased())"
+            return "Focus: \(focus.displayName)"
         }
         if let intervention = caseFile.activeIntervention?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !intervention.isEmpty {
-            return "Current drill: \(Self.shortCaseLine(intervention).lowercased())"
+            return "Drill: \(Self.shortCaseLine(intervention, maxLength: 64))"
         }
         return nil
     }

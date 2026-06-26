@@ -458,7 +458,7 @@ enum BaselineCoachDimension: String, CaseIterable, Identifiable, Equatable {
 
 struct BaselineCoachDimensionRead: Equatable, Identifiable {
     let dimension: BaselineCoachDimension
-    /// 0...1 evidence coverage. This is what the radar primarily visualises.
+    /// 0...1 evidence coverage. This is what the baseline readout primarily visualises.
     let evidenceProgress: Double
     /// 0...1 current quality read, nil while the dimension is too thin.
     let currentScore: Double?
@@ -467,6 +467,13 @@ struct BaselineCoachDimensionRead: Equatable, Identifiable {
 
     var id: BaselineCoachDimension { dimension }
     var isMeasured: Bool { currentScore != nil }
+
+    var coachStateLabel: String {
+        guard let currentScore else { return "Needs signal" }
+        if currentScore >= 0.72 { return "Strong" }
+        if currentScore >= 0.42 { return "Working" }
+        return "Focus"
+    }
 }
 
 struct BaselineGoalGapRead: Equatable {
@@ -498,6 +505,76 @@ struct BaselineCoachMap: Equatable {
 
     var measuredDimensionCount: Int {
         dimensions.filter(\.isMeasured).count
+    }
+
+    var strongestMeasuredDimension: BaselineCoachDimensionRead? {
+        dimensions
+            .filter(\.isMeasured)
+            .max { ($0.currentScore ?? 0) < ($1.currentScore ?? 0) }
+    }
+
+    var weakestMeasuredDimension: BaselineCoachDimensionRead? {
+        dimensions
+            .filter(\.isMeasured)
+            .min { ($0.currentScore ?? 1) < ($1.currentScore ?? 1) }
+    }
+
+    var nextEvidenceDimension: BaselineCoachDimensionRead? {
+        dimensions.first { !$0.isMeasured }
+    }
+
+    var readoutFocusDimension: BaselineCoachDimensionRead? {
+        weakestMeasuredDimension ?? nextEvidenceDimension
+    }
+
+    var readoutStrengthDimension: BaselineCoachDimensionRead? {
+        guard let strongest = strongestMeasuredDimension else { return nil }
+        guard strongest.dimension != readoutFocusDimension?.dimension else { return nil }
+        return strongest
+    }
+
+    var supportingReadoutDimensions: [BaselineCoachDimensionRead] {
+        dimensions.filter { read in
+            read.dimension != readoutFocusDimension?.dimension
+                && read.dimension != readoutStrengthDimension?.dimension
+        }
+    }
+
+    var coachHeadline: String {
+        switch confidence {
+        case .insufficient:
+            return "Noum is still calibrating"
+        case .tentative:
+            return "The first read is forming"
+        case .moderate:
+            return "Your baseline is taking shape"
+        case .established, .stable:
+            return "Your baseline is usable"
+        }
+    }
+
+    var coachPriorityLine: String {
+        if let weakest = weakestMeasuredDimension,
+           let score = weakest.currentScore,
+           score < 0.42 {
+            return "\(weakest.dimension.title) is the clearest gap to work next."
+        }
+
+        if let weakest = weakestMeasuredDimension,
+           let score = weakest.currentScore,
+           score < 0.72 {
+            return "\(weakest.dimension.title) is the next place to tighten."
+        }
+
+        if let nextEvidenceDimension {
+            return "\(nextEvidenceDimension.dimension.title) still needs more signal."
+        }
+
+        if measuredDimensionCount > 0 {
+            return "New reps can now be compared against these patterns."
+        }
+
+        return "Run one measured rep so Noum can stop guessing."
     }
 
     var statusTitle: String {
@@ -609,6 +686,7 @@ struct BaselineCoachMap: Equatable {
         if baseline.hedgingRate.confidence != .insufficient {
             scores.append(1.0 - min(baseline.hedgingRate.value / 4.0, 1.0))
             confidences.append(baseline.hedgingRate.confidence)
+            labels.append(String(format: "%.1f hedges/min", baseline.hedgingRate.value))
         }
         if baseline.pauseRate.confidence != .insufficient {
             // Pause count alone is not "bad"; it just adds weak composure
@@ -616,6 +694,7 @@ struct BaselineCoachMap: Equatable {
             // punished by the map.
             scores.append(1.0 - min(baseline.pauseRate.value / 10.0, 1.0))
             confidences.append(baseline.pauseRate.confidence)
+            labels.append(String(format: "%.1f pauses/min", baseline.pauseRate.value))
         }
 
         guard !scores.isEmpty else {
@@ -635,7 +714,7 @@ struct BaselineCoachMap: Equatable {
             evidenceProgress: evidenceProgress(for: confidence),
             currentScore: clamp(meanScore),
             confidence: confidence,
-            valueLabel: labels.first ?? "forming"
+            valueLabel: labels.first ?? "Multi-signal read"
         )
     }
 

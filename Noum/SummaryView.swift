@@ -2325,6 +2325,7 @@ struct SummaryView: View {
                 let result = try await VideoAnalysisService.shared.analyzeRecording(at: url)
                 await MainActor.run {
                     videoAnalysisResult = result
+                    coachMemoryStore.noteVisualDeliveryRead(from: result, sessionID: latestSessionID)
                     isAnalyzingVideo = false
                 }
             } catch {

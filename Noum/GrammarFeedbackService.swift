@@ -125,22 +125,50 @@ actor GrammarFeedbackService {
         isPro: Bool
     ) async -> GrammarPolishResult? {
         if let cached = cache[sessionId] { return cached }
-        guard isPro else { return nil }
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            statusCode: Int? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "Grammar polish",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+        }
+
+        guard isPro else {
+            record(.skipped, "Requires Pro")
+            return nil
+        }
         // M13: English-only — Spanish/French transcripts would produce
         // English-rules feedback on non-English speech (noise, not coaching).
-        guard await activeLocaleSupportsAI() else { return nil }
+        guard await activeLocaleSupportsAI() else {
+            record(.skipped, "Locale not AI-supported")
+            return nil
+        }
         guard shouldRun(
             transcript: transcript,
             duration: duration,
             wordCount: wordCount,
             fillerWordCount: fillerWordCount,
             transcriptConfidence: transcriptConfidence
-        ) else { return nil }
+        ) else {
+            record(.skipped, "Session below grammar signal floor")
+            return nil
+        }
 
-        guard let provider = await currentProvider(),
+        let configuredProvider = await currentProvider()
+        guard let provider = configuredProvider,
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider) else {
             // No provider — never invent template grammar findings.
+            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
             return nil
         }
 
@@ -157,20 +185,33 @@ actor GrammarFeedbackService {
             case .gemini:
                 request.setGoogleAPIKey(key)
             case .none:
+                record(.skipped, "Provider set to off", provider: provider)
                 return nil
             }
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
+            let startedAt = Date()
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                record(
+                    .fallback,
+                    statusCode.map { "Provider returned HTTP \($0)" } ?? "Non-HTTP response",
+                    provider: provider,
+                    statusCode: statusCode,
+                    startedAt: startedAt
+                )
                 return nil
             }
             guard let parsed = parse(data: data, provider: provider, transcript: transcript) else {
+                record(.fallback, "Response JSON did not match grammar schema", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
                 return nil
             }
+            record(.success, parsed.findings.isEmpty ? "No grammar finding crossed the bar" : "Grammar findings accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
             cache[sessionId] = parsed
             return parsed
         } catch {
+            record(.failure, "Transport or decode error", provider: provider)
             return nil
         }
     }
@@ -233,11 +274,7 @@ actor GrammarFeedbackService {
     }
 
     private func apiKey(for provider: AIProvider) -> String? {
-        guard let keyName = provider.environmentKey else { return nil }
-        if let value = ProcessInfo.processInfo.environment[keyName], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        AIProviderCredential.apiKey(for: provider)
     }
 
     // MARK: - Prompt construction
@@ -320,9 +357,10 @@ actor GrammarFeedbackService {
         case .gemini:
             return [
                 "systemInstruction": ["parts": [["text": Self.systemPrompt]]],
-                "contents": [["parts": [["text": userPrompt]]]],
+                "contents": [["role": "user", "parts": [["text": userPrompt]]]],
                 "generationConfig": [
                     "temperature": 0.2,
+                    "thinkingConfig": ["thinkingBudget": 0],
                     "responseMimeType": "application/json"
                 ]
             ]

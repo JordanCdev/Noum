@@ -113,20 +113,49 @@ actor AIInsightsService {
         }
 
         let templated = templatedFallback(for: input)
+        let surface = "AI insight \(input.kind.rawValue)"
+        let geminiInsightsModel = "gemini-2.5-pro"
+        func diagnosticsModel(for provider: AIProvider?) -> String? {
+            guard let provider else { return nil }
+            switch provider {
+            case .gemini: return geminiInsightsModel
+            default: return provider.model
+            }
+        }
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            statusCode: Int? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: surface,
+                providerName: provider?.title,
+                model: diagnosticsModel(for: provider),
+                outcome: outcome,
+                reason: reason,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+        }
 
         // M13: AI insight surfaces are English-only in this milestone.
         // Non-English practice sessions get the deterministic template
         // fallback so the card stays useful but never produces English
         // coaching text on a Spanish or French session.
         guard await activeLocaleSupportsAI() else {
+            record(.skipped, "Locale not AI-supported")
             cache[cacheKey] = templated
             return templated
         }
 
-        guard let provider = await currentProvider(),
+        let configuredProvider = await currentProvider()
+        guard let provider = configuredProvider,
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider)
         else {
+            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
             cache[cacheKey] = templated
             return templated
         }
@@ -138,7 +167,6 @@ actor AIInsightsService {
             // are short and the JSON shape is fixed, so the latency hit
             // (well inside the 14s timeout) buys sharper diagnosis on
             // the surface that already drives the weekly digest card.
-            let geminiInsightsModel = "gemini-2.5-pro"
             var request = URLRequest(url: insightsEndpoint(
                 for: provider,
                 geminiModelOverride: geminiInsightsModel
@@ -152,15 +180,28 @@ actor AIInsightsService {
             case .gemini:
                 request.setGoogleAPIKey(key)
             case .none:
+                record(.skipped, "Provider set to off", provider: provider)
                 cache[cacheKey] = templated
                 return templated
             }
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
+            let startedAt = Date()
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-                  let parsed = parse(data: data, provider: provider, kind: input.kind)
-            else {
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                record(
+                    .fallback,
+                    statusCode.map { "Provider returned HTTP \($0)" } ?? "Non-HTTP response",
+                    provider: provider,
+                    statusCode: statusCode,
+                    startedAt: startedAt
+                )
+                cache[cacheKey] = templated
+                return templated
+            }
+            guard let parsed = parse(data: data, provider: provider, kind: input.kind) else {
+                record(.fallback, "Response JSON did not match insight schema", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
                 cache[cacheKey] = templated
                 return templated
             }
@@ -180,13 +221,16 @@ actor AIInsightsService {
                 insight: parsed,
                 transcript: input.focusSessions.first?.transcript
                ) {
+                record(.fallback, "Insight failed quote-grounding gate", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
                 cache[cacheKey] = templated
                 return templated
             }
 
+            record(.success, "Insight accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
             cache[cacheKey] = parsed
             return parsed
         } catch {
+            record(.failure, "Transport or decode error", provider: provider)
             cache[cacheKey] = templated
             return templated
         }
@@ -224,11 +268,7 @@ actor AIInsightsService {
     }
 
     private func apiKey(for provider: AIProvider) -> String? {
-        guard let keyName = provider.environmentKey else { return nil }
-        if let value = ProcessInfo.processInfo.environment[keyName], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        AIProviderCredential.apiKey(for: provider)
     }
 
     // MARK: - Prompt construction
@@ -392,10 +432,11 @@ actor AIInsightsService {
         case .gemini:
             return [
                 "systemInstruction": ["parts": [["text": system]]],
-                "contents": [["parts": [["text": prompt]]]],
+                "contents": [["role": "user", "parts": [["text": prompt]]]],
                 "generationConfig": [
                     "temperature": 0.5,
                     "maxOutputTokens": 320,
+                    "thinkingConfig": ["thinkingBudget": 0],
                     "responseMimeType": "application/json"
                 ]
             ]

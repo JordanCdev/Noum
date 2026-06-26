@@ -82,11 +82,33 @@ actor AIRewriteService {
         weakness: Weakness,
         voice: SpeakingStyleGoal? = nil
     ) async -> Rewrite? {
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            statusCode: Int? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "Rewrite suggestion",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+        }
+
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 40 else { return nil }
-        guard let provider = await currentProvider(),
+        guard trimmed.count >= 40 else {
+            record(.skipped, "Transcript below rewrite floor")
+            return nil
+        }
+        let configuredProvider = await currentProvider()
+        guard let provider = configuredProvider,
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider) else {
+            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
             return nil
         }
 
@@ -101,6 +123,7 @@ actor AIRewriteService {
         do {
             switch provider {
             case .none:
+                record(.skipped, "Provider set to off", provider: provider)
                 return nil
             case .openAI, .deepSeek:
                 request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
@@ -117,20 +140,40 @@ actor AIRewriteService {
                 request.setGoogleAPIKey(key)
                 let body: [String: Any] = [
                     "systemInstruction": ["parts": [["text": Self.systemPrompt(for: weakness, voice: voice)]]],
-                    "contents": [["parts": [["text": userPrompt]]]],
-                    "generationConfig": ["temperature": 0.5]
+                    "contents": [["role": "user", "parts": [["text": userPrompt]]]],
+                    "generationConfig": [
+                        "temperature": 0.5,
+                        "thinkingConfig": ["thinkingBudget": 0]
+                    ]
                 ]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
             }
 
+            let startedAt = Date()
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                record(
+                    .fallback,
+                    statusCode.map { "Provider returned HTTP \($0)" } ?? "Non-HTTP response",
+                    provider: provider,
+                    statusCode: statusCode,
+                    startedAt: startedAt
+                )
                 return nil
             }
-            guard let raw = decodeText(from: data, provider: provider) else { return nil }
-            guard let cleaned = RewriteContentFilter.accept(raw, signals: signals) else { return nil }
+            guard let raw = decodeText(from: data, provider: provider) else {
+                record(.fallback, "Missing response content", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+                return nil
+            }
+            guard let cleaned = RewriteContentFilter.accept(raw, signals: signals) else {
+                record(.fallback, "Rewrite failed voice-preservation filter", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+                return nil
+            }
+            record(.success, "Rewrite accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
             return Rewrite(text: cleaned, weakness: weakness)
         } catch {
+            record(.failure, "Transport or decode error", provider: provider)
             return nil
         }
     }
@@ -209,11 +252,7 @@ actor AIRewriteService {
     }
 
     private func apiKey(for provider: AIProvider) -> String? {
-        guard let keyName = provider.environmentKey else { return nil }
-        if let value = ProcessInfo.processInfo.environment[keyName], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        AIProviderCredential.apiKey(for: provider)
     }
 
     private func decodeText(from data: Data, provider: AIProvider) -> String? {

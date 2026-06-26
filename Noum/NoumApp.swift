@@ -85,6 +85,20 @@ struct NoumApp: App {
                 NotificationPrePromptManager.shared.pendingPrompt = true
             }
         }
+        if args.contains("FORCE_WEEKLY_CHECKIN") {
+            DispatchQueue.main.async {
+                CoachCheckInStore.shared.replaceForDebug([
+                    CoachCheckIn(
+                        recordedAt: Date().addingTimeInterval(-8 * 86_400),
+                        hardest: "Holding the room while being concise",
+                        outsideApp: "Leadership update",
+                        drillVerdict: .stalled,
+                        confidenceShift: .aboutSame,
+                        avoidedSaying: "I softened the direct ask"
+                    )
+                ])
+            }
+        }
         // Lets UI tests exercise the real app-level first-run cover while
         // preserving the normal `UI_TESTING` bypass used by seeded tours.
         if args.contains("UI_TESTING_REAL_FIRST_RUN") {

@@ -5,6 +5,9 @@ import SwiftUI
 #if canImport(AVFoundation)
 @preconcurrency import AVFoundation
 #endif
+#if canImport(UIKit)
+import UIKit
+#endif
 
 #if canImport(SwiftUI)
 
@@ -656,6 +659,7 @@ private struct ImpromptuSettingsPanel: View {
 struct TimedPracticeView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openURL) private var openURL
     @Binding var navigationPath: NavigationPath
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
@@ -790,6 +794,13 @@ struct TimedPracticeView: View {
                     .transition(.opacity)
             }
         }
+        .overlay(alignment: .center) {
+            if phase == .speaking, let error = speechVM.connectionError, !speechVM.isRecording {
+                recordingIssueCard(error)
+                    .padding(.horizontal, Spacing.screenH)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(phase == .speaking || phase == .thinking)
@@ -885,6 +896,11 @@ struct TimedPracticeView: View {
             // Drop any pending intent that wasn't consumed by a finalize.
             SessionIntentStore.shared.clearPending()
         }
+        .onChange(of: speechVM.connectionError) { _, error in
+            guard error != nil, phase == .speaking else { return }
+            speakingTask?.cancel()
+            speakingTask = nil
+        }
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
@@ -972,6 +988,8 @@ struct TimedPracticeView: View {
 
                 impromptuLaunchCard
 
+                microphoneReadinessCard
+
                 promptPoolRow
 
                 if showSetupSettings {
@@ -1042,6 +1060,141 @@ struct TimedPracticeView: View {
         } else {
             fullImpromptuLaunchCard
         }
+    }
+
+    @ViewBuilder
+    private var microphoneReadinessCard: some View {
+        switch speechVM.microphonePermissionState {
+        case .granted:
+            EmptyView()
+        case .undetermined:
+            microphoneCard(
+                icon: "mic.fill",
+                title: "Mic check",
+                message: "Noum needs the microphone to hear your rep and coach the real answer.",
+                actionTitle: "Enable microphone",
+                action: requestMicrophoneAccess
+            )
+        case .denied:
+            microphoneCard(
+                icon: "mic.slash.fill",
+                title: "Mic access blocked",
+                message: PracticeMicrophonePermissionState.denied.userFacingRecoveryMessage ?? "Open Settings and allow microphone access before starting.",
+                actionTitle: "Open Settings",
+                action: openAppSettings
+            )
+        case .unknown:
+            microphoneCard(
+                icon: "waveform.badge.exclamationmark",
+                title: "Mic unavailable",
+                message: PracticeMicrophonePermissionState.unknown.userFacingRecoveryMessage ?? "Check the audio route and try again.",
+                actionTitle: nil,
+                action: nil
+            )
+        }
+    }
+
+    private func microphoneCard(
+        icon: String,
+        title: String,
+        message: String,
+        actionTitle: String?,
+        action: (() -> Void)?
+    ) -> some View {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            Image(systemName: icon)
+                .font(Typography.headline)
+                .foregroundStyle(AppColor.modeTimed)
+                .frame(width: 42, height: 42)
+                .background(AppColor.modeTimed.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(Typography.cardLabel)
+                    .foregroundStyle(.primary)
+
+                Text(message)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(AppColor.modeTimed)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(AppColor.modeTimed.opacity(0.10), in: Capsule())
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("timedPractice.microphoneReadiness.action")
+            }
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.modeTimed.opacity(0.16), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.04), radius: 12, y: 5)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("timedPractice.microphoneReadiness")
+    }
+
+    private func recordingIssueCard(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: "mic.slash.fill")
+                    .font(Typography.headline)
+                    .foregroundStyle(.white)
+                    .frame(width: 42, height: 42)
+                    .background(Color.white.opacity(0.14), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("We could not hear the rep")
+                        .font(Typography.cardTitle)
+                        .foregroundStyle(.white)
+
+                    Text(message)
+                        .font(Typography.subheadline)
+                        .foregroundStyle(.white.opacity(0.76))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Button(action: retryRecordingAfterIssue) {
+                Label(speechVM.microphonePermissionState == .denied ? "Open Settings" : "Try again", systemImage: "arrow.clockwise")
+                    .font(Typography.caption.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(.white, in: Capsule())
+                    .foregroundStyle(Color(red: 0.08, green: 0.12, blue: 0.22))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("timedPractice.recordingIssue.retry")
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [Color(red: 0.10, green: 0.13, blue: 0.20), Color(red: 0.21, green: 0.28, blue: 0.42)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.22), radius: 30, y: 15)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("timedPractice.recordingIssue")
     }
 
     private var compactImpromptuLaunchCard: some View {
@@ -2420,6 +2573,43 @@ struct TimedPracticeView: View {
 
     // MARK: - Actions
 
+    private func requestMicrophoneAccess() {
+        Task {
+            _ = await speechVM.requestMicrophoneAccessForPractice()
+        }
+    }
+
+    private func openAppSettings() {
+        #if canImport(UIKit)
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            openURL(url)
+        }
+        #endif
+    }
+
+    private func prepareMicrophoneForLaunch() async -> Bool {
+        speechVM.refreshRecordPermission()
+        if speechVM.microphonePermissionState == .undetermined {
+            return await speechVM.requestMicrophoneAccessForPractice()
+        }
+        if speechVM.microphonePermissionState.blocksRecording {
+            speechVM.connectionError = speechVM.microphonePermissionState.userFacingRecoveryMessage
+            return false
+        }
+        speechVM.connectionError = nil
+        return true
+    }
+
+    private func retryRecordingAfterIssue() {
+        speechVM.connectionError = nil
+        speechVM.refreshRecordPermission()
+        if speechVM.microphonePermissionState == .denied {
+            openAppSettings()
+            return
+        }
+        startSpeaking()
+    }
+
     private func beginSession() {
         guard phase == .setup else { return }
         enforcePremiumFeatureAvailability()
@@ -2427,10 +2617,6 @@ struct TimedPracticeView: View {
         // Haptic feedback for session start fires before the AI hop so the
         // tap feels immediate even if prompt selection takes a beat.
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-
-        // Pre-rep ambience starts now so the user has audio feedback while
-        // we resolve the prompt + warm up TTS.
-        SoundscapeEngine.shared.startPreferredMode()
 
         if usesInjectedFirstValueLoop {
             question = "Brief the team on a customer handoff risk."
@@ -2446,6 +2632,12 @@ struct TimedPracticeView: View {
         // budget to attempt an AI-generated prompt without blocking. Falls
         // back to the curated pool on timeout/failure (≤ 3s).
         Task { @MainActor in
+            guard await prepareMicrophoneForLaunch() else { return }
+
+            // Pre-rep ambience starts only after microphone readiness is
+            // known; otherwise a denied permission can feel like a rep began.
+            SoundscapeEngine.shared.startPreferredMode()
+
             if question.isEmpty {
                 question = await PracticeTopics.next(
                     profile: coachingProfileStore.profile,
@@ -2508,6 +2700,28 @@ struct TimedPracticeView: View {
 
     private func startSpeaking() {
         guard !speechVM.isRecording else { return }
+        speechVM.refreshRecordPermission()
+        if speechVM.microphonePermissionState == .undetermined {
+            Task { @MainActor in
+                if await speechVM.requestMicrophoneAccessForPractice() {
+                    startSpeaking()
+                } else {
+                    SoundscapeEngine.shared.stop()
+                    thinkingTask?.cancel()
+                    thinkingTask = nil
+                    withAnimation(.easeInOut(duration: 0.25)) { phase = .setup }
+                }
+            }
+            return
+        }
+        if speechVM.microphonePermissionState.blocksRecording {
+            speechVM.connectionError = speechVM.microphonePermissionState.userFacingRecoveryMessage
+            SoundscapeEngine.shared.stop()
+            thinkingTask?.cancel()
+            thinkingTask = nil
+            withAnimation(.easeInOut(duration: 0.25)) { phase = .setup }
+            return
+        }
 
         // Cut pre-rep ambience the moment the rep starts — soundscape
         // is for prep only, never for the rep itself.
@@ -2532,6 +2746,11 @@ struct TimedPracticeView: View {
         speechVM.sessionPrompt = question
         speechVM.prepareSession(mode: .timed)
         speechVM.startRecording()
+        if !speechVM.isRecording, speechVM.connectionError != nil {
+            speakingTask?.cancel()
+            speakingTask = nil
+            return
+        }
 
         // Start video recording if enabled (any mode)
         // Camera session was already prepared when the user toggled the switch

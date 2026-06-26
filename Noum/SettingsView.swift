@@ -42,6 +42,7 @@ struct SettingsView: View {
     /// limiter publishes a `changeToken` on every successful
     /// `consumeIfAllowed` and on active-account `deleteAllData`.
     @StateObject private var rateLimiter = AIRateLimiter.shared
+    @StateObject private var aiCallDiagnostics = AICallDiagnosticsStore.shared
 
     // M15 Phase 4 — escape hatch for the signal-gated home. Mirrors the
     // AppStorage key read by ContentView; flipping this on shows every
@@ -66,6 +67,9 @@ struct SettingsView: View {
     @State private var debugMessage: String?
     @State private var supportToast: String?
     @State private var microphonePermission: MicrophonePermissionState = .unknown
+    @State private var isRunningAIProviderHealthCheck = false
+    @State private var aiProviderHealthSummary: String?
+    @State private var aiProviderHealthGuidance: AIProviderHealthGuidance?
     #if DEBUG
     @State private var seedProfileStatus: String?
     #endif
@@ -275,6 +279,7 @@ struct SettingsView: View {
                 if authManager.isDeveloper {
                     section(label: "Home reveal") { advancedHomeCard }
                     section(label: "Developer tools") { transcriptionProviderCard }
+                    section(label: "AI calls") { aiCallDiagnosticsCard }
                     section(label: "Diagnostics") { recommendationDiagnosticsCard }
                     section(label: "Seed data") { developerSeedCard }
                 }
@@ -323,8 +328,7 @@ struct SettingsView: View {
     // MARK: - Profile Hero
 
     private var displayName: String {
-        let name = authManager.currentAccountName?.trimmingCharacters(in: .whitespaces) ?? ""
-        return name.isEmpty ? "Speaker" : name
+        AuthManager.userFacingDisplayName(from: authManager.currentAccountName)
     }
 
     /// Premium-tier presence tint for the hero avatar + ambient register.
@@ -338,18 +342,7 @@ struct SettingsView: View {
             showCoachingProfile = true
         } label: {
             HStack(spacing: Spacing.md) {
-                // M14 dream pass: replaces the letter avatar with the
-                // shared NoumCharacter (same component Profile uses) so the
-                // hero carries brand presence instead of a generic monogram.
-                // Compact 56pt size since Settings' hero is a row, not a
-                // full hero card. Pro users render against the purple tint
-                // so the character + ambient background read as one register.
-                NoumCharacter(
-                    mood: .calm,
-                    tint: profileHeroTint,
-                    size: 56
-                )
-                .accessibilityHidden(true)
+                profileHeroMark
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
@@ -370,20 +363,21 @@ struct SettingsView: View {
                         }
                     }
 
-                    // Practice volume, not identity (progression spine):
-                    // XP never wears a skill costume — "Practice level N"
-                    // is the only permitted title shape for the XP ledger.
+                    // Identity first. If the user chose a voice target,
+                    // Settings echoes that choice instead of making the hero
+                    // feel like an XP receipt. The level still lives in
+                    // accessibility and progression surfaces.
                     HStack(spacing: 6) {
-                        Image(systemName: "chart.bar.fill")
+                        Image(systemName: profileHeroSubtitleIcon)
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(AppColor.brandBlue)
-                        Text(PracticeVolumeNarration.title(forXP: profileManager.xp))
+                            .foregroundStyle(profileHeroSubtitleTint)
+                        Text(profileHeroSubtitle)
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(AppColor.brandBlue)
+                            .foregroundStyle(profileHeroSubtitleTint)
                     }
                     .padding(.horizontal, Spacing.sm)
                     .padding(.vertical, 5)
-                    .background(AppColor.brandBlue.opacity(0.12), in: Capsule())
+                    .background(profileHeroSubtitleTint.opacity(0.12), in: Capsule())
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -402,9 +396,56 @@ struct SettingsView: View {
             .shadow(color: AppColor.pro.opacity(0.10), radius: 14, x: 0, y: 6)
         }
         .buttonStyle(.pressable)
-        .accessibilityLabel("\(displayName), \(PracticeVolumeNarration.title(forXP: profileManager.xp))")
+        .accessibilityLabel(profileHeroAccessibilityLabel)
         .accessibilityHint("Open coaching profile to edit")
         .accessibilityIdentifier("settings.profileHero")
+    }
+
+    private var profileHeroSubtitle: String {
+        profileHeroPresentation.subtitle
+    }
+
+    private var profileHeroSubtitleIcon: String {
+        profileHeroPresentation.subtitleIcon
+    }
+
+    private var profileHeroSubtitleTint: Color {
+        coachingProfileStore.profile?.chosenStyleGoal?.voiceIconTint ?? AppColor.brandBlue
+    }
+
+    private var profileHeroPresentation: SettingsProfileHeroPresentation {
+        SettingsProfileHeroPresentation.make(
+            displayName: displayName,
+            chosenVoice: coachingProfileStore.profile?.chosenStyleGoal,
+            xp: profileManager.xp
+        )
+    }
+
+    @ViewBuilder
+    private var profileHeroMark: some View {
+        if let chosenVoice = coachingProfileStore.profile?.chosenStyleGoal {
+            VoiceGoalIcon(
+                goal: chosenVoice,
+                size: 22,
+                containerSize: 56,
+                cornerRadius: 18
+            )
+            .accessibilityHidden(true)
+        } else {
+            // Neutral pre-goal presence. Once the user chooses a voice target,
+            // Settings should echo that identity rather than another generic
+            // waveform mark.
+            NoumCharacter(
+                mood: .calm,
+                tint: profileHeroTint,
+                size: 56
+            )
+            .accessibilityHidden(true)
+        }
+    }
+
+    private var profileHeroAccessibilityLabel: String {
+        profileHeroPresentation.accessibilityLabel
     }
 
     /// Hero card chrome — applies the M14 Pro-purple ambient register so
@@ -1224,6 +1265,19 @@ struct SettingsView: View {
         }
     }
 
+    private func copyAICallDiagnostics() {
+        let payload = aiCallDiagnostics.exportDiagnostics()
+        #if canImport(UIKit)
+        UIPasteboard.general.string = payload
+        #elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
+        #endif
+        withAnimation(reduceMotion ? nil : .standardSpring) {
+            supportToast = "AI call log copied to clipboard"
+        }
+    }
+
     // MARK: - Microphone Permission
 
     private enum MicrophonePermissionState {
@@ -1371,6 +1425,200 @@ struct SettingsView: View {
                 accessibilityHint: "When on, coach replies speak with the on-device system voice to avoid cloud text-to-speech cost during development."
             )
             #endif
+        }
+    }
+
+    private var aiCallDiagnosticsCard: some View {
+        let latest = aiCallDiagnostics.latest
+        return cardContainer(spacing: Spacing.md) {
+            Text("Recent model-call health for internal QA. Prompts, transcripts, API keys, and raw responses are never stored.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Provider setup: \(AIProviderCredential.configurationSummary())")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("settings.aiCallDiagnostics.providerSetup")
+
+            Text("Ask Noum setup: \(CoachChatProvider.configurationSummary())")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("settings.aiCallDiagnostics.chatProviderSetup")
+
+            HStack(spacing: Spacing.xs) {
+                compactStat(title: "Recent", value: "\(aiCallDiagnostics.records.count)")
+                compactStat(title: "Latest", value: latest?.outcome.title ?? "-")
+                compactStat(title: "Provider", value: latest?.provider ?? "-")
+            }
+
+            Button {
+                runAIProviderHealthCheck()
+            } label: {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: isRunningAIProviderHealthCheck ? "hourglass" : "waveform.path.ecg")
+                        .accessibilityHidden(true)
+                    Text(isRunningAIProviderHealthCheck ? "Checking providers..." : "Run provider checks")
+                    Spacer(minLength: Spacing.xs)
+                    Image(systemName: "arrow.right.circle.fill")
+                        .accessibilityHidden(true)
+                }
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .padding(.horizontal, Spacing.sm)
+            }
+            .buttonStyle(.plain)
+            .background(AppColor.brandBlue.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+            .foregroundStyle(AppColor.brandBlue)
+            .disabled(isRunningAIProviderHealthCheck)
+            .accessibilityHint("Sends one tiny health-check request to the active AI provider and records a non-secret diagnostic.")
+
+            if let aiProviderHealthSummary {
+                Text(aiProviderHealthSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let aiProviderHealthGuidance {
+                aiProviderHealthGuidanceView(aiProviderHealthGuidance)
+            }
+
+            if aiCallDiagnostics.records.isEmpty {
+                Text("No AI calls recorded yet. Ask Noum or finish a rep to populate this.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(spacing: Spacing.xs) {
+                    ForEach(aiCallDiagnostics.records.prefix(3)) { record in
+                        aiCallDiagnosticRow(record)
+                    }
+                }
+            }
+
+            HStack(spacing: Spacing.xs) {
+                Button {
+                    copyAICallDiagnostics()
+                } label: {
+                    Label("Copy log", systemImage: "doc.on.doc.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .background(AppColor.brandBlue.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                .foregroundStyle(AppColor.brandBlue)
+                .accessibilityHint("Copies the recent non-secret AI call log.")
+
+                Button {
+                    aiCallDiagnostics.reset()
+                    debugMessage = "AI call diagnostics reset."
+                } label: {
+                    Text("Reset")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .background(AppColor.warning.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                .foregroundStyle(AppColor.warning)
+                .accessibilityHint("Clears the recent AI call diagnostics on this device.")
+            }
+        }
+        .accessibilityIdentifier("settings.aiCallDiagnostics.card")
+    }
+
+    private func runAIProviderHealthCheck() {
+        guard !isRunningAIProviderHealthCheck else { return }
+        isRunningAIProviderHealthCheck = true
+        aiProviderHealthSummary = nil
+        aiProviderHealthGuidance = nil
+
+        Task {
+            let sharedResults = await AIProviderHealthProbe.runConfiguredProviderProbes()
+            let chatResults = await AICoachChatService.shared.runConfiguredProviderHealthProbes()
+            let results = sharedResults + chatResults
+            await MainActor.run {
+                isRunningAIProviderHealthCheck = false
+                aiProviderHealthSummary = formattedAIProviderHealthSummary(for: results)
+                aiProviderHealthGuidance = AIProviderHealthGuidance.make(for: results)
+                debugMessage = results.contains(where: \.isHealthy)
+                    ? "At least one AI provider check passed."
+                    : "AI provider check needs attention."
+            }
+        }
+    }
+
+    private func formattedAIProviderHealthSummary(for results: [AIProviderHealthProbeResult]) -> String {
+        AIProviderHealthProbe.summary(for: results)
+    }
+
+    private func aiProviderHealthGuidanceView(_ guidance: AIProviderHealthGuidance) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: guidance.title == "Model path ready" ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(guidance.title == "Model path ready" ? AppColor.positive : AppColor.warning)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(guidance.title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.primary)
+                Text(guidance.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.sm)
+        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func aiCallDiagnosticRow(_ record: AICallDiagnosticRecord) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Circle()
+                .fill(aiCallOutcomeTint(record.outcome))
+                .frame(width: 10, height: 10)
+                .padding(.top, 5)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: Spacing.xs) {
+                    Text(record.surface)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Spacer(minLength: Spacing.xs)
+                    Text(record.statusLabel)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(aiCallOutcomeTint(record.outcome))
+                }
+
+                Text("\(record.provider)\(record.model.map { " - \($0)" } ?? "")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Text(record.reason)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(Spacing.xs)
+        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func aiCallOutcomeTint(_ outcome: AICallDiagnosticOutcome) -> Color {
+        switch outcome {
+        case .success: return AppColor.positive
+        case .fallback: return AppColor.caution
+        case .failure: return AppColor.warning
+        case .skipped: return .secondary
         }
     }
 
@@ -1985,6 +2233,33 @@ struct YourDataView: View {
         try? jsonData.write(to: fileURL)
         exportURL = fileURL
         showExportSheet = true
+    }
+}
+
+struct SettingsProfileHeroPresentation: Equatable {
+    let subtitle: String
+    let subtitleIcon: String
+    let accessibilityLabel: String
+
+    static func make(
+        displayName: String,
+        chosenVoice: SpeakingStyleGoal?,
+        xp: Int
+    ) -> SettingsProfileHeroPresentation {
+        let practiceLevel = PracticeVolumeNarration.title(forXP: xp)
+        guard let chosenVoice else {
+            return SettingsProfileHeroPresentation(
+                subtitle: practiceLevel,
+                subtitleIcon: "chart.bar.fill",
+                accessibilityLabel: "\(displayName), \(practiceLevel)"
+            )
+        }
+
+        return SettingsProfileHeroPresentation(
+            subtitle: "Voice target: \(chosenVoice.title)",
+            subtitleIcon: chosenVoice.voiceIconSystemName,
+            accessibilityLabel: "\(displayName), voice target \(chosenVoice.title), \(practiceLevel)"
+        )
     }
 }
 

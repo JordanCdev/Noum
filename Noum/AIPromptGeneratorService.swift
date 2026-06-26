@@ -41,13 +41,35 @@ actor AIPromptGeneratorService {
         weakestDimension: String?,
         recentPromptTexts: [String] = []
     ) async -> String? {
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            statusCode: Int? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "AI prompt generator",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+        }
+
         // M13: skip AI generation when the user is practising in a locale
         // we haven't localised AI prompts for. Falling back to the curated
         // pool is honest; an English prompt mid-Spanish session is not.
-        guard await activeLocaleSupportsAI() else { return nil }
-        guard let provider = await currentProvider(),
+        guard await activeLocaleSupportsAI() else {
+            record(.skipped, "Locale not AI-supported")
+            return nil
+        }
+        let configuredProvider = await currentProvider()
+        guard let provider = configuredProvider,
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider) else {
+            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
             return nil
         }
 
@@ -65,6 +87,7 @@ actor AIPromptGeneratorService {
         do {
             switch provider {
             case .none:
+                record(.skipped, "Provider set to off", provider: provider)
                 return nil
             case .openAI, .deepSeek:
                 request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
@@ -81,19 +104,40 @@ actor AIPromptGeneratorService {
                 request.setGoogleAPIKey(key)
                 let body: [String: Any] = [
                     "systemInstruction": ["parts": [["text": Self.systemPrompt]]],
-                    "contents": [["parts": [["text": prompt]]]],
-                    "generationConfig": ["temperature": 0.9]
+                    "contents": [["role": "user", "parts": [["text": prompt]]]],
+                    "generationConfig": [
+                        "temperature": 0.9,
+                        "thinkingConfig": ["thinkingBudget": 0]
+                    ]
                 ]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
             }
 
+            let startedAt = Date()
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                record(
+                    .fallback,
+                    statusCode.map { "Provider returned HTTP \($0)" } ?? "Non-HTTP response",
+                    provider: provider,
+                    statusCode: statusCode,
+                    startedAt: startedAt
+                )
                 return nil
             }
-            guard let raw = decodeText(from: data, provider: provider) else { return nil }
-            return PromptContentFilter.accept(raw)
+            guard let raw = decodeText(from: data, provider: provider) else {
+                record(.fallback, "Missing response content", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+                return nil
+            }
+            guard let accepted = PromptContentFilter.accept(raw) else {
+                record(.fallback, "Generated prompt failed content filter", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+                return nil
+            }
+            record(.success, "Prompt accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+            return accepted
         } catch {
+            record(.failure, "Transport or decode error", provider: provider)
             return nil
         }
     }
@@ -113,11 +157,7 @@ actor AIPromptGeneratorService {
     }
 
     private func apiKey(for provider: AIProvider) -> String? {
-        guard let keyName = provider.environmentKey else { return nil }
-        if let value = ProcessInfo.processInfo.environment[keyName], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        AIProviderCredential.apiKey(for: provider)
     }
 
     // MARK: - Prompts

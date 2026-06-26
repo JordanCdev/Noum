@@ -24,7 +24,7 @@ import os
 //     prompt brevity contract (compact 1-4 line replies) is what actually
 //     keeps replies tight; the cap is a safety ceiling, not the length lever.
 //     History: a 350 cap silently truncated. The default provider is a
-//     *thinking* model (gemini-2.5-flash) whose budget is shared between
+//     thinking-capable Gemini models whose budget can be shared between
 //     invisible reasoning tokens and visible text, so terse/ambiguous
 //     early questions triggered heavy reasoning that ate the 350 budget
 //     and guillotined the visible answer mid-word ("…guide you through
@@ -70,6 +70,17 @@ enum ChatOutcome {
     case reply(String)
     case failure(ChatFailure)
 }
+
+typealias CoachChatDiagnosticRecorder = (
+    _ surface: String,
+    _ providerName: String?,
+    _ model: String?,
+    _ outcome: AICallDiagnosticOutcome,
+    _ reason: String,
+    _ statusCode: Int?,
+    _ startedAt: Date?,
+    _ now: Date
+) -> Void
 
 /// Provider response extraction result for Ask Noum text replies. Kept typed
 /// so the service can preserve truncation honesty without treating every
@@ -206,12 +217,12 @@ enum CoachReplyTextSanitizer {
     }
 
     private nonisolated static func stripCoachLeadIn(from value: String) -> String {
-        let pattern = #"(?i)^(read|the read|coach read|next move|move|why|evidence|try this|try|focus):\s*"#
+        let pattern = #"(?i)^(read|the read|coach read|next move|next rep|move|why|evidence|try this|try|focus|target|drill):\s*"#
         return replace(pattern: pattern, in: value, template: "")
     }
 
     private nonisolated static func stripInlineCoachLeadIns(from value: String) -> String {
-        let pattern = #"(?i)(^|[.!?]\s+|\s+[—-]\s+)(read|the read|coach read|next move|move|why|evidence|try this|try|focus):\s*"#
+        let pattern = #"(?i)(^|[.!?]\s+|\s+[—-]\s+)(read|the read|coach read|next move|next rep|move|why|evidence|try this|try|focus|target|drill):\s*"#
         return replace(pattern: pattern, in: value, template: "$1")
     }
 
@@ -399,11 +410,12 @@ struct ChatGroundingContext: Equatable {
 // MARK: - Chat provider chain
 
 /// Chat-reply provider identity. Wraps the shared `AIProvider` cases and adds
-/// Anthropic, which only the chat surface speaks today — promoting it into
-/// `AIProvider` proper means giving every AI service a request/extract branch
-/// (~40 switch sites across the AI layer), tracked as a follow-up. Declaration
-/// order is the failover preference order.
+/// chat-only providers. Promoting each chat-only provider into `AIProvider`
+/// proper means giving every AI service a request/extract branch (~40 switch
+/// sites across the AI layer), tracked as a follow-up. Declaration order is
+/// the failover preference order.
 enum CoachChatProvider: CaseIterable, Equatable, Hashable {
+    case agentPlatform
     case gemini
     case anthropic
     case openAI
@@ -413,7 +425,7 @@ enum CoachChatProvider: CaseIterable, Equatable, Hashable {
     /// exists, or nil for chat-only providers with their own branch.
     var sharedProvider: AIProvider? {
         switch self {
-        case .gemini: return .gemini
+        case .agentPlatform, .gemini: return .gemini
         case .openAI: return .openAI
         case .deepSeek: return .deepSeek
         case .anthropic: return nil
@@ -421,16 +433,36 @@ enum CoachChatProvider: CaseIterable, Equatable, Hashable {
     }
 
     var keyName: String {
+        keyNames[0]
+    }
+
+    var keyNames: [String] {
         switch self {
-        case .gemini: return "GEMINI_API_KEY"
-        case .anthropic: return "ANTHROPIC_API_KEY"
-        case .openAI: return "OPENAI_API_KEY"
-        case .deepSeek: return "DEEPSEEK_API_KEY"
+        case .agentPlatform:
+            return [
+                "GOOGLE_AGENT_PLATFORM_API_KEY",
+                "GOOGLE_CLOUD_AGENT_PLATFORM_API_KEY",
+                "VERTEX_AI_API_KEY"
+            ]
+        case .gemini: return ["GEMINI_API_KEY"]
+        case .anthropic: return ["ANTHROPIC_API_KEY"]
+        case .openAI: return ["OPENAI_API_KEY"]
+        case .deepSeek: return ["DEEPSEEK_API_KEY"]
         }
     }
 
     var model: String {
         switch self {
+        case .agentPlatform:
+            // Agent Platform uses Google Cloud billing. It can share the chat
+            // model override, but gets its own key so Cloud/AI Studio
+            // experiments do not have to move together.
+            return Self.configValue(forKeys: [
+                "GOOGLE_AGENT_PLATFORM_MODEL",
+                "GOOGLE_CLOUD_AGENT_MODEL",
+                "VERTEX_AI_GEMINI_MODEL",
+                "GEMINI_CHAT_MODEL"
+            ]) ?? "gemini-3.5-flash"
         // Haiku: the chat contract is 1-2 sentences in a fixed voice —
         // fast + cheap fits; the system prompt carries the intelligence.
         case .anthropic: return "claude-haiku-4-5"
@@ -447,6 +479,8 @@ enum CoachChatProvider: CaseIterable, Equatable, Hashable {
 
     var endpoint: URL? {
         switch self {
+        case .agentPlatform:
+            return Self.agentPlatformEndpoint(model: model)
         case .anthropic: return URL(string: "https://api.anthropic.com/v1/messages")
         case .gemini:
             // Built from `model` (not the shared endpoint) so the
@@ -459,11 +493,83 @@ enum CoachChatProvider: CaseIterable, Equatable, Hashable {
 
     var displayName: String {
         switch self {
+        case .agentPlatform: return "Google Cloud"
         case .gemini: return "Gemini"
         case .anthropic: return "Claude"
         case .openAI: return "OpenAI"
         case .deepSeek: return "DeepSeek"
         }
+    }
+
+    nonisolated static func configurationSummary(
+        providers: [CoachChatProvider] = CoachChatProvider.allCases,
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        localValue: (String) -> String? = { keyName in
+            LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        }
+    ) -> String {
+        providers
+            .map { provider in
+                let states: [String] = [
+                    provider.hasConfiguredKey(env: env, localValue: localValue)
+                        ? "key present"
+                        : "missing key"
+                ]
+                return "\(provider.displayName): \(states.joined(separator: ", "))"
+            }
+            .joined(separator: " | ")
+    }
+
+    nonisolated static func agentPlatformEndpoint(model: String) -> URL? {
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModel.isEmpty else { return nil }
+
+        let modelPath = trimmedModel.hasPrefix("publishers/google/models/")
+            ? String(trimmedModel.dropFirst("publishers/google/models/".count))
+            : trimmedModel
+        return URL(
+            string: "https://aiplatform.googleapis.com/v1/publishers/google/models/\(modelPath):generateContent"
+        )
+    }
+
+    private nonisolated func hasConfiguredKey(
+        env: [String: String],
+        localValue: (String) -> String?
+    ) -> Bool {
+        keyNames.contains { keyName in
+            AIProviderCredential.usableAPIKey(env[keyName]) != nil ||
+            AIProviderCredential.usableAPIKey(localValue(keyName)) != nil
+        }
+    }
+
+    private nonisolated static func configurationValue(
+        forKeys keys: [String],
+        env: [String: String],
+        localValue: (String) -> String?
+    ) -> String? {
+        for key in keys {
+            if let value = AIProviderCredential.usableAPIKey(env[key]) {
+                return value
+            }
+            if let value = AIProviderCredential.usableAPIKey(localValue(key)) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private nonisolated static func configValue(forKeys keys: [String]) -> String? {
+        for key in keys {
+            if let value = ProcessInfo.processInfo.environment[key],
+               !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return value.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if let value = LocalConfigLoader.value(forKey: key, plistNamed: "AIConfig"),
+               !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return value.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        return nil
     }
 }
 
@@ -517,6 +623,31 @@ actor AICoachChatService {
     static let shared = AICoachChatService()
 
     private static let log = Logger(subsystem: "com.jordancoaten.noum", category: "CoachChat")
+    private static let chatSurface = "Ask Noum chat"
+    private static let healthSurface = "Ask Noum provider check"
+    private static let healthSentinel = "NOUM_AI_OK"
+    private static let healthPrompt = "Reply with exactly: \(healthSentinel)"
+    private static let healthSystemPrompt = "You are a private API health check. Return the requested sentinel only."
+    private static let defaultDiagnosticRecorder: CoachChatDiagnosticRecorder = {
+        surface,
+        providerName,
+        model,
+        outcome,
+        reason,
+        statusCode,
+        startedAt,
+        now in
+        AICallDiagnostics.record(
+            surface: surface,
+            providerName: providerName,
+            model: model,
+            outcome: outcome,
+            reason: reason,
+            statusCode: statusCode,
+            startedAt: startedAt,
+            now: now
+        )
+    }
 
     /// Providers that refused recently sit at the BACK of the chain until
     /// this date — never dropped entirely, because a cooling provider is
@@ -526,6 +657,7 @@ actor AICoachChatService {
     private let keyLookupOverride: ((CoachChatProvider) -> String?)?
     private let localeSupportsAIOverride: (() -> Bool)?
     private let providerHTTPOverride: ((CoachChatProvider, URL, String, [String: Any]) async throws -> ProviderHTTPResult)?
+    private let diagnosticRecorder: CoachChatDiagnosticRecorder
 
     /// Cap on the number of chat messages we replay to the model per
     /// request. The user context block carries the long-arc summary,
@@ -538,18 +670,21 @@ actor AICoachChatService {
         self.keyLookupOverride = nil
         self.localeSupportsAIOverride = nil
         self.providerHTTPOverride = nil
+        self.diagnosticRecorder = Self.defaultDiagnosticRecorder
     }
 
     init(
         keyedProviders: @escaping () -> [CoachChatProvider],
         keyLookup: @escaping (CoachChatProvider) -> String?,
         localeSupportsAI: @escaping () -> Bool,
-        providerHTTP: @escaping (CoachChatProvider, URL, String, [String: Any]) async throws -> ProviderHTTPResult
+        providerHTTP: @escaping (CoachChatProvider, URL, String, [String: Any]) async throws -> ProviderHTTPResult,
+        diagnosticRecorder: CoachChatDiagnosticRecorder? = nil
     ) {
         self.keyedProvidersOverride = keyedProviders
         self.keyLookupOverride = keyLookup
         self.localeSupportsAIOverride = localeSupportsAI
         self.providerHTTPOverride = providerHTTP
+        self.diagnosticRecorder = diagnosticRecorder ?? Self.defaultDiagnosticRecorder
     }
 
     /// Send a turn to the model. Returns `.reply(text)` on a live success or
@@ -574,9 +709,10 @@ actor AICoachChatService {
             }
             if launchArguments.contains("UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY") {
                 return .reply("""
-                **Read:** You want it straight.
+                **Fair.** I’ll keep it direct.
 
-                **Move:** Give one 30-second update, state the recommendation first, then stop.
+                - **Target:** answer first, proof second.
+                - **Next rep:** 30-second update, so the recommendation lands before the explanation: recommendation, one proof point, stop.
                 """)
             }
             if launchArguments.contains("UI_TESTING_CHAT_FORCE_NOTICE") {
@@ -593,12 +729,14 @@ actor AICoachChatService {
             localeSupportsAI = await activeLocaleSupportsAI()
         }
         guard localeSupportsAI else {
+            recordChatDiagnostic(.skipped, "Locale not AI-supported")
             return .failure(.localeUnsupported)
         }
 
         let keyed = keyedProvidersOverride?() ?? Self.keyedProviders()
         guard !keyed.isEmpty else {
             Self.log.error("no chat provider has a key")
+            recordChatDiagnostic(.skipped, "No configured chat provider")
             return .failure(.noProvider)
         }
 
@@ -620,7 +758,16 @@ actor AICoachChatService {
         Self.log.debug("chat provider chain=\(Self.providerChainDescription(chain), privacy: .public)")
         var sawContentRejection = false
         for provider in chain {
-            guard let endpoint = provider.endpoint, let key = key(for: provider) else { continue }
+            guard let endpoint = provider.endpoint else {
+                Self.log.error("\(provider.displayName, privacy: .public) skipped: missing endpoint")
+                recordChatDiagnostic(.skipped, "Missing provider endpoint", provider: provider)
+                continue
+            }
+            guard let key = key(for: provider) else {
+                Self.log.error("\(provider.displayName, privacy: .public) skipped: missing API key")
+                recordChatDiagnostic(.skipped, "Missing API key", provider: provider)
+                continue
+            }
             let outcome = await attempt(
                 provider: provider,
                 endpoint: endpoint,
@@ -650,8 +797,13 @@ actor AICoachChatService {
         if sawContentRejection,
            let fallback = Self.trustRepairFallbackReply(for: latestUserTurn) {
             Self.log.notice("using trust-repair fallback after content rejection latestUserChars=\(latestUserTurn?.count ?? 0, privacy: .public)")
+            recordChatDiagnostic(.fallback, "Trust-repair fallback used after rejected model drafts")
             return .reply(fallback)
         }
+        recordChatDiagnostic(
+            .failure,
+            sawContentRejection ? "All chat providers failed quality gate" : "All chat providers refused"
+        )
         return .failure(sawContentRejection ? .contentRejected : .network)
     }
 
@@ -662,8 +814,10 @@ actor AICoachChatService {
         env: [String: String] = ProcessInfo.processInfo.environment
     ) -> [CoachChatProvider] {
         CoachChatProvider.allCases.filter { provider in
-            if usableAPIKey(env[provider.keyName]) != nil { return true }
-            return usableAPIKey(LocalConfigLoader.value(forKey: provider.keyName, plistNamed: "AIConfig")) != nil
+            provider.keyNames.contains { keyName in
+                if usableAPIKey(env[keyName]) != nil { return true }
+                return usableAPIKey(LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")) != nil
+            }
         }
     }
 
@@ -688,6 +842,22 @@ actor AICoachChatService {
         }
     }
 
+    /// Tiny live probe for the exact provider/model chain Ask Noum uses.
+    /// This complements `AIProviderHealthProbe`, which checks the shared
+    /// structured-AI provider path. Chat has its own Gemini model override and
+    /// Claude branch, so it needs its own probe to answer "will the coach reply?"
+    /// without sending a user prompt or transcript.
+    func runConfiguredProviderHealthProbes(
+        providers: [CoachChatProvider] = CoachChatProvider.allCases,
+        session: URLSession = .shared
+    ) async -> [AIProviderHealthProbeResult] {
+        var results: [AIProviderHealthProbeResult] = []
+        for provider in providers {
+            results.append(await runProviderHealthProbe(for: provider, session: session))
+        }
+        return results
+    }
+
     /// Pure ordering: ready providers first, cooling ones moved to the BACK —
     /// not dropped, because when everything is cooling the chain must still
     /// try its best option rather than ending the turn early.
@@ -702,24 +872,7 @@ actor AICoachChatService {
     }
 
     nonisolated static func usableAPIKey(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        let placeholder = trimmed.uppercased()
-        if [
-            "REPLACE_ME",
-            "YOUR_API_KEY",
-            "YOUR_KEY",
-            "PASTE_KEY_HERE",
-            "INSERT_API_KEY"
-        ].contains(placeholder) {
-            return nil
-        }
-        if trimmed.hasPrefix("<"), trimmed.hasSuffix(">") {
-            return nil
-        }
-        return trimmed
+        AIProviderCredential.usableAPIKey(value)
     }
 
     private nonisolated static func providerChainDescription(_ providers: [CoachChatProvider]) -> String {
@@ -729,6 +882,99 @@ actor AICoachChatService {
     private enum AttemptOutcome {
         case reply(String)
         case refused(CoachChatProviderRefusal)
+    }
+
+    private func runProviderHealthProbe(
+        for provider: CoachChatProvider,
+        session: URLSession
+    ) async -> AIProviderHealthProbeResult {
+        guard let endpoint = provider.endpoint else {
+            return recordHealthProbe(.skipped, "Missing provider endpoint", provider: provider)
+        }
+        guard let key = key(for: provider) else {
+            return recordHealthProbe(.skipped, "Missing API key", provider: provider)
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 20
+        switch provider {
+        case .openAI, .deepSeek:
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        case .agentPlatform, .gemini:
+            request.setGoogleAPIKey(key)
+        case .anthropic:
+            request.setValue(key, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        }
+
+        do {
+            request.httpBody = try Self.healthRequestBody(for: provider)
+        } catch {
+            return recordHealthProbe(.failure, "Could not build health-check request", provider: provider)
+        }
+
+        let startedAt = Date()
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                return recordHealthProbe(.failure, "Non-HTTP response", provider: provider, startedAt: startedAt)
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                return recordHealthProbe(
+                    .failure,
+                    Self.failureReason(forHTTPStatus: http.statusCode, data: data, provider: provider),
+                    provider: provider,
+                    statusCode: http.statusCode,
+                    startedAt: startedAt
+                )
+            }
+            guard Self.healthResponseContainsSentinel(data, provider: provider) else {
+                return recordHealthProbe(
+                    .failure,
+                    "Sentinel missing from provider response",
+                    provider: provider,
+                    statusCode: http.statusCode,
+                    startedAt: startedAt
+                )
+            }
+            return recordHealthProbe(
+                .success,
+                "Provider returned health-check sentinel",
+                provider: provider,
+                statusCode: http.statusCode,
+                startedAt: startedAt
+            )
+        } catch {
+            return recordHealthProbe(.failure, "Transport error", provider: provider, startedAt: startedAt)
+        }
+    }
+
+    private nonisolated func recordHealthProbe(
+        _ outcome: AICallDiagnosticOutcome,
+        _ reason: String,
+        provider: CoachChatProvider,
+        statusCode: Int? = nil,
+        startedAt: Date? = nil
+    ) -> AIProviderHealthProbeResult {
+        AICallDiagnostics.record(
+            surface: Self.healthSurface,
+            providerName: provider.displayName,
+            model: provider.model,
+            outcome: outcome,
+            reason: reason,
+            statusCode: statusCode,
+            startedAt: startedAt
+        )
+        return AIProviderHealthProbeResult(
+            provider: provider.sharedProvider,
+            outcome: outcome,
+            reason: reason,
+            statusCode: statusCode,
+            providerName: "Ask Noum \(provider.displayName)",
+            model: provider.model
+        )
     }
 
     /// One provider attempt: request (with a single short retry when the
@@ -768,6 +1014,7 @@ actor AICoachChatService {
                     let normalized = CoachReplyTextSanitizer.displayText(from: text)
                     guard !normalized.isEmpty else {
                         Self.log.error("\(provider.displayName, privacy: .public) reply normalized to empty text")
+                        recordChatDiagnostic(.fallback, "Reply normalized to empty", provider: provider)
                         return .refused(.transient)
                     }
                     if normalized != text.trimmingCharacters(in: .whitespacesAndNewlines) {
@@ -789,15 +1036,23 @@ actor AICoachChatService {
                             messages: messages,
                             quoteGuard: quoteGuard
                         ) {
+                            recordChatDiagnostic(.success, "Repair reply accepted", provider: provider)
                             return .reply(repaired)
                         }
                         // A content miss by this model on this turn — let the
                         // next provider in the chain take the question.
+                        recordChatDiagnostic(.fallback, "Reply failed professional-coach gate", provider: provider)
                         return .refused(.contentRejected)
                     }
+                    recordChatDiagnostic(.success, "Reply accepted", provider: provider)
                     return .reply(normalized)
                 case .empty, .lengthTruncated:
                     Self.log.error("\(provider.displayName, privacy: .public) returned no usable text (\(extraction == .lengthTruncated ? "truncated" : "empty", privacy: .public))")
+                    recordChatDiagnostic(
+                        .fallback,
+                        extraction == .lengthTruncated ? "Reply length-truncated" : "Missing response content",
+                        provider: provider
+                    )
                     return .refused(.transient)
                 }
             }
@@ -1051,8 +1306,17 @@ actor AICoachChatService {
         ])
     }
 
+    private nonisolated static let directnessRequestPhrases = [
+        "be direct", "direct with me", "give it to me straight",
+        "tell me straight", "keep it direct"
+    ]
+
+    private nonisolated static func turnRequestsDirectness(_ lower: String) -> Bool {
+        containsAny(lower, directnessRequestPhrases)
+    }
+
     private nonisolated static func turnRequestsShortness(_ lower: String) -> Bool {
-        containsAny(lower, [
+        turnRequestsDirectness(lower) || containsAny(lower, [
             "keep it short", "keep this short", "make it short", "shorter",
             "too much writing", "too long", "less writing", "less text",
             "straight to the point", "straight to point", "get to the point",
@@ -1075,6 +1339,12 @@ actor AICoachChatService {
             Fair question. The friction was my draft, not your ask.
             - Move: I’ll keep the next answer to one read and one drill.
             - Try: send the situation in one line so I can aim the coaching.
+            """
+        } else if turnRequestsDirectness(lower) {
+            raw = """
+            Fair. I’ll keep it direct.
+            - Target: answer first, proof second.
+            - Next rep: 30-second update, so the recommendation lands before the explanation: recommendation, one proof point, stop.
             """
         } else if turnRequestsShortness(lower) {
             raw = """
@@ -1364,11 +1634,13 @@ actor AICoachChatService {
             case .text(let text) = Self.chatExtractReplyText(from: data, provider: provider)
         else {
             Self.log.error("repair pass got no usable text from \(provider.displayName, privacy: .public)")
+            recordChatDiagnostic(.fallback, "Repair response missing content", provider: provider)
             return nil
         }
         let normalized = CoachReplyTextSanitizer.displayText(from: text)
         guard !normalized.isEmpty else {
             Self.log.error("repair pass normalized to empty text from \(provider.displayName, privacy: .public)")
+            recordChatDiagnostic(.fallback, "Repair reply normalized to empty", provider: provider)
             return nil
         }
         if normalized != text.trimmingCharacters(in: .whitespacesAndNewlines) {
@@ -1380,6 +1652,7 @@ actor AICoachChatService {
             quoteGuard: quoteGuard
         ) {
             Self.log.error("repair pass still tripped the gate (\(String(describing: remainingIssue), privacy: .public))")
+            recordChatDiagnostic(.fallback, "Repair reply failed professional-coach gate", provider: provider)
             return nil
         }
         return normalized
@@ -1396,13 +1669,38 @@ actor AICoachChatService {
         if let keyLookupOverride {
             return Self.usableAPIKey(keyLookupOverride(provider))
         }
-        if let value = Self.usableAPIKey(ProcessInfo.processInfo.environment[provider.keyName]) {
-            return value
+        for keyName in provider.keyNames {
+            if let value = Self.usableAPIKey(ProcessInfo.processInfo.environment[keyName]) {
+                return value
+            }
+            if let value = Self.usableAPIKey(LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")) {
+                return value
+            }
         }
-        return Self.usableAPIKey(LocalConfigLoader.value(forKey: provider.keyName, plistNamed: "AIConfig"))
+        return nil
     }
 
     // MARK: - Transport
+
+    private func recordChatDiagnostic(
+        _ outcome: AICallDiagnosticOutcome,
+        _ reason: String,
+        provider: CoachChatProvider? = nil,
+        statusCode: Int? = nil,
+        startedAt: Date? = nil,
+        now: Date = Date()
+    ) {
+        diagnosticRecorder(
+            Self.chatSurface,
+            provider?.displayName,
+            provider?.model,
+            outcome,
+            reason,
+            statusCode,
+            startedAt,
+            now
+        )
+    }
 
     enum ProviderHTTPResult {
         case success(Data)
@@ -1432,7 +1730,7 @@ actor AICoachChatService {
         switch provider {
         case .openAI, .deepSeek:
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        case .gemini:
+        case .agentPlatform, .gemini:
             request.setGoogleAPIKey(key)
         case .anthropic:
             request.setValue(key, forHTTPHeaderField: "x-api-key")
@@ -1443,18 +1741,52 @@ actor AICoachChatService {
         let started = Date()
         let bodyBytes = request.httpBody?.count ?? 0
         Self.log.debug("transport start provider=\(provider.displayName, privacy: .public) host=\(endpoint.host ?? "unknown", privacy: .public) path=\(endpoint.path, privacy: .public) bodyBytes=\(bodyBytes, privacy: .public)")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let elapsedMs = Int(Date().timeIntervalSince(started) * 1_000)
-        guard let http = response as? HTTPURLResponse else {
-            Self.log.error("transport non-http response provider=\(provider.displayName, privacy: .public) ms=\(elapsedMs, privacy: .public) bytes=\(data.count, privacy: .public)")
-            return .refused(status: -1, retryAfter: nil)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let now = Date()
+            let elapsedMs = Int(now.timeIntervalSince(started) * 1_000)
+            guard let http = response as? HTTPURLResponse else {
+                Self.log.error("transport non-http response provider=\(provider.displayName, privacy: .public) ms=\(elapsedMs, privacy: .public) bytes=\(data.count, privacy: .public)")
+                recordChatDiagnostic(
+                    .failure,
+                    "Non-HTTP response",
+                    provider: provider,
+                    startedAt: started,
+                    now: now
+                )
+                return .refused(status: -1, retryAfter: nil)
+            }
+            let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
+            Self.log.info("transport response provider=\(provider.displayName, privacy: .public) status=\(http.statusCode, privacy: .public) ms=\(elapsedMs, privacy: .public) bytes=\(data.count, privacy: .public) retryAfter=\(retryAfter != nil, privacy: .public)")
+            guard (200..<300).contains(http.statusCode) else {
+                recordChatDiagnostic(
+                    .fallback,
+                    Self.failureReason(forHTTPStatus: http.statusCode, data: data, provider: provider),
+                    provider: provider,
+                    statusCode: http.statusCode,
+                    startedAt: started,
+                    now: now
+                )
+                return .refused(status: http.statusCode, retryAfter: retryAfter)
+            }
+            recordChatDiagnostic(
+                .success,
+                "Transport succeeded",
+                provider: provider,
+                statusCode: http.statusCode,
+                startedAt: started,
+                now: now
+            )
+            return .success(data)
+        } catch {
+            recordChatDiagnostic(
+                .failure,
+                "Transport error",
+                provider: provider,
+                startedAt: started
+            )
+            throw error
         }
-        let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
-        Self.log.info("transport response provider=\(provider.displayName, privacy: .public) status=\(http.statusCode, privacy: .public) ms=\(elapsedMs, privacy: .public) bytes=\(data.count, privacy: .public) retryAfter=\(retryAfter != nil, privacy: .public)")
-        guard (200..<300).contains(http.statusCode) else {
-            return .refused(status: http.statusCode, retryAfter: retryAfter)
-        }
-        return .success(data)
     }
 
     // MARK: - Request body construction
@@ -1544,9 +1876,9 @@ actor AICoachChatService {
                 "contents": contents,
                 "generationConfig": [
                     "temperature": 0.6,
-                    // gemini-2.5-flash is a thinking model: reasoning
-                    // tokens otherwise share — and eat — the output
-                    // budget, guillotining the visible reply mid-word.
+                    // Thinking-capable Gemini models can otherwise spend
+                    // visible output budget on hidden reasoning tokens,
+                    // guillotining the reply mid-word.
                     // thinkingBudget 0 spends the whole budget on text.
                     "thinkingConfig": ["thinkingBudget": 0],
                     // 520 = safety ceiling; the compact system-prompt
@@ -1560,6 +1892,77 @@ actor AICoachChatService {
     }
 
     // MARK: - Response parsing
+
+    static func healthRequestBody(for provider: CoachChatProvider) throws -> Data {
+        let body: [String: Any]
+        switch provider {
+        case .agentPlatform, .gemini:
+            body = [
+                "systemInstruction": ["parts": [["text": healthSystemPrompt]]],
+                "contents": [
+                    [
+                        "role": "user",
+                        "parts": [["text": healthPrompt]]
+                    ]
+                ],
+                "generationConfig": [
+                    "temperature": 0,
+                    "thinkingConfig": ["thinkingBudget": 0],
+                    "maxOutputTokens": 16
+                ]
+            ]
+        case .openAI, .deepSeek:
+            body = [
+                "model": provider.model,
+                "temperature": 0,
+                "max_tokens": 16,
+                "messages": [
+                    ["role": "system", "content": healthSystemPrompt],
+                    ["role": "user", "content": healthPrompt]
+                ]
+            ]
+        case .anthropic:
+            body = [
+                "model": provider.model,
+                "system": healthSystemPrompt,
+                "messages": [
+                    ["role": "user", "content": healthPrompt]
+                ],
+                "temperature": 0,
+                "max_tokens": 16
+            ]
+        }
+        return try JSONSerialization.data(withJSONObject: body)
+    }
+
+    static func healthResponseContainsSentinel(_ data: Data, provider: CoachChatProvider) -> Bool {
+        guard case .text(let text) = chatExtractReplyText(from: data, provider: provider) else {
+            return false
+        }
+        return text.contains(healthSentinel)
+    }
+
+    static func failureReason(
+        forHTTPStatus statusCode: Int,
+        data: Data,
+        provider: CoachChatProvider
+    ) -> String {
+        if let shared = provider.sharedProvider {
+            return AIProviderHealthProbe.failureReason(
+                forHTTPStatus: statusCode,
+                data: data,
+                provider: shared
+            )
+        }
+
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let error = object["error"] as? [String: Any],
+           let type = error["type"] as? String,
+           !type.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Provider error: \(type)"
+        }
+        return "Provider returned HTTP \(statusCode)"
+    }
 
     static func chatExtractReplyText(from data: Data, provider: CoachChatProvider) -> ChatExtractionResult {
         if let shared = provider.sharedProvider {

@@ -38,6 +38,10 @@
     <string></string>
     <key>DEEPSEEK_API_KEY</key>
     <string></string>
+    <key>GOOGLE_AGENT_PLATFORM_API_KEY</key>
+    <string></string>
+    <key>GOOGLE_AGENT_PLATFORM_MODEL</key>
+    <string>gemini-3.5-flash</string>
     <key>GEMINI_API_KEY</key>
     <string></string>
     <key>IM_CONTEXT_REGION</key>

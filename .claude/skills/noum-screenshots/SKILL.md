@@ -73,7 +73,7 @@ This skill requires the macOS iOS Simulator. **If running on Linux (cloud routin
                  shutil.copy(f'/tmp/noum-tour-attachments/{a[\"exportedFileName\"]}', f'{out}/tour_{slug}.png')
      "
      ```
-   - The tour covers **27 surfaces** (in this order):
+   - The tour covers **28 surfaces** (in this order):
      - Home top/mid/bottom (3)
      - Profile top/mid/bottom (3)
      - Review top/bottom + session detail (3)
@@ -86,6 +86,7 @@ This skill requires the macOS iOS Simulator. **If running on Linux (cloud routin
      - Path Journey top/bottom (2)
      - Goal Refresh sheet (1) — via `FORCE_GOAL_REFRESH` launch arg
      - Notification Pre-Prompt sheet (1) — via `FORCE_NOTIFICATION_PROMPT` launch arg
+     - Weekly Check-In sheet (1) — via `FORCE_WEEKLY_CHECKIN` launch arg
    - All seeded with the `improvingIntermediate` dev profile.
    - The tour uses `UI_TESTING_SEED_FORCE` which **destructively replaces** the simulator's practice data + clears celebration overlays. That's intentional for deterministic captures; don't run detailed mode on a sim you're using for real hand-testing.
    - **Not yet covered** (require audio-mocking or test-only hooks not built): in-rep dynamic states (Thinking / Speaking / Summary), Paywall, Friend Leaderboard, Friend invite QR. If these matter, extend `ScreenshotTour.swift` + add the required launch args.

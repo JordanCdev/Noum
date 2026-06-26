@@ -76,6 +76,7 @@ struct ProfileEvidenceDetailPlan: Equatable {
             .baselineMap,
             .coachingDirection,
             .coachLoopReadiness,
+            .weeklyCheckIn,
             .caseReview,
             .deliveryProfile,
             .speechPatterns
@@ -92,6 +93,7 @@ struct ProfileEvidenceDetailPlan: Equatable {
 }
 
 enum ProfileEvidenceHubLink: String, Hashable {
+    case baselineMap
     case growthLibrary
     case history
 }
@@ -102,7 +104,7 @@ struct ProfileEvidenceHubPresentation: Equatable {
     let showsDefaultHeader: Bool
 
     static let valueFirst = ProfileEvidenceHubPresentation(
-        linkOrder: [.growthLibrary, .history],
+        linkOrder: [.baselineMap, .growthLibrary, .history],
         usesCompactRows: true,
         showsDefaultHeader: false
     )
@@ -111,44 +113,11 @@ struct ProfileEvidenceHubPresentation: Equatable {
 struct BaselineMapCard: View {
     let map: BaselineCoachMap
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var measuredReads: [BaselineCoachDimensionRead] {
-        map.dimensions.filter(\.isMeasured)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             header
-            formationBar
-
-            HStack(alignment: .center, spacing: Spacing.md) {
-                BaselineRadarChart(reads: map.dimensions)
-                    .frame(width: 150, height: 150)
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("\(map.measuredDimensionCount) of \(map.dimensions.count) coach reads active")
-                        .font(Typography.cardLabel)
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Text(map.statusDetail)
-                        .font(Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if !measuredReads.isEmpty {
-                        VStack(alignment: .leading, spacing: 5) {
-                            ForEach(measuredReads.prefix(3)) { read in
-                                dimensionLine(read)
-                            }
-                        }
-                        .padding(.top, 2)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            coachSummary
+            BaselineCoachReadout(map: map)
 
             goalGapSection
 
@@ -169,57 +138,91 @@ struct BaselineMapCard: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
+            Image(systemName: "chart.bar.xaxis")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(AppColor.pro)
-            Text("Baseline map")
+            Text("Baseline readout")
                 .font(Typography.micro)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .tracking(0.8)
             Spacer()
-            Text(map.confidence.label)
+            Text(headerBadgeLabel)
                 .font(Typography.micro)
-                .foregroundStyle(AppColor.pro)
+                .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .tracking(0.7)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(AppColor.pro.opacity(0.10), in: Capsule())
+                .background(AppColor.tagBackground, in: Capsule())
         }
     }
 
-    private var formationBar: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(map.statusTitle)
+    private var coachSummary: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(map.coachHeadline)
                     .font(Typography.headline)
                     .foregroundStyle(.primary)
-                Spacer()
-                Text(formationCountLabel)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(map.coachPriorityLine)
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
-                    .monospacedDigit()
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(AppColor.tagBackground)
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [AppColor.brandBlue, AppColor.pro],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: max(8, proxy.size.width * map.formationProgress))
-                }
+            HStack(spacing: 8) {
+                baselineMetricPill(
+                    icon: "scope",
+                    label: "Reads",
+                    value: "\(map.measuredDimensionCount)/\(map.dimensions.count)",
+                    tint: AppColor.brandBlue
+                )
+                baselineMetricPill(
+                    icon: "magnifyingglass",
+                    label: "Evidence",
+                    value: "\(map.qualifyingSessionCount) reps",
+                    tint: AppColor.pro
+                )
             }
-            .frame(height: 8)
-            .animation(reduceMotion ? nil : .standardSpring, value: map.formationProgress)
         }
+    }
+
+    private func baselineMetricPill(icon: String, label: String, value: String, tint: Color) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(Typography.captionSmall.weight(.bold))
+                .foregroundStyle(tint)
+                .frame(width: 22, height: 22)
+                .background(tint.opacity(0.10), in: Circle())
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(Typography.micro)
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+
+                Text(value)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(.primary.opacity(0.82))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.76)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.065), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+    }
+
+    private var headerBadgeLabel: String {
+        if map.formationProgress >= 1 {
+            return "Ready"
+        }
+        return formationCountLabel
     }
 
     private var formationCountLabel: String {
@@ -232,35 +235,32 @@ struct BaselineMapCard: View {
     @ViewBuilder
     private var goalGapSection: some View {
         if let gap = map.goalGap {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Gap to goal")
-                        .font(Typography.micro)
-                        .foregroundStyle(.tertiary)
-                        .textCase(.uppercase)
-                        .tracking(0.8)
-                    Spacer()
-                    Text(gap.summary)
-                        .font(Typography.caption)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Goal gap")
+                            .font(Typography.micro)
+                            .foregroundStyle(.tertiary)
+                            .textCase(.uppercase)
+                            .tracking(0.8)
+
+                        Text("Toward \(gap.goal.title.lowercased())")
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 12)
+
+                    Text(gap.percentLabel)
+                        .font(Typography.figtreeNumeric(size: 24, weight: .bold, relativeTo: .title3))
                         .foregroundStyle(AppColor.brandBlue)
                 }
 
-                GeometryReader { proxy in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(AppColor.brandBlue.opacity(0.10))
-                        Capsule()
-                            .fill(AppColor.brandBlue)
-                            .frame(width: max(8, proxy.size.width * gap.proximity))
-                    }
+                HStack(spacing: 10) {
+                    goalGapMiniStat(label: "Current", value: gap.currentLabel)
+                    goalGapMiniStat(label: "Target", value: gap.targetLabel)
                 }
-                .frame(height: 7)
-                .animation(reduceMotion ? nil : .standardSpring, value: gap.proximity)
-
-                Text("\(gap.currentLabel) · target: \(gap.targetLabel)")
-                    .font(Typography.captionSmall)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(Spacing.md)
             .background(AppColor.brandBlue.opacity(0.07), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
@@ -274,6 +274,27 @@ struct BaselineMapCard: View {
         }
     }
 
+    private func goalGapMiniStat(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(Typography.micro)
+                .foregroundStyle(.tertiary)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            Text(value)
+                .font(Typography.captionSmall.weight(.semibold))
+                .foregroundStyle(.primary.opacity(0.76))
+                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(2)
+                .minimumScaleFactor(0.82)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+        .background(Color.white.opacity(0.74), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+    }
+
     private func motivationSection(_ text: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "quote.opening")
@@ -281,7 +302,7 @@ struct BaselineMapCard: View {
                 .foregroundStyle(AppColor.pro)
                 .padding(.top, 2)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Original why")
+                Text("Why this matters")
                     .font(Typography.micro)
                     .foregroundStyle(.tertiary)
                     .textCase(.uppercase)
@@ -296,26 +317,9 @@ struct BaselineMapCard: View {
         .background(AppColor.pro.opacity(0.07), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
-    private func dimensionLine(_ read: BaselineCoachDimensionRead) -> some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(read.confidence.isReliable ? AppColor.positive : AppColor.caution)
-                .frame(width: 6, height: 6)
-            Text(read.dimension.shortTitle)
-                .font(Typography.captionSmall)
-                .foregroundStyle(.secondary)
-            if let value = read.valueLabel {
-                Text(value)
-                    .font(Typography.captionSmall)
-                    .foregroundStyle(.primary)
-                    .monospacedDigit()
-            }
-        }
-    }
-
     private var accessibilityLabel: String {
         var parts = [
-            "Baseline map.",
+            "Baseline readout.",
             "\(map.statusTitle).",
             "\(map.measuredDimensionCount) of \(map.dimensions.count) coach reads active."
         ]
@@ -329,123 +333,326 @@ struct BaselineMapCard: View {
     }
 }
 
-private struct BaselineRadarChart: View {
-    let reads: [BaselineCoachDimensionRead]
-
-    private var evidenceValues: [Double] {
-        reads.map(\.evidenceProgress)
-    }
-
-    private var measuredValues: [Double]? {
-        let values = reads.map { $0.currentScore }
-        guard values.compactMap({ $0 }).count >= 3 else { return nil }
-        return values.map { $0 ?? 0 }
-    }
+private struct BaselineCoachReadout: View {
+    let map: BaselineCoachMap
 
     var body: some View {
-        GeometryReader { proxy in
-            let side = min(proxy.size.width, proxy.size.height)
-            let rect = CGRect(
-                x: (proxy.size.width - side) / 2,
-                y: (proxy.size.height - side) / 2,
-                width: side,
-                height: side
-            )
-
-            ZStack {
-                ForEach([0.33, 0.66, 1.0], id: \.self) { scale in
-                    RadarPolygonShape(values: Array(repeating: scale, count: reads.count))
-                        .stroke(Color.black.opacity(scale == 1.0 ? 0.12 : 0.07), lineWidth: 1)
-                }
-
-                ForEach(reads.indices, id: \.self) { index in
-                    RadarAxisShape(index: index, count: reads.count)
-                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
-                }
-
-                RadarPolygonShape(values: evidenceValues)
-                    .fill(AppColor.brandBlue.opacity(0.18))
-                RadarPolygonShape(values: evidenceValues)
-                    .stroke(AppColor.brandBlue.opacity(0.85), lineWidth: 2)
-
-                if let measuredValues {
-                    RadarPolygonShape(values: measuredValues)
-                        .fill(AppColor.pro.opacity(0.12))
-                    RadarPolygonShape(values: measuredValues)
-                        .stroke(AppColor.pro.opacity(0.75), lineWidth: 1.8)
-                }
-
-                ForEach(Array(reads.enumerated()), id: \.offset) { index, read in
-                    Text(read.dimension.shortTitle)
-                        .font(Typography.micro)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                        .position(labelPoint(index: index, count: reads.count, rect: rect))
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            if let focus = map.readoutFocusDimension {
+                BaselinePriorityReadRow(
+                    read: focus,
+                    role: focusRole(for: focus)
+                )
             }
+
+            if let strength = map.readoutStrengthDimension {
+                BaselinePriorityReadRow(
+                    read: strength,
+                    role: .strength
+                )
+            }
+
+            BaselineSupportingSignals(
+                reads: map.supportingReadoutDimensions,
+                measuredCount: map.measuredDimensionCount,
+                totalCount: map.dimensions.count
+            )
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func focusRole(for read: BaselineCoachDimensionRead) -> BaselineReadRole {
+        guard read.isMeasured else { return .learning }
+        if let score = read.currentScore, score >= 0.72 {
+            return .monitor
+        }
+        return .focus
+    }
+}
+
+private enum BaselineReadRole {
+    case focus
+    case strength
+    case learning
+    case monitor
+
+    var eyebrow: String {
+        switch self {
+        case .focus: return "Work next"
+        case .strength: return "Holding"
+        case .learning: return "Needs signal"
+        case .monitor: return "Keep watching"
         }
     }
 
-    private func labelPoint(index: Int, count: Int, rect: CGRect) -> CGPoint {
-        let angle = angleFor(index: index, count: count)
-        let radius = min(rect.width, rect.height) * 0.47
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        return CGPoint(
-            x: center.x + cos(angle) * radius,
-            y: center.y + sin(angle) * radius
+    var icon: String {
+        switch self {
+        case .focus: return "scope"
+        case .strength: return "checkmark.seal.fill"
+        case .learning: return "dot.radiowaves.left.and.right"
+        case .monitor: return "eye.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .focus: return AppColor.caution
+        case .strength: return AppColor.positive
+        case .learning: return AppColor.pro
+        case .monitor: return AppColor.brandBlue
+        }
+    }
+
+    var backgroundOpacity: Double {
+        switch self {
+        case .focus: return 0.085
+        case .strength: return 0.075
+        case .learning: return 0.070
+        case .monitor: return 0.070
+        }
+    }
+}
+
+private struct BaselinePriorityReadRow: View {
+    let read: BaselineCoachDimensionRead
+    let role: BaselineReadRole
+
+    private var stateTint: Color {
+        guard read.isMeasured else {
+            return role.tint
+        }
+
+        let score = read.currentScore ?? 0
+        if score >= 0.72 {
+            return AppColor.positive
+        }
+        if score >= 0.42 {
+            return read.dimension.signalTint
+        }
+        return AppColor.caution
+    }
+
+    private var valueText: String {
+        read.valueLabel ?? "Needs more reps"
+    }
+
+    private var meterValue: Double {
+        if let score = read.currentScore {
+            return score
+        }
+        return read.evidenceProgress
+    }
+
+    private var badgeText: String {
+        switch role {
+        case .focus:
+            return "Focus"
+        case .strength:
+            return "Strong"
+        case .learning:
+            return "Learning"
+        case .monitor:
+            return "Stable"
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: role.icon)
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(role.tint)
+                .frame(width: 34, height: 34)
+                .background(role.tint.opacity(0.12), in: Circle())
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(role.eyebrow)
+                    .font(Typography.micro)
+                    .foregroundStyle(role.tint)
+                    .textCase(.uppercase)
+                    .tracking(0.7)
+
+                Text(read.dimension.title)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+
+                Text("\(read.coachStateLabel) · \(valueText)")
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.74)
+                    .monospacedDigit()
+            }
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(badgeText)
+                    .font(Typography.captionSmall.weight(.bold))
+                    .foregroundStyle(stateTint)
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(stateTint.opacity(0.11), in: Capsule())
+
+                BaselineScoreMeter(value: meterValue, tint: stateTint)
+                    .frame(width: 82)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
+        .background(role.tint.opacity(role.backgroundOpacity), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(role.tint.opacity(0.14), lineWidth: 1)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(role.eyebrow). \(read.dimension.title). \(read.coachStateLabel). \(valueText).")
+    }
+}
+
+private struct BaselineSupportingSignals: View {
+    let reads: [BaselineCoachDimensionRead]
+    let measuredCount: Int
+    let totalCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Supporting signals")
+                    .font(Typography.micro)
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.7)
+
+                Spacer(minLength: 8)
+
+                Text("\(measuredCount)/\(totalCount) active")
+                    .font(Typography.captionSmall.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            VStack(spacing: 7) {
+                ForEach(reads) { read in
+                    BaselineSupportSignalRow(read: read)
+                }
+            }
+        }
+        .padding(12)
+        .background(
+            AppColor.tagBackground.opacity(0.76),
+            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
         )
     }
 }
 
-private struct RadarPolygonShape: Shape {
-    var values: [Double]
+private struct BaselineSupportSignalRow: View {
+    let read: BaselineCoachDimensionRead
 
-    func path(in rect: CGRect) -> Path {
-        guard values.count >= 3 else { return Path() }
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let radius = min(rect.width, rect.height) * 0.34
-        var path = Path()
-        for (index, value) in values.enumerated() {
-            let angle = angleFor(index: index, count: values.count)
-            let scaled = min(max(value, 0), 1)
-            let point = CGPoint(
-                x: center.x + cos(angle) * radius * scaled,
-                y: center.y + sin(angle) * radius * scaled
-            )
-            if index == 0 {
-                path.move(to: point)
-            } else {
-                path.addLine(to: point)
+    private var valueText: String {
+        read.valueLabel ?? "Gathering"
+    }
+
+    private var meterValue: Double {
+        read.currentScore ?? read.evidenceProgress
+    }
+
+    private var tint: Color {
+        guard read.isMeasured else { return .secondary }
+        return read.dimension.signalTint
+    }
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: read.dimension.signalIcon)
+                .font(Typography.captionSmall.weight(.bold))
+                .foregroundStyle(tint)
+                .frame(width: 24, height: 24)
+                .background(tint.opacity(read.isMeasured ? 0.10 : 0.07), in: Circle())
+
+            Text(read.dimension.shortTitle)
+                .font(Typography.captionSmall.weight(.semibold))
+                .foregroundStyle(.primary.opacity(0.80))
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+
+            Spacer(minLength: 6)
+
+            Text(valueText)
+                .font(Typography.captionSmall)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .monospacedDigit()
+
+            BaselineScoreMeter(value: meterValue, tint: tint)
+                .frame(width: 44)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(read.dimension.title). \(read.coachStateLabel). \(valueText).")
+    }
+}
+
+private struct BaselineScoreMeter: View {
+    let value: Double
+    let tint: Color
+
+    private var clampedValue: Double {
+        min(max(value, 0), 1)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.black.opacity(0.07))
+
+                Capsule()
+                    .fill(tint.opacity(0.78))
+                    .frame(width: max(4, proxy.size.width * CGFloat(clampedValue)))
             }
         }
-        path.closeSubpath()
-        return path
+        .frame(height: 5)
+        .accessibilityHidden(true)
     }
 }
 
-private struct RadarAxisShape: Shape {
-    let index: Int
-    let count: Int
-
-    func path(in rect: CGRect) -> Path {
-        guard count >= 3 else { return Path() }
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let radius = min(rect.width, rect.height) * 0.34
-        let angle = angleFor(index: index, count: count)
-        var path = Path()
-        path.move(to: center)
-        path.addLine(to: CGPoint(
-            x: center.x + cos(angle) * radius,
-            y: center.y + sin(angle) * radius
-        ))
-        return path
+private extension BaselineCoachDimension {
+    var signalIcon: String {
+        switch self {
+        case .fillerControl:
+            return "speaker.slash.fill"
+        case .paceControl:
+            return "speedometer"
+        case .structure:
+            return "rectangle.stack.fill"
+        case .clarity:
+            return "checkmark.circle.fill"
+        case .composure:
+            return "pause.circle.fill"
+        case .vocalRange:
+            return "waveform.path"
+        }
     }
-}
 
-private func angleFor(index: Int, count: Int) -> CGFloat {
-    guard count > 0 else { return -.pi / 2 }
-    return -.pi / 2 + (CGFloat(index) / CGFloat(count)) * 2 * .pi
+    var signalTint: Color {
+        switch self {
+        case .fillerControl:
+            return AppColor.caution
+        case .paceControl:
+            return AppColor.modeAhCounter
+        case .structure:
+            return AppColor.brandBlue
+        case .clarity:
+            return AppColor.positive
+        case .composure:
+            return AppColor.pro
+        case .vocalRange:
+            return .pink
+        }
+    }
 }
 
 struct ProfileIdentityPresentation: Equatable {
@@ -492,7 +699,7 @@ struct ProfileCoachReadContent: Equatable {
         var evidenceLine: String?
         let read: String
         if let memory, let hypothesis = bounded(memory.workingHypothesis), confidence >= .tentative {
-            read = hypothesis
+            read = userFacingRead(fromWorkingHypothesis: hypothesis)
             evidenceLine = CoachCaseFile.evidenceDepthLine(
                 evidenceCount: memory.evidenceCount,
                 confidence: confidence,
@@ -534,6 +741,78 @@ struct ProfileCoachReadContent: Equatable {
             proofQuote: bounded(proof?.proof.quote),
             isThinEvidence: isThin
         )
+    }
+
+    static func userFacingRead(fromWorkingHypothesis hypothesis: String) -> String {
+        let trimmed = hypothesis.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let parts = splitHypothesis(
+            trimmed,
+            marker: " appears to be the highest-leverage focus because ",
+            suffix: "; keep checking against future reps."
+        ) {
+            let topic = userFacingTopic(parts.topic)
+            let basis = sentenceCased(userFacingBasis(parts.basis))
+            return "\(topic) looks like the strongest lever right now. \(basis), so keep testing it against future reps."
+        }
+        if let parts = splitHypothesis(
+            trimmed,
+            marker: " may be the highest-leverage focus because ",
+            suffix: "; verify over more reps."
+        ) {
+            let topic = userFacingTopic(parts.topic)
+            let basis = sentenceCased(userFacingBasis(parts.basis))
+            return "\(topic) may be the strongest lever. \(basis), but Noum needs a few more reps before treating it as the main case."
+        }
+        return trimmed
+            .replacingOccurrences(
+                of: "persistent blocker in the rolling baseline",
+                with: "it keeps showing up in the rolling baseline"
+            )
+    }
+
+    private static func splitHypothesis(
+        _ value: String,
+        marker: String,
+        suffix: String
+    ) -> (topic: String, basis: String)? {
+        guard value.hasSuffix(suffix),
+              let markerRange = value.range(of: marker) else { return nil }
+        let topic = String(value[..<markerRange.lowerBound])
+        let basisEnd = value.index(value.endIndex, offsetBy: -suffix.count)
+        let basis = String(value[markerRange.upperBound..<basisEnd])
+        guard !topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !basis.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return (topic, basis)
+    }
+
+    private static func userFacingTopic(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.localizedCaseInsensitiveCompare("Filler Words") == .orderedSame {
+            return "Filler-word control"
+        }
+        guard let first = trimmed.first else { return trimmed }
+        return String(first).uppercased() + String(trimmed.dropFirst()).lowercased()
+    }
+
+    private static func userFacingBasis(_ value: String) -> String {
+        let trimmed = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        if trimmed.localizedCaseInsensitiveCompare("persistent blocker in the rolling baseline") == .orderedSame {
+            return "it keeps showing up in the rolling baseline"
+        }
+        if trimmed.localizedCaseInsensitiveCompare("stable at developing") == .orderedSame {
+            return "the pattern is steady, but not yet moving"
+        }
+        return trimmed
+    }
+
+    private static func sentenceCased(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.first else { return trimmed }
+        return String(first).uppercased() + String(trimmed.dropFirst())
     }
 
     private static func bounded(_ value: String?) -> String? {
@@ -597,6 +876,7 @@ enum ProfileTransferStatusKind: Equatable {
     case activePrep
     case transferPattern
     case recentOutcome
+    case setupTeaser
 }
 
 struct ProfileTransferStatusContent: Equatable {
@@ -691,7 +971,15 @@ struct ProfileTransferStatusContent: Equatable {
             )
         }
 
-        return nil
+        return ProfileTransferStatusContent(
+            kind: .setupTeaser,
+            eyebrow: "Real-world loop",
+            title: "Bring Noum a real moment",
+            detail: "Set an interview, presentation, or hard conversation. Noum will shape prep around it, then ask how it actually landed.",
+            actionTitle: "Set moment",
+            destination: .bigMomentIntake,
+            moment: nil
+        )
     }
 
     private static func pendingOutcomeContent(
@@ -809,7 +1097,7 @@ struct ProfileView: View {
     ]
 
     private var displayName: String {
-        authManager.currentAccountName ?? "Speaker"
+        AuthManager.userFacingDisplayName(from: authManager.currentAccountName)
     }
 
     private var sessions: [PracticeSession] {
@@ -1178,6 +1466,7 @@ struct ProfileView: View {
         case .activePrep: return "flag.checkered.circle.fill"
         case .transferPattern: return "chart.line.uptrend.xyaxis.circle.fill"
         case .recentOutcome: return "checkmark.seal.fill"
+        case .setupTeaser: return "calendar.badge.plus"
         }
     }
 
@@ -1219,6 +1508,24 @@ struct ProfileView: View {
                     .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
             }
         }
+    }
+
+    private var baselineCoachMap: BaselineCoachMap {
+        BaselineCoachMap.make(
+            baseline: baselineStore.baseline,
+            profile: coachingProfileStore.profile
+        )
+    }
+
+    private var baselineMapHubSubtitle: String {
+        let map = baselineCoachMap
+        if let gap = map.goalGap {
+            return "\(map.statusTitle) · \(gap.summary)"
+        }
+        if map.formationProgress < 1 {
+            return "\(map.statusTitle) · \(map.qualifyingSessionCount)/\(BaselineCoachMap.establishedRepTarget) reps"
+        }
+        return "\(map.statusTitle) · \(map.measuredDimensionCount) coach reads"
     }
 
     private var profileEvidenceToggleLabel: some View {
@@ -1297,6 +1604,14 @@ struct ProfileView: View {
     @ViewBuilder
     private func profileEvidenceLink(for link: ProfileEvidenceHubLink) -> some View {
         switch link {
+        case .baselineMap:
+            profileEvidenceActionRow(
+                title: "Baseline readout",
+                subtitle: baselineMapHubSubtitle,
+                icon: "chart.bar.xaxis",
+                tint: AppColor.pro,
+                identifier: "profile.evidence.baselineMap.row"
+            )
         case .growthLibrary:
             profileEvidenceLink(
                 title: "Growth library",
@@ -1316,6 +1631,57 @@ struct ProfileView: View {
                 identifier: "profile.evidence.history"
             )
         }
+    }
+
+    private func profileEvidenceActionRow(
+        title: String,
+        subtitle: String,
+        icon: String,
+        tint: Color,
+        identifier: String
+    ) -> some View {
+        Button {
+            toggleProfileEvidence()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(tint)
+                    .frame(width: 42, height: 42)
+                    .background(tint.opacity(0.12), in: Circle())
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(Typography.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(Typography.captionSmall)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(showProfileEvidence ? 180 : 0))
+                    .animation(reduceMotion ? nil : .standardSpring, value: showProfileEvidence)
+            }
+            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 12)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                    .stroke(tint.opacity(0.12), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(showProfileEvidence ? "Hide baseline readout" : "Show baseline readout")
+        .accessibilityHint("Shows the baseline readout, goal gap, and supporting coaching evidence.")
+        .accessibilityIdentifier(identifier)
     }
 
     private var historyLinkSubtitle: String {
@@ -1408,10 +1774,7 @@ struct ProfileView: View {
 
     private var baselineMapCard: some View {
         BaselineMapCard(
-            map: BaselineCoachMap.make(
-                baseline: baselineStore.baseline,
-                profile: coachingProfileStore.profile
-            )
+            map: baselineCoachMap
         )
         .accessibilityIdentifier("profile.evidence.baselineMap")
     }

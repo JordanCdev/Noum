@@ -81,13 +81,32 @@ actor ForwardPlanService {
     /// nil. Use `plan.isAIBacked` to know which path ran.
     func generate(input: ForwardPlanInput) async -> ForwardPlan {
         let fallback = Self.deterministicPlan(input: input)
+        func record(
+            _ outcome: AICallDiagnosticOutcome,
+            _ reason: String,
+            provider: AIProvider? = nil,
+            statusCode: Int? = nil,
+            startedAt: Date? = nil
+        ) {
+            AICallDiagnostics.record(
+                surface: "Forward plan",
+                provider: provider,
+                outcome: outcome,
+                reason: reason,
+                statusCode: statusCode,
+                startedAt: startedAt
+            )
+        }
 
         guard await activeLocaleSupportsAI() else {
+            record(.skipped, "Locale not AI-supported")
             return fallback
         }
-        guard let provider = await currentProvider(),
+        let configuredProvider = await currentProvider()
+        guard let provider = configuredProvider,
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider) else {
+            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
             return fallback
         }
 
@@ -103,18 +122,30 @@ actor ForwardPlanService {
             case .gemini:
                 request.setGoogleAPIKey(key)
             case .none:
+                record(.skipped, "Provider set to off", provider: provider)
                 return fallback
             }
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
+            let startedAt = Date()
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                record(
+                    .fallback,
+                    statusCode.map { "Provider returned HTTP \($0)" } ?? "Non-HTTP response",
+                    provider: provider,
+                    statusCode: statusCode,
+                    startedAt: startedAt
+                )
                 return fallback
             }
             guard let weeks = parsePlanWeeks(from: data, provider: provider, input: input),
                   weeks.count == 4 else {
+                record(.fallback, "Response JSON did not match plan schema", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
                 return fallback
             }
+            record(.success, "Forward plan accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
             return ForwardPlan(
                 weeks: weeks,
                 bigMomentID: input.bigMoment?.id,
@@ -122,6 +153,7 @@ actor ForwardPlanService {
                 isAIBacked: true
             )
         } catch {
+            record(.failure, "Transport or decode error", provider: provider)
             return fallback
         }
     }
@@ -432,10 +464,11 @@ actor ForwardPlanService {
         case .gemini:
             return [
                 "systemInstruction": ["parts": [["text": system]]],
-                "contents": [["parts": [["text": user]]]],
+                "contents": [["role": "user", "parts": [["text": user]]]],
                 "generationConfig": [
                     "temperature": 0.5,
                     "maxOutputTokens": 600,
+                    "thinkingConfig": ["thinkingBudget": 0],
                     "responseMimeType": "application/json"
                 ]
             ]
@@ -651,11 +684,7 @@ actor ForwardPlanService {
     }
 
     private func apiKey(for provider: AIProvider) -> String? {
-        guard let keyName = provider.environmentKey else { return nil }
-        if let value = ProcessInfo.processInfo.environment[keyName], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+        AIProviderCredential.apiKey(for: provider)
     }
 
     private func extractContent(from data: Data, provider: AIProvider) -> String? {
