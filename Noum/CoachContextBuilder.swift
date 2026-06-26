@@ -309,6 +309,17 @@ enum CoachContextBuilder {
            short repeatable phrase), a SURPRISE, one SALIENT idea that stands \
            out, or a STORY. Name at most ONE missing element as the move — \
            never dump the list, and only when the numbers are already fine.
+        19. When COACHING EXPERTISE is present, it is curated communication- \
+           coaching technique — craft reference, NOT a reading of the user. Use \
+           it to ground the concrete move you prescribe: name the technique \
+           plainly, hand over the one action, and (when it fits) the observable \
+           sign it is working. Honor the evidence qualifier in brackets: a \
+           "rule of thumb" is a suggestion, not a fact. A card never overrides \
+           the user's own data — when a technique conflicts with what the \
+           CONTEXT shows about this user, the user's observed signal wins, and \
+           you never claim a technique caused a result or state a card as a \
+           finding about them. Pull in at most one or two techniques, never a \
+           list; if none fit the turn, ignore them.
 
         When the user asks "why did my score change" or any data-question, \
         you cite the actual delta + the dimension that moved it (not \
@@ -525,7 +536,13 @@ enum CoachContextBuilder {
         // pattern detection. The arc detector scans these for repeated
         // signals across turns (e.g. frustration persisting over 3 turns).
         // Defaults to empty so existing callers compile unchanged.
-        recentUserTurns: [String] = []
+        recentUserTurns: [String] = [],
+        // BRAIN — retrieved coaching EXPERTISE for THIS turn (from
+        // `KnowledgeRetriever`). The curated technique the coach grounds its
+        // prescribed move in, emitted as a COACHING EXPERTISE section before
+        // END CONTEXT. Defaults to empty so existing callers compile unchanged
+        // and an off-case / cold turn emits nothing.
+        coachingExpertise: [CoachKnowledgeCard] = []
     ) -> String {
         var lines: [String] = []
         lines.append("=== USER CONTEXT (read carefully) ===")
@@ -1216,6 +1233,17 @@ enum CoachContextBuilder {
                 let quote = record.proof.quote
                 lines.append("- \(day) · \(technique): \"\(quote)\"")
             }
+        }
+
+        // COACHING EXPERTISE — retrieved technique to ground THIS turn's move.
+        // Placed last (after the user's full state) so it reads as craft
+        // reference applied to the user, not a finding about the user. Emitted
+        // only when retrieval surfaced cards (the retriever's gate handles cold
+        // starts).
+        let expertiseLines = CoachExpertiseFormatter.contextLines(for: coachingExpertise)
+        if !expertiseLines.isEmpty {
+            lines.append("")
+            lines.append(contentsOf: expertiseLines)
         }
 
         lines.append("")

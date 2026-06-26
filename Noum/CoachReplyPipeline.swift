@@ -57,6 +57,23 @@ enum CoachReplyPipeline {
             .suffix(6)
             .map { $0.text }
 
+        // BRAIN — retrieve the coaching expertise most worth grounding this turn
+        // in. Boosted by the user's active lever + chosen voice; gated so a
+        // cold-start user only gets technique when they explicitly ask for it.
+        // Warmup for the optional on-device embedding rerank is kicked OFF the
+        // reply path (it can't load in the Simulator); retrieval never waits on
+        // it and degrades to BM25 until it's ready.
+        let activeLever = coachMemoryStore.currentMemory?.currentLever
+        if KnowledgeBrainFlags.semanticRerankEnabled {
+            Task { await KnowledgeSemanticReranker.shared.warmUpIfNeeded() }
+        }
+        let coachingExpertise = await KnowledgeRetriever.retrieveReranked(
+            query: latestUserTurn ?? "",
+            lever: activeLever,
+            voice: profileStore.profile?.speakingStyleGoal,
+            hasDiagnosis: activeLever != nil
+        )
+
         let context = CoachContextBuilder.userContext(
             profile: profileStore.profile,
             baseline: BaselineStore.shared.baseline,
@@ -81,7 +98,8 @@ enum CoachReplyPipeline {
             weeklyCheckInDue: weeklyCheckInDue,
             latestUserTurn: latestUserTurn,
             previousCoachReply: previousCoachReply,
-            recentUserTurns: recentUserTurns
+            recentUserTurns: recentUserTurns,
+            coachingExpertise: coachingExpertise
         )
 
         // Quote-grounding context — assembled in the same main-actor prologue
