@@ -7106,8 +7106,8 @@ struct CoachContextBuilderTests {
             with: " ",
             options: .regularExpression
         )
-        #expect(normalized.contains("text chat defaults to 1-3 short sentences"))
-        #expect(normalized.contains("Voice read-aloud should be tighter still"))
+        #expect(normalized.contains("TWO or THREE short sentences, in ONE single paragraph"))
+        #expect(normalized.contains("Voice read-aloud is tighter still"))
         #expect(normalized.contains("report-style wording about scores being down"))
         #expect(!normalized.contains("recent reps show a decline"))
         #expect(normalized.contains("The pattern I'd watch is"))
@@ -19302,9 +19302,13 @@ struct AICoachChatReplyQualityGateTests {
         #expect(AICoachChatService.replyQualityIssue(in: reply) == .tooLong)
     }
 
-    @Test func normalTurnRejectsThreeSentenceReport() {
+    @Test func normalTurnAllowsTightThreeSentenceCoaching() {
+        // Voice contract is "at most 3 short sentences": a tight 3-sentence reply
+        // that cites the rep and prescribes a move now PASSES (was rejected when
+        // the cap was 2 — the cap fought the prompt's own "1-3 sentences" promise
+        // and dumped good coaching to the deterministic fallback).
         let reply = "Your last rep held the opening. The middle softened under pressure. Next rep, hold a beat before sentence two."
-        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == .tooLong)
+        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == nil)
     }
 
     @Test func expandedPlanTurnAllowsLongerShape() {

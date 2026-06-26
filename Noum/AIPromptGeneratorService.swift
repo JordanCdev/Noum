@@ -77,8 +77,7 @@ actor AIPromptGeneratorService {
                     ]
                 ]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            case .gemini:
-                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+            case .gemini, .agentPlatform:                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
                 let body: [String: Any] = [
                     "systemInstruction": ["parts": [["text": Self.systemPrompt]]],
                     "contents": [["parts": [["text": prompt]]]],
@@ -213,8 +212,7 @@ actor AIPromptGeneratorService {
                 let content = message["content"] as? String
             else { return nil }
             return content
-        case .gemini:
-            guard
+        case .gemini, .agentPlatform:            guard
                 let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let candidates = object["candidates"] as? [[String: Any]],
                 let first = candidates.first,

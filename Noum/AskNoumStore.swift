@@ -214,11 +214,11 @@ final class AskNoumStore: ObservableObject {
     private static func noticeCopy(for failure: ChatFailure) -> String {
         switch failure {
         case .noProvider:
-            return "I'm not set up with an AI provider yet. Add a key in Settings to continue."
+            return "Coaching chat is unavailable — no AI provider is set up. Add a key in Settings to turn it on."
         case .localeUnsupported:
             return "I can only chat in English right now. Switch practice locale in Settings to continue."
         case .network:
-            return "I couldn't reach my model — check your connection and try again."
+            return "Coaching chat is unavailable right now — I couldn't reach the model. Try again in a moment."
         case .empty:
             return "I came up empty on that one. Try rephrasing."
         }

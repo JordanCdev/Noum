@@ -154,8 +154,7 @@ actor GrammarFeedbackService {
             switch provider {
             case .openAI, .deepSeek:
                 request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-            case .gemini:
-                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+            case .gemini, .agentPlatform:                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
             case .none:
                 return nil
             }
@@ -317,8 +316,7 @@ actor GrammarFeedbackService {
                     ["role": "user", "content": userPrompt]
                 ]
             ]
-        case .gemini:
-            return [
+        case .gemini, .agentPlatform:            return [
                 "systemInstruction": ["parts": [["text": Self.systemPrompt]]],
                 "contents": [["parts": [["text": userPrompt]]]],
                 "generationConfig": [
@@ -411,8 +409,7 @@ actor GrammarFeedbackService {
                 let content = message["content"] as? String
             else { return nil }
             return content
-        case .gemini:
-            guard
+        case .gemini, .agentPlatform:            guard
                 let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let candidates = object["candidates"] as? [[String: Any]],
                 let first = candidates.first,

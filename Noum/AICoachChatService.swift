@@ -234,18 +234,16 @@ actor AICoachChatService {
 
     private init() {}
 
-    /// Send a turn to the model. Returns `.reply(text)` on a live success,
-    /// `.deterministicReply(text)` when the model is unreachable / the locale
-    /// is unsupported (a real coach always answers — see `ChatFallbackContext`),
-    /// or `.failure(cause)` on the one path where a canned line could mask a
-    /// real bug (`.empty`: the model WAS reached but returned nothing parseable
-    /// or was length-truncated — the user gets the honest "try rephrasing"
-    /// notice instead of substituted text). Total function — never throws.
+    /// Send a turn to the model. Tries each configured provider in the failover
+    /// chain (`AISettingsManager.availableProviders`) until one returns a usable
+    /// reply → `.reply(text)`. When ALL providers fail, returns `.failure(...)`
+    /// so the chat shows an honest "unavailable" notice rather than a canned
+    /// fallback that reads as broken: `.noProvider` (no keys), `.network` (no
+    /// provider reachable), `.empty` (reached but no usable reply), or
+    /// `.localeUnsupported`. Total function — never throws.
     ///
-    /// `fallback` is the LAST, defaulted parameter (arg-order rule) so the
-    /// single existing call site can opt in without reordering; with the
-    /// default empty context the deterministic reply degrades to an in-voice,
-    /// fabrication-free line.
+    /// `fallback` is retained for API compatibility but is no longer used: the
+    /// deterministic in-voice fallback is retired from the live path.
     func reply(
         history: [CoachMessage],
         systemPrompt: String,
@@ -260,88 +258,114 @@ actor AICoachChatService {
         allowAgentic: Bool = false,
         toolContext: CoachToolContext = CoachToolContext()
     ) async -> ChatOutcome {
-        guard let provider = await currentProvider(),
-              let endpoint = provider.endpoint,
-              let key = apiKey(for: provider)
-        else {
-            // No provider configured — the model can't be reached at all.
-            // A real coach still answers, so hand back a grounded, in-voice
-            // deterministic line rather than an error notice.
-            return .deterministicReply(Self.deterministicReply(failure: .noProvider, context: fallback))
-        }
-
-        // M13: AI surfaces are English-only. The deterministic fallback is
-        // locale-agnostic English copy (layer-wide precedent), so a non-English
-        // user still gets a useful coach line rather than a config notice.
+        // AI surfaces are English-only (M13) — an honest notice, not a canned reply.
         guard await activeLocaleSupportsAI() else {
-            return .deterministicReply(Self.deterministicReply(failure: .localeUnsupported, context: fallback))
+            return .failure(.localeUnsupported)
         }
 
-        // Compose the system prompt — voice + context block.
-        let composedSystem = systemPrompt + "\n\n" + userContext
+        // Failover chain: every configured provider, primary first. The chat
+        // tries each in turn and only goes UNAVAILABLE when ALL fail. The
+        // grounded deterministic fallback is retired from the live path — an
+        // honest "can't reach the coach" notice beats a canned reply that reads
+        // as broken. (`fallback` is kept for API compatibility; unused here now.)
+        let providers = await availableProviders()
+        guard !providers.isEmpty else {
+            return .failure(.noProvider)
+        }
 
-        // Trim replay to the cap, keeping the most recent turns.
+        let composedSystem = systemPrompt + "\n\n" + userContext
         let trimmed = Array(history.suffix(Self.maxReplayMessages))
         let latestUserTurn = trimmed.last(where: { $0.role == .user })?.text
 
-        // AGENTIC PATH (text chat + Gemini + flag). The coach can call
-        // `retrieve_expertise` on demand. Returns nil on ANY problem (network,
-        // parse, unknown tool, gate fail, round budget) so we drop to the
-        // single-shot path below — which carries the SAME grounded context, so
-        // the fallback reply is still expertise-grounded. Never worse than today.
-        if allowAgentic, provider == .gemini, KnowledgeBrainFlags.agenticToolCallingEnabled {
-            if let outcome = await geminiAgenticReply(
+        var reachedAnyProvider = false
+        for provider in providers {
+            switch await attemptReply(
+                provider: provider,
                 composedSystem: composedSystem,
-                history: trimmed,
+                messages: trimmed,
                 latestUserTurn: latestUserTurn,
+                allowAgentic: allowAgentic,
+                toolContext: toolContext
+            ) {
+            case .success(let text):
+                return .reply(text)
+            case .reachedButNoUsableReply:
+                reachedAnyProvider = true   // model answered but unusable — try next
+            case .unreachable:
+                continue                    // couldn't reach this provider — try next
+            }
+        }
+        // Honest "unavailable": reached-but-unusable -> .empty ("try rephrasing");
+        // never reached a provider at all -> .network (connection / keys down).
+        return .failure(reachedAnyProvider ? .empty : .network)
+    }
+
+    /// Outcome of trying ONE provider — drives the failover decision.
+    private enum ProviderAttempt {
+        case success(String)
+        case reachedButNoUsableReply
+        case unreachable
+    }
+
+    /// Try ONE provider end-to-end: the agentic loop (when eligible) then the
+    /// single-shot path, with the quality gate + one repair pass. Returns the
+    /// reply text, or the reason the failover loop uses to pick the next provider.
+    private func attemptReply(
+        provider: AIProvider,
+        composedSystem: String,
+        messages: [CoachMessage],
+        latestUserTurn: String?,
+        allowAgentic: Bool,
+        toolContext: CoachToolContext
+    ) async -> ProviderAttempt {
+        guard let endpoint = provider.endpoint, let key = apiKey(for: provider) else {
+            return .unreachable
+        }
+
+        // Agentic path (text chat + Gemini-schema + flag). On any problem it
+        // returns nil and we fall through to single-shot for the SAME provider.
+        if allowAgentic, provider.usesGeminiSchema, KnowledgeBrainFlags.agenticToolCallingEnabled {
+            if let text = await geminiAgenticReply(
+                composedSystem: composedSystem,
+                history: messages,
+                latestUserTurn: latestUserTurn,
+                provider: provider,
                 endpoint: endpoint,
                 key: key,
                 toolContext: toolContext
             ) {
-                return outcome
+                return .success(text)
             }
-            // else: fall through to the single-shot path.
         }
 
         do {
-            let body = requestBody(for: provider, system: composedSystem, messages: trimmed)
+            let body = requestBody(for: provider, system: composedSystem, messages: messages)
             guard let data = try await providerResponseData(
-                provider: provider,
-                endpoint: endpoint,
-                key: key,
-                body: body
+                provider: provider, endpoint: endpoint, key: key, body: body
             ) else {
-                // Transport reached the server but it refused — treat as a
-                // network failure and answer deterministically (a coach who
-                // can't reach their notes still gives a useful read).
-                return .deterministicReply(Self.deterministicReply(failure: .network, context: fallback))
+                return .unreachable   // non-2xx — this provider refused
             }
-            if let text = extractText(from: data, provider: provider) {
-                if let issue = Self.replyQualityIssue(in: text, latestUserTurn: latestUserTurn) {
-                    if let repaired = await repairLowQualityReply(
-                        issue: issue,
-                        draft: text,
-                        provider: provider,
-                        endpoint: endpoint,
-                        key: key,
-                        system: composedSystem,
-                        messages: trimmed
-                    ) {
-                        return .reply(repaired)
-                    }
-                    return .deterministicReply(Self.deterministicReply(failure: .empty, context: fallback))
+            guard let text = extractText(from: data, provider: provider) else {
+                return .reachedButNoUsableReply   // reached, nothing parseable / truncated
+            }
+            if let issue = Self.replyQualityIssue(in: text, latestUserTurn: latestUserTurn) {
+                if let repaired = await repairLowQualityReply(
+                    issue: issue, draft: text, provider: provider,
+                    endpoint: endpoint, key: key, system: composedSystem, messages: messages
+                ) {
+                    return .success(repaired)
                 }
-                return .reply(text)
+                return .reachedButNoUsableReply
             }
-            // The model WAS reached but returned nothing parseable / was
-            // length-truncated. Keep the honest `.empty` notice — substituting
-            // a canned line here could mask a real truncation bug.
-            return .failure(.empty)
+            return .success(text)
         } catch {
-            // Transport / encode failure — the model is unreachable. Answer
-            // deterministically instead of dead-ending the user.
-            return .deterministicReply(Self.deterministicReply(failure: .network, context: fallback))
+            return .unreachable
         }
+    }
+
+    @MainActor
+    private func availableProviders() -> [AIProvider] {
+        AISettingsManager.shared.availableProviders
     }
 
     // MARK: - Live reply quality gate
@@ -375,8 +399,10 @@ actor AICoachChatService {
         }
 
         let expandedAnswer = turnRequestsExpandedAnswer(latestUserTurn)
-        let maxCharacters = expandedAnswer ? 560 : 380
-        let maxSentences = expandedAnswer ? 5 : 2
+        // A coaching turn is at most 3 short sentences (matches the system
+        // prompt's "at most 3 sentences" contract); a plan/list turn gets more.
+        let maxCharacters = expandedAnswer ? 560 : 440
+        let maxSentences = expandedAnswer ? 5 : 3
         if trimmed.count > maxCharacters || sentenceCount(in: trimmed) > maxSentences {
             return .tooLong
         }
@@ -451,8 +477,8 @@ actor AICoachChatService {
         }
 
         let expandedAnswer = turnRequestsExpandedAnswer(latestUserTurn)
-        let maxCharacters = expandedAnswer ? 560 : 360
-        let maxSentences = expandedAnswer ? 5 : 2
+        let maxCharacters = expandedAnswer ? 560 : 440
+        let maxSentences = expandedAnswer ? 5 : 3
         if trimmed.count > maxCharacters || sentenceCount(in: trimmed) > maxSentences {
             apply(.overlong, penalty: 2)
         }
@@ -568,7 +594,12 @@ actor AICoachChatService {
             "you said", "you asked", "i heard", "what i notice", "pattern",
             "case", "hypothesis", "target", "success measure", "not enough data",
             "i don't have", "i do not have", "i can't see", "from what you wrote",
-            "your message", "your words", "the friction"
+            "your message", "your words", "the friction",
+            // References to the user's OWN goal / upcoming moment are real
+            // anchors, not generic advice. (Was keyword-limited and rejected a
+            // reply grounded in "your board update in two weeks".)
+            "your goal", "board update", "big moment", "your update",
+            "two weeks", "your voice", "your point", "your open", "your close"
         ]) {
             return true
         }
@@ -598,7 +629,14 @@ actor AICoachChatService {
             "next rep", "try ", "practice", "run ", "hold ", "record",
             "answer", "send", "say ", "use ", "repeat", "do one", "focus",
             "start", "ask ", "replace", "keep the ", "keep this ", "cut ",
-            "pause before", "one drill", "one rep", "review"
+            "pause before", "one drill", "one rep", "review",
+            // Direct-instruction verbs a coach actually uses — the prescription
+            // is the imperative, not a fixed vocabulary. (Was keyword-limited and
+            // false-rejected "make the main point your opening line".)
+            "make the", "make your", "make it", "lead with", "open with",
+            "open on", "put the", "put your", "land the", "land your",
+            "build out", "build the", "give me", "drop a", "slow the",
+            "breathe", "name the", "first sentence", "opening line", "opening sentence"
         ])
     }
 
@@ -688,16 +726,17 @@ actor AICoachChatService {
     static let agenticToolName = "retrieve_expertise"
     static let agenticMaxRounds = 3
 
-    /// Run the Gemini function-calling loop. Returns a finished `ChatOutcome` on
-    /// success, or nil to signal "fall back to single-shot".
+    /// Run the Gemini function-calling loop. Returns the reply TEXT on success,
+    /// or nil to signal "fall back to single-shot / try the next provider".
     private func geminiAgenticReply(
         composedSystem: String,
         history: [CoachMessage],
         latestUserTurn: String?,
+        provider: AIProvider,
         endpoint: URL,
         key: String,
         toolContext: CoachToolContext
-    ) async -> ChatOutcome? {
+    ) async -> String? {
         var contents = Self.geminiContents(from: history)
         let tools: [[String: Any]] = [["functionDeclarations": [Self.expertiseToolDeclaration()]]]
         let toolConfig: [String: Any] = ["functionCallingConfig": ["mode": "AUTO"]]
@@ -718,7 +757,7 @@ actor AICoachChatService {
             let data: Data?
             do {
                 data = try await providerResponseData(
-                    provider: .gemini, endpoint: endpoint, key: key, body: body
+                    provider: provider, endpoint: endpoint, key: key, body: body
                 )
             } catch {
                 return nil
@@ -732,14 +771,14 @@ actor AICoachChatService {
                 // Same quality gate + single repair pass as the non-agentic path.
                 if let issue = Self.replyQualityIssue(in: text, latestUserTurn: latestUserTurn) {
                     if let repaired = await repairLowQualityReply(
-                        issue: issue, draft: text, provider: .gemini,
+                        issue: issue, draft: text, provider: provider,
                         endpoint: endpoint, key: key, system: composedSystem, messages: history
                     ) {
-                        return .reply(repaired)
+                        return repaired
                     }
                     return nil
                 }
-                return .reply(text)
+                return text
 
             case .call(let name, let args, let modelContent):
                 guard name == Self.agenticToolName, let query = args["query"] as? String else {
@@ -1036,11 +1075,6 @@ actor AICoachChatService {
     // MARK: - Provider plumbing
 
     @MainActor
-    private func currentProvider() -> AIProvider? {
-        AISettingsManager.shared.activeProvider
-    }
-
-    @MainActor
     private func activeLocaleSupportsAI() -> Bool {
         LocaleSettingsManager.shared.current.aiSupported
     }
@@ -1068,8 +1102,15 @@ actor AICoachChatService {
         switch provider {
         case .openAI, .deepSeek:
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        case .gemini:
+        case .gemini, .agentPlatform:
             request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+            // Send the app's bundle id so a Gemini key with an iOS application
+            // restriction (the secure way to scope a shipped key) is accepted.
+            // Without this, a bundle-restricted key returns 403
+            // API_KEY_IOS_APP_BLOCKED and every reply falls to the offline coach.
+            if let bundleID = Bundle.main.bundleIdentifier {
+                request.setValue(bundleID, forHTTPHeaderField: "X-Ios-Bundle-Identifier")
+            }
         case .none:
             return nil
         }
@@ -1111,7 +1152,7 @@ actor AICoachChatService {
                 "max_tokens": 800,
                 "messages": msgs
             ]
-        case .gemini:
+        case .gemini, .agentPlatform:
             // Gemini expects role-tagged content parts. Map .user → "user",
             // .coach → "model". The system instruction is a separate
             // top-level field, distinct from the message array.
@@ -1168,7 +1209,7 @@ actor AICoachChatService {
             }
             let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed
-        case .gemini:
+        case .gemini, .agentPlatform:
             guard
                 let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let candidates = object["candidates"] as? [[String: Any]],
@@ -1206,7 +1247,7 @@ actor AICoachChatService {
                 let first = choices.first
             else { return nil }
             return first["finish_reason"] as? String
-        case .gemini:
+        case .gemini, .agentPlatform:
             guard
                 let candidates = object["candidates"] as? [[String: Any]],
                 let first = candidates.first

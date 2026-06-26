@@ -113,8 +113,7 @@ actor AIRewriteService {
                     ]
                 ]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            case .gemini:
-                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+            case .gemini, .agentPlatform:                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
                 let body: [String: Any] = [
                     "systemInstruction": ["parts": [["text": Self.systemPrompt(for: weakness, voice: voice)]]],
                     "contents": [["parts": [["text": userPrompt]]]],
@@ -226,8 +225,7 @@ actor AIRewriteService {
                   let message = first["message"] as? [String: Any],
                   let content = message["content"] as? String else { return nil }
             return content
-        case .gemini:
-            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        case .gemini, .agentPlatform:            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let candidates = object["candidates"] as? [[String: Any]],
                   let first = candidates.first,
                   let content = first["content"] as? [String: Any],

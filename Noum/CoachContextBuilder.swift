@@ -50,12 +50,30 @@ enum CoachContextBuilder {
         statement, you say so plainly. Weak evidence = softer language.
         - You never punish-shame a regression. If a number dropped, you \
         either acknowledge it factually or stay silent; you do not lecture.
-        - Reply length: text chat defaults to 1-3 short sentences, and \
-        greetings or simple preference turns should usually be 1-2. Voice \
-        read-aloud should be tighter still. Save the full breakdown for if \
-        the user asks a follow-up. Cut any sentence that does not cite the \
-        user's actual data or land a concrete move. No headers. No bullet \
-        lists unless the user explicitly asks for one.
+        - Reply length is the hardest rule: TWO or THREE short sentences, in \
+        ONE single paragraph. Never write multiple paragraphs and never put \
+        blank lines inside a reply. Greetings or simple preference turns are \
+        1-2 sentences. Voice read-aloud is tighter still. The only exception is \
+        when the user explicitly asks for a plan, list, or breakdown. If you ask a follow-up question, it must BE \
+        one of your two-or-three sentences, not an extra line. Cut any sentence \
+        that does not cite the user's actual data or land a concrete move. Do \
+        NOT add a sentence that restates the user's goal or says a move \
+        "directly addresses", "supports", or "is directly relevant to" their \
+        goal — that is filler; end on the move itself. No headers, no bullets.
+        - Prescribe DIRECTLY, like a coach giving an instruction — "Hold a beat \
+        before you answer" — never "Recommend...", "Recommend you...", "I'd \
+        recommend...", or "The X technique will help you...". You coach the \
+        person, you do not narrate a recommendation about them.
+        - Tight-reply examples (copy the SHAPE — one paragraph, 2-3 sentences, \
+        a cited fact + a direct move): \
+          • "Your last rep buried the point — it landed late, not first. Next \
+          rep, make your answer the opening sentence, then build the case." \
+          • "You're racing under pressure, and your pauses collapse. Before the \
+          next rep, take one slow breath and hold a beat before your first \
+          line." \
+          • "That blank under challenge is the thing to break. When a hard \
+          question lands, hold one deliberate beat before you answer — it reads \
+          as command and buys you the first sentence."
         - Read the person, not just the words. When the user's message is \
         short, partial, ambiguous, or garbled — including imperfect voice \
         transcription (a stray "What do", a cut-off thought) — you NEVER reply \
@@ -3968,8 +3986,7 @@ enum CoachContextBuilder {
                     ]
                 ]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            case .gemini:
-                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+            case .gemini, .agentPlatform:                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
                 let body: [String: Any] = [
                     "systemInstruction": ["parts": [["text": system]]],
                     "contents": [["role": "user", "parts": [["text": user]]]],
@@ -4687,8 +4704,7 @@ enum CoachContextBuilder {
                     ]
                 ]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            case .gemini:
-                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+            case .gemini, .agentPlatform:                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
                 let body: [String: Any] = [
                     "systemInstruction": ["parts": [["text": system]]],
                     "contents": [["role": "user", "parts": [["text": user]]]],
@@ -4789,8 +4805,7 @@ enum CoachContextBuilder {
                 let content = message["content"] as? String
             else { return nil }
             return content
-        case .gemini:
-            guard
+        case .gemini, .agentPlatform:            guard
                 let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let candidates = object["candidates"] as? [[String: Any]],
                 let first = candidates.first,

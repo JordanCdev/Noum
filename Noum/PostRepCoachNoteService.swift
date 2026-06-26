@@ -485,8 +485,7 @@ actor PostRepCoachNoteService {
             switch provider {
             case .openAI, .deepSeek:
                 request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-            case .gemini:
-                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+            case .gemini, .agentPlatform:                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
             case .none:
                 return fallback
             }
@@ -1409,8 +1408,7 @@ actor PostRepCoachNoteService {
                     ["role": "user", "content": user]
                 ]
             ]
-        case .gemini:
-            return [
+        case .gemini, .agentPlatform:            return [
                 "systemInstruction": ["parts": [["text": system]]],
                 "contents": [["parts": [["text": user]]]],
                 "generationConfig": [
@@ -1435,8 +1433,7 @@ actor PostRepCoachNoteService {
                 let content = message["content"] as? String
             else { return nil }
             raw = content
-        case .gemini:
-            guard
+        case .gemini, .agentPlatform:            guard
                 let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let candidates = object["candidates"] as? [[String: Any]],
                 let first = candidates.first,

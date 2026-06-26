@@ -71,8 +71,7 @@ final class PressureFollowUpService: PressureFollowUpProviding {
         )
 
         switch provider {
-        case .gemini:
-            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        case .gemini, .agentPlatform:            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
             let body = GeminiRequest(
                 systemInstruction: .init(parts: [.init(text: systemPrompt)]),
                 contents: [.init(parts: [.init(text: userPrompt)])],
@@ -154,8 +153,7 @@ final class PressureFollowUpService: PressureFollowUpProviding {
         let jsonData: Data
 
         switch provider {
-        case .gemini:
-            let completion = try JSONDecoder().decode(GeminiResponse.self, from: data)
+        case .gemini, .agentPlatform:            let completion = try JSONDecoder().decode(GeminiResponse.self, from: data)
             guard let text = completion.candidates.first?.content.parts.compactMap(\.text).joined(),
                   !text.isEmpty else {
                 throw FollowUpError.emptyResponse

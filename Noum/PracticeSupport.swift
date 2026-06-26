@@ -801,8 +801,18 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
     case openAI
     case deepSeek
     case gemini
+    /// Gemini via Vertex AI "express mode". Same `generateContent` request /
+    /// response schema as `.gemini`, different endpoint + key (a Vertex express
+    /// API key bound to a service account). Lets the app run on a Vertex/Agent
+    /// Platform project (`GOOGLE_AGENT_PLATFORM_*`) instead of an AI Studio key.
+    case agentPlatform
 
     var id: String { rawValue }
+
+    /// Whether this provider speaks the Gemini `generateContent` schema
+    /// (systemInstruction / contents / functionCall). Both `.gemini` and the
+    /// Vertex `.agentPlatform` do, so every Gemini-shaped branch handles both.
+    var usesGeminiSchema: Bool { self == .gemini || self == .agentPlatform }
 
     var title: String {
         switch self {
@@ -810,6 +820,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
         case .openAI: return "OpenAI"
         case .deepSeek: return "DeepSeek"
         case .gemini: return "Gemini"
+        case .agentPlatform: return "Agent Platform"
         }
     }
 
@@ -818,7 +829,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
         case .none: return ""
         case .openAI: return "gpt-4o-mini"
         case .deepSeek: return "deepseek-chat"
-        case .gemini: return "gemini-2.5-flash"
+        case .gemini, .agentPlatform: return "gemini-2.5-flash"
         }
     }
 
@@ -832,6 +843,8 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
             return URL(string: "https://api.deepseek.com/chat/completions")
         case .gemini:
             return URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")
+        case .agentPlatform:
+            return URL(string: "https://aiplatform.googleapis.com/v1/publishers/google/models/\(model):generateContent")
         }
     }
 
@@ -841,6 +854,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
         case .openAI: return "OPENAI_API_KEY"
         case .deepSeek: return "DEEPSEEK_API_KEY"
         case .gemini: return "GEMINI_API_KEY"
+        case .agentPlatform: return "GOOGLE_AGENT_PLATFORM_API_KEY"
         }
     }
 }
@@ -3722,8 +3736,19 @@ final class AISettingsManager: ObservableObject {
         resetIfNeeded()
     }
 
+    /// Ordered failover chain: every configured provider, primary first. The
+    /// chat tries each in turn and only goes unavailable when ALL fail. Order:
+    /// Vertex (Agent Platform) → Gemini → OpenAI (gpt-4o-mini) → DeepSeek
+    /// (deepseek-chat). DeepSeek is the cheapest fallback; it sits LAST so chat
+    /// content only flows to China-hosted infra when every other provider is
+    /// down (disclose it in the App Store privacy label / GDPR transfers).
+    /// Reorder this array to change priority.
+    var availableProviders: [AIProvider] {
+        [.agentPlatform, .gemini, .openAI, .deepSeek].filter(hasAPIKey(for:))
+    }
+
     var activeProvider: AIProvider? {
-        [.gemini, .openAI].first(where: hasAPIKey(for:))
+        availableProviders.first
     }
 
     /// Current monthly limit based on subscription tier.
@@ -8912,8 +8937,7 @@ struct IMConversationService: IMConversationServicing {
                 responseFormat: .jsonObject
             )
             request.httpBody = try JSONEncoder().encode(body)
-        case .gemini:
-            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        case .gemini, .agentPlatform:            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
             let body = GeminiGenerateContentRequest(
                 systemInstruction: .init(parts: [.init(text: systemPrompt)]),
                 contents: [.init(parts: [.init(text: prompt)])],
@@ -9149,8 +9173,7 @@ struct IMConversationService: IMConversationServicing {
                 throw AICoachError.invalidResponse
             }
             return contentData
-        case .gemini:
-            let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+        case .gemini, .agentPlatform:            let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
             let content = completion.candidates.first?.content.parts.compactMap(\.text).joined()
             guard let content, let contentData = normalizedJSONData(from: content) else {
                 throw AICoachError.invalidResponse
@@ -9382,8 +9405,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
                 responseFormat: .jsonObject
             )
             request.httpBody = try JSONEncoder().encode(body)
-        case .gemini:
-            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        case .gemini, .agentPlatform:            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
             let body = GeminiGenerateContentRequest(
                 systemInstruction: .init(parts: [.init(text: systemPrompt)]),
                 contents: [.init(parts: [.init(text: prompt)])],
@@ -9683,8 +9705,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
                 throw AICoachError.invalidResponse
             }
             return contentData
-        case .gemini:
-            let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+        case .gemini, .agentPlatform:            let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
             let content = completion.candidates.first?.content.parts.compactMap(\.text).joined()
             guard let content, let contentData = content.data(using: .utf8) else {
                 throw AICoachError.invalidResponse
@@ -10100,8 +10121,7 @@ struct AICoachService: AICoachServicing {
                     responseFormat: .jsonObject
                 )
                 request.httpBody = try JSONEncoder().encode(body)
-            case .gemini:
-                request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            case .gemini, .agentPlatform:                request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
                 let body = GeminiGenerateContentRequest(
                     systemInstruction: .init(parts: [.init(text: system)]),
                     contents: [.init(parts: [.init(text: prompt)])],
@@ -10130,8 +10150,7 @@ struct AICoachService: AICoachServicing {
                     return fallback
                 }
                 jsonData = contentData
-            case .gemini:
-                let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+            case .gemini, .agentPlatform:                let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
                 let content = completion.candidates
                     .first?
                     .content
@@ -10699,8 +10718,7 @@ struct AIHomeRecommendationService: AIHomeRecommendationServicing {
                 responseFormat: .jsonObject
             )
             request.httpBody = try JSONEncoder().encode(body)
-        case .gemini:
-            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        case .gemini, .agentPlatform:            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
             let body = GeminiGenerateContentRequest(
                 systemInstruction: .init(parts: [.init(text: systemPrompt)]),
                 contents: [.init(parts: [.init(text: prompt)])],
@@ -10731,8 +10749,7 @@ struct AIHomeRecommendationService: AIHomeRecommendationServicing {
                 throw AICoachError.invalidResponse
             }
             jsonData = contentData
-        case .gemini:
-            let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+        case .gemini, .agentPlatform:            let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
             let content = completion.candidates
                 .first?
                 .content
@@ -10983,8 +11000,7 @@ final class VideoAnalysisService {
         case .deepSeek:
             // DeepSeek doesn't support vision — fall back to text-only analysis prompt
             jsonData = try await callTextOnlyAnalysis(provider: provider, apiKey: apiKey)
-        case .gemini:
-            jsonData = try await callGeminiVision(apiKey: apiKey, frames: base64Frames)
+        case .gemini, .agentPlatform:            jsonData = try await callGeminiVision(apiKey: apiKey, frames: base64Frames)
         }
 
         let result = try JSONDecoder().decode(VideoAnalysisResult.self, from: jsonData)
@@ -11141,8 +11157,7 @@ final class VideoAnalysisService {
                 responseFormat: .jsonObject
             )
             request.httpBody = try JSONEncoder().encode(body)
-        case .gemini:
-            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        case .gemini, .agentPlatform:            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
             let body = GeminiGenerateContentRequest(
                 systemInstruction: .init(parts: [.init(text: videoAnalysisSystemPrompt)]),
                 contents: [.init(parts: [.init(text: fallbackPrompt)])],
@@ -11166,8 +11181,7 @@ final class VideoAnalysisService {
                 throw AICoachError.invalidResponse
             }
             return jsonData
-        case .gemini:
-            let geminiResponse = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+        case .gemini, .agentPlatform:            let geminiResponse = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
             guard let content = geminiResponse.candidates.first?.content.parts.compactMap(\.text).joined(),
                   let jsonData = content.data(using: .utf8) else {
                 throw AICoachError.invalidResponse
