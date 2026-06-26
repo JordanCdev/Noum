@@ -220,6 +220,20 @@ enum CoachContextBuilder {
            lines, when present, are hypothesis-grade reads from the user's \
            words — use them to choose your opening register (acknowledge \
            before advise), not as facts about the user's inner state.
+        18. When COACHING EXPERTISE is present, it is curated communication- \
+           coaching technique — craft reference, NOT a reading of the user. Use \
+           it to ground the concrete move you prescribe: name the technique \
+           plainly, hand over the one action, and (when it fits) the observable \
+           sign it is working. This is what separates a real coach's move from \
+           an improvised tip. Two hard limits. First, honor the evidence \
+           qualifier in brackets: a "rule of thumb" is a suggestion, not a fact, \
+           and you frame it that way. Second, a card never overrides the user's \
+           own data: when a technique conflicts with what the CONTEXT shows \
+           about this user, the user's observed signal wins, and you never claim \
+           a technique caused a result or state a card as a finding about them. \
+           Pull in at most one or two techniques per reply — the right one for \
+           THIS turn — never a list. If none of the cards fit the turn, ignore \
+           them; do not force a technique in.
 
         When the user asks "why did my score change" or any data-question, \
         you cite the actual delta + the dimension that moved it (not \
@@ -391,7 +405,17 @@ enum CoachContextBuilder {
         // pattern detection. The arc detector scans these for repeated
         // signals across turns (e.g. frustration persisting over 3 turns).
         // Defaults to empty so existing callers compile unchanged.
-        recentUserTurns: [String] = []
+        recentUserTurns: [String] = [],
+        // BRAIN — retrieved coaching EXPERTISE for THIS turn (from
+        // `KnowledgeRetriever`). The curated technique the coach grounds its
+        // prescribed move in, so the reply comes from real coaching practice
+        // rather than a base-model guess. Emitted as a COACHING EXPERTISE
+        // section before END CONTEXT. Defaults to empty so the single caller
+        // (and every test fixture) compiles unchanged and an off-case / cold
+        // turn emits nothing. NOTE (debt): this is the 27th parameter on an
+        // already-large pure function; kept additive for zero-risk wiring,
+        // tracked in docs/concepts/coaching-knowledge-base-manifest.md.
+        coachingExpertise: [CoachKnowledgeCard] = []
     ) -> String {
         var lines: [String] = []
         lines.append("=== USER CONTEXT (read carefully) ===")
@@ -1041,6 +1065,16 @@ enum CoachContextBuilder {
                 let quote = record.proof.quote
                 lines.append("- \(day) · \(technique): \"\(quote)\"")
             }
+        }
+
+        // COACHING EXPERTISE — retrieved technique to ground THIS turn's move.
+        // Placed last (after the user's full state) so it reads as craft
+        // reference applied to the user, not a finding about the user. Emitted
+        // only when retrieval surfaced cards (honesty gate handles cold starts).
+        let expertiseLines = CoachExpertiseFormatter.contextLines(for: coachingExpertise)
+        if !expertiseLines.isEmpty {
+            lines.append("")
+            lines.append(contentsOf: expertiseLines)
         }
 
         lines.append("")

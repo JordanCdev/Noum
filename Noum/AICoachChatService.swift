@@ -511,14 +511,35 @@ actor AICoachChatService {
 
     private nonisolated static func replyHasObservableAnchor(_ lower: String) -> Bool {
         if lower.rangeOfCharacter(from: .decimalDigits) != nil { return true }
-        return containsAny(lower, [
+        if containsAny(lower, [
             "last rep", "recent rep", "next rep", "session", "transcript",
             "filler", "pace", "pause", "score", "wpm", "word choice",
             "you said", "you asked", "i heard", "what i notice", "pattern",
             "case", "hypothesis", "target", "success measure", "not enough data",
             "i don't have", "i do not have", "i can't see", "from what you wrote",
             "your message", "your words", "the friction"
+        ]) {
+            return true
+        }
+        // Soft anchors a senior coach actually uses: a grounded reference to a
+        // moment in time PLUS a specific second-person action ("earlier you
+        // rushed the open", "the moment you hesitated before the question").
+        // These are genuinely anchored even without a hard keyword/digit, so
+        // requiring BOTH a temporal marker and a second-person action keeps the
+        // gate from false-rejecting real coaching. Only ADMITS replies — never
+        // newly rejects — so it's safe on the shared live-call path.
+        let hasTemporal = containsAny(lower, [
+            "this week", "yesterday", "last time", "earlier", "just now",
+            "a moment ago", "that last", "in your last", "the moment you",
+            "when you opened", "when you closed"
         ])
+        let hasSecondPersonAction = containsAny(lower, [
+            "you rushed", "you raced", "you opened", "you closed", "you hesitated",
+            "you paused", "you held", "you led", "you buried", "you slowed",
+            "you landed", "you showed", "you trailed", "you softened", "you sped",
+            "you stalled", "you jumped"
+        ])
+        return hasTemporal && hasSecondPersonAction
     }
 
     private nonisolated static func replyPrescribesAction(_ lower: String) -> Bool {

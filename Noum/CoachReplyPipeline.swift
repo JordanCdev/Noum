@@ -48,6 +48,19 @@ enum CoachReplyPipeline {
             .suffix(6)
             .map { $0.text }
 
+        // BRAIN — retrieve the coaching expertise most worth grounding this
+        // turn in. Boosted by the user's active lever + chosen voice; gated so
+        // a cold-start user only gets technique when they explicitly ask for it
+        // (otherwise the coach reads the person, not a card). Pure + fast +
+        // deterministic — same single brain, just better-informed.
+        let activeLever = coachMemoryStore.currentMemory?.currentLever
+        let expertise = KnowledgeRetriever.retrieve(
+            query: latestUserTurn ?? "",
+            lever: activeLever,
+            voice: profileStore.profile?.speakingStyleGoal,
+            hasDiagnosis: activeLever != nil
+        )
+
         let context = CoachContextBuilder.userContext(
             profile: profileStore.profile,
             baseline: BaselineStore.shared.baseline,
@@ -71,7 +84,8 @@ enum CoachReplyPipeline {
             recentCheckIns: CoachCheckInStore.shared.recentForContext(limit: 2),
             latestUserTurn: latestUserTurn,
             previousCoachReply: previousCoachReply,
-            recentUserTurns: recentUserTurns
+            recentUserTurns: recentUserTurns,
+            coachingExpertise: expertise
         )
 
         // Deterministic-fallback context — assembled in the same main-actor
