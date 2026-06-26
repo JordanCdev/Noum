@@ -47,6 +47,42 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-26 continuation (autonomous `noum-1` run). **Broke the six-cycle
+"eval-but-never-ship" loop: shipped a verified, default-OFF code slice — the
+auto-guided first-rep routing — without touching the concurrent session's diff.**
+
+- **Score 7.5/10 (+0.1).** Honest delta in `docs/COACH_PARITY_EVAL_2026-06-26.md`.
+  The +0.1 is a stale-debit correction: **the double-Begin regression the 06-25 eval
+  reported as LIVE is FIXED at HEAD** (`aaf7061`) — verified at
+  `PracticeModeSelectionView.swift:376` (hero arms QuickStart before navigating; the
+  `(no arm())` at `:384` is only the secondary "Adjust" affordance).
+- **Shipped `f392b01` (default-OFF, build + test verified on iPhone 17 sim):** the
+  auto-guided first rep from `SPEC_first_rep_auto_guided.md`. New
+  `Noum/AutoGuidedFirstRep.swift` (default-off flag + per-account one-shot + framing-
+  prompt seeding into the exact `timedPractice.suggestedPrompt` key) + a 2-line fork at
+  `ContentView.swift:1402` (`noum://train`) + `NoumTests/AutoGuidedFirstRepTests.swift`
+  (5 Swift Testing cases, all green). The rep **reuses** PracticeModeQuickStart +
+  TimedPracticeView + SummaryView (no engine fork). The feature was ~90% pre-built infra.
+- **Why default-OFF:** the spec gates this on an on-device human felt-QA pass (time-to-
+  first-word, mic-arms-once-no-echo, read-reads-honest) a headless run can't self-certify.
+  The lever is now **code-complete**; only the flag-flip + feel pass remain. The
+  device-owning session sets `AutoGuidedFirstRep.enabledOverrideKey` (or `defaultEnabled
+  = true`) and QAs per the spec.
+- **Concurrency handled cleanly:** the tree was quiescent (~4h idle) but held a ~28-file
+  STAGED AI-provider-diagnostics diff + unstaged dock-layout changes in `ContentView`.
+  The commit was built via a **temporary git index + `git update-ref`** so the concurrent
+  session's staged work is byte-for-byte preserved (verified `MM` status intact post-
+  commit); only my fork hunk (not the dock hunks) entered the commit.
+- **10/10 answer, restated:** literal "replaces a human coach" stays REFUSED by design
+  (`CoachParityReadiness` `.forming` cap) — don't chase it. Achievable A* is gated only by
+  acquisition, whose dominant lever is now shipped-but-dark. Genuine limitations named in
+  the eval doc (audio-only prosody, n=3 transfer floor, cloud-STT single point, no true
+  deferred-signup, push-to-talk, honesty caps the n=1 "wow").
+- **Next (device session):** flip the flag + felt-QA → add mic soft-ask
+  (`SpeechRecognizerViewModel.swift:374` is fire-and-forget; a denied first rep records
+  nothing) → ProfileView transfer teaser + onboarding→picker `whyNow` copy (sequence after
+  the staged diff lands) → delete orphaned `SessionIntentPromptView.swift`.
+
 2026-06-23 continuation (autonomous `noum-1` run, role-diverse eval, read-only).
 **Re-measured the delta with a clean 6-of-6 role panel, verified the concurrent
 session's three in-flight slices are complete (not half-done), found one new
