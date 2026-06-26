@@ -23,7 +23,11 @@ enum CoachReplyPipeline {
     @discardableResult
     static func generate(
         coachID: UUID,
-        pendingGoalIntent: CoachContextBuilder.GoalIntent? = nil
+        pendingGoalIntent: CoachContextBuilder.GoalIntent? = nil,
+        // AGENTIC — text chat (AskNoumView) passes true so the coach may call the
+        // retrieve_expertise tool; the live voice call leaves it false (latency).
+        // Defaulted so the live-call call site is unchanged.
+        allowAgentic: Bool = false
     ) async -> ChatOutcome {
         let profileStore = CoachingProfileStore.shared
         let systemPrompt = CoachContextBuilder.systemPrompt(for: profileStore.profile)
@@ -54,7 +58,13 @@ enum CoachReplyPipeline {
         // (otherwise the coach reads the person, not a card). Pure + fast +
         // deterministic — same single brain, just better-informed.
         let activeLever = coachMemoryStore.currentMemory?.currentLever
-        let expertise = KnowledgeRetriever.retrieve(
+        // Kick the optional on-device embedding model's one-time warmup OFF the
+        // reply path (it can't load in the Simulator and downloads on first run);
+        // retrieval never waits on it and degrades to BM25 until it's ready.
+        if KnowledgeBrainFlags.semanticRerankEnabled {
+            Task { await KnowledgeSemanticReranker.shared.warmUpIfNeeded() }
+        }
+        let expertise = await KnowledgeRetriever.retrieveReranked(
             query: latestUserTurn ?? "",
             lever: activeLever,
             voice: profileStore.profile?.speakingStyleGoal,
@@ -109,11 +119,21 @@ enum CoachReplyPipeline {
             nextQuestion: fallbackCaseFile?.nextQuestion
         )
 
+        // Tool context for the agentic path — the lever/voice the retrieve_
+        // expertise tool boosts on. Same owners as the pre-retrieval above.
+        let toolContext = CoachToolContext(
+            lever: activeLever,
+            voice: profileStore.profile?.speakingStyleGoal,
+            hasDiagnosis: activeLever != nil
+        )
+
         let outcome = await AICoachChatService.shared.reply(
             history: history,
             systemPrompt: systemPrompt,
             userContext: context,
-            fallback: fallbackContext
+            fallback: fallbackContext,
+            allowAgentic: allowAgentic,
+            toolContext: toolContext
         )
         AskNoumStore.shared.completeCoachTurn(id: coachID, outcome: outcome)
         return outcome

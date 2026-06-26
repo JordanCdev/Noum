@@ -197,6 +197,30 @@ struct ChatFallbackContext: Equatable {
     }
 }
 
+/// Pure inputs the `retrieve_expertise` tool uses to boost on-case retrieval
+/// when the agentic coach calls it. Assembled by `CoachReplyPipeline` from owners
+/// already in scope (active lever + chosen voice). No I/O, no singletons.
+struct CoachToolContext: Equatable, Sendable {
+    var lever: SkillArea?
+    var voice: SpeakingStyleGoal?
+    var hasDiagnosis: Bool
+
+    init(lever: SkillArea? = nil, voice: SpeakingStyleGoal? = nil, hasDiagnosis: Bool = false) {
+        self.lever = lever
+        self.voice = voice
+        self.hasDiagnosis = hasDiagnosis
+    }
+}
+
+/// One step of the Gemini agentic loop: the model either requested a tool call,
+/// produced a final text answer, or returned something unusable (truncated /
+/// empty / unparseable) — in which case the caller falls back to single-shot.
+enum GeminiAgenticStep {
+    case call(name: String, args: [String: Any], modelContent: [String: Any])
+    case text(String)
+    case unusable
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 actor AICoachChatService {
 
@@ -226,7 +250,15 @@ actor AICoachChatService {
         history: [CoachMessage],
         systemPrompt: String,
         userContext: String,
-        fallback: ChatFallbackContext = ChatFallbackContext()
+        fallback: ChatFallbackContext = ChatFallbackContext(),
+        // AGENTIC — when true (text chat only; the live call leaves it false for
+        // latency) AND the provider is Gemini, the coach may call the
+        // `retrieve_expertise` tool on demand before answering. Any failure in
+        // the loop falls through to the single-shot path below, so worst case is
+        // today's behavior. `toolContext` carries the lever/voice the tool boosts
+        // retrieval with. Defaulted so existing callers are unchanged.
+        allowAgentic: Bool = false,
+        toolContext: CoachToolContext = CoachToolContext()
     ) async -> ChatOutcome {
         guard let provider = await currentProvider(),
               let endpoint = provider.endpoint,
@@ -251,6 +283,25 @@ actor AICoachChatService {
         // Trim replay to the cap, keeping the most recent turns.
         let trimmed = Array(history.suffix(Self.maxReplayMessages))
         let latestUserTurn = trimmed.last(where: { $0.role == .user })?.text
+
+        // AGENTIC PATH (text chat + Gemini + flag). The coach can call
+        // `retrieve_expertise` on demand. Returns nil on ANY problem (network,
+        // parse, unknown tool, gate fail, round budget) so we drop to the
+        // single-shot path below — which carries the SAME grounded context, so
+        // the fallback reply is still expertise-grounded. Never worse than today.
+        if allowAgentic, provider == .gemini, KnowledgeBrainFlags.agenticToolCallingEnabled {
+            if let outcome = await geminiAgenticReply(
+                composedSystem: composedSystem,
+                history: trimmed,
+                latestUserTurn: latestUserTurn,
+                endpoint: endpoint,
+                key: key,
+                toolContext: toolContext
+            ) {
+                return outcome
+            }
+            // else: fall through to the single-shot path.
+        }
 
         do {
             let body = requestBody(for: provider, system: composedSystem, messages: trimmed)
@@ -624,6 +675,190 @@ actor AICoachChatService {
         else { return nil }
 
         return text
+    }
+
+    // MARK: - Agentic tool-calling loop (Gemini, text chat only)
+    //
+    // The coach can call `retrieve_expertise` on demand — model-driven retrieval
+    // on top of the pre-retrieved context. Bounded rounds, and ANY failure
+    // returns nil so the caller drops to the single-shot path (which carries the
+    // same grounded context). Voice call stays single-shot (latency); only the
+    // text chat passes `allowAgentic`.
+
+    static let agenticToolName = "retrieve_expertise"
+    static let agenticMaxRounds = 3
+
+    /// Run the Gemini function-calling loop. Returns a finished `ChatOutcome` on
+    /// success, or nil to signal "fall back to single-shot".
+    private func geminiAgenticReply(
+        composedSystem: String,
+        history: [CoachMessage],
+        latestUserTurn: String?,
+        endpoint: URL,
+        key: String,
+        toolContext: CoachToolContext
+    ) async -> ChatOutcome? {
+        var contents = Self.geminiContents(from: history)
+        let tools: [[String: Any]] = [["functionDeclarations": [Self.expertiseToolDeclaration()]]]
+        let toolConfig: [String: Any] = ["functionCallingConfig": ["mode": "AUTO"]]
+
+        for _ in 0..<Self.agenticMaxRounds {
+            let body: [String: Any] = [
+                "systemInstruction": ["parts": [["text": composedSystem]]],
+                "contents": contents,
+                "tools": tools,
+                "toolConfig": toolConfig,
+                "generationConfig": [
+                    "temperature": 0.6,
+                    "thinkingConfig": ["thinkingBudget": 0],
+                    "maxOutputTokens": 800
+                ]
+            ]
+
+            let data: Data?
+            do {
+                data = try await providerResponseData(
+                    provider: .gemini, endpoint: endpoint, key: key, body: body
+                )
+            } catch {
+                return nil
+            }
+            guard let data,
+                  let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            else { return nil }
+
+            switch Self.parseGeminiStep(from: object) {
+            case .text(let text):
+                // Same quality gate + single repair pass as the non-agentic path.
+                if let issue = Self.replyQualityIssue(in: text, latestUserTurn: latestUserTurn) {
+                    if let repaired = await repairLowQualityReply(
+                        issue: issue, draft: text, provider: .gemini,
+                        endpoint: endpoint, key: key, system: composedSystem, messages: history
+                    ) {
+                        return .reply(repaired)
+                    }
+                    return nil
+                }
+                return .reply(text)
+
+            case .call(let name, let args, let modelContent):
+                guard name == Self.agenticToolName, let query = args["query"] as? String else {
+                    return nil
+                }
+                // Re-append the model's functionCall turn verbatim (role "model"),
+                // then the tool RESULT as a role:"user" functionResponse part —
+                // the exact two-turn shape Gemini requires. (Gemini uses "user"
+                // for the function result, NOT "function"/"tool" — that would
+                // break the call.)
+                contents.append(modelContent)
+                let response = Self.executeExpertiseTool(query: query, context: toolContext)
+                contents.append([
+                    "role": "user",
+                    "parts": [["functionResponse": ["name": name, "response": response]]]
+                ])
+
+            case .unusable:
+                return nil
+            }
+        }
+        return nil
+    }
+
+    /// The one tool the coach can call: a JSON-schema function declaration for
+    /// on-demand expertise retrieval. Pure + nonisolated for tests.
+    nonisolated static func expertiseToolDeclaration() -> [String: Any] {
+        [
+            "name": agenticToolName,
+            "description": "Look up Noum's curated communication-coaching technique cards relevant to a topic (fillers, pacing, structure, openings, closings, composure under pressure, interviews, presentations, difficult conversations, leadership, networking, social). Call this when the user asks how to improve something, or when you want a grounded, named technique to prescribe. Returns each technique's name, why it works, how to apply it, and the observable sign it is working.",
+            "parameters": [
+                "type": "object",
+                "properties": [
+                    "query": [
+                        "type": "string",
+                        "description": "What to find a technique for, in plain words — e.g. 'stop saying um', 'open a presentation', 'calm interview nerves', 'sound more concise'."
+                    ]
+                ],
+                "required": ["query"]
+            ]
+        ]
+    }
+
+    /// Execute `retrieve_expertise`: the model explicitly asked, so bypass the
+    /// cold-start gate (`hasDiagnosis: true`) and return the cards as a JSON
+    /// object (Gemini requires `functionResponse.response` to be an object).
+    nonisolated static func executeExpertiseTool(
+        query: String,
+        context: CoachToolContext
+    ) -> [String: Any] {
+        let cards = KnowledgeRetriever.retrieve(
+            query: query,
+            lever: context.lever,
+            voice: context.voice,
+            hasDiagnosis: true,
+            limit: 4
+        )
+        guard !cards.isEmpty else {
+            return [
+                "techniques": [[String: Any]](),
+                "note": "No specific technique card matched. Coach from the user's own data instead."
+            ]
+        }
+        let techniques: [[String: Any]] = cards.map { card in
+            [
+                "technique": card.title,
+                "why": card.why,
+                "apply": card.howToApply,
+                "successMarker": card.successMarker,
+                "evidence": card.evidenceTier.rawValue
+            ]
+        }
+        return ["techniques": techniques]
+    }
+
+    /// Map chat history to Gemini `contents`. Skips empty/UI-only turns so a
+    /// trailing empty pending-coach row can't end the contents on a model turn.
+    nonisolated static func geminiContents(from messages: [CoachMessage]) -> [[String: Any]] {
+        var contents: [[String: Any]] = []
+        for m in messages {
+            let role: String
+            switch m.role {
+            case .user: role = "user"
+            case .coach: role = "model"
+            case .systemNotice: continue
+            }
+            guard !m.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            contents.append(["role": role, "parts": [["text": m.text]]])
+        }
+        return contents
+    }
+
+    /// Classify a Gemini response: a tool request, a final text answer, or
+    /// unusable (truncated/empty/unparseable). Iterates `parts` and matches on
+    /// the `functionCall` key — never assumes position 0 (thinking/tool models
+    /// interleave parts). Pure + nonisolated for tests.
+    nonisolated static func parseGeminiStep(from object: [String: Any]) -> GeminiAgenticStep {
+        guard let candidates = object["candidates"] as? [[String: Any]],
+              let first = candidates.first,
+              let content = first["content"] as? [String: Any],
+              let parts = content["parts"] as? [[String: Any]]
+        else { return .unusable }
+
+        for part in parts {
+            if let call = part["functionCall"] as? [String: Any],
+               let name = call["name"] as? String {
+                let args = (call["args"] as? [String: Any]) ?? [:]
+                return .call(name: name, args: args, modelContent: content)
+            }
+        }
+
+        if isLengthTruncated(responseObject: object, provider: .gemini) {
+            return .unusable
+        }
+        let text = parts
+            .compactMap { $0["text"] as? String }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? .unusable : .text(text)
     }
 
     // MARK: - Deterministic offline fallback

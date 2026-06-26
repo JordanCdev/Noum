@@ -2096,7 +2096,8 @@ struct AskNoumView: View {
         // spoken-reply decision stays here because it differs by surface.
         let outcome = await CoachReplyPipeline.generate(
             coachID: coachID,
-            pendingGoalIntent: pendingGoalIntent
+            pendingGoalIntent: pendingGoalIntent,
+            allowAgentic: true
         )
         if AskNoumSpokenMode.shouldSpeak(
             outcome: outcome,

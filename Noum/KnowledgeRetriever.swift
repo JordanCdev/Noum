@@ -47,6 +47,9 @@ enum KnowledgeRetriever {
     /// Default number of cards surfaced. Keeps the COACHING EXPERTISE block
     /// tight (the formatter caps the token budget).
     static let defaultLimit: Int = 4
+    /// Wider BM25 candidate pool handed to the optional semantic reranker, so it
+    /// can promote a semantically-strong card BM25 ranked just outside the top-K.
+    static let rerankCandidatePool: Int = 10
 
     // MARK: Public API (the tool)
 
@@ -112,6 +115,35 @@ enum KnowledgeRetriever {
         }
 
         return scored.prefix(max(0, limit)).map(\.card)
+    }
+
+    /// Async retrieval with the OPTIONAL semantic rerank applied when enabled +
+    /// the embedding model is ready. Falls back to pure BM25 — byte-identical to
+    /// `retrieve` — when the flag is off, the corpus is thin, or the model isn't
+    /// ready (Simulator / pre-download / offline). Used by `CoachReplyPipeline`.
+    @available(iOS 17.0, *)
+    static func retrieveReranked(
+        query: String,
+        lever: SkillArea? = nil,
+        voice: SpeakingStyleGoal? = nil,
+        hasDiagnosis: Bool = false,
+        limit: Int = defaultLimit
+    ) async -> [CoachKnowledgeCard] {
+        // Pull a WIDER BM25 candidate set so the reranker has room to promote a
+        // semantically-strong card BM25 ranked just outside the final top-K.
+        let candidates = retrieve(
+            query: query, lever: lever, voice: voice,
+            hasDiagnosis: hasDiagnosis, limit: max(limit, rerankCandidatePool)
+        )
+        guard KnowledgeBrainFlags.semanticRerankEnabled, candidates.count > 1 else {
+            return Array(candidates.prefix(max(0, limit)))
+        }
+        return await KnowledgeSemanticReranker.shared.rerank(
+            query: query,
+            candidates: candidates,
+            bm25Order: candidates.map(\.id),
+            limit: limit
+        )
     }
 
     // MARK: Technique-question detection (pure, testable)
