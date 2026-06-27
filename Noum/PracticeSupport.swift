@@ -1550,6 +1550,9 @@ enum AIProviderHealthProbe {
                 return "Provider error: \(code)"
             }
         }
+        if statusCode == 402 {
+            return "Provider billing/account blocked (HTTP 402)"
+        }
         return "Provider returned HTTP \(statusCode)"
     }
 

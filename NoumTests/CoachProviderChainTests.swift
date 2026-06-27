@@ -931,4 +931,14 @@ struct AnthropicExtractionTests {
         #expect(reason == "Provider error: authentication_error")
         #expect(!reason.contains("Invalid API key"))
     }
+
+    @Test func chatHTTPFailureReasonNamesPaymentRequiredBillingBlock() {
+        let reason = AICoachChatService.failureReason(
+            forHTTPStatus: 402,
+            data: Data(),
+            provider: .deepSeek
+        )
+
+        #expect(reason == "Provider billing/account blocked (HTTP 402)")
+    }
 }
