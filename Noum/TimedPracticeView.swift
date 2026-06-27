@@ -3008,6 +3008,10 @@ struct TimedPracticeView: View {
         showCelebration = false
         // Reset video recording state for the new session
         videoManager.cleanup()
+        // The instant-start one-shot applies to the auto-guided FIRST rep only.
+        // A retry / new-prompt rep in the same view must fall back to the user's
+        // persistent prep-countdown / prompt prefs — never inherit fast-start.
+        fastStartActive = false
         // Don't reset phase yet — launchSessionFlow will set it
         phase = .setup
     }

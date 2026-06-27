@@ -114,6 +114,22 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var activeSession: (any TranscriptionSession)?
     private var transcriptListenerTask: Task<Void, Never>?
 
+    /// Monotonic session token. `stopRecording()` finalizes on a 500ms delay to
+    /// let trailing transcripts land; if a NEW session starts inside that window
+    /// (rapid push-to-talk re-tap in the live coach call, back-to-back Sudden
+    /// Death rounds), the stale finalize must NOT run — `startRecordingWithProvider`
+    /// has already reset the transcript buffers, so finalizing would save the new
+    /// rep's (or empty) data against the old stop and blend quality metrics across
+    /// two reps. Bumped when a new session commits; the delayed teardown/finalize
+    /// captures the token and bails if it no longer matches.
+    private var sessionGeneration: Int = 0
+
+    /// Pure predicate for the delayed-finalize guard (unit-testable without the
+    /// audio stack): finalize only when no newer session has started since.
+    nonisolated static func shouldFinalize(captured: Int, current: Int) -> Bool {
+        captured == current
+    }
+
     private var audioEngine: AVAudioEngine?
     /// Captures audio samples in parallel with transcription so we can
     /// emit `PitchMetrics` at session end. Created fresh per recording;
@@ -293,6 +309,9 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     private func startRecordingWithProvider() async {
+        // A new session is committing — invalidate any pending delayed finalize
+        // from a prior stop (its transcript buffers are about to be reset).
+        sessionGeneration &+= 1
         let shouldRestorePressureMode = _pressureDrillMode
         let promptBeforeReset = sessionPrompt
         resetCurrentSession()
@@ -362,14 +381,21 @@ class SpeechRecognizerViewModel: ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(false)
         isRecording = false
 
+        // Capture this stop's generation + session so a session started during
+        // the teardown/finalize window can't have its state torn down or its
+        // transcript overwritten by this (now stale) tail.
+        let gen = sessionGeneration
+        let sessionToEnd = activeSession
         Task {
-            try? await activeSession?.endAudio()
+            try? await sessionToEnd?.endAudio()
+            guard Self.shouldFinalize(captured: gen, current: sessionGeneration) else { return }
             activeSession = nil
             transcriptListenerTask?.cancel()
             transcriptListenerTask = nil
 
             // Allow time for any final transcripts to arrive before finalizing
             try? await Task.sleep(for: .milliseconds(500))
+            guard Self.shouldFinalize(captured: gen, current: sessionGeneration) else { return }
             finalizeTranscript()
             recordQualityMetrics()
         }

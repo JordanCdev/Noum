@@ -217,6 +217,27 @@ final class LeagueManager: ObservableObject {
 
     // MARK: - Public API
 
+    /// Pure promotion-celebration predicate (unit-testable without RatingStore /
+    /// UserDefaults / the rest of the manager). A promotion celebration may fire
+    /// ONLY when:
+    ///   - the last-seen tier has been initialized (NOT first launch — a fresh
+    ///     install with a seeded mid-tier rating must never claim an unearned
+    ///     "Promoted to Silver" on open), AND
+    ///   - the rating carries real rated evidence (no celebration off the
+    ///     default placeholder rating), AND
+    ///   - the new tier is strictly ABOVE the last-seen tier (a rating dip
+    ///     re-tiers silently — never shame a regression).
+    /// This is the single source of truth for the league_promotion_guard
+    /// invariant; `recomputeTierAndBucket` defers to it.
+    nonisolated static func shouldCelebratePromotion(
+        isInitialized: Bool,
+        hasRatedEvidence: Bool,
+        lastSeenFloor: Int,
+        newFloor: Int
+    ) -> Bool {
+        isInitialized && hasRatedEvidence && newFloor > lastSeenFloor
+    }
+
     /// Recompute the tier/bucket from the current rating. Called when the
     /// user's rating changes or a new ISO week starts. Detects upward
     /// tier crossings and queues a promotion celebration.
@@ -238,7 +259,12 @@ final class LeagueManager: ObservableObject {
             // demotion (downward changes happen quietly so we don't
             // shame a user whose rating dipped).
             let lastSeen = lastSeenTier()
-            if newTier.ratingFloor > lastSeen.ratingFloor {
+            if Self.shouldCelebratePromotion(
+                isInitialized: true,
+                hasRatedEvidence: rating.hasRatedEvidence,
+                lastSeenFloor: lastSeen.ratingFloor,
+                newFloor: newTier.ratingFloor
+            ) {
                 queuePromotion(from: lastSeen, to: newTier)
             }
             persistLastSeenTier(newTier)
