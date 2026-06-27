@@ -26468,6 +26468,152 @@ struct AICoachChatReplyQualityGateTests {
     }
 }
 
+/// Exact transcript-regression harness for the 2026-06-27 live coach eval.
+///
+/// This is not an expert-calibration claim; it keeps the known live failures
+/// from drifting back in when provider prompts, fallback order, or repair copy
+/// change. The reference replies are compact "what good looks like" examples
+/// that must pass the same local senior-coach gate the product uses.
+struct CoachLiveTranscriptRegressionTests {
+    private struct Case {
+        let id: String
+        let userTurn: String
+        let liveReply: String
+        let expectedIssue: CoachChatReplyQualityIssue?
+        let referenceReply: String
+        let quoteGuard: CoachChatQuoteGuardContext?
+
+        init(
+            id: String,
+            userTurn: String,
+            liveReply: String,
+            expectedIssue: CoachChatReplyQualityIssue?,
+            referenceReply: String,
+            quoteGuard: CoachChatQuoteGuardContext? = nil
+        ) {
+            self.id = id
+            self.userTurn = userTurn
+            self.liveReply = liveReply
+            self.expectedIssue = expectedIssue
+            self.referenceReply = referenceReply
+            self.quoteGuard = quoteGuard
+        }
+    }
+
+    private static let transcriptCases: [Case] = [
+        Case(
+            id: "interview-baseline",
+            userTurn: "How do I get better before my interview?",
+            liveReply: "No rated sessions yet, so the honest starting point is: I don't know which part of your delivery needs the most work.\nRun one timed rep - pick a likely interview question, answer it out loud for 60-90 seconds, then note where you hesitated or rushed. That gives us something real to coach from.\nWhat's the interview for?",
+            expectedIssue: .roboticPhrase("no rated sessions yet"),
+            referenceReply: "No baseline yet, so start there. Record 60 seconds on one likely interview question, then review whether your first sentence answers it before polishing anything."
+        ),
+        Case(
+            id: "fillers-under-pressure",
+            userTurn: "How do I stop saying um under pressure?",
+            liveReply: "Your last rep had 6 fillers under a timed limit, so the pattern is there when the clock runs.\nTo break this, test the silent pause: the moment you feel an um coming, hold one second of silence instead, then say the next word.\nRun one rep now with that silent beat to see if it stops the filler.",
+            expectedIssue: .roboticPhrase("to break this"),
+            referenceReply: "Your last rep had 6 fillers, so use the silent beat as a test. Hold one second before the next word and see whether the filler count drops on the next rep."
+        ),
+        Case(
+            id: "filler-count",
+            userTurn: "What should I do with that filler count?",
+            liveReply: "Your last rep had five fillers, so test a slow open on your next run to give yourself room to find the second sentence. Say your first line slower than feels natural, which can replace the early um with a silent beat.",
+            expectedIssue: .roboticPhrase("give yourself room to find"),
+            referenceReply: "Five fillers is enough signal to test the opening, not judge the whole answer. Say the first line slower than feels natural, then hold one beat before sentence two."
+        ),
+        Case(
+            id: "robotic-feedback",
+            userTurn: "This is robotic and too much writing.",
+            liveReply: "You are right to call that out, and I am cutting the robotic report voice. Your last rep had one filler, so record a new rep where you say the main point in your very first sentence and then stop.",
+            expectedIssue: .roboticPhrase("i am cutting the"),
+            referenceReply: "Fair push. That read like a report. Your last rep had one filler, so run one cleaner rep: main point first, then stop."
+        ),
+        Case(
+            id: "markdown-tts",
+            userTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach.",
+            liveReply: "Fair push. I'll cut the markers and the report voice - your last rep gives me enough to work from, so next time out, lead with your recommendation in the first sentence and stop there.",
+            expectedIssue: .roboticPhrase("i'll cut the markers"),
+            referenceReply: "Fair push: TTS reading symbols breaks trust. Your last rep has enough signal, so lead with the recommendation, give one proof point, then stop."
+        ),
+        Case(
+            id: "cold-overexplained",
+            userTurn: "This still sounds cold and overexplained, like generic AI tips.",
+            liveReply: "You are right to call that out, as that generic tip-giving was cold and did not help. Your last rep had one filler but the main point did not clearly lead, so open your next attempt by saying your core client recommendation in the very first sentence because that tests whether a strong start helps you feel in control.",
+            expectedIssue: .roboticPhrase("generic tip-giving"),
+            referenceReply: "Fair push: that was advice, not coaching. Your last rep had one filler, so say the client recommendation first, then soften it with one reassurance."
+        ),
+        Case(
+            id: "what-next",
+            userTurn: "What next?",
+            liveReply: "Your last rep had no fillers, so the gap to close is the ending - run the same executive update and finish on one specific decision or next step you want from the room.",
+            expectedIssue: nil,
+            referenceReply: "Your last rep was clean on fillers, so the useful gap is the close. Run the same executive update and end with the one decision or next step you want from the room."
+        ),
+        Case(
+            id: "why-landed-badly",
+            userTurn: "Why did that answer land badly?",
+            liveReply: "Your last rep put the recommendation right up front, but you asserted the claim without giving a reason or an implication to back it up. That risks sounding like an opinion rather than an authoritative verdict, so run a rep where you state the point, give one clear reason, and name the impact if we do not act.",
+            expectedIssue: .overclaimsEvidence,
+            referenceReply: "From the transcript, the recommendation arrived late, so the first fix is order. Say the decision first, add one reason, then name the implication.",
+            quoteGuard: CoachChatQuoteGuardContext(
+                transcripts: ["I waited too long to state the recommendation, then gave the context after it."],
+                latestUserTurn: "Why did that answer land badly?"
+            )
+        ),
+        Case(
+            id: "leadership-update",
+            userTurn: "I have a leadership update tomorrow, what should I practice?",
+            liveReply: "Your last rep led with the point cleanly, so test the thirty-second update for tomorrow's meeting. State your main headline and what it means in the first sentence, because a senior room wants the implication immediately.",
+            expectedIssue: .roboticPhrase("a senior room wants"),
+            referenceReply: "Your last rep led cleanly, so tomorrow's practice should sharpen the ask. Run a 30-second update: headline, implication, one decision you need."
+        )
+    ]
+
+    @Test func liveTranscriptRowsStayVersioned() {
+        #expect(Self.transcriptCases.map(\.id) == [
+            "interview-baseline",
+            "fillers-under-pressure",
+            "filler-count",
+            "robotic-feedback",
+            "markdown-tts",
+            "cold-overexplained",
+            "what-next",
+            "why-landed-badly",
+            "leadership-update"
+        ])
+    }
+
+    @Test func knownLiveFailuresTripTheLocalCoachGate() {
+        for row in Self.transcriptCases {
+            let issue = AICoachChatService.replyQualityIssue(
+                in: row.liveReply,
+                latestUserTurn: row.userTurn,
+                quoteGuard: row.quoteGuard
+            )
+            #expect(issue == row.expectedIssue,
+                    "\(row.id) expected \(String(describing: row.expectedIssue)), got \(String(describing: issue))")
+        }
+    }
+
+    @Test func referenceRepliesPassTheSeniorCoachGate() {
+        for row in Self.transcriptCases {
+            let issue = AICoachChatService.replyQualityIssue(
+                in: row.referenceReply,
+                latestUserTurn: row.userTurn,
+                quoteGuard: row.quoteGuard
+            )
+            let rubric = AICoachChatService.professionalCoachRubric(
+                reply: row.referenceReply,
+                latestUserTurn: row.userTurn
+            )
+            #expect(issue == nil, "\(row.id) reference reply issue: \(String(describing: issue))")
+            #expect(rubric.passesSeniorCoachFloor,
+                    "\(row.id) reference reply should pass. Misses: \(rubric.misses)")
+        }
+    }
+}
+
 /// Cross-surface fabricated-quote guard.
 ///
 /// The live chat already routes "you said …" attributions through

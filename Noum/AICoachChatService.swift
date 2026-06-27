@@ -1893,6 +1893,12 @@ actor AICoachChatService {
             "the point was up front",
             "the recommendation was up front",
             "the decision was up front",
+            "point right up front",
+            "recommendation right up front",
+            "decision right up front",
+            "put the point right up front",
+            "put the recommendation right up front",
+            "put the decision right up front",
             "your opening led with the point",
             "your opening led with the recommendation"
         ]) else {
