@@ -25495,6 +25495,14 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .roboticPhrase("we do not have any rated sessions"))
     }
 
+    @Test func rejectsUserFacingRatedSessionJargonOnColdStart() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "I don't have rated sessions yet, so the useful first move is a baseline interview answer.",
+            latestUserTurn: "How do I get better before my interview?"
+        )
+        #expect(issue == .roboticPhrase("i don't have rated sessions"))
+    }
+
     @Test func rejectsColdStartIntakeQuestionAfterBaselineMove() {
         let context = """
         PROFESSIONAL TURN CONTRACT
@@ -25559,6 +25567,14 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "This is robotic and too much writing."
         )
         #expect(issue == .roboticPhrase("i will cut the report voice"))
+    }
+
+    @Test func rejectsCutMarkersSelfNarrationInTTSRepair() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Fair push. I'll cut the markers and the report voice, so next time out, lead with your recommendation in the first sentence and stop there.",
+            latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach."
+        )
+        #expect(issue == .roboticPhrase("i'll cut the markers"))
     }
 
     @Test func rejectsGenericTipGivingTrustRepair() {
@@ -25985,7 +26001,7 @@ struct AICoachChatReplyQualityGateTests {
     }
 
     @Test func turnAwareGateAcceptsColdStartBaselineAction() {
-        let reply = "I don't have rated sessions yet, so the useful first move is a baseline interview answer. Record 60 seconds on one likely question, then check whether the first sentence gives the point before the explanation."
+        let reply = "No baseline yet, so the useful first move is one interview answer. Record 60 seconds on a likely question, then check whether the first sentence gives the point before the explanation."
         let issue = AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "How do I get better before my interview?"

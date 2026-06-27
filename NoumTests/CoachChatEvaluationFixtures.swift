@@ -172,7 +172,7 @@ enum CoachChatEvaluationCorpus {
                 "No rated sessions yet",
                 "Not enough data for a stable baseline yet"
             ],
-            referenceReply: "I don't have rated sessions yet, so the honest move is one baseline rep. Record a 60-second interview answer, then review the first sentence for the point before polishing anything.",
+            referenceReply: "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.",
             knownBadReply: "Keep practicing and try to sound more confident.",
             expectedBadIssue: .unanchoredCoaching
         ),
