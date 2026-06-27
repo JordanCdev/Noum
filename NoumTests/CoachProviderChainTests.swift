@@ -345,6 +345,50 @@ struct CoachProviderChainTests {
         })
     }
 
+    @Test func repairPromptIncludesExpertReferenceShape() async throws {
+        let turn = "The ** don't format and TTS reads them out. The responses feel robotic and cold."
+        let repaired = "Fair push: TTS reading symbols breaks trust. Your last rep had one filler, so say the recommendation first, give one proof point, then stop."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repaired,
+            latestUserTurn: turn,
+            systemContext: "RECENT (most-recent first)\n- Your last rep had 1 filler."
+        ) == nil)
+        let scripted = ScriptedCoachHTTP(results: [
+            .success(Self.openAIData("Fair push. Formatting read aloud breaks trust, so I'll keep the next replies shorter, plain, and warmer.")),
+            .success(Self.openAIData(repaired))
+        ])
+        let service = AICoachChatService(
+            keyedProviders: { [.openAI] },
+            keyLookup: { _ in "test-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { provider, endpoint, key, body in
+                await scripted.next(provider: provider, endpoint: endpoint, key: key, body: body)
+            }
+        )
+
+        let outcome = await service.reply(
+            history: [
+                CoachMessage(role: .user, text: turn)
+            ],
+            systemPrompt: "You are Noum.",
+            userContext: "RECENT (most-recent first)\n- Your last rep had 1 filler."
+        )
+
+        guard case .reply(let text) = outcome else {
+            Issue.record("Expected repaired reply, got \(outcome)")
+            return
+        }
+        #expect(text == repaired)
+
+        let systemMessages = await scripted.systemMessages
+        #expect(systemMessages.count == 2)
+        let systemMessage = try #require(systemMessages.last)
+
+        #expect(systemMessage.contains("Expert reference shape"))
+        #expect(systemMessage.contains("TTS reading symbols breaks trust"))
+        #expect(systemMessage.contains("say the recommendation first"))
+    }
+
     @Test func refusedGoogleCloudFallsThroughToClaudeReply() async {
         let diagnostics = CoachDiagnosticRecorderProbe()
         let acceptedReply = "I don't have a rated rep yet, so use the first answer as the baseline. Run one 45-second interview answer, then mark every um and hold one silent beat before sentence two."
@@ -450,6 +494,7 @@ private actor ScriptedCoachHTTP {
     private var results: [AICoachChatService.ProviderHTTPResult]
     private(set) var callCount: Int = 0
     private(set) var providers: [CoachChatProvider] = []
+    private(set) var systemMessages: [String] = []
 
     init(results: [AICoachChatService.ProviderHTTPResult]) {
         self.results = results
@@ -463,10 +508,29 @@ private actor ScriptedCoachHTTP {
     ) -> AICoachChatService.ProviderHTTPResult {
         callCount += 1
         providers.append(provider)
+        if let system = systemText(from: body) {
+            systemMessages.append(system)
+        }
         guard !results.isEmpty else {
             return .refused(status: 500, retryAfter: nil)
         }
         return results.removeFirst()
+    }
+
+    private func systemText(from body: [String: Any]) -> String? {
+        if let messages = body["messages"] as? [[String: Any]],
+           let system = messages.first(where: { $0["role"] as? String == "system" })?["content"] as? String {
+            return system
+        }
+        if let system = body["system"] as? String {
+            return system
+        }
+        if let instruction = body["systemInstruction"] as? [String: Any],
+           let parts = instruction["parts"] as? [[String: Any]],
+           let text = parts.first?["text"] as? String {
+            return text
+        }
+        return nil
     }
 }
 

@@ -2243,6 +2243,11 @@ actor AICoachChatService {
             latestUserTurn: messages.last(where: { $0.role == .user })?.text,
             system: system
         )
+        let referenceShape = Self.repairReferenceShape(
+            issue: issue,
+            latestUserTurn: messages.last(where: { $0.role == .user })?.text,
+            system: system
+        )
         let repairSystem = """
         \(system)
 
@@ -2264,6 +2269,7 @@ actor AICoachChatService {
         - No long paragraph.
         - No broad menu. Pick one coaching move.
         \(requiredAnchor.map { "- Required anchor: \($0)" } ?? "")
+        \(referenceShape.map { "- Expert reference shape: \($0)" } ?? "")
         - The final answer must include a direct action verb the user can do now
           or in the next rep: say, run, record, hold, cut, use, answer,
           practice, review, end, state, make, lead, put, or give.
@@ -2379,6 +2385,97 @@ actor AICoachChatService {
             return nil
         }
         return normalized
+    }
+
+    nonisolated static func repairReferenceShape(
+        issue: CoachChatReplyQualityIssue,
+        latestUserTurn: String?,
+        system: String
+    ) -> String? {
+        let lowerTurn = latestUserTurn?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        guard !lowerTurn.isEmpty else { return nil }
+
+        if turnAsksWhyAnswerLandedBadly(latestUserTurn) {
+            if sourceMentionsLateRecommendation(system) {
+                return "From the transcript, the recommendation arrived late, so say the decision first, add one reason, then name the implication."
+            }
+            return "Name the landing problem first, then the move: the close softened, so end with the one decision you need."
+        }
+
+        if isCritiqueTurn(lowerTurn) {
+            return trustRepairReferenceShape(for: lowerTurn, system: system)
+        }
+
+        if containsAny(lowerTurn, ["interview", "get better", "prepare", "practice"]),
+           containsAny(system.lowercased(), [
+            "no rated sessions yet",
+            "not enough data for a stable baseline yet",
+            "personalization floor: no rated sessions yet",
+            "no voice set yet"
+           ]) {
+            return "No baseline yet, so start there. Record 60 seconds on one likely question, then review whether your first sentence answers it before polishing anything."
+        }
+
+        if containsAny(lowerTurn, ["um", "filler", "fillers", "hesitat"]) {
+            if let count = firstFillerCount(in: system) {
+                return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so hold one silent beat before sentence two and check whether the next rep lowers the count."
+            }
+            return "No stable filler pattern yet, so record one short rep and mark every filler before changing the drill."
+        }
+
+        if containsAny(lowerTurn, ["leadership", "update", "meeting", "executive", "board"]) {
+            return "Run a 30-second update: headline, implication, one decision you need."
+        }
+
+        if containsAny(lowerTurn, ["what next", "next move", "what should"]) {
+            return "Use the last rep to pick one gap, so run the same prompt once and sharpen either the close, the pause, or the first sentence."
+        }
+
+        switch issue {
+        case .missingInsightBridge, .missingPrescribedAction, .unanchoredCoaching:
+            return "Name one observable signal, connect it with so or because, then prescribe one next move the user can test."
+        case .missedTrustRepair, .defensiveProductLanguage:
+            return "Fair push. Name the friction briefly, then use one safe signal to prescribe the changed coaching move."
+        default:
+            return nil
+        }
+    }
+
+    private nonisolated static func trustRepairReferenceShape(
+        for lowerTurn: String,
+        system: String
+    ) -> String {
+        let friction: String
+        if containsAny(lowerTurn, ["tts", "read them out", "read aloud", "**", "markdown", "format"]) {
+            friction = "Fair push: TTS reading symbols breaks trust."
+        } else if containsAny(lowerTurn, ["robotic", "report", "too much writing", "too long", "less text"]) {
+            friction = "Fair push. That read too much like a report."
+        } else if containsAny(lowerTurn, ["cold", "generic", "not human", "low eq", "not high eq"]) {
+            friction = "Fair push: that was advice, not coaching."
+        } else {
+            friction = "Fair push. That answer did not earn enough trust."
+        }
+
+        let move: String
+        if containsAny(lowerTurn, ["short", "less text", "too much writing", "too long"]) {
+            move = "run one cleaner rep: main point first, then stop"
+        } else if containsAny(lowerTurn, ["tts", "read them out", "read aloud", "**", "markdown", "format"]) {
+            move = "say the recommendation first, give one proof point, then stop"
+        } else if containsAny(lowerTurn, ["cold", "generic", "robotic", "not human", "low eq", "not high eq"]) {
+            move = "say the decision first, then soften it with one human reassurance"
+        } else {
+            move = "run one short rep with the point first and one proof point after it"
+        }
+
+        if let count = firstFillerCount(in: system) {
+            return "\(friction) Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so \(move)."
+        }
+        if replyShouldCiteRecentSession(system) {
+            return "\(friction) Your last rep gives one usable signal, so \(move)."
+        }
+        return "\(friction) No baseline yet, so record one short rep before polishing the answer."
     }
 
     private nonisolated static func requiredRepairAnchor(

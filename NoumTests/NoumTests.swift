@@ -26282,6 +26282,72 @@ struct AICoachChatReplyQualityGateTests {
         ) == nil)
     }
 
+    @Test func repairReferenceForTTSRepairPassesCoachGate() throws {
+        let turn = "The ** don't format and TTS reads them out. The responses feel robotic and cold."
+        let system = """
+        RECENT (most-recent first)
+        - Your last rep had 1 filler.
+        """
+        let shape = try #require(AICoachChatService.repairReferenceShape(
+            issue: .missingPrescribedAction,
+            latestUserTurn: turn,
+            system: system
+        ))
+
+        #expect(shape.contains("TTS reading symbols breaks trust"))
+        #expect(shape.contains("say the recommendation first"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: shape,
+            latestUserTurn: turn,
+            systemContext: system
+        ) == nil)
+    }
+
+    @Test func repairReferenceForWhyLandedUsesLateRecommendationEvidence() throws {
+        let turn = "Why did that answer land badly?"
+        let system = "TRANSCRIPT\n- I waited too long to state the recommendation, then gave the context after it."
+        let shape = try #require(AICoachChatService.repairReferenceShape(
+            issue: .overclaimsEvidence,
+            latestUserTurn: turn,
+            system: system
+        ))
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: ["I waited too long to state the recommendation, then gave the context after it."],
+            latestUserTurn: turn
+        )
+
+        #expect(shape.contains("recommendation arrived late"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: shape,
+            latestUserTurn: turn,
+            quoteGuard: guardContext,
+            systemContext: system
+        ) == nil)
+    }
+
+    @Test func repairReferenceForColdStartSkipsIntakeQuestion() throws {
+        let turn = "How do I get better before my interview?"
+        let system = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let shape = try #require(AICoachChatService.repairReferenceShape(
+            issue: .menuInsteadOfDecision,
+            latestUserTurn: turn,
+            system: system
+        ))
+
+        #expect(shape.contains("No baseline yet"))
+        #expect(!shape.contains("?"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: shape,
+            latestUserTurn: turn,
+            systemContext: system
+        ) == nil)
+    }
+
     @Test func quoteGuardRejectsUnverifiedYouSaidQuote() {
         let guardContext = CoachChatQuoteGuardContext(
             transcripts: ["We launched the product on Tuesday and handled the deadline well."],
