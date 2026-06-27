@@ -487,10 +487,12 @@ final class AskNoumStore: ObservableObject {
         switch issue {
         case .roboticPhrase, .bareClarification, .defensiveProductLanguage, .menuInsteadOfDecision, .unrequestedNamedTechnique, .scaffoldLabel, .unverifiedQuotedUserSpeech:
             return true
-        case .tooLong, .missedTrustRepair, .missingPrescribedAction, .missingInsightBridge, .unanchoredCoaching, .overclaimsEvidence, .unengagedUserSpeechClaim:
-            // `.unengagedUserSpeechClaim` can only fire with a quote-guard
-            // context; this legacy sweep has no sources to judge by, so it
-            // never rewrites history on that basis.
+        case .tooLong, .missedTrustRepair, .missingPrescribedAction,
+                .missingInsightBridge, .unanchoredCoaching, .overclaimsEvidence,
+                .unengagedUserSpeechClaim, .ignoredCoachingExpertise:
+            // `.unengagedUserSpeechClaim` and `.ignoredCoachingExpertise` need
+            // per-turn source / RAG context; this legacy sweep has neither, so
+            // it never rewrites history on that basis.
             return false
         }
     }

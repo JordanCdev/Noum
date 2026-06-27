@@ -200,6 +200,16 @@ struct KnowledgeRetrieverTests {
         #expect(!result.isEmpty)
     }
 
+    @Test func coachRepairTurnDoesNotRetrieveTechniqueCards() {
+        let result = KnowledgeRetriever.retrieve(
+            query: "This still sounds cold and overexplained, like generic AI tips.",
+            lever: .structure,
+            voice: .warm,
+            hasDiagnosis: true
+        )
+        #expect(result.isEmpty)
+    }
+
     @Test func diagnosedVagueTurnSeedsTheActiveLever() {
         // Vague turn but an established case -> surface ON-CASE technique even
         // with no lexical overlap. Every returned card serves the active lever.
@@ -227,6 +237,8 @@ struct KnowledgeRetrieverTests {
         #expect(KnowledgeRetriever.isTechniqueSeekingTurn("how do i stop rambling"))
         #expect(KnowledgeRetriever.isTechniqueSeekingTurn("any tips for interviews"))
         #expect(KnowledgeRetriever.isTechniqueSeekingTurn("help me prepare for my pitch"))
+        #expect(KnowledgeRetriever.isTechniqueSeekingTurn("how do i make my answers less robotic"))
+        #expect(!KnowledgeRetriever.isTechniqueSeekingTurn("this sounds like generic AI tips"))
         #expect(!KnowledgeRetriever.isTechniqueSeekingTurn("hey"))
         #expect(!KnowledgeRetriever.isTechniqueSeekingTurn("thanks"))
         #expect(!KnowledgeRetriever.isTechniqueSeekingTurn("that makes sense"))

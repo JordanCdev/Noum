@@ -26956,12 +26956,14 @@ struct CoachChatEvaluationFixtureTests {
             )
             #expect(result.passesSeniorCoachFloor,
                     "\(fixture.id) reference reply should pass. Misses: \(result.misses)")
-            #expect(AICoachChatService.replyQualityIssue(
+            let qualityIssue = AICoachChatService.replyQualityIssue(
                 in: fixture.referenceReply,
                 latestUserTurn: fixture.latestUserTurn,
                 quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
                 systemContext: context
-            ) == nil)
+            )
+            #expect(qualityIssue == nil,
+                    "\(fixture.id) reference reply tripped quality gate: \(String(describing: qualityIssue))")
         }
     }
 

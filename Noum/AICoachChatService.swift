@@ -1356,6 +1356,10 @@ actor AICoachChatService {
             return .missingPrescribedAction
         }
 
+        if replyOverclaimsEvidence(lower) {
+            return .overclaimsEvidence
+        }
+
         if turnAsksWhyAnswerLandedBadly(latestUserTurn),
            !replyExplainsWhyAnswerLanded(lower) {
             return .missingInsightBridge
@@ -2103,6 +2107,7 @@ actor AICoachChatService {
     ) -> Bool {
         guard let turn = latestUserTurn?.trimmingCharacters(in: .whitespacesAndNewlines),
               KnowledgeRetriever.isTechniqueSeekingTurn(turn),
+              !isCritiqueTurn(turn.lowercased()),
               replyPrescribesAction(lower),
               let systemContext else {
             return false

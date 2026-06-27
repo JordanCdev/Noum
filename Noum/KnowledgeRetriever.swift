@@ -74,6 +74,8 @@ enum KnowledgeRetriever {
         limit: Int = defaultLimit
     ) -> [CoachKnowledgeCard] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isCoachRepairTurn(trimmed) else { return [] }
+
         let techniqueTurn = isTechniqueSeekingTurn(trimmed)
 
         // Honesty gate: don't surface prescriptive expertise on a cold-start
@@ -153,7 +155,24 @@ enum KnowledgeRetriever {
     nonisolated static func isTechniqueSeekingTurn(_ query: String) -> Bool {
         let lower = query.lowercased()
         guard !lower.isEmpty else { return false }
+        guard !isCoachRepairTurn(lower) else { return false }
         return techniqueSignals.contains { lower.contains($0) }
+    }
+
+    /// User turns criticising the coach's answer are trust-repair moments, not
+    /// requests for a random technique card just because they mention "tips".
+    nonisolated static func isCoachRepairTurn(_ query: String) -> Bool {
+        let lower = query.lowercased()
+        guard !lower.isEmpty else { return false }
+
+        if coachFormattingRepairSignals.contains(where: { lower.contains($0) }) {
+            return true
+        }
+
+        guard coachRepairSubjectSignals.contains(where: { lower.contains($0) }) else {
+            return false
+        }
+        return coachRepairQualitySignals.contains { lower.contains($0) }
     }
 
     private static let techniqueSignals: [String] = [
@@ -164,6 +183,24 @@ enum KnowledgeRetriever {
         "work on my", "stop saying", "deal with", "how do i handle", "handle a",
         "prepare for", "preparing for", "i keep", "i always", "i tend to",
         "i struggle", "struggle with", "i can't stop", "fix my", "what can i do"
+    ]
+
+    private static let coachRepairSubjectSignals: [String] = [
+        "this ", "that ", "it ", "your answer", "your reply",
+        "your response", "the answer", "the reply", "the response",
+        "responses feel", "reply feels", "answer feels", "noum", "coach"
+    ]
+
+    private static let coachRepairQualitySignals: [String] = [
+        "robotic", "generic ai", "generic tips", "cold", "overexplained",
+        "over-explained", "not human", "low eq", "not high eq",
+        "too much writing", "too long", "less text", "less writing",
+        "doesn't feel", "does not feel", "nowhere near", "no where near"
+    ]
+
+    private static let coachFormattingRepairSignals: [String] = [
+        "**", "markdown", "tts", "read them out", "read aloud",
+        "don't format", "do not format", "symbols"
     ]
 
     // MARK: BM25 index
