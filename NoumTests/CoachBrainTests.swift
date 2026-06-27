@@ -32,7 +32,7 @@ struct CoachKnowledgeBaseIntegrityTests {
         "in order to improve", "effective communication",
         "to communicate more clearly", "be clear and concise",
         "try to be more confident", "retrieval load", "chosen profile",
-        "profile yet", "brain was searching", "searching for the next word",
+        "profile yet", "in my response", "your brain", "brain was searching", "searching for the next word",
         "close your mouth", "closing your mouth", "close your lips",
         "closing your lips", "go to the practice tab", "open the practice tab",
         "tap the practice tab", "use the practice screen",

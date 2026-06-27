@@ -15,6 +15,7 @@
 //    -D NOUM_LIVE_AI_EVAL_GEMINI_ONLY
 //    -D NOUM_LIVE_AI_EVAL_CLAUDE_ONLY
 //    -D NOUM_LIVE_AI_EVAL_PRODUCTION_CHAIN
+//    -D NOUM_LIVE_AI_EVAL_FULL_CORPUS
 //
 //  This is not CI evidence and not a claim of human-coach parity. It is a
 //  repeatable transcript capture for the exact live model path, context builder,
@@ -167,6 +168,9 @@ struct CoachLiveEvaluationTests {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard let raw, !raw.isEmpty else {
+            #if NOUM_LIVE_AI_EVAL_FULL_CORPUS
+            return all
+            #else
             // Keep the default run cheap but representative: cold start,
             // pressure prescription, and trust repair.
             #if NOUM_LIVE_AI_EVAL_SINGLE
@@ -189,6 +193,7 @@ struct CoachLiveEvaluationTests {
             ]
             #endif
             return defaults.compactMap { id in all.first { $0.id == id } }
+            #endif
         }
 
         let wanted = raw

@@ -1309,7 +1309,7 @@ enum CoachContextBuilder {
             "hardcoded"
         ]) {
             lines.append("- Turn read: user is giving friction or product-quality critique.")
-            lines.append("- Coaching move: do not defend the app. Open with a short repair phrase such as \"Fair push\" or \"You're right to call that out\", name the specific friction in the user's own terms, then use so or because to connect one safe fact or honest data gap to one changed coaching move. Prefer metrics over invented structure claims.")
+            lines.append("- Coaching move: do not defend the app. Open with a short repair phrase such as \"Fair push\" or \"You're right to call that out\", name the specific friction in the user's own terms, then use so or because to connect the safest available anchor — a recent transcript pattern, a metric, or an honest data gap — to one changed coaching move. If RECENT is present, do not claim there are no usable reps; use the rep carefully.")
         } else if isChoiceOrCommitmentTurn(normalized, previousCoachReply: previousCoachReply) {
             lines.append("- Turn read: user is choosing or negotiating a coaching direction.")
             lines.append("- Coaching move: honor the preference, do not ask the same choice again, and turn it into a prescribed next step with an observable target.")
@@ -1415,7 +1415,7 @@ enum CoachContextBuilder {
             "not human", "doesn't feel", "does not feel", "too much writing",
             "hardcoded"
         ]) {
-            lines.append("- Must do this turn: repair trust first. Open with a short repair phrase such as \"Fair push\" or \"You're right to call that out\", name the specific friction in the user's own terms, then use so or because to connect one safe fact or honest data gap to one useful changed action. Prefer metrics over invented structure claims.")
+            lines.append("- Must do this turn: repair trust first. Open with a short repair phrase such as \"Fair push\" or \"You're right to call that out\", name the specific friction in the user's own terms, then use so or because to connect the safest available anchor — a recent transcript pattern, a metric, or an honest data gap — to one useful changed action. If RECENT is present, do not claim there are no usable reps; use the rep carefully.")
         } else if isChoiceOrCommitmentTurn(normalized, previousCoachReply: previousCoachReply) {
             lines.append("- Must do this turn: treat the user's choice as a decision. Do not ask them to choose again.")
         } else if containsAny(lower, [

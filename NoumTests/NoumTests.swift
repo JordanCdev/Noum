@@ -25417,12 +25417,28 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .roboticPhrase("chosen profile"))
     }
 
+    @Test func rejectsAssistantSelfNarrationInCoachReply() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep had four fillers, so run a new sixty-second test with no symbols in my response.",
+            latestUserTurn: "The ** don't format and TTS reads them out."
+        )
+        #expect(issue == .roboticPhrase("in my response"))
+    }
+
+    @Test func rejectsPopPsychBrainRegisterInCoachReply() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep had five fillers, so give your brain more runway before sentence two.",
+            latestUserTurn: "How do I stop saying um under pressure?"
+        )
+        #expect(issue == .roboticPhrase("your brain"))
+    }
+
     @Test func rejectsSpeculativeBrainSearchingCauseForFillers() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "You said um six times because your brain was searching for the next word under pressure.",
             latestUserTurn: "How do I stop saying um under pressure?"
         )
-        #expect(issue == .roboticPhrase("brain was searching"))
+        #expect(issue == .roboticPhrase("your brain"))
     }
 
     @Test func rejectsAwkwardPhysicalCorrection() {
@@ -25723,7 +25739,7 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "How do I stop saying um under pressure?",
             systemContext: context
         )
-        #expect(issue == .unanchoredCoaching)
+        #expect(issue == .roboticPhrase("your brain"))
     }
 
     @Test func contextAwareGateAcceptsRecentSessionAnchor() {
@@ -25740,6 +25756,16 @@ struct AICoachChatReplyQualityGateTests {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your April 1st rep had four fillers, so state the recommendation first in the next rep.",
             latestUserTurn: "The responses feel robotic and cold."
+        )
+        #expect(issue == .unanchoredCoaching)
+    }
+
+    @Test func critiqueReplyCannotClaimNoUsableRepsWhenRecentContextExists() {
+        let context = "RECENT (most-recent first)\n- Timed rep: 1 filler in 66 seconds."
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Fair push — I don't have enough reps yet to give you something tailored, so do one rep now.",
+            latestUserTurn: "This still sounds cold and overexplained, like generic AI tips.",
+            systemContext: context
         )
         #expect(issue == .unanchoredCoaching)
     }

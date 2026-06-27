@@ -1318,6 +1318,14 @@ actor AICoachChatService {
             return .unanchoredCoaching
         }
 
+        if replyClaimsNoUsableRecentEvidenceDespiteContext(
+            lower,
+            latestUserTurn: latestUserTurn,
+            systemContext: systemContext
+        ) {
+            return .unanchoredCoaching
+        }
+
         if let quoteGuard,
            replyContradictsRecommendationPosition(lower, quoteGuard: quoteGuard) {
             return .overclaimsEvidence
@@ -1472,6 +1480,8 @@ actor AICoachChatService {
         "retrieval load",
         "chosen profile",
         "profile yet",
+        "in my response",
+        "your brain",
         "brain was searching",
         "searching for the next word",
         "close your mouth",
@@ -1706,7 +1716,8 @@ actor AICoachChatService {
             "silence forces", "this forces stakeholders", "stakeholders will think",
             "stakeholders will assume", "stakeholders will see", "listeners will think",
             "listeners will assume", "audience will think", "audience will assume",
-            "they will think", "they will assume", "defending a weak position"
+            "they will think", "they will assume", "defending a weak position",
+            "forces you to", "force you to"
         ]) {
             return true
         }
@@ -1751,6 +1762,30 @@ actor AICoachChatService {
             let offset = sourceLower.distance(from: sourceLower.startIndex, to: range.lowerBound)
             return offset <= max(32, sourceLower.count / 3)
         }
+    }
+
+    private nonisolated static func replyClaimsNoUsableRecentEvidenceDespiteContext(
+        _ lower: String,
+        latestUserTurn: String?,
+        systemContext: String?
+    ) -> Bool {
+        guard replyShouldCiteRecentSession(systemContext),
+              isCritiqueTurn(latestUserTurn?.lowercased() ?? "") else {
+            return false
+        }
+        return containsAny(lower, [
+            "i don't have enough reps",
+            "i do not have enough reps",
+            "not enough reps",
+            "don't have enough reps",
+            "do not have enough reps",
+            "i don't have enough sessions",
+            "i do not have enough sessions",
+            "not enough sessions",
+            "i don't have enough data",
+            "i do not have enough data",
+            "not enough data yet"
+        ])
     }
 
     private nonisolated static func replyUsesUnrequestedNamedTechnique(
@@ -1965,11 +2000,15 @@ actor AICoachChatService {
           first repair the specific friction in the user's terms (formatting,
           TTS, symbols, robotic, cold, generic), second cite one safe fact or
           honest data gap and use "so" or "because" to prescribe one changed
-          move. Prefer a metric anchor such as fillers, pace, or "I do not have
-          enough data yet"; do not invent structural claims such as "buried the
-          recommendation" unless the context explicitly says that happened. The
+          move. Prefer the safest available anchor: a recent transcript pattern,
+          a metric such as fillers or pace, or an honest data gap. If RECENT is
+          present in context, do not claim there are no usable reps. Do not
+          invent structural claims such as "buried the recommendation" unless
+          the context explicitly says that happened. The
           second sentence still needs the action, for example: "Your last rep had
           4 fillers, so say the decision first, give one proof point, then stop."
+        - Do not narrate your own response mechanics. Avoid assistant-style phrases
+          such as "in my response"; say the changed coaching move directly.
         - Do not name a drill/framework unless the user explicitly asked for a named drill or plan. Translate the technique into plain action.
         - If the user showed frustration, do not defend the app.
         - If the user asked for shortness, make the answer shorter before making it smarter.
@@ -2034,7 +2073,19 @@ actor AICoachChatService {
         latestUserTurn: String?,
         system: String
     ) -> String? {
-        guard issue == .unanchoredCoaching || issue == .missingInsightBridge else {
+        let shouldCarryAnchor: Bool
+        switch issue {
+        case .unanchoredCoaching, .missingInsightBridge, .missingPrescribedAction,
+                .missedTrustRepair, .defensiveProductLanguage, .scaffoldLabel:
+            shouldCarryAnchor = true
+        case .roboticPhrase:
+            shouldCarryAnchor = true
+        case .tooLong, .bareClarification, .menuInsteadOfDecision,
+                .overclaimsEvidence, .unrequestedNamedTechnique,
+                .unverifiedQuotedUserSpeech, .unengagedUserSpeechClaim:
+            shouldCarryAnchor = false
+        }
+        guard shouldCarryAnchor else {
             return nil
         }
         let lowerTurn = latestUserTurn?.lowercased() ?? ""
