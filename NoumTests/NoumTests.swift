@@ -26959,6 +26959,7 @@ struct CoachChatEvaluationFixtureTests {
             #expect(AICoachChatService.replyQualityIssue(
                 in: fixture.referenceReply,
                 latestUserTurn: fixture.latestUserTurn,
+                quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
                 systemContext: context
             ) == nil)
         }
@@ -26970,10 +26971,25 @@ struct CoachChatEvaluationFixtureTests {
             let issue = AICoachChatService.replyQualityIssue(
                 in: fixture.knownBadReply,
                 latestUserTurn: fixture.latestUserTurn,
+                quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
                 systemContext: context
             )
             #expect(issue == fixture.expectedBadIssue,
                     "\(fixture.id) expected \(fixture.expectedBadIssue), got \(String(describing: issue))")
+        }
+    }
+
+    @Test func fixtureQuoteGuardsCarryLatestTimedTranscriptAndTurn() {
+        for fixture in CoachChatEvaluationCorpus.fixtures {
+            let guardContext = CoachChatEvaluationCorpus.quoteGuard(for: fixture)
+            #expect(guardContext.sourceTexts.contains(fixture.latestUserTurn))
+
+            if let latestTimed = fixture.sessions
+                .filter({ $0.mode == .timed })
+                .max(by: { $0.date < $1.date }) {
+                #expect(guardContext.sourceTexts.contains(latestTimed.transcript),
+                        "\(fixture.id) should ground quoted reads in the latest timed transcript.")
+            }
         }
     }
 

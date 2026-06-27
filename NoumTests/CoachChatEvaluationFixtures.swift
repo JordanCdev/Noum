@@ -71,11 +71,13 @@ struct CoachChatEvaluationCIReport: Codable, Equatable {
                 let referenceIssue = AICoachChatService.replyQualityIssue(
                     in: fixture.referenceReply,
                     latestUserTurn: fixture.latestUserTurn,
+                    quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
                     systemContext: context
                 )
                 let issue = AICoachChatService.replyQualityIssue(
                     in: fixture.knownBadReply,
                     latestUserTurn: fixture.latestUserTurn,
+                    quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
                     systemContext: context
                 )
                 return CoachChatEvaluationCIReportRow(
@@ -448,6 +450,17 @@ enum CoachChatEvaluationCorpus {
             lever: fixture.trends.first?.skillArea,
             voice: fixture.profile?.speakingStyleGoal,
             hasDiagnosis: !fixture.sessions.isEmpty
+        )
+    }
+
+    static func quoteGuard(for fixture: CoachChatEvaluationFixture) -> CoachChatQuoteGuardContext {
+        let recentTimed = fixture.sessions
+            .filter { $0.mode == .timed }
+            .max(by: { $0.date < $1.date })
+        return CoachChatQuoteGuardContext(
+            transcripts: [recentTimed?.transcript],
+            latestUserTurn: fixture.latestUserTurn,
+            recentUserTurns: [fixture.latestUserTurn]
         )
     }
 
