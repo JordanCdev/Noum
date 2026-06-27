@@ -25409,6 +25409,22 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .roboticPhrase("retrieval load"))
     }
 
+    @Test func rejectsInternalProfileLanguageInCoachReply() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You do not have rated sessions or a chosen profile yet, so record one baseline answer.",
+            latestUserTurn: "How do I get better before my interview?"
+        )
+        #expect(issue == .roboticPhrase("chosen profile"))
+    }
+
+    @Test func rejectsSpeculativeBrainSearchingCauseForFillers() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You said um six times because your brain was searching for the next word under pressure.",
+            latestUserTurn: "How do I stop saying um under pressure?"
+        )
+        #expect(issue == .roboticPhrase("brain was searching"))
+    }
+
     @Test func rejectsAwkwardPhysicalCorrection() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Close your mouth and hold a one-second silence instead of letting the sound out.",

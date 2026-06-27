@@ -737,7 +737,7 @@ enum VerdictEngine {
         switch skillArea {
         case .fillerReduction:
             if fillerCount >= 8 {
-                return "You used \(fillerCount) filler words — they clustered at transition points when your brain was searching for the next thought."
+                return "You used \(fillerCount) filler words — they clustered at transition points before the next idea was ready."
             } else if fillerCount >= 5 {
                 return "You used \(fillerCount) filler words this session. Most speakers can cut these significantly with focused practice."
             } else {

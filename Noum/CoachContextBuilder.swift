@@ -1366,7 +1366,7 @@ enum CoachContextBuilder {
             lines.append("- Case discipline: prefer the active case file before creating a new focus; if the user rejects it, ask one anchoring question before changing course.")
         }
         if profile == nil {
-            lines.append("- Personalization floor: no chosen profile yet. First anchor in the honest data gap, then prescribe one baseline rep tied to the user's ask. Do not ask an intake question in the same reply.")
+            lines.append("- Personalization floor: no rated sessions yet. First anchor in the honest data gap in user-facing language, then prescribe one baseline rep tied to the user's ask. Do not mention profiles or ask an intake question in the same reply.")
         }
 
         return lines
@@ -1427,7 +1427,7 @@ enum CoachContextBuilder {
         } else if isLowSignalGreeting(normalized) {
             lines.append("- Must do this turn: resume the active coaching thread rather than greeting back with a menu.")
         } else if profile == nil {
-            lines.append("- Must do this turn: cold start is not a menu. Say you do not have rated sessions or a chosen profile yet, then use so or because to prescribe one baseline rep tied to the user's ask. Do not ask a discovery question in the same reply.")
+            lines.append("- Must do this turn: cold start is not a menu. Say you do not have rated sessions yet, then use so or because to prescribe one baseline rep tied to the user's ask. Do not mention profiles or ask a discovery question in the same reply.")
         } else {
             lines.append("- Must do this turn: answer the user's actual ask first. Bring in the case file only when it sharpens the answer.")
         }

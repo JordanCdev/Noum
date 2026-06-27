@@ -26,7 +26,17 @@ struct CoachKnowledgeBaseIntegrityTests {
     static let bannedPhrases: [String] = [
         "based on your data", "the key insight is", "concrete next move",
         "this indicates", "recent reps show", "scores are down", "let's",
-        "as an ai", "as your ai", "optimize your", "utilize",
+        "let us", "as an ai", "as your ai", "optimize your", "utilize",
+        "i understand your frustration", "here are some tips",
+        "here are a few tips", "it's important to", "it is important to",
+        "in order to improve", "effective communication",
+        "to communicate more clearly", "be clear and concise",
+        "try to be more confident", "retrieval load", "chosen profile",
+        "profile yet", "brain was searching", "searching for the next word",
+        "close your mouth", "closing your mouth", "close your lips",
+        "closing your lips", "go to the practice tab", "open the practice tab",
+        "tap the practice tab", "use the practice screen",
+        "go to the practice screen", "open the practice screen",
         "the app is designed", "the system is designed", "i am just", "i'm just"
     ]
 
