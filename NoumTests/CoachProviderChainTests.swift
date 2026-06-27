@@ -178,6 +178,7 @@ struct CoachProviderChainTests {
     @Test func refusalClassification() {
         #expect(CoachChatProviderRefusal.classify(status: 429) == .rateLimited)
         #expect(CoachChatProviderRefusal.classify(status: 401) == .authBlocked)
+        #expect(CoachChatProviderRefusal.classify(status: 402) == .authBlocked)
         #expect(CoachChatProviderRefusal.classify(status: 403) == .authBlocked)
         #expect(CoachChatProviderRefusal.classify(status: 500) == .transient)
         #expect(CoachChatProviderRefusal.classify(status: 529) == .transient)
@@ -553,6 +554,53 @@ struct CoachProviderChainTests {
             record.outcome == .success &&
             record.reason == "Reply accepted"
         })
+    }
+
+    @Test func paymentRequiredProviderCoolsBehindNextProvider() async {
+        let userTurn = "Give me one move for the next rep."
+        let acceptedReply = "Your message asks for one move, so keep the test narrow. In the next rep, answer first, give one proof point, then stop. That tests whether structure holds when the timer is tight."
+        #expect(AICoachChatService.replyQualityIssue(in: acceptedReply, latestUserTurn: userTurn) == nil)
+
+        let scripted = ScriptedCoachHTTP(results: [
+            .refused(status: 402, retryAfter: nil),
+            .success(Self.anthropicData(acceptedReply)),
+            .success(Self.anthropicData(acceptedReply))
+        ])
+        let service = AICoachChatService(
+            keyedProviders: { [.deepSeek, .anthropic] },
+            keyLookup: { _ in "test-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { provider, endpoint, key, body in
+                await scripted.next(provider: provider, endpoint: endpoint, key: key, body: body)
+            }
+        )
+
+        let history = [
+            CoachMessage(role: .user, text: userTurn)
+        ]
+
+        let firstOutcome = await service.reply(
+            history: history,
+            systemPrompt: "You are Noum.",
+            userContext: "No recent sessions."
+        )
+        guard case .reply(let firstText) = firstOutcome else {
+            Issue.record("Expected Claude fallback reply, got \(firstOutcome)")
+            return
+        }
+        #expect(firstText == acceptedReply)
+
+        let secondOutcome = await service.reply(
+            history: history,
+            systemPrompt: "You are Noum.",
+            userContext: "No recent sessions."
+        )
+        guard case .reply(let secondText) = secondOutcome else {
+            Issue.record("Expected Claude to run before cooled DeepSeek, got \(secondOutcome)")
+            return
+        }
+        #expect(secondText == acceptedReply)
+        #expect(await scripted.providers == [.deepSeek, .anthropic, .anthropic])
     }
 
     private static func openAIData(_ content: String) -> Data {

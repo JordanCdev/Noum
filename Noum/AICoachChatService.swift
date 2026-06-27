@@ -702,7 +702,7 @@ enum CoachChatProvider: CaseIterable, Equatable, Hashable {
 enum CoachChatProviderRefusal: Equatable {
     /// 429 — the quota window will pass; sit out briefly.
     case rateLimited
-    /// 401/403 — the key is bad or blocked; hammering won't fix it.
+    /// 401/402/403 — the key, billing, or account is blocked; hammering won't fix it.
     case authBlocked
     /// 5xx / transport / empty body — likely transient.
     case transient
@@ -722,7 +722,7 @@ enum CoachChatProviderRefusal: Equatable {
     static func classify(status: Int) -> CoachChatProviderRefusal {
         switch status {
         case 429: return .rateLimited
-        case 401, 403: return .authBlocked
+        case 401, 402, 403: return .authBlocked
         default: return .transient
         }
     }
