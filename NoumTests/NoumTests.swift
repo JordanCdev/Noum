@@ -25425,6 +25425,14 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .roboticPhrase("in my response"))
     }
 
+    @Test func rejectsAppMechanicSelfNarrationInTrustRepair() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You are right to call that out, and I am stripping out those system symbols because they break the flow.",
+            latestUserTurn: "The ** don't format and TTS reads them out."
+        )
+        #expect(issue == .roboticPhrase("system symbols"))
+    }
+
     @Test func rejectsPopPsychBrainRegisterInCoachReply() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your last rep had five fillers, so give your brain more runway before sentence two.",
@@ -25439,6 +25447,38 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "How do I stop saying um under pressure?"
         )
         #expect(issue == .roboticPhrase("your brain"))
+    }
+
+    @Test func rejectsFillerCountAsInventedCause() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep had six fillers because the point did not clearly lead, so say the answer first.",
+            latestUserTurn: "How do I stop saying um under pressure?"
+        )
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func rejectsFillerCountAsMindReadCause() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep had six fillers under pressure because the next word was not ready.",
+            latestUserTurn: "How do I stop saying um under pressure?"
+        )
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func rejectsSilenceAsGuaranteedComposureOrOutcome() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Hold one second of silence because that silence reads as composure, and it stops the filler before it starts.",
+            latestUserTurn: "How do I stop saying um under pressure?"
+        )
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func rejectsGuaranteedStickinessFromFramework() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep stopped at a bare claim, so add a reason and example because that will make the recommendation stick.",
+            latestUserTurn: "Why did that answer land badly?"
+        )
+        #expect(issue == .overclaimsEvidence)
     }
 
     @Test func rejectsAwkwardPhysicalCorrection() {
@@ -25520,6 +25560,11 @@ struct AICoachChatReplyQualityGateTests {
         Observation: your point is clear.
         Action: hold the same opening under pressure.
         """
+        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == .scaffoldLabel)
+    }
+
+    @Test func rejectsRecommendationCoachReplyScaffoldLabel() {
+        let reply = "Recommend: Run a sixty-second rep where your first sentence states the point immediately."
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == .scaffoldLabel)
     }
 

@@ -96,13 +96,13 @@ enum ChatExtractionResult: Equatable {
 /// Noum's app surfaces should never expose raw scaffolding like `**Read:**`,
 /// and spoken replies should not read formatting labels aloud.
 enum CoachReplyTextSanitizer {
-    static let coachScaffoldLeadInPattern = #"read|the read|coach read|observation|diagnosis|insight|next move|next rep|move|action|why|evidence|try this|try|focus|target|drill|practice"#
+    static let coachScaffoldLeadInPattern = #"read|the read|coach read|observation|diagnosis|insight|next move|next rep|move|action|why|evidence|try this|try|focus|target|drill|practice|recommend|recommendation"#
 
     private static let coachScaffoldOnlyLabels: Set<String> = [
         "read", "the read", "coach read", "observation", "diagnosis",
         "insight", "move", "next move", "next rep", "action", "why",
         "evidence", "try this", "try", "focus", "target", "drill",
-        "practice"
+        "practice", "recommend", "recommendation"
     ]
 
     nonisolated static func displayText(from raw: String) -> String {
@@ -1481,6 +1481,8 @@ actor AICoachChatService {
         "chosen profile",
         "profile yet",
         "in my response",
+        "system symbols",
+        "stripping out",
         "your brain",
         "brain was searching",
         "searching for the next word",
@@ -1705,15 +1707,43 @@ actor AICoachChatService {
             "guarantees", "guarantee that", "will ensure", "ensures that",
             "automatically improves", "automatically reduces",
             "naturally drops", "naturally reduces", "will drop your pace",
-            "will reduce your fillers", "will make you sound"
+            "will reduce your fillers", "will make you sound",
+            "stops the filler before", "stops fillers before",
+            "will stop the filler", "will stop fillers", "will stop filler words"
         ]) {
+            return true
+        }
+        if lower.contains("will make"),
+           containsAny(lower, [
+            " stick", " land", " clearer", " stronger",
+            " more authoritative", " more confident", " sound"
+           ]) {
+            return true
+        }
+        if containsAny(lower, [
+            "fillers because", "filler because", "filler words because",
+            "fillers came because", "filler came because",
+            "fillers happened because", "filler happened because"
+        ]) {
+            return true
+        }
+        if lower.contains("fillers"),
+           lower.contains(" because "),
+           containsAny(lower, [
+            "point did not", "point didn't", "did not clearly lead",
+            "didn't clearly lead", "recommendation", "structure", "opening",
+            "next word was not ready", "next word wasn't ready",
+            "next word is not ready", "next word isn't ready",
+            "the next word was not", "the next word wasn't"
+           ]) {
             return true
         }
         if containsAny(lower, [
             "you signal that you", "you signal you", "you actually signal",
             "you are signaling that", "you're signaling that", "you’re signaling that",
             "this signals that you", "this invites the", "this invites challenges",
-            "silence forces", "this forces stakeholders", "stakeholders will think",
+            "silence forces", "silence reads as", "that silence reads",
+            "reads as composure", "this forces stakeholders", "stakeholders will think",
             "stakeholders will assume", "stakeholders will see", "listeners will think",
             "listeners will assume", "audience will think", "audience will assume",
             "they will think", "they will assume", "defending a weak position",
@@ -1984,7 +2014,7 @@ actor AICoachChatService {
         - Usually 1-2 short lines and under 50 words unless the user explicitly asked for a plan.
         - Use natural sentence starts, up to 3 bullets, or numbered steps only when they reduce reading.
         - Never output literal Markdown markers such as **, __, ###, or decorative formatting.
-        - Do not label the reply with Read, Move, Target, or Next rep.
+        - Do not label the reply with Read, Move, Target, Recommend, or Next rep.
         - Do not write "let's" or "let us". Start with the action instead: "Test this", "Use this", "Run one rep", "Say the recommendation first".
         - No long paragraph.
         - No broad menu. Pick one coaching move.
@@ -1994,6 +2024,16 @@ actor AICoachChatService {
           or review.
         - For filler-word work, say "hold a silent beat" or "hold one second of
           silence"; never tell the user to close their mouth or lips.
+        - Do not explain filler counts as caused by a separate structure read
+          unless the context explicitly says that. Write "you had 6 fillers, so
+          test a silent beat"; do not write "you had 6 fillers because the point
+          did not lead."
+        - Do not infer the user's hidden mental cause for fillers. Avoid lines
+          like "because the next word was not ready." Use observable phrasing:
+          "you had 6 fillers, so test a silent beat as the replacement."
+        - Do not present silence as a guaranteed perception or outcome. Avoid
+          "silence reads as composure" and "it stops the filler"; write "a
+          silent beat can give you one deliberate next word."
         - The final answer must contain the word "so" or "because" when it connects the anchor to the action.
         - When referencing a practice session, write "your last rep" or "a recent rep"; never write the exact calendar date.
         - If this is a trust-repair or critique turn, use exactly two sentences:
@@ -2008,7 +2048,8 @@ actor AICoachChatService {
           second sentence still needs the action, for example: "Your last rep had
           4 fillers, so say the decision first, give one proof point, then stop."
         - Do not narrate your own response mechanics. Avoid assistant-style phrases
-          such as "in my response"; say the changed coaching move directly.
+          such as "in my response", "system symbols", or "stripping out"; say the
+          changed coaching move directly.
         - Do not name a drill/framework unless the user explicitly asked for a named drill or plan. Translate the technique into plain action.
         - If the user showed frustration, do not defend the app.
         - If the user asked for shortness, make the answer shorter before making it smarter.
