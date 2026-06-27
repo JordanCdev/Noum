@@ -426,7 +426,7 @@ enum PathNodeRegistry {
                 tier: .gold,
                 title: "Hold a silent beat",
                 detail: "Hold a single silent pause of 1.5 seconds or longer in any rep.",
-                coachLine: "Silence reads as composure. One held beat shows you're choosing the moment, not searching for it.",
+                coachLine: "One held beat gives the next sentence room to land without adding a filler.",
                 actionLabel: "Start a rep",
                 actionDestination: .practiceSelection,
                 symbolName: "pause.circle.fill"

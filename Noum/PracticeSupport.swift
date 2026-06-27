@@ -12600,7 +12600,7 @@ struct AICoachService: AICoachServicing {
             return "Your pace ran slow at \(input.wordsPerMinute) WPM. Lift the energy a touch so the line carries."
         }
         if input.fillerCount >= 4 {
-            return "Fillers crept in this rep. Try a deliberate pause where a filler wants to go — silence reads as composure."
+            return "Fillers crept in this rep. Try a deliberate pause where a filler wants to go, then say the next word cleanly."
         }
         return "Pick one concrete idea and make it the spine of the next rep, then cut anything that doesn't serve it."
     }

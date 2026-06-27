@@ -128,19 +128,26 @@ enum CoachContextBuilder {
           the point never appeared. Prefer observable reads: "the close \
           softened", "the point arrived late", or "the final sentence needs \
           the ask."
+        - If a transcript says the user waited too long to state the \
+          recommendation, never write "led with the point", "point was up \
+          front", or similar. Say the recommendation arrived late, then \
+          prescribe recommendation first plus one reason or implication.
         - Do not present silence as a guaranteed perception or outcome. Avoid \
-        "silence reads as composure" and "it stops the filler"; say a silent \
-        beat can give the user one deliberate next word.
+        "silence reads as composure", "reads as command", and "it stops the \
+        filler"; say a silent beat can give the user one deliberate next word.
         - Do not narrate app or response mechanics when repairing trust. Avoid \
         lines like "I am stripping out system symbols", "generic tip-giving", \
         "I'm dropping both now", "from here the coaching drops", "from this rep \
         forward", "we are dropping the metrics", "coaching that sounds like a \
-        person", or "I am cutting the robotic report voice"; \
+        person", "we are shifting to short, plain coaching", "the coaching \
+        shifts now", or "I am cutting the robotic report voice"; \
         own the friction briefly, then say the coaching change in user-facing \
         language. Prefer "Fair push. That read too much like a report." over \
         "You are right to call that out, as...".
-        - Avoid formal no-data openings like "Since we do not have..."; say \
-        "No baseline yet, so start there."
+        - Avoid formal no-data openings like "Since we do not have..." or \
+        "We do not have any rated sessions yet"; say "No baseline yet, so \
+        start there." Do not ask "What's the interview for?" in the same \
+        cold-start reply.
         - You never punish-shame a regression. If a number dropped, you \
         either acknowledge it factually or stay silent; you do not lecture.
         - Hard-banned wording (any use fails review, rephrase around them): \
@@ -528,6 +535,39 @@ enum CoachContextBuilder {
         }
 
         return "What felt hardest in a real conversation this week?"
+    }
+
+    static func transcriptMentionsLateRecommendation(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return containsAny(lower, [
+            "waited too long to state the recommendation",
+            "waited too long to state my recommendation",
+            "waited too long to make the recommendation",
+            "took too long to state the recommendation",
+            "took too long to make the recommendation",
+            "recommendation arrived late",
+            "recommendation landed late",
+            "point arrived late",
+            "main point arrived late",
+            "point landed late",
+            "main point landed late",
+            "went too wide before saying it",
+            "too much context before saying it",
+            "too much context before the recommendation",
+            "before stating the recommendation",
+            "before saying the recommendation",
+            "before giving the recommendation"
+        ])
+    }
+
+    static func replySafeFactLines(for transcript: String) -> [String] {
+        guard transcriptMentionsLateRecommendation(transcript) else {
+            return []
+        }
+        return [
+            "- Safe structure fact: recommendation arrived late; do not say the point led or was up front.",
+            "- Safe move: put the recommendation first, then give one reason or implication."
+        ]
     }
 
     static func userContext(
@@ -1080,6 +1120,13 @@ enum CoachContextBuilder {
         // composure across channels rather than only on isolated
         // metrics.
         if let latest = recent.first {
+            let safeFactLines = replySafeFactLines(for: latest.transcript)
+            if !safeFactLines.isEmpty {
+                lines.append("")
+                lines.append("REPLY-SAFE FACTS (most-recent rep)")
+                lines.append(contentsOf: safeFactLines)
+            }
+
             let hedgingPerMinute: Double? = baseline.hedgingRate.value
             let composure = ComposureReadEngine.derive(
                 session: latest,

@@ -1326,8 +1326,20 @@ actor AICoachChatService {
             return .unanchoredCoaching
         }
 
+        if replyAddsColdStartIntakeQuestion(
+            lower,
+            latestUserTurn: latestUserTurn,
+            systemContext: systemContext
+        ) {
+            return .menuInsteadOfDecision
+        }
+
         if let quoteGuard,
            replyContradictsRecommendationPosition(lower, quoteGuard: quoteGuard) {
+            return .overclaimsEvidence
+        }
+        if let quoteGuard,
+           replyContradictsLateRecommendationEvidence(lower, quoteGuard: quoteGuard) {
             return .overclaimsEvidence
         }
 
@@ -1482,6 +1494,17 @@ actor AICoachChatService {
         "profile yet",
         "since we do not have",
         "since we don't have",
+        "we do not have any rated sessions",
+        "we don't have any rated sessions",
+        "do not have any rated sessions yet",
+        "removes the reason",
+        "give yourself room to find",
+        "before the gap turns into",
+        "reads as command",
+        "looks like control",
+        "leaks uncertainty",
+        "a senior room wants",
+        "senior room wants",
         "in my response",
         "system symbols",
         "stripping out",
@@ -1490,6 +1513,12 @@ actor AICoachChatService {
         "we're dropping",
         "we are dropping",
         "dropping both now",
+        "we are shifting",
+        "we're shifting",
+        "i am shifting",
+        "i'm shifting",
+        "the coaching shifts",
+        "coaching shifts now",
         "from here the coaching",
         "from this rep forward",
         "the coaching drops",
@@ -1670,6 +1699,7 @@ actor AICoachChatService {
             "filler", "pace", "pause", "score", "wpm", "word choice",
             "you said", "you asked", "i heard", "what i notice", "pattern",
             "case", "hypothesis", "target", "success measure", "not enough data",
+            "baseline",
             "i don't have", "i do not have", "i can't see", "from what you wrote",
             "your message", "your words", "the friction", "the claim was there",
             "no reason followed", "bare claim", "the rep led", "formatting",
@@ -1706,7 +1736,7 @@ actor AICoachChatService {
             "answer", "send", "say ", "use ", "repeat", "do one", "focus",
             "start", "ask ", "replace", "add one", "add a ", "keep the ", "keep this ", "cut ",
             "pause before", "one drill", "one rep", "review", "speak ",
-            "end your", "state your", "make the", "make your", "lead with",
+            "end your", "state your", "state the", "make the", "make your", "lead with",
             "put the", "give one", "end the", "end it", "end with",
             "stop there", "then stop"
         ])
@@ -1757,6 +1787,13 @@ actor AICoachChatService {
             "fillers because", "filler because", "filler words because",
             "fillers came because", "filler came because",
             "fillers happened because", "filler happened because"
+        ]) {
+            return true
+        }
+        if containsAny(lower, [
+            "what brings out the um", "brings out the um",
+            "what brings out the filler", "brings out the filler",
+            "rush to fill silence"
         ]) {
             return true
         }
@@ -1827,6 +1864,43 @@ actor AICoachChatService {
         }
     }
 
+    private nonisolated static func replyContradictsLateRecommendationEvidence(
+        _ lower: String,
+        quoteGuard: CoachChatQuoteGuardContext
+    ) -> Bool {
+        guard containsAny(lower, [
+            "your last rep led with the point",
+            "last rep led with the point",
+            "the last rep led with the point",
+            "your last rep led with the recommendation",
+            "last rep led with the recommendation",
+            "the last rep led with the recommendation",
+            "your last rep led with the decision",
+            "last rep led with the decision",
+            "you led with the point",
+            "you led with the recommendation",
+            "you led with the decision",
+            "you opened with the point",
+            "you opened with the recommendation",
+            "you opened with the decision",
+            "the point was up front",
+            "the recommendation was up front",
+            "the decision was up front",
+            "your opening led with the point",
+            "your opening led with the recommendation"
+        ]) else {
+            return false
+        }
+
+        return quoteGuard.sourceTexts.contains { source in
+            sourceMentionsLateRecommendation(source)
+        }
+    }
+
+    private nonisolated static func sourceMentionsLateRecommendation(_ text: String) -> Bool {
+        CoachContextBuilder.transcriptMentionsLateRecommendation(text)
+    }
+
     private nonisolated static func replyClaimsNoUsableRecentEvidenceDespiteContext(
         _ lower: String,
         latestUserTurn: String?,
@@ -1848,6 +1922,40 @@ actor AICoachChatService {
             "i don't have enough data",
             "i do not have enough data",
             "not enough data yet"
+        ])
+    }
+
+    private nonisolated static func replyAddsColdStartIntakeQuestion(
+        _ lower: String,
+        latestUserTurn: String?,
+        systemContext: String?
+    ) -> Bool {
+        guard let context = systemContext?.lowercased(),
+              containsAny(context, [
+                "no rated sessions yet",
+                "not enough data for a stable baseline yet",
+                "personalization floor: no rated sessions yet",
+                "no voice set yet"
+              ]) else {
+            return false
+        }
+        guard containsAny(latestUserTurn?.lowercased() ?? "", [
+            "interview", "presentation", "update", "pitch", "meeting",
+            "get better", "improve", "practice", "prepare"
+        ]) else {
+            return false
+        }
+        guard lower.contains("?") else { return false }
+        return containsAny(lower, [
+            "what's the interview for",
+            "what is the interview for",
+            "what role",
+            "what job",
+            "which interview",
+            "tell me more",
+            "what are you preparing for",
+            "what situation",
+            "what kind of"
         ])
     }
 
@@ -2048,6 +2156,8 @@ actor AICoachChatService {
         - Use natural sentence starts, up to 3 bullets, or numbered steps only when they reduce reading.
         - Never output literal Markdown markers such as **, __, ###, or decorative formatting.
         - Do not label the reply with Read, Move, Target, Recommend, or Next rep.
+        - Do not write "Next rep:" with a colon; write the action as a normal
+          sentence.
         - Do not write "let's" or "let us". Start with the action instead: "Test this", "Use this", "Run one rep", "Say the recommendation first".
         - No long paragraph.
         - No broad menu. Pick one coaching move.
@@ -2068,17 +2178,32 @@ actor AICoachChatService {
           point" unless the context explicitly says the point never appeared.
           Prefer the safer observable target: "the close softened", "the point
           arrived late", or "the final sentence needs the ask."
+        - If the source transcript already opens with a recommendation, point,
+          or decision, do not write "the point arrived late", "buried the
+          recommendation", or similar. Use a safe anchor instead, such as the
+          filler count, the exact transcript wording, or a missing
+          reason/implication only when the context supports it.
+        - If the source transcript says the user waited too long to state the
+          recommendation, do not write "led with the point", "point was up
+          front", or similar. Say the recommendation arrived late, then
+          prescribe recommendation first plus one reason or implication.
         - Do not present silence as a guaranteed perception or outcome. Avoid
           "silence reads as composure" and "it stops the filler"; write "a
           silent beat can give you one deliberate next word."
         - Avoid stiff trust-repair narration such as "You are right to call that
           out, as...", "I am cutting the robotic report voice", "from here the
           coaching drops...", "from this rep forward...", or "we are dropping
-          the metrics". Prefer a human first sentence like "Fair push. That read
-          too much like a report."
+          the metrics", or "the coaching shifts now". Prefer a human first
+          sentence like "Fair push. That read too much like a report."
         - Avoid formal no-data openings such as "Since we do not have...".
           Prefer "No baseline yet, so start there."
+        - On cold-start/no-baseline turns, prescribe one first rep before asking
+          discovery questions. Avoid "What's the interview for?" in the same
+          reply.
         - The final answer must contain the word "so" or "because" when it connects the anchor to the action.
+        - When the user asks why an answer landed badly, start from the
+          transcript or last rep before the prescription, for example "From the
+          transcript..." or "In your last rep...".
         - When referencing a practice session, write "your last rep" or "a recent rep"; never write the exact calendar date.
         - If this is a trust-repair or critique turn, use exactly two sentences:
           first repair the specific friction in the user's terms (formatting,
@@ -2167,16 +2292,25 @@ actor AICoachChatService {
         case .roboticPhrase:
             shouldCarryAnchor = true
         case .tooLong, .bareClarification, .menuInsteadOfDecision,
-                .overclaimsEvidence, .unrequestedNamedTechnique,
+                .unrequestedNamedTechnique,
                 .unverifiedQuotedUserSpeech, .unengagedUserSpeechClaim:
             shouldCarryAnchor = false
+        case .overclaimsEvidence:
+            shouldCarryAnchor = true
         }
         guard shouldCarryAnchor else {
             return nil
         }
+        if issue == .overclaimsEvidence,
+           sourceMentionsLateRecommendation(system) {
+            return "The transcript says the recommendation arrived late; do not say the rep led with the point. Prescribe recommendation first plus one reason or implication."
+        }
         let lowerTurn = latestUserTurn?.lowercased() ?? ""
         guard containsAny(lowerTurn, ["um", "filler", "fillers", "hesitat"])
                 || isCritiqueTurn(lowerTurn) else {
+            if replyShouldCiteRecentSession(system) {
+                return "Anchor the answer to the last rep or transcript before prescribing the move."
+            }
             return nil
         }
         guard let count = firstFillerCount(in: system) else {

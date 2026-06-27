@@ -297,7 +297,7 @@ enum CoachChatEvaluationCorpus {
                 "Never output literal Markdown markers",
                 "same text may be spoken aloud"
             ],
-            referenceReply: "Fair push: the stars should never reach you or the voice. I’ll keep the read plain: last rep points to the close, so next rep state the recommendation first and stop after one proof.",
+            referenceReply: "Fair push: the stars should never reach you or the voice. Your last rep had 4 fillers, so state the recommendation first and stop after one proof — no symbols, no report shape.",
             knownBadReply: "The app is designed to provide AI coaching, and formatting like **Read:** may appear while the system improves.",
             expectedBadIssue: .defensiveProductLanguage
         ),
@@ -393,6 +393,9 @@ enum CoachChatEvaluationCorpus {
                 "PROMPT RELEVANCE",
                 "ARGUMENT LOGIC",
                 "RECENT (most-recent first)",
+                "REPLY-SAFE FACTS",
+                "recommendation arrived late",
+                "do not say the point led",
                 "2 fillers"
             ],
             referenceReply: "From the transcript, I would treat it as a hypothesis: the point arrived late. Next rep, say the conclusion first, then add one reason.",

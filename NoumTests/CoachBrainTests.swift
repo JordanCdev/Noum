@@ -33,6 +33,9 @@ struct CoachKnowledgeBaseIntegrityTests {
         "to communicate more clearly", "be clear and concise",
         "try to be more confident", "retrieval load", "chosen profile",
         "profile yet", "since we do not have", "since we don't have",
+        "removes the reason", "give yourself room to find",
+        "before the gap turns into", "reads as command", "looks like control",
+        "leaks uncertainty", "a senior room wants", "senior room wants",
         "in my response", "system symbols", "stripping out",
         "i'm dropping", "i am dropping", "we're dropping",
         "we are dropping", "dropping both now",
@@ -92,6 +95,36 @@ struct CoachKnowledgeBaseIntegrityTests {
             for banned in Self.bannedPhrases {
                 #expect(!line.contains(banned),
                         "card \(card.id) contains gate-banned phrase '\(banned)'")
+            }
+        }
+    }
+
+    @Test func fillerAndLeadershipCardsAvoidCausalOrClicheShortcuts() {
+        let sensitiveIDs = [
+            "filler-pause-beats-filler",
+            "filler-anchor-word",
+            "filler-slow-the-open",
+            "composure-tactical-pause",
+            "leadership-gravity-fewer-words",
+            "leadership-summary-first-update"
+        ]
+        let banned = [
+            "reads as composure",
+            "reads as command",
+            "looks like control",
+            "removes the reason",
+            "before the gap turns into",
+            "give yourself room to find",
+            "leaks uncertainty",
+            "a senior room wants"
+        ]
+
+        for id in sensitiveIDs {
+            let card = CoachKnowledgeBase.cards.first { $0.id == id }
+            #expect(card != nil, "missing expected card \(id)")
+            let line = card.map(CoachExpertiseFormatter.line(for:))?.lowercased() ?? ""
+            for phrase in banned {
+                #expect(!line.contains(phrase), "\(id) contains anti-pattern '\(phrase)'")
             }
         }
     }

@@ -25425,6 +25425,48 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .roboticPhrase("since we do not have"))
     }
 
+    @Test func rejectsFormalRatedSessionsColdStartOpening() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "We do not have any rated sessions yet, so run one baseline interview answer now.",
+            latestUserTurn: "How do I get better before my interview?"
+        )
+        #expect(issue == .roboticPhrase("we do not have any rated sessions"))
+    }
+
+    @Test func rejectsColdStartIntakeQuestionAfterBaselineMove() {
+        let context = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        GOAL
+        - No voice set yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "No baseline yet, so run one timed rep on a likely interview question. What's the interview for?",
+            latestUserTurn: "How do I get better before my interview?",
+            systemContext: context
+        )
+        #expect(issue == .menuInsteadOfDecision)
+    }
+
+    @Test func acceptsColdStartBaselineMoveWithoutDiscoveryQuestion() {
+        let context = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        GOAL
+        - No voice set yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "No baseline yet, so run one timed rep on a likely interview question and review whether your first sentence answers it.",
+            latestUserTurn: "How do I get better before my interview?",
+            systemContext: context
+        )
+        #expect(issue == nil)
+    }
+
     @Test func rejectsAssistantSelfNarrationInCoachReply() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your last rep had four fillers, so run a new sixty-second test with no symbols in my response.",
@@ -25505,6 +25547,22 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .roboticPhrase("we are dropping"))
     }
 
+    @Test func rejectsShiftingCoachVoiceRepairNarration() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Fair push. That read too much like a report, so we are shifting to short, plain coaching.",
+            latestUserTurn: "This is robotic and too much writing."
+        )
+        #expect(issue == .roboticPhrase("we are shifting"))
+    }
+
+    @Test func rejectsCoachingShiftsRepairNarration() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Fair push. The stars should never reach you or the voice, and the coaching shifts now: plain sentences, no symbols, spoken rhythm.",
+            latestUserTurn: "The ** don't format and TTS reads them out."
+        )
+        #expect(issue == .roboticPhrase("the coaching shifts"))
+    }
+
     @Test func rejectsPopPsychBrainRegisterInCoachReply() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your last rep had five fillers, so give your brain more runway before sentence two.",
@@ -25521,6 +25579,22 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .roboticPhrase("your brain"))
     }
 
+    @Test func rejectsCorpusEchoedFillerMechanismCliche() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep had five fillers, so slow the open to give yourself room to find the second sentence.",
+            latestUserTurn: "What should I do with that filler count?"
+        )
+        #expect(issue == .roboticPhrase("give yourself room to find"))
+    }
+
+    @Test func rejectsLeadershipRoomCliche() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "State your main headline and what it means in the first sentence, because a senior room wants the implication immediately.",
+            latestUserTurn: "I have a leadership update tomorrow, what should I practice?"
+        )
+        #expect(issue == .roboticPhrase("a senior room wants"))
+    }
+
     @Test func rejectsFillerCountAsInventedCause() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your last rep had six fillers because the point did not clearly lead, so say the answer first.",
@@ -25532,6 +25606,14 @@ struct AICoachChatReplyQualityGateTests {
     @Test func rejectsFillerCountAsMindReadCause() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your last rep had six fillers under pressure because the next word was not ready.",
+            latestUserTurn: "How do I stop saying um under pressure?"
+        )
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func rejectsRushToFillSilenceAsFillerCause() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Under pressure, the rush to fill silence is what brings out the um.",
             latestUserTurn: "How do I stop saying um under pressure?"
         )
         #expect(issue == .overclaimsEvidence)
@@ -26026,6 +26108,32 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .overclaimsEvidence)
     }
 
+    @Test func quoteGuardRejectsContradictedPointLedClaim() {
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: ["I waited too long to state the recommendation, then gave the context after it."],
+            latestUserTurn: "Why did that answer not land?"
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep led with the point, but it was asserted rather than argued, so give one reason before you stop.",
+            latestUserTurn: "Why did that answer not land?",
+            quoteGuard: guardContext
+        )
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func quoteGuardAllowsLateRecommendationReadFromLateAdmission() {
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: ["I waited too long to state the recommendation, then gave the context after it."],
+            latestUserTurn: "Why did that answer not land?"
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep waited too long to state the recommendation, so put the recommendation first, give one reason it is right, then stop.",
+            latestUserTurn: "Why did that answer not land?",
+            quoteGuard: guardContext
+        )
+        #expect(issue == nil)
+    }
+
     @Test func turnAwareGateAcceptsDrillFramedAsTestableHypothesis() {
         let reply = "Your last update buried the recommendation at second 34 and ended soft. Record a 30-second update with the decision inside the first ten seconds. That tests whether leading with the recommendation lowers the rush without pretending the drill caused it."
         #expect(AICoachChatService.replyQualityIssue(
@@ -26436,7 +26544,13 @@ struct CoachChatEvaluationFixtureTests {
             "this proves",
             "definitely means",
             "guaranteed",
-            "diagnosis"
+            "diagnosis",
+            "i'll keep",
+            "i’ll keep",
+            "i will keep",
+            "i'll cut",
+            "i’ll cut",
+            "i will cut"
         ]
 
         for fixture in CoachChatEvaluationCorpus.fixtures {
