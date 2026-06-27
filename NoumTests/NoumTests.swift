@@ -25417,6 +25417,14 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .roboticPhrase("chosen profile"))
     }
 
+    @Test func rejectsFormalNoBaselineOpening() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Since we do not have any rated sessions yet, run one baseline practice rep now.",
+            latestUserTurn: "How do I get better before my interview?"
+        )
+        #expect(issue == .roboticPhrase("since we do not have"))
+    }
+
     @Test func rejectsAssistantSelfNarrationInCoachReply() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your last rep had four fillers, so run a new sixty-second test with no symbols in my response.",
@@ -25455,6 +25463,46 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "This still sounds cold and overexplained, like generic AI tips."
         )
         #expect(issue == .roboticPhrase("generic tip-giving"))
+    }
+
+    @Test func rejectsCallThatOutTrustRepairTemplate() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You're right to call that out. Your last rep had one filler, so make the next run shorter.",
+            latestUserTurn: "This sounds robotic."
+        )
+        #expect(issue == .roboticPhrase("you're right to call that out"))
+    }
+
+    @Test func rejectsMetaCoachingRepairNarration() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Fair push. From here the coaching drops the formatting markers and speaks to you directly, so run one cleaner rep.",
+            latestUserTurn: "The ** don't format and TTS reads them out."
+        )
+        #expect(issue == .roboticPhrase("from here the coaching"))
+    }
+
+    @Test func rejectsPerformativeHumanCoachRepairNarration() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Fair push. From this rep forward, plain text and coaching that sounds like a person.",
+            latestUserTurn: "The ** don't format and TTS reads them out."
+        )
+        #expect(issue == .roboticPhrase("from this rep forward"))
+    }
+
+    @Test func rejectsDroppingBothRepairNarration() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Fair push. The markers and report-style structure are the problem, so I'm dropping both now.",
+            latestUserTurn: "The ** don't format and TTS reads them out."
+        )
+        #expect(issue == .roboticPhrase("i'm dropping"))
+    }
+
+    @Test func rejectsDroppingMetricsRepairNarration() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Fair push. That read too much like a report, so we are dropping the metrics to focus on one small thing.",
+            latestUserTurn: "This is robotic and too much writing."
+        )
+        #expect(issue == .roboticPhrase("we are dropping"))
     }
 
     @Test func rejectsPopPsychBrainRegisterInCoachReply() {
@@ -25758,6 +25806,24 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .missingPrescribedAction)
     }
 
+    @Test func turnAwareGateAcceptsCloseFocusedEndTheNextOneMove() {
+        let reply = "Your last rep had zero fillers but the close softened, so end the next one with a specific decision or next step, not a recap."
+        let issue = AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "What next?"
+        )
+        #expect(issue == nil)
+    }
+
+    @Test func turnAwareGateAcceptsClaimWasThereReasonFollowedRead() {
+        let reply = "The claim was there, but no reason followed it, so under pressure it reads as opinion, not a verdict. Add one sentence after the recommendation that starts with because."
+        let issue = AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "Why did that answer land badly?"
+        )
+        #expect(issue == nil)
+    }
+
     @Test func turnAwareGateRejectsGenericUnanchoredCoaching() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Keep practicing and stay focused on improving your communication.",
@@ -25776,7 +25842,7 @@ struct AICoachChatReplyQualityGateTests {
     }
 
     @Test func turnAwareGateAcceptsTTSMarkupTrustRepair() {
-        let reply = "You're right to call that out: markup read aloud breaks trust. Your last rep had 4 fillers, so I’ll cut the formatting and coach one thing: next rep, say the recommendation first, then stop."
+        let reply = "Fair push: markup read aloud breaks trust. Your last rep had 4 fillers, so say the recommendation first, hold one silent beat, then stop."
         let issue = AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach."
@@ -25785,7 +25851,7 @@ struct AICoachChatReplyQualityGateTests {
     }
 
     @Test func turnAwareGateAcceptsFormattingTrustRepairWithPlainUserTerms() {
-        let reply = "You're right to call out the formatting; TTS reading symbols breaks trust. Your last rep had 4 fillers, so say the recommendation first, give one proof point, then stop."
+        let reply = "Good call: TTS reading symbols breaks trust. Your last rep had 4 fillers, so say the recommendation first, give one proof point, then stop."
         let issue = AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach."

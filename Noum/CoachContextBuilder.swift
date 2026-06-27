@@ -133,9 +133,14 @@ enum CoachContextBuilder {
         beat can give the user one deliberate next word.
         - Do not narrate app or response mechanics when repairing trust. Avoid \
         lines like "I am stripping out system symbols", "generic tip-giving", \
-        or "I am cutting the robotic report voice"; say the coaching change \
-        in user-facing language instead. Prefer "Fair push. That read too much \
-        like a report." over "You are right to call that out, as...".
+        "I'm dropping both now", "from here the coaching drops", "from this rep \
+        forward", "we are dropping the metrics", "coaching that sounds like a \
+        person", or "I am cutting the robotic report voice"; \
+        own the friction briefly, then say the coaching change in user-facing \
+        language. Prefer "Fair push. That read too much like a report." over \
+        "You are right to call that out, as...".
+        - Avoid formal no-data openings like "Since we do not have..."; say \
+        "No baseline yet, so start there."
         - You never punish-shame a regression. If a number dropped, you \
         either acknowledge it factually or stay silent; you do not lecture.
         - Hard-banned wording (any use fails review, rephrase around them): \
@@ -1328,7 +1333,7 @@ enum CoachContextBuilder {
             "hardcoded"
         ]) {
             lines.append("- Turn read: user is giving friction or product-quality critique.")
-            lines.append("- Coaching move: do not defend the app. Open with a short repair phrase such as \"Fair push\" or \"You're right to call that out\", name the specific friction in the user's own terms, then use so or because to connect the safest available anchor — a recent transcript pattern, a metric, or an honest data gap — to one changed coaching move. If RECENT is present, do not claim there are no usable reps; use the rep carefully.")
+            lines.append("- Coaching move: do not defend the app. Open with a short repair phrase such as \"Fair push\" or \"Good call\", name the specific friction in the user's own terms, then use so or because to connect the safest available anchor — a recent transcript pattern, a metric, or an honest data gap — to one changed coaching move. Avoid \"You're right to call that out\"; it reads like an assistant template. If RECENT is present, do not claim there are no usable reps; use the rep carefully.")
         } else if isChoiceOrCommitmentTurn(normalized, previousCoachReply: previousCoachReply) {
             lines.append("- Turn read: user is choosing or negotiating a coaching direction.")
             lines.append("- Coaching move: honor the preference, do not ask the same choice again, and turn it into a prescribed next step with an observable target.")
@@ -1434,7 +1439,7 @@ enum CoachContextBuilder {
             "not human", "doesn't feel", "does not feel", "too much writing",
             "hardcoded"
         ]) {
-            lines.append("- Must do this turn: repair trust first. Open with a short repair phrase such as \"Fair push\" or \"You're right to call that out\", name the specific friction in the user's own terms, then use so or because to connect the safest available anchor — a recent transcript pattern, a metric, or an honest data gap — to one useful changed action. If RECENT is present, do not claim there are no usable reps; use the rep carefully.")
+            lines.append("- Must do this turn: repair trust first. Open with a short repair phrase such as \"Fair push\" or \"Good call\", name the specific friction in the user's own terms, then use so or because to connect the safest available anchor — a recent transcript pattern, a metric, or an honest data gap — to one useful changed action. Avoid \"You're right to call that out\"; it reads like an assistant template. If RECENT is present, do not claim there are no usable reps; use the rep carefully.")
         } else if isChoiceOrCommitmentTurn(normalized, previousCoachReply: previousCoachReply) {
             lines.append("- Must do this turn: treat the user's choice as a decision. Do not ask them to choose again.")
         } else if containsAny(lower, [

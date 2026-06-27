@@ -1480,9 +1480,25 @@ actor AICoachChatService {
         "retrieval load",
         "chosen profile",
         "profile yet",
+        "since we do not have",
+        "since we don't have",
         "in my response",
         "system symbols",
         "stripping out",
+        "i'm dropping",
+        "i am dropping",
+        "we're dropping",
+        "we are dropping",
+        "dropping both now",
+        "from here the coaching",
+        "from this rep forward",
+        "the coaching drops",
+        "coaching drops the",
+        "the coaching will",
+        "coaching that sounds like a person",
+        "report-voice",
+        "speaks to you directly",
+        "nothing templated",
         "generic tip-giving",
         "you are right to call that out, as",
         "i am cutting the",
@@ -1491,6 +1507,8 @@ actor AICoachChatService {
         "i'll cut the report voice",
         "i will cut the robotic report voice",
         "i'll cut the robotic report voice",
+        "you are right to call that out",
+        "you're right to call that out",
         "your brain",
         "brain was searching",
         "searching for the next word",
@@ -1653,7 +1671,8 @@ actor AICoachChatService {
             "you said", "you asked", "i heard", "what i notice", "pattern",
             "case", "hypothesis", "target", "success measure", "not enough data",
             "i don't have", "i do not have", "i can't see", "from what you wrote",
-            "your message", "your words", "the friction", "formatting",
+            "your message", "your words", "the friction", "the claim was there",
+            "no reason followed", "bare claim", "the rep led", "formatting",
             "markdown", "tts", "symbols"
         ])
     }
@@ -1685,10 +1704,11 @@ actor AICoachChatService {
         containsAny(lower, [
             "next rep", "try ", "practice", "run ", "hold ", "record",
             "answer", "send", "say ", "use ", "repeat", "do one", "focus",
-            "start", "ask ", "replace", "keep the ", "keep this ", "cut ",
+            "start", "ask ", "replace", "add one", "add a ", "keep the ", "keep this ", "cut ",
             "pause before", "one drill", "one rep", "review", "speak ",
             "end your", "state your", "make the", "make your", "lead with",
-            "put the", "give one", "stop there", "then stop"
+            "put the", "give one", "end the", "end it", "end with",
+            "stop there", "then stop"
         ])
     }
 
@@ -2052,8 +2072,12 @@ actor AICoachChatService {
           "silence reads as composure" and "it stops the filler"; write "a
           silent beat can give you one deliberate next word."
         - Avoid stiff trust-repair narration such as "You are right to call that
-          out, as..." or "I am cutting the robotic report voice." Prefer a human
-          first sentence like "Fair push. That read too much like a report."
+          out, as...", "I am cutting the robotic report voice", "from here the
+          coaching drops...", "from this rep forward...", or "we are dropping
+          the metrics". Prefer a human first sentence like "Fair push. That read
+          too much like a report."
+        - Avoid formal no-data openings such as "Since we do not have...".
+          Prefer "No baseline yet, so start there."
         - The final answer must contain the word "so" or "because" when it connects the anchor to the action.
         - When referencing a practice session, write "your last rep" or "a recent rep"; never write the exact calendar date.
         - If this is a trust-repair or critique turn, use exactly two sentences:
@@ -2069,7 +2093,8 @@ actor AICoachChatService {
           4 fillers, so say the decision first, give one proof point, then stop."
         - Do not narrate your own response mechanics. Avoid assistant-style phrases
           such as "in my response", "system symbols", "generic tip-giving", or
-          "stripping out"; say the changed coaching move directly.
+          "stripping out"; own the friction briefly, then say the changed
+          coaching move directly.
         - Do not name a drill/framework unless the user explicitly asked for a named drill or plan. Translate the technique into plain action.
         - If the user showed frustration, do not defend the app.
         - If the user asked for shortness, make the answer shorter before making it smarter.
