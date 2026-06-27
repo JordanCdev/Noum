@@ -26266,6 +26266,66 @@ struct AICoachChatReplyQualityGateTests {
         ) == nil)
     }
 
+    @Test func techniqueTurnRejectsGenericReplyThatIgnoresRetrievedExpertise() {
+        let card = CoachKnowledgeBase.cards.first { $0.id == "filler-pause-beats-filler" }!
+        let context = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachingExpertise: [card]
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep had 6 fillers, so practice speaking more clearly on the next rep.",
+            latestUserTurn: "How do I stop saying um under pressure?",
+            systemContext: context
+        )
+        #expect(issue == .ignoredCoachingExpertise)
+    }
+
+    @Test func techniqueTurnAcceptsReplyGroundedInRetrievedExpertise() {
+        let card = CoachKnowledgeBase.cards.first { $0.id == "filler-pause-beats-filler" }!
+        let context = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachingExpertise: [card]
+        )
+        let reply = "Your last rep had 6 fillers, so hold one second of silence before sentence two and check whether the next rep lowers the count."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "How do I stop saying um under pressure?",
+            systemContext: context
+        ) == nil)
+    }
+
+    @Test func techniqueTurnAcceptsColdStartBaselineMoveWhenInterviewExpertiseIsPresent() {
+        let card = CoachKnowledgeBase.cards.first { $0.id == "interview-answer-first" }!
+        let context = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachingExpertise: [card]
+        )
+        let reply = "No baseline yet, so record 60 seconds on one likely interview question and review whether your first sentence answers it."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "How do I get better before my interview?",
+            systemContext: context
+        ) == nil)
+    }
+
     @Test func rejectsWhyLandedReplyWithNoLandingRead() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your last rep had enough signal, so run the next rep with the decision first, one reason, and a hard stop.",

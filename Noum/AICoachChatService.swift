@@ -385,6 +385,7 @@ enum CoachChatReplyQualityIssue: Equatable {
     case scaffoldLabel
     case unverifiedQuotedUserSpeech
     case unengagedUserSpeechClaim
+    case ignoredCoachingExpertise
 
     var repairInstruction: String {
         switch self {
@@ -416,6 +417,8 @@ enum CoachChatReplyQualityIssue: Equatable {
             return "The draft quotes user speech that is not verified against a transcript or the latest user turn. Remove the quote and cite a metric, pattern, or honest data gap instead."
         case .unengagedUserSpeechClaim:
             return "The draft claims to read the user's words but does not touch any known transcript, verified proof, or their latest message. Ground the read in what they actually said, or cite a metric, pattern, or honest data gap instead."
+        case .ignoredCoachingExpertise:
+            return "The draft ignores the retrieved coaching expertise for this technique-seeking turn. Use the COACHING EXPERTISE block as craft guidance: apply its technique in plain user-facing language, tied to the user's context."
         }
     }
 }
@@ -1362,6 +1365,14 @@ actor AICoachChatService {
             return .unrequestedNamedTechnique
         }
 
+        if replyIgnoresRetrievedCoachingExpertise(
+            lower,
+            latestUserTurn: latestUserTurn,
+            systemContext: systemContext
+        ) {
+            return .ignoredCoachingExpertise
+        }
+
         let rubric = professionalCoachRubric(reply: trimmed, latestUserTurn: latestUserTurn)
         if rubric.misses.contains(.missedTrustRepair) {
             return .missedTrustRepair
@@ -2085,6 +2096,70 @@ actor AICoachChatService {
             ) != nil
     }
 
+    private nonisolated static func replyIgnoresRetrievedCoachingExpertise(
+        _ lower: String,
+        latestUserTurn: String?,
+        systemContext: String?
+    ) -> Bool {
+        guard let turn = latestUserTurn?.trimmingCharacters(in: .whitespacesAndNewlines),
+              KnowledgeRetriever.isTechniqueSeekingTurn(turn),
+              replyPrescribesAction(lower),
+              let systemContext else {
+            return false
+        }
+
+        let anchors = retrievedCoachingExpertiseAnchorTokens(from: systemContext)
+        guard !anchors.isEmpty else { return false }
+
+        let replyTokens = Set(
+            KnowledgeRetriever.tokenize(lower)
+                .map(KnowledgeRetriever.stem)
+                .filter { !retrievedExpertiseStopTokens.contains($0) }
+        )
+        return anchors.isDisjoint(with: replyTokens)
+    }
+
+    nonisolated static func retrievedCoachingExpertiseAnchorTokens(from systemContext: String) -> Set<String> {
+        var inExpertiseSection = false
+        var tokens = Set<String>()
+
+        for rawLine in systemContext.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lower = line.lowercased()
+            if lower.hasPrefix("coaching expertise") {
+                inExpertiseSection = true
+                continue
+            }
+            guard inExpertiseSection else { continue }
+            if line.isEmpty || line.hasPrefix("===") {
+                break
+            }
+            guard line.hasPrefix("-") else { continue }
+            for token in KnowledgeRetriever.tokenize(line).map(KnowledgeRetriever.stem) {
+                guard token.count >= 4,
+                      !retrievedExpertiseStopTokens.contains(token) else {
+                    continue
+                }
+                tokens.insert(token)
+            }
+        }
+
+        return tokens
+    }
+
+    private nonisolated static let retrievedExpertiseStopTokens: Set<String> = [
+        "about", "above", "after", "again", "also", "apply", "around",
+        "because", "before", "being", "card", "coach", "coaching",
+        "communicate", "communication", "context", "craft", "curated",
+        "data", "domain", "evidence", "expertise", "filler", "fillers",
+        "ground", "guidance", "language", "marker", "model", "move",
+        "practice", "prescribe", "prescribed", "reply", "speaker",
+        "speaking", "success", "technique", "their", "there", "these",
+        "this", "those", "turn", "user", "using", "voice", "when",
+        "where", "which", "while", "with", "word", "work", "working",
+        "your"
+    ]
+
     /// Attribution phrases that may precede a QUOTED fragment. BROAD set, used
     /// by Gate 2: if any quoted text follows one of these and isn't verified
     /// against a source, it's a fabricated quote. Includes topic-reference
@@ -2494,6 +2569,8 @@ actor AICoachChatService {
                 .unrequestedNamedTechnique,
                 .unverifiedQuotedUserSpeech, .unengagedUserSpeechClaim:
             shouldCarryAnchor = false
+        case .ignoredCoachingExpertise:
+            shouldCarryAnchor = true
         case .overclaimsEvidence:
             shouldCarryAnchor = true
         }
@@ -2503,6 +2580,9 @@ actor AICoachChatService {
         if issue == .overclaimsEvidence,
            sourceMentionsLateRecommendation(system) {
             return "The transcript says the recommendation arrived late; do not say the rep led with the point. Prescribe recommendation first plus one reason or implication."
+        }
+        if issue == .ignoredCoachingExpertise {
+            return "Use the COACHING EXPERTISE technique as craft guidance; do not add a data claim unless the context supports it."
         }
         let lowerTurn = latestUserTurn?.lowercased() ?? ""
         guard containsAny(lowerTurn, ["um", "filler", "fillers", "hesitat"])

@@ -315,6 +315,19 @@ struct CoachContextExpertiseInjectionTests {
         #expect(ctx.contains("=== END CONTEXT ==="))
     }
 
+    @Test func expertiseAnchorTokensKeepTechniqueWordsOnly() {
+        let card = CoachKnowledgeBase.cards.first { $0.id == "filler-pause-beats-filler" }!
+        let ctx = userContext(expertise: [card])
+        let tokens = AICoachChatService.retrievedCoachingExpertiseAnchorTokens(from: ctx)
+
+        #expect(tokens.contains("silent"))
+        #expect(tokens.contains("pause"))
+        #expect(tokens.contains("silence"))
+        #expect(!tokens.contains("coaching"))
+        #expect(!tokens.contains("expertise"))
+        #expect(!tokens.contains("filler"))
+    }
+
     @Test func noExpertiseSectionWhenEmpty() {
         let ctx = userContext(expertise: [])
         #expect(!ctx.contains("COACHING EXPERTISE"))
