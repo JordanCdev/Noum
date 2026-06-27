@@ -26306,6 +26306,32 @@ struct AICoachChatReplyQualityGateTests {
         ) == nil)
     }
 
+    @Test func repairReferenceForIgnoredExpertiseUsesRetrievedApplyItMove() throws {
+        let card = CoachKnowledgeBase.cards.first { $0.id == "filler-pause-beats-filler" }!
+        let expertise = CoachExpertiseFormatter.contextLines(for: [card]).joined(separator: "\n")
+        let system = """
+        RECENT (most-recent first)
+        - Your last rep had 6 fillers.
+        \(expertise)
+        === END CONTEXT ===
+        """
+        let turn = "How do I stop saying um under pressure?"
+        let shape = try #require(AICoachChatService.repairReferenceShape(
+            issue: .ignoredCoachingExpertise,
+            latestUserTurn: turn,
+            system: system
+        ))
+
+        #expect(shape.contains("Your last rep had 6 fillers"))
+        #expect(shape.contains("hold a one-second silence"))
+        #expect(shape.contains(" so "))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: shape,
+            latestUserTurn: turn,
+            systemContext: system
+        ) == nil)
+    }
+
     @Test func techniqueTurnAcceptsColdStartBaselineMoveWhenInterviewExpertiseIsPresent() {
         let card = CoachKnowledgeBase.cards.first { $0.id == "interview-answer-first" }!
         let context = CoachContextBuilder.userContext(

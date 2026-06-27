@@ -328,6 +328,18 @@ struct CoachContextExpertiseInjectionTests {
         #expect(!tokens.contains("filler"))
     }
 
+    @Test func expertiseApplicationLineParsesApplyItMove() throws {
+        let card = CoachKnowledgeBase.cards.first { $0.id == "filler-pause-beats-filler" }!
+        let ctx = userContext(expertise: [card])
+        let application = try #require(
+            AICoachChatService.retrievedCoachingExpertiseApplicationLine(from: ctx)
+        )
+
+        #expect(application == card.howToApply)
+        #expect(application.contains("hold a one-second silence"))
+        #expect(!application.contains("Working when"))
+    }
+
     @Test func noExpertiseSectionWhenEmpty() {
         let ctx = userContext(expertise: [])
         #expect(!ctx.contains("COACHING EXPERTISE"))

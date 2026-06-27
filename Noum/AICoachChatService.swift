@@ -2483,6 +2483,14 @@ actor AICoachChatService {
             return trustRepairReferenceShape(for: lowerTurn, system: system)
         }
 
+        if issue == .ignoredCoachingExpertise,
+           let expertiseShape = retrievedExpertiseRepairReferenceShape(
+            latestUserTurn: lowerTurn,
+            system: system
+           ) {
+            return expertiseShape
+        }
+
         if containsAny(lowerTurn, ["interview", "get better", "prepare", "practice"]),
            containsAny(system.lowercased(), [
             "no rated sessions yet",
@@ -2516,6 +2524,84 @@ actor AICoachChatService {
         default:
             return nil
         }
+    }
+
+    nonisolated static func retrievedCoachingExpertiseApplicationLine(from systemContext: String) -> String? {
+        var inExpertiseSection = false
+
+        for rawLine in systemContext.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lower = line.lowercased()
+            if lower.hasPrefix("coaching expertise") {
+                inExpertiseSection = true
+                continue
+            }
+            guard inExpertiseSection else { continue }
+            if line.isEmpty || line.hasPrefix("===") {
+                break
+            }
+            guard line.hasPrefix("-"),
+                  let applyRange = line.range(of: "Apply it:", options: [.caseInsensitive]) else {
+                continue
+            }
+
+            let remainder = line[applyRange.upperBound...]
+            let applicationSlice: Substring
+            if let workingRange = remainder.range(
+                of: ". Working when:",
+                options: [.caseInsensitive]
+            ) {
+                applicationSlice = remainder[..<workingRange.lowerBound]
+            } else if let workingRange = remainder.range(
+                of: "Working when:",
+                options: [.caseInsensitive]
+            ) {
+                applicationSlice = remainder[..<workingRange.lowerBound]
+            } else {
+                applicationSlice = remainder[...]
+            }
+
+            let application = String(applicationSlice)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !application.isEmpty {
+                return application
+            }
+        }
+
+        return nil
+    }
+
+    private nonisolated static func retrievedExpertiseRepairReferenceShape(
+        latestUserTurn: String,
+        system: String
+    ) -> String? {
+        guard let application = retrievedCoachingExpertiseApplicationLine(from: system) else {
+            return nil
+        }
+
+        if let count = firstFillerCount(in: system),
+           containsAny(latestUserTurn, ["um", "filler", "fillers", "hesitat"]) {
+            return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so \(application)."
+        }
+
+        if containsAny(system.lowercased(), [
+            "no rated sessions yet",
+            "not enough data for a stable baseline yet",
+            "personalization floor: no rated sessions yet"
+        ]) {
+            if containsAny(latestUserTurn, ["interview", "prepare", "practice"]) {
+                return "No baseline yet, so record one 60-second answer and \(application)."
+            }
+            return "No baseline yet, so test one short rep where you \(application)."
+        }
+
+        if replyShouldCiteRecentSession(system) {
+            return "Your last rep gives one usable signal, so \(application)."
+        }
+
+        return "Test the next rep so the move is observable: \(application)."
     }
 
     private nonisolated static func trustRepairReferenceShape(

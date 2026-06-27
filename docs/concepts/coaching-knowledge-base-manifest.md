@@ -13,11 +13,11 @@ expertise* to cite. RAG closes that gap.
 | `Noum/CoachingKnowledgeBase.swift` | The corpus. `CoachKnowledgeCard` schema + `CoachKnowledgeBase.cards` (~64 curated cards). Pure value types, in-binary, no download, no network. |
 | `Noum/KnowledgeRetriever.swift` | BM25 retriever (`KnowledgeRetriever.retrieve`) + the honesty gate + `CoachExpertiseFormatter`. Pure, deterministic, `nonisolated`. |
 | `Noum/CoachContextBuilder.swift` | `userContext(...)` gained `coachingExpertise:` (defaulted) and emits a `COACHING EXPERTISE` section before `END CONTEXT`. `systemPrompt(...)` gained intelligence-floor rule **#18**. |
-| `Noum/CoachReplyPipeline.swift` | `generate()` retrieves (BM25 + optional rerank), threads it into `userContext`, and passes the agentic flag + `CoachToolContext` to the chat service. Same single brain. |
+| `Noum/CoachReplyPipeline.swift` | `generate()` retrieves (BM25 + optional rerank), threads it into `userContext`, records the brain-retrieval diagnostic, and sends the grounded context through the shared Ask Noum/live coach path. Same single brain. |
 | `Noum/KnowledgeVectorMath.swift` | Pure vector math for the rerank: mean-pool, L2-normalize, cosine, Reciprocal Rank Fusion. Host-testable (no framework). |
 | `Noum/KnowledgeSemanticReranker.swift` | Optional `NLContextualEmbedding` rerank actor + `KnowledgeBrainFlags`. Warmup off the reply path; silent BM25 fallback; device-only. |
-| `Noum/AICoachChatService.swift` | Soft-anchor gate fix + the agentic `retrieve_expertise` tool-calling loop (`geminiAgenticReply` + the verified Gemini function-calling wire format). |
-| `NoumTests/CoachBrainTests.swift`, `NoumTests/CoachBrainRerankTests.swift` | Corpus integrity, retriever relevance + gate, formatter honesty, context injection, anchor-gate regression, vector math, rerank fallback, and the agentic tool/parse helpers. |
+| `Noum/AICoachChatService.swift` | Reply quality gate + repair pass. The gate rejects generic replies that ignore retrieved expertise, and the repair prompt now carries the retrieved `Apply it:` move into the rewrite reference shape. |
+| `NoumTests/CoachBrainTests.swift`, `NoumTests/CoachBrainRerankTests.swift` | Corpus integrity, retriever relevance + gate, formatter honesty, context injection, anchor-gate regression, vector math, rerank fallback, and expertise-grounded repair coverage. |
 
 ## Retrieval decision: BM25 primary, embeddings as an optional rerank
 
@@ -98,31 +98,25 @@ gate and the system prompt (and pinned by the `rejectsLetsRegister` test), so
 they're consistent; un-banning it is a brand-voice taste call for the owner, not
 a bug fix.
 
-## Agentic tool-calling loop (BUILT — `KnowledgeBrainFlags.agenticToolCallingEnabled`, on)
+## Agentic tool-calling loop (not shipped)
 
-Model-driven retrieval: the coach can call the **`retrieve_expertise`** tool on
-demand (it crafts its own query) instead of relying only on the pre-retrieved
-block. `AICoachChatService.geminiAgenticReply` runs the Gemini function-calling
-loop with the **verified wire format** — `tools[].functionDeclarations`,
-`toolConfig.functionCallingConfig.mode = "AUTO"`, and critically the tool RESULT
-turn is `role: "user"` with a `functionResponse` part (NOT `"function"`/`"tool"`,
-which would break the call). Parsing iterates `parts[]` (never assumes index 0)
-and treats a `MAX_TOKENS` finish as unusable.
+There is currently **no live `retrieve_expertise` function-calling loop** in
+`AICoachChatService`. The shipping path is deterministic pre-retrieval:
+`CoachReplyPipeline.generate()` retrieves the cards for the latest turn, injects
+them into `COACHING EXPERTISE`, and the model answers with that context already
+present.
 
-Safety envelope:
-- **Text chat only.** `AskNoumView` passes `allowAgentic: true`; the live
-  `LiveCoachCallView` voice call leaves it false (latency).
-- **Gemini only**, bounded to `agenticMaxRounds = 3`.
-- **Fully fallback-guarded.** Any failure (network, parse, unknown tool, gate
-  fail, round budget) returns nil → the existing single-shot path runs, carrying
-  the SAME grounded context, so the fallback reply is still expertise-grounded.
-  Worst case is exactly today's behavior.
-- The final agentic text still passes the same quality gate + repair pass.
+This was deliberate for the current product state:
+- It keeps Ask Noum and the live coach on one shared, low-latency brain path.
+- It works offline/in Simulator with BM25 and silently improves on device when
+  semantic rerank is ready.
+- It is easier to audit: if the model ignores retrieved expertise, the live
+  quality gate rejects it and the repair pass rewrites with the retrieved
+  `Apply it:` move as the reference shape.
 
-The deterministic helpers (`expertiseToolDeclaration`, `executeExpertiseTool`,
-`geminiContents`, `parseGeminiStep`) are unit-tested (`AgenticToolLoopTests`); the
-**live multi-turn loop needs device/network QA** (it can't run against the
-offline Simulator test loop).
+A future model-driven tool loop can still call `KnowledgeRetriever.retrieve(...)`
+directly, but it should be built as a new, tested transport layer rather than
+assumed to exist from this manifest.
 
 ## Known debt
 
