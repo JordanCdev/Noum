@@ -47,6 +47,45 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-27 (autonomous `noum2` run). **Ship-first, not re-score: landed the
+long-blocked instant-start lever + 3 audit-panel fixes, all build+test verified;
+no push.** Full write-up: `docs/COACH_PARITY_EVAL_2026-06-27.md`.
+
+- **Score holds at 7.5/10.** The number can't move headless (gated on the
+  human-only flag-flip + device felt-QA), but the experience behind the flag is
+  now the *good* version and three defects are gone.
+- **Shipped `2babca4` — auto-guided first-rep INSTANT START** (closes the 15s
+  gap). The highest-leverage first-rep move, blocked across the last several runs
+  by `TimedPracticeView` contention; the mic-guard prerequisite has landed + the
+  tree was clear, so it shipped. Per-rep one-shot (`AutoGuidedFirstRep.fastStartOnce`,
+  armed at the fork, consumed once in the QuickStart handshake) drives THIS rep
+  only via `effectiveThinkingTime`(off)/`effectiveKeepPromptVisible`(on) — never
+  writes the user's persistent prefs. Default-OFF. +4 tests.
+- **Shipped `55bbd57` — 3 fixes from a 4-role audit panel** (cold end-user ·
+  market · UX-honesty · Swift/QA): (1) **fast-start leak** — `resetState` didn't
+  reset `fastStartActive`, so a retry rep #2 inherited instant-start (regression
+  in `2babca4`, fixed same run); (2) **delayed-finalize race** in
+  `SpeechRecognizerViewModel.stopRecording()` — added a `sessionGeneration` token
+  + pure `shouldFinalize` so a session started inside the 500ms finalize window
+  can't corrupt the new rep / blend metrics (live-coach re-tap, Sudden Death);
+  (3) **honesty inversion** — the rule-based fallback badge said "Live" (opposite
+  of the truth), relabeled "Rule-based" + VoiceOver label. Plus extracted
+  `LeagueManager.shouldCelebratePromotion` (pure, behaviour-identical) so the
+  promotion guard finally has tests. +9 tests. Build + 3 suites green (36/36).
+- **Concurrency handled:** a concurrent session held a ~7-file coach-brain diff
+  (AICoachChatService, CoachContextBuilder, CoachingKnowledgeBase, FeedbackEngine,
+  PracticeSupport, CoachBrainTests, NoumTests) — both commits used explicit
+  pathspecs so that diff was preserved byte-for-byte.
+- **Deferred by design (NOT shipped headless):** universal first-rep fast-start
+  (make the picker/Home Begin first rep also skip the countdown) — code-shippable
+  but changes live cold-start for all new users with no device felt-QA. Spec:
+  `docs/SPEC_first_rep_fast_start_universal.md`.
+- **10/10 answer, restated:** literal "with no doubt replaces a human coach" stays
+  REFUSED by design (`CoachParityReadiness` `.forming` cap). Realistic ceiling ~9
+  after the flag-flip + fast-start land. Human-only levers unchanged (flag-flip +
+  device QA [highest], universal-fast-start QA, cloud-STT fallback, deferred-signup,
+  video-into-coach-memory).
+
 2026-06-26 continuation #2 (autonomous `noum2` run). **Forward-looking role-diverse
 synthesis (not a 9th scorecard) + one collision-safe, build-verified code slice; no push.**
 
