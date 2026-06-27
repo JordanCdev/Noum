@@ -1187,6 +1187,12 @@ actor AICoachChatService {
                         systemContext: system
                     ) {
                         Self.log.notice("\(provider.displayName, privacy: .public) reply tripped quality gate (\(String(describing: issue), privacy: .public)) — repairing")
+                        recordChatDiagnostic(
+                            .fallback,
+                            "Reply tripped professional-coach gate; attempting repair: \(String(describing: issue))",
+                            provider: provider,
+                            startedAt: startedAt
+                        )
                         if let repaired = await repairLowQualityReply(
                             issue: issue,
                             draft: display,

@@ -346,6 +346,7 @@ struct CoachProviderChainTests {
     }
 
     @Test func repairPromptIncludesExpertReferenceShape() async throws {
+        let diagnostics = CoachDiagnosticRecorderProbe()
         let turn = "The ** don't format and TTS reads them out. The responses feel robotic and cold."
         let repaired = "Fair push: TTS reading symbols breaks trust. Your last rep had one filler, so say the recommendation first, give one proof point, then stop."
         #expect(AICoachChatService.replyQualityIssue(
@@ -363,6 +364,18 @@ struct CoachProviderChainTests {
             localeSupportsAI: { true },
             providerHTTP: { provider, endpoint, key, body in
                 await scripted.next(provider: provider, endpoint: endpoint, key: key, body: body)
+            },
+            diagnosticRecorder: { surface, providerName, model, outcome, reason, statusCode, startedAt, now in
+                diagnostics.record(
+                    surface: surface,
+                    providerName: providerName,
+                    model: model,
+                    outcome: outcome,
+                    reason: reason,
+                    statusCode: statusCode,
+                    startedAt: startedAt,
+                    now: now
+                )
             }
         )
 
@@ -387,6 +400,20 @@ struct CoachProviderChainTests {
         #expect(systemMessage.contains("Expert reference shape"))
         #expect(systemMessage.contains("TTS reading symbols breaks trust"))
         #expect(systemMessage.contains("say the recommendation first"))
+
+        #expect(diagnostics.records.contains { record in
+            record.surface == "Ask Noum chat" &&
+            record.provider == "OpenAI" &&
+            record.outcome == .fallback &&
+            record.reason.contains("attempting repair") &&
+            record.reason.contains("missingPrescribedAction")
+        })
+        #expect(diagnostics.records.contains { record in
+            record.surface == "Ask Noum chat" &&
+            record.provider == "OpenAI" &&
+            record.outcome == .success &&
+            record.reason == "Repair reply accepted"
+        })
     }
 
     @Test func critiqueRepairMustNameTheUserFriction() {
