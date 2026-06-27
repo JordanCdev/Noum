@@ -1793,7 +1793,8 @@ actor AICoachChatService {
         return containsAny(lower, [
             "last rep", "recent rep", "latest rep", "last session",
             "recent session", "rated session", "your timed rep",
-            "your rep", "the transcript", "your transcript"
+            "your rep", "the transcript", "your transcript",
+            "last transcript", "latest transcript", "recent transcript"
         ])
     }
 

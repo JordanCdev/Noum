@@ -409,7 +409,7 @@ enum CoachChatEvaluationCorpus {
                 "do not say the point led",
                 "2 fillers"
             ],
-            referenceReply: "From the transcript, I would treat it as a hypothesis: the point arrived late. Next rep, say the conclusion first, then add one reason.",
+            referenceReply: "From the transcript, I would treat it as a hypothesis: the recommendation arrived late. Next rep, say the conclusion first, then add one reason.",
             knownBadReply: "You are clearly evasive, and this proves you lack conviction.",
             expectedBadIssue: .overclaimsEvidence
         ),
