@@ -533,3 +533,122 @@ enum CoachChatEvaluationCorpus {
         )
     }
 }
+
+/// Regression guard for the latest manual/live transcript the product was
+/// tuned against. These are not generic "bad wording" examples; they are the
+/// concrete drafts that made Ask Noum feel less than expert-coach level.
+@Suite("CoachChatLatestLiveEvalRegressionTests")
+struct CoachChatLatestLiveEvalRegressionTests {
+
+    @Test func latestManualEvalWeakDraftsTripTheProfessionalGate() throws {
+        let samples: [(fixtureID: String, reply: String, issue: CoachChatReplyQualityIssue)] = [
+            (
+                "cold-start-interview-baseline",
+                """
+                No rated sessions yet, so the honest starting point is: I don't know which part of your delivery needs the most work.
+                Run one timed rep — pick a likely interview question, answer it out loud for 60–90 seconds, then note where you hesitated or rushed. That gives us something real to coach from.
+                What's the interview for?
+                """,
+                .roboticPhrase("no rated sessions yet")
+            ),
+            (
+                "filler-pressure-prescription",
+                """
+                Your last rep had 6 fillers under a timed limit, so the pattern is there when the clock runs.
+                To break this, test the silent pause: the moment you feel an um coming, hold one second of silence instead, then say the next word.
+                Run one rep now with that silent beat to see if it stops the filler.
+                """,
+                .roboticPhrase("to break this")
+            ),
+            (
+                "metric-action-without-read",
+                "Your last rep had five fillers, so test a slow open on your next run to give yourself room to find the second sentence. Say your first line slower than feels natural, which can replace the early um with a silent beat.",
+                .roboticPhrase("give yourself room to find")
+            ),
+            (
+                "critique-trust-repair",
+                "You are right to call that out, and I am cutting the robotic report voice. Your last rep had one filler, so record a new rep where you say the main point in your very first sentence and then stop.",
+                .roboticPhrase("i am cutting the")
+            ),
+            (
+                "markdown-tts-trust-repair",
+                "Fair push. I'll cut the markers and the report voice — your last rep gives me enough to work from, so next time out, lead with your recommendation in the first sentence and stop there.",
+                .roboticPhrase("i'll cut the markers")
+            ),
+            (
+                "assistant-explainer-register",
+                "You are right to call that out, as that generic tip-giving was cold and did not help. Your last rep had one filler but the main point did not clearly lead, so open your next attempt by saying your core client recommendation in the very first sentence because that tests whether a strong start helps you feel in control.",
+                .roboticPhrase("generic tip-giving")
+            ),
+            (
+                "overclaim-hypothesis-boundary",
+                "Your last rep put the recommendation right up front, but you asserted the claim without giving a reason or an implication to back it up. That risks sounding like an opinion rather than an authoritative verdict, so run a rep where you state the point, give one clear reason, and name the impact if we do not act.",
+                .overclaimsEvidence
+            ),
+            (
+                "leadership-transfer-setup",
+                "Your last rep led with the point cleanly, so test the thirty-second update for tomorrow's meeting. State your main headline and what it means in the first sentence, because a senior room wants the implication immediately.",
+                .roboticPhrase("a senior room wants")
+            )
+        ]
+
+        for sample in samples {
+            let fixture = try Self.fixture(sample.fixtureID)
+            let context = CoachChatEvaluationCorpus.renderedContext(for: fixture)
+            let issue = AICoachChatService.replyQualityIssue(
+                in: sample.reply,
+                latestUserTurn: fixture.latestUserTurn,
+                quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+                systemContext: context
+            )
+
+            #expect(issue == sample.issue,
+                    "\(sample.fixtureID) expected \(sample.issue), got \(String(describing: issue))")
+        }
+    }
+
+    @Test func latestManualEvalPreferredShapesStayShortAndActionable() throws {
+        let samples: [(fixtureID: String, reply: String)] = [
+            (
+                "cold-start-interview-baseline",
+                "No baseline yet, so start there. Record 60 seconds on one likely interview question, then review whether the first sentence answers it before polishing anything."
+            ),
+            (
+                "filler-pressure-prescription",
+                "Your last rep had 6 fillers, so hold one silent beat before the final sentence and check whether the next rep lowers the count."
+            ),
+            (
+                "assistant-explainer-register",
+                "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance."
+            ),
+            (
+                "leadership-transfer-setup",
+                "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary."
+            )
+        ]
+
+        for sample in samples {
+            let fixture = try Self.fixture(sample.fixtureID)
+            let context = CoachChatEvaluationCorpus.renderedContext(for: fixture)
+            let issue = AICoachChatService.replyQualityIssue(
+                in: sample.reply,
+                latestUserTurn: fixture.latestUserTurn,
+                quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+                systemContext: context
+            )
+            let rubric = AICoachChatService.professionalCoachRubric(
+                reply: sample.reply,
+                latestUserTurn: fixture.latestUserTurn
+            )
+
+            #expect(issue == nil,
+                    "\(sample.fixtureID) preferred shape tripped quality gate: \(String(describing: issue))")
+            #expect(rubric.passesSeniorCoachFloor,
+                    "\(sample.fixtureID) preferred shape should pass. Misses: \(rubric.misses)")
+        }
+    }
+
+    private static func fixture(_ id: String) throws -> CoachChatEvaluationFixture {
+        try #require(CoachChatEvaluationCorpus.fixtures.first { $0.id == id })
+    }
+}
