@@ -1485,6 +1485,7 @@ actor AICoachChatService {
         "it's important to",
         "it is important to",
         "in order to improve",
+        "to break this",
         "effective communication",
         "to communicate more clearly",
         "be clear and concise",

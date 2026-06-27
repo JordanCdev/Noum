@@ -10810,12 +10810,74 @@ struct CoachContextBuilderTests {
             latestUserTurn: "How do I get better before my interview?",
             previousCoachReply: nil,
             profile: nil,
-            coachMemory: nil
+            coachMemory: nil,
+            hasSessionEvidence: false
         ).joined(separator: " ")
 
         #expect(lines.contains("cold start is not a menu"))
-        #expect(lines.contains("rated sessions"))
+        #expect(lines.contains("No baseline yet"))
         #expect(lines.contains("baseline rep"))
+        #expect(lines.contains("what's it for"))
+    }
+
+    @Test func turnContractUsesSessionEvidenceNotProfileForColdStart() {
+        let noRepWithProfile = CoachContextBuilder.professionalTurnContractLines(
+            latestUserTurn: "How do I get better before my interview?",
+            previousCoachReply: nil,
+            profile: sampleProfile(voice: .authoritative),
+            coachMemory: nil,
+            hasSessionEvidence: false
+        ).joined(separator: " ")
+        #expect(noRepWithProfile.contains("No baseline yet"))
+        #expect(noRepWithProfile.contains("baseline rep"))
+
+        let repsWithoutProfile = CoachContextBuilder.professionalTurnContractLines(
+            latestUserTurn: "How do I get better before my interview?",
+            previousCoachReply: nil,
+            profile: nil,
+            coachMemory: nil,
+            hasSessionEvidence: true
+        ).joined(separator: " ")
+        #expect(!repsWithoutProfile.contains("No baseline yet"))
+        #expect(repsWithoutProfile.contains("Voice-goal rule"))
+        #expect(repsWithoutProfile.contains("do not mention profile setup"))
+    }
+
+    @Test func liveCoachingFrameSeparatesVoiceGoalFromBaselineEvidence() {
+        let noRepWithProfile = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: "How do I get better before my interview?",
+            previousCoachReply: nil,
+            profile: sampleProfile(voice: .authoritative),
+            coachMemory: nil,
+            hasSessionEvidence: false
+        ).joined(separator: " ")
+        #expect(noRepWithProfile.contains("Evidence floor: no baseline yet"))
+        #expect(noRepWithProfile.contains("baseline rep"))
+
+        let repsWithoutProfile = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: "How do I get better before my interview?",
+            previousCoachReply: nil,
+            profile: nil,
+            coachMemory: nil,
+            hasSessionEvidence: true
+        ).joined(separator: " ")
+        #expect(repsWithoutProfile.contains("Voice-goal floor"))
+        #expect(repsWithoutProfile.contains("rated or recent session evidence exists"))
+        #expect(!repsWithoutProfile.contains("no baseline yet"))
+    }
+
+    @Test func professionalTurnContractFramesFillerMoveAsTestNotCure() {
+        let lines = CoachContextBuilder.professionalTurnContractLines(
+            latestUserTurn: "How do I stop saying um under pressure?",
+            previousCoachReply: nil,
+            profile: sampleProfile(voice: .concise),
+            coachMemory: nil,
+            hasSessionEvidence: true
+        ).joined(separator: " ")
+
+        #expect(lines.contains("Filler-pressure rule"))
+        #expect(lines.contains("Frame the move as a test, not a cure"))
+        #expect(lines.contains("stops the filler"))
     }
 
     // MARK: - User context block
@@ -25505,6 +25567,14 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "This still sounds cold and overexplained, like generic AI tips."
         )
         #expect(issue == .roboticPhrase("generic tip-giving"))
+    }
+
+    @Test func rejectsGenericBreakThisRegister() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep had six fillers under pressure. To break this, hold one second of silence before sentence two.",
+            latestUserTurn: "How do I stop saying um under pressure?"
+        )
+        #expect(issue == .roboticPhrase("to break this"))
     }
 
     @Test func rejectsCallThatOutTrustRepairTemplate() {

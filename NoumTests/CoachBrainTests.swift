@@ -29,7 +29,7 @@ struct CoachKnowledgeBaseIntegrityTests {
         "let us", "as an ai", "as your ai", "optimize your", "utilize",
         "i understand your frustration", "here are some tips",
         "here are a few tips", "it's important to", "it is important to",
-        "in order to improve", "effective communication",
+        "in order to improve", "to break this", "effective communication",
         "to communicate more clearly", "be clear and concise",
         "try to be more confident", "retrieval load", "chosen profile",
         "profile yet", "since we do not have", "since we don't have",

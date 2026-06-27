@@ -773,6 +773,7 @@ enum CoachContextBuilder {
             previousCoachReply: previousCoachReply,
             profile: profile,
             coachMemory: coachMemory,
+            hasSessionEvidence: rating.totalRatedSessions > 0 || !sessions.isEmpty,
             recentUserTurns: recentUserTurns
         )
         if !liveFrame.isEmpty {
@@ -785,7 +786,8 @@ enum CoachContextBuilder {
             latestUserTurn: latestUserTurn,
             previousCoachReply: previousCoachReply,
             profile: profile,
-            coachMemory: coachMemory
+            coachMemory: coachMemory,
+            hasSessionEvidence: rating.totalRatedSessions > 0 || !sessions.isEmpty
         )
         if !turnContract.isEmpty {
             lines.append("")
@@ -1362,6 +1364,7 @@ enum CoachContextBuilder {
         previousCoachReply: String?,
         profile: CoachingProfile?,
         coachMemory: CoachMemory?,
+        hasSessionEvidence: Bool = true,
         recentUserTurns: [String] = []
     ) -> [String] {
         guard let latestUserTurn else { return [] }
@@ -1380,7 +1383,7 @@ enum CoachContextBuilder {
             "hardcoded"
         ]) {
             lines.append("- Turn read: user is giving friction or product-quality critique.")
-            lines.append("- Coaching move: do not defend the app. Open with a short repair phrase such as \"Fair push\" or \"Good call\", name the specific friction in the user's own terms, then use so or because to connect the safest available anchor — a recent transcript pattern, a metric, or an honest data gap — to one changed coaching move. Avoid \"You're right to call that out\"; it reads like an assistant template. If RECENT is present, do not claim there are no usable reps; use the rep carefully.")
+            lines.append("- Coaching move: do not defend the app. Open with a short repair phrase such as \"Fair push\" or \"Good call\", name the specific friction in the user's own terms, then use so or because to connect one fact or honest data gap — a recent transcript pattern, a metric, or a missing baseline — to one changed coaching move. Avoid \"You're right to call that out\"; it reads like an assistant template. If RECENT is present, do not claim there are no usable reps; use the rep carefully.")
         } else if isChoiceOrCommitmentTurn(normalized, previousCoachReply: previousCoachReply) {
             lines.append("- Turn read: user is choosing or negotiating a coaching direction.")
             lines.append("- Coaching move: honor the preference, do not ask the same choice again, and turn it into a prescribed next step with an observable target.")
@@ -1436,8 +1439,10 @@ enum CoachContextBuilder {
         if coachMemory?.caseFile != nil {
             lines.append("- Case discipline: prefer the active case file before creating a new focus; if the user rejects it, ask one anchoring question before changing course.")
         }
-        if profile == nil {
-            lines.append("- Personalization floor: no rated sessions yet. First anchor in the honest data gap in user-facing language, then prescribe one baseline rep tied to the user's ask. Do not mention profiles or ask an intake question in the same reply.")
+        if !hasSessionEvidence {
+            lines.append("- Evidence floor: no baseline yet. First anchor in that honest data gap in user-facing language, then prescribe one baseline rep tied to the user's ask. Do not ask an intake question in the same reply.")
+        } else if profile == nil {
+            lines.append("- Voice-goal floor: no chosen voice goal yet, but rated or recent session evidence exists. Use the session evidence carefully; do not claim there are no rated sessions.")
         }
 
         return lines
@@ -1467,7 +1472,8 @@ enum CoachContextBuilder {
         latestUserTurn: String?,
         previousCoachReply: String?,
         profile: CoachingProfile?,
-        coachMemory: CoachMemory?
+        coachMemory: CoachMemory?,
+        hasSessionEvidence: Bool = true
     ) -> [String] {
         guard let latestUserTurn else { return [] }
         let trimmed = latestUserTurn.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1486,7 +1492,7 @@ enum CoachContextBuilder {
             "not human", "doesn't feel", "does not feel", "too much writing",
             "hardcoded"
         ]) {
-            lines.append("- Must do this turn: repair trust first. Open with a short repair phrase such as \"Fair push\" or \"Good call\", name the specific friction in the user's own terms, then use so or because to connect the safest available anchor — a recent transcript pattern, a metric, or an honest data gap — to one useful changed action. Avoid \"You're right to call that out\"; it reads like an assistant template. If RECENT is present, do not claim there are no usable reps; use the rep carefully.")
+            lines.append("- Must do this turn: repair trust first. Open with a short repair phrase such as \"Fair push\" or \"Good call\", name the specific friction in the user's own terms, then use so or because to connect one fact or honest data gap — a recent transcript pattern, a metric, or a missing baseline — to one useful changed action. Avoid \"You're right to call that out\"; it reads like an assistant template. If RECENT is present, do not claim there are no usable reps; use the rep carefully.")
         } else if isChoiceOrCommitmentTurn(normalized, previousCoachReply: previousCoachReply) {
             lines.append("- Must do this turn: treat the user's choice as a decision. Do not ask them to choose again.")
         } else if containsAny(lower, [
@@ -1497,20 +1503,22 @@ enum CoachContextBuilder {
             lines.append("- Must do this turn: choose the highest-leverage next action for them. Explain the reason in one clause, then prescribe the rep or review.")
         } else if isLowSignalGreeting(normalized) {
             lines.append("- Must do this turn: resume the active coaching thread rather than greeting back with a menu.")
-        } else if profile == nil {
-            lines.append("- Must do this turn: cold start is not a menu. Say you do not have rated sessions yet, then use so or because to prescribe one baseline rep tied to the user's ask. Do not mention profiles or ask a discovery question in the same reply.")
+        } else if !hasSessionEvidence {
+            lines.append("- Must do this turn: cold start is not a menu. Say \"No baseline yet\" in natural language, then use so or because to prescribe one baseline rep tied to the user's ask. Do not ask a discovery question in the same reply.")
         } else {
             lines.append("- Must do this turn: answer the user's actual ask first. Bring in the case file only when it sharpens the answer.")
         }
 
         if coachMemory?.caseFile != nil {
             lines.append("- Active-case rule: stay with the current case unless the user clearly redirects.")
+        } else if !hasSessionEvidence {
+            lines.append("- Baseline action plan: prescribe one short timed rep tied to the user's ask. For interview/presentation/meeting prep, pick a likely prompt and tell them what to watch in the first sentence. Do not ask \"what's it for?\" until after the first baseline exists.")
         } else if profile == nil {
-            lines.append("- Cold-start rule: anchor on the honest data gap, then use so or because to make the first useful action concrete. Do not ask a discovery question in the same reply; never lead with a generic intake menu.")
+            lines.append("- Voice-goal rule: use recent session evidence if it helps, but do not mention profile setup or claim there are no rated sessions.")
         }
 
         if containsAny(lower, ["um", "uh", "filler", "fillers"]) {
-            lines.append("- Filler-pressure rule: if recent session context exists, cite the latest filler count or last rep and use so or because to connect it to the pause/opening move.")
+            lines.append("- Filler-pressure rule: if recent session context exists, cite the latest filler count or last rep and use so or because to connect it to one pause/opening move. Frame the move as a test, not a cure; do not write \"to break this\", \"what brings out the um\", or \"stops the filler\".")
         }
 
         return lines
