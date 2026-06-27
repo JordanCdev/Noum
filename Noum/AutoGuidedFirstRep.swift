@@ -101,6 +101,33 @@ enum AutoGuidedFirstRep {
         UserDefaults.standard.set(framingPrompt, forKey: "timedPractice.suggestedPrompt")
     }
 
+    // MARK: Fast start (per-rep one-shot)
+
+    /// One-shot key that tells the *next* Timed rep to start instantly — no 15s
+    /// prep countdown, prompt kept visible — WITHOUT mutating the user's
+    /// persistent `enableThinkingTime` / `keepPromptVisible` preferences. The
+    /// 15s countdown turns "speak in seconds" into "wait 15s, then speak," which
+    /// defeats the acquisition lever; this closes that gap for rep #1 only.
+    /// Mirrors the seeded-prompt contract: written at the fork, read-and-removed
+    /// once by the rep, so an app-kill mid-rep can never re-apply it to a later
+    /// rep. See `docs/SPEC_first_rep_fast_start.md`.
+    static let fastStartOnceKey = "timedPractice.fastStartOnce"
+
+    /// Arm the instant-start for the auto-guided first rep only. Called at the
+    /// fork alongside `seedFramingPrompt()`.
+    static func armFastStartOnce() {
+        UserDefaults.standard.set(true, forKey: fastStartOnceKey)
+    }
+
+    /// Read-and-remove the one-shot. Returns true exactly once per arming;
+    /// false (and a no-op) for every returning-user / non-auto-guided rep.
+    @discardableResult
+    static func consumeFastStartOnce() -> Bool {
+        let defaults = UserDefaults.standard
+        defer { defaults.removeObject(forKey: fastStartOnceKey) }
+        return defaults.bool(forKey: fastStartOnceKey)
+    }
+
     // MARK: Debug
 
     #if DEBUG
@@ -109,6 +136,7 @@ enum AutoGuidedFirstRep {
     /// `FirstRunOnboardingManager.resetForDebug`.
     static func resetForDebug() {
         UserDefaults.standard.removeObject(forKey: completedKey)
+        UserDefaults.standard.removeObject(forKey: fastStartOnceKey)
     }
     #endif
 }

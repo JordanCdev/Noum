@@ -694,6 +694,22 @@ struct TimedPracticeView: View {
     @AppStorage("timedPractice.showFillerWords") private var showFillerWords: Bool = false
     @State private var showSetupSettings = false
 
+    // Per-rep one-shot fast-start (auto-guided first rep only). When the
+    // `AutoGuidedFirstRep.fastStartOnce` flag is consumed in the QuickStart
+    // handshake, this rep skips the prep countdown and keeps the prompt visible
+    // WITHOUT touching the user's persistent `enableThinkingTime` /
+    // `keepPromptVisible` prefs. See `docs/SPEC_first_rep_fast_start.md`.
+    @State private var fastStartActive = false
+
+    /// Thinking-time for *this* rep: forced off when fast-start is active,
+    /// otherwise the user's saved preference.
+    private var effectiveThinkingTime: Bool { fastStartActive ? false : enableThinkingTime }
+
+    /// Prompt visibility for *this* rep: forced on when fast-start is active so
+    /// the seeded prompt stays on screen with no countdown; otherwise the user's
+    /// saved preference.
+    private var effectiveKeepPromptVisible: Bool { fastStartActive ? true : keepPromptVisible }
+
     private var timerDisplay: TimerDisplayOption {
         get { TimerDisplayOption(rawValue: timerDisplayRaw) ?? .none }
         nonmutating set { timerDisplayRaw = newValue.rawValue }
@@ -837,6 +853,11 @@ struct TimedPracticeView: View {
             // so the work skipped here is not lost — just not done twice.
             if phase == .setup, PracticeModeQuickStart.consume(for: .timed) {
                 if let seeded = consumeSeededPrompt() { question = seeded }
+                // Consume the auto-guided first-rep instant-start one-shot. A
+                // returning-user QuickStart never armed it, so this is a no-op
+                // for them; for the auto-guided rep it drops the 15s countdown
+                // and keeps the prompt visible for this rep only.
+                fastStartActive = AutoGuidedFirstRep.consumeFastStartOnce()
                 wordOfTheDayTarget = consumeSeededWord()
                 speechVM.prepareForInteractiveUse()
                 prewarmTTS()
@@ -1875,7 +1896,7 @@ struct TimedPracticeView: View {
                 }
 
                 // Optional prompt — compact
-                if keepPromptVisible {
+                if effectiveKeepPromptVisible {
                     Text(question)
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.5))
@@ -2013,7 +2034,7 @@ struct TimedPracticeView: View {
             .padding(.horizontal, 20)
 
             // Optional prompt — styled as subtle card
-            if keepPromptVisible {
+            if effectiveKeepPromptVisible {
                 HStack(spacing: 10) {
                     Image(systemName: "quote.opening")
                         .font(.caption)
@@ -2123,7 +2144,7 @@ struct TimedPracticeView: View {
                 Spacer(minLength: 16)
 
                 // Prompt pill (if visible)
-                if keepPromptVisible {
+                if effectiveKeepPromptVisible {
                     spotlightPromptPill
                         .padding(.bottom, 8)
                 }
@@ -2650,14 +2671,14 @@ struct TimedPracticeView: View {
             if ttsEngine.delegate == nil { configureTTSDelegate() }
 
             // Pressure mode halves thinking time for increased challenge.
-            let useThinkingTime = enableThinkingTime
+            let useThinkingTime = effectiveThinkingTime
             let thinkingDuration = practiceSettings.pressureModeEnabled ? 8 : 15
 
             if useThinkingTime {
                 thinkingCountdown = thinkingDuration
                 withAnimation(.easeInOut(duration: 0.3)) { phase = .thinking }
                 startThinkingCountdown(thinkingDuration: thinkingDuration)
-            } else if !keepPromptVisible {
+            } else if !effectiveKeepPromptVisible {
                 withAnimation(.easeInOut(duration: 0.3)) { phase = .briefReveal }
                 Task {
                     try? await Task.sleep(for: .seconds(3))
@@ -2998,7 +3019,7 @@ struct TimedPracticeView: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
         enforcePremiumFeatureAvailability()
-        let useThinkingTime = enableThinkingTime
+        let useThinkingTime = effectiveThinkingTime
         let thinkingDuration = practiceSettings.pressureModeEnabled ? 8 : 15
         if useThinkingTime {
             thinkingCountdown = thinkingDuration
@@ -3009,7 +3030,7 @@ struct TimedPracticeView: View {
             // rep itself.
             SoundscapeEngine.shared.startPreferredMode()
             startThinkingCountdown(thinkingDuration: thinkingDuration)
-        } else if !keepPromptVisible {
+        } else if !effectiveKeepPromptVisible {
             withAnimation(.easeInOut(duration: 0.3)) { phase = .briefReveal }
             SoundscapeEngine.shared.startPreferredMode()
             Task {

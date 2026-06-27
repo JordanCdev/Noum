@@ -1414,6 +1414,10 @@ struct ContentView: View {
             ) {
                 AutoGuidedFirstRep.markFirstRepCompleted()
                 AutoGuidedFirstRep.seedFramingPrompt()
+                // Instant-start this one rep only (no 15s prep countdown, prompt
+                // kept visible) via a one-shot the rep consumes — never mutates
+                // the user's persistent prep-countdown / prompt prefs.
+                AutoGuidedFirstRep.armFastStartOnce()
                 PracticeModeQuickStart.arm(for: .timed)
                 replaceNavigationPath(with: .timedPractice)
             } else {

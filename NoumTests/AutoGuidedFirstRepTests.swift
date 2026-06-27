@@ -23,7 +23,8 @@ struct AutoGuidedFirstRepTests {
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: AutoGuidedFirstRep.enabledOverrideKey)
         defaults.removeObject(forKey: "timedPractice.suggestedPrompt")
-        AutoGuidedFirstRep.resetForDebug() // clears the per-account one-shot
+        defaults.removeObject(forKey: AutoGuidedFirstRep.fastStartOnceKey)
+        AutoGuidedFirstRep.resetForDebug() // clears the per-account one-shot + fast-start
     }
 
     @Test func defaultsToOffSoNewUsersKeepThePicker() {
@@ -81,6 +82,52 @@ struct AutoGuidedFirstRepTests {
                 == AutoGuidedFirstRep.framingPrompt
         )
         #expect(AutoGuidedFirstRep.framingPrompt.isEmpty == false)
+        cleanState()
+    }
+
+    @Test func fastStartIsNotArmedByDefault() {
+        cleanState()
+        // A returning-user / non-auto-guided rep never armed it → consume is a
+        // no-op false, so the rep keeps the user's saved prep-countdown behaviour.
+        #expect(AutoGuidedFirstRep.consumeFastStartOnce() == false)
+        cleanState()
+    }
+
+    @Test func fastStartIsConsumedExactlyOnce() {
+        cleanState()
+        AutoGuidedFirstRep.armFastStartOnce()
+        // First read (the auto-guided rep's QuickStart handshake) sees it on...
+        #expect(AutoGuidedFirstRep.consumeFastStartOnce() == true)
+        // ...and it is removed, so a later rep / app-kill mid-rep can never
+        // re-apply instant-start to a rep the user didn't opt into.
+        #expect(AutoGuidedFirstRep.consumeFastStartOnce() == false)
+        cleanState()
+    }
+
+    @Test func fastStartDoesNotMutatePersistentPrefs() {
+        cleanState()
+        let defaults = UserDefaults.standard
+        // User's saved practice prefs (defaults: prep-countdown ON, prompt hidden).
+        defaults.removeObject(forKey: "timedPractice.enableThinkingTime")
+        defaults.removeObject(forKey: "timedPractice.keepPromptVisible")
+
+        AutoGuidedFirstRep.armFastStartOnce()
+        _ = AutoGuidedFirstRep.consumeFastStartOnce()
+
+        // Arming + consuming the one-shot must NOT write the persistent keys —
+        // the instant-start lives only as a per-rep @State override in the view.
+        #expect(defaults.object(forKey: "timedPractice.enableThinkingTime") == nil)
+        #expect(defaults.object(forKey: "timedPractice.keepPromptVisible") == nil)
+        cleanState()
+    }
+
+    @Test func debugResetClearsFastStart() {
+        cleanState()
+        AutoGuidedFirstRep.armFastStartOnce()
+        // An aborted felt-QA (rep never consumed the one-shot) must not leak the
+        // flag into the next run; resetForDebug clears it alongside the one-shot.
+        AutoGuidedFirstRep.resetForDebug()
+        #expect(AutoGuidedFirstRep.consumeFastStartOnce() == false)
         cleanState()
     }
 }
