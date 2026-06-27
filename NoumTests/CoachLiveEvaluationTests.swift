@@ -111,7 +111,8 @@ struct CoachLiveEvaluationTests {
                         transcripts: [grounding.recentTimedTranscript],
                         latestUserTurn: fixture.latestUserTurn,
                         recentUserTurns: history.filter { $0.role == .user }.map { $0.text }
-                    )
+                    ),
+                    systemContext: context
                 )
 
                 emit("")
