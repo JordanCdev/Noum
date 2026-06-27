@@ -43,7 +43,10 @@ struct CoachChatProviderTests {
 
     @Test func anthropicProviderShape() {
         let provider = CoachChatProvider.anthropic
-        #expect(provider.model == "claude-haiku-4-5")
+        let expectedModel = LocalConfigLoader.value(forKey: "ANTHROPIC_CHAT_MODEL", plistNamed: "AIConfig")
+            ?? LocalConfigLoader.value(forKey: "ANTHROPIC_MODEL", plistNamed: "AIConfig")
+            ?? "claude-sonnet-4-6"
+        #expect(provider.model == expectedModel)
         #expect(provider.endpoint?.absoluteString == "https://api.anthropic.com/v1/messages")
         #expect(provider.keyName == "ANTHROPIC_API_KEY")
         #expect(provider.sharedProvider == nil)
@@ -280,7 +283,7 @@ struct CoachProviderChainTests {
         #expect(captured.provider == .agentPlatform)
         #expect(captured.endpointHost == "aiplatform.googleapis.com")
         #expect(captured.thinkingBudget == 0)
-        #expect(captured.maxOutputTokens == 520)
+        #expect(captured.maxOutputTokens == 180)
 
         #expect(diagnostics.records.contains { record in
             record.surface == "Ask Noum chat" &&
@@ -342,6 +345,67 @@ struct CoachProviderChainTests {
         })
     }
 
+    @Test func refusedGoogleCloudFallsThroughToClaudeReply() async {
+        let diagnostics = CoachDiagnosticRecorderProbe()
+        let acceptedReply = "I don't have a rated rep yet, so use the first answer as the baseline. Run one 45-second interview answer, then mark every um and hold one silent beat before sentence two."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: acceptedReply,
+            latestUserTurn: "How do I stop saying um under pressure?"
+        ) == nil)
+
+        let scripted = ScriptedCoachHTTP(results: [
+            .refused(status: 429, retryAfter: nil),
+            .success(Self.anthropicData(acceptedReply))
+        ])
+        let service = AICoachChatService(
+            keyedProviders: { [.agentPlatform, .anthropic] },
+            keyLookup: { _ in "test-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { provider, endpoint, key, body in
+                await scripted.next(provider: provider, endpoint: endpoint, key: key, body: body)
+            },
+            diagnosticRecorder: { surface, providerName, model, outcome, reason, statusCode, startedAt, now in
+                diagnostics.record(
+                    surface: surface,
+                    providerName: providerName,
+                    model: model,
+                    outcome: outcome,
+                    reason: reason,
+                    statusCode: statusCode,
+                    startedAt: startedAt,
+                    now: now
+                )
+            }
+        )
+
+        let outcome = await service.reply(
+            history: [
+                CoachMessage(role: .user, text: "How do I stop saying um under pressure?")
+            ],
+            systemPrompt: "You are Noum.",
+            userContext: "No recent sessions."
+        )
+
+        guard case .reply(let text) = outcome else {
+            Issue.record("Expected Claude fallback reply, got \(outcome)")
+            return
+        }
+
+        #expect(text == acceptedReply)
+        #expect(await scripted.providers == [.agentPlatform, .anthropic])
+        #expect(diagnostics.records.contains { record in
+            record.provider == "Google Cloud" &&
+            record.outcome == .fallback &&
+            record.statusCode == 429
+        })
+        #expect(diagnostics.records.contains { record in
+            record.provider == "Claude" &&
+            record.model == CoachChatProvider.anthropic.model &&
+            record.outcome == .success &&
+            record.reason == "Reply accepted"
+        })
+    }
+
     private static func openAIData(_ content: String) -> Data {
         let payload: [String: Any] = [
             "choices": [
@@ -367,11 +431,25 @@ struct CoachProviderChainTests {
         ]
         return try! JSONSerialization.data(withJSONObject: payload)
     }
+
+    private static func anthropicData(_ content: String) -> Data {
+        let payload: [String: Any] = [
+            "content": [
+                [
+                    "type": "text",
+                    "text": content
+                ]
+            ],
+            "stop_reason": "end_turn"
+        ]
+        return try! JSONSerialization.data(withJSONObject: payload)
+    }
 }
 
 private actor ScriptedCoachHTTP {
     private var results: [AICoachChatService.ProviderHTTPResult]
     private(set) var callCount: Int = 0
+    private(set) var providers: [CoachChatProvider] = []
 
     init(results: [AICoachChatService.ProviderHTTPResult]) {
         self.results = results
@@ -384,6 +462,7 @@ private actor ScriptedCoachHTTP {
         body: [String: Any]
     ) -> AICoachChatService.ProviderHTTPResult {
         callCount += 1
+        providers.append(provider)
         guard !results.isEmpty else {
             return .refused(status: 500, retryAfter: nil)
         }

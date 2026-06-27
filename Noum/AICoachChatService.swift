@@ -20,17 +20,17 @@ import os
 //   • Bounded replay — cap at 12 user-coach turn pairs in the request
 //     body (24 messages). Older context is summarised by virtue of
 //     being baked into the user context block.
-//   • Token-bounded — temperature 0.6, output cap 520. The system
-//     prompt brevity contract (compact 1-4 line replies) is what actually
-//     keeps replies tight; the cap is a safety ceiling, not the length lever.
+//   • Token-bounded — temperature 0.6, output cap 180. The system
+//     prompt brevity contract (compact 1-4 line replies) carries the style;
+//     the cap prevents Gemini from spending a spoken coach beat on a mini-report.
 //     History: a 350 cap silently truncated. The default provider is a
 //     thinking-capable Gemini models whose budget can be shared between
 //     invisible reasoning tokens and visible text, so terse/ambiguous
 //     early questions triggered heavy reasoning that ate the 350 budget
 //     and guillotined the visible answer mid-word ("…guide you through
 //     the app'"). Fix: Gemini reasoning is disabled (thinkingConfig
-//     thinkingBudget 0) so the whole budget is visible text, and the cap
-//     is 520 (headroom over the compact reply contract).
+//     thinkingBudget 0) so the whole budget is visible text. The cap now keeps
+//     enough headroom for a short requested plan without inviting ramble.
 //   • Truncation-honest — response extraction reads the provider finish
 //     reason (Gemini `finishReason`, OpenAI/DeepSeek `finish_reason`). A
 //     length-truncated completion (MAX_TOKENS / "length") stays an honest
@@ -96,6 +96,14 @@ enum ChatExtractionResult: Equatable {
 /// Noum's app surfaces should never expose raw scaffolding like `**Read:**`,
 /// and spoken replies should not read formatting labels aloud.
 enum CoachReplyTextSanitizer {
+    static let coachScaffoldLeadInPattern = #"read|the read|coach read|observation|diagnosis|insight|next move|next rep|move|action|why|evidence|try this|try|focus|target|drill|practice"#
+
+    private static let coachScaffoldOnlyLabels: Set<String> = [
+        "read", "the read", "coach read", "observation", "diagnosis",
+        "insight", "move", "next move", "next rep", "action", "why",
+        "evidence", "try this", "try", "focus", "target", "drill",
+        "practice"
+    ]
 
     nonisolated static func displayText(from raw: String) -> String {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -311,12 +319,12 @@ enum CoachReplyTextSanitizer {
     }
 
     private nonisolated static func stripCoachLeadIn(from value: String) -> String {
-        let pattern = #"(?i)^(read|the read|coach read|next move|next rep|move|why|evidence|try this|try|focus|target|drill):\s*"#
+        let pattern = #"(?i)^("# + coachScaffoldLeadInPattern + #"):\s*"#
         return replace(pattern: pattern, in: value, template: "")
     }
 
     private nonisolated static func stripInlineCoachLeadIns(from value: String) -> String {
-        let pattern = #"(?i)(^|[.!?]\s+|\s+[—-]\s+)(read|the read|coach read|next move|next rep|move|why|evidence|try this|try|focus|target|drill):\s*"#
+        let pattern = #"(?i)(^|[.!?]\s+|\s+[—-]\s+)("# + coachScaffoldLeadInPattern + #"):\s*"#
         return replace(pattern: pattern, in: value, template: "$1")
     }
 
@@ -324,11 +332,7 @@ enum CoachReplyTextSanitizer {
         let lower = value.trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: ":."))
             .lowercased()
-        return [
-            "read", "the read", "coach read", "move", "next move",
-            "next rep", "why", "evidence", "try this", "try",
-            "focus", "target", "drill"
-        ].contains(lower)
+        return coachScaffoldOnlyLabels.contains(lower)
     }
 
     /// Keep visual warmth available in chat, but never send emoji/decorative
@@ -395,13 +399,13 @@ enum CoachChatReplyQualityIssue: Equatable {
         case .menuInsteadOfDecision:
             return "The draft offers a broad menu or asks the user to choose again. Pick one recommendation and prescribe it."
         case .missedTrustRepair:
-            return "The user challenged the coaching quality. Repair trust first, name the friction briefly, and show the changed coaching move."
+            return "The user challenged the coaching quality. Repair trust first with a short phrase such as \"Fair push\" or \"You're right to call that out\", name the friction briefly, then use so or because to connect one grounded fact to one changed coaching move."
         case .missingPrescribedAction:
             return "The draft does not prescribe a concrete next move. Give one action the user can take in the next rep or review."
         case .missingInsightBridge:
-            return "The draft gives an anchor and an action but does not connect them with a coaching read. Add the reason this move fits the signal."
+            return "The draft gives an anchor and an action but does not connect them with a coaching read. Use so or because to explain why this move fits the signal."
         case .unanchoredCoaching:
-            return "The draft is not anchored in an observable fact, recent user message, case-file target, or honest data gap. Add one grounded anchor."
+            return "The draft is not anchored in an observable fact, recent user message, case-file target, or honest data gap. Add one grounded anchor. If referencing a practice session, say \"your last rep\" or \"a recent rep\", never the exact calendar date."
         case .overclaimsEvidence:
             return "The draft overclaims from limited evidence, labels the user, or treats a drill as guaranteed to cause improvement. Reframe as a testable coaching hypothesis the user can confirm or reject."
         case .unrequestedNamedTechnique:
@@ -574,9 +578,14 @@ enum CoachChatProvider: CaseIterable, Equatable, Hashable {
                 "VERTEX_AI_GEMINI_MODEL",
                 "GEMINI_CHAT_MODEL"
             ]) ?? "gemini-3.5-flash"
-        // Haiku: the chat contract is 1-2 sentences in a fixed voice —
-        // fast + cheap fits; the system prompt carries the intelligence.
-        case .anthropic: return "claude-haiku-4-5"
+        case .anthropic:
+            // Claude is a quality fallback for the coach, not a cheap
+            // background summarizer. Default to Sonnet, while allowing
+            // AIConfig/env overrides for cost or latency experiments.
+            return Self.configValue(forKeys: [
+                "ANTHROPIC_CHAT_MODEL",
+                "ANTHROPIC_MODEL"
+            ]) ?? "claude-sonnet-4-6"
         case .gemini:
             // Chat-only override (AIConfig.plist `GEMINI_CHAT_MODEL`) so a
             // newer Gemini can be A/B'd against the register/quality gate
@@ -775,6 +784,41 @@ actor AICoachChatService {
     /// so older messages don't need to be sent — they'd inflate
     /// tokens without adding signal.
     private static let maxReplayMessages = 24
+    /// Hard output ceiling for the coach turn. The prompt still governs style,
+    /// but Gemini will fill whatever visible budget we hand it; keep enough
+    /// room for an explicitly requested short plan while making rambling
+    /// replies structurally harder.
+    private static let coachReplyMaxOutputTokens = 180
+    private static let coachRepairMaxOutputTokens = 128
+
+    private nonisolated static func liveEvalDraftSuffix(_ draft: String) -> String {
+        #if NOUM_LIVE_AI_EVAL_INCLUDE_DRAFTS
+        let includeDraft = true
+        #else
+        let includeDraft = ProcessInfo.processInfo.environment["NOUM_LIVE_AI_EVAL_INCLUDE_DRAFTS"] == "1"
+        #endif
+        guard includeDraft else {
+            return ""
+        }
+        let compact = draft
+            .unicodeScalars
+            .map { scalar -> Character in
+                if CharacterSet.newlines.contains(scalar) || scalar.value < 0x20 {
+                    return " "
+                }
+                if scalar.value == 0x22 {
+                    return "'"
+                }
+                return Character(scalar)
+            }
+            .reduce(into: "") { output, character in
+                output.append(character)
+            }
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !compact.isEmpty else { return "" }
+        return " draft=\"\(String(compact.prefix(700)))\""
+    }
 
     private init() {
         self.keyedProvidersOverride = nil
@@ -1093,6 +1137,7 @@ actor AICoachChatService {
         quoteGuard: CoachChatQuoteGuardContext,
         latestUserTurn: String?
     ) async -> AttemptOutcome {
+        let startedAt = Date()
         do {
             Self.log.debug("attempting chat provider \(provider.displayName, privacy: .public)")
             let body = chatRequestBody(for: provider, system: system, messages: messages)
@@ -1111,6 +1156,13 @@ actor AICoachChatService {
             switch result {
             case .refused(let status, _):
                 Self.log.error("\(provider.displayName, privacy: .public) refused: HTTP \(status)")
+                recordChatDiagnostic(
+                    .fallback,
+                    "Provider refused: HTTP \(status)",
+                    provider: provider,
+                    statusCode: status,
+                    startedAt: startedAt
+                )
                 return .refused(.classify(status: status))
             case .success(let data):
                 let extraction = Self.chatExtractReplyText(from: data, provider: provider)
@@ -1128,7 +1180,8 @@ actor AICoachChatService {
                     if let issue = Self.replyQualityIssue(
                         in: display,
                         latestUserTurn: latestUserTurn,
-                        quoteGuard: quoteGuard
+                        quoteGuard: quoteGuard,
+                        systemContext: system
                     ) {
                         Self.log.notice("\(provider.displayName, privacy: .public) reply tripped quality gate (\(String(describing: issue), privacy: .public)) — repairing")
                         if let repaired = await repairLowQualityReply(
@@ -1146,7 +1199,11 @@ actor AICoachChatService {
                         }
                         // A content miss by this model on this turn — let the
                         // next provider in the chain take the question.
-                        recordChatDiagnostic(.fallback, "Reply failed professional-coach gate", provider: provider)
+                        recordChatDiagnostic(
+                            .fallback,
+                            "Reply failed professional-coach gate: \(String(describing: issue))\(Self.liveEvalDraftSuffix(display))",
+                            provider: provider
+                        )
                         return .refused(.contentRejected)
                     }
                     let normalized = CoachReplyTextSanitizer.coachReplyText(from: display)
@@ -1168,7 +1225,14 @@ actor AICoachChatService {
                 }
             }
         } catch {
+            let nsError = error as NSError
             Self.log.error("\(provider.displayName, privacy: .public) transport failure: \(error.localizedDescription, privacy: .public)")
+            recordChatDiagnostic(
+                .failure,
+                "Transport failure: \(nsError.domain) \(nsError.code)",
+                provider: provider,
+                startedAt: startedAt
+            )
             return .refused(.transient)
         }
     }
@@ -1188,7 +1252,8 @@ actor AICoachChatService {
     nonisolated static func replyQualityIssue(
         in text: String,
         latestUserTurn: String?,
-        quoteGuard: CoachChatQuoteGuardContext? = nil
+        quoteGuard: CoachChatQuoteGuardContext? = nil,
+        systemContext: String? = nil
     ) -> CoachChatReplyQualityIssue? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -1249,6 +1314,15 @@ actor AICoachChatService {
             return .defensiveProductLanguage
         }
 
+        if replyUsesUnhelpfulRepDate(lower) {
+            return .unanchoredCoaching
+        }
+
+        if let quoteGuard,
+           replyContradictsRecommendationPosition(lower, quoteGuard: quoteGuard) {
+            return .overclaimsEvidence
+        }
+
         if lower.contains("which direction would you prefer")
             || lower.contains("what is your priority")
             || (lower.contains("we can ") && lower.contains(" or ") && lower.contains("?")) {
@@ -1276,6 +1350,12 @@ actor AICoachChatService {
         }
         if rubric.misses.contains(.missingObservableAnchor),
            turnExpectsCoaching(latestUserTurn) || rubric.score <= 6 {
+            return .unanchoredCoaching
+        }
+
+        if replyShouldCiteRecentSession(systemContext),
+           turnExpectsCoaching(latestUserTurn),
+           !replyCitesRecentSessionAnchor(lower) {
             return .unanchoredCoaching
         }
 
@@ -1374,6 +1454,7 @@ actor AICoachChatService {
         "recent reps show",
         "scores are down",
         "let's",
+        "let us",
         "as an ai",
         "as your ai",
         "optimize your",
@@ -1387,7 +1468,18 @@ actor AICoachChatService {
         "effective communication",
         "to communicate more clearly",
         "be clear and concise",
-        "try to be more confident"
+        "try to be more confident",
+        "retrieval load",
+        "close your mouth",
+        "closing your mouth",
+        "close your lips",
+        "closing your lips",
+        "go to the practice tab",
+        "open the practice tab",
+        "tap the practice tab",
+        "use the practice screen",
+        "go to the practice screen",
+        "open the practice screen"
     ]
 
     private nonisolated static let defensiveProductPhrases = [
@@ -1447,7 +1539,7 @@ actor AICoachChatService {
             return false
         }
 
-        let labels = #"read|the read|coach read|next move|next rep|move|target"#
+        let labels = CoachReplyTextSanitizer.coachScaffoldLeadInPattern
         let linePattern = #"(?im)^\s*(?:[-*+•]\s*|\d+[.)]\s*)?(?:"# + labels + #"):\s*"#
         let inlinePattern = #"(?i)(?:[.!?]\s+|\s+[—-]\s+)(?:"# + labels + #"):\s*"#
 
@@ -1520,8 +1612,12 @@ actor AICoachChatService {
         containsAny(lower, [
             "fair", "you're right", "you are right", "good call", "useful push",
             "that read", "that felt", "the friction", "too generic", "too robotic",
+            "right to call", "that should not", "that shouldn't", "should not happen",
+            "shouldn't happen", "that was advice", "that was generic", "that was cold",
+            "markup read", "tts read", "read aloud", "overexplained",
+            "formatting", "markdown", "symbols",
             "i'll be", "i will be", "i'll keep", "i will keep", "i'll change",
-            "i will change"
+            "i will change", "i'll cut", "i will cut", "i'll stop", "i will stop"
         ])
     }
 
@@ -1533,7 +1629,31 @@ actor AICoachChatService {
             "you said", "you asked", "i heard", "what i notice", "pattern",
             "case", "hypothesis", "target", "success measure", "not enough data",
             "i don't have", "i do not have", "i can't see", "from what you wrote",
-            "your message", "your words", "the friction"
+            "your message", "your words", "the friction", "formatting",
+            "markdown", "tts", "symbols"
+        ])
+    }
+
+    private nonisolated static func replyShouldCiteRecentSession(_ systemContext: String?) -> Bool {
+        guard let lower = systemContext?.lowercased() else { return false }
+        return lower.contains("recent (most-recent first)")
+            || lower.contains("most-recent first")
+    }
+
+    private nonisolated static func replyCitesRecentSessionAnchor(_ lower: String) -> Bool {
+        if lower.rangeOfCharacter(from: .decimalDigits) != nil { return true }
+        return containsAny(lower, [
+            "last rep", "recent rep", "latest rep", "last session",
+            "recent session", "rated session", "your timed rep",
+            "your rep", "the transcript", "your transcript"
+        ])
+    }
+
+    private nonisolated static func replyUsesUnhelpfulRepDate(_ lower: String) -> Bool {
+        guard containsAny(lower, [" rep", "session", "practice"]) else { return false }
+        return containsAny(lower, [
+            "january", "february", "march", "april", "may ", "june",
+            "july", "august", "september", "october", "november", "december"
         ])
     }
 
@@ -1542,7 +1662,7 @@ actor AICoachChatService {
             "next rep", "try ", "practice", "run ", "hold ", "record",
             "answer", "send", "say ", "use ", "repeat", "do one", "focus",
             "start", "ask ", "replace", "keep the ", "keep this ", "cut ",
-            "pause before", "one drill", "one rep", "review"
+            "pause before", "one drill", "one rep", "review", "speak "
         ])
     }
 
@@ -1592,6 +1712,41 @@ actor AICoachChatService {
             return true
         }
         return false
+    }
+
+    private nonisolated static func replyContradictsRecommendationPosition(
+        _ lower: String,
+        quoteGuard: CoachChatQuoteGuardContext
+    ) -> Bool {
+        guard containsAny(lower, [
+            "buried the recommendation",
+            "recommendation was buried",
+            "recommendation is buried",
+            "recommendation at the end",
+            "recommendation came at the end",
+            "recommendation landed at the end",
+            "point didn't lead",
+            "point did not lead",
+            "main point didn't lead",
+            "main point did not lead",
+            "point arrived late",
+            "main point arrived late",
+            "point landed late",
+            "main point landed late",
+            "recommendation didn't lead",
+            "recommendation did not lead"
+        ]) else {
+            return false
+        }
+
+        return quoteGuard.sourceTexts.contains { source in
+            let sourceLower = source.lowercased()
+            guard let range = sourceLower.range(of: "recommendation") else {
+                return false
+            }
+            let offset = sourceLower.distance(from: sourceLower.startIndex, to: range.lowerBound)
+            return offset <= max(32, sourceLower.count / 3)
+        }
     }
 
     private nonisolated static func replyUsesUnrequestedNamedTechnique(
@@ -1771,6 +1926,11 @@ actor AICoachChatService {
         messages: [CoachMessage],
         quoteGuard: CoachChatQuoteGuardContext?
     ) async -> String? {
+        let requiredAnchor = Self.requiredRepairAnchor(
+            issue: issue,
+            latestUserTurn: messages.last(where: { $0.role == .user })?.text,
+            system: system
+        )
         let repairSystem = """
         \(system)
 
@@ -1782,12 +1942,30 @@ actor AICoachChatService {
         \(draft)
 
         Rewrite from scratch. Requirements:
-        - 1-4 short lines, usually under 75 words.
-        - Use plain lead-ins, up to 3 bullets, or numbered steps only when they reduce reading.
+        - Usually 1-2 short lines and under 50 words unless the user explicitly asked for a plan.
+        - Use natural sentence starts, up to 3 bullets, or numbered steps only when they reduce reading.
         - Never output literal Markdown markers such as **, __, ###, or decorative formatting.
         - Do not label the reply with Read, Move, Target, or Next rep.
+        - Do not write "let's" or "let us". Start with the action instead: "Test this", "Use this", "Run one rep", "Say the recommendation first".
         - No long paragraph.
         - No broad menu. Pick one coaching move.
+        \(requiredAnchor.map { "- Required anchor: \($0)" } ?? "")
+        - The final answer must include a direct action verb the user can do now
+          or in the next rep: say, run, record, hold, cut, use, answer, practice,
+          or review.
+        - For filler-word work, say "hold a silent beat" or "hold one second of
+          silence"; never tell the user to close their mouth or lips.
+        - The final answer must contain the word "so" or "because" when it connects the anchor to the action.
+        - When referencing a practice session, write "your last rep" or "a recent rep"; never write the exact calendar date.
+        - If this is a trust-repair or critique turn, use exactly two sentences:
+          first repair the specific friction in the user's terms (formatting,
+          TTS, symbols, robotic, cold, generic), second cite one safe fact or
+          honest data gap and use "so" or "because" to prescribe one changed
+          move. Prefer a metric anchor such as fillers, pace, or "I do not have
+          enough data yet"; do not invent structural claims such as "buried the
+          recommendation" unless the context explicitly says that happened. The
+          second sentence still needs the action, for example: "Your last rep had
+          4 fillers, so say the decision first, give one proof point, then stop."
         - Do not name a drill/framework unless the user explicitly asked for a named drill or plan. Translate the technique into plain action.
         - If the user showed frustration, do not defend the app.
         - If the user asked for shortness, make the answer shorter before making it smarter.
@@ -1795,7 +1973,12 @@ actor AICoachChatService {
         - Connect the evidence to the move with one coaching reason; do not just list a metric and a drill.
         """
 
-        let body = chatRequestBody(for: provider, system: repairSystem, messages: messages)
+        let body = chatRequestBody(
+            for: provider,
+            system: repairSystem,
+            messages: messages,
+            maxOutputTokens: Self.coachRepairMaxOutputTokens
+        )
         guard
             let result = try? await providerHTTP(
                 provider: provider,
@@ -1822,10 +2005,15 @@ actor AICoachChatService {
         if let remainingIssue = Self.replyQualityIssue(
             in: display,
             latestUserTurn: messages.last(where: { $0.role == .user })?.text,
-            quoteGuard: quoteGuard
+            quoteGuard: quoteGuard,
+            systemContext: system
         ) {
             Self.log.error("repair pass still tripped the gate (\(String(describing: remainingIssue), privacy: .public))")
-            recordChatDiagnostic(.fallback, "Repair reply failed professional-coach gate", provider: provider)
+            recordChatDiagnostic(
+                .fallback,
+                "Repair reply failed professional-coach gate: \(String(describing: remainingIssue))\(Self.liveEvalDraftSuffix(display))",
+                provider: provider
+            )
             return nil
         }
         let normalized = CoachReplyTextSanitizer.coachReplyText(from: display)
@@ -1835,6 +2023,39 @@ actor AICoachChatService {
             return nil
         }
         return normalized
+    }
+
+    private nonisolated static func requiredRepairAnchor(
+        issue: CoachChatReplyQualityIssue,
+        latestUserTurn: String?,
+        system: String
+    ) -> String? {
+        guard issue == .unanchoredCoaching || issue == .missingInsightBridge else {
+            return nil
+        }
+        let lowerTurn = latestUserTurn?.lowercased() ?? ""
+        guard containsAny(lowerTurn, ["um", "filler", "fillers", "hesitat"])
+                || isCritiqueTurn(lowerTurn) else {
+            return nil
+        }
+        guard let count = firstFillerCount(in: system) else {
+            return "I do not have enough rated filler data yet."
+        }
+        return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers")."
+    }
+
+    private nonisolated static func firstFillerCount(in text: String) -> Int? {
+        let pattern = #"(?i)\b(\d{1,3})\s+fillers?\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                in: text,
+                range: NSRange(text.startIndex..., in: text)
+              ),
+              match.numberOfRanges > 1,
+              let range = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return Int(text[range])
     }
 
     // MARK: - Provider plumbing
@@ -1973,10 +2194,17 @@ actor AICoachChatService {
     private func chatRequestBody(
         for provider: CoachChatProvider,
         system: String,
-        messages: [CoachMessage]
+        messages: [CoachMessage],
+        maxOutputTokens: Int? = nil
     ) -> [String: Any] {
+        let tokenCap = maxOutputTokens ?? Self.coachReplyMaxOutputTokens
         if let shared = provider.sharedProvider {
-            return requestBody(for: shared, system: system, messages: messages)
+            return requestBody(
+                for: shared,
+                system: system,
+                messages: messages,
+                maxOutputTokens: tokenCap
+            )
         }
 
         // Anthropic Messages API: system is a top-level field; messages carry
@@ -1998,9 +2226,7 @@ actor AICoachChatService {
         }
         return [
             "model": provider.model,
-            // 520 is a safety ceiling, not the length lever — the compact
-            // reply contract governs length.
-            "max_tokens": 520,
+            "max_tokens": tokenCap,
             "system": system,
             "messages": msgs
         ]
@@ -2009,8 +2235,10 @@ actor AICoachChatService {
     private func requestBody(
         for provider: AIProvider,
         system: String,
-        messages: [CoachMessage]
+        messages: [CoachMessage],
+        maxOutputTokens: Int? = nil
     ) -> [String: Any] {
+        let tokenCap = maxOutputTokens ?? Self.coachReplyMaxOutputTokens
         switch provider {
         case .openAI, .deepSeek:
             // OpenAI-style chat completion. Each role maps directly;
@@ -2028,9 +2256,7 @@ actor AICoachChatService {
             return [
                 "model": provider.model,
                 "temperature": 0.6,
-                // 520 is a safety ceiling, not the length lever — the compact
-                // reply contract governs length.
-                "max_tokens": 520,
+                "max_tokens": tokenCap,
                 "messages": msgs
             ]
         case .gemini:
@@ -2060,9 +2286,7 @@ actor AICoachChatService {
                     // guillotining the reply mid-word.
                     // thinkingBudget 0 spends the whole budget on text.
                     "thinkingConfig": ["thinkingBudget": 0],
-                    // 520 = safety ceiling; the compact system-prompt
-                    // contract is what keeps replies tight.
-                    "maxOutputTokens": 520
+                    "maxOutputTokens": tokenCap
                 ]
             ]
         case .none:

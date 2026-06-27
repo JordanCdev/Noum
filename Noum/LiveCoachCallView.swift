@@ -157,7 +157,7 @@ struct LiveCoachCallView: View {
         guard let text = store.messages.last(where: { $0.role == .coach && !$0.isPending })?.text else {
             return nil
         }
-        return CoachReplyTextSanitizer.liveDisplayText(from: text)
+        return text
     }
 
     /// True when the latest coach turn being captioned is a legacy offline row.
@@ -178,12 +178,16 @@ struct LiveCoachCallView: View {
     /// seeds, or renderer changes cannot leak prompt scaffolds like "Read:".
     private var visibleCaption: String? {
         guard let text = caption else { return nil }
-        let value: String
         if voiceInput.state == .recording {
-            value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        } else {
-            value = CoachReplyTextSanitizer.liveDisplayText(from: text)
+            let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
         }
+        return Self.visibleCoachCaptionText(from: text)
+    }
+
+    nonisolated static func visibleCoachCaptionText(from raw: String) -> String? {
+        let value = CoachReplyTextSanitizer.liveDisplayText(from: raw)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
 

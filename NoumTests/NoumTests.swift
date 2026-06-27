@@ -9488,6 +9488,24 @@ struct CoachReplyTextSanitizerTests {
         #expect(!display.lowercased().contains("move:"))
     }
 
+    @Test func liveDisplayTextDropsAlternateScaffoldLabelsForCallCaption() {
+        let raw = """
+        Observation: Your recommendation led the answer.
+        Action: repeat that shape in 30 seconds.
+        Practice: recommendation, one proof point, stop.
+        """
+        let display = CoachReplyTextSanitizer.liveDisplayText(from: raw)
+
+        #expect(display == """
+        Your recommendation led the answer.
+        repeat that shape in 30 seconds.
+        recommendation, one proof point, stop.
+        """)
+        for label in ["observation:", "action:", "practice:"] {
+            #expect(!display.lowercased().contains(label))
+        }
+    }
+
     @Test func liveDisplayTextStaysCleanAfterStoredReplyNormalization() {
         let stored = CoachReplyTextSanitizer.coachReplyText(from: """
         **Read:** You want it straight.
@@ -9529,6 +9547,23 @@ struct CoachReplyTextSanitizerTests {
         #expect(!display.lowercased().contains("read:"))
         #expect(!display.lowercased().contains("move:"))
         #expect(!display.contains("\n"))
+    }
+
+    @Test func liveCoachVisibleCaptionDropsScreenshotScaffoldLabels() {
+        guard #available(iOS 17.0, *) else { return }
+        let raw = """
+        Read: You want it straight.
+
+        Move: Give one 30-second update, state the recommendation first, then stop.
+        """
+        let display = LiveCoachCallView.visibleCoachCaptionText(from: raw)
+
+        #expect(display == """
+        You want it straight.
+        Give one 30-second update, state the recommendation first, then stop.
+        """)
+        #expect(display?.localizedCaseInsensitiveContains("Read:") == false)
+        #expect(display?.localizedCaseInsensitiveContains("Move:") == false)
     }
 
     @Test func spokenTextDropsMarkdownArtifactsBeforeTTS() {
@@ -10292,6 +10327,7 @@ struct CoachContextBuilderTests {
         let prompt = CoachContextBuilder.systemPrompt(for: nil)
         #expect(prompt.contains("Second person"))
         #expect(prompt.contains("never use chirpy filler"))
+        #expect(prompt.contains("never write \"let's\" or \"let us\""))
         #expect(prompt.contains("never use exclamation marks"))
         #expect(prompt.contains("never overclaim"))
         #expect(prompt.contains("frame drills as tests"))
@@ -10433,6 +10469,7 @@ struct CoachContextBuilderTests {
         #expect(normalized.contains("The key insight is"))
         #expect(normalized.contains("concrete next move"))
         #expect(normalized.contains("this indicates"))
+        #expect(normalized.contains("let us"))
         #expect(normalized.contains("as an AI"))
         #expect(normalized.contains("i understand your frustration"))
         #expect(normalized.contains("here are some tips"))
@@ -10455,12 +10492,14 @@ struct CoachContextBuilderTests {
         // should still be short enough to scan.
         #expect(normalized.contains("Default to 1-4 short lines"))
         #expect(normalized.contains("Voice read-aloud should be tighter still"))
-        #expect(normalized.contains("short plain lead-ins"))
+        #expect(normalized.contains("natural sentence starts"))
         #expect(normalized.contains("bullets for 2-3 options"))
         #expect(normalized.contains("Do not emit literal Markdown markers"))
         #expect(normalized.contains("report-style wording about scores being down"))
         #expect(!normalized.contains("recent reps show a decline"))
         #expect(normalized.contains("The pattern I'd watch is"))
+        #expect(!prompt.contains("-> \"Next rep:"))
+        #expect(!prompt.contains("Next rep: hold a beat"))
     }
 
     @Test func systemPromptForbidsLiteralMarkdownMarkersBecauseTTSReadsSharedText() {
@@ -10474,6 +10513,8 @@ struct CoachContextBuilderTests {
         #expect(prompt.contains("LIVE COACHING FRAME"))
         #expect(prompt.contains("preference honored"))
         #expect(prompt.contains("concise case-thread continuation"))
+        #expect(prompt.contains("two spoken sentences"))
+        #expect(prompt.contains("about 45 words"))
     }
 
     @Test func systemPromptIncludesVoicePersonalityWhenProfileSet() {
@@ -10525,7 +10566,7 @@ struct CoachContextBuilderTests {
 
         #expect(lines.contains("friction or product-quality critique"))
         #expect(lines.contains("do not defend the app"))
-        #expect(lines.contains("one concrete next move"))
+        #expect(lines.contains("connect one fact or honest data gap"))
     }
 
     @Test func liveCoachingFrameTurnsDirectionIntoOneRecommendation() {
@@ -10760,7 +10801,21 @@ struct CoachContextBuilderTests {
 
         #expect(lines.contains("repair trust first"))
         #expect(lines.contains("specific friction"))
-        #expect(lines.contains("one useful action"))
+        #expect(lines.contains("one useful changed action"))
+        #expect(lines.contains("connect one fact or honest data gap"))
+    }
+
+    @Test func professionalTurnContractTreatsColdStartAsBaselineAction() {
+        let lines = CoachContextBuilder.professionalTurnContractLines(
+            latestUserTurn: "How do I get better before my interview?",
+            previousCoachReply: nil,
+            profile: nil,
+            coachMemory: nil
+        ).joined(separator: " ")
+
+        #expect(lines.contains("cold start is not a menu"))
+        #expect(lines.contains("rated sessions"))
+        #expect(lines.contains("baseline rep"))
     }
 
     // MARK: - User context block
@@ -25325,6 +25380,13 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .roboticPhrase("let's"))
     }
 
+    @Test func rejectsLetUsRegister() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Let us test the silent pause in your next rep."
+        )
+        #expect(issue == .roboticPhrase("let us"))
+    }
+
     @Test func rejectsAssistantExplainerRegister() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "I understand your frustration. Here are some tips to communicate more clearly: be clear and concise."
@@ -25337,6 +25399,46 @@ struct AICoachChatReplyQualityGateTests {
             in: "Effective communication is important. In order to improve, try to be more confident."
         )
         #expect(issue == .roboticPhrase("in order to improve"))
+    }
+
+    @Test func rejectsInternalCognitiveJargon() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your retrieval load rises under pressure, so pause before sentence two.",
+            latestUserTurn: "Why do I keep saying um?"
+        )
+        #expect(issue == .roboticPhrase("retrieval load"))
+    }
+
+    @Test func rejectsAwkwardPhysicalCorrection() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Close your mouth and hold a one-second silence instead of letting the sound out.",
+            latestUserTurn: "How do I stop saying um?"
+        )
+        #expect(issue == .roboticPhrase("close your mouth"))
+    }
+
+    @Test func rejectsAwkwardPhysicalCorrectionInOtherTense() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Closing your mouth on the gap gives you time to find the next word because silence reads as composure.",
+            latestUserTurn: "How do I stop saying um?"
+        )
+        #expect(issue == .roboticPhrase("closing your mouth"))
+    }
+
+    @Test func rejectsAppNavigationAsCoachMove() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Go to the practice tab and run a short rep, because your last answer had six fillers.",
+            latestUserTurn: "How do I stop saying um?"
+        )
+        #expect(issue == .roboticPhrase("go to the practice tab"))
+    }
+
+    @Test func rejectsPracticeScreenNavigationAsCoachMove() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Use the practice screen to run one sixty-second answer about your background.",
+            latestUserTurn: "How do I get better before my interview?"
+        )
+        #expect(issue == .roboticPhrase("use the practice screen"))
     }
 
     @Test func rejectsBareClarification() {
@@ -25377,6 +25479,14 @@ struct AICoachChatReplyQualityGateTests {
         Read: 5 fillers show the rush is happening near the close.
         - Move: next rep, hold one beat before the final sentence.
         - Why: that tests whether pace is driving the filler spike.
+        """
+        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == .scaffoldLabel)
+    }
+
+    @Test func rejectsAlternateCoachReplyScaffoldLabels() {
+        let reply = """
+        Observation: your point is clear.
+        Action: hold the same opening under pressure.
         """
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == .scaffoldLabel)
     }
@@ -25547,6 +25657,33 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .unanchoredCoaching)
     }
 
+    @Test func turnAwareGateAcceptsColdStartBaselineAction() {
+        let reply = "I don't have rated sessions yet, so the useful first move is a baseline interview answer. Record 60 seconds on one likely question, then check whether the first sentence gives the point before the explanation."
+        let issue = AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "How do I get better before my interview?"
+        )
+        #expect(issue == nil)
+    }
+
+    @Test func turnAwareGateAcceptsTTSMarkupTrustRepair() {
+        let reply = "You're right to call that out: markup read aloud breaks trust. Your last rep had 4 fillers, so I’ll cut the formatting and coach one thing: next rep, say the recommendation first, then stop."
+        let issue = AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach."
+        )
+        #expect(issue == nil)
+    }
+
+    @Test func turnAwareGateAcceptsFormattingTrustRepairWithPlainUserTerms() {
+        let reply = "You're right to call out the formatting; TTS reading symbols breaks trust. Your last rep had 4 fillers, so say the recommendation first, give one proof point, then stop."
+        let issue = AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach."
+        )
+        #expect(issue == nil)
+    }
+
     @Test func turnAwareGateRejectsMetricAndActionWithoutInsightBridge() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your last rep had 5 fillers. Next rep, hold a beat before sentence two.",
@@ -25561,6 +25698,34 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "What next?"
         )
         #expect(issue == nil)
+    }
+
+    @Test func contextAwareGateRejectsGenericAdviceWhenRecentSessionExists() {
+        let context = "RECENT (most-recent first)\n- Timed rep: 6 fillers in 64 seconds."
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Under pressure, your brain fills the gap with um, so hold one silent pause before the next word.",
+            latestUserTurn: "How do I stop saying um under pressure?",
+            systemContext: context
+        )
+        #expect(issue == .unanchoredCoaching)
+    }
+
+    @Test func contextAwareGateAcceptsRecentSessionAnchor() {
+        let context = "RECENT (most-recent first)\n- Timed rep: 6 fillers in 64 seconds."
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep had 6 fillers, so the pressure cue is the gap before sentence two. Next rep, hold one silent pause before the next word.",
+            latestUserTurn: "How do I stop saying um under pressure?",
+            systemContext: context
+        )
+        #expect(issue == nil)
+    }
+
+    @Test func contextAwareGateRejectsExactRepDates() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your April 1st rep had four fillers, so state the recommendation first in the next rep.",
+            latestUserTurn: "The responses feel robotic and cold."
+        )
+        #expect(issue == .unanchoredCoaching)
     }
 
     @Test func turnAwareGateRejectsOverconfidentPersonalLabels() {
@@ -25609,6 +25774,45 @@ struct AICoachChatReplyQualityGateTests {
             Record a 30-second project update now where you state the final decision in the first ten seconds. This forces you to lead with the recommendation and naturally drops your pace to your target range.
             """,
             latestUserTurn: "What should I do next?"
+        )
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func quoteGuardRejectsContradictedRecommendationPositionClaim() {
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: ["My recommendation is to hold the date, um, because the launch risk is still unresolved."],
+            latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold."
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You're right to call out the formatting. Your last rep buried the recommendation at the end, so say the decision first and stop.",
+            latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold.",
+            quoteGuard: guardContext
+        )
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func quoteGuardRejectsContradictedPointDidNotLeadClaim() {
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: ["My recommendation is to hold the date, um, because the launch risk is still unresolved."],
+            latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold."
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep gave me one real signal: the point didn't lead, so make your first sentence the recommendation itself.",
+            latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold.",
+            quoteGuard: guardContext
+        )
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func quoteGuardRejectsContradictedPointArrivedLateClaim() {
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: ["My recommendation is to hold the date, um, because the launch risk is still unresolved."],
+            latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold."
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep had four fillers and the main point arrived late, so say the decision first.",
+            latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold.",
+            quoteGuard: guardContext
         )
         #expect(issue == .overclaimsEvidence)
     }
