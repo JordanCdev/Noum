@@ -1352,6 +1352,10 @@ actor AICoachChatService {
             return .menuInsteadOfDecision
         }
 
+        if trustRepairMissesSpecificFriction(lower, latestUserTurn: latestUserTurn) {
+            return .missedTrustRepair
+        }
+
         if trustRepairLacksUserPracticeMove(lower, latestUserTurn: latestUserTurn) {
             return .missingPrescribedAction
         }
@@ -1457,7 +1461,8 @@ actor AICoachChatService {
             apply(.menuInsteadOfDecision, penalty: 2)
         }
 
-        if isCritiqueTurn(latestLower), !replyRepairsTrust(lower) {
+        if isCritiqueTurn(latestLower),
+           !replyRepairsTrust(lower) || trustRepairMissesSpecificFriction(lower, latestUserTurn: latestUserTurn) {
             apply(.missedTrustRepair, penalty: 3)
         }
 
@@ -1765,6 +1770,67 @@ actor AICoachChatService {
             "i'll be", "i will be", "i'll keep", "i will keep", "i'll change",
             "i will change", "i'll cut", "i will cut", "i'll stop", "i will stop"
         ])
+    }
+
+    private nonisolated static func trustRepairMissesSpecificFriction(
+        _ lowerReply: String,
+        latestUserTurn: String?
+    ) -> Bool {
+        guard let lowerTurn = latestUserTurn?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              isCritiqueTurn(lowerTurn),
+              replyRepairsTrust(lowerReply) else {
+            return false
+        }
+
+        let frictionNeedles = trustRepairFrictionNeedles(for: lowerTurn)
+        guard !frictionNeedles.isEmpty else {
+            return false
+        }
+
+        return !containsAny(lowerReply, frictionNeedles)
+    }
+
+    private nonisolated static func trustRepairFrictionNeedles(for lowerTurn: String) -> [String] {
+        var needles: [String] = []
+
+        if containsAny(lowerTurn, [
+            "tts", "read them out", "read aloud", "**", "markdown",
+            "format", "formatting", "symbols", "stars"
+        ]) {
+            needles += [
+                "tts", "read aloud", "read out", "voice", "spoken",
+                "markdown", "format", "formatting", "symbol", "symbols",
+                "stars", "asterisk"
+            ]
+        }
+
+        if containsAny(lowerTurn, [
+            "robotic", "report", "too much writing", "too long",
+            "less writing", "less text", "shorter", "overexplained",
+            "over explained", "over-explained"
+        ]) || turnCritiquesCoachOverexplaining(lowerTurn) {
+            needles += [
+                "robotic", "report", "too much writing", "too long",
+                "less writing", "less text", "shorter", "overexplained",
+                "over explained", "over-explained", "dense", "wordy",
+                "generic", "template", "templated"
+            ]
+        }
+
+        if containsAny(lowerTurn, [
+            "cold", "generic", "not human", "doesn't feel", "does not feel",
+            "low eq", "not high eq", "expert coach", "ai tips", "ai wrapper"
+        ]) {
+            needles += [
+                "cold", "generic", "advice", "not coaching", "coaching",
+                "human", "warm", "expert", "ai tips", "ai wrapper",
+                "template", "templated"
+            ]
+        }
+
+        return Array(Set(needles))
     }
 
     private nonisolated static func replyHasObservableAnchor(_ lower: String) -> Bool {

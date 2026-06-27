@@ -389,6 +389,32 @@ struct CoachProviderChainTests {
         #expect(systemMessage.contains("say the recommendation first"))
     }
 
+    @Test func critiqueRepairMustNameTheUserFriction() {
+        let turn = "This still sounds cold and overexplained, like generic AI tips."
+        let vagueRepair = "Fair push. Your last rep had one filler, so say the recommendation first, then stop."
+        let specificRepair = "Fair push: that was advice, not coaching. Your last rep had one filler, so say the recommendation first, then soften it with one reassurance."
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: vagueRepair,
+            latestUserTurn: turn,
+            systemContext: "RECENT (most-recent first)\n- Your last rep had 1 filler."
+        ) == .missedTrustRepair)
+        #expect(AICoachChatService.professionalCoachRubric(
+            reply: vagueRepair,
+            latestUserTurn: turn
+        ).misses.contains(.missedTrustRepair))
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: specificRepair,
+            latestUserTurn: turn,
+            systemContext: "RECENT (most-recent first)\n- Your last rep had 1 filler."
+        ) == nil)
+        #expect(AICoachChatService.professionalCoachRubric(
+            reply: specificRepair,
+            latestUserTurn: turn
+        ).passesSeniorCoachFloor)
+    }
+
     @Test func overclaimRepairPromptPinsEvidenceSourceOfTruth() async throws {
         let turn = "Why did that answer land badly?"
         let transcript = "I waited too long to state the recommendation, then gave the context after it."
