@@ -25585,6 +25585,22 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .roboticPhrase("generic tip-giving"))
     }
 
+    @Test func rejectsTrustRepairThatOnlyPromisesAssistantBehavior() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Fair push. Formatting read aloud breaks trust, so I'll keep the next replies shorter, plain, and warmer.",
+            latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold."
+        )
+        #expect(issue == .missingPrescribedAction)
+    }
+
+    @Test func acceptsTrustRepairThatChangesTheUserMove() {
+        let reply = "Fair push: TTS reading symbols breaks trust. Your last rep had one filler, so say the recommendation first, give one proof point, then stop."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold."
+        ) == nil)
+    }
+
     @Test func rejectsGenericBreakThisRegister() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your last rep had six fillers under pressure. To break this, hold one second of silence before sentence two.",
@@ -26247,6 +26263,22 @@ struct AICoachChatReplyQualityGateTests {
         #expect(AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "What drill should I run next?"
+        ) == nil)
+    }
+
+    @Test func rejectsWhyLandedReplyWithNoLandingRead() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep had enough signal, so run the next rep with the decision first, one reason, and a hard stop.",
+            latestUserTurn: "Why did that answer land badly?"
+        )
+        #expect(issue == .missingInsightBridge)
+    }
+
+    @Test func acceptsWhyLandedReplyWithSpecificLandingRead() {
+        let reply = "From the transcript, the recommendation arrived late, so say the decision first, add one reason, then name the implication."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "Why did that answer land badly?"
         ) == nil)
     }
 

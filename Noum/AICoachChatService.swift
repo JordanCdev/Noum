@@ -1349,6 +1349,15 @@ actor AICoachChatService {
             return .menuInsteadOfDecision
         }
 
+        if trustRepairLacksUserPracticeMove(lower, latestUserTurn: latestUserTurn) {
+            return .missingPrescribedAction
+        }
+
+        if turnAsksWhyAnswerLandedBadly(latestUserTurn),
+           !replyExplainsWhyAnswerLanded(lower) {
+            return .missingInsightBridge
+        }
+
         if replyUsesUnrequestedNamedTechnique(lower, latestUserTurn: latestUserTurn) {
             return .unrequestedNamedTechnique
         }
@@ -1686,6 +1695,50 @@ actor AICoachChatService {
         ]) || isCritiqueTurn(lower)
     }
 
+    private nonisolated static func turnAsksWhyAnswerLandedBadly(_ turn: String?) -> Bool {
+        guard let lower = turn?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              lower.contains("why") else {
+            return false
+        }
+        return containsAny(lower, [
+            "landed badly", "land badly", "landed bad", "did not land",
+            "didn't land", "didn’t land", "not land", "not work",
+            "did not work", "didn't work", "didn’t work",
+            "fell flat", "missed", "came across wrong"
+        ])
+    }
+
+    private nonisolated static func trustRepairLacksUserPracticeMove(
+        _ lower: String,
+        latestUserTurn: String?
+    ) -> Bool {
+        guard isCritiqueTurn(latestUserTurn?.lowercased() ?? ""),
+              replyRepairsTrust(lower),
+              !replyHasUserPracticeMove(lower) else {
+            return false
+        }
+        return containsAny(lower, [
+            "i'll ", "i will ", "i’m ", "i'm ", "i am ",
+            "we'll ", "we will ", "we're ", "we are ",
+            "my reply", "my response", "next replies", "future replies",
+            "the reply", "the response", "the coaching", "plain text",
+            "shorter", "warmer", "more direct", "less robotic",
+            "formatting", "symbols", "tts", "report"
+        ])
+    }
+
+    private nonisolated static func replyHasUserPracticeMove(_ lower: String) -> Bool {
+        containsAny(lower, [
+            "say ", "run ", "record", "hold ", "state ", "state the",
+            "lead with", "put the", "give one", "give a ", "answer ",
+            "practice", "review", "repeat", "pause before", "add one",
+            "add a ", "end with", "end the", "end it", "stop there",
+            "cut the hedge", "cut that hedge", "make the ask",
+            "make your ask", "make the decision", "ask for",
+            "write one", "send one", "speak "
+        ])
+    }
+
     private nonisolated static func replyRepairsTrust(_ lower: String) -> Bool {
         containsAny(lower, [
             "fair", "you're right", "you are right", "good call", "useful push",
@@ -1746,6 +1799,42 @@ actor AICoachChatService {
             "end your", "state your", "state the", "make the", "make your", "lead with",
             "put the", "give one", "end the", "end it", "end with",
             "stop there", "then stop"
+        ])
+    }
+
+    private nonisolated static func replyExplainsWhyAnswerLanded(_ lower: String) -> Bool {
+        containsAny(lower, [
+            "recommendation arrived late",
+            "recommendation came late",
+            "recommendation landed late",
+            "decision arrived late",
+            "decision came late",
+            "point arrived late",
+            "point came late",
+            "buried the recommendation",
+            "buried your recommendation",
+            "buried the decision",
+            "buried your decision",
+            "too much context",
+            "context came first",
+            "setup came first",
+            "no reason followed",
+            "without giving a reason",
+            "without a reason",
+            "no implication",
+            "without an implication",
+            "bare claim",
+            "unsupported claim",
+            "asserted the claim",
+            "sounded like an opinion",
+            "risked sounding like an opinion",
+            "close softened",
+            "ending softened",
+            "trailed off",
+            "missing ask",
+            "ask was missing",
+            "hedge softened",
+            "hedged the close"
         ])
     }
 
