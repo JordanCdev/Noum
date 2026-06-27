@@ -389,6 +389,58 @@ struct CoachProviderChainTests {
         #expect(systemMessage.contains("say the recommendation first"))
     }
 
+    @Test func overclaimRepairPromptPinsEvidenceSourceOfTruth() async throws {
+        let turn = "Why did that answer land badly?"
+        let transcript = "I waited too long to state the recommendation, then gave the context after it."
+        let repaired = "From the transcript, the recommendation arrived late, so say the decision first, add one reason, then name the implication."
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: [transcript],
+            latestUserTurn: turn
+        )
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repaired,
+            latestUserTurn: turn,
+            quoteGuard: guardContext,
+            systemContext: "TRANSCRIPT\n- \(transcript)"
+        ) == nil)
+        let scripted = ScriptedCoachHTTP(results: [
+            .success(Self.openAIData("Your last rep led with the point, but it lacked a reason, so give one proof point next time.")),
+            .success(Self.openAIData(repaired))
+        ])
+        let service = AICoachChatService(
+            keyedProviders: { [.openAI] },
+            keyLookup: { _ in "test-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { provider, endpoint, key, body in
+                await scripted.next(provider: provider, endpoint: endpoint, key: key, body: body)
+            }
+        )
+
+        let outcome = await service.reply(
+            history: [
+                CoachMessage(role: .user, text: turn)
+            ],
+            systemPrompt: "You are Noum.",
+            userContext: "TRANSCRIPT\n- \(transcript)",
+            grounding: ChatGroundingContext(recentTimedTranscript: transcript)
+        )
+
+        guard case .reply(let text) = outcome else {
+            Issue.record("Expected repaired reply, got \(outcome)")
+            return
+        }
+        #expect(text == repaired)
+
+        let systemMessages = await scripted.systemMessages
+        #expect(systemMessages.count == 2)
+        let systemMessage = try #require(systemMessages.last)
+
+        #expect(systemMessage.contains("Evidence overclaim repair"))
+        #expect(systemMessage.contains("source of truth"))
+        #expect(systemMessage.contains("recommendation arrived late"))
+        #expect(systemMessage.contains("do not say the rep led with the point"))
+    }
+
     @Test func refusedGoogleCloudFallsThroughToClaudeReply() async {
         let diagnostics = CoachDiagnosticRecorderProbe()
         let acceptedReply = "I don't have a rated rep yet, so use the first answer as the baseline. Run one 45-second interview answer, then mark every um and hold one silent beat before sentence two."

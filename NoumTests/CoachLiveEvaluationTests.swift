@@ -15,6 +15,12 @@
 //    -D NOUM_LIVE_AI_EVAL_GEMINI_ONLY
 //    -D NOUM_LIVE_AI_EVAL_CLAUDE_ONLY
 //    -D NOUM_LIVE_AI_EVAL_PRODUCTION_CHAIN
+//
+//  Fixture selectors:
+//    -D NOUM_LIVE_AI_EVAL_SINGLE
+//    -D NOUM_LIVE_AI_EVAL_COLD_START
+//    -D NOUM_LIVE_AI_EVAL_TRUST_REPAIR
+//    -D NOUM_LIVE_AI_EVAL_OVERCLAIM
 //    -D NOUM_LIVE_AI_EVAL_FULL_CORPUS
 //
 //  This is not CI evidence and not a claim of human-coach parity. It is a
@@ -132,6 +138,7 @@ struct CoachLiveEvaluationTests {
             case .failure(let failure):
                 emit("failure: \(failure)")
                 failed = true
+                #expect(Bool(false), "\(fixture.id) failed with \(failure)")
             }
         }
 
@@ -151,7 +158,7 @@ struct CoachLiveEvaluationTests {
             #expect(Bool(false))
         }
         if failed {
-            Issue.record("Live coach eval failed; report written to \(resolvedOutputPath)\n\(reportText)")
+            #expect(!failed, "Live coach eval failed; report written to \(resolvedOutputPath)\n\(reportText)")
         }
     }
 
@@ -185,6 +192,10 @@ struct CoachLiveEvaluationTests {
             #elseif NOUM_LIVE_AI_EVAL_COLD_START
             let defaults = [
                 "cold-start-interview-baseline"
+            ]
+            #elseif NOUM_LIVE_AI_EVAL_OVERCLAIM
+            let defaults = [
+                "overclaim-hypothesis-boundary"
             ]
             #else
             let defaults = [

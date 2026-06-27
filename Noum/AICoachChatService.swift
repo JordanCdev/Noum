@@ -2329,6 +2329,9 @@ actor AICoachChatService {
             latestUserTurn: messages.last(where: { $0.role == .user })?.text,
             system: system
         )
+        let evidenceRepairSourceOfTruthRule = issue == .overclaimsEvidence
+            ? "- Evidence overclaim repair: treat the Required anchor and Expert reference shape as the source of truth. Do not re-diagnose the transcript differently; preserve the late/early recommendation read exactly."
+            : ""
         let repairSystem = """
         \(system)
 
@@ -2351,6 +2354,7 @@ actor AICoachChatService {
         - No broad menu. Pick one coaching move.
         \(requiredAnchor.map { "- Required anchor: \($0)" } ?? "")
         \(referenceShape.map { "- Expert reference shape: \($0)" } ?? "")
+        \(evidenceRepairSourceOfTruthRule)
         - The final answer must include a direct action verb the user can do now
           or in the next rep: say, run, record, hold, cut, use, answer,
           practice, review, end, state, make, lead, put, or give.
