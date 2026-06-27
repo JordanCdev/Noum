@@ -63,19 +63,27 @@ struct CoachChatEvaluationCIReport: Codable, Equatable {
             schemaVersion: CoachChatEvaluationCorpus.reportSchemaVersion,
             fixtureCount: fixtures.count,
             rows: fixtures.map { fixture in
+                let context = CoachChatEvaluationCorpus.renderedContext(for: fixture)
                 let referenceResult = AICoachChatService.professionalCoachRubric(
                     reply: fixture.referenceReply,
                     latestUserTurn: fixture.latestUserTurn
                 )
+                let referenceIssue = AICoachChatService.replyQualityIssue(
+                    in: fixture.referenceReply,
+                    latestUserTurn: fixture.latestUserTurn,
+                    systemContext: context
+                )
                 let issue = AICoachChatService.replyQualityIssue(
                     in: fixture.knownBadReply,
-                    latestUserTurn: fixture.latestUserTurn
+                    latestUserTurn: fixture.latestUserTurn,
+                    systemContext: context
                 )
                 return CoachChatEvaluationCIReportRow(
                     fixtureID: fixture.id,
                     pillar: fixture.pillar.rawValue,
                     expertBaselineStatus: fixture.expertBaseline.status.rawValue,
                     referenceReplyPassesRubric: referenceResult.passesSeniorCoachFloor,
+                    referenceReplyPassesQualityGate: referenceIssue == nil,
                     knownBadIssueMatched: issue == fixture.expectedBadIssue,
                     expectedBadIssue: String(describing: fixture.expectedBadIssue),
                     contextNeedleCount: fixture.expectedContextNeedles.count
@@ -97,6 +105,7 @@ struct CoachChatEvaluationCIReportRow: Codable, Equatable {
     let pillar: String
     let expertBaselineStatus: String
     let referenceReplyPassesRubric: Bool
+    let referenceReplyPassesQualityGate: Bool
     let knownBadIssueMatched: Bool
     let expectedBadIssue: String
     let contextNeedleCount: Int
@@ -154,7 +163,7 @@ struct CoachChatExpertReviewPacketRow: Codable, Equatable {
 }
 
 enum CoachChatEvaluationCorpus {
-    static let reportSchemaVersion = "coach-chat-eval-report-v1"
+    static let reportSchemaVersion = "coach-chat-eval-report-v2"
     static let expertReviewPacketSchemaVersion = "coach-chat-expert-review-packet-v1"
 
     static let fixtures: [CoachChatEvaluationFixture] = [
@@ -174,7 +183,7 @@ enum CoachChatEvaluationCorpus {
             ],
             referenceReply: "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.",
             knownBadReply: "Keep practicing and try to sound more confident.",
-            expectedBadIssue: .unanchoredCoaching
+            expectedBadIssue: .ignoredCoachingExpertise
         ),
         CoachChatEvaluationFixture(
             id: "filler-pressure-prescription",
@@ -429,9 +438,18 @@ enum CoachChatEvaluationCorpus {
             ],
             referenceReply: "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
             knownBadReply: "You should think about your audience and try to communicate clearly.",
-            expectedBadIssue: .unanchoredCoaching
+            expectedBadIssue: .ignoredCoachingExpertise
         )
     ]
+
+    static func deterministicCoachingExpertise(for fixture: CoachChatEvaluationFixture) -> [CoachKnowledgeCard] {
+        KnowledgeRetriever.retrieve(
+            query: fixture.latestUserTurn,
+            lever: fixture.trends.first?.skillArea,
+            voice: fixture.profile?.speakingStyleGoal,
+            hasDiagnosis: !fixture.sessions.isEmpty
+        )
+    }
 
     static func renderedContext(for fixture: CoachChatEvaluationFixture) -> String {
         CoachContextBuilder.userContext(
@@ -444,7 +462,8 @@ enum CoachChatEvaluationCorpus {
             pathGatingPhrase: nil,
             trends: fixture.trends,
             latestUserTurn: fixture.latestUserTurn,
-            previousCoachReply: fixture.previousCoachReply
+            previousCoachReply: fixture.previousCoachReply,
+            coachingExpertise: deterministicCoachingExpertise(for: fixture)
         )
     }
 

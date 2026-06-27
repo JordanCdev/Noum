@@ -26927,8 +26927,29 @@ struct CoachChatEvaluationFixtureTests {
         }
     }
 
+    @Test func fixturesRenderProductionLikeCoachingExpertiseWhenRetrieved() {
+        for fixture in CoachChatEvaluationCorpus.fixtures {
+            let context = CoachChatEvaluationCorpus.renderedContext(for: fixture)
+            let expertise = CoachChatEvaluationCorpus.deterministicCoachingExpertise(for: fixture)
+            if expertise.isEmpty {
+                #expect(!CoachChatEvaluationCorpus.contains(context, "COACHING EXPERTISE"),
+                        "\(fixture.id) should omit an empty expertise block.")
+            } else {
+                #expect(CoachChatEvaluationCorpus.contains(context, "COACHING EXPERTISE"),
+                        "\(fixture.id) should carry retrieved coaching expertise.")
+                for card in expertise {
+                    #expect(CoachChatEvaluationCorpus.contains(context, card.id)
+                            || CoachChatEvaluationCorpus.contains(context, card.technique)
+                            || CoachChatEvaluationCorpus.contains(context, card.title),
+                            "\(fixture.id) missing retrieved card \(card.id)")
+                }
+            }
+        }
+    }
+
     @Test func referenceSeniorRepliesPassTheProfessionalRubric() {
         for fixture in CoachChatEvaluationCorpus.fixtures {
+            let context = CoachChatEvaluationCorpus.renderedContext(for: fixture)
             let result = AICoachChatService.professionalCoachRubric(
                 reply: fixture.referenceReply,
                 latestUserTurn: fixture.latestUserTurn
@@ -26937,16 +26958,19 @@ struct CoachChatEvaluationFixtureTests {
                     "\(fixture.id) reference reply should pass. Misses: \(result.misses)")
             #expect(AICoachChatService.replyQualityIssue(
                 in: fixture.referenceReply,
-                latestUserTurn: fixture.latestUserTurn
+                latestUserTurn: fixture.latestUserTurn,
+                systemContext: context
             ) == nil)
         }
     }
 
     @Test func knownBadRepliesFailForTheIntendedReason() {
         for fixture in CoachChatEvaluationCorpus.fixtures {
+            let context = CoachChatEvaluationCorpus.renderedContext(for: fixture)
             let issue = AICoachChatService.replyQualityIssue(
                 in: fixture.knownBadReply,
-                latestUserTurn: fixture.latestUserTurn
+                latestUserTurn: fixture.latestUserTurn,
+                systemContext: context
             )
             #expect(issue == fixture.expectedBadIssue,
                     "\(fixture.id) expected \(fixture.expectedBadIssue), got \(String(describing: issue))")
@@ -26995,13 +27019,15 @@ struct CoachChatEvaluationFixtureTests {
         #expect(first.schemaVersion == CoachChatEvaluationCorpus.reportSchemaVersion)
         #expect(first.fixtureCount == CoachChatEvaluationCorpus.fixtures.count)
         #expect(first.rows.allSatisfy { $0.referenceReplyPassesRubric })
+        #expect(first.rows.allSatisfy { $0.referenceReplyPassesQualityGate })
         #expect(first.rows.allSatisfy { $0.knownBadIssueMatched })
         #expect(first.rows.allSatisfy { $0.expertBaselineStatus == "pendingExpertReview" })
 
         let encoded = try first.encodedSortedJSON()
-        #expect(encoded.contains(#""schemaVersion":"coach-chat-eval-report-v1""#))
+        #expect(encoded.contains(#""schemaVersion":"coach-chat-eval-report-v2""#))
         #expect(encoded.contains(#""fixtureID":"cold-start-interview-baseline""#))
         #expect(encoded.contains(#""referenceReplyPassesRubric":true"#))
+        #expect(encoded.contains(#""referenceReplyPassesQualityGate":true"#))
     }
 
     @Test func expertReviewPacketCoversEveryFixtureWithoutClaimingValidation() throws {
