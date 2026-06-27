@@ -25433,6 +25433,30 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .roboticPhrase("system symbols"))
     }
 
+    @Test func rejectsStiffReportVoiceSelfNarrationInTrustRepair() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You are right to call that out, and I am cutting the robotic report voice.",
+            latestUserTurn: "This is robotic and too much writing."
+        )
+        #expect(issue == .roboticPhrase("i am cutting the"))
+    }
+
+    @Test func rejectsWillCutReportVoiceSelfNarrationInTrustRepair() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Fair push. I will cut the report voice and keep this brief because your last rep shows one usable signal.",
+            latestUserTurn: "This is robotic and too much writing."
+        )
+        #expect(issue == .roboticPhrase("i will cut the report voice"))
+    }
+
+    @Test func rejectsGenericTipGivingTrustRepair() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You are right to call that out, as that generic tip-giving was cold and did not help.",
+            latestUserTurn: "This still sounds cold and overexplained, like generic AI tips."
+        )
+        #expect(issue == .roboticPhrase("generic tip-giving"))
+    }
+
     @Test func rejectsPopPsychBrainRegisterInCoachReply() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your last rep had five fillers, so give your brain more runway before sentence two.",
@@ -25468,6 +25492,14 @@ struct AICoachChatReplyQualityGateTests {
     @Test func rejectsSilenceAsGuaranteedComposureOrOutcome() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Hold one second of silence because that silence reads as composure, and it stops the filler before it starts.",
+            latestUserTurn: "How do I stop saying um under pressure?"
+        )
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func rejectsSilentBeatAsGuaranteedFillerStop() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Run one rep now with that silent beat to see if it stops the filler.",
             latestUserTurn: "How do I stop saying um under pressure?"
         )
         #expect(issue == .overclaimsEvidence)
@@ -25775,6 +25807,30 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "What next?"
         )
         #expect(issue == nil)
+    }
+
+    @Test func turnAwareGateAcceptsNaturalImperativeAction() {
+        let reply = "Your last rep had zero fillers and a clean open, so the gap worth testing is the close. End your next executive update on the single thing you want the room to do, then stop."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "What next?"
+        ) == nil)
+    }
+
+    @Test func turnAwareGateRejectsAbsolutePointNeverLedClaim() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep never led with the point, so open your next answer with the conclusion in the first sentence.",
+            latestUserTurn: "What next?"
+        )
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func turnAwareGateAcceptsCloseFocusedWhatNextMove() {
+        let reply = "Your last rep was clean on fillers, so the safer target is the close. Rewrite only the final sentence as the ask, then run one short rep with that line as the finish."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "What next?"
+        ) == nil)
     }
 
     @Test func contextAwareGateRejectsGenericAdviceWhenRecentSessionExists() {

@@ -399,7 +399,7 @@ enum CoachChatReplyQualityIssue: Equatable {
         case .menuInsteadOfDecision:
             return "The draft offers a broad menu or asks the user to choose again. Pick one recommendation and prescribe it."
         case .missedTrustRepair:
-            return "The user challenged the coaching quality. Repair trust first with a short phrase such as \"Fair push\" or \"You're right to call that out\", name the friction briefly, then use so or because to connect one grounded fact to one changed coaching move."
+            return "The user challenged the coaching quality. Repair trust first with \"Fair push\" or another short natural acknowledgement, name the friction briefly, then use so or because to connect one grounded fact to one changed coaching move. Avoid stiff self-narration about changing the reply style."
         case .missingPrescribedAction:
             return "The draft does not prescribe a concrete next move. Give one action the user can take in the next rep or review."
         case .missingInsightBridge:
@@ -1483,6 +1483,14 @@ actor AICoachChatService {
         "in my response",
         "system symbols",
         "stripping out",
+        "generic tip-giving",
+        "you are right to call that out, as",
+        "i am cutting the",
+        "i'm cutting the",
+        "i will cut the report voice",
+        "i'll cut the report voice",
+        "i will cut the robotic report voice",
+        "i'll cut the robotic report voice",
         "your brain",
         "brain was searching",
         "searching for the next word",
@@ -1678,7 +1686,9 @@ actor AICoachChatService {
             "next rep", "try ", "practice", "run ", "hold ", "record",
             "answer", "send", "say ", "use ", "repeat", "do one", "focus",
             "start", "ask ", "replace", "keep the ", "keep this ", "cut ",
-            "pause before", "one drill", "one rep", "review", "speak "
+            "pause before", "one drill", "one rep", "review", "speak ",
+            "end your", "state your", "make the", "make your", "lead with",
+            "put the", "give one", "stop there", "then stop"
         ])
     }
 
@@ -1699,7 +1709,10 @@ actor AICoachChatService {
     private nonisolated static func replyOverclaimsEvidence(_ lower: String) -> Bool {
         if containsAny(lower, [
             "this proves", "the data proves", "definitely means",
-            "always do this", "you lack conviction", "you are weak"
+            "always do this", "you lack conviction", "you are weak",
+            "never led with the point", "never led with your point",
+            "never led with the recommendation",
+            "never led with your recommendation"
         ]) {
             return true
         }
@@ -1708,7 +1721,7 @@ actor AICoachChatService {
             "automatically improves", "automatically reduces",
             "naturally drops", "naturally reduces", "will drop your pace",
             "will reduce your fillers", "will make you sound",
-            "stops the filler before", "stops fillers before",
+            "stops the filler", "stops fillers", "stops filler words",
             "will stop the filler", "will stop fillers", "will stop filler words"
         ]) {
             return true
@@ -2020,8 +2033,8 @@ actor AICoachChatService {
         - No broad menu. Pick one coaching move.
         \(requiredAnchor.map { "- Required anchor: \($0)" } ?? "")
         - The final answer must include a direct action verb the user can do now
-          or in the next rep: say, run, record, hold, cut, use, answer, practice,
-          or review.
+          or in the next rep: say, run, record, hold, cut, use, answer,
+          practice, review, end, state, make, lead, put, or give.
         - For filler-word work, say "hold a silent beat" or "hold one second of
           silence"; never tell the user to close their mouth or lips.
         - Do not explain filler counts as caused by a separate structure read
@@ -2031,9 +2044,16 @@ actor AICoachChatService {
         - Do not infer the user's hidden mental cause for fillers. Avoid lines
           like "because the next word was not ready." Use observable phrasing:
           "you had 6 fillers, so test a silent beat as the replacement."
+        - Do not make absolute structure claims such as "never led with the
+          point" unless the context explicitly says the point never appeared.
+          Prefer the safer observable target: "the close softened", "the point
+          arrived late", or "the final sentence needs the ask."
         - Do not present silence as a guaranteed perception or outcome. Avoid
           "silence reads as composure" and "it stops the filler"; write "a
           silent beat can give you one deliberate next word."
+        - Avoid stiff trust-repair narration such as "You are right to call that
+          out, as..." or "I am cutting the robotic report voice." Prefer a human
+          first sentence like "Fair push. That read too much like a report."
         - The final answer must contain the word "so" or "because" when it connects the anchor to the action.
         - When referencing a practice session, write "your last rep" or "a recent rep"; never write the exact calendar date.
         - If this is a trust-repair or critique turn, use exactly two sentences:
@@ -2048,8 +2068,8 @@ actor AICoachChatService {
           second sentence still needs the action, for example: "Your last rep had
           4 fillers, so say the decision first, give one proof point, then stop."
         - Do not narrate your own response mechanics. Avoid assistant-style phrases
-          such as "in my response", "system symbols", or "stripping out"; say the
-          changed coaching move directly.
+          such as "in my response", "system symbols", "generic tip-giving", or
+          "stripping out"; say the changed coaching move directly.
         - Do not name a drill/framework unless the user explicitly asked for a named drill or plan. Translate the technique into plain action.
         - If the user showed frustration, do not defend the app.
         - If the user asked for shortness, make the answer shorter before making it smarter.
