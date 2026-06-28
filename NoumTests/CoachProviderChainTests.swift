@@ -495,6 +495,72 @@ struct CoachProviderChainTests {
         #expect(systemMessage.contains("do not say the rep led with the point"))
     }
 
+    @Test func safeReferenceRepairResolvesEvidenceBoundaryAfterProviderRepairMiss() async throws {
+        let diagnostics = CoachDiagnosticRecorderProbe()
+        let turn = "Why did that answer land badly?"
+        let transcript = "I waited too long to state the recommendation, then gave the context after it."
+        let safeRepair = "From the transcript, the recommendation arrived late, so say the decision first, add one reason, then name the implication."
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: [transcript],
+            latestUserTurn: turn
+        )
+        #expect(AICoachChatService.replyQualityIssue(
+            in: safeRepair,
+            latestUserTurn: turn,
+            quoteGuard: guardContext,
+            systemContext: "TRANSCRIPT\n- \(transcript)"
+        ) == nil)
+        let scripted = ScriptedCoachHTTP(results: [
+            .success(Self.openAIData("Your last rep led with the point, but it lacked a reason, so give one proof point next time.")),
+            .success(Self.openAIData("Your last rep put the recommendation right up front, but it needed a reason, so lead with the point and add one implication."))
+        ])
+        let service = AICoachChatService(
+            keyedProviders: { [.openAI] },
+            keyLookup: { _ in "test-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { provider, endpoint, key, body in
+                await scripted.next(provider: provider, endpoint: endpoint, key: key, body: body)
+            },
+            diagnosticRecorder: { surface, providerName, model, outcome, reason, statusCode, startedAt, now in
+                diagnostics.record(
+                    surface: surface,
+                    providerName: providerName,
+                    model: model,
+                    outcome: outcome,
+                    reason: reason,
+                    statusCode: statusCode,
+                    startedAt: startedAt,
+                    now: now
+                )
+            }
+        )
+
+        let outcome = await service.reply(
+            history: [
+                CoachMessage(role: .user, text: turn)
+            ],
+            systemPrompt: "You are Noum.",
+            userContext: "TRANSCRIPT\n- \(transcript)",
+            grounding: ChatGroundingContext(recentTimedTranscript: transcript)
+        )
+
+        guard case .reply(let text) = outcome else {
+            Issue.record("Expected safe reference repair, got \(outcome)")
+            return
+        }
+        #expect(text == safeRepair)
+        #expect(await scripted.callCount == 2)
+        #expect(diagnostics.records.contains { record in
+            record.surface == "Ask Noum chat" &&
+            record.provider == "OpenAI" &&
+            record.outcome == .success &&
+            record.reason == "Safe reference repair accepted"
+        })
+        #expect(!diagnostics.records.contains { record in
+            record.reason == "All chat providers failed quality gate"
+        })
+    }
+
     @Test func refusedGoogleCloudFallsThroughToClaudeReply() async {
         let diagnostics = CoachDiagnosticRecorderProbe()
         let acceptedReply = "I don't have a rated rep yet, so use the first answer as the baseline. Run one 45-second interview answer, then mark every um and hold one silent beat before sentence two."

@@ -167,6 +167,17 @@ struct CoachChatExpertReviewPacketRow: Codable, Equatable {
 enum CoachChatEvaluationCorpus {
     static let reportSchemaVersion = "coach-chat-eval-report-v2"
     static let expertReviewPacketSchemaVersion = "coach-chat-expert-review-packet-v1"
+    static let latestManualEvalFixtureIDs = [
+        "cold-start-interview-baseline",
+        "filler-pressure-prescription",
+        "metric-action-without-read",
+        "critique-trust-repair",
+        "markdown-tts-trust-repair",
+        "assistant-explainer-register",
+        "what-next-single-move",
+        "overclaim-hypothesis-boundary",
+        "leadership-transfer-setup"
+    ]
 
     static let fixtures: [CoachChatEvaluationFixture] = [
         CoachChatEvaluationFixture(
@@ -581,6 +592,11 @@ struct CoachChatLatestLiveEvalRegressionTests {
                 .roboticPhrase("give yourself room to find")
             ),
             (
+                "metric-action-without-read",
+                "Your last rep carried five fillers, which is a solid baseline to test against. Run one rep now where you focus on a slow open: say your first sentence slower than feels natural, then hold a silent beat before sentence two.",
+                .missingInsightBridge
+            ),
+            (
                 "critique-trust-repair",
                 "You are right to call that out, and I am cutting the robotic report voice. Your last rep had one filler, so record a new rep where you say the main point in your very first sentence and then stop.",
                 .roboticPhrase("i am cutting the")
@@ -594,6 +610,11 @@ struct CoachChatLatestLiveEvalRegressionTests {
                 "assistant-explainer-register",
                 "You are right to call that out, as that generic tip-giving was cold and did not help. Your last rep had one filler but the main point did not clearly lead, so open your next attempt by saying your core client recommendation in the very first sentence because that tests whether a strong start helps you feel in control.",
                 .roboticPhrase("generic tip-giving")
+            ),
+            (
+                "what-next-single-move",
+                "Your last rep was clean on fillers but the point arrived late, so state your main takeaway in your very first sentence on the next run. Leading with the conclusion tests whether that immediately gives you more control over the pace.",
+                .missingInsightBridge
             ),
             (
                 "overclaim-hypothesis-boundary",
@@ -633,8 +654,20 @@ struct CoachChatLatestLiveEvalRegressionTests {
                 "Your last rep had 6 fillers, so hold one silent beat before the final sentence and check whether the next rep lowers the count."
             ),
             (
+                "metric-action-without-read",
+                "Your last rep had 5 fillers, so hold one silent beat after the decision line and restart if a filler appears."
+            ),
+            (
                 "assistant-explainer-register",
                 "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance."
+            ),
+            (
+                "what-next-single-move",
+                "The pattern I'd pick is the rushed close. Review the last transcript, rewrite only the final sentence, then run one rep with that close as the target."
+            ),
+            (
+                "overclaim-hypothesis-boundary",
+                "From the transcript, the recommendation arrived late, so say the decision first, add one reason, then name the implication."
             ),
             (
                 "leadership-transfer-setup",

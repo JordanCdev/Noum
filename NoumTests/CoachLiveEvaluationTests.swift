@@ -11,16 +11,20 @@
 //      OTHER_SWIFT_FLAGS='$(inherited) -D NOUM_LIVE_AI_EVAL -D NOUM_LIVE_AI_EVAL_SINGLE'
 //
 //  Provider selectors:
+//    NOUM_LIVE_AI_PROVIDER_CHAIN=agent-platform|gemini|claude|production
 //    -D NOUM_LIVE_AI_EVAL_AGENT_PLATFORM_ONLY
 //    -D NOUM_LIVE_AI_EVAL_GEMINI_ONLY
 //    -D NOUM_LIVE_AI_EVAL_CLAUDE_ONLY
 //    -D NOUM_LIVE_AI_EVAL_PRODUCTION_CHAIN
 //
 //  Fixture selectors:
+//    NOUM_LIVE_AI_FIXTURES=latest-transcript
+//    NOUM_LIVE_AI_FIXTURES=fixture-id,another-fixture-id
 //    -D NOUM_LIVE_AI_EVAL_SINGLE
 //    -D NOUM_LIVE_AI_EVAL_COLD_START
 //    -D NOUM_LIVE_AI_EVAL_TRUST_REPAIR
 //    -D NOUM_LIVE_AI_EVAL_OVERCLAIM
+//    -D NOUM_LIVE_AI_EVAL_LATEST_TRANSCRIPT
 //    -D NOUM_LIVE_AI_EVAL_FULL_CORPUS
 //
 //  This is not CI evidence and not a claim of human-coach parity. It is a
@@ -34,6 +38,31 @@ import Testing
 
 @Suite("CoachLiveEvaluationTests")
 struct CoachLiveEvaluationTests {
+
+    @Test func latestTranscriptPresetCoversEveryManualEvalTurn() {
+        let fixtures = Self.selectedFixtures(env: [
+            "NOUM_LIVE_AI_FIXTURES": "latest-transcript"
+        ])
+
+        #expect(fixtures.map(\.id) == CoachChatEvaluationCorpus.latestManualEvalFixtureIDs)
+    }
+
+    @Test func runtimeProviderSelectorCanExerciseProductionChain() {
+        let allKeyed: (CoachChatProvider) -> String? = { _ in "test-key" }
+
+        #expect(Self.liveProviderChain(
+            env: ["NOUM_LIVE_AI_PROVIDER_CHAIN": "production"],
+            keyLookup: allKeyed
+        ) == CoachChatProvider.allCases)
+        #expect(Self.liveProviderChain(
+            env: ["NOUM_LIVE_AI_PROVIDER_CHAIN": "claude"],
+            keyLookup: allKeyed
+        ) == [.anthropic])
+        #expect(Self.liveProviderChain(
+            env: ["NOUM_LIVE_AI_PROVIDER_CHAIN": "gemini"],
+            keyLookup: allKeyed
+        ) == [.agentPlatform, .gemini])
+    }
 
     @Test func liveGeminiRepliesClearFixtureRubric() async {
         guard Self.liveEvalEnabled else {
@@ -170,9 +199,11 @@ struct CoachLiveEvaluationTests {
         #endif
     }
 
-    private static func selectedFixtures() -> [CoachChatEvaluationFixture] {
+    private static func selectedFixtures(
+        env: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [CoachChatEvaluationFixture] {
         let all = CoachChatEvaluationCorpus.fixtures
-        let raw = ProcessInfo.processInfo.environment["NOUM_LIVE_AI_FIXTURES"]?
+        let raw = env["NOUM_LIVE_AI_FIXTURES"]?
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard let raw, !raw.isEmpty else {
@@ -181,7 +212,9 @@ struct CoachLiveEvaluationTests {
             #else
             // Keep the default run cheap but representative: cold start,
             // pressure prescription, and trust repair.
-            #if NOUM_LIVE_AI_EVAL_SINGLE
+            #if NOUM_LIVE_AI_EVAL_LATEST_TRANSCRIPT
+            let defaults = CoachChatEvaluationCorpus.latestManualEvalFixtureIDs
+            #elseif NOUM_LIVE_AI_EVAL_SINGLE
             let defaults = [
                 "filler-pressure-prescription"
             ]
@@ -206,6 +239,12 @@ struct CoachLiveEvaluationTests {
             #endif
             return defaults.compactMap { id in all.first { $0.id == id } }
             #endif
+        }
+
+        let preset = raw.lowercased()
+        if ["latest", "latest-transcript", "latest-manual-eval"].contains(preset) {
+            return CoachChatEvaluationCorpus.latestManualEvalFixtureIDs
+                .compactMap { id in all.first { $0.id == id } }
         }
 
         let wanted = raw
@@ -274,21 +313,45 @@ struct CoachLiveEvaluationTests {
         )
     }
 
-    private static func liveProviderChain() -> [CoachChatProvider] {
+    private static func liveProviderChain(
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        keyLookup: ((CoachChatProvider) -> String?)? = nil
+    ) -> [CoachChatProvider] {
+        let lookup = keyLookup ?? { provider in
+            Self.liveKey(for: provider)
+        }
+        let runtimeSelector = env["NOUM_LIVE_AI_PROVIDER_CHAIN"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        switch runtimeSelector {
+        case "agent", "agent-platform", "google-cloud", "vertex":
+            return [.agentPlatform].filter { lookup($0) != nil }
+        case "gemini", "google":
+            return [.agentPlatform, .gemini].filter { lookup($0) != nil }
+        case "claude", "anthropic":
+            return [.anthropic].filter { lookup($0) != nil }
+        case "production", "all", "chain":
+            return CoachChatProvider.allCases.filter { lookup($0) != nil }
+        case nil, "":
+            break
+        default:
+            break
+        }
+
         #if NOUM_LIVE_AI_EVAL_AGENT_PLATFORM_ONLY
-        return [.agentPlatform].filter { Self.liveKey(for: $0) != nil }
+        return [.agentPlatform].filter { lookup($0) != nil }
         #elseif NOUM_LIVE_AI_EVAL_GEMINI_ONLY
-        return [.gemini].filter { Self.liveKey(for: $0) != nil }
+        return [.gemini].filter { lookup($0) != nil }
         #elseif NOUM_LIVE_AI_EVAL_CLAUDE_ONLY
-        return [.anthropic].filter { Self.liveKey(for: $0) != nil }
+        return [.anthropic].filter { lookup($0) != nil }
         #elseif NOUM_LIVE_AI_EVAL_PRODUCTION_CHAIN
-        return CoachChatProvider.allCases.filter { Self.liveKey(for: $0) != nil }
+        return CoachChatProvider.allCases.filter { lookup($0) != nil }
         #else
         // Keep the manual eval focused on the Google Gemini path the product is
         // being tuned around. If Google Cloud is keyed it goes first; direct
         // Gemini remains the fast fallback. Other providers are deliberately
         // excluded so a "green" live eval cannot hide that Gemini is broken.
-        return [.agentPlatform, .gemini].filter { Self.liveKey(for: $0) != nil }
+        return [.agentPlatform, .gemini].filter { lookup($0) != nil }
         #endif
     }
 

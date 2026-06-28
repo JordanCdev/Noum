@@ -1206,6 +1206,19 @@ actor AICoachChatService {
                             recordChatDiagnostic(.success, "Repair reply accepted", provider: provider)
                             return .reply(repaired)
                         }
+                        if let safeRepair = Self.safeReferenceRepairReply(
+                            issue: issue,
+                            latestUserTurn: latestUserTurn,
+                            system: system,
+                            quoteGuard: quoteGuard
+                        ) {
+                            recordChatDiagnostic(
+                                .success,
+                                "Safe reference repair accepted",
+                                provider: provider
+                            )
+                            return .reply(safeRepair)
+                        }
                         // A content miss by this model on this turn — let the
                         // next provider in the chain take the question.
                         recordChatDiagnostic(
@@ -1350,6 +1363,22 @@ actor AICoachChatService {
         if let quoteGuard,
            replyContradictsLateRecommendationEvidence(lower, quoteGuard: quoteGuard) {
             return .overclaimsEvidence
+        }
+
+        if replyMisdirectsDecisionLineFillerRead(
+            lower,
+            latestUserTurn: latestUserTurn,
+            systemContext: systemContext
+        ) {
+            return .missingInsightBridge
+        }
+
+        if replyIgnoresClosingStrengthNextMove(
+            lower,
+            latestUserTurn: latestUserTurn,
+            systemContext: systemContext
+        ) {
+            return .missingInsightBridge
         }
 
         if lower.contains("which direction would you prefer")
@@ -2087,6 +2116,101 @@ actor AICoachChatService {
         }
     }
 
+    private nonisolated static func replyMisdirectsDecisionLineFillerRead(
+        _ lower: String,
+        latestUserTurn: String?,
+        systemContext: String?
+    ) -> Bool {
+        guard containsAny(latestUserTurn?.lowercased() ?? "", [
+            "um", "filler", "fillers", "hesitat"
+        ]),
+              let systemContext,
+              fillerEvidenceSitsInsideDecisionLine(systemContext) else {
+            return false
+        }
+        if containsAny(lower, [
+            "after the decision",
+            "after the recommendation",
+            "inside the recommendation",
+            "inside the decision"
+        ]) {
+            return false
+        }
+        return containsAny(lower, [
+            "slow open",
+            "slow opener",
+            "first line slower",
+            "first sentence slower",
+            "open your next",
+            "opening slower",
+            "before sentence two",
+            "early um",
+            "strong start",
+            "first sentence"
+        ])
+    }
+
+    private nonisolated static func replyIgnoresClosingStrengthNextMove(
+        _ lower: String,
+        latestUserTurn: String?,
+        systemContext: String?
+    ) -> Bool {
+        guard turnAsksForNextMove(latestUserTurn),
+              let context = systemContext?.lowercased(),
+              contextMentionsClosingStrengthLeverage(context) else {
+            return false
+        }
+        guard containsAny(lower, [
+            "point arrived late",
+            "main point arrived late",
+            "state your main",
+            "state the main",
+            "very first sentence",
+            "first sentence",
+            "lead with the conclusion",
+            "leading with the conclusion",
+            "open your next",
+            "opening"
+        ]) else {
+            return false
+        }
+        return !containsAny(lower, [
+            "close",
+            "closing",
+            "ending",
+            "final sentence",
+            "end with",
+            "end on",
+            "the ask"
+        ])
+    }
+
+    private nonisolated static func turnAsksForNextMove(_ latestUserTurn: String?) -> Bool {
+        let lower = latestUserTurn?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        return containsAny(lower, [
+            "what next",
+            "next move",
+            "what should i do next",
+            "what should i practice next",
+            "where next"
+        ])
+    }
+
+    private nonisolated static func contextMentionsClosingStrengthLeverage(_ lower: String) -> Bool {
+        containsAny(lower, [
+            "closingstrength",
+            "closing strength",
+            "close lost force",
+            "rushed close",
+            "weak close",
+            "soft close",
+            "final sentence the ask",
+            "final sentence needs the ask"
+        ])
+    }
+
     private nonisolated static func sourceMentionsLateRecommendation(_ text: String) -> Bool {
         CoachContextBuilder.transcriptMentionsLateRecommendation(text)
     }
@@ -2609,6 +2733,61 @@ actor AICoachChatService {
         default:
             return nil
         }
+    }
+
+    private nonisolated static func safeReferenceRepairReply(
+        issue: CoachChatReplyQualityIssue,
+        latestUserTurn: String?,
+        system: String,
+        quoteGuard: CoachChatQuoteGuardContext?
+    ) -> String? {
+        guard issue == .overclaimsEvidence || issue == .missingInsightBridge else {
+            return nil
+        }
+        guard safeReferenceRepairIsAllowed(
+            latestUserTurn: latestUserTurn,
+            system: system
+        ),
+              let referenceShape = repairReferenceShape(
+                issue: issue,
+                latestUserTurn: latestUserTurn,
+                system: system
+              ) else {
+            return nil
+        }
+        guard replyQualityIssue(
+            in: referenceShape,
+            latestUserTurn: latestUserTurn,
+            quoteGuard: quoteGuard,
+            systemContext: system
+        ) == nil else {
+            return nil
+        }
+        let normalized = CoachReplyTextSanitizer.coachReplyText(from: referenceShape)
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private nonisolated static func safeReferenceRepairIsAllowed(
+        latestUserTurn: String?,
+        system: String
+    ) -> Bool {
+        let lowerTurn = latestUserTurn?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        let lowerSystem = system.lowercased()
+        if turnAsksWhyAnswerLandedBadly(latestUserTurn),
+           sourceMentionsLateRecommendation(system) {
+            return true
+        }
+        if containsAny(lowerTurn, ["um", "filler", "fillers", "hesitat"]),
+           fillerEvidenceSitsInsideDecisionLine(system) {
+            return true
+        }
+        if turnAsksForNextMove(latestUserTurn),
+           contextMentionsClosingStrengthLeverage(lowerSystem) {
+            return true
+        }
+        return false
     }
 
     nonisolated static func retrievedCoachingExpertiseApplicationLine(from systemContext: String) -> String? {
