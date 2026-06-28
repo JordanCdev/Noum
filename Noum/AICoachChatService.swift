@@ -2715,6 +2715,9 @@ actor AICoachChatService {
             move = "run one short rep with the point first and one proof point after it"
         }
 
+        if contextSaysWarmthBeforeRecommendation(system) {
+            return "\(friction) Your last rep has the useful signal: warmth came before the recommendation, so say the recommendation first, then soften it with one human reassurance."
+        }
         if let count = firstFillerCount(in: system) {
             return "\(friction) Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so \(move)."
         }
@@ -2722,6 +2725,14 @@ actor AICoachChatService {
             return "\(friction) Your last rep gives one usable signal, so \(move)."
         }
         return "\(friction) No baseline yet, so record one short rep before polishing the answer."
+    }
+
+    private nonisolated static func contextSaysWarmthBeforeRecommendation(_ system: String) -> Bool {
+        containsAny(system.lowercased(), [
+            "safe warmth fact",
+            "warmth came before the recommendation",
+            "reassurance came before the recommendation"
+        ])
     }
 
     private nonisolated static func requiredRepairAnchor(

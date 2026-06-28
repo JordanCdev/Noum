@@ -544,6 +544,7 @@ enum CoachContextBuilder {
             "waited too long to state my recommendation",
             "waited too long to make the recommendation",
             "took too long to state the recommendation",
+            "took too long to say the actual recommendation",
             "took too long to make the recommendation",
             "recommendation arrived late",
             "recommendation landed late",
@@ -558,6 +559,20 @@ enum CoachContextBuilder {
             "before saying the recommendation",
             "before giving the recommendation"
         ])
+    }
+
+    static func transcriptShowsWarmthBeforeRecommendation(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        guard containsAny(lower, [
+            "reassure the client first",
+            "reassure first",
+            "reassurance first",
+            "soften first",
+            "warmth before the recommendation"
+        ]) else {
+            return false
+        }
+        return containsAny(lower, ["recommendation", "decision", "point"])
     }
 
     static func transcriptHasFillerAfterDecisionLine(_ text: String) -> Bool {
@@ -592,6 +607,11 @@ enum CoachContextBuilder {
         if transcriptMentionsLateRecommendation(transcript) {
             lines.append("- Safe structure fact: recommendation arrived late; do not say the point led or was up front.")
             lines.append("- Safe move: put the recommendation first, then give one reason or implication.")
+        }
+
+        if transcriptShowsWarmthBeforeRecommendation(transcript) {
+            lines.append("- Safe warmth fact: reassurance came before the recommendation; do not reduce the issue to a filler count.")
+            lines.append("- Safe move: say the recommendation first, then soften it with one human reassurance.")
         }
 
         if transcriptHasFillerAfterDecisionLine(transcript) {

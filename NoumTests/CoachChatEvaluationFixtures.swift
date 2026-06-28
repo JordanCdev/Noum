@@ -337,7 +337,8 @@ enum CoachChatEvaluationCorpus {
                 "repair trust first",
                 "specific friction",
                 "RECENT (most-recent first)",
-                "1 filler"
+                "1 filler",
+                "Safe warmth fact"
             ],
             referenceReply: "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance.",
             knownBadReply: "I understand your frustration. Here are some tips to communicate more clearly: be clear and concise, structure your thoughts, and practice confidence.",
@@ -660,6 +661,19 @@ struct CoachChatLatestLiveEvalRegressionTests {
         #expect(shape.contains("after the decision line"))
         #expect(shape.contains("restart if a filler appears"))
         #expect(!shape.contains("before sentence two"))
+    }
+
+    @Test func trustRepairShapePrefersWarmthSignalOverFillerCount() throws {
+        let fixture = try Self.fixture("assistant-explainer-register")
+        let shape = try #require(AICoachChatService.repairReferenceShape(
+            issue: .missedTrustRepair,
+            latestUserTurn: fixture.latestUserTurn,
+            system: CoachChatEvaluationCorpus.renderedContext(for: fixture)
+        ))
+
+        #expect(shape.contains("warmth came before the recommendation"))
+        #expect(shape.contains("say the recommendation first"))
+        #expect(!shape.contains("1 filler"))
     }
 
     private static func fixture(_ id: String) throws -> CoachChatEvaluationFixture {
