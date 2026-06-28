@@ -47,6 +47,43 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-28 (autonomous `noum-1` run). **Verified the just-landed coach judgement
+layer is REAL (not stub), build+test GREEN on the real toolchain, and shipped one
+collision-safe slice: an adversarial test suite locking the semantic gate. No push.**
+Full write-up: `docs/COACH_PARITY_EVAL_2026-06-28.md`.
+
+- **The "noum chat v2" coach judgement layer (`9c31e7f6`, ~1863 lines) is genuine
+  end-to-end wiring** — 5/5 role agents confirmed, data flow traced
+  `TurnDepthClassifier` → `UserTrajectoryCache` → `CoachReasoningPass` (typed
+  `CoachAssessment`) → `CoachPromptBundle` (depth-routed) → model → semantic gate →
+  reply. Not placeholder-presented-as-complete. **Build verified GREEN** (real
+  toolchain, isolated `DerivedData/Noum-eval-verify`, `** TEST BUILD SUCCEEDED **`,
+  0 errors) — earlier "green" claims in this log were never actually compiled; this
+  one was.
+- **Mean role score 7.7/10** (eng 8.2 · market 7.8 · honesty 7.7 · end-user 7.5 ·
+  UX 7.3), up from the ~7.4–7.5 plateau — the judgement layer adds real substance.
+- **Shipped (test-only, zero production collision, verified 50/50 green via
+  xcresult):** `CoachSemanticQualityGateAdversarialTests` — 18 fixtures in
+  `NoumTests/CoachJudgementLayerTests.swift` locking the gate's six ordered
+  deep-assessment checks, the 0.78/0.70/0.55 confidence thresholds, the
+  over-rejection guards (qualified closeness passes; high-confidence replies need
+  not disclose missing evidence), trust-repair, and quick-move. Closes the
+  engineering gap "the new layer's tests are tautological / never exercise the gate
+  under varied assessments." Each fixture hand-traced through the gate's real check
+  ordering (`AICoachChatService.swift:1664-1714`) before writing.
+- **Spec'd, deferred (hot file + runtime-only value):**
+  `docs/SPEC_semantic_gate_dry_run_calibration.md` — a default-OFF dry-run mode that
+  logs gate-tripping replies instead of rejecting them, so the author-chosen cutoffs
+  can be calibrated against real production replies. The recurring top gap is that
+  the rubric/gate thresholds are heuristic, not validated (why `CoachParityReadiness`
+  stays `.forming`); this spec is the first piece of that calibration substrate.
+- **10/10 answer, unchanged:** literal "with no doubt replaces a human coach" stays
+  REFUSED by design (`CoachParityReadiness` `.forming` cap — the trust moat). Genuine
+  limitations (none cheaply closeable headless): heuristic uncalibrated scoring,
+  single (authoritative-only) rubric, structurally-bounded single-rep goal-readiness,
+  provisional read not yet rendered in Live Coach, and the dominant acquisition lever
+  (auto-guided first-rep instant-start) still default-OFF + device-felt-QA-gated.
+
 2026-06-27 (autonomous `noum2` run). **Ship-first, not re-score: landed the
 long-blocked instant-start lever + 3 audit-panel fixes, all build+test verified;
 no push.** Full write-up: `docs/COACH_PARITY_EVAL_2026-06-27.md`.
