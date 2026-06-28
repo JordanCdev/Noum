@@ -377,9 +377,6 @@ struct CoachLiveEvaluationTests {
             localeSupportsAI: {
                 true
             },
-            providerHTTP: { provider, endpoint, key, body in
-                try await Self.liveHTTP(provider: provider, endpoint: endpoint, key: key, body: body)
-            },
             diagnosticRecorder: { surface, providerName, model, outcome, reason, statusCode, startedAt, now in
                 diagnostics.record(
                     surface: surface,
@@ -482,6 +479,22 @@ struct CoachLiveEvaluationTests {
     }
 
     private static func defaultReportPath() -> String {
+        #if NOUM_LIVE_AI_EVAL
+        let source = URL(fileURLWithPath: #filePath)
+        let repoRoot = source
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let derivedData = repoRoot
+            .appendingPathComponent("DerivedData", isDirectory: true)
+            .appendingPathComponent("Noum", isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: derivedData,
+            withIntermediateDirectories: true
+        )
+        return derivedData
+            .appendingPathComponent("noum-live-coach-eval.md")
+            .path
+        #endif
         if let shared = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.com.jordancoaten.noum"
         ) {

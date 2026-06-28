@@ -9,6 +9,8 @@ import Foundation
 enum CoachBrainFlags {
     static let judgementPassEnabledKey = "NOUM_COACH_JUDGEMENT_PASS_ENABLED"
     static let realtimeCoachModeEnabledKey = "NOUM_REALTIME_COACH_MODE_ENABLED"
+    static let semanticGateDryRunEnabledKey = "NOUM_COACH_SEMANTIC_GATE_DRY_RUN"
+    static let providerStreamingEnabledKey = "NOUM_COACH_PROVIDER_STREAMING_ENABLED"
 
     /// Master switch for the deterministic assessment pass. Default on; a
     /// config value of false keeps the chat pipeline on its pre-judgement
@@ -26,6 +28,28 @@ enum CoachBrainFlags {
     static var realtimeCoachModeEnabled: Bool {
         boolFlag(
             key: realtimeCoachModeEnabledKey,
+            defaultValue: true
+        )
+    }
+
+    /// Calibration switch for the semantic judgement gate. Default off: a
+    /// semantic miss still repairs/fails the draft. When enabled, the service
+    /// records the would-have-failed issue but lets the provider reply through,
+    /// so live traffic can calibrate thresholds without user-visible holdbacks.
+    static var semanticGateDryRunEnabled: Bool {
+        boolFlag(
+            key: semanticGateDryRunEnabledKey,
+            defaultValue: false
+        )
+    }
+
+    /// Uses provider-native streaming transports for the final LLM
+    /// verbalisation where available. The UI still shows only the local typed
+    /// coach read until the completed provider draft passes the existing
+    /// quality gates.
+    static var providerStreamingEnabled: Bool {
+        boolFlag(
+            key: providerStreamingEnabledKey,
             defaultValue: true
         )
     }

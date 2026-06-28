@@ -3149,21 +3149,7 @@ actor IMContextService {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let apiKey = backendAPIKey() {
-            request.setValue(apiKey, forHTTPHeaderField: "X-Noum-API-Key")
-        }
-        let authHeaders = await MainActor.run {
-            (
-                accountID: AuthManager.shared.currentAccountID,
-                provider: AuthManager.shared.currentAuthProviderRawValue
-            )
-        }
-        if let accountID = authHeaders.accountID {
-            request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
-        }
-        if let provider = authHeaders.provider {
-            request.setValue(provider, forHTTPHeaderField: "X-Noum-Auth-Provider")
-        }
+        await BackendAuthHeaders.applyCurrent(to: &request)
 
         let payload = IMContextRequestPayload(
             scenario: scenario.rawValue,
@@ -3357,10 +3343,6 @@ actor IMContextService {
         return URL(string: rawValue)
     }
 
-    private func backendAPIKey() -> String? {
-        ProcessInfo.processInfo.environment["BACKEND_API_KEY"] ??
-        LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
-    }
 }
 
 private struct OpenMeteoGeocodingResponse: Decodable {
@@ -4352,6 +4334,7 @@ final class CoachingProfileStore: ObservableObject {
         shouldPresentInitialOnboarding = false
         syncProfileIfPossible(profile, accountID: accountID)
         paraphraseGoalIfNeeded(profile: profile, accountID: accountID)
+        refreshTrajectoryCache()
 
         if let previousVoice, previousVoice != profile.speakingStyleGoal {
             PracticeSessionFinalizer.regenerateMostRecentNoteIfVoiceChanged(
@@ -4380,6 +4363,7 @@ final class CoachingProfileStore: ObservableObject {
                     UserDefaults.standard.set(data, forKey: self.profileKey(for: accountID))
                 }
                 self.syncProfileIfPossible(current, accountID: accountID)
+                self.refreshTrajectoryCache()
             }
         }
     }
@@ -4399,6 +4383,7 @@ final class CoachingProfileStore: ObservableObject {
         }
 
         shouldPresentInitialOnboarding = false
+        refreshTrajectoryCache()
     }
 
     func beginSession(isNewAccount: Bool) {
@@ -4414,6 +4399,7 @@ final class CoachingProfileStore: ObservableObject {
     func endSession() {
         profile = nil
         shouldPresentInitialOnboarding = false
+        refreshTrajectoryCache()
     }
 
     func replaceFromRemote(_ profile: CoachingProfile?, for accountID: String) {
@@ -4423,6 +4409,7 @@ final class CoachingProfileStore: ObservableObject {
             UserDefaults.standard.set(true, forKey: onboardingCompletionKey(for: accountID))
         }
         shouldPresentInitialOnboarding = false
+        refreshTrajectoryCache()
     }
 
     #if DEBUG
@@ -4443,6 +4430,7 @@ final class CoachingProfileStore: ObservableObject {
         }
         self.profile = profile
         shouldPresentInitialOnboarding = false
+        refreshTrajectoryCache()
     }
     #endif
 
@@ -4466,6 +4454,12 @@ final class CoachingProfileStore: ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: key),
               let profile = try? JSONDecoder().decode(CoachingProfile.self, from: data) else { return nil }
         return profile
+    }
+
+    private func refreshTrajectoryCache() {
+        Task { @MainActor in
+            _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
+        }
     }
 
     private func syncProfileIfPossible(_ profile: CoachingProfile, accountID: String) {
@@ -5069,8 +5063,10 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
     ///     (network down, keys invalid, audio route broken), the on-device
     ///     `AVSpeechSynthesizer` becomes the terminal engine instead of a
     ///     silent skip.
-    /// `onDeviceOnly` remains available for explicit future engine choices,
-    /// but Ask Noum no longer uses it to speak local deterministic coach copy.
+    /// `onDeviceOnly` remains available for explicit low-latency engine
+    /// choices: typed Ask Noum stays cloud-first, while live-call immediate
+    /// coach reads may use the system voice so the first verdict can start
+    /// before the fuller model reply returns.
     /// If speech was requested and no engine at all produced audio,
     /// `voiceUnavailableNotice` is set so the UI can say so.
     ///
@@ -5441,7 +5437,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
             guard let request = openAIRequest(for: ".", setup: setup) else { return false }
             return await executeWarmupRequest(request)
         case .backend:
-            guard let request = backendRequest(for: ".", setup: setup) else { return false }
+            guard let request = await backendRequest(for: ".", setup: setup) else { return false }
             return await executeWarmupRequest(request)
         case .auto:
             return false
@@ -5480,13 +5476,8 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
         return URL(string: rawValue)
     }
 
-    private func backendAPIKey() -> String? {
-        ProcessInfo.processInfo.environment["BACKEND_API_KEY"] ??
-        LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
-    }
-
     private func playWithBackend(_ text: String, setup: IMConversationSetup, generation: UInt64) async -> Bool {
-        guard let request = backendRequest(for: text, setup: setup) else { return false }
+        guard let request = await backendRequest(for: text, setup: setup) else { return false }
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -5826,21 +5817,13 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
 
 
 
-    private func backendRequest(for text: String, setup: IMConversationSetup) -> URLRequest? {
+    private func backendRequest(for text: String, setup: IMConversationSetup) async -> URLRequest? {
         guard let baseURL = backendBaseURL() else { return nil }
         let endpoint = baseURL.appending(path: "/v1/tts/im")
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let apiKey = backendAPIKey() {
-            request.setValue(apiKey, forHTTPHeaderField: "X-Noum-API-Key")
-        }
-        if let accountID = AuthManager.shared.currentAccountID {
-            request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
-        }
-        if let provider = AuthManager.shared.currentAuthProviderRawValue {
-            request.setValue(provider, forHTTPHeaderField: "X-Noum-Auth-Provider")
-        }
+        await BackendAuthHeaders.applyCurrent(to: &request)
 
         let body = BackendIMTTSRequest(
             text: text,
@@ -8177,6 +8160,7 @@ final class PracticeSessionStore: ObservableObject {
 
     func reload() {
         sessions = Self.loadSessions(forKey: Self.storageKey(for: currentAccountID))
+        UserTrajectoryCache.shared.invalidate()
     }
 
     func reloadForCurrentAccount() {
@@ -8187,6 +8171,7 @@ final class PracticeSessionStore: ObservableObject {
         sessions = []
         // Also clear persisted data so old sessions don't reappear on reload
         UserDefaults.standard.removeObject(forKey: Self.storageKey(for: currentAccountID))
+        UserTrajectoryCache.shared.invalidate()
     }
 
     @discardableResult
@@ -8212,6 +8197,7 @@ final class PracticeSessionStore: ObservableObject {
         )
         sessions.insert(session, at: 0)
         persist()
+        UserTrajectoryCache.shared.invalidate()
         syncSessionIfPossible(session)
         return session
     }
@@ -8229,6 +8215,7 @@ final class PracticeSessionStore: ObservableObject {
         latest.theme = annotation.theme
         sessions[0] = latest
         persist()
+        UserTrajectoryCache.shared.invalidate()
         syncSessionIfPossible(latest)
     }
 
@@ -8240,6 +8227,7 @@ final class PracticeSessionStore: ObservableObject {
         sessions[index].insights = annotation.insights
         sessions[index].coachSummary = annotation.coachSummary
         persist()
+        UserTrajectoryCache.shared.invalidate()
         syncSessionIfPossible(sessions[index])
     }
 
@@ -8247,12 +8235,14 @@ final class PracticeSessionStore: ObservableObject {
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
         sessions[index].aiCoachFeedback = feedback
         persist()
+        UserTrajectoryCache.shared.invalidate()
         syncSessionIfPossible(sessions[index])
     }
 
     func deleteSession(id: UUID) {
         sessions.removeAll { $0.id == id }
         persist()
+        UserTrajectoryCache.shared.invalidate()
     }
 
     func replaceFromRemote(_ remoteSessions: [PracticeSession]) {
@@ -8260,6 +8250,7 @@ final class PracticeSessionStore: ObservableObject {
             .filter { !$0.isEvaluationFixture }
             .sorted { $0.date > $1.date }
         persist()
+        UserTrajectoryCache.shared.invalidate()
     }
 
     private func persist() {
@@ -10984,7 +10975,7 @@ struct IMConversationService: IMConversationServicing {
         context: IMSessionContext,
         latestUserSignal: IMUserMessageSignal?
     ) async throws -> IMConversationReply? {
-        guard var request = backendRequest(path: "/v1/im/reply") else { return nil }
+        guard var request = await backendRequest(path: "/v1/im/reply") else { return nil }
         let body = BackendIMConversationReplyRequest(
             setup: setup,
             turns: turns,
@@ -11260,21 +11251,13 @@ struct IMConversationService: IMConversationServicing {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private func backendRequest(path: String) -> URLRequest? {
+    private func backendRequest(path: String) async -> URLRequest? {
         guard let baseURL = backendBaseURL() else { return nil }
         let endpoint = baseURL.appending(path: path)
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let apiKey = backendAPIKey() {
-            request.setValue(apiKey, forHTTPHeaderField: "X-Noum-API-Key")
-        }
-        if let accountID = AuthManager.shared.currentAccountID {
-            request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
-        }
-        if let provider = AuthManager.shared.currentAuthProviderRawValue {
-            request.setValue(provider, forHTTPHeaderField: "X-Noum-Auth-Provider")
-        }
+        await BackendAuthHeaders.applyCurrent(to: &request)
         return request
     }
 
@@ -11286,10 +11269,6 @@ struct IMConversationService: IMConversationServicing {
         return URL(string: rawValue)
     }
 
-    private func backendAPIKey() -> String? {
-        ProcessInfo.processInfo.environment["BACKEND_API_KEY"] ??
-        LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
-    }
 }
 
 @MainActor
@@ -11518,7 +11497,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         relationship: IMRelationshipProfile?,
         context: IMSessionContext
     ) async throws -> IMConversationEvaluation? {
-        guard var request = backendRequest(path: "/v1/im/evaluate") else { return nil }
+        guard var request = await backendRequest(path: "/v1/im/evaluate") else { return nil }
         let body = BackendIMConversationEvaluationRequest(
             setup: setup,
             turns: turns,
@@ -11657,21 +11636,13 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         """
     }
 
-    private func backendRequest(path: String) -> URLRequest? {
+    private func backendRequest(path: String) async -> URLRequest? {
         guard let baseURL = backendBaseURL() else { return nil }
         let endpoint = baseURL.appending(path: path)
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let apiKey = backendAPIKey() {
-            request.setValue(apiKey, forHTTPHeaderField: "X-Noum-API-Key")
-        }
-        if let accountID = AuthManager.shared.currentAccountID {
-            request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
-        }
-        if let provider = AuthManager.shared.currentAuthProviderRawValue {
-            request.setValue(provider, forHTTPHeaderField: "X-Noum-Auth-Provider")
-        }
+        await BackendAuthHeaders.applyCurrent(to: &request)
         return request
     }
 
@@ -11681,11 +11652,6 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
             LocalConfigLoader.value(forKey: "BACKEND_BASE_URL", plistNamed: "BackendConfig")
         guard let rawValue, !rawValue.isEmpty else { return nil }
         return URL(string: rawValue)
-    }
-
-    private func backendAPIKey() -> String? {
-        ProcessInfo.processInfo.environment["BACKEND_API_KEY"] ??
-        LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
     }
 
     private func toneMatchScore(for tone: IMTargetTone, transcript: String) -> Int {

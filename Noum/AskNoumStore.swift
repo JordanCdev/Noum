@@ -38,6 +38,109 @@ enum CoachMessageRole: String, Codable, Equatable {
     case systemNotice
 }
 
+/// Result of the semantic judgement gate for an accepted coach turn.
+/// Stored with the row so shallow/repaired turns can be audited later.
+enum CoachTurnSemanticGateOutcome: Codable, Equatable {
+    case notEvaluated
+    case passed
+    case failed(String)
+
+    var logValue: String {
+        switch self {
+        case .notEvaluated:
+            return "notEvaluated"
+        case .passed:
+            return "passed"
+        case .failed(let issue):
+            return "failed:\(issue)"
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case state, issue
+    }
+
+    private enum State: String, Codable {
+        case notEvaluated, passed, failed
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        switch try c.decode(State.self, forKey: .state) {
+        case .notEvaluated:
+            self = .notEvaluated
+        case .passed:
+            self = .passed
+        case .failed:
+            self = .failed(try c.decode(String.self, forKey: .issue))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .notEvaluated:
+            try c.encode(State.notEvaluated, forKey: .state)
+        case .passed:
+            try c.encode(State.passed, forKey: .state)
+        case .failed(let issue):
+            try c.encode(State.failed, forKey: .state)
+            try c.encode(issue, forKey: .issue)
+        }
+    }
+}
+
+struct CoachTurnProviderChoice: Equatable, Sendable {
+    let providerName: String
+    let model: String
+}
+
+/// Persisted per-turn observability for the Ask Noum coach thread.
+///
+/// Optional fields keep old persisted rows decodable and let non-pipeline
+/// injected artifacts stay lightweight. `userImmediatePushback` is the one
+/// field the store can update after the fact when the user's next turn is a
+/// trust-repair prompt.
+struct CoachTurnMetadata: Codable, Equatable {
+    var turnDepth: CoachTurnDepth?
+    var providerTier: CoachProviderTier?
+    var semanticGateOutcome: CoachTurnSemanticGateOutcome?
+    var evidenceCoverage: Double?
+    var ttftMs: Int?
+    var fullLatencyMs: Int?
+    var providerName: String?
+    var providerModel: String?
+    var userImmediatePushback: Bool
+    var trajectoryCacheHit: Bool?
+    var surface: CoachReplySurface?
+
+    init(
+        turnDepth: CoachTurnDepth? = nil,
+        providerTier: CoachProviderTier? = nil,
+        semanticGateOutcome: CoachTurnSemanticGateOutcome? = nil,
+        evidenceCoverage: Double? = nil,
+        ttftMs: Int? = nil,
+        fullLatencyMs: Int? = nil,
+        providerName: String? = nil,
+        providerModel: String? = nil,
+        userImmediatePushback: Bool = false,
+        trajectoryCacheHit: Bool? = nil,
+        surface: CoachReplySurface? = nil
+    ) {
+        self.turnDepth = turnDepth
+        self.providerTier = providerTier
+        self.semanticGateOutcome = semanticGateOutcome
+        self.evidenceCoverage = evidenceCoverage
+        self.ttftMs = ttftMs
+        self.fullLatencyMs = fullLatencyMs
+        self.providerName = providerName
+        self.providerModel = providerModel
+        self.userImmediatePushback = userImmediatePushback
+        self.trajectoryCacheHit = trajectoryCacheHit
+        self.surface = surface
+    }
+}
+
 /// One message in the Ask-Noum thread.
 struct CoachMessage: Identifiable, Codable, Equatable {
     let id: UUID
@@ -56,6 +159,10 @@ struct CoachMessage: Identifiable, Codable, Equatable {
     /// `role == .coach` keeps working unchanged — only the bubble's visual
     /// treatment branches on this flag.
     var isOffline: Bool
+    /// Optional judgement / latency metadata for coach turns. Kept on the
+    /// message rather than a parallel store so replay, persistence, and trust
+    /// repair all move with the row they describe.
+    var metadata: CoachTurnMetadata?
 
     init(
         id: UUID = UUID(),
@@ -63,7 +170,8 @@ struct CoachMessage: Identifiable, Codable, Equatable {
         text: String,
         createdAt: Date = Date(),
         isPending: Bool = false,
-        isOffline: Bool = false
+        isOffline: Bool = false,
+        metadata: CoachTurnMetadata? = nil
     ) {
         self.id = id
         self.role = role
@@ -71,6 +179,7 @@ struct CoachMessage: Identifiable, Codable, Equatable {
         self.createdAt = createdAt
         self.isPending = isPending
         self.isOffline = isOffline
+        self.metadata = metadata
     }
 
     // Custom decoder so threads persisted BEFORE `isOffline` existed still
@@ -78,7 +187,7 @@ struct CoachMessage: Identifiable, Codable, Equatable {
     // rows decode as not-offline (the conservative default: an unknown
     // historical row reads as a normal coach bubble, never falsely "offline").
     private enum CodingKeys: String, CodingKey {
-        case id, role, text, createdAt, isPending, isOffline
+        case id, role, text, createdAt, isPending, isOffline, metadata
     }
 
     init(from decoder: Decoder) throws {
@@ -89,6 +198,7 @@ struct CoachMessage: Identifiable, Codable, Equatable {
         self.createdAt = try c.decode(Date.self, forKey: .createdAt)
         self.isPending = try c.decodeIfPresent(Bool.self, forKey: .isPending) ?? false
         self.isOffline = try c.decodeIfPresent(Bool.self, forKey: .isOffline) ?? false
+        self.metadata = try c.decodeIfPresent(CoachTurnMetadata.self, forKey: .metadata)
     }
 }
 
@@ -184,6 +294,7 @@ final class AskNoumStore: ObservableObject {
     /// the service returns.
     @discardableResult
     func appendUserTurn(_ text: String) -> (userID: UUID, coachID: UUID) {
+        markImmediatePushbackIfNeeded(for: text)
         let userMsg = CoachMessage(role: .user, text: text)
         let coachMsg = CoachMessage(role: .coach, text: "", isPending: true)
         messages.append(userMsg)
@@ -197,8 +308,13 @@ final class AskNoumStore: ObservableObject {
     /// `.reply` becomes a coach bubble. Any non-live outcome becomes a system
     /// notice with cause-specific copy, so Ask Noum never presents a local
     /// deterministic line as the intelligent coach.
-    func completeCoachTurn(id: UUID, outcome: ChatOutcome) {
+    func completeCoachTurn(
+        id: UUID,
+        outcome: ChatOutcome,
+        metadata: CoachTurnMetadata? = nil
+    ) {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
+        let resolvedMetadata = metadata ?? messages[idx].metadata
         switch outcome {
         case .reply(let text):
             let trimmed = CoachReplyTextSanitizer.coachReplyText(from: text)
@@ -207,7 +323,7 @@ final class AskNoumStore: ObservableObject {
                 // it reaches the store, route through the same notice instead
                 // of leaving a blank coach bubble.
                 Self.log.error("coach turn completed with empty normalized text")
-                replaceWithNotice(at: idx, id: id, failure: .empty)
+                replaceWithNotice(at: idx, id: id, failure: .empty, metadata: resolvedMetadata)
             } else {
                 if trimmed != text.trimmingCharacters(in: .whitespacesAndNewlines) {
                     Self.log.notice("normalized coach turn before persistence id=\(id.uuidString, privacy: .public)")
@@ -218,13 +334,14 @@ final class AskNoumStore: ObservableObject {
                     text: trimmed,
                     createdAt: messages[idx].createdAt,
                     isPending: false,
-                    isOffline: false
+                    isOffline: false,
+                    metadata: resolvedMetadata
                 )
                 Self.log.info("coach turn stored as live reply chars=\(trimmed.count, privacy: .public)")
             }
         case .failure(let failure):
             Self.log.notice("coach turn resolved as system notice cause=\(String(describing: failure), privacy: .public)")
-            replaceWithNotice(at: idx, id: id, failure: failure)
+            replaceWithNotice(at: idx, id: id, failure: failure, metadata: resolvedMetadata)
         }
         isAwaitingReply = false
         trimAndPersist()
@@ -234,13 +351,18 @@ final class AskNoumStore: ObservableObject {
     /// live model is still verbalising the final reply. The row stays pending
     /// and is never persisted, so this improves perceived latency without
     /// masquerading as the final AI coach response.
-    func setProvisionalCoachRead(id: UUID, text: String) {
+    @discardableResult
+    func setProvisionalCoachRead(
+        id: UUID,
+        text: String,
+        metadata: CoachTurnMetadata? = nil
+    ) -> Bool {
         let trimmed = CoachReplyTextSanitizer.coachReplyText(from: text)
         guard !trimmed.isEmpty,
               let idx = messages.firstIndex(where: { $0.id == id }),
               messages[idx].role == .coach,
               messages[idx].isPending else {
-            return
+            return false
         }
         messages[idx] = CoachMessage(
             id: id,
@@ -248,18 +370,56 @@ final class AskNoumStore: ObservableObject {
             text: trimmed,
             createdAt: messages[idx].createdAt,
             isPending: true,
-            isOffline: false
+            isOffline: false,
+            metadata: metadata ?? messages[idx].metadata
         )
         Self.log.info("coach turn provisional read visible chars=\(trimmed.count, privacy: .public)")
+        return true
     }
 
-    private func replaceWithNotice(at idx: Int, id: UUID, failure: ChatFailure) {
+    private func replaceWithNotice(
+        at idx: Int,
+        id: UUID,
+        failure: ChatFailure,
+        metadata: CoachTurnMetadata? = nil
+    ) {
         messages[idx] = CoachMessage(
             id: id,
             role: .systemNotice,
             text: Self.noticeCopy(for: failure),
             createdAt: messages[idx].createdAt,
-            isPending: false
+            isPending: false,
+            metadata: metadata
+        )
+    }
+
+    private func markImmediatePushbackIfNeeded(for userText: String) {
+        let trimmed = userText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              TurnDepthClassifier.classify(
+                userText: trimmed,
+                recentTurns: replayForModel
+              ) == .trustRepair,
+              let idx = messages.lastIndex(where: {
+                $0.role == .coach && !$0.isPending && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              }) else {
+            return
+        }
+
+        var metadata = messages[idx].metadata ?? CoachTurnMetadata()
+        metadata.userImmediatePushback = true
+        messages[idx].metadata = metadata
+        AICallDiagnostics.record(
+            surface: "Ask Noum immediate pushback",
+            providerName: "User feedback",
+            model: metadata.providerModel,
+            outcome: .failure,
+            reason: [
+                "priorDepth=\(metadata.turnDepth?.rawValue ?? "unknown")",
+                "provider=\(metadata.providerName ?? "unknown")",
+                "semanticGate=\(metadata.semanticGateOutcome?.logValue ?? "unknown")",
+                "ttftMs=\(metadata.ttftMs ?? -1)"
+            ].joined(separator: " ")
         )
     }
 
@@ -485,7 +645,8 @@ final class AskNoumStore: ObservableObject {
                     text: normalized,
                     createdAt: message.createdAt,
                     isPending: false,
-                    isOffline: message.isOffline
+                    isOffline: message.isOffline,
+                    metadata: message.metadata
                 )
             }
             guard Self.shouldCleanLegacyCoachMessage(message.text) else {
@@ -497,7 +658,8 @@ final class AskNoumStore: ObservableObject {
                 role: .systemNotice,
                 text: Self.legacyCoachMessageNotice,
                 createdAt: message.createdAt,
-                isPending: false
+                isPending: false,
+                metadata: message.metadata
             )
         }
         if didCleanLegacyCoachNotes {

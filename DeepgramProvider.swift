@@ -58,14 +58,11 @@ final class DeepgramProvider: TranscriptionProvider, @unchecked Sendable {
         let endpoint = baseURL.appending(path: "/v1/transcribe/deepgram-key")
         var request = URLRequest(url: endpoint)
         request.httpMethod = "GET"
-        request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
-        request.setValue(providerRaw, forHTTPHeaderField: "X-Noum-Auth-Provider")
-
-        let backendAPIKey = ProcessInfo.processInfo.environment["BACKEND_API_KEY"]
-            ?? LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
-        if let backendAPIKey, !backendAPIKey.isEmpty {
-            request.setValue(backendAPIKey, forHTTPHeaderField: "X-Noum-API-Key")
-        }
+        await BackendAuthHeaders.applyCurrent(
+            to: &request,
+            accountID: accountID,
+            providerRawValue: providerRaw
+        )
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,

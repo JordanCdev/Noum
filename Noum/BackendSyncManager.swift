@@ -34,7 +34,7 @@ actor BackendSyncManager {
             return await fetchFirebaseBootstrap(accountID: accountID, providerRawValue: providerRawValue)
         }
 #endif
-        guard let request = request(
+        guard let request = await request(
             path: "/v1/me/bootstrap",
             method: "GET",
             accountID: accountID,
@@ -120,7 +120,7 @@ actor BackendSyncManager {
         }
 #endif
         // REST backend path: send a DELETE request to remove server-side data
-        guard let request = request(
+        guard let request = await request(
             path: "/v1/me",
             method: "DELETE",
             accountID: accountID,
@@ -205,7 +205,7 @@ actor BackendSyncManager {
         accountID: String,
         providerRawValue: String
     ) async throws {
-        guard var request = request(
+        guard var request = await request(
             path: path,
             method: "POST",
             accountID: accountID,
@@ -223,17 +223,17 @@ actor BackendSyncManager {
         method: String,
         accountID: String,
         providerRawValue: String
-    ) -> URLRequest? {
+    ) async -> URLRequest? {
         guard let baseURL else { return nil }
         let endpoint = baseURL.appending(path: path)
         var request = URLRequest(url: endpoint)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
-        request.setValue(providerRawValue, forHTTPHeaderField: "X-Noum-Auth-Provider")
-        if let apiKey = backendAPIKey {
-            request.setValue(apiKey, forHTTPHeaderField: "X-Noum-API-Key")
-        }
+        await BackendAuthHeaders.applyCurrent(
+            to: &request,
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        )
         return request
     }
 
@@ -244,11 +244,6 @@ actor BackendSyncManager {
 
         guard let rawValue, !rawValue.isEmpty else { return nil }
         return URL(string: rawValue)
-    }
-
-    private var backendAPIKey: String? {
-        ProcessInfo.processInfo.environment["BACKEND_API_KEY"] ??
-        LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
     }
 
     private var firebaseIsConfigured: Bool {

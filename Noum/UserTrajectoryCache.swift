@@ -48,6 +48,25 @@ final class UserTrajectoryCache {
         cachedSnapshot = nil
     }
 
+    @discardableResult
+    @MainActor
+    func warmFromCurrentStores() -> UserTrajectoryCacheResult {
+        snapshot(
+            profile: CoachingProfileStore.shared.profile,
+            baseline: BaselineStore.shared.baseline,
+            rating: RatingStore.shared.rating,
+            sessions: PracticeSessionStore.shared.sessions,
+            coachMemory: CoachMemoryStore.shared.currentMemory
+        )
+    }
+
+    @discardableResult
+    @MainActor
+    func invalidateAndWarmFromCurrentStores() -> UserTrajectoryCacheResult {
+        invalidate()
+        return warmFromCurrentStores()
+    }
+
     private static func signature(
         profile: CoachingProfile?,
         baseline: CommunicationBaseline,

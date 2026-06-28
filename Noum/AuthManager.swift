@@ -388,14 +388,11 @@ class AuthManager: ObservableObject {
         let endpoint = baseURL.appending(path: "/v1/transcribe/credentials")
         var request = URLRequest(url: endpoint)
         request.httpMethod = "GET"
-        request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
-        request.setValue(providerRawValue, forHTTPHeaderField: "X-Noum-Auth-Provider")
-
-        let backendAPIKey = ProcessInfo.processInfo.environment["BACKEND_API_KEY"]
-            ?? LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
-        if let backendAPIKey, !backendAPIKey.isEmpty {
-            request.setValue(backendAPIKey, forHTTPHeaderField: "X-Noum-API-Key")
-        }
+        await BackendAuthHeaders.applyCurrent(
+            to: &request,
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        )
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
@@ -891,6 +888,7 @@ class AuthManager {
     var isSignedIn: Bool = false
     var signInError: String?
     var currentAccountID: String? { nil }
+    var currentAuthProviderRawValue: String? { nil }
     var isDeveloper: Bool { false }
     func credentialResolver() throws -> any AWSCredentialIdentityResolver {
         DefaultAWSCredentialIdentityResolverChain()
@@ -902,3 +900,116 @@ class AuthManager {
     func reloadCredentials() {}
 }
 #endif
+
+struct BackendAuthHeaders: Equatable, Sendable {
+    static let accountIDHeader = "X-Noum-Account-ID"
+    static let authProviderHeader = "X-Noum-Auth-Provider"
+    static let apiKeyHeader = "X-Noum-API-Key"
+    static let authorizationHeader = "Authorization"
+
+    let accountID: String?
+    let providerRawValue: String?
+    let apiKey: String?
+    let firebaseIDToken: String?
+
+    init(
+        accountID: String?,
+        providerRawValue: String?,
+        apiKey: String?,
+        firebaseIDToken: String?
+    ) {
+        self.accountID = Self.cleaned(accountID)
+        self.providerRawValue = Self.cleaned(providerRawValue)
+        self.apiKey = Self.cleaned(apiKey)
+        self.firebaseIDToken = Self.cleaned(firebaseIDToken)
+    }
+
+    func apply(to request: inout URLRequest) {
+        if let apiKey {
+            request.setValue(apiKey, forHTTPHeaderField: Self.apiKeyHeader)
+        }
+        if let firebaseIDToken {
+            request.setValue("Bearer \(firebaseIDToken)", forHTTPHeaderField: Self.authorizationHeader)
+            return
+        }
+
+        // Legacy REST-backend fallback only. In Firebase-authenticated mode the
+        // server must derive identity from the bearer token, never from these
+        // client-provided transition headers.
+        if let accountID {
+            request.setValue(accountID, forHTTPHeaderField: Self.accountIDHeader)
+        }
+        if let providerRawValue {
+            request.setValue(providerRawValue, forHTTPHeaderField: Self.authProviderHeader)
+        }
+    }
+
+    static func current(
+        accountID: String? = nil,
+        providerRawValue: String? = nil,
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        configValue: (String) -> String? = { key in
+            LocalConfigLoader.value(forKey: key, plistNamed: "BackendConfig")
+        }
+    ) async -> BackendAuthHeaders {
+        let legacy = await MainActor.run {
+            (
+                accountID: accountID ?? AuthManager.shared.currentAccountID,
+                providerRawValue: providerRawValue ?? AuthManager.shared.currentAuthProviderRawValue
+            )
+        }
+        let token = await currentFirebaseIDToken()
+        return BackendAuthHeaders(
+            accountID: legacy.accountID,
+            providerRawValue: legacy.providerRawValue,
+            apiKey: configuredAPIKey(env: env, configValue: configValue),
+            firebaseIDToken: token
+        )
+    }
+
+    static func applyCurrent(
+        to request: inout URLRequest,
+        accountID: String? = nil,
+        providerRawValue: String? = nil
+    ) async {
+        let headers = await current(
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        )
+        headers.apply(to: &request)
+    }
+
+    static func configuredAPIKey(
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        configValue: (String) -> String? = { key in
+            LocalConfigLoader.value(forKey: key, plistNamed: "BackendConfig")
+        }
+    ) -> String? {
+        cleaned(env["BACKEND_API_KEY"]) ?? cleaned(configValue("BACKEND_API_KEY"))
+    }
+
+    static func cleaned(_ raw: String?) -> String? {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func currentFirebaseIDToken() async -> String? {
+        #if canImport(FirebaseAuth)
+        #if canImport(FirebaseCore)
+        guard FirebaseApp.app() != nil else { return nil }
+        #endif
+        guard let user = Auth.auth().currentUser else { return nil }
+        return try? await withCheckedThrowingContinuation { continuation in
+            user.getIDToken { token, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                continuation.resume(returning: token ?? "")
+            }
+        }
+        #else
+        return nil
+        #endif
+    }
+}

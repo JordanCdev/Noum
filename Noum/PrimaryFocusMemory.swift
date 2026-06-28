@@ -2291,10 +2291,12 @@ final class CoachMemoryStore: ObservableObject {
 
     func reloadForCurrentAccount() {
         loadFromDisk()
+        UserTrajectoryCache.shared.invalidate()
     }
 
     func endSession() {
         currentMemory = nil
+        UserTrajectoryCache.shared.invalidate()
     }
 
     func refresh(
@@ -2555,20 +2557,26 @@ final class CoachMemoryStore: ObservableObject {
     func clearAll() {
         guard let accountID = accountIDProvider() else {
             currentMemory = nil
+            UserTrajectoryCache.shared.invalidate()
             return
         }
         currentMemory = nil
         defaults.removeObject(forKey: storageKey(for: accountID))
+        UserTrajectoryCache.shared.invalidate()
     }
 
     func deleteAllData(for accountID: String) {
         defaults.removeObject(forKey: storageKey(for: accountID))
         if accountIDProvider() == accountID {
             currentMemory = nil
+            UserTrajectoryCache.shared.invalidate()
         }
     }
 
     private func persist(_ memory: CoachMemory) {
+        defer {
+            _ = UserTrajectoryCache.shared.warmFromCurrentStores()
+        }
         guard let accountID = accountIDProvider(),
               let data = try? JSONEncoder().encode(memory) else { return }
         defaults.set(data, forKey: storageKey(for: accountID))

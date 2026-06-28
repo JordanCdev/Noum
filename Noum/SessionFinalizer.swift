@@ -269,6 +269,7 @@ enum SessionFinalizer {
             latestTransferReport: BigMomentStore.shared.recentOutcomeReports(limit: 1).first,
             upcomingMoment: BigMomentStore.shared.activeMoment
         )
+        _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
 
         let milestone = detectMilestone(
             levelBefore: levelBefore,

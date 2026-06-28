@@ -152,8 +152,16 @@ struct NoumApp: App {
         // already-rendered Text views keep their original locale.
         .environment(\.locale, Locale(identifier: localeSettings.current.code))
         .id(localeSettings.current.code)
+        .task {
+            await MainActor.run {
+                _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
+            }
+        }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
+            Task { @MainActor in
+                _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
+            }
             // Re-arm scheduled notifications with the latest streak +
             // freezes + reps-today snapshot. Notification copy is
             // streak-aware via NotificationCopy, so the body that fires

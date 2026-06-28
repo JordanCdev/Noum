@@ -854,6 +854,78 @@ struct AnthropicExtractionTests {
         #expect(AICoachChatService.extractAnthropicReplyText(from: data("not json")) == .empty)
     }
 
+    @Test func anthropicStreamExtractionAccumulatesTextDeltas() {
+        let payload = data("""
+        event: message_start
+        data: {"type":"message_start","message":{"id":"msg_1"}}
+
+        event: content_block_delta
+        data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Lead with "}}
+
+        event: content_block_delta
+        data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"the verdict."}}
+
+        event: message_stop
+        data: {"type":"message_stop"}
+        """)
+
+        #expect(AICoachChatService.chatExtractStreamReplyText(
+            from: payload,
+            provider: .anthropic
+        ) == .text("Lead with the verdict."))
+    }
+
+    @Test func anthropicStreamMaxTokensIsLengthTruncated() {
+        let payload = data("""
+        event: content_block_delta
+        data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"This stops mid"}}
+
+        event: message_delta
+        data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"}}
+        """)
+
+        #expect(AICoachChatService.chatExtractStreamReplyText(
+            from: payload,
+            provider: .anthropic
+        ) == .lengthTruncated)
+    }
+
+    @Test func openAIStyleStreamExtractionAccumulatesDeltas() {
+        let payload = data("""
+        data: {"choices":[{"delta":{"content":"Use one "},"finish_reason":null}]}
+
+        data: {"choices":[{"delta":{"content":"proof point."},"finish_reason":"stop"}]}
+
+        data: [DONE]
+        """)
+
+        #expect(AICoachChatService.chatExtractStreamReplyText(
+            from: payload,
+            provider: .openAI
+        ) == .text("Use one proof point."))
+    }
+
+    @Test func geminiStreamExtractionAccumulatesDeltas() {
+        let payload = data("""
+        data: {"candidates":[{"content":{"parts":[{"text":"Mechanics are "}]}}]}
+
+        data: {"candidates":[{"content":{"parts":[{"text":"usable; authority is not proven."}]},"finishReason":"STOP"}]}
+        """)
+
+        #expect(AICoachChatService.chatExtractStreamReplyText(
+            from: payload,
+            provider: .gemini
+        ) == .text("Mechanics are usable; authority is not proven."))
+    }
+
+    @Test func googleStreamingEndpointsUseSSEGenerateContent() {
+        let agent = CoachChatProvider.agentPlatformStreamingEndpoint(model: "gemini-3.5-flash")?.absoluteString
+        let gemini = CoachChatProvider.gemini.streamingEndpoint?.absoluteString
+
+        #expect(agent?.contains(":streamGenerateContent?alt=sse") == true)
+        #expect(gemini?.contains(":streamGenerateContent?alt=sse") == true)
+    }
+
     @Test func chatExtractRoutesSharedProvidersThroughExistingPath() {
         // OpenAI-shaped payload extracted via the chat wrapper for .openAI.
         let payload = data("""

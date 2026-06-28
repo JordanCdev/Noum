@@ -220,6 +220,7 @@ final class CoachCheckInStore: ObservableObject {
         updated.insert(checkIn, at: 0)
         checkIns = Array(updated.prefix(Self.cap))
         persist(accountID: accountID)
+        _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
         return checkIn
     }
 

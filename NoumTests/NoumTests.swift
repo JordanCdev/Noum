@@ -11881,6 +11881,24 @@ struct AskNoumStoreTests {
         return AskNoumStore(defaults: suite, accountIDProvider: { "tester" })
     }
 
+    private func sampleTurnMetadata(
+        userImmediatePushback: Bool = false
+    ) -> CoachTurnMetadata {
+        CoachTurnMetadata(
+            turnDepth: .deepAssessment,
+            providerTier: .claudeReasoning,
+            semanticGateOutcome: .passed,
+            evidenceCoverage: 0.42,
+            ttftMs: 180,
+            fullLatencyMs: 940,
+            providerName: "Claude",
+            providerModel: "claude-sonnet-4-6",
+            userImmediatePushback: userImmediatePushback,
+            trajectoryCacheHit: true,
+            surface: .text
+        )
+    }
+
     @Test func appendUserTurnAddsUserAndPendingCoach() {
         let store = freshStore()
         let ids = store.appendUserTurn("Plan my week.")
@@ -12074,6 +12092,17 @@ struct AskNoumStoreTests {
         #expect(msg.isOffline == false)
     }
 
+    /// Back-compat: rows persisted before per-turn observability existed must
+    /// still decode. Old rows simply have no metadata.
+    @Test func coachMessageDecodesLegacyJSONWithoutMetadataKey() throws {
+        let legacy = """
+        {"id":"\(UUID().uuidString)","role":"coach","text":"Older reply.","createdAt":0,"isPending":false,"isOffline":false}
+        """.data(using: .utf8)!
+        let msg = try JSONDecoder().decode(CoachMessage.self, from: legacy)
+        #expect(msg.metadata == nil)
+        #expect(msg.isOffline == false)
+    }
+
     /// Back-compat: an offline-flagged legacy message survives encode → decode.
     @Test func coachMessageOfflineFlagRoundTrips() throws {
         let original = CoachMessage(role: .coach, text: "Offline line.", isOffline: true)
@@ -12081,6 +12110,131 @@ struct AskNoumStoreTests {
         let decoded = try JSONDecoder().decode(CoachMessage.self, from: data)
         #expect(decoded.isOffline == true)
         #expect(decoded.text == "Offline line.")
+    }
+
+    @Test func coachTurnMetadataRoundTripsWithMessage() throws {
+        let original = CoachMessage(
+            role: .coach,
+            text: "You're closer mechanically than authoritatively.",
+            metadata: sampleTurnMetadata()
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(CoachMessage.self, from: data)
+        #expect(decoded.metadata?.turnDepth == .deepAssessment)
+        #expect(decoded.metadata?.providerTier == .claudeReasoning)
+        #expect(decoded.metadata?.semanticGateOutcome == .passed)
+        #expect(decoded.metadata?.evidenceCoverage == 0.42)
+        #expect(decoded.metadata?.ttftMs == 180)
+        #expect(decoded.metadata?.fullLatencyMs == 940)
+        #expect(decoded.metadata?.providerName == "Claude")
+        #expect(decoded.metadata?.providerModel == "claude-sonnet-4-6")
+        #expect(decoded.metadata?.trajectoryCacheHit == true)
+        #expect(decoded.metadata?.surface == .text)
+    }
+
+    @Test func coachTurnMetadataPersistsAcrossRelaunch() {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let store1 = AskNoumStore(defaults: suite, accountIDProvider: { "tester" })
+        let ids = store1.appendUserTurn("How far off am I from sounding authoritative?")
+        store1.completeCoachTurn(
+            id: ids.coachID,
+            outcome: .reply("You're closer mechanically than authoritatively. Next proof test: lead with the verdict."),
+            metadata: sampleTurnMetadata()
+        )
+
+        let store2 = AskNoumStore(defaults: suite, accountIDProvider: { "tester" })
+        let coach = store2.messages.first { $0.role == .coach }
+        #expect(coach?.metadata?.turnDepth == .deepAssessment)
+        #expect(coach?.metadata?.providerTier == .claudeReasoning)
+        #expect(coach?.metadata?.semanticGateOutcome == .passed)
+        #expect(coach?.metadata?.evidenceCoverage == 0.42)
+        #expect(coach?.metadata?.ttftMs == 180)
+        #expect(coach?.metadata?.fullLatencyMs == 940)
+        #expect(coach?.metadata?.providerName == "Claude")
+        #expect(coach?.metadata?.providerModel == "claude-sonnet-4-6")
+        #expect(coach?.metadata?.userImmediatePushback == false)
+    }
+
+    @Test func provisionalCoachReadKeepsMetadataInMemoryButDoesNotPersistPendingRow() {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let store1 = AskNoumStore(defaults: suite, accountIDProvider: { "tester" })
+        let ids = store1.appendUserTurn("How far off am I?")
+
+        let visible = store1.setProvisionalCoachRead(
+            id: ids.coachID,
+            text: "Initial read: you need one more proof rep.",
+            metadata: sampleTurnMetadata()
+        )
+
+        #expect(visible)
+        #expect(store1.messages[1].isPending)
+        #expect(store1.messages[1].metadata?.turnDepth == .deepAssessment)
+        #expect(store1.messages[1].metadata?.ttftMs == 180)
+
+        let store2 = AskNoumStore(defaults: suite, accountIDProvider: { "tester" })
+        #expect(store2.messages.count == 1)
+        #expect(store2.messages.first?.role == .user)
+        #expect(store2.messages.first?.metadata == nil)
+    }
+
+    @Test func completeCoachTurnPreservesExistingMetadataWhenNoFinalMetadataProvided() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("How far off am I?")
+        _ = store.setProvisionalCoachRead(
+            id: ids.coachID,
+            text: "Initial read: mechanics are improving.",
+            metadata: sampleTurnMetadata()
+        )
+
+        store.completeCoachTurn(
+            id: ids.coachID,
+            outcome: .reply("You're closer mechanically than authoritatively. Test it with a verdict-first rep.")
+        )
+
+        #expect(store.messages[1].role == .coach)
+        #expect(store.messages[1].metadata?.turnDepth == .deepAssessment)
+        #expect(store.messages[1].metadata?.ttftMs == 180)
+    }
+
+    @Test func appendUserTurnMarksPreviousCoachWhenImmediatePushback() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("How far off am I from sounding authoritative?")
+        store.completeCoachTurn(
+            id: ids.coachID,
+            outcome: .reply("You're closer mechanically than authoritatively. Test it with a verdict-first rep."),
+            metadata: sampleTurnMetadata()
+        )
+
+        _ = store.appendUserTurn("That's not informative at all.")
+
+        #expect(store.messages[1].role == .coach)
+        #expect(store.messages[1].metadata?.turnDepth == .deepAssessment)
+        #expect(store.messages[1].metadata?.userImmediatePushback == true)
+    }
+
+    @Test func immediatePushbackRecordsDiagnosticWithPriorTurnContext() async {
+        AICallDiagnosticsStore.shared.reset()
+        let store = freshStore()
+        let ids = store.appendUserTurn("How far off am I from sounding authoritative?")
+        store.completeCoachTurn(
+            id: ids.coachID,
+            outcome: .reply("You're closer mechanically than authoritatively. Test it with a verdict-first rep."),
+            metadata: sampleTurnMetadata()
+        )
+
+        _ = store.appendUserTurn("That's not informative at all.")
+        await Task.yield()
+        await Task.yield()
+
+        let latest = AICallDiagnosticsStore.shared.latest
+        #expect(latest?.surface == "Ask Noum immediate pushback")
+        #expect(latest?.provider == "User feedback")
+        #expect(latest?.model == "claude-sonnet-4-6")
+        #expect(latest?.outcome == .failure)
+        #expect(latest?.reason.contains("priorDepth=deepAssessment") == true)
+        #expect(latest?.reason.contains("provider=Claude") == true)
+        #expect(latest?.reason.contains("semanticGate=passed") == true)
+        AICallDiagnosticsStore.shared.reset()
     }
 
     @Test func cancelPendingCoachTurnRemovesPlaceholder() {
@@ -25232,6 +25386,54 @@ struct S5SpokenModeRouteTests {
         #expect(!value.lowercased().contains("move:"))
     }
 }
+
+#if canImport(SwiftUI)
+struct LiveCoachImmediateSpeechTests {
+
+    @Test func provisionalReadUsesSameSpokenSanitizerAsFinalReplies() {
+        let spoken = LiveCoachCallView.liveCoachSpokenText(
+            from: """
+            **Read:** You're closer mechanically than authoritatively.
+            - **Move:** Run one 45-second verdict-first answer.
+            """,
+            spokenRepliesEnabled: true,
+            localeSupportsAI: true
+        )
+
+        #expect(spoken == "You're closer mechanically than authoritatively. Run one 45-second verdict-first answer.")
+    }
+
+    @Test func provisionalReadRespectsMuteAndLocaleGate() {
+        #expect(LiveCoachCallView.liveCoachSpokenText(
+            from: "Start with the verdict, then stop.",
+            spokenRepliesEnabled: false,
+            localeSupportsAI: true
+        ) == nil)
+        #expect(LiveCoachCallView.liveCoachSpokenText(
+            from: "Start with the verdict, then stop.",
+            spokenRepliesEnabled: true,
+            localeSupportsAI: false
+        ) == nil)
+    }
+
+    @Test func scaffoldOnlyProvisionalReadDoesNotStartSpeech() {
+        #expect(LiveCoachCallView.liveCoachSpokenText(
+            from: "**Read:**\n- **Move:**",
+            spokenRepliesEnabled: true,
+            localeSupportsAI: true
+        ) == nil)
+    }
+
+    @Test func finalSpeechIsSuppressedOnlyAfterImmediateSpeechStarts() {
+        #expect(LiveCoachCallView.shouldSpeakFinalCoachOutcome(
+            provisionalSpeechStarted: false
+        ))
+        #expect(!LiveCoachCallView.shouldSpeakFinalCoachOutcome(
+            provisionalSpeechStarted: true
+        ))
+    }
+}
+#endif
 
 /// S5 — voice → spoken-tone mapping. Pure + total: every chosen voice maps to
 /// a real `IMTargetTone`, and a nil chosen voice maps to the steady neutral
@@ -45560,6 +45762,64 @@ struct LiveCallLandingLineTests {
             #expect(line?.contains("!") == false)
             #expect(line?.hasPrefix("Last rep:") == true)
         }
+    }
+
+    @Test func liveLandingSelectsNewestTimedRepByDateNotArrayPosition() {
+        let olderTimed = liveLandingSession(
+            transcript: "older timed rep",
+            date: Date(timeIntervalSince1970: 1_000),
+            mode: .timed
+        )
+        let newestTimed = liveLandingSession(
+            transcript: "newest timed rep",
+            date: Date(timeIntervalSince1970: 3_000),
+            mode: .timed
+        )
+        let newestButWrongMode = liveLandingSession(
+            transcript: "newer non timed rep",
+            date: Date(timeIntervalSince1970: 4_000),
+            mode: .suddenDeath
+        )
+
+        let selected = LiveCoachCallView.latestTimedRepForLiveLanding(
+            from: [newestTimed, newestButWrongMode, olderTimed]
+        )
+
+        #expect(selected?.id == newestTimed.id)
+    }
+
+    @Test func liveLandingSelectorReturnsNilWhenNoTimedRepExists() {
+        let selected = LiveCoachCallView.latestTimedRepForLiveLanding(
+            from: [
+                liveLandingSession(
+                    transcript: "pressure rep",
+                    date: Date(timeIntervalSince1970: 2_000),
+                    mode: .suddenDeath
+                ),
+                liveLandingSession(
+                    transcript: "im rep",
+                    date: Date(timeIntervalSince1970: 3_000),
+                    mode: .imConversation
+                )
+            ]
+        )
+
+        #expect(selected == nil)
+    }
+
+    private func liveLandingSession(
+        transcript: String,
+        date: Date,
+        mode: PracticeMode
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: transcript,
+            fillerWordCount: 1,
+            duration: 60,
+            date: date,
+            mode: mode,
+            score: 7
+        )
     }
 }
 

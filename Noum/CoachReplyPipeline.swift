@@ -40,6 +40,25 @@ enum CoachReplyPipeline {
         return "No cards matched turn"
     }
 
+    nonisolated static func shouldShowProvisionalCoachRead(
+        turnDepth: CoachTurnDepth,
+        surface: CoachReplySurface,
+        responseMode: CoachAssessment.ResponseMode,
+        realtimeCoachModeEnabled: Bool
+    ) -> Bool {
+        guard realtimeCoachModeEnabled else { return false }
+        if surface == .live { return true }
+        if responseMode == .expandable { return true }
+        return turnDepth == .deepAssessment || turnDepth == .trustRepair
+    }
+
+    nonisolated static func shouldUseSemanticKnowledgeRerank(
+        surface: CoachReplySurface,
+        semanticRerankEnabled: Bool = KnowledgeBrainFlags.semanticRerankEnabled
+    ) -> Bool {
+        semanticRerankEnabled && surface != .live
+    }
+
     /// Assemble context from the shared stores, call the model, and hydrate the
     /// pending coach row identified by `coachID`. Returns the outcome so the
     /// caller can decide whether to speak it. `@MainActor`: the store reads run
@@ -49,7 +68,8 @@ enum CoachReplyPipeline {
     static func generate(
         coachID: UUID,
         pendingGoalIntent: CoachContextBuilder.GoalIntent? = nil,
-        surface: CoachReplySurface = .text
+        surface: CoachReplySurface = .text,
+        onProvisionalCoachReadVisible: (@MainActor (String) -> Void)? = nil
     ) async -> ChatOutcome {
         let turnStartedAt = Date()
         let profileStore = CoachingProfileStore.shared
@@ -77,6 +97,10 @@ enum CoachReplyPipeline {
                 liveMode: surface == .live
             )
             : .groundedRead
+        let preferredTier = CoachPromptBundle.preferredProviderTier(
+            for: turnDepth,
+            surface: surface
+        )
         let previousCoachReply = latestUserIndex.flatMap { index in
             history[..<index].last { $0.role == .coach }?.text
         }
@@ -89,26 +113,35 @@ enum CoachReplyPipeline {
             .map { $0.text }
 
         // BRAIN — retrieve the coaching expertise most worth grounding this turn
-        // in. Boosted by the user's active lever + chosen voice; gated so a
-        // cold-start user only gets technique when they explicitly ask for it.
-        // Warmup for the optional on-device embedding rerank is kicked OFF the
-        // reply path (it can't load in the Simulator); retrieval never waits on
-        // it and degrades to BM25 until it's ready.
+        // in. Text chat can use the optional semantic rerank; live mode stays
+        // on pure BM25 so it never kicks embedding warmup or waits on the actor
+        // path inside a spoken-response budget.
         let activeLever = coachMemoryStore.currentMemory?.currentLever
         let hasDiagnosis = activeLever != nil
-        if KnowledgeBrainFlags.semanticRerankEnabled {
+        let semanticRerankAllowed = Self.shouldUseSemanticKnowledgeRerank(surface: surface)
+        if semanticRerankAllowed {
             Task { await KnowledgeSemanticReranker.shared.warmUpIfNeeded() }
         }
-        let coachingExpertise = await KnowledgeRetriever.retrieveReranked(
-            query: latestUserTurn ?? "",
-            lever: activeLever,
-            voice: profileStore.profile?.speakingStyleGoal,
-            hasDiagnosis: hasDiagnosis
-        )
+        let coachingExpertise: [CoachKnowledgeCard]
+        if semanticRerankAllowed {
+            coachingExpertise = await KnowledgeRetriever.retrieveReranked(
+                query: latestUserTurn ?? "",
+                lever: activeLever,
+                voice: profileStore.profile?.speakingStyleGoal,
+                hasDiagnosis: hasDiagnosis
+            )
+        } else {
+            coachingExpertise = KnowledgeRetriever.retrieve(
+                query: latestUserTurn ?? "",
+                lever: activeLever,
+                voice: profileStore.profile?.speakingStyleGoal,
+                hasDiagnosis: hasDiagnosis
+            )
+        }
         AICallDiagnostics.record(
             surface: "Coach brain retrieval",
             providerName: "On-device brain",
-            model: KnowledgeBrainFlags.semanticRerankEnabled ? "BM25 + semantic rerank" : "BM25",
+            model: semanticRerankAllowed ? "BM25 + semantic rerank" : "BM25",
             outcome: coachingExpertise.isEmpty ? .skipped : .success,
             reason: Self.brainDiagnosticReason(
                 cards: coachingExpertise,
@@ -135,6 +168,7 @@ enum CoachReplyPipeline {
                 surface: surface
             )
             : nil
+        var firstVisibleAt: Date?
         if let assessment {
             AICallDiagnostics.record(
                 surface: "Coach judgement pass",
@@ -144,11 +178,33 @@ enum CoachReplyPipeline {
                 reason: "turnDepth=\(turnDepth.rawValue) cacheHit=\(trajectoryResult.cacheHit) reasoningEvidence=\(assessment.evidenceReferenceCount)",
                 startedAt: reasoningStartedAt
             )
-            if CoachBrainFlags.realtimeCoachModeEnabled {
-                AskNoumStore.shared.setProvisionalCoachRead(
-                    id: coachID,
-                    text: assessment.immediateCoachRead
+            if Self.shouldShowProvisionalCoachRead(
+                turnDepth: turnDepth,
+                surface: surface,
+                responseMode: assessment.responseMode,
+                realtimeCoachModeEnabled: CoachBrainFlags.realtimeCoachModeEnabled
+            ) {
+                let provisionalVisibleAt = Date()
+                let immediateCoachRead = CoachReplyTextSanitizer.coachReplyText(
+                    from: assessment.immediateCoachRead
                 )
+                let provisionalMetadata = CoachTurnMetadata(
+                    turnDepth: turnDepth,
+                    providerTier: preferredTier,
+                    semanticGateOutcome: .notEvaluated,
+                    evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
+                    ttftMs: Self.latencyMs(from: turnStartedAt, to: provisionalVisibleAt),
+                    trajectoryCacheHit: trajectoryResult.cacheHit,
+                    surface: surface
+                )
+                if AskNoumStore.shared.setProvisionalCoachRead(
+                    id: coachID,
+                    text: immediateCoachRead,
+                    metadata: provisionalMetadata
+                ) {
+                    firstVisibleAt = provisionalVisibleAt
+                    onProvisionalCoachReadVisible?(immediateCoachRead)
+                }
                 AICallDiagnostics.record(
                     surface: "Coach immediate read",
                     providerName: "On-device coach brain",
@@ -167,6 +223,7 @@ enum CoachReplyPipeline {
                 reason: "judgementPassEnabled=false turnDepth=\(turnDepth.rawValue)"
             )
         }
+        var providerChoice: CoachTurnProviderChoice?
 
         var context = CoachContextBuilder.userContext(
             profile: profileStore.profile,
@@ -228,10 +285,48 @@ enum CoachReplyPipeline {
             turnDepth: turnDepth,
             assessment: assessment,
             surface: surface,
-            preferredTier: CoachPromptBundle.preferredProviderTier(
-                for: turnDepth,
-                surface: surface
-            )
+            preferredTier: preferredTier,
+            onStreamedPartialVisible: { partialText in
+                let streamedVisibleAt = Date()
+                let streamedMetadata = CoachTurnMetadata(
+                    turnDepth: turnDepth,
+                    providerTier: preferredTier,
+                    semanticGateOutcome: .notEvaluated,
+                    evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
+                    ttftMs: Self.latencyMs(from: turnStartedAt, to: firstVisibleAt ?? streamedVisibleAt),
+                    trajectoryCacheHit: trajectoryResult.cacheHit,
+                    surface: surface
+                )
+                if AskNoumStore.shared.setProvisionalCoachRead(
+                    id: coachID,
+                    text: partialText,
+                    metadata: streamedMetadata
+                ) {
+                    if firstVisibleAt == nil {
+                        firstVisibleAt = streamedVisibleAt
+                    }
+                }
+            },
+            onProviderChosen: { choice in
+                providerChoice = choice
+            }
+        )
+        let completionAt = Date()
+        let finalMetadata = CoachTurnMetadata(
+            turnDepth: turnDepth,
+            providerTier: preferredTier,
+            semanticGateOutcome: Self.semanticGateOutcome(
+                for: outcome,
+                turnDepth: turnDepth,
+                assessment: assessment
+            ),
+            evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
+            ttftMs: Self.latencyMs(from: turnStartedAt, to: firstVisibleAt ?? completionAt),
+            fullLatencyMs: Self.latencyMs(from: turnStartedAt, to: completionAt),
+            providerName: providerChoice?.providerName,
+            providerModel: providerChoice?.model,
+            trajectoryCacheHit: trajectoryResult.cacheHit,
+            surface: surface
         )
         AICallDiagnostics.record(
             surface: "Coach response timing",
@@ -241,8 +336,19 @@ enum CoachReplyPipeline {
                 if case .reply = outcome { return .success }
                 return .failure
             }(),
-            reason: "turnDepth=\(turnDepth.rawValue) cacheHit=\(trajectoryResult.cacheHit) surface=\(surface.rawValue)",
-            startedAt: turnStartedAt
+            reason: [
+                "turnDepth=\(turnDepth.rawValue)",
+                "cacheHit=\(trajectoryResult.cacheHit)",
+                "surface=\(surface.rawValue)",
+                "providerTier=\(preferredTier.rawValue)",
+                "providerChosen=\(providerChoice?.providerName ?? "none")",
+                "providerModel=\(providerChoice?.model ?? "none")",
+                "ttftMs=\(finalMetadata.ttftMs ?? -1)",
+                "fullLatencyMs=\(finalMetadata.fullLatencyMs ?? -1)",
+                "semanticGate=\(finalMetadata.semanticGateOutcome?.logValue ?? "notEvaluated")"
+            ].joined(separator: " "),
+            startedAt: turnStartedAt,
+            now: completionAt
         )
         switch outcome {
         case .reply(let text):
@@ -250,8 +356,39 @@ enum CoachReplyPipeline {
         case .failure(let failure):
             Self.log.notice("coach pipeline produced failure=\(String(describing: failure), privacy: .public)")
         }
-        AskNoumStore.shared.completeCoachTurn(id: coachID, outcome: outcome)
+        AskNoumStore.shared.completeCoachTurn(
+            id: coachID,
+            outcome: outcome,
+            metadata: finalMetadata
+        )
         return outcome
+    }
+
+    private static func semanticGateOutcome(
+        for outcome: ChatOutcome,
+        turnDepth: CoachTurnDepth,
+        assessment: CoachAssessment?
+    ) -> CoachTurnSemanticGateOutcome {
+        guard let assessment else { return .notEvaluated }
+        switch outcome {
+        case .reply(let text):
+            let normalized = CoachReplyTextSanitizer.coachReplyText(from: text)
+            guard !normalized.isEmpty else { return .notEvaluated }
+            if let issue = AICoachChatService.semanticQualityIssue(
+                in: normalized,
+                turnDepth: turnDepth,
+                assessment: assessment
+            ) {
+                return .failed(issue.rawValue)
+            }
+            return .passed
+        case .failure:
+            return .notEvaluated
+        }
+    }
+
+    private static func latencyMs(from start: Date, to end: Date) -> Int {
+        max(0, Int(end.timeIntervalSince(start) * 1_000))
     }
 }
 

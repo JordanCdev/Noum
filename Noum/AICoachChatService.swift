@@ -71,6 +71,94 @@ enum ChatOutcome {
     case failure(ChatFailure)
 }
 
+/// Guards streamed provider chunks before they become visible in the pending
+/// coach row. The first render waits for a complete, sanitized sentence so the
+/// UI never flashes raw scaffolding or half a verdict; after that, the row can
+/// update as the provider continues streaming. The final committed reply still
+/// passes through the full quality and semantic gates.
+struct CoachStreamingPartialGate {
+    private var rawBuffer = ""
+    private var released = false
+    private var lastVisible = ""
+
+    mutating func consume(delta: String) -> String? {
+        guard !delta.isEmpty else { return nil }
+        rawBuffer += delta
+
+        let display = CoachReplyTextSanitizer.liveDisplayText(from: rawBuffer)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !display.isEmpty else { return nil }
+
+        let visible: String
+        if released {
+            visible = display
+        } else {
+            guard let prefix = Self.firstPassableCompleteSentencePrefix(in: display) else {
+                return nil
+            }
+            released = true
+            visible = prefix
+        }
+
+        guard visible != lastVisible else { return nil }
+        lastVisible = visible
+        return visible
+    }
+
+    static func completeSentencePrefix(in text: String) -> String? {
+        var index = text.startIndex
+        while index < text.endIndex {
+            if ".!?".contains(text[index]) {
+                let next = text.index(after: index)
+                if next == text.endIndex ||
+                    text[next].unicodeScalars.allSatisfy({
+                        CharacterSet.whitespacesAndNewlines.contains($0)
+                    }) {
+                    let prefix = String(text[..<next])
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    return prefix.isEmpty ? nil : prefix
+                }
+            }
+            index = text.index(after: index)
+        }
+        return nil
+    }
+
+    private static func firstPassableCompleteSentencePrefix(in text: String) -> String? {
+        var index = text.startIndex
+        while index < text.endIndex {
+            if ".!?".contains(text[index]) {
+                let next = text.index(after: index)
+                if next == text.endIndex ||
+                    text[next].unicodeScalars.allSatisfy({
+                        CharacterSet.whitespacesAndNewlines.contains($0)
+                    }) {
+                    let prefix = String(text[..<next])
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    if passesInitialGate(prefix) {
+                        return prefix
+                    }
+                }
+            }
+            index = text.index(after: index)
+        }
+        return nil
+    }
+
+    static func passesInitialGate(_ text: String) -> Bool {
+        let normalized = CoachReplyTextSanitizer.spokenText(from: text)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.count >= 24 else { return false }
+        let words = normalized
+            .split { !$0.isLetter && !$0.isNumber }
+        guard words.count >= 5 else { return false }
+
+        let lower = normalized.lowercased()
+        let blockedPrefixes = ["read:", "move:", "target:", "next rep:", "-", "•"]
+        return !blockedPrefixes.contains { lower.hasPrefix($0) }
+    }
+}
+
 typealias CoachChatDiagnosticRecorder = (
     _ surface: String,
     _ providerName: String?,
@@ -646,6 +734,19 @@ enum CoachChatProvider: CaseIterable, Equatable, Hashable {
         }
     }
 
+    var streamingEndpoint: URL? {
+        switch self {
+        case .agentPlatform:
+            return Self.agentPlatformStreamingEndpoint(model: model)
+        case .gemini:
+            return URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):streamGenerateContent?alt=sse")
+        case .anthropic:
+            return endpoint
+        case .openAI, .deepSeek:
+            return sharedProvider?.endpoint
+        }
+    }
+
     var displayName: String {
         switch self {
         case .agentPlatform: return "Google Cloud"
@@ -684,6 +785,18 @@ enum CoachChatProvider: CaseIterable, Equatable, Hashable {
             : trimmedModel
         return URL(
             string: "https://aiplatform.googleapis.com/v1/publishers/google/models/\(modelPath):generateContent"
+        )
+    }
+
+    nonisolated static func agentPlatformStreamingEndpoint(model: String) -> URL? {
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModel.isEmpty else { return nil }
+
+        let modelPath = trimmedModel.hasPrefix("publishers/google/models/")
+            ? String(trimmedModel.dropFirst("publishers/google/models/".count))
+            : trimmedModel
+        return URL(
+            string: "https://aiplatform.googleapis.com/v1/publishers/google/models/\(modelPath):streamGenerateContent?alt=sse"
         )
     }
 
@@ -812,6 +925,7 @@ actor AICoachChatService {
     private let keyLookupOverride: ((CoachChatProvider) -> String?)?
     private let localeSupportsAIOverride: (() -> Bool)?
     private let providerHTTPOverride: ((CoachChatProvider, URL, String, [String: Any]) async throws -> ProviderHTTPResult)?
+    private let semanticGateDryRunOverride: (() -> Bool)?
     private let diagnosticRecorder: CoachChatDiagnosticRecorder
 
     /// Cap on the number of chat messages we replay to the model per
@@ -860,6 +974,7 @@ actor AICoachChatService {
         self.keyLookupOverride = nil
         self.localeSupportsAIOverride = nil
         self.providerHTTPOverride = nil
+        self.semanticGateDryRunOverride = nil
         self.diagnosticRecorder = Self.defaultDiagnosticRecorder
     }
 
@@ -868,12 +983,29 @@ actor AICoachChatService {
         keyLookup: @escaping (CoachChatProvider) -> String?,
         localeSupportsAI: @escaping () -> Bool,
         providerHTTP: @escaping (CoachChatProvider, URL, String, [String: Any]) async throws -> ProviderHTTPResult,
+        semanticGateDryRun: (() -> Bool)? = nil,
         diagnosticRecorder: CoachChatDiagnosticRecorder? = nil
     ) {
         self.keyedProvidersOverride = keyedProviders
         self.keyLookupOverride = keyLookup
         self.localeSupportsAIOverride = localeSupportsAI
         self.providerHTTPOverride = providerHTTP
+        self.semanticGateDryRunOverride = semanticGateDryRun
+        self.diagnosticRecorder = diagnosticRecorder ?? Self.defaultDiagnosticRecorder
+    }
+
+    init(
+        keyedProviders: @escaping () -> [CoachChatProvider],
+        keyLookup: @escaping (CoachChatProvider) -> String?,
+        localeSupportsAI: @escaping () -> Bool,
+        semanticGateDryRun: (() -> Bool)? = nil,
+        diagnosticRecorder: CoachChatDiagnosticRecorder? = nil
+    ) {
+        self.keyedProvidersOverride = keyedProviders
+        self.keyLookupOverride = keyLookup
+        self.localeSupportsAIOverride = localeSupportsAI
+        self.providerHTTPOverride = nil
+        self.semanticGateDryRunOverride = semanticGateDryRun
         self.diagnosticRecorder = diagnosticRecorder ?? Self.defaultDiagnosticRecorder
     }
 
@@ -890,7 +1022,9 @@ actor AICoachChatService {
         turnDepth: CoachTurnDepth = .groundedRead,
         assessment: CoachAssessment? = nil,
         surface: CoachReplySurface = .text,
-        preferredTier: CoachProviderTier? = nil
+        preferredTier: CoachProviderTier? = nil,
+        onStreamedPartialVisible: (@MainActor (String) -> Void)? = nil,
+        onProviderChosen: (@MainActor (CoachTurnProviderChoice) -> Void)? = nil
     ) async -> ChatOutcome {
         // UI harness only: lets simulator tests verify send -> pipeline ->
         // store -> system-notice rendering without depending on live provider
@@ -899,9 +1033,15 @@ actor AICoachChatService {
         let launchArguments = ProcessInfo.processInfo.arguments
         if launchArguments.contains("UI_TESTING") {
             if launchArguments.contains("UI_TESTING_CHAT_FORCE_GOAL_REPLY") {
+                if let onProviderChosen {
+                    await onProviderChosen(Self.uiHarnessProviderChoice)
+                }
                 return .reply("I can help with that shift. Confirm the voice card below, then I will tune the next rep around it.")
             }
             if launchArguments.contains("UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY") {
+                if let onProviderChosen {
+                    await onProviderChosen(Self.uiHarnessProviderChoice)
+                }
                 return .reply("""
                 **Fair.** I’ll keep it direct.
 
@@ -910,6 +1050,9 @@ actor AICoachChatService {
                 """)
             }
             if launchArguments.contains("UI_TESTING_CHAT_FORCE_JUDGEMENT_REPLY") {
+                if let onProviderChosen {
+                    await onProviderChosen(Self.uiHarnessProviderChoice)
+                }
                 return .reply("You are closer mechanically than you are to sounding authoritative overall. Mechanics: your latest rep is usable, but goal readiness still needs pressure evidence and repeated clean closes. Missing: repeated reps under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.")
             }
             if launchArguments.contains("UI_TESTING_CHAT_FORCE_NOTICE") {
@@ -984,12 +1127,19 @@ actor AICoachChatService {
                 latestUserTurn: latestUserTurn,
                 turnDepth: turnDepth,
                 assessment: assessment,
-                surface: surface
+                surface: surface,
+                onStreamedPartialVisible: onStreamedPartialVisible
             )
             switch outcome {
             case .reply(let text):
                 providerCooldowns[provider] = nil
                 Self.log.info("chat turn succeeded via \(provider.displayName, privacy: .public) chars=\(text.count, privacy: .public)")
+                if let onProviderChosen {
+                    await onProviderChosen(CoachTurnProviderChoice(
+                        providerName: provider.displayName,
+                        model: provider.model
+                    ))
+                }
                 return .reply(text)
             case .refused(let refusal):
                 if refusal == .contentRejected { sawContentRejection = true }
@@ -1002,6 +1152,26 @@ actor AICoachChatService {
 
         // Every keyed provider refused this turn. A content rejection means
         // the model WAS reachable, so that cause must win over `.network`.
+        if sawContentRejection,
+           let fallback = Self.deterministicAssessmentFallbackReply(
+            assessment: assessment,
+            latestUserTurn: latestUserTurn,
+            quoteGuard: quoteGuard,
+            systemContext: composedSystem,
+            turnDepth: turnDepth,
+            surface: surface
+           ) {
+            Self.log.notice("chat turn accepted typed judgement fallback after provider quality failure")
+            recordChatDiagnostic(
+                .success,
+                "Typed judgement fallback accepted after provider quality failure"
+            )
+            if let onProviderChosen {
+                await onProviderChosen(Self.typedFallbackProviderChoice)
+            }
+            return .reply(fallback)
+        }
+
         Self.log.error("all \(chain.count) chat providers refused")
         recordChatDiagnostic(
             .failure,
@@ -1011,6 +1181,16 @@ actor AICoachChatService {
     }
 
     // MARK: - Provider chain
+
+    private nonisolated static let uiHarnessProviderChoice = CoachTurnProviderChoice(
+        providerName: "UI test harness",
+        model: "Forced coach reply"
+    )
+
+    private nonisolated static let typedFallbackProviderChoice = CoachTurnProviderChoice(
+        providerName: "Typed judgement fallback",
+        model: "CoachAssessment"
+    )
 
     /// Providers with a usable key, in declaration (preference) order.
     nonisolated static func keyedProviders(
@@ -1214,11 +1394,17 @@ actor AICoachChatService {
         latestUserTurn: String?,
         turnDepth: CoachTurnDepth,
         assessment: CoachAssessment?,
-        surface: CoachReplySurface
+        surface: CoachReplySurface,
+        onStreamedPartialVisible: (@MainActor (String) -> Void)? = nil
     ) async -> AttemptOutcome {
         let startedAt = Date()
         do {
             Self.log.debug("attempting chat provider \(provider.displayName, privacy: .public)")
+            let streamEndpoint = provider.streamingEndpoint
+            let usesProviderStream = CoachBrainFlags.providerStreamingEnabled &&
+                providerHTTPOverride == nil &&
+                streamEndpoint != nil
+            let requestEndpoint = usesProviderStream ? (streamEndpoint ?? endpoint) : endpoint
             let body = chatRequestBody(
                 for: provider,
                 system: system,
@@ -1226,9 +1412,17 @@ actor AICoachChatService {
                 maxOutputTokens: CoachPromptBundle.maxOutputTokens(
                     for: turnDepth,
                     surface: surface
-                )
+                ),
+                streaming: usesProviderStream
             )
-            var result = try await providerHTTP(provider: provider, endpoint: endpoint, key: key, body: body)
+            var result = try await providerTextHTTP(
+                provider: provider,
+                endpoint: requestEndpoint,
+                key: key,
+                body: body,
+                streaming: usesProviderStream,
+                onStreamedPartialVisible: onStreamedPartialVisible
+            )
 
             // One in-call retry when the refusal is explicitly short-lived
             // (429/503/529 with Retry-After within the turn's latency budget).
@@ -1237,7 +1431,14 @@ actor AICoachChatService {
                let delay = retryAfter, delay > 0, delay <= 4 {
                 Self.log.info("\(provider.displayName, privacy: .public) \(status) — retrying after \(delay, format: .fixed(precision: 1))s")
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                result = try await providerHTTP(provider: provider, endpoint: endpoint, key: key, body: body)
+                result = try await providerTextHTTP(
+                    provider: provider,
+                    endpoint: requestEndpoint,
+                    key: key,
+                    body: body,
+                    streaming: usesProviderStream,
+                    onStreamedPartialVisible: onStreamedPartialVisible
+                )
             }
 
             switch result {
@@ -1251,8 +1452,16 @@ actor AICoachChatService {
                     startedAt: startedAt
                 )
                 return .refused(.classify(status: status))
-            case .success(let data):
-                let extraction = Self.chatExtractReplyText(from: data, provider: provider)
+            case .success(let extraction, let firstTokenAt):
+                if let firstTokenAt {
+                    recordChatDiagnostic(
+                        .success,
+                        "Streaming first provider token received",
+                        provider: provider,
+                        startedAt: startedAt,
+                        now: firstTokenAt
+                    )
+                }
                 switch extraction {
                 case .text(let text):
                     let display = CoachReplyTextSanitizer.displayText(from: text)
@@ -1322,36 +1531,46 @@ actor AICoachChatService {
                         turnDepth: turnDepth,
                         assessment: assessment
                     ) {
-                        let issue = CoachChatReplyQualityIssue.semanticJudgement(semanticIssue)
-                        Self.log.notice("\(provider.displayName, privacy: .public) reply tripped semantic judgement gate (\(semanticIssue.rawValue, privacy: .public)) — repairing")
-                        recordChatDiagnostic(
-                            .fallback,
-                            "Reply tripped semantic judgement gate: \(semanticIssue.rawValue)",
-                            provider: provider,
-                            startedAt: startedAt
-                        )
-                        if let repaired = await repairLowQualityReply(
-                            issue: issue,
-                            draft: display,
-                            provider: provider,
-                            endpoint: endpoint,
-                            key: key,
-                            system: system,
-                            messages: messages,
-                            quoteGuard: quoteGuard,
-                            turnDepth: turnDepth,
-                            assessment: assessment,
-                            surface: surface
-                        ) {
-                            recordChatDiagnostic(.success, "Semantic repair reply accepted", provider: provider)
-                            return .reply(repaired)
+                        if semanticGateDryRunEnabled() {
+                            Self.log.notice("\(provider.displayName, privacy: .public) reply would trip semantic judgement gate (\(semanticIssue.rawValue, privacy: .public)) — dry-run accepting")
+                            recordChatDiagnostic(
+                                .success,
+                                "Semantic judgement gate dry-run: would reject (\(semanticIssue.rawValue))\(Self.liveEvalDraftSuffix(display))",
+                                provider: provider,
+                                startedAt: startedAt
+                            )
+                        } else {
+                            let issue = CoachChatReplyQualityIssue.semanticJudgement(semanticIssue)
+                            Self.log.notice("\(provider.displayName, privacy: .public) reply tripped semantic judgement gate (\(semanticIssue.rawValue, privacy: .public)) — repairing")
+                            recordChatDiagnostic(
+                                .fallback,
+                                "Reply tripped semantic judgement gate: \(semanticIssue.rawValue)",
+                                provider: provider,
+                                startedAt: startedAt
+                            )
+                            if let repaired = await repairLowQualityReply(
+                                issue: issue,
+                                draft: display,
+                                provider: provider,
+                                endpoint: endpoint,
+                                key: key,
+                                system: system,
+                                messages: messages,
+                                quoteGuard: quoteGuard,
+                                turnDepth: turnDepth,
+                                assessment: assessment,
+                                surface: surface
+                            ) {
+                                recordChatDiagnostic(.success, "Semantic repair reply accepted", provider: provider)
+                                return .reply(repaired)
+                            }
+                            recordChatDiagnostic(
+                                .fallback,
+                                "Reply failed semantic judgement gate: \(semanticIssue.rawValue)\(Self.liveEvalDraftSuffix(display))",
+                                provider: provider
+                            )
+                            return .refused(.contentRejected)
                         }
-                        recordChatDiagnostic(
-                            .fallback,
-                            "Reply failed semantic judgement gate: \(semanticIssue.rawValue)\(Self.liveEvalDraftSuffix(display))",
-                            provider: provider
-                        )
-                        return .refused(.contentRejected)
                     }
                     let normalized = CoachReplyTextSanitizer.coachReplyText(from: display)
                     guard !normalized.isEmpty else {
@@ -1382,6 +1601,237 @@ actor AICoachChatService {
             )
             return .refused(.transient)
         }
+    }
+
+    private func semanticGateDryRunEnabled() -> Bool {
+        semanticGateDryRunOverride?() ?? CoachBrainFlags.semanticGateDryRunEnabled
+    }
+
+    private nonisolated static func deterministicAssessmentFallbackReply(
+        assessment: CoachAssessment?,
+        latestUserTurn: String?,
+        quoteGuard: CoachChatQuoteGuardContext?,
+        systemContext: String,
+        turnDepth: CoachTurnDepth,
+        surface: CoachReplySurface
+    ) -> String? {
+        guard let assessment else { return nil }
+
+        let raw: String
+        switch turnDepth {
+        case .deepAssessment:
+            raw = deterministicDeepAssessmentReply(assessment)
+        case .trustRepair:
+            raw = deterministicTrustRepairReply(
+                assessment: assessment,
+                latestUserTurn: latestUserTurn,
+                systemContext: systemContext
+            )
+        case .quickMove:
+            raw = deterministicQuickMoveReply(assessment)
+        case .groundedRead:
+            raw = deterministicGroundedReadReply(assessment)
+        }
+
+        let normalized = CoachReplyTextSanitizer.coachReplyText(from: raw)
+        guard !normalized.isEmpty else { return nil }
+        guard replyQualityIssue(
+            in: normalized,
+            latestUserTurn: latestUserTurn,
+            quoteGuard: quoteGuard,
+            systemContext: systemContext,
+            turnDepth: turnDepth,
+            surface: surface
+        ) == nil else {
+            return nil
+        }
+        guard semanticQualityIssue(
+            in: normalized,
+            turnDepth: turnDepth,
+            assessment: assessment
+        ) == nil else {
+            return nil
+        }
+        return normalized
+    }
+
+    private nonisolated static func deterministicQuickMoveReply(
+        _ assessment: CoachAssessment
+    ) -> String {
+        guard let anchor = conciseEvidencePhrase(from: assessment.evidenceUsed.first) else {
+            return "No baseline yet, so \(connectorClause(assessment.nextProofTest))"
+        }
+        return "Your last rep gives one usable signal: \(anchor), so \(connectorClause(assessment.nextProofTest))"
+    }
+
+    private nonisolated static func deterministicGroundedReadReply(
+        _ assessment: CoachAssessment
+    ) -> String {
+        guard let anchor = conciseEvidencePhrase(from: assessment.evidenceUsed.first) else {
+            return "\(completeSentence(assessment.directVerdict)) No baseline yet, so \(connectorClause(assessment.nextProofTest))"
+        }
+        return "\(completeSentence(assessment.directVerdict)) The signal I can use is \(anchor), so \(connectorClause(assessment.nextProofTest))"
+    }
+
+    private nonisolated static func deterministicDeepAssessmentReply(
+        _ assessment: CoachAssessment
+    ) -> String {
+        var lines: [String] = []
+        lines.append(completeSentence(deepAssessmentFallbackVerdict(from: assessment)))
+        lines.append("That matters because a score can show cleaner mechanics, but goal readiness still needs repeated pressure evidence.")
+        let evidence = assessment.evidenceUsed
+            .prefix(2)
+            .compactMap { conciseEvidencePhrase(from: $0) }
+        if !evidence.isEmpty {
+            lines.append("The evidence I can use is \(evidence.joined(separator: " and ")).")
+        }
+        if let missing = assessment.missingEvidence.first {
+            lines.append("What is still missing is \(completeSentence(missing))")
+        }
+        lines.append("Test this next: \(completeSentence(assessment.nextProofTest))")
+        return lines.joined(separator: " ")
+    }
+
+    private nonisolated static func deepAssessmentFallbackVerdict(
+        from assessment: CoachAssessment
+    ) -> String {
+        let verdict = assessment.directVerdict
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = verdict.lowercased()
+        guard !verdict.isEmpty else {
+            return "You are not proven authoritative overall yet, even if the mechanics are usable."
+        }
+        guard containsAny(lower, [
+            "not enough evidence",
+            "do not have enough evidence",
+            "don't have enough evidence",
+            "not enough data",
+            "do not have enough data",
+            "don't have enough data"
+        ]) else {
+            return verdict
+        }
+        return "You are not proven authoritative overall yet, even if the mechanics are usable."
+    }
+
+    private nonisolated static func deterministicTrustRepairReply(
+        assessment: CoachAssessment,
+        latestUserTurn: String?,
+        systemContext: String
+    ) -> String {
+        let lowerTurn = latestUserTurn?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        let friction = trustRepairFallbackFriction(for: lowerTurn)
+        let action = connectorClause(trustRepairFallbackAction(
+            for: lowerTurn,
+            assessment: assessment
+        ))
+        if contextSaysWarmthBeforeRecommendation(systemContext) {
+            return "\(friction) Your last rep shows warmth came before the recommendation, so \(action)"
+        }
+        if let evidence = conciseEvidencePhrase(from: assessment.evidenceUsed.first) {
+            return "\(friction) Your last rep gives one safe signal, \(evidence), so \(action)"
+        }
+        return "\(friction) I do not have enough reliable evidence yet, so \(action)"
+    }
+
+    private nonisolated static func trustRepairFallbackFriction(
+        for lowerTurn: String
+    ) -> String {
+        var clauses: [String] = []
+
+        if containsAny(lowerTurn, [
+            "tts", "read them out", "read aloud", "**", "markdown",
+            "format", "formatting", "symbols", "stars"
+        ]) {
+            clauses.append("TTS reading formatting symbols breaks trust")
+        }
+        if containsAny(lowerTurn, [
+            "robotic", "report", "too much writing", "too long",
+            "less text", "less writing", "shorter"
+        ]) {
+            clauses.append("it felt robotic or too much like a report")
+        }
+        if containsAny(lowerTurn, [
+            "cold", "generic", "not human", "low eq", "not high eq",
+            "overexplained", "over explained", "over-explained",
+            "expert coach", "ai tips", "ai wrapper"
+        ]) {
+            clauses.append("it sounded cold or generic instead of like expert coaching")
+        }
+
+        guard let last = clauses.last else {
+            return "Fair push. That answer did not earn enough trust."
+        }
+        if clauses.count == 1 {
+            return "Fair push. \(sentenceStart(last))."
+        }
+        let prefix = clauses.dropLast().enumerated().map { index, clause in
+            index == 0 ? sentenceStart(clause) : clause
+        }.joined(separator: ", ")
+        return "Fair push. \(prefix), and \(last)."
+    }
+
+    private nonisolated static func trustRepairFallbackAction(
+        for lowerTurn: String,
+        assessment: CoachAssessment
+    ) -> String {
+        if containsAny(lowerTurn, ["short", "less text", "less writing", "too much writing", "too long"]) {
+            return "run one cleaner rep with the main point first, then stop."
+        }
+        if containsAny(lowerTurn, ["tts", "read them out", "read aloud", "**", "markdown", "format"]) {
+            return "run one rep by saying the recommendation first, giving one proof point, then stopping."
+        }
+        let proof = assessment.nextProofTest.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !proof.isEmpty {
+            return completeSentence(proof)
+        }
+        return "run one short rep with the point first and one proof point after it."
+    }
+
+    private nonisolated static func sentenceStart(_ text: String) -> String {
+        guard let first = text.first else { return text }
+        return String(first).uppercased() + String(text.dropFirst())
+    }
+
+    private nonisolated static func connectorClause(_ text: String) -> String {
+        let sentence = completeSentence(text)
+        guard let first = sentence.first else { return sentence }
+        return String(first).lowercased() + String(sentence.dropFirst())
+    }
+
+    private nonisolated static func conciseEvidencePhrase(
+        from raw: String?
+    ) -> String? {
+        guard let raw else { return nil }
+        var value = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\n", with: " ")
+        guard !value.isEmpty else { return nil }
+        let lower = value.lowercased()
+        for prefix in ["latest rep:", "pace estimate:", "case focus:", "case evidence:"] where lower.hasPrefix(prefix) {
+            let label = String(prefix.dropLast())
+            let rest = String(value.dropFirst(prefix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            value = "\(label) \(rest)"
+            break
+        }
+        value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return nil }
+        if value.count > 120 {
+            value = String(value.prefix(117)).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
+        }
+        return value
+    }
+
+    private nonisolated static func completeSentence(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return trimmed }
+        if let last = trimmed.last, ".!?".contains(last) {
+            return trimmed
+        }
+        return trimmed + "."
     }
 
     // MARK: - Live reply quality gate
@@ -1550,7 +2000,12 @@ actor AICoachChatService {
             return .ignoredCoachingExpertise
         }
 
-        let rubric = professionalCoachRubric(reply: trimmed, latestUserTurn: latestUserTurn)
+        let rubric = professionalCoachRubric(
+            reply: trimmed,
+            latestUserTurn: latestUserTurn,
+            turnDepth: turnDepth,
+            surface: surface
+        )
         if rubric.misses.contains(.missedTrustRepair) {
             return .missedTrustRepair
         }
@@ -1587,7 +2042,9 @@ actor AICoachChatService {
     /// reliably enough to protect the live chat surface.
     nonisolated static func professionalCoachRubric(
         reply: String,
-        latestUserTurn: String? = nil
+        latestUserTurn: String? = nil,
+        turnDepth: CoachTurnDepth? = nil,
+        surface: CoachReplySurface = .text
     ) -> CoachChatProfessionalRubricResult {
         let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -1609,11 +2066,26 @@ actor AICoachChatService {
             }
         }
 
+        let effectiveDepth: CoachTurnDepth
+        if let turnDepth {
+            effectiveDepth = turnDepth
+        } else if latestLower.isEmpty {
+            effectiveDepth = .groundedRead
+        } else {
+            effectiveDepth = TurnDepthClassifier.classify(userText: latestLower)
+        }
         let expandedAnswer = turnRequestsExpandedAnswer(latestUserTurn)
-        let maxCharacters = expandedAnswer ? 680 : 420
-        let maxSentences = expandedAnswer ? 7 : 4
-        let maxWords = expandedAnswer ? 150 : 85
-        let maxLines = expandedAnswer ? 9 : 5
+            || effectiveDepth == .deepAssessment
+            || effectiveDepth == .trustRepair
+        let limits = replyLengthLimits(
+            expandedAnswer: expandedAnswer,
+            turnDepth: effectiveDepth,
+            surface: surface
+        )
+        let maxCharacters = limits.characters
+        let maxSentences = limits.sentences
+        let maxWords = limits.words
+        let maxLines = limits.lines
         if trimmed.count > maxCharacters
             || sentenceCount(in: trimmed) > maxSentences
             || wordCount(in: trimmed) > maxWords
@@ -3384,6 +3856,146 @@ actor AICoachChatService {
         case refused(status: Int, retryAfter: TimeInterval?)
     }
 
+    private enum ProviderTextTransportResult {
+        case success(ChatExtractionResult, firstTokenReceivedAt: Date?)
+        /// The server answered with a non-2xx. `retryAfter` carries the
+        /// parsed Retry-After header when the server named one.
+        case refused(status: Int, retryAfter: TimeInterval?)
+    }
+
+    private func providerTextHTTP(
+        provider: CoachChatProvider,
+        endpoint: URL,
+        key: String,
+        body: [String: Any],
+        streaming: Bool,
+        onStreamedPartialVisible: (@MainActor (String) -> Void)? = nil
+    ) async throws -> ProviderTextTransportResult {
+        if streaming {
+            return try await providerStreamingHTTP(
+                provider: provider,
+                endpoint: endpoint,
+                key: key,
+                body: body,
+                onStreamedPartialVisible: onStreamedPartialVisible
+            )
+        }
+
+        let result = try await providerHTTP(
+            provider: provider,
+            endpoint: endpoint,
+            key: key,
+            body: body
+        )
+        switch result {
+        case .success(let data):
+            return .success(
+                Self.chatExtractReplyText(from: data, provider: provider),
+                firstTokenReceivedAt: nil
+            )
+        case .refused(let status, let retryAfter):
+            return .refused(status: status, retryAfter: retryAfter)
+        }
+    }
+
+    private func providerStreamingHTTP(
+        provider: CoachChatProvider,
+        endpoint: URL,
+        key: String,
+        body: [String: Any],
+        onStreamedPartialVisible: (@MainActor (String) -> Void)? = nil
+    ) async throws -> ProviderTextTransportResult {
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 12
+        switch provider {
+        case .openAI, .deepSeek:
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        case .agentPlatform, .gemini:
+            request.setGoogleAPIKey(key)
+        case .anthropic:
+            request.setValue(key, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let started = Date()
+        let bodyBytes = request.httpBody?.count ?? 0
+        Self.log.debug("stream transport start provider=\(provider.displayName, privacy: .public) host=\(endpoint.host ?? "unknown", privacy: .public) path=\(endpoint.path, privacy: .public) bodyBytes=\(bodyBytes, privacy: .public)")
+        do {
+            let (bytes, response) = try await URLSession.shared.bytes(for: request)
+            let headersAt = Date()
+            let headerMs = Int(headersAt.timeIntervalSince(started) * 1_000)
+            guard let http = response as? HTTPURLResponse else {
+                Self.log.error("stream transport non-http response provider=\(provider.displayName, privacy: .public) ms=\(headerMs, privacy: .public)")
+                recordChatDiagnostic(
+                    .failure,
+                    "Streaming non-HTTP response",
+                    provider: provider,
+                    startedAt: started,
+                    now: headersAt
+                )
+                return .refused(status: -1, retryAfter: nil)
+            }
+
+            let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
+            guard (200..<300).contains(http.statusCode) else {
+                var errorBody = Data()
+                for try await byte in bytes {
+                    if errorBody.count < 8_192 {
+                        errorBody.append(byte)
+                    }
+                }
+                Self.log.info("stream transport response provider=\(provider.displayName, privacy: .public) status=\(http.statusCode, privacy: .public) ms=\(headerMs, privacy: .public) bytes=\(errorBody.count, privacy: .public) retryAfter=\(retryAfter != nil, privacy: .public)")
+                recordChatDiagnostic(
+                    .fallback,
+                    Self.failureReason(forHTTPStatus: http.statusCode, data: errorBody, provider: provider),
+                    provider: provider,
+                    statusCode: http.statusCode,
+                    startedAt: started,
+                    now: headersAt
+                )
+                return .refused(status: http.statusCode, retryAfter: retryAfter)
+            }
+
+            var accumulator = CoachChatStreamAccumulator(provider: provider)
+            var firstTokenAt: Date?
+            for try await line in bytes.lines {
+                if let event = accumulator.consume(line: line) {
+                    if !event.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty,
+                       firstTokenAt == nil {
+                        firstTokenAt = Date()
+                    }
+                    if let visiblePartial = event.visiblePartial {
+                        await MainActor.run {
+                            onStreamedPartialVisible?(visiblePartial)
+                        }
+                    }
+                }
+            }
+            let completedAt = Date()
+            Self.log.info("stream transport response provider=\(provider.displayName, privacy: .public) status=\(http.statusCode, privacy: .public) ms=\(Int(completedAt.timeIntervalSince(started) * 1_000), privacy: .public) firstToken=\(firstTokenAt != nil, privacy: .public)")
+            recordChatDiagnostic(
+                .success,
+                "Streaming transport succeeded",
+                provider: provider,
+                statusCode: http.statusCode,
+                startedAt: started,
+                now: completedAt
+            )
+            return .success(accumulator.extractionResult, firstTokenReceivedAt: firstTokenAt)
+        } catch {
+            recordChatDiagnostic(
+                .failure,
+                "Streaming transport error",
+                provider: provider,
+                startedAt: started
+            )
+            throw error
+        }
+    }
+
     private func providerHTTP(
         provider: CoachChatProvider,
         endpoint: URL,
@@ -3470,7 +4082,8 @@ actor AICoachChatService {
         for provider: CoachChatProvider,
         system: String,
         messages: [CoachMessage],
-        maxOutputTokens: Int? = nil
+        maxOutputTokens: Int? = nil,
+        streaming: Bool = false
     ) -> [String: Any] {
         let tokenCap = maxOutputTokens ?? Self.coachReplyMaxOutputTokens
         if let shared = provider.sharedProvider {
@@ -3478,7 +4091,8 @@ actor AICoachChatService {
                 for: shared,
                 system: system,
                 messages: messages,
-                maxOutputTokens: tokenCap
+                maxOutputTokens: tokenCap,
+                streaming: streaming
             )
         }
 
@@ -3499,19 +4113,24 @@ actor AICoachChatService {
         while let first = msgs.first, first["role"] as? String == "assistant" {
             msgs.removeFirst()
         }
-        return [
+        var body: [String: Any] = [
             "model": provider.model,
             "max_tokens": tokenCap,
             "system": system,
             "messages": msgs
         ]
+        if streaming {
+            body["stream"] = true
+        }
+        return body
     }
 
     private func requestBody(
         for provider: AIProvider,
         system: String,
         messages: [CoachMessage],
-        maxOutputTokens: Int? = nil
+        maxOutputTokens: Int? = nil,
+        streaming: Bool = false
     ) -> [String: Any] {
         let tokenCap = maxOutputTokens ?? Self.coachReplyMaxOutputTokens
         switch provider {
@@ -3528,12 +4147,16 @@ actor AICoachChatService {
                 }
                 msgs.append(["role": role, "content": m.text])
             }
-            return [
+            var body: [String: Any] = [
                 "model": provider.model,
                 "temperature": 0.6,
                 "max_tokens": tokenCap,
                 "messages": msgs
             ]
+            if streaming {
+                body["stream"] = true
+            }
+            return body
         case .gemini:
             // Gemini expects role-tagged content parts. Map .user → "user",
             // .coach → "model". The system instruction is a separate
@@ -3647,6 +4270,147 @@ actor AICoachChatService {
             return extractReplyText(from: data, provider: shared)
         }
         return extractAnthropicReplyText(from: data)
+    }
+
+    static func chatExtractStreamReplyText(from data: Data, provider: CoachChatProvider) -> ChatExtractionResult {
+        var accumulator = CoachChatStreamAccumulator(provider: provider)
+        guard let text = String(data: data, encoding: .utf8) else {
+            return .empty
+        }
+        for line in text.components(separatedBy: .newlines) {
+            _ = accumulator.consume(line: line)
+        }
+        return accumulator.extractionResult
+    }
+
+    private struct CoachChatStreamAccumulator {
+        let provider: CoachChatProvider
+        private var chunks: [String] = []
+        private var lengthTruncated = false
+        private var partialGate = CoachStreamingPartialGate()
+
+        init(provider: CoachChatProvider) {
+            self.provider = provider
+        }
+
+        var extractionResult: ChatExtractionResult {
+            if lengthTruncated { return .lengthTruncated }
+            let joined = chunks
+                .joined()
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return joined.isEmpty ? .empty : .text(joined)
+        }
+
+        mutating func consume(line rawLine: String) -> CoachChatStreamEvent? {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard line.hasPrefix("data:") else { return nil }
+
+            let payload = String(line.dropFirst("data:".count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !payload.isEmpty, payload != "[DONE]" else { return nil }
+            guard let data = payload.data(using: .utf8) else { return nil }
+
+            let delta = AICoachChatService.streamDelta(from: data, provider: provider)
+            if delta.lengthTruncated {
+                lengthTruncated = true
+            }
+            let visiblePartial = partialGate.consume(delta: delta.text)
+            if !delta.text.isEmpty {
+                chunks.append(delta.text)
+            }
+            return CoachChatStreamEvent(
+                text: delta.text,
+                visiblePartial: visiblePartial
+            )
+        }
+    }
+
+    private struct CoachChatStreamEvent {
+        var text: String
+        var visiblePartial: String?
+    }
+
+    private struct CoachChatStreamDelta {
+        var text: String
+        var lengthTruncated: Bool
+    }
+
+    private static func streamDelta(from data: Data, provider: CoachChatProvider) -> CoachChatStreamDelta {
+        if let shared = provider.sharedProvider {
+            return streamDelta(from: data, provider: shared)
+        }
+        return anthropicStreamDelta(from: data)
+    }
+
+    private static func streamDelta(from data: Data, provider: AIProvider) -> CoachChatStreamDelta {
+        switch provider {
+        case .openAI, .deepSeek:
+            return openAIStyleStreamDelta(from: data)
+        case .gemini:
+            return geminiStreamDelta(from: data)
+        case .none:
+            return CoachChatStreamDelta(text: "", lengthTruncated: false)
+        }
+    }
+
+    private static func openAIStyleStreamDelta(from data: Data) -> CoachChatStreamDelta {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let choices = object["choices"] as? [[String: Any]]
+        else {
+            return CoachChatStreamDelta(text: "", lengthTruncated: false)
+        }
+
+        var text = ""
+        var lengthTruncated = false
+        for choice in choices {
+            if (choice["finish_reason"] as? String) == "length" {
+                lengthTruncated = true
+            }
+            if let delta = choice["delta"] as? [String: Any],
+               let content = delta["content"] as? String {
+                text += content
+            } else if let message = choice["message"] as? [String: Any],
+                      let content = message["content"] as? String {
+                text += content
+            }
+        }
+        return CoachChatStreamDelta(text: text, lengthTruncated: lengthTruncated)
+    }
+
+    private static func geminiStreamDelta(from data: Data) -> CoachChatStreamDelta {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return CoachChatStreamDelta(text: "", lengthTruncated: false)
+        }
+        let lengthTruncated = isLengthTruncated(responseObject: object, provider: .gemini)
+        let candidates = object["candidates"] as? [[String: Any]] ?? []
+        let text = candidates
+            .compactMap { $0["content"] as? [String: Any] }
+            .flatMap { $0["parts"] as? [[String: Any]] ?? [] }
+            .compactMap { $0["text"] as? String }
+            .joined()
+        return CoachChatStreamDelta(text: text, lengthTruncated: lengthTruncated)
+    }
+
+    private static func anthropicStreamDelta(from data: Data) -> CoachChatStreamDelta {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return CoachChatStreamDelta(text: "", lengthTruncated: false)
+        }
+
+        var text = ""
+        var lengthTruncated = false
+        if let delta = object["delta"] as? [String: Any] {
+            if let chunk = delta["text"] as? String {
+                text += chunk
+            }
+            if (delta["stop_reason"] as? String) == "max_tokens" {
+                lengthTruncated = true
+            }
+        }
+        if (object["stop_reason"] as? String) == "max_tokens" {
+            lengthTruncated = true
+        }
+        return CoachChatStreamDelta(text: text, lengthTruncated: lengthTruncated)
     }
 
     /// Anthropic Messages API extraction: text blocks joined, with

@@ -105,8 +105,8 @@ struct LiveCoachCallView: View {
     // Conversation state → the orb's mood (the "face" reacting to the call).
     private var orbMood: NoumCharacter.Mood {
         if voiceInput.state == .recording { return .listening }
-        if store.isAwaitingReply { return .thinking }
         if speaker.isSpeaking { return .coaching }
+        if store.isAwaitingReply { return .thinking }
         return .calm
     }
 
@@ -119,8 +119,8 @@ struct LiveCoachCallView: View {
         if !voiceInput.isAvailable { return "Use Type to write instead" }
         if !loopActive { return nil }
         if voiceInput.state == .recording { return "Listening — pause when you're done" }
-        if store.isAwaitingReply { return "Thinking…" }
         if speaker.isSpeaking { return "Speaking…" }
+        if store.isAwaitingReply { return "Thinking…" }
         // Push-to-talk: mid-session idle is a real state now (the mic no
         // longer auto re-arms), so name the affordance instead of "…".
         return "Tap Talk to reply"
@@ -195,6 +195,31 @@ struct LiveCoachCallView: View {
         let value = CoachReplyTextSanitizer.liveDisplayText(from: raw)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
+    }
+
+    nonisolated static func liveCoachSpokenText(
+        from raw: String,
+        spokenRepliesEnabled: Bool,
+        localeSupportsAI: Bool
+    ) -> String? {
+        let outcome = ChatOutcome.reply(raw)
+        guard AskNoumSpokenMode.spokenRoute(
+            outcome: outcome,
+            spokenRepliesEnabled: spokenRepliesEnabled,
+            localeSupportsAI: localeSupportsAI
+        ) != .none else {
+            return nil
+        }
+        return AskNoumSpokenMode.spokenText(for: outcome)
+    }
+
+    /// A live turn should not read the immediate verdict and then read a
+    /// second fuller version over the top of it. The final model text still
+    /// lands in the thread; this only chooses the audio surface.
+    nonisolated static func shouldSpeakFinalCoachOutcome(
+        provisionalSpeechStarted: Bool
+    ) -> Bool {
+        !provisionalSpeechStarted
     }
 
     private var shouldShowCoachingBrief: Bool {
@@ -450,7 +475,9 @@ struct LiveCoachCallView: View {
     /// not observed — the landing renders before any exchange, and a rep
     /// cannot complete mid-call.
     private var lastRepLandingLine: String? {
-        guard let rep = PracticeSessionStore.shared.sessions.last(where: { $0.mode == .timed }) else {
+        guard let rep = Self.latestTimedRepForLiveLanding(
+            from: PracticeSessionStore.shared.sessions
+        ) else {
             return nil
         }
         let wpm = PracticeEvaluator.paceSnapshot(
@@ -461,6 +488,14 @@ struct LiveCoachCallView: View {
             wordsPerMinute: wpm,
             fillerCount: rep.fillerWordCount
         )
+    }
+
+    nonisolated static func latestTimedRepForLiveLanding(
+        from sessions: [PracticeSession]
+    ) -> PracticeSession? {
+        sessions
+            .filter { $0.mode == .timed }
+            .max { $0.date < $1.date }
     }
 
     private func bounded(_ value: String?, maximumLength: Int = 96) -> String? {
@@ -658,6 +693,33 @@ struct LiveCoachCallView: View {
         endLoop()
     }
 
+    @MainActor
+    @discardableResult
+    private func speakLiveCoachReplyText(
+        _ rawText: String,
+        source: String,
+        setup: IMConversationSetup,
+        onDeviceOnly: Bool = false
+    ) -> Bool {
+        guard loopActive else { return false }
+        guard let spokenText = Self.liveCoachSpokenText(
+            from: rawText,
+            spokenRepliesEnabled: voiceSettings.askNoumSpokenRepliesEnabled,
+            localeSupportsAI: LocaleSettingsManager.shared.current.aiSupported
+        ) else {
+            Self.speechLog.debug("live coach speech skipped route=none")
+            return false
+        }
+        Self.speechLog.info("live coach \(source, privacy: .public) speech starting chars=\(spokenText.count, privacy: .public)")
+        speaker.speak(
+            spokenText,
+            setup: setup,
+            allowOnDeviceFallback: true,
+            onDeviceOnly: onDeviceOnly
+        )
+        return true
+    }
+
     private func handleUtterance(_ text: String) {
         // Single-in-flight: a turn already awaiting a reply must not be
         // superseded by a second dispatch (barge-in / Talk / late silence
@@ -668,6 +730,11 @@ struct LiveCoachCallView: View {
         hasLiveExchange = true
         let ids = store.appendUserTurn(text)
         Task {
+            let speechSetup = IMConversationSetup(
+                scenario: .workUpdate,
+                targetTone: AskNoumSpokenMode.coachTone(for: voice)
+            )
+            var provisionalSpeechStarted = false
             // The pipeline hydrates the thread row regardless — that must
             // always happen so the reply is there when the user returns to
             // Type mode. But SPEAKING is gated on the call still being live:
@@ -677,9 +744,23 @@ struct LiveCoachCallView: View {
             // TTS-when-it-must-not class the auto-rearm removal closed.
             let outcome = await CoachReplyPipeline.generate(
                 coachID: ids.coachID,
-                surface: .live
+                surface: .live,
+                onProvisionalCoachReadVisible: { provisionalRead in
+                    provisionalSpeechStarted = speakLiveCoachReplyText(
+                        provisionalRead,
+                        source: "immediate-read",
+                        setup: speechSetup,
+                        onDeviceOnly: true
+                    )
+                }
             )
             guard loopActive else { return }
+            guard Self.shouldSpeakFinalCoachOutcome(
+                provisionalSpeechStarted: provisionalSpeechStarted
+            ) else {
+                Self.speechLog.debug("live coach final speech skipped after immediate read")
+                return
+            }
             let route = AskNoumSpokenMode.spokenRoute(
                 outcome: outcome,
                 spokenRepliesEnabled: voiceSettings.askNoumSpokenRepliesEnabled,
@@ -693,18 +774,15 @@ struct LiveCoachCallView: View {
                 Self.speechLog.notice("live coach speech skipped after sanitizer emptied reply")
                 return
             }
-            Self.speechLog.info("live coach speech starting chars=\(spokenText.count, privacy: .public)")
+            Self.speechLog.info("live coach final speech starting chars=\(spokenText.count, privacy: .public)")
             speaker.speak(
                 spokenText,
-                setup: IMConversationSetup(
-                    scenario: .workUpdate,
-                    targetTone: AskNoumSpokenMode.coachTone(for: voice)
-                ),
+                setup: speechSetup,
                 allowOnDeviceFallback: true,
                 onDeviceOnly: false
             )
-            }
         }
+    }
 
     private func toggleAloud() {
         voiceSettings.askNoumSpokenRepliesEnabled.toggle()

@@ -176,6 +176,20 @@ enum CoachMessageTextFormatter {
     }
 }
 
+enum AskNoumCoachVisibleText {
+    static func text(
+        for message: CoachMessage,
+        revealingMessageID: UUID?,
+        revealedText: String
+    ) -> String {
+        guard message.id == revealingMessageID else { return message.text }
+        if message.isPending {
+            return message.text
+        }
+        return revealedText
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct CoachFormattedMessageText: View {
     let text: String
@@ -2267,9 +2281,11 @@ struct AskNoumView: View {
     }
 
     private func visibleCoachText(for message: CoachMessage) -> String {
-        guard message.id == revealingMessageID else { return message.text }
-        if !revealedText.isEmpty { return revealedText }
-        return message.isPending ? "" : message.text
+        AskNoumCoachVisibleText.text(
+            for: message,
+            revealingMessageID: revealingMessageID,
+            revealedText: revealedText
+        )
     }
 
     /// Quiet "offline" chip shown above legacy offline coach rows. New turns
