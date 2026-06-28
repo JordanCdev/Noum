@@ -6,7 +6,7 @@ _Session goal: use the deep-research report + the dataset/eval conversation to a
 
 I shipped **one** coherent, verified slice rather than sprawling across the report's 7-day plan: a deterministic **last-mile reliability gate** on the coach reply path. It is the report's **#1 P0** ("stabilise one response path — no placeholder/duplicate reaches UI") and **#4 P0** ("reliability gate"), and it targets the user's literal complaint ("same response back / placeholder stuff").
 
-Verified green (40 unit + golden test cases, 0 failures; full app + test compile clean). Landed on `main` via fast-forward (see **Landing** below).
+Verified green (25 unit + golden test cases, 0 failures; full app + test compile clean). Landed on `main` via fast-forward (see **Landing** below).
 
 ## How this maps to the report
 
@@ -27,6 +27,7 @@ A pure, flag-guarded `CoachReliabilityGate` that runs on the **final** reply rig
 | `placeholder` (stub text leaked) | HARD | block → truthful fallback |
 | `duplicateReply` (verbatim repeat of last coach turn, normalised) | HARD | block → truthful fallback |
 | `scaffoldLeak` (enum raw values / JSON envelope / point-reason-example-point) | HARD | block → truthful fallback |
+| `nearDuplicateReply` (model rephrased the same content — token-Jaccard ≥ 0.82) | SOFT | recorded only |
 | `floorConfidenceWithEvidence` (the "constant 0.20 with evidence present" smell) | SOFT | recorded only |
 | `noAttunementOnPushback` (trust-repair turn that doesn't acknowledge first) | SOFT | recorded only |
 | `repeatedProofTest` | SOFT | recorded only |
@@ -34,6 +35,8 @@ A pure, flag-guarded `CoachReliabilityGate` that runs on the **final** reply rig
 **Fallback selection** prefers the deterministic on-device read the judgement pass *already* produced (`assessment.immediateCoachRead`) — clean by construction and evidence-grounded — and only falls to an honest depth-shaped static line if that read is itself dirty/empty/the-same-duplicate. This reuses an existing pattern rather than emitting a dead-end apology, and is strictly better than the report's static-string suggestion. The fallback is also checked to never re-emit the very duplicate it is escaping.
 
 **Why SOFT issues don't block:** replacing an otherwise-fine reply that merely lacks an acknowledgement, or whose confidence floored, would *degrade* UX into a generic fallback. Those are recorded for evals/metadata (the report's "reliability cap" signal) but never blanket-replace a shipping reply. This is the honest design choice — block only on unambiguous user-facing junk.
+
+**Near-duplicate detection** is the one piece that directly chases the user's literal "same response back" complaint *beyond* verbatim matching: the model often rephrases the same content rather than repeating it byte-for-byte. `nearDuplicateReply` flags a token-Jaccard overlap ≥ 0.82 with the previous coach turn (both ≥ 8 distinct tokens, to avoid short-reply noise). It is kept **soft/recorded-only** on purpose — a hard block here would risk replacing a legitimately-similar-but-fine reply, which has real UX cost on a premium product and can't be device-QA'd tonight; surfacing it for evals is pure upside with zero false-block risk. Promoting it to a soft-repair is a clean follow-up for Codex.
 
 ## Files changed
 
@@ -46,7 +49,7 @@ A pure, flag-guarded `CoachReliabilityGate` that runs on the **final** reply rig
 
 ## Verification
 
-- **Unit + golden tests:** `xcodebuild test -scheme Noum -only-testing:NoumTests/CoachReliabilityGateTests` on iPhone 17 simulator (Xcode 26.3) → **`** TEST SUCCEEDED **`, exit 0, 40 test cases passed, 0 failures.**
+- **Unit + golden tests:** `xcodebuild test -scheme Noum -only-testing:NoumTests/CoachReliabilityGateTests` on iPhone 17 simulator (Xcode 26.3) → **`** TEST SUCCEEDED **`, exit 0, 25 test cases passed, 0 failures.**
   - Coverage: clean reply passes through untouched; each hard block (empty / placeholder / verbatim-duplicate / scaffold-leak) blocks and emits a fallback; each soft smell is recorded but does NOT block; normalisation catches whitespace/case-shifted duplicates but not near-misses; fallback prefers a clean `immediateCoachRead`, falls to an honest depth-shaped static line when that read is dirty, and never re-emits the duplicate it is escaping; the report's **10 golden scenarios** each assert good→passes-clean and degenerate→blocks-with-a-clean-truthful-fallback.
 - **Full app + test compile:** the whole `Noum` module and `NoumTests` target compiled with no new errors/warnings (gate wiring, metadata fields, flag, and harness emit all type-check end-to-end; `build-for-testing` exit 0).
 - **Full `NoumTests` unit suite regression run (~1900 tests):** completed; my direct-dependency suites — `UserTrajectoryCacheTests`, `CoachAssessmentCacheTests`, `CoachJudgementLayerTests` — all green. The run surfaced 8 failures, which I traced and ruled out as regressions:

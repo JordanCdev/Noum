@@ -134,6 +134,68 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.issues.contains(.duplicateReply))
     }
 
+    @Test func nearDuplicateReplyIsRecordedSoftNotBlocked() {
+        let prior = "your close trails off so the ask never lands with conviction in the room"
+        let verdict = CoachReliabilityGate.evaluate(
+            // A rephrase: one word added, nothing dropped → high token overlap, not verbatim.
+            replyText: "your close trails off so the ask never lands with conviction in the busy room",
+            previousCoachReply: prior,
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.6
+        )
+        #expect(verdict.issues.contains(.nearDuplicateReply))
+        #expect(!verdict.issues.contains(.duplicateReply))
+        #expect(!verdict.blocked) // soft: recorded, not replaced
+    }
+
+    @Test func exactDuplicatePrefersHardDuplicateOverNearDuplicate() {
+        let text = "your close trails off so the ask never lands with conviction in the room"
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: text,
+            previousCoachReply: text,
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.6
+        )
+        #expect(verdict.issues.contains(.duplicateReply))
+        #expect(!verdict.issues.contains(.nearDuplicateReply))
+        #expect(verdict.blocked)
+    }
+
+    @Test func genuinelyDifferentReplyIsNotNearDuplicate() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Lead with the verdict in sentence one, then prove it with a single concrete example.",
+            previousCoachReply: "your close trails off so the ask never lands with conviction in the room",
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.6
+        )
+        #expect(!verdict.issues.contains(.nearDuplicateReply))
+        #expect(!verdict.issues.contains(.duplicateReply))
+    }
+
+    @Test func shortSimilarRepliesDoNotTripNearDuplicate() {
+        // Below the token floor → unstable overlap is not flagged.
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Run a 60-second drill",
+            previousCoachReply: "Run a 60-second rep",
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.6
+        )
+        #expect(!verdict.issues.contains(.nearDuplicateReply))
+    }
+
+    @Test func isNearDuplicateHelperIsSymmetricAndThresholded() {
+        let a = CoachReliabilityGate.normalize("your close trails off so the ask never lands with conviction in the room")
+        let b = CoachReliabilityGate.normalize("your close trails off so the ask never lands with conviction in the busy room")
+        #expect(CoachReliabilityGate.isNearDuplicate(a, b))
+        #expect(CoachReliabilityGate.isNearDuplicate(b, a)) // symmetric
+        let c = CoachReliabilityGate.normalize("lead with the verdict then prove it once with a concrete vivid detail")
+        #expect(!CoachReliabilityGate.isNearDuplicate(a, c))
+    }
+
     @Test func leakedScaffoldBlocks() {
         for leak in [
             "turnDepth=deepAssessment confidence 0.20",

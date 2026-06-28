@@ -38,6 +38,10 @@ enum CoachReliabilityIssue: String, Codable, Equatable, CaseIterable {
     case placeholder
     /// The reply is a verbatim (normalised) repeat of the previous coach turn.
     case duplicateReply
+    /// The reply is not verbatim-identical but shares a high token overlap with
+    /// the previous coach turn — the "it basically said the same thing again"
+    /// case that exact-match misses. Recorded only (no false-block UX risk).
+    case nearDuplicateReply
     /// Internal pipeline scaffolding (enum raw values, the structured envelope,
     /// the point-reason-example-point label) leaked into the surface text.
     case scaffoldLeak
@@ -56,7 +60,7 @@ enum CoachReliabilityIssue: String, Codable, Equatable, CaseIterable {
         switch self {
         case .empty, .placeholder, .duplicateReply, .scaffoldLeak:
             return true
-        case .floorConfidenceWithEvidence, .noAttunementOnPushback, .repeatedProofTest:
+        case .nearDuplicateReply, .floorConfidenceWithEvidence, .noAttunementOnPushback, .repeatedProofTest:
             return false
         }
     }
@@ -87,6 +91,16 @@ enum CoachReliabilityGate {
     /// How many leading characters of a trust-repair reply are scanned for an
     /// acknowledgement marker.
     static let attunementWindow: Int = 140
+
+    /// Token-overlap (Jaccard) at or above this — without being a verbatim
+    /// duplicate — marks a reply as a near-duplicate of the previous coach turn.
+    /// Deliberately high so genuinely distinct advice is never flagged.
+    static let nearDuplicateThreshold: Double = 0.82
+
+    /// Both replies must have at least this many distinct tokens before
+    /// near-duplicate similarity is meaningful (short replies have unstable
+    /// overlap ratios).
+    static let nearDuplicateMinTokens: Int = 8
 
     // MARK: Detection vocabularies
 
@@ -186,11 +200,17 @@ enum CoachReliabilityGate {
         if !trimmed.isEmpty, containsAny(lowered, scaffoldMarkers) {
             issues.append(.scaffoldLeak)
         }
-        if !trimmed.isEmpty,
-           let previous = previousCoachReply?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !previous.isEmpty,
-           normalize(previous) == lowered {
-            issues.append(.duplicateReply)
+        let normalizedPrevious = previousCoachReply
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty ? nil : normalize($0) }
+        if !trimmed.isEmpty, let normalizedPrevious {
+            if normalizedPrevious == lowered {
+                issues.append(.duplicateReply)
+            } else if isNearDuplicate(lowered, normalizedPrevious) {
+                // Not a verbatim repeat, but the model rephrased the same content
+                // — the real "same response back" complaint. Recorded only.
+                issues.append(.nearDuplicateReply)
+            }
         }
 
         // --- SOFT (recorded, never blanket-replace) ---
@@ -285,6 +305,22 @@ enum CoachReliabilityGate {
     static func openingAcknowledges(_ text: String) -> Bool {
         let opening = normalize(String(text.prefix(attunementWindow)))
         return containsAny(opening, acknowledgementMarkers)
+    }
+
+    /// Whether two already-normalised strings are near-duplicates by distinct
+    /// token (word) Jaccard overlap, given the configured threshold and minimum
+    /// token floor. Pure; symmetric.
+    static func isNearDuplicate(_ a: String, _ b: String) -> Bool {
+        let tokensA = Set(a.split(separator: " ").map(String.init))
+        let tokensB = Set(b.split(separator: " ").map(String.init))
+        guard tokensA.count >= nearDuplicateMinTokens,
+              tokensB.count >= nearDuplicateMinTokens else {
+            return false
+        }
+        let intersection = tokensA.intersection(tokensB).count
+        let union = tokensA.union(tokensB).count
+        guard union > 0 else { return false }
+        return Double(intersection) / Double(union) >= nearDuplicateThreshold
     }
 
     /// Lowercase + collapse all runs of whitespace/newlines to single spaces, so
