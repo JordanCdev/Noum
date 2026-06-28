@@ -230,6 +230,29 @@ final class AskNoumStore: ObservableObject {
         trimAndPersist()
     }
 
+    /// Hydrate the pending coach row with a local deterministic read while the
+    /// live model is still verbalising the final reply. The row stays pending
+    /// and is never persisted, so this improves perceived latency without
+    /// masquerading as the final AI coach response.
+    func setProvisionalCoachRead(id: UUID, text: String) {
+        let trimmed = CoachReplyTextSanitizer.coachReplyText(from: text)
+        guard !trimmed.isEmpty,
+              let idx = messages.firstIndex(where: { $0.id == id }),
+              messages[idx].role == .coach,
+              messages[idx].isPending else {
+            return
+        }
+        messages[idx] = CoachMessage(
+            id: id,
+            role: .coach,
+            text: trimmed,
+            createdAt: messages[idx].createdAt,
+            isPending: true,
+            isOffline: false
+        )
+        Self.log.info("coach turn provisional read visible chars=\(trimmed.count, privacy: .public)")
+    }
+
     private func replaceWithNotice(at idx: Int, id: UUID, failure: ChatFailure) {
         messages[idx] = CoachMessage(
             id: id,
@@ -489,7 +512,8 @@ final class AskNoumStore: ObservableObject {
             return true
         case .tooLong, .missedTrustRepair, .missingPrescribedAction,
                 .missingInsightBridge, .unanchoredCoaching, .overclaimsEvidence,
-                .unengagedUserSpeechClaim, .ignoredCoachingExpertise:
+                .unengagedUserSpeechClaim, .ignoredCoachingExpertise,
+                .semanticJudgement:
             // `.unengagedUserSpeechClaim` and `.ignoredCoachingExpertise` need
             // per-turn source / RAG context; this legacy sweep has neither, so
             // it never rewrites history on that basis.

@@ -2170,9 +2170,13 @@ struct AskNoumView: View {
         // rows, but saved threads still deserve honest styling: neutral stroke,
         // muted text, and a quiet "Offline — reconnect for a full read" marker.
         let accent = message.isOffline ? AppColor.textSecondary : AppColor.pro
+        let provisionalText = message.isPending
+            ? message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            : ""
+        let showsProvisionalRead = message.isPending && !provisionalText.isEmpty
 
         return HStack(alignment: .top, spacing: 12) {
-            if !message.isPending {
+            if !message.isPending || showsProvisionalRead {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(accent.opacity(message.isOffline ? 0.45 : 0.78))
                     .frame(width: 3)
@@ -2182,8 +2186,12 @@ struct AskNoumView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 if message.isPending {
-                    pendingDots
-                        .padding(.vertical, 4)
+                    if showsProvisionalRead {
+                        provisionalCoachRead(message: message, accent: accent)
+                    } else {
+                        pendingDots
+                            .padding(.vertical, 4)
+                    }
                 } else {
                     if message.isOffline {
                         offlineMarker
@@ -2220,8 +2228,42 @@ struct AskNoumView: View {
         .accessibilityLabel(
             message.isOffline
                 ? "Noum, offline reply: \(message.text)"
+                : showsProvisionalRead
+                    ? "Noum is preparing the full reply. Immediate coach read: \(message.text)"
                 : "Noum: \(message.text)"
         )
+    }
+
+    private func provisionalCoachRead(message: CoachMessage, accent: Color) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                NoumCharacter(
+                    mood: .thinking,
+                    tint: AppColor.pro,
+                    size: 20,
+                    stage: characterStage
+                )
+                Text("Coach read")
+                    .font(Typography.micro.weight(.bold))
+                    .tracking(0.7)
+                    .foregroundStyle(accent.opacity(0.72))
+                    .textCase(.uppercase)
+            }
+            .accessibilityHidden(true)
+
+            CoachFormattedMessageText(
+                text: visibleCoachText(for: message),
+                textColor: Color.primary,
+                accent: accent
+            )
+
+            Text("Full answer coming")
+                .font(Typography.micro.weight(.semibold))
+                .foregroundStyle(Color.secondary)
+                .accessibilityHidden(true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Coach read. \(message.text). Full answer coming.")
     }
 
     private func visibleCoachText(for message: CoachMessage) -> String {

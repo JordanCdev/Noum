@@ -48,8 +48,10 @@ enum CoachReplyPipeline {
     @discardableResult
     static func generate(
         coachID: UUID,
-        pendingGoalIntent: CoachContextBuilder.GoalIntent? = nil
+        pendingGoalIntent: CoachContextBuilder.GoalIntent? = nil,
+        surface: CoachReplySurface = .text
     ) async -> ChatOutcome {
+        let turnStartedAt = Date()
         let profileStore = CoachingProfileStore.shared
         let systemPrompt = CoachContextBuilder.systemPrompt(
             for: profileStore.profile,
@@ -68,6 +70,13 @@ enum CoachReplyPipeline {
         let history = AskNoumStore.shared.replayForModel
         let latestUserIndex = history.lastIndex { $0.role == .user }
         let latestUserTurn = latestUserIndex.map { history[$0].text }
+        let turnDepth = CoachBrainFlags.judgementPassEnabled
+            ? TurnDepthClassifier.classify(
+                userText: latestUserTurn ?? "",
+                recentTurns: history,
+                liveMode: surface == .live
+            )
+            : .groundedRead
         let previousCoachReply = latestUserIndex.flatMap { index in
             history[..<index].last { $0.role == .coach }?.text
         }
@@ -108,7 +117,58 @@ enum CoachReplyPipeline {
             )
         )
 
-        let context = CoachContextBuilder.userContext(
+        let trajectoryResult = UserTrajectoryCache.shared.snapshot(
+            profile: profileStore.profile,
+            baseline: BaselineStore.shared.baseline,
+            rating: RatingStore.shared.rating,
+            sessions: sessionStore.sessions,
+            coachMemory: coachMemoryStore.currentMemory
+        )
+        let activeRubric = GoalRubricStore.activeRubric(for: profileStore.profile)
+        let reasoningStartedAt = Date()
+        let assessment: CoachAssessment? = CoachBrainFlags.judgementPassEnabled
+            ? CoachReasoningPass.assess(
+                turnDepth: turnDepth,
+                userQuestion: latestUserTurn ?? "",
+                trajectory: trajectoryResult.snapshot,
+                rubric: activeRubric,
+                surface: surface
+            )
+            : nil
+        if let assessment {
+            AICallDiagnostics.record(
+                surface: "Coach judgement pass",
+                providerName: "On-device coach brain",
+                model: "CoachReasoningPass",
+                outcome: .success,
+                reason: "turnDepth=\(turnDepth.rawValue) cacheHit=\(trajectoryResult.cacheHit) reasoningEvidence=\(assessment.evidenceReferenceCount)",
+                startedAt: reasoningStartedAt
+            )
+            if CoachBrainFlags.realtimeCoachModeEnabled {
+                AskNoumStore.shared.setProvisionalCoachRead(
+                    id: coachID,
+                    text: assessment.immediateCoachRead
+                )
+                AICallDiagnostics.record(
+                    surface: "Coach immediate read",
+                    providerName: "On-device coach brain",
+                    model: "CoachAssessment",
+                    outcome: .success,
+                    reason: "turnDepth=\(turnDepth.rawValue) cacheHit=\(trajectoryResult.cacheHit) timeToFirstVisibleToken=local",
+                    startedAt: turnStartedAt
+                )
+            }
+        } else {
+            AICallDiagnostics.record(
+                surface: "Coach judgement pass",
+                providerName: "On-device coach brain",
+                model: "CoachReasoningPass",
+                outcome: .skipped,
+                reason: "judgementPassEnabled=false turnDepth=\(turnDepth.rawValue)"
+            )
+        }
+
+        var context = CoachContextBuilder.userContext(
             profile: profileStore.profile,
             baseline: BaselineStore.shared.baseline,
             rating: RatingStore.shared.rating,
@@ -135,6 +195,13 @@ enum CoachReplyPipeline {
             recentUserTurns: recentUserTurns,
             coachingExpertise: coachingExpertise
         )
+        if let assessment {
+            context += "\n" + CoachPromptBundle.contextBlock(
+                assessment: assessment,
+                rubric: activeRubric,
+                surface: surface
+            )
+        }
 
         // Quote-grounding context — assembled in the same main-actor prologue
         // so the live model can reference recent rep/proof text without
@@ -157,7 +224,25 @@ enum CoachReplyPipeline {
             history: history,
             systemPrompt: systemPrompt,
             userContext: context,
-            grounding: groundingContext
+            grounding: groundingContext,
+            turnDepth: turnDepth,
+            assessment: assessment,
+            surface: surface,
+            preferredTier: CoachPromptBundle.preferredProviderTier(
+                for: turnDepth,
+                surface: surface
+            )
+        )
+        AICallDiagnostics.record(
+            surface: "Coach response timing",
+            providerName: "CoachReplyPipeline",
+            model: "Shared coach pipeline",
+            outcome: {
+                if case .reply = outcome { return .success }
+                return .failure
+            }(),
+            reason: "turnDepth=\(turnDepth.rawValue) cacheHit=\(trajectoryResult.cacheHit) surface=\(surface.rawValue)",
+            startedAt: turnStartedAt
         )
         switch outcome {
         case .reply(let text):

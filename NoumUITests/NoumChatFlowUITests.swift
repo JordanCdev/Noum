@@ -241,6 +241,49 @@ final class NoumChatFlowUITests: XCTestCase {
         app.terminate()
     }
 
+    /// Focused screenshot regression for judgement-depth chat: a "How far off
+    /// am I?" turn should render a calibrated verdict, not a generic score tip
+    /// or an unsupported "close overall" claim.
+    @MainActor
+    func testDeepJudgementQuestionRendersCalibratedReply() throws {
+        let app = launchTypedChat(forceArguments: ["UI_TESTING_CHAT_FORCE_JUDGEMENT_REPLY"])
+        let input = app.descendants(matching: .any)["askNoum.inputControl"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        let field = messageField(in: app)
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+
+        let beforeCoach = coachBubbleCount(in: app)
+        field.tap()
+        field.typeText("How far off am I from sounding authoritative?")
+        let send = waitForEnabledSendControl(in: app)
+        XCTAssertEqual(send.label, "Send message")
+        XCTAssertTrue(send.isEnabled)
+        send.tap()
+
+        let afterCoach = waitForCoachBubble(in: app, above: beforeCoach)
+        XCTAssertEqual(afterCoach, beforeCoach + 1, "Judgement reply should land as one coach bubble")
+
+        guard let latest = waitForCoachBubbleLabel(
+            in: app,
+            containing: ["closer mechanically", "Proof test"]
+        ) else {
+            XCTFail("Expected calibrated judgement reply among coach labels: \(coachBubbleLabels(in: app))")
+            app.terminate()
+            return
+        }
+        XCTAssertTrue(latest.contains("closer mechanically"))
+        XCTAssertTrue(latest.contains("pressure evidence"))
+        XCTAssertTrue(latest.contains("Proof test"))
+        XCTAssertFalse(latest.localizedCaseInsensitiveContains("close overall"))
+
+        Thread.sleep(forTimeInterval: 2)
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "ask-noum-deep-judgement-reply"
+        shot.lifetime = .keepAlways
+        add(shot)
+        app.terminate()
+    }
+
     /// The immersive live-call caption had the owner-visible regression:
     /// literal `**Read:**` / `**Move:**` leaked into the caption and then into
     /// spoken output. This covers the caption surface directly; spoken output

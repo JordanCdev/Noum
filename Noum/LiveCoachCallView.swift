@@ -152,7 +152,13 @@ struct LiveCoachCallView: View {
         if voiceInput.state == .recording {
             return voiceInput.partialTranscript.isEmpty ? nil : voiceInput.partialTranscript
         }
-        if store.isAwaitingReply { return nil }
+        if store.isAwaitingReply {
+            guard let pending = store.messages.last(where: { $0.role == .coach && $0.isPending })?.text,
+                  !pending.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return nil
+            }
+            return pending
+        }
         guard hasLiveExchange || speaker.isSpeaking else { return nil }
         guard let text = store.messages.last(where: { $0.role == .coach && !$0.isPending })?.text else {
             return nil
@@ -669,7 +675,10 @@ struct LiveCoachCallView: View {
             // singleton, so without this guard the coach's voice plays on
             // whatever screen the user moved to after Leave/Type. Same
             // TTS-when-it-must-not class the auto-rearm removal closed.
-            let outcome = await CoachReplyPipeline.generate(coachID: ids.coachID)
+            let outcome = await CoachReplyPipeline.generate(
+                coachID: ids.coachID,
+                surface: .live
+            )
             guard loopActive else { return }
             let route = AskNoumSpokenMode.spokenRoute(
                 outcome: outcome,
