@@ -846,6 +846,16 @@ enum CoachContextBuilder {
             lines.append("PROFESSIONAL TURN CONTRACT (how this reply earns trust)")
             lines.append(contentsOf: turnContract)
         }
+        let turnFormulation = coachTurnFormulationLines(
+            latestUserTurn: latestUserTurn,
+            sessions: sessions,
+            hasSessionEvidence: rating.totalRatedSessions > 0 || !sessions.isEmpty
+        )
+        if !turnFormulation.isEmpty {
+            lines.append("")
+            lines.append("COACH FORMULATION (this turn — use as the reply backbone, not as labels)")
+            lines.append(contentsOf: turnFormulation)
+        }
 
         // COACHING READINESS (F5) — claim-scaling. Always present so the coach
         // never asserts more certainty than the accumulated evidence supports,
@@ -1574,6 +1584,127 @@ enum CoachContextBuilder {
         }
 
         return lines
+    }
+
+    // MARK: - Turn formulation
+
+    /// Deterministic reply backbone for the current turn.
+    ///
+    /// This is the smallest structured step toward expert-coach formulation:
+    /// evidence -> read -> move -> target -> boundary. It does not persist a
+    /// diagnosis and it avoids raw transcript text; it simply turns the
+    /// strongest current signal into a bounded answer shape the model can
+    /// follow.
+    static func coachTurnFormulationLines(
+        latestUserTurn: String?,
+        sessions: [PracticeSession],
+        hasSessionEvidence: Bool
+    ) -> [String] {
+        guard let latestUserTurn else { return [] }
+        let trimmed = latestUserTurn.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        let lower = trimmed.lowercased()
+        let latest = sessions.sorted { $0.date > $1.date }.first
+
+        if !hasSessionEvidence || latest == nil {
+            guard containsAny(lower, ["interview", "presentation", "meeting", "update", "prepare", "practice", "get better"]) else {
+                return []
+            }
+            return [
+                "- Evidence: no baseline yet.",
+                "- Read: the first useful coaching move is one usable rep, not an intake question.",
+                "- Move: record 60 seconds on one likely \(baselinePromptSurface(for: lower)) and check whether the first sentence answers it.",
+                "- Boundary: do not ask a discovery question in the same reply; ask it after the baseline exists."
+            ]
+        }
+
+        guard let latest else { return [] }
+
+        if containsAny(lower, [
+            "robotic", "generic", "not ideal", "not a fan", "no where near",
+            "nowhere near", "annoy", "frustrat", "sucks", "poop",
+            "not human", "doesn't feel", "does not feel", "too much writing",
+            "hardcoded", "cold", "overexplained"
+        ]) {
+            if transcriptShowsWarmthBeforeRecommendation(latest.transcript) {
+                return [
+                    "- Evidence: reassurance came before the recommendation.",
+                    "- Read: the trust repair should use the ordering signal, not reduce the issue to a filler count.",
+                    "- Move: say the recommendation first, then soften it with one human reassurance.",
+                    "- Boundary: repair the user's stated friction first; do not defend the app or explain response mechanics."
+                ]
+            }
+            return [
+                "- Evidence: recent session exists, so do not claim there is no usable data.",
+                "- Read: the reply must repair trust before giving advice.",
+                "- Move: name the friction in the user's terms, then prescribe one changed practice move tied to a safe fact.",
+                "- Boundary: no assistant mechanics, broad apology, or product defense."
+            ]
+        }
+
+        if containsAny(lower, ["um", "uh", "filler", "fillers", "hesitat"]) {
+            let count = latest.fillerWordCount
+            if transcriptHasFillerAfterDecisionLine(latest.transcript) {
+                return [
+                    "- Evidence: last rep had \(count) \(count == 1 ? "filler" : "fillers") and a filler appeared after the decision/recommendation line.",
+                    "- Read: the leverage is the beat after the decision, not a slower opening.",
+                    "- Move: hold one silent beat after the decision line, then restart if a filler appears.",
+                    "- Target: next rep lowers fillers without weakening the recommendation."
+                ]
+            }
+            return [
+                "- Evidence: last rep had \(count) \(count == 1 ? "filler" : "fillers").",
+                "- Read: use silence as the replacement behavior, not a guaranteed cure.",
+                "- Move: hold one silent beat before the next word and compare the next rep's count.",
+                "- Boundary: do not write that the pause will stop fillers."
+            ]
+        }
+
+        if containsAny(lower, ["why did", "land badly", "land bad", "landed badly", "did that answer land"]) {
+            if transcriptMentionsLateRecommendation(latest.transcript) {
+                return [
+                    "- Evidence: transcript says the recommendation arrived late.",
+                    "- Read: treat that as a hypothesis about landing, not proof of audience perception.",
+                    "- Move: say the conclusion first, then add one reason or implication.",
+                    "- Boundary: do not say the recommendation was up front."
+                ]
+            }
+            return [
+                "- Evidence: use the most-recent rep as the anchor.",
+                "- Read: explain the landing problem before prescribing the correction.",
+                "- Move: name one observable weakness, then run the same prompt with that one target.",
+                "- Boundary: do not overclaim what the audience thought."
+            ]
+        }
+
+        if containsAny(lower, ["leadership", "update", "executive", "board"]) {
+            return [
+                "- Evidence: current ask is a real-world transfer moment.",
+                "- Read: practice should train the room-facing close, not just a clean summary.",
+                "- Move: record a 75-second update with headline, implication, and one ask.",
+                "- Target: final sentence makes the decision or next step unmistakable."
+            ]
+        }
+
+        if containsAny(lower, ["what next", "next move", "what should i do", "where should", "focus on"]) {
+            return [
+                "- Evidence: use the most-recent rep to choose one gap.",
+                "- Read: direction beats a menu here.",
+                "- Move: rerun the same prompt and sharpen one target: first sentence, silent beat, or final ask.",
+                "- Boundary: choose one if the context clearly points to it; otherwise keep the action narrow."
+            ]
+        }
+
+        return []
+    }
+
+    private static func baselinePromptSurface(for lowerTurn: String) -> String {
+        if lowerTurn.contains("interview") { return "interview question" }
+        if lowerTurn.contains("presentation") { return "presentation opener" }
+        if lowerTurn.contains("leadership") || lowerTurn.contains("update") { return "leadership update" }
+        if lowerTurn.contains("meeting") { return "meeting update" }
+        return "high-stakes prompt"
     }
 
     // MARK: - Emotional signal detection (EQ workflow)

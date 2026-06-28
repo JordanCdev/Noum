@@ -181,7 +181,10 @@ enum CoachChatEvaluationCorpus {
             expectedContextNeedles: [
                 "No voice set yet",
                 "No rated sessions yet",
-                "Not enough data for a stable baseline yet"
+                "Not enough data for a stable baseline yet",
+                "COACH FORMULATION",
+                "first useful coaching move is one usable rep",
+                "do not ask a discovery question"
             ],
             referenceReply: "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.",
             knownBadReply: "Keep practicing and try to sound more confident.",
@@ -219,7 +222,9 @@ enum CoachChatEvaluationCorpus {
             expectedContextNeedles: [
                 "RECENT (most-recent first)",
                 "6 fillers",
-                "TRENDS"
+                "TRENDS",
+                "COACH FORMULATION",
+                "silence as the replacement behavior"
             ],
             referenceReply: "Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and cut every filler after that point.",
             knownBadReply: "Based on your data, the key insight is reducing fillers.",
@@ -248,7 +253,9 @@ enum CoachChatEvaluationCorpus {
             expectedContextNeedles: [
                 "RECENT (most-recent first)",
                 "5 fillers",
-                "Safe filler fact"
+                "Safe filler fact",
+                "COACH FORMULATION",
+                "leverage is the beat after the decision"
             ],
             referenceReply: "Last rep had 5 fillers; the signal is inside the recommendation, not before it. Next rep, hold one beat after the decision line and restart if a filler appears.",
             knownBadReply: "Your last rep had 5 fillers. Next rep, hold one beat before sentence two.",
@@ -338,7 +345,9 @@ enum CoachChatEvaluationCorpus {
                 "specific friction",
                 "RECENT (most-recent first)",
                 "1 filler",
-                "Safe warmth fact"
+                "Safe warmth fact",
+                "COACH FORMULATION",
+                "ordering signal"
             ],
             referenceReply: "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance.",
             knownBadReply: "I understand your frustration. Here are some tips to communicate more clearly: be clear and concise, structure your thoughts, and practice confidence.",
@@ -409,7 +418,9 @@ enum CoachChatEvaluationCorpus {
                 "REPLY-SAFE FACTS",
                 "recommendation arrived late",
                 "do not say the point led",
-                "2 fillers"
+                "2 fillers",
+                "COACH FORMULATION",
+                "do not say the recommendation was up front"
             ],
             referenceReply: "From the transcript, I would treat it as a hypothesis: the recommendation arrived late. Next rep, say the conclusion first, then add one reason.",
             knownBadReply: "You are clearly evasive, and this proves you lack conviction.",
@@ -438,7 +449,9 @@ enum CoachChatEvaluationCorpus {
             expectedContextNeedles: [
                 "Where they want to use this",
                 "RECENT (most-recent first)",
-                "0 fillers"
+                "0 fillers",
+                "COACH FORMULATION",
+                "75-second update"
             ],
             referenceReply: "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
             knownBadReply: "You should think about your audience and try to communicate clearly.",
