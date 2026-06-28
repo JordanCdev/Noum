@@ -560,14 +560,46 @@ enum CoachContextBuilder {
         ])
     }
 
-    static func replySafeFactLines(for transcript: String) -> [String] {
-        guard transcriptMentionsLateRecommendation(transcript) else {
-            return []
-        }
-        return [
-            "- Safe structure fact: recommendation arrived late; do not say the point led or was up front.",
-            "- Safe move: put the recommendation first, then give one reason or implication."
+    static func transcriptHasFillerAfterDecisionLine(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let decisionAnchors = [
+            "the recommendation is",
+            "my recommendation is",
+            "recommendation is to",
+            "the decision is",
+            "my decision is"
         ]
+        guard let earliestAnchor = decisionAnchors
+            .compactMap({ lower.range(of: $0) })
+            .min(by: { $0.lowerBound < $1.lowerBound }) else {
+            return false
+        }
+
+        let afterDecision = String(lower[earliestAnchor.upperBound...])
+        return containsAny(afterDecision, [
+            " um,",
+            " uh,",
+            ", um",
+            ", uh",
+            " um ",
+            " uh "
+        ])
+    }
+
+    static func replySafeFactLines(for transcript: String) -> [String] {
+        var lines: [String] = []
+
+        if transcriptMentionsLateRecommendation(transcript) {
+            lines.append("- Safe structure fact: recommendation arrived late; do not say the point led or was up front.")
+            lines.append("- Safe move: put the recommendation first, then give one reason or implication.")
+        }
+
+        if transcriptHasFillerAfterDecisionLine(transcript) {
+            lines.append("- Safe filler fact: a filler appeared after the decision/recommendation line; do not prescribe a slower opening as the main move.")
+            lines.append("- Safe move: hold one silent beat after the decision line, then restart if a filler appears.")
+        }
+
+        return lines
     }
 
     static func userContext(

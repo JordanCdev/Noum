@@ -247,7 +247,8 @@ enum CoachChatEvaluationCorpus {
             previousCoachReply: nil,
             expectedContextNeedles: [
                 "RECENT (most-recent first)",
-                "5 fillers"
+                "5 fillers",
+                "Safe filler fact"
             ],
             referenceReply: "Last rep had 5 fillers; the signal is inside the recommendation, not before it. Next rep, hold one beat after the decision line and restart if a filler appears.",
             knownBadReply: "Your last rep had 5 fillers. Next rep, hold one beat before sentence two.",
@@ -646,6 +647,19 @@ struct CoachChatLatestLiveEvalRegressionTests {
             #expect(rubric.passesSeniorCoachFloor,
                     "\(sample.fixtureID) preferred shape should pass. Misses: \(rubric.misses)")
         }
+    }
+
+    @Test func fillerRepairShapeUsesDecisionLineWhenTranscriptShowsIt() throws {
+        let fixture = try Self.fixture("metric-action-without-read")
+        let shape = try #require(AICoachChatService.repairReferenceShape(
+            issue: .missingInsightBridge,
+            latestUserTurn: fixture.latestUserTurn,
+            system: CoachChatEvaluationCorpus.renderedContext(for: fixture)
+        ))
+
+        #expect(shape.contains("after the decision line"))
+        #expect(shape.contains("restart if a filler appears"))
+        #expect(!shape.contains("before sentence two"))
     }
 
     private static func fixture(_ id: String) throws -> CoachChatEvaluationFixture {

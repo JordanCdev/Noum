@@ -2585,6 +2585,9 @@ actor AICoachChatService {
 
         if containsAny(lowerTurn, ["um", "filler", "fillers", "hesitat"]) {
             if let count = firstFillerCount(in: system) {
+                if fillerEvidenceSitsInsideDecisionLine(system) {
+                    return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so hold one silent beat after the decision line and restart if a filler appears."
+                }
                 return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so hold one silent beat before sentence two and check whether the next rep lowers the count."
             }
             return "No stable filler pattern yet, so record one short rep and mark every filler before changing the drill."
@@ -2778,6 +2781,27 @@ actor AICoachChatService {
             return nil
         }
         return Int(text[range])
+    }
+
+    private nonisolated static func fillerEvidenceSitsInsideDecisionLine(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        if containsAny(lower, [
+            "safe filler fact",
+            "filler appeared after the decision/recommendation line",
+            "hold one silent beat after the decision line"
+        ]) {
+            return true
+        }
+        guard containsAny(lower, [
+            "the recommendation is",
+            "my recommendation is",
+            "recommendation is to",
+            "the decision is",
+            "my decision is"
+        ]) else {
+            return false
+        }
+        return containsAny(lower, [" um,", " uh,", " um ", " uh ", "filler", "fillers"])
     }
 
     // MARK: - Provider plumbing
