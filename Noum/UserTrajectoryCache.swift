@@ -8,6 +8,7 @@ import Foundation
 final class UserTrajectoryCache {
     static let shared = UserTrajectoryCache()
 
+    private let lock = NSLock()
     private var cachedSignature: String?
     private var cachedSnapshot: UserTrajectorySnapshot?
 
@@ -27,6 +28,8 @@ final class UserTrajectoryCache {
             sessions: sessions,
             coachMemory: coachMemory
         )
+        lock.lock()
+        defer { lock.unlock() }
         if let cachedSnapshot, cachedSignature == signature {
             return UserTrajectoryCacheResult(snapshot: cachedSnapshot, cacheHit: true)
         }
@@ -44,8 +47,11 @@ final class UserTrajectoryCache {
     }
 
     func invalidate() {
+        lock.lock()
         cachedSignature = nil
         cachedSnapshot = nil
+        lock.unlock()
+        CoachAssessmentCache.shared.invalidate()
     }
 
     @discardableResult
@@ -148,7 +154,53 @@ final class UserTrajectoryCache {
             baselineLift = 0.28
         }
         let memoryLift = coachMemory?.caseFile == nil ? 0.0 : 0.14
-        return max(0.05, min(1.0, (sessionDepth * 0.58) + baselineLift + memoryLift))
+        let localLift = latestUsableRepLift(from: sessions.max(by: { $0.date < $1.date }))
+        let diversityLift = practiceDiversityLift(from: sessions)
+        let raw = (sessionDepth * 0.50) + baselineLift + memoryLift + localLift + diversityLift
+        let capped: Double
+        if sessions.count < 3 {
+            // One or two reps can support a useful local read, but not an
+            // overall-goal verdict. Keep the cap low enough that the semantic
+            // gate still requires missing-evidence language.
+            capped = min(raw, sessions.isEmpty ? 0.05 : 0.42)
+        } else {
+            capped = raw
+        }
+        return max(0.05, min(1.0, capped))
+    }
+
+    private static func latestUsableRepLift(from session: PracticeSession?) -> Double {
+        guard let session else { return 0.0 }
+        let words = session.transcript.split { $0.isWhitespace || $0.isNewline }.count
+        var lift = 0.0
+        if session.score != nil { lift += 0.06 }
+        if session.duration >= 45 {
+            lift += 0.06
+        } else if session.duration >= 20 {
+            lift += 0.03
+        }
+        if words >= 55 {
+            lift += 0.06
+        } else if words >= 25 {
+            lift += 0.03
+        }
+        if session.transcriptConfidence.map({ $0 >= 0.55 }) ?? false {
+            lift += 0.03
+        }
+        if session.pressureLevel >= .elevated || session.mode == .suddenDeath {
+            lift += 0.05
+        }
+        return min(0.18, lift)
+    }
+
+    private static func practiceDiversityLift(from sessions: [PracticeSession]) -> Double {
+        guard sessions.count >= 2 else { return 0.0 }
+        let modes = Set(sessions.map(\.mode))
+        let hasPressure = sessions.contains { $0.pressureLevel >= .elevated || $0.mode == .suddenDeath }
+        var lift = 0.0
+        if modes.count >= 2 { lift += 0.04 }
+        if hasPressure { lift += 0.05 }
+        return min(0.09, lift)
     }
 
     private static func latestRepPack(_ session: PracticeSession) -> LatestRepEvidencePack {

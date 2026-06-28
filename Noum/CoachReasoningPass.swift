@@ -9,23 +9,52 @@ enum CoachReasoningPass {
         userQuestion: String,
         trajectory: UserTrajectorySnapshot,
         rubric: ActiveGoalRubric,
-        surface: CoachReplySurface
+        surface: CoachReplySurface,
+        recentProofTests: [String] = [],
+        previousCoachReply: String? = nil
     ) -> CoachAssessment {
+        let repairFocus = repairFocus(
+            for: userQuestion,
+            previousCoachReply: previousCoachReply,
+            turnDepth: turnDepth
+        )
         let scores = rubric.rubric.dimensions.map { dimension in
             score(dimension: dimension, trajectory: trajectory)
         }
         let weightedMechanics = weightedScore(scores: scores, rubric: rubric.rubric)
         let goalReadiness = goalReadinessScore(scores: scores, coverage: trajectory.evidenceCoverage)
+        let preferredDimensionID = preferredProofDimensionID(
+            for: userQuestion,
+            scores: scores,
+            turnDepth: turnDepth
+        )
+        let focusLabel = preferredDimensionID.flatMap { id in
+            rubric.rubric.dimensions.first { $0.id == id }?.label
+        }
         let directVerdict = verdict(
             depth: turnDepth,
             mechanics: weightedMechanics,
             goalReadiness: goalReadiness,
             coverage: trajectory.evidenceCoverage,
-            rubricName: rubric.rubric.displayName
+            rubricName: rubric.rubric.displayName,
+            focusDimensionID: preferredDimensionID,
+            focusLabel: focusLabel,
+            repairFocus: repairFocus
         )
-        let evidence = evidenceLines(from: trajectory, limit: turnDepth == .deepAssessment ? 4 : 2)
+        let evidence = evidenceLines(
+            from: trajectory,
+            limit: turnDepth == .deepAssessment ? 4 : 2,
+            repairFocus: repairFocus,
+            turnDepth: turnDepth
+        )
         let missing = missingEvidence(from: scores, trajectory: trajectory, depth: turnDepth)
-        let proofTest = nextProofTest(from: scores, rubric: rubric.rubric, surface: surface)
+        let proofTest = nextProofTest(
+            from: scores,
+            rubric: rubric.rubric,
+            surface: surface,
+            preferredDimensionID: preferredDimensionID,
+            recentProofTests: recentProofTests
+        )
 
         return CoachAssessment(
             turnDepth: turnDepth,
@@ -37,7 +66,9 @@ enum CoachReasoningPass {
             rubricScores: scores,
             missingEvidence: missing,
             nextProofTest: proofTest,
-            responseMode: responseMode(depth: turnDepth, surface: surface)
+            responseMode: responseMode(depth: turnDepth, surface: surface),
+            toneMode: toneMode(depth: turnDepth, repairFocus: repairFocus),
+            repairFocus: repairFocus
         )
     }
 
@@ -113,14 +144,26 @@ enum CoachReasoningPass {
         mechanics: Double,
         goalReadiness: Double,
         coverage: Double,
-        rubricName: String
+        rubricName: String,
+        focusDimensionID: String?,
+        focusLabel: String?,
+        repairFocus: String?
     ) -> String {
         switch depth {
         case .quickMove:
+            if let focusDimensionID {
+                return quickMoveVerdict(for: focusDimensionID, focusLabel: focusLabel)
+            }
             return "The next useful move is narrow: test one observable change, not a new plan."
         case .groundedRead:
+            if let focusLabel {
+                return "The grounded read should stay local to \(focusLabel.lowercased()) in the latest evidence."
+            }
             return "The grounded read is local to the latest evidence, not a verdict on the whole goal."
         case .trustRepair:
+            if repairFocus != nil {
+                return "The repair is to name the miss first, then answer with one useful move."
+            }
             return "The prior answer needs repair: it should answer the real question before offering advice."
         case .deepAssessment:
             if coverage < 0.35 {
@@ -136,11 +179,42 @@ enum CoachReasoningPass {
         }
     }
 
+    private static func quickMoveVerdict(
+        for dimensionID: String,
+        focusLabel: String?
+    ) -> String {
+        switch dimensionID {
+        case "controlled_pacing":
+            return "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer."
+        case "clean_close":
+            return "The ending is the next lever: make the final sentence the ask or decision, then stop."
+        case "verdict_first":
+            return "The opening is the next lever: put the verdict in sentence one, then prove it once."
+        case "hedge_control":
+            return "Directness is the next lever: replace one hedge with a plain recommendation."
+        case "pressure_stability":
+            return "Pressure is the next lever: repeat the same answer under a timer and protect sentence one."
+        case "salience":
+            return "Salience is the next lever: add one concrete detail, then return to the ask."
+        default:
+            if let focusLabel {
+                return "The next useful move is \(focusLabel.lowercased()): test one observable change, not a new plan."
+            }
+            return "The next useful move is narrow: test one observable change, not a new plan."
+        }
+    }
+
     private static func evidenceLines(
         from trajectory: UserTrajectorySnapshot,
-        limit: Int
+        limit: Int,
+        repairFocus: String?,
+        turnDepth: CoachTurnDepth
     ) -> [String] {
         var lines: [String] = []
+        if turnDepth == .trustRepair,
+           let repairFocus {
+            lines.append("trust repair signal: \(repairFocus)")
+        }
         if let pack = trajectory.latestRepEvidencePack {
             lines.append(contentsOf: pack.evidenceLines)
         }
@@ -186,17 +260,85 @@ enum CoachReasoningPass {
     private static func nextProofTest(
         from scores: [RubricScore],
         rubric: GoalRubric,
-        surface: CoachReplySurface
+        surface: CoachReplySurface,
+        preferredDimensionID: String?,
+        recentProofTests: [String]
     ) -> String {
-        let weakestID = scores.sorted {
+        let sortedIDs = scores.sorted {
             if $0.score != $1.score { return $0.score < $1.score }
             return $0.dimensionID < $1.dimensionID
-        }.first?.dimensionID
-        let dimension = rubric.dimensions.first { $0.id == weakestID } ?? rubric.dimensions[0]
-        if surface == .live {
-            return liveVersion(of: dimension.proofTest)
+        }.map(\.dimensionID)
+        let orderedIDs: [String]
+        if let preferredDimensionID {
+            orderedIDs = [preferredDimensionID] + sortedIDs.filter { $0 != preferredDimensionID }
+        } else {
+            orderedIDs = sortedIDs
         }
-        return dimension.proofTest
+        let recentKeys = Set(recentProofTests.map(proofTestKey).filter { !$0.isEmpty })
+        for id in orderedIDs {
+            guard let dimension = rubric.dimensions.first(where: { $0.id == id }) else { continue }
+            for candidate in proofTestCandidates(for: dimension, surface: surface) where !recentKeys.contains(proofTestKey(candidate)) {
+                return candidate
+            }
+        }
+        let fallbackID = orderedIDs.first ?? rubric.dimensions[0].id
+        let fallbackDimension = rubric.dimensions.first { $0.id == fallbackID } ?? rubric.dimensions[0]
+        return proofTestCandidates(for: fallbackDimension, surface: surface).first ?? fallbackDimension.proofTest
+    }
+
+    private static func proofTestCandidates(
+        for dimension: RubricDimension,
+        surface: CoachReplySurface
+    ) -> [String] {
+        let candidates: [String]
+        switch dimension.id {
+        case "verdict_first":
+            candidates = [
+                dimension.proofTest,
+                "Run a 45-second answer with the recommendation first, then give exactly one proof point.",
+                "Open the next rep with the decision before any context."
+            ]
+        case "hedge_control":
+            candidates = [
+                dimension.proofTest,
+                "Replay the answer once and replace one hedge with a direct recommendation.",
+                "Record one rep and turn the first maybe/probably into a plain verb."
+            ]
+        case "clean_close":
+            candidates = [
+                dimension.proofTest,
+                "End the next rep on the exact ask, then stop before adding a summary.",
+                "Make the final sentence the ask or decision, then leave the silence there."
+            ]
+        case "pressure_stability":
+            candidates = [
+                dimension.proofTest,
+                "Repeat the prompt with a timer and keep the first sentence as the answer, not setup.",
+                "Run the same prompt under pressure and check whether the close stays decisive."
+            ]
+        case "controlled_pacing":
+            candidates = [
+                dimension.proofTest,
+                "Run the next rep with a one-beat pause before the reason and no restart.",
+                "Place one silent beat after the verdict, then finish the reason in one sentence."
+            ]
+        case "salience":
+            candidates = [
+                dimension.proofTest,
+                "Use one specific detail that makes the point memorable, then return to the ask.",
+                "Add one concrete example after the verdict, then stop before a second example."
+            ]
+        default:
+            candidates = [dimension.proofTest]
+        }
+        return candidates.map { surface == .live ? liveVersion(of: $0) : $0 }
+    }
+
+    private static func proofTestKey(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     }
 
     private static func liveVersion(of test: String) -> String {
@@ -239,6 +381,87 @@ enum CoachReasoningPass {
         case .quickMove, .groundedRead:
             return .immediateOnly
         }
+    }
+
+    private static func toneMode(
+        depth: CoachTurnDepth,
+        repairFocus: String?
+    ) -> CoachAssessment.ToneMode {
+        switch depth {
+        case .trustRepair:
+            return .repair
+        case .deepAssessment:
+            return .challenge
+        case .groundedRead:
+            return .explain
+        case .quickMove:
+            return repairFocus == nil ? .prescribe : .validate
+        }
+    }
+
+    private static func repairFocus(
+        for userQuestion: String,
+        previousCoachReply: String?,
+        turnDepth: CoachTurnDepth
+    ) -> String? {
+        guard turnDepth == .trustRepair else { return nil }
+        let lower = userQuestion.lowercased()
+        let previous = previousCoachReply?.lowercased() ?? ""
+        if containsAny(lower, ["cold", "robotic", "not human", "low eq", "not high eq"]) {
+            return "I sounded cold instead of giving a human coach read"
+        }
+        if containsAny(lower, ["too much writing", "too long", "less writing", "shorter", "get to the point", "straight to the point"]) {
+            return "I used too much writing before the useful read"
+        }
+        if containsAny(lower, ["not informative", "not helpful", "not useful", "missed the point", "doesn't answer", "does not answer"]) {
+            return "I missed the actual question before prescribing"
+        }
+        if containsAny(lower, ["generic", "generic ai", "generic tips"]) ||
+            containsAny(previous, ["keep practicing", "practice more", "communicate clearly", "be clear and concise"]) {
+            return "I leaned on generic advice instead of evidence"
+        }
+        if TurnDepthClassifier.isSoftPushback(lower) {
+            return "there is friction underneath the polite pushback"
+        }
+        return "the prior answer did not earn trust before prescribing"
+    }
+
+    private static func preferredProofDimensionID(
+        for userQuestion: String,
+        scores: [RubricScore],
+        turnDepth: CoachTurnDepth
+    ) -> String? {
+        let lower = userQuestion.lowercased()
+        if containsAny(lower, ["slow", "pace", "rushing", "too fast", "unsure", "pause", "breath"]) {
+            return "controlled_pacing"
+        }
+        if containsAny(lower, ["ending", "close", "closing", "ask", "stop", "land"]) {
+            return "clean_close"
+        }
+        if containsAny(lower, ["opening", "start", "first sentence", "verdict", "point first", "lead with", "headline"]) {
+            return "verdict_first"
+        }
+        if containsAny(lower, ["filler", "fillers", "um", "uh", "ah", "hedge", "maybe", "probably", "kind of", "sort of"]) {
+            return "hedge_control"
+        }
+        if containsAny(lower, ["pressure", "stakes", "timer", "under fire", "interrupt", "real room"]) {
+            return "pressure_stability"
+        }
+        if containsAny(lower, ["depth", "example", "memorable", "stick", "story", "salience", "boring"]) {
+            return "salience"
+        }
+
+        // Broad distance-to-goal questions should still be governed by the
+        // weakest observed dimension, especially pressure evidence. Tactical
+        // turns get no forced fallback here so the sorted weakest score below
+        // remains the last-resort source of truth.
+        if turnDepth == .deepAssessment {
+            return nil
+        }
+        return scores.sorted {
+            if $0.score != $1.score { return $0.score < $1.score }
+            return $0.dimensionID < $1.dimensionID
+        }.first?.dimensionID
     }
 
     private static func restatement(for question: String, depth: CoachTurnDepth) -> String {

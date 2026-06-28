@@ -17,6 +17,13 @@ enum CoachPromptBundle {
         lines.append("- User ask: \(assessment.questionRestatement)")
         lines.append("- Direct verdict to verbalise first: \(assessment.directVerdict)")
         lines.append("- Confidence: \(String(format: "%.2f", assessment.confidence)) (scale claims to this; weak evidence means softer language).")
+        if let toneMode = assessment.toneMode {
+            lines.append("- Tone mode: \(toneMode.rawValue).")
+        }
+        if let repairFocus = assessment.repairFocus,
+           !repairFocus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lines.append("- Repair focus: \(repairFocus). Acknowledge this before prescribing again.")
+        }
         if !assessment.evidenceUsed.isEmpty {
             lines.append("- Evidence to use:")
             for item in assessment.evidenceUsed.prefix(4) {
@@ -64,7 +71,8 @@ enum CoachPromptBundle {
             ]
         case .trustRepair:
             return [
-                "- Depth instruction: acknowledge the miss briefly, name what the prior answer failed to establish, then repair with a better answer or the exact missing evidence.",
+                "- Depth instruction: acknowledge the specific miss briefly, name what the prior answer failed to establish, then repair with a better answer or the exact missing evidence.",
+                "- Do not give another drill until the repair focus has been named.",
                 "- Length budget: \(live ? "under 100 spoken words" : "under 160 words")."
             ]
         }

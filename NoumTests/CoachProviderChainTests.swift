@@ -417,6 +417,89 @@ struct CoachProviderChainTests {
         })
     }
 
+    @Test func repeatedProofTestTripsTurnAwareQualityGate() {
+        let prior = "Last rep had 6 fillers, so run the same 60-second proof test."
+        let repeated = "The pressure cue is still the close, so run the same 60-second proof test."
+        let reminder = "Do not run the same 60-second proof test. Keep the prior result, then vary the close."
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repeated,
+            latestUserTurn: "What next?",
+            recentCoachReplies: [prior]
+        ) == .repeatedProofTest)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reminder,
+            latestUserTurn: "What next?",
+            recentCoachReplies: [prior]
+        ) != .repeatedProofTest)
+    }
+
+    @Test func providerRepairCannotRepeatRecentProofTest() async {
+        let diagnostics = CoachDiagnosticRecorderProbe()
+        let priorCoachReply = "Last rep had 6 fillers, so run the same 60-second proof test."
+        let repeatedDraft = "The close is still leaking pressure, so run the same 60-second proof test."
+        let advancedRepair = "Your last rep already has that proof test set, so vary the check: keep the same prompt and judge only whether the final sentence lands cleanly."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: advancedRepair,
+            latestUserTurn: "What next?",
+            recentCoachReplies: [priorCoachReply]
+        ) == nil)
+        let scripted = ScriptedCoachHTTP(results: [
+            .success(Self.openAIData(repeatedDraft)),
+            .success(Self.openAIData(advancedRepair))
+        ])
+        let service = AICoachChatService(
+            keyedProviders: { [.openAI] },
+            keyLookup: { _ in "test-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { provider, endpoint, key, body in
+                await scripted.next(provider: provider, endpoint: endpoint, key: key, body: body)
+            },
+            diagnosticRecorder: { surface, providerName, model, outcome, reason, statusCode, startedAt, now in
+                diagnostics.record(
+                    surface: surface,
+                    providerName: providerName,
+                    model: model,
+                    outcome: outcome,
+                    reason: reason,
+                    statusCode: statusCode,
+                    startedAt: startedAt,
+                    now: now
+                )
+            }
+        )
+
+        let outcome = await service.reply(
+            history: [
+                CoachMessage(role: .user, text: "How do I stop saying um under pressure?"),
+                CoachMessage(role: .coach, text: priorCoachReply),
+                CoachMessage(role: .user, text: "What next?")
+            ],
+            systemPrompt: "You are Noum.",
+            userContext: "RECENT (most-recent first)\n- Your last rep had 6 fillers."
+        )
+
+        guard case .reply(let text) = outcome else {
+            Issue.record("Expected repeated proof-test repair, got \(outcome)")
+            return
+        }
+
+        #expect(text == advancedRepair)
+        #expect(await scripted.callCount == 2)
+        #expect(diagnostics.records.contains { record in
+            record.surface == "Ask Noum chat" &&
+            record.provider == "OpenAI" &&
+            record.outcome == .fallback &&
+            record.reason.contains("repeatedProofTest")
+        })
+        #expect(diagnostics.records.contains { record in
+            record.surface == "Ask Noum chat" &&
+            record.provider == "OpenAI" &&
+            record.outcome == .success &&
+            record.reason == "Repair reply accepted"
+        })
+    }
+
     @Test func critiqueRepairMustNameTheUserFriction() {
         let turn = "This still sounds cold and overexplained, like generic AI tips."
         let vagueRepair = "Fair push. Your last rep had one filler, so say the recommendation first, then stop."

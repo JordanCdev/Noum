@@ -90,6 +90,75 @@ enum CoachTurnSemanticGateOutcome: Codable, Equatable {
     }
 }
 
+/// Compact final state for the hidden quality gates that ran before a coach
+/// reply reached the user. Stored without draft text so production rows can be
+/// audited without persisting failed model output.
+enum CoachTurnQualityGateOutcome: Codable, Equatable {
+    case notEvaluated
+    case passed
+    case repaired(String)
+    case fallback(String)
+    case failed(String)
+
+    var logValue: String {
+        switch self {
+        case .notEvaluated:
+            return "notEvaluated"
+        case .passed:
+            return "passed"
+        case .repaired(let gate):
+            return "repaired:\(gate)"
+        case .fallback(let gate):
+            return "fallback:\(gate)"
+        case .failed(let gate):
+            return "failed:\(gate)"
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case state, gate
+    }
+
+    private enum State: String, Codable {
+        case notEvaluated, passed, repaired, fallback, failed
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        switch try c.decode(State.self, forKey: .state) {
+        case .notEvaluated:
+            self = .notEvaluated
+        case .passed:
+            self = .passed
+        case .repaired:
+            self = .repaired(try c.decode(String.self, forKey: .gate))
+        case .fallback:
+            self = .fallback(try c.decode(String.self, forKey: .gate))
+        case .failed:
+            self = .failed(try c.decode(String.self, forKey: .gate))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .notEvaluated:
+            try c.encode(State.notEvaluated, forKey: .state)
+        case .passed:
+            try c.encode(State.passed, forKey: .state)
+        case .repaired(let gate):
+            try c.encode(State.repaired, forKey: .state)
+            try c.encode(gate, forKey: .gate)
+        case .fallback(let gate):
+            try c.encode(State.fallback, forKey: .state)
+            try c.encode(gate, forKey: .gate)
+        case .failed(let gate):
+            try c.encode(State.failed, forKey: .state)
+            try c.encode(gate, forKey: .gate)
+        }
+    }
+}
+
 struct CoachTurnProviderChoice: Equatable, Sendable {
     let providerName: String
     let model: String
@@ -98,44 +167,116 @@ struct CoachTurnProviderChoice: Equatable, Sendable {
 /// Persisted per-turn observability for the Ask Noum coach thread.
 ///
 /// Optional fields keep old persisted rows decodable and let non-pipeline
-/// injected artifacts stay lightweight. `userImmediatePushback` is the one
-/// field the store can update after the fact when the user's next turn is a
-/// trust-repair prompt.
+/// injected artifacts stay lightweight. The pushback fields are the ones the
+/// store can update after the fact when the user's next turn is a trust-repair
+/// prompt.
 struct CoachTurnMetadata: Codable, Equatable {
     var turnDepth: CoachTurnDepth?
     var providerTier: CoachProviderTier?
+    var providerTierChosen: CoachProviderTier?
     var semanticGateOutcome: CoachTurnSemanticGateOutcome?
+    var semanticGateIssue: String?
     var evidenceCoverage: Double?
+    var assessment: CoachAssessment?
+    var assessmentConfidence: Double?
+    var proofTestHash: String?
+    var proofTestRecentlyRepeated: Bool?
+    var visionScore: Int?
+    var visionCriticalMisses: [CoachVisionCriterion]?
+    var visionPassesProductionFloor: Bool?
+    var qualityGateOutcome: CoachTurnQualityGateOutcome?
+    var qualityGateFailureCount: Int?
+    var qualityGateRepairCount: Int?
+    var assessmentCacheHit: Bool?
+    var assessmentCacheAgeMs: Int?
+    var immediateCoachReadShown: Bool?
+    var replyWordCount: Int?
+    var providerRetryCount: Int?
+    var providerAttemptCount: Int?
+    var providerRefusalCount: Int?
     var ttftMs: Int?
     var fullLatencyMs: Int?
+    var timeToFirstVisibleTokenMs: Int?
+    var timeToCompleteReplyMs: Int?
     var providerName: String?
     var providerModel: String?
     var userImmediatePushback: Bool
+    var userPushbackWithinTwoTurns: Bool?
+    var coldnessComplaintFlag: Bool?
+    var voiceBargeInOccurred: Bool?
     var trajectoryCacheHit: Bool?
     var surface: CoachReplySurface?
 
     init(
         turnDepth: CoachTurnDepth? = nil,
         providerTier: CoachProviderTier? = nil,
+        providerTierChosen: CoachProviderTier? = nil,
         semanticGateOutcome: CoachTurnSemanticGateOutcome? = nil,
+        semanticGateIssue: String? = nil,
         evidenceCoverage: Double? = nil,
+        assessment: CoachAssessment? = nil,
+        assessmentConfidence: Double? = nil,
+        proofTestHash: String? = nil,
+        proofTestRecentlyRepeated: Bool? = nil,
+        visionScore: Int? = nil,
+        visionCriticalMisses: [CoachVisionCriterion]? = nil,
+        visionPassesProductionFloor: Bool? = nil,
+        qualityGateOutcome: CoachTurnQualityGateOutcome? = nil,
+        qualityGateFailureCount: Int? = nil,
+        qualityGateRepairCount: Int? = nil,
+        assessmentCacheHit: Bool? = nil,
+        assessmentCacheAgeMs: Int? = nil,
+        immediateCoachReadShown: Bool? = nil,
+        replyWordCount: Int? = nil,
+        providerRetryCount: Int? = nil,
+        providerAttemptCount: Int? = nil,
+        providerRefusalCount: Int? = nil,
         ttftMs: Int? = nil,
         fullLatencyMs: Int? = nil,
+        timeToFirstVisibleTokenMs: Int? = nil,
+        timeToCompleteReplyMs: Int? = nil,
         providerName: String? = nil,
         providerModel: String? = nil,
         userImmediatePushback: Bool = false,
+        userPushbackWithinTwoTurns: Bool? = nil,
+        coldnessComplaintFlag: Bool? = nil,
+        voiceBargeInOccurred: Bool? = nil,
         trajectoryCacheHit: Bool? = nil,
         surface: CoachReplySurface? = nil
     ) {
         self.turnDepth = turnDepth
         self.providerTier = providerTier
+        self.providerTierChosen = providerTierChosen
         self.semanticGateOutcome = semanticGateOutcome
+        self.semanticGateIssue = semanticGateIssue
         self.evidenceCoverage = evidenceCoverage
+        self.assessment = assessment
+        self.assessmentConfidence = assessmentConfidence
+        self.proofTestHash = proofTestHash
+        self.proofTestRecentlyRepeated = proofTestRecentlyRepeated
+        self.visionScore = visionScore
+        self.visionCriticalMisses = visionCriticalMisses
+        self.visionPassesProductionFloor = visionPassesProductionFloor
+        self.qualityGateOutcome = qualityGateOutcome
+        self.qualityGateFailureCount = qualityGateFailureCount
+        self.qualityGateRepairCount = qualityGateRepairCount
+        self.assessmentCacheHit = assessmentCacheHit
+        self.assessmentCacheAgeMs = assessmentCacheAgeMs
+        self.immediateCoachReadShown = immediateCoachReadShown
+        self.replyWordCount = replyWordCount
+        self.providerRetryCount = providerRetryCount
+        self.providerAttemptCount = providerAttemptCount
+        self.providerRefusalCount = providerRefusalCount
         self.ttftMs = ttftMs
         self.fullLatencyMs = fullLatencyMs
+        self.timeToFirstVisibleTokenMs = timeToFirstVisibleTokenMs ?? ttftMs
+        self.timeToCompleteReplyMs = timeToCompleteReplyMs ?? fullLatencyMs
         self.providerName = providerName
         self.providerModel = providerModel
         self.userImmediatePushback = userImmediatePushback
+        self.userPushbackWithinTwoTurns = userPushbackWithinTwoTurns
+        self.coldnessComplaintFlag = coldnessComplaintFlag
+        self.voiceBargeInOccurred = voiceBargeInOccurred
         self.trajectoryCacheHit = trajectoryCacheHit
         self.surface = surface
     }
@@ -314,7 +455,10 @@ final class AskNoumStore: ObservableObject {
         metadata: CoachTurnMetadata? = nil
     ) {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
-        let resolvedMetadata = metadata ?? messages[idx].metadata
+        let resolvedMetadata = Self.metadataByPreservingMutableFlags(
+            incoming: metadata,
+            existing: messages[idx].metadata
+        )
         switch outcome {
         case .reply(let text):
             let trimmed = CoachReplyTextSanitizer.coachReplyText(from: text)
@@ -377,6 +521,45 @@ final class AskNoumStore: ObservableObject {
         return true
     }
 
+    /// Live-call telemetry: the user tapped Talk while the spoken coach reply
+    /// was still playing. Store it on the coach row that got interrupted, not
+    /// in a parallel live-call store, so transcript review and replay audits see
+    /// the same row-level signals as pushback/coldness.
+    @discardableResult
+    func markLatestCoachTurnVoiceBargeIn() -> Bool {
+        guard let idx = messages.lastIndex(where: {
+            $0.role == .coach &&
+            !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) else {
+            return false
+        }
+
+        var metadata = messages[idx].metadata ?? CoachTurnMetadata()
+        metadata.voiceBargeInOccurred = true
+        messages[idx].metadata = metadata
+        AICallDiagnostics.record(
+            surface: "Ask Noum live barge-in",
+            providerName: "User feedback",
+            model: metadata.providerModel,
+            outcome: .failure,
+            reason: [
+                "priorDepth=\(metadata.turnDepth?.rawValue ?? "unknown")",
+                "provider=\(metadata.providerName ?? "unknown")",
+                "providerTierChosen=\(metadata.providerTierChosen?.rawValue ?? "unknown")",
+                "surface=\(metadata.surface?.rawValue ?? "unknown")",
+                "voiceBargeInOccurred=true",
+                "immediateCoachReadShown=\(metadata.immediateCoachReadShown.map { "\($0)" } ?? "unknown")",
+                "replyWordCount=\(metadata.replyWordCount ?? -1)",
+                "semanticGateIssue=\(metadata.semanticGateIssue ?? "none")",
+                "visionScore=\(metadata.visionScore.map { "\($0)" } ?? "unknown")",
+                "ttftMs=\(metadata.ttftMs ?? -1)",
+                "timeToFirstVisibleTokenMs=\(metadata.timeToFirstVisibleTokenMs ?? -1)"
+            ].joined(separator: " ")
+        )
+        persist()
+        return true
+    }
+
     private func replaceWithNotice(
         at idx: Int,
         id: UUID,
@@ -391,6 +574,27 @@ final class AskNoumStore: ObservableObject {
             isPending: false,
             metadata: metadata
         )
+    }
+
+    private static func metadataByPreservingMutableFlags(
+        incoming: CoachTurnMetadata?,
+        existing: CoachTurnMetadata?
+    ) -> CoachTurnMetadata? {
+        guard var metadata = incoming ?? existing else { return nil }
+        guard let existing else { return metadata }
+        if existing.userImmediatePushback {
+            metadata.userImmediatePushback = true
+        }
+        if existing.userPushbackWithinTwoTurns == true {
+            metadata.userPushbackWithinTwoTurns = true
+        }
+        if existing.coldnessComplaintFlag == true {
+            metadata.coldnessComplaintFlag = true
+        }
+        if existing.voiceBargeInOccurred == true {
+            metadata.voiceBargeInOccurred = true
+        }
+        return metadata
     }
 
     private func markImmediatePushbackIfNeeded(for userText: String) {
@@ -408,6 +612,8 @@ final class AskNoumStore: ObservableObject {
 
         var metadata = messages[idx].metadata ?? CoachTurnMetadata()
         metadata.userImmediatePushback = true
+        metadata.userPushbackWithinTwoTurns = true
+        metadata.coldnessComplaintFlag = Self.isColdnessComplaint(trimmed)
         messages[idx].metadata = metadata
         AICallDiagnostics.record(
             surface: "Ask Noum immediate pushback",
@@ -418,9 +624,51 @@ final class AskNoumStore: ObservableObject {
                 "priorDepth=\(metadata.turnDepth?.rawValue ?? "unknown")",
                 "provider=\(metadata.providerName ?? "unknown")",
                 "semanticGate=\(metadata.semanticGateOutcome?.logValue ?? "unknown")",
-                "ttftMs=\(metadata.ttftMs ?? -1)"
+                "semanticGateIssue=\(metadata.semanticGateIssue ?? "none")",
+                "qualityGate=\(metadata.qualityGateOutcome?.logValue ?? "unknown")",
+                "qualityGateFailures=\(metadata.qualityGateFailureCount ?? 0)",
+                "qualityGateRepairs=\(metadata.qualityGateRepairCount ?? 0)",
+                "assessmentCacheHit=\(metadata.assessmentCacheHit.map { "\($0)" } ?? "unknown")",
+                "assessmentCacheAgeMs=\(metadata.assessmentCacheAgeMs ?? -1)",
+                "immediateCoachReadShown=\(metadata.immediateCoachReadShown.map { "\($0)" } ?? "unknown")",
+                "replyWordCount=\(metadata.replyWordCount ?? -1)",
+                "providerTierChosen=\(metadata.providerTierChosen?.rawValue ?? "unknown")",
+                "providerRetryCount=\(metadata.providerRetryCount ?? 0)",
+                "providerAttemptCount=\(metadata.providerAttemptCount ?? 0)",
+                "providerRefusalCount=\(metadata.providerRefusalCount ?? 0)",
+                "userPushbackWithinTwoTurns=\(metadata.userPushbackWithinTwoTurns.map { "\($0)" } ?? "unknown")",
+                "coldnessComplaint=\(metadata.coldnessComplaintFlag.map { "\($0)" } ?? "unknown")",
+                "voiceBargeInOccurred=\(metadata.voiceBargeInOccurred.map { "\($0)" } ?? "unknown")",
+                "visionScore=\(metadata.visionScore.map { "\($0)" } ?? "unknown")",
+                "visionPassesFloor=\(metadata.visionPassesProductionFloor.map { "\($0)" } ?? "unknown")",
+                "ttftMs=\(metadata.ttftMs ?? -1)",
+                "timeToFirstVisibleTokenMs=\(metadata.timeToFirstVisibleTokenMs ?? -1)",
+                "timeToCompleteReplyMs=\(metadata.timeToCompleteReplyMs ?? -1)"
             ].joined(separator: " ")
         )
+    }
+
+    private static func isColdnessComplaint(_ text: String) -> Bool {
+        let lower = text
+            .replacingOccurrences(of: "\u{2019}", with: "'")
+            .replacingOccurrences(of: "\u{2018}", with: "'")
+            .lowercased()
+        return [
+            "cold",
+            "robotic",
+            "generic ai",
+            "generic tips",
+            "ai tips",
+            "ai wrapper",
+            "low eq",
+            "not high eq",
+            "not human",
+            "doesn't feel human",
+            "does not feel human",
+            "not like a coach",
+            "nowhere near an expert coach",
+            "no where near an expert coach"
+        ].contains { lower.contains($0) }
     }
 
     /// User-facing copy per failure cause. First-person voice (Noum),
@@ -675,10 +923,10 @@ final class AskNoumStore: ObservableObject {
         case .tooLong, .missedTrustRepair, .missingPrescribedAction,
                 .missingInsightBridge, .unanchoredCoaching, .overclaimsEvidence,
                 .unengagedUserSpeechClaim, .ignoredCoachingExpertise,
-                .semanticJudgement:
-            // `.unengagedUserSpeechClaim` and `.ignoredCoachingExpertise` need
-            // per-turn source / RAG context; this legacy sweep has neither, so
-            // it never rewrites history on that basis.
+                .visionGate, .semanticJudgement, .repeatedProofTest:
+            // These need per-turn source / RAG / vision / recent-reply context;
+            // this legacy sweep has none of that, so it never rewrites history
+            // on that basis.
             return false
         }
     }

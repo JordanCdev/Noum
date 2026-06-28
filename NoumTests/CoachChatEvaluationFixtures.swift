@@ -68,7 +68,19 @@ struct CoachChatEvaluationCIReport: Codable, Equatable {
                     reply: fixture.referenceReply,
                     latestUserTurn: fixture.latestUserTurn
                 )
+                let referenceVision = AICoachChatService.coachVisionEvaluation(
+                    reply: fixture.referenceReply,
+                    latestUserTurn: fixture.latestUserTurn,
+                    quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+                    systemContext: context
+                )
                 let referenceIssue = AICoachChatService.replyQualityIssue(
+                    in: fixture.referenceReply,
+                    latestUserTurn: fixture.latestUserTurn,
+                    quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+                    systemContext: context
+                )
+                let referenceVisionRuntimeIssue = AICoachChatService.visionQualityIssue(
                     in: fixture.referenceReply,
                     latestUserTurn: fixture.latestUserTurn,
                     quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
@@ -80,13 +92,30 @@ struct CoachChatEvaluationCIReport: Codable, Equatable {
                     quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
                     systemContext: context
                 )
+                let knownBadVision = AICoachChatService.coachVisionEvaluation(
+                    reply: fixture.knownBadReply,
+                    latestUserTurn: fixture.latestUserTurn,
+                    quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+                    systemContext: context
+                )
+                let knownBadVisionRuntimeIssue = AICoachChatService.visionQualityIssue(
+                    in: fixture.knownBadReply,
+                    latestUserTurn: fixture.latestUserTurn,
+                    quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+                    systemContext: context
+                )
                 return CoachChatEvaluationCIReportRow(
                     fixtureID: fixture.id,
                     pillar: fixture.pillar.rawValue,
                     expertBaselineStatus: fixture.expertBaseline.status.rawValue,
                     referenceReplyPassesRubric: referenceResult.passesSeniorCoachFloor,
                     referenceReplyPassesQualityGate: referenceIssue == nil,
+                    referenceVisionScore: referenceVision.score,
+                    referencePassesVisionFloor: referenceVision.passesProductionFloor,
+                    referencePassesVisionRuntimeGate: referenceVisionRuntimeIssue == nil,
                     knownBadIssueMatched: issue == fixture.expectedBadIssue,
+                    knownBadVisionScore: knownBadVision.score,
+                    knownBadTripsVisionRuntimeGate: knownBadVisionRuntimeIssue != nil,
                     expectedBadIssue: String(describing: fixture.expectedBadIssue),
                     contextNeedleCount: fixture.expectedContextNeedles.count
                 )
@@ -108,9 +137,110 @@ struct CoachChatEvaluationCIReportRow: Codable, Equatable {
     let expertBaselineStatus: String
     let referenceReplyPassesRubric: Bool
     let referenceReplyPassesQualityGate: Bool
+    let referenceVisionScore: Int
+    let referencePassesVisionFloor: Bool
+    let referencePassesVisionRuntimeGate: Bool
     let knownBadIssueMatched: Bool
+    let knownBadVisionScore: Int
+    let knownBadTripsVisionRuntimeGate: Bool
     let expectedBadIssue: String
     let contextNeedleCount: Int
+}
+
+enum CoachChatConversationCriterion: String, Codable, Equatable, CaseIterable {
+    case directAnswer
+    case evidenceCalibration
+    case observableAnchor
+    case prescribedPractice
+    case rationaleBridge
+    case followupContinuity
+    case stateRetention
+    case nonRepetitiveTrajectory
+    case proofTestProgression
+    case adaptiveRepair
+    case repairCarryover
+    case transferProof
+    case seniorRegister
+    case brevity
+}
+
+struct CoachChatConversationTurn: Codable, Equatable {
+    let userTurn: String
+    let coachReply: String
+}
+
+struct CoachChatConversationFixture: Codable, Equatable {
+    let id: String
+    let sourceFixtureID: String
+    let turns: [CoachChatConversationTurn]
+}
+
+struct CoachChatConversationScore: Codable, Equatable {
+    let score: Int
+    let earned: [CoachChatConversationCriterion]
+    let missed: [CoachChatConversationCriterion]
+    let turnVisionScores: [Int]
+    let lowestTurnVisionScore: Int
+
+    var passesConversationFloor: Bool {
+        score >= 82 &&
+        lowestTurnVisionScore >= 45 &&
+        !missed.contains(.directAnswer) &&
+        !missed.contains(.evidenceCalibration) &&
+        !missed.contains(.prescribedPractice) &&
+        !missed.contains(.stateRetention) &&
+        !missed.contains(.nonRepetitiveTrajectory) &&
+        !missed.contains(.proofTestProgression) &&
+        !missed.contains(.seniorRegister)
+    }
+}
+
+struct CoachChatConversationEvaluationReport: Codable, Equatable {
+    let schemaVersion: String
+    let conversationCount: Int
+    let rows: [CoachChatConversationEvaluationReportRow]
+
+    static func make(
+        from conversations: [CoachChatConversationFixture]
+    ) -> CoachChatConversationEvaluationReport {
+        CoachChatConversationEvaluationReport(
+            schemaVersion: CoachChatConversationCorpus.reportSchemaVersion,
+            conversationCount: conversations.count,
+            rows: conversations.map { conversation in
+                let score = CoachChatConversationCorpus.evaluate(conversation)
+                return CoachChatConversationEvaluationReportRow(
+                    conversationID: conversation.id,
+                    sourceFixtureID: conversation.sourceFixtureID,
+                    turns: conversation.turns,
+                    score: score.score,
+                    passesConversationFloor: score.passesConversationFloor,
+                    turnVisionScores: score.turnVisionScores,
+                    lowestTurnVisionScore: score.lowestTurnVisionScore,
+                    earned: score.earned.map(\.rawValue),
+                    missed: score.missed.map(\.rawValue)
+                )
+            }
+        )
+    }
+
+    func encodedSortedJSON() throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(self)
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+}
+
+struct CoachChatConversationEvaluationReportRow: Codable, Equatable {
+    let conversationID: String
+    let sourceFixtureID: String
+    let turns: [CoachChatConversationTurn]
+    let score: Int
+    let passesConversationFloor: Bool
+    let turnVisionScores: [Int]
+    let lowestTurnVisionScore: Int
+    let earned: [String]
+    let missed: [String]
 }
 
 struct CoachChatExpertReviewPacket: Codable, Equatable {
@@ -165,7 +295,7 @@ struct CoachChatExpertReviewPacketRow: Codable, Equatable {
 }
 
 enum CoachChatEvaluationCorpus {
-    static let reportSchemaVersion = "coach-chat-eval-report-v2"
+    static let reportSchemaVersion = "coach-chat-eval-report-v4"
     static let expertReviewPacketSchemaVersion = "coach-chat-expert-review-packet-v1"
     static let latestManualEvalFixtureIDs = [
         "cold-start-interview-baseline",
@@ -209,7 +339,7 @@ enum CoachChatEvaluationCorpus {
             ],
             referenceReply: "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.",
             knownBadReply: "Keep practicing and try to sound more confident.",
-            expectedBadIssue: .ignoredCoachingExpertise
+            expectedBadIssue: .roboticPhrase("keep practicing")
         ),
         CoachChatEvaluationFixture(
             id: "filler-pressure-prescription",
@@ -507,7 +637,7 @@ enum CoachChatEvaluationCorpus {
             ],
             referenceReply: "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
             knownBadReply: "You should think about your audience and try to communicate clearly.",
-            expectedBadIssue: .ignoredCoachingExpertise
+            expectedBadIssue: .roboticPhrase("think about your audience")
         ),
         CoachChatEvaluationFixture(
             id: "pace-control-next-rep",
@@ -1121,6 +1251,276 @@ struct CoachChatLatestLiveEvalRegressionTests {
         #expect(shape.contains("warmth came before the recommendation"))
         #expect(shape.contains("say the recommendation first"))
         #expect(!shape.contains("1 filler"))
+    }
+
+    @Test func genericAdviceScoresNearTheReviewCritique() throws {
+        let fixture = try Self.fixture("cold-start-interview-baseline")
+        let reply = "Keep practicing and try to sound more confident."
+
+        let vision = AICoachChatService.coachVisionEvaluation(
+            reply: reply,
+            latestUserTurn: fixture.latestUserTurn,
+            quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+            systemContext: CoachChatEvaluationCorpus.renderedContext(for: fixture)
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: fixture.latestUserTurn,
+            quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+            systemContext: CoachChatEvaluationCorpus.renderedContext(for: fixture)
+        )
+
+        #expect(vision.score <= 30)
+        #expect(vision.criticalMisses.contains(.directAnswer))
+        #expect(vision.criticalMisses.contains(.observableAnchor))
+        #expect(vision.criticalMisses.contains(.prescribedAction))
+        #expect(issue != nil)
+    }
+
+    @Test func coachTurnMetadataPersistsVisionDiagnostics() throws {
+        let metadata = CoachTurnMetadata(
+            providerTier: .claudeReasoning,
+            providerTierChosen: .claudeReasoning,
+            semanticGateIssue: "trustRepairMissed",
+            visionScore: 32,
+            visionCriticalMisses: [.directAnswer, .observableAnchor],
+            visionPassesProductionFloor: false,
+            qualityGateOutcome: .repaired("vision:32:directAnswer,observableAnchor"),
+            qualityGateFailureCount: 1,
+            qualityGateRepairCount: 1,
+            assessmentCacheHit: true,
+            assessmentCacheAgeMs: 240,
+            immediateCoachReadShown: true,
+            replyWordCount: 38,
+            providerRetryCount: 1,
+            providerAttemptCount: 2,
+            providerRefusalCount: 1,
+            ttftMs: 180,
+            fullLatencyMs: 940,
+            timeToFirstVisibleTokenMs: 180,
+            timeToCompleteReplyMs: 940,
+            userPushbackWithinTwoTurns: true,
+            coldnessComplaintFlag: true,
+            voiceBargeInOccurred: true
+        )
+
+        let encoded = try JSONEncoder().encode(metadata)
+        let decoded = try JSONDecoder().decode(CoachTurnMetadata.self, from: encoded)
+
+        #expect(decoded.providerTier == .claudeReasoning)
+        #expect(decoded.providerTierChosen == .claudeReasoning)
+        #expect(decoded.visionScore == 32)
+        #expect(decoded.visionCriticalMisses == [.directAnswer, .observableAnchor])
+        #expect(decoded.visionPassesProductionFloor == false)
+        #expect(decoded.semanticGateIssue == "trustRepairMissed")
+        #expect(decoded.qualityGateOutcome == .repaired("vision:32:directAnswer,observableAnchor"))
+        #expect(decoded.qualityGateFailureCount == 1)
+        #expect(decoded.qualityGateRepairCount == 1)
+        #expect(decoded.assessmentCacheHit == true)
+        #expect(decoded.assessmentCacheAgeMs == 240)
+        #expect(decoded.immediateCoachReadShown == true)
+        #expect(decoded.replyWordCount == 38)
+        #expect(decoded.providerRetryCount == 1)
+        #expect(decoded.providerAttemptCount == 2)
+        #expect(decoded.providerRefusalCount == 1)
+        #expect(decoded.timeToFirstVisibleTokenMs == 180)
+        #expect(decoded.timeToCompleteReplyMs == 940)
+        #expect(decoded.userPushbackWithinTwoTurns == true)
+        #expect(decoded.coldnessComplaintFlag == true)
+        #expect(decoded.voiceBargeInOccurred == true)
+    }
+
+    @Test func qualityGateAggregationKeepsPassedOutcomeAfterRejectedDraft() {
+        let events: [CoachTurnQualityGateEvent] = [
+            .rejected("vision:28:observableAnchor"),
+            .passed
+        ]
+
+        #expect(CoachReplyPipeline.qualityGateOutcome(
+            for: events,
+            outcome: .reply("No baseline yet, so run one 60-second answer and make the first sentence the verdict.")
+        ) == .passed)
+        #expect(CoachReplyPipeline.qualityGateFailureCount(events) == 1)
+        #expect(CoachReplyPipeline.qualityGateRepairCount(events) == 0)
+    }
+
+    @Test func qualityGateAggregationReportsRepairShownToUser() {
+        let events: [CoachTurnQualityGateEvent] = [
+            .rejected("vision:34:prescribedAction"),
+            .repaired("vision:72:transferProof")
+        ]
+
+        #expect(CoachReplyPipeline.qualityGateOutcome(
+            for: events,
+            outcome: .reply("Your close is the lever. Do a 75-second update and make the final sentence the ask.")
+        ) == .repaired("vision:72:transferProof"))
+        #expect(CoachReplyPipeline.qualityGateFailureCount(events) == 1)
+        #expect(CoachReplyPipeline.qualityGateRepairCount(events) == 1)
+    }
+
+    @Test func qualityGateAggregationPrefersSafeFallbackOverPriorRepair() {
+        let events: [CoachTurnQualityGateEvent] = [
+            .rejected("vision:31:directAnswer"),
+            .repaired("vision:76:bridge"),
+            .fallback("safeReference:vision:29:observableAnchor")
+        ]
+
+        #expect(CoachReplyPipeline.qualityGateOutcome(
+            for: events,
+            outcome: .reply("I’m holding off on a broad read. Start with one 60-second rep and we’ll judge the first sentence.")
+        ) == .fallback("safeReference:vision:29:observableAnchor"))
+        #expect(CoachReplyPipeline.qualityGateFailureCount(events) == 1)
+        #expect(CoachReplyPipeline.qualityGateRepairCount(events) == 2)
+    }
+
+    @Test func semanticGateIssueSurvivesSuccessfulRepair() {
+        let events: [CoachTurnQualityGateEvent] = [
+            .rejected("semantic:trustRepairMissed"),
+            .repaired("semantic:trustRepairMissed"),
+            .passed
+        ]
+
+        #expect(CoachReplyPipeline.semanticGateIssue(
+            for: .passed,
+            qualityGateEvents: events
+        ) == "trustRepairMissed")
+    }
+
+    @Test func semanticGateIssuePrefersFinalFailedOutcome() {
+        #expect(CoachReplyPipeline.semanticGateIssue(
+            for: .failed("unsupportedClosenessClaim"),
+            qualityGateEvents: [.repaired("semantic:trustRepairMissed")]
+        ) == "unsupportedClosenessClaim")
+    }
+
+    @Test func providerAttemptAggregationSeparatesRetriesFromQualityFailures() {
+        let first = CoachTurnProviderChoice(providerName: "Gemini", model: "gemini-2.5-flash")
+        let second = CoachTurnProviderChoice(providerName: "Claude", model: "claude-sonnet-4-6")
+        let events: [CoachProviderAttemptEvent] = [
+            .started(first),
+            .retry(first),
+            .refused(first),
+            .started(second)
+        ]
+
+        #expect(CoachReplyPipeline.providerAttemptCount(events) == 2)
+        #expect(CoachReplyPipeline.providerRefusalCount(events) == 1)
+        #expect(CoachReplyPipeline.providerRetryCount(events) == 2)
+    }
+
+    @Test func providerTierChosenClassifiesKnownRoutingFamilies() {
+        #expect(CoachReplyPipeline.providerTierChosen(
+            for: CoachTurnProviderChoice(providerName: "Claude", model: "claude-sonnet-4-6"),
+            requestedTier: .geminiFast
+        ) == .claudeReasoning)
+        #expect(CoachReplyPipeline.providerTierChosen(
+            for: CoachTurnProviderChoice(providerName: "Google Cloud", model: "gemini-3.5-flash"),
+            requestedTier: .claudeReasoning
+        ) == .geminiFast)
+        #expect(CoachReplyPipeline.providerTierChosen(
+            for: CoachTurnProviderChoice(providerName: "Typed judgement fallback", model: "CoachAssessment"),
+            requestedTier: .claudeReasoning
+        ) == .claudeReasoning)
+        #expect(CoachReplyPipeline.providerTierChosen(
+            for: CoachTurnProviderChoice(providerName: "OpenAI", model: "gpt-test"),
+            requestedTier: .claudeReasoning
+        ) == nil)
+    }
+
+    @Test func qualityGateAggregationPreservesFinalFailureReason() {
+        let events: [CoachTurnQualityGateEvent] = [
+            .rejected("vision:24:evidenceHonesty"),
+            .failed("providerRefused")
+        ]
+
+        #expect(CoachReplyPipeline.qualityGateOutcome(
+            for: events,
+            outcome: .failure(.contentRejected)
+        ) == .failed("providerRefused"))
+        #expect(CoachReplyPipeline.qualityGateFailureCount(events) == 2)
+        #expect(CoachReplyPipeline.qualityGateRepairCount(events) == 0)
+    }
+
+    @Test func broadStructureAdviceTripsVisionGateDespiteLexicalShape() throws {
+        let fixture = try Self.fixture("cold-start-interview-baseline")
+        let reply = "No baseline yet, so focus on structure and clarity before the interview."
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: fixture.latestUserTurn,
+            quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+            systemContext: CoachChatEvaluationCorpus.renderedContext(for: fixture)
+        ) == nil)
+
+        let issue = try #require(AICoachChatService.visionQualityIssue(
+            in: reply,
+            latestUserTurn: fixture.latestUserTurn,
+            quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+            systemContext: CoachChatEvaluationCorpus.renderedContext(for: fixture)
+        ))
+
+        if case .visionGate(let score, let misses) = issue {
+            #expect(score < 85)
+            #expect(misses.contains(.prescribedAction))
+        } else {
+            Issue.record("Expected vision gate issue, got \(issue)")
+        }
+    }
+
+    @Test func specificColdStartMoveClearsVisionRuntimeGate() throws {
+        let fixture = try Self.fixture("cold-start-interview-baseline")
+        let reply = fixture.referenceReply
+
+        #expect(AICoachChatService.visionQualityIssue(
+            in: reply,
+            latestUserTurn: fixture.latestUserTurn,
+            quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+            systemContext: CoachChatEvaluationCorpus.renderedContext(for: fixture)
+        ) == nil)
+    }
+
+    @Test func socialAcknowledgementDoesNotTripVisionRuntimeGate() {
+        #expect(AICoachChatService.visionQualityIssue(
+            in: "Anytime.",
+            latestUserTurn: "Thanks, that helps."
+        ) == nil)
+    }
+
+    @Test func latestManualEvalReferenceShapesEarnVisionScore() throws {
+        for id in CoachChatEvaluationCorpus.latestManualEvalFixtureIDs.prefix(10) {
+            let fixture = try Self.fixture(id)
+            let context = CoachChatEvaluationCorpus.renderedContext(for: fixture)
+            let vision = AICoachChatService.coachVisionEvaluation(
+                reply: fixture.referenceReply,
+                latestUserTurn: fixture.latestUserTurn,
+                quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+                systemContext: context
+            )
+
+            #expect(vision.score >= 70,
+                    "\(id) reference reply scored too low: \(vision.score), missed \(vision.missed)")
+            #expect(!vision.criticalMisses.contains(.observableAnchor),
+                    "\(id) reference reply lost its grounding anchor")
+            #expect(!vision.criticalMisses.contains(.prescribedAction),
+                    "\(id) reference reply lost its next move")
+        }
+    }
+
+    @Test func latestManualEvalKnownBadShapesScoreHarshly() throws {
+        for id in CoachChatEvaluationCorpus.latestManualEvalFixtureIDs.prefix(10) {
+            let fixture = try Self.fixture(id)
+            let context = CoachChatEvaluationCorpus.renderedContext(for: fixture)
+            let vision = AICoachChatService.coachVisionEvaluation(
+                reply: fixture.knownBadReply,
+                latestUserTurn: fixture.latestUserTurn,
+                quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+                systemContext: context
+            )
+
+            #expect(vision.score <= 78,
+                    "\(id) known-bad reply scored too high: \(vision.score), earned \(vision.earned)")
+            #expect(!vision.passesProductionFloor)
+        }
     }
 
     private static func fixture(_ id: String) throws -> CoachChatEvaluationFixture {

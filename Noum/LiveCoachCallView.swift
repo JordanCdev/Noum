@@ -630,6 +630,7 @@ struct LiveCoachCallView: View {
         deadMicNotice = nil
         if loopActive {
             if speaker.isSpeaking {
+                store.markLatestCoachTurnVoiceBargeIn()
                 speaker.stop()        // barge-in: cut the coach off
                 startRecording()      // and take the floor
             } else if voiceInput.state == .recording {

@@ -71,6 +71,24 @@ enum ChatOutcome {
     case failure(ChatFailure)
 }
 
+/// Redacted quality-gate event for turn metadata. Carries stable gate labels,
+/// never draft text or user content.
+enum CoachTurnQualityGateEvent: Equatable, Sendable {
+    case passed
+    case repaired(String)
+    case fallback(String)
+    case rejected(String)
+    case failed(String)
+}
+
+/// Redacted provider-call events for per-turn latency/cost observability.
+/// Carries only provider identity/model, never user text or draft output.
+enum CoachProviderAttemptEvent: Equatable, Sendable {
+    case started(CoachTurnProviderChoice)
+    case retry(CoachTurnProviderChoice)
+    case refused(CoachTurnProviderChoice)
+}
+
 /// Guards streamed provider chunks before they become visible in the pending
 /// coach row. The first render waits for a complete, sanitized sentence so the
 /// UI never flashes raw scaffolding or half a verdict; after that, the row can
@@ -474,7 +492,51 @@ enum CoachChatReplyQualityIssue: Equatable {
     case unverifiedQuotedUserSpeech
     case unengagedUserSpeechClaim
     case ignoredCoachingExpertise
+    case repeatedProofTest
+    case visionGate(score: Int, misses: [CoachVisionCriterion])
     case semanticJudgement(CoachSemanticQualityIssue)
+
+    var auditLabel: String {
+        switch self {
+        case .tooLong:
+            return "professional:tooLong"
+        case .roboticPhrase:
+            return "professional:roboticPhrase"
+        case .bareClarification:
+            return "professional:bareClarification"
+        case .defensiveProductLanguage:
+            return "professional:defensiveProductLanguage"
+        case .menuInsteadOfDecision:
+            return "professional:menuInsteadOfDecision"
+        case .missedTrustRepair:
+            return "professional:missedTrustRepair"
+        case .missingPrescribedAction:
+            return "professional:missingPrescribedAction"
+        case .missingInsightBridge:
+            return "professional:missingInsightBridge"
+        case .unanchoredCoaching:
+            return "professional:unanchoredCoaching"
+        case .overclaimsEvidence:
+            return "professional:overclaimsEvidence"
+        case .unrequestedNamedTechnique:
+            return "professional:unrequestedNamedTechnique"
+        case .scaffoldLabel:
+            return "professional:scaffoldLabel"
+        case .unverifiedQuotedUserSpeech:
+            return "professional:unverifiedQuotedUserSpeech"
+        case .unengagedUserSpeechClaim:
+            return "professional:unengagedUserSpeechClaim"
+        case .ignoredCoachingExpertise:
+            return "professional:ignoredCoachingExpertise"
+        case .repeatedProofTest:
+            return "professional:repeatedProofTest"
+        case .visionGate(let score, let misses):
+            let labels = misses.map(\.rawValue).joined(separator: ",")
+            return "vision:\(score):\(labels)"
+        case .semanticJudgement(let issue):
+            return "semantic:\(issue.rawValue)"
+        }
+    }
 
     var repairInstruction: String {
         switch self {
@@ -508,6 +570,11 @@ enum CoachChatReplyQualityIssue: Equatable {
             return "The draft claims to read the user's words but does not touch any known transcript, verified proof, or their latest message. Ground the read in what they actually said, or cite a metric, pattern, or honest data gap instead."
         case .ignoredCoachingExpertise:
             return "The draft ignores the retrieved coaching expertise for this technique-seeking turn. Use the COACHING EXPERTISE block as craft guidance: apply its technique in plain user-facing language, tied to the user's context."
+        case .repeatedProofTest:
+            return "The draft repeats the same proof test or prescribed action from a recent coach reply. Advance the intervention: acknowledge the prior move, then vary the target, evidence check, or next condition."
+        case .visionGate(let score, let misses):
+            let labels = misses.map(\.rawValue).joined(separator: ", ")
+            return "The draft scored \(score)/100 on the Ask Noum vision gate. Missing: \(labels). Rewrite it so it directly answers, uses one observable anchor or honest data gap, prescribes one specific action, stays evidence-honest, and sounds like a senior communications coach."
         case .semanticJudgement(let issue):
             return issue.repairInstruction
         }
@@ -556,6 +623,46 @@ enum CoachChatProfessionalRubricMiss: String, Equatable {
     case missingInsightBridge
     case overclaimsEvidence
     case menuInsteadOfDecision
+}
+
+/// Harsher product-vision score for transcript review. Unlike
+/// `professionalCoachRubric`, which starts at 10 and subtracts obvious
+/// failures, this starts at zero and makes a reply earn coaching quality:
+/// direct answer, grounded read, action, bridge, honesty, adaptation,
+/// personalization, transfer, register, and brevity.
+enum CoachVisionCriterion: String, Codable, Equatable, CaseIterable {
+    case directAnswer
+    case observableAnchor
+    case prescribedAction
+    case insightBridge
+    case evidenceHonesty
+    case adaptiveRepair
+    case personalization
+    case transferProof
+    case seniorRegister
+    case brevity
+}
+
+struct CoachVisionEvaluationResult: Equatable {
+    let score: Int
+    let earned: [CoachVisionCriterion]
+    let missed: [CoachVisionCriterion]
+
+    var passesProductionFloor: Bool {
+        score >= 85 && criticalMisses.isEmpty
+    }
+
+    var criticalMisses: [CoachVisionCriterion] {
+        missed.filter {
+            [
+                .directAnswer,
+                .observableAnchor,
+                .prescribedAction,
+                .evidenceHonesty,
+                .seniorRegister
+            ].contains($0)
+        }
+    }
 }
 
 /// Pure, inspectable scoring result for one Ask-Noum reply. Kept outside the
@@ -1024,7 +1131,9 @@ actor AICoachChatService {
         surface: CoachReplySurface = .text,
         preferredTier: CoachProviderTier? = nil,
         onStreamedPartialVisible: (@MainActor (String) -> Void)? = nil,
-        onProviderChosen: (@MainActor (CoachTurnProviderChoice) -> Void)? = nil
+        onProviderChosen: (@MainActor (CoachTurnProviderChoice) -> Void)? = nil,
+        onProviderAttemptEvent: (@MainActor (CoachProviderAttemptEvent) -> Void)? = nil,
+        onQualityGateEvent: (@MainActor (CoachTurnQualityGateEvent) -> Void)? = nil
     ) async -> ChatOutcome {
         // UI harness only: lets simulator tests verify send -> pipeline ->
         // store -> system-notice rendering without depending on live provider
@@ -1092,6 +1201,9 @@ actor AICoachChatService {
             latestUserTurn: latestUserTurn,
             recentUserTurns: trimmed.filter { $0.role == .user }.map(\.text)
         )
+        let recentCoachReplies = Self.recentCoachReplies(
+            beforeLatestUserTurnIn: trimmed
+        )
 
         let routingTier = preferredTier ?? CoachPromptBundle.preferredProviderTier(
             for: turnDepth,
@@ -1125,10 +1237,13 @@ actor AICoachChatService {
                 messages: trimmed,
                 quoteGuard: quoteGuard,
                 latestUserTurn: latestUserTurn,
+                recentCoachReplies: recentCoachReplies,
                 turnDepth: turnDepth,
                 assessment: assessment,
                 surface: surface,
-                onStreamedPartialVisible: onStreamedPartialVisible
+                onStreamedPartialVisible: onStreamedPartialVisible,
+                onProviderAttemptEvent: onProviderAttemptEvent,
+                onQualityGateEvent: onQualityGateEvent
             )
             switch outcome {
             case .reply(let text):
@@ -1158,6 +1273,7 @@ actor AICoachChatService {
             latestUserTurn: latestUserTurn,
             quoteGuard: quoteGuard,
             systemContext: composedSystem,
+            recentCoachReplies: recentCoachReplies,
             turnDepth: turnDepth,
             surface: surface
            ) {
@@ -1169,6 +1285,7 @@ actor AICoachChatService {
             if let onProviderChosen {
                 await onProviderChosen(Self.typedFallbackProviderChoice)
             }
+            await onQualityGateEvent?(.fallback("typedAssessment"))
             return .reply(fallback)
         }
 
@@ -1177,6 +1294,7 @@ actor AICoachChatService {
             .failure,
             sawContentRejection ? "All chat providers failed quality gate" : "All chat providers refused"
         )
+        await onQualityGateEvent?(.failed(sawContentRejection ? "contentRejected" : "providerRefused"))
         return .failure(sawContentRejection ? .contentRejected : .network)
     }
 
@@ -1392,14 +1510,22 @@ actor AICoachChatService {
         messages: [CoachMessage],
         quoteGuard: CoachChatQuoteGuardContext,
         latestUserTurn: String?,
+        recentCoachReplies: [String],
         turnDepth: CoachTurnDepth,
         assessment: CoachAssessment?,
         surface: CoachReplySurface,
-        onStreamedPartialVisible: (@MainActor (String) -> Void)? = nil
+        onStreamedPartialVisible: (@MainActor (String) -> Void)? = nil,
+        onProviderAttemptEvent: (@MainActor (CoachProviderAttemptEvent) -> Void)? = nil,
+        onQualityGateEvent: (@MainActor (CoachTurnQualityGateEvent) -> Void)? = nil
     ) async -> AttemptOutcome {
         let startedAt = Date()
+        let providerChoice = CoachTurnProviderChoice(
+            providerName: provider.displayName,
+            model: provider.model
+        )
         do {
             Self.log.debug("attempting chat provider \(provider.displayName, privacy: .public)")
+            await onProviderAttemptEvent?(.started(providerChoice))
             let streamEndpoint = provider.streamingEndpoint
             let usesProviderStream = CoachBrainFlags.providerStreamingEnabled &&
                 providerHTTPOverride == nil &&
@@ -1430,6 +1556,7 @@ actor AICoachChatService {
                [429, 503, 529].contains(status),
                let delay = retryAfter, delay > 0, delay <= 4 {
                 Self.log.info("\(provider.displayName, privacy: .public) \(status) — retrying after \(delay, format: .fixed(precision: 1))s")
+                await onProviderAttemptEvent?(.retry(providerChoice))
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 result = try await providerTextHTTP(
                     provider: provider,
@@ -1451,6 +1578,7 @@ actor AICoachChatService {
                     statusCode: status,
                     startedAt: startedAt
                 )
+                await onProviderAttemptEvent?(.refused(providerChoice))
                 return .refused(.classify(status: status))
             case .success(let extraction, let firstTokenAt):
                 if let firstTokenAt {
@@ -1468,6 +1596,7 @@ actor AICoachChatService {
                     guard !display.isEmpty else {
                         Self.log.error("\(provider.displayName, privacy: .public) reply normalized to empty text")
                         recordChatDiagnostic(.fallback, "Reply normalized to empty", provider: provider)
+                        await onProviderAttemptEvent?(.refused(providerChoice))
                         return .refused(.transient)
                     }
                     if display != text.trimmingCharacters(in: .whitespacesAndNewlines) {
@@ -1478,6 +1607,7 @@ actor AICoachChatService {
                         latestUserTurn: latestUserTurn,
                         quoteGuard: quoteGuard,
                         systemContext: system,
+                        recentCoachReplies: recentCoachReplies,
                         turnDepth: turnDepth,
                         surface: surface
                     ) {
@@ -1488,6 +1618,7 @@ actor AICoachChatService {
                             provider: provider,
                             startedAt: startedAt
                         )
+                        await onProviderAttemptEvent?(.retry(providerChoice))
                         if let repaired = await repairLowQualityReply(
                             issue: issue,
                             draft: display,
@@ -1497,24 +1628,30 @@ actor AICoachChatService {
                             system: system,
                             messages: messages,
                             quoteGuard: quoteGuard,
+                            recentCoachReplies: recentCoachReplies,
                             turnDepth: turnDepth,
                             assessment: assessment,
                             surface: surface
                         ) {
                             recordChatDiagnostic(.success, "Repair reply accepted", provider: provider)
+                            await onQualityGateEvent?(.repaired(issue.auditLabel))
                             return .reply(repaired)
                         }
                         if let safeRepair = Self.safeReferenceRepairReply(
                             issue: issue,
                             latestUserTurn: latestUserTurn,
                             system: system,
-                            quoteGuard: quoteGuard
+                            quoteGuard: quoteGuard,
+                            turnDepth: turnDepth,
+                            assessment: assessment,
+                            surface: surface
                         ) {
                             recordChatDiagnostic(
                                 .success,
                                 "Safe reference repair accepted",
                                 provider: provider
                             )
+                            await onQualityGateEvent?(.fallback("safeReference:\(issue.auditLabel)"))
                             return .reply(safeRepair)
                         }
                         // A content miss by this model on this turn — let the
@@ -1524,6 +1661,8 @@ actor AICoachChatService {
                             "Reply failed professional-coach gate: \(String(describing: issue))\(Self.liveEvalDraftSuffix(display))",
                             provider: provider
                         )
+                        await onQualityGateEvent?(.rejected(issue.auditLabel))
+                        await onProviderAttemptEvent?(.refused(providerChoice))
                         return .refused(.contentRejected)
                     }
                     if let semanticIssue = Self.semanticQualityIssue(
@@ -1539,6 +1678,7 @@ actor AICoachChatService {
                                 provider: provider,
                                 startedAt: startedAt
                             )
+                            await onQualityGateEvent?(.fallback("semanticDryRun:\(semanticIssue.rawValue)"))
                         } else {
                             let issue = CoachChatReplyQualityIssue.semanticJudgement(semanticIssue)
                             Self.log.notice("\(provider.displayName, privacy: .public) reply tripped semantic judgement gate (\(semanticIssue.rawValue, privacy: .public)) — repairing")
@@ -1548,6 +1688,7 @@ actor AICoachChatService {
                                 provider: provider,
                                 startedAt: startedAt
                             )
+                            await onProviderAttemptEvent?(.retry(providerChoice))
                             if let repaired = await repairLowQualityReply(
                                 issue: issue,
                                 draft: display,
@@ -1557,11 +1698,13 @@ actor AICoachChatService {
                                 system: system,
                                 messages: messages,
                                 quoteGuard: quoteGuard,
+                                recentCoachReplies: recentCoachReplies,
                                 turnDepth: turnDepth,
                                 assessment: assessment,
                                 surface: surface
                             ) {
                                 recordChatDiagnostic(.success, "Semantic repair reply accepted", provider: provider)
+                                await onQualityGateEvent?(.repaired(issue.auditLabel))
                                 return .reply(repaired)
                             }
                             recordChatDiagnostic(
@@ -1569,16 +1712,64 @@ actor AICoachChatService {
                                 "Reply failed semantic judgement gate: \(semanticIssue.rawValue)\(Self.liveEvalDraftSuffix(display))",
                                 provider: provider
                             )
+                            await onQualityGateEvent?(.rejected(issue.auditLabel))
+                            await onProviderAttemptEvent?(.refused(providerChoice))
                             return .refused(.contentRejected)
                         }
+                    }
+                    if let visionIssue = Self.visionQualityIssue(
+                        in: display,
+                        latestUserTurn: latestUserTurn,
+                        quoteGuard: quoteGuard,
+                        systemContext: system,
+                        turnDepth: turnDepth,
+                        assessment: assessment,
+                        surface: surface
+                    ) {
+                        Self.log.notice("\(provider.displayName, privacy: .public) reply tripped vision gate (\(String(describing: visionIssue), privacy: .public)) — repairing")
+                        recordChatDiagnostic(
+                            .fallback,
+                            "Reply tripped vision gate: \(String(describing: visionIssue))",
+                            provider: provider,
+                            startedAt: startedAt
+                        )
+                        await onProviderAttemptEvent?(.retry(providerChoice))
+                        if let repaired = await repairLowQualityReply(
+                            issue: visionIssue,
+                            draft: display,
+                            provider: provider,
+                            endpoint: endpoint,
+                            key: key,
+                            system: system,
+                            messages: messages,
+                            quoteGuard: quoteGuard,
+                            recentCoachReplies: recentCoachReplies,
+                            turnDepth: turnDepth,
+                            assessment: assessment,
+                            surface: surface
+                        ) {
+                            recordChatDiagnostic(.success, "Vision repair reply accepted", provider: provider)
+                            await onQualityGateEvent?(.repaired(visionIssue.auditLabel))
+                            return .reply(repaired)
+                        }
+                        recordChatDiagnostic(
+                            .fallback,
+                            "Reply failed vision gate: \(String(describing: visionIssue))\(Self.liveEvalDraftSuffix(display))",
+                            provider: provider
+                        )
+                        await onQualityGateEvent?(.rejected(visionIssue.auditLabel))
+                        await onProviderAttemptEvent?(.refused(providerChoice))
+                        return .refused(.contentRejected)
                     }
                     let normalized = CoachReplyTextSanitizer.coachReplyText(from: display)
                     guard !normalized.isEmpty else {
                         Self.log.error("\(provider.displayName, privacy: .public) reply scaffold normalized to empty text")
                         recordChatDiagnostic(.fallback, "Reply scaffold normalized to empty", provider: provider)
+                        await onProviderAttemptEvent?(.refused(providerChoice))
                         return .refused(.transient)
                     }
                     recordChatDiagnostic(.success, "Reply accepted", provider: provider)
+                    await onQualityGateEvent?(.passed)
                     return .reply(normalized)
                 case .empty, .lengthTruncated:
                     Self.log.error("\(provider.displayName, privacy: .public) returned no usable text (\(extraction == .lengthTruncated ? "truncated" : "empty", privacy: .public))")
@@ -1587,6 +1778,7 @@ actor AICoachChatService {
                         extraction == .lengthTruncated ? "Reply length-truncated" : "Missing response content",
                         provider: provider
                     )
+                    await onProviderAttemptEvent?(.refused(providerChoice))
                     return .refused(.transient)
                 }
             }
@@ -1599,6 +1791,7 @@ actor AICoachChatService {
                 provider: provider,
                 startedAt: startedAt
             )
+            await onProviderAttemptEvent?(.refused(providerChoice))
             return .refused(.transient)
         }
     }
@@ -1612,6 +1805,7 @@ actor AICoachChatService {
         latestUserTurn: String?,
         quoteGuard: CoachChatQuoteGuardContext?,
         systemContext: String,
+        recentCoachReplies: [String] = [],
         turnDepth: CoachTurnDepth,
         surface: CoachReplySurface
     ) -> String? {
@@ -1640,6 +1834,7 @@ actor AICoachChatService {
             latestUserTurn: latestUserTurn,
             quoteGuard: quoteGuard,
             systemContext: systemContext,
+            recentCoachReplies: recentCoachReplies,
             turnDepth: turnDepth,
             surface: surface
         ) == nil else {
@@ -1649,6 +1844,17 @@ actor AICoachChatService {
             in: normalized,
             turnDepth: turnDepth,
             assessment: assessment
+        ) == nil else {
+            return nil
+        }
+        guard visionQualityIssue(
+            in: normalized,
+            latestUserTurn: latestUserTurn,
+            quoteGuard: quoteGuard,
+            systemContext: systemContext,
+            turnDepth: turnDepth,
+            assessment: assessment,
+            surface: surface
         ) == nil else {
             return nil
         }
@@ -1851,6 +2057,7 @@ actor AICoachChatService {
         latestUserTurn: String?,
         quoteGuard: CoachChatQuoteGuardContext? = nil,
         systemContext: String? = nil,
+        recentCoachReplies: [String] = [],
         turnDepth: CoachTurnDepth = .groundedRead,
         surface: CoachReplySurface = .text
     ) -> CoachChatReplyQualityIssue? {
@@ -1885,6 +2092,13 @@ actor AICoachChatService {
 
         if replyUsesCoachScaffoldLabel(trimmed) {
             return .scaffoldLabel
+        }
+
+        if replyRepeatsRecentProofTest(
+            trimmed,
+            recentCoachReplies: recentCoachReplies
+        ) {
+            return .repeatedProofTest
         }
 
         let expandedAnswer = turnRequestsExpandedAnswer(latestUserTurn)
@@ -2025,6 +2239,20 @@ actor AICoachChatService {
             return .unanchoredCoaching
         }
 
+        let vision = coachVisionEvaluation(
+            reply: trimmed,
+            latestUserTurn: latestUserTurn,
+            quoteGuard: quoteGuard,
+            systemContext: systemContext,
+            turnDepth: turnDepth,
+            assessment: nil,
+            surface: surface
+        )
+        if vision.score < 45,
+           let issue = qualityIssue(forVisionMisses: vision.missed) {
+            return issue
+        }
+
         if replyShouldCiteRecentSession(systemContext),
            turnExpectsCoaching(latestUserTurn),
            !replyCitesRecentSessionAnchor(lower) {
@@ -2032,6 +2260,115 @@ actor AICoachChatService {
         }
 
         return nil
+    }
+
+    private nonisolated static func recentCoachReplies(
+        beforeLatestUserTurnIn messages: [CoachMessage],
+        limit: Int = 4
+    ) -> [String] {
+        let latestUserIndex = messages.lastIndex { $0.role == .user } ?? messages.endIndex
+        guard latestUserIndex > messages.startIndex else { return [] }
+        return Array(messages[..<latestUserIndex]
+            .reversed()
+            .filter { $0.role == .coach }
+            .map(\.text)
+            .prefix(limit))
+    }
+
+    private nonisolated static func replyRepeatsRecentProofTest(
+        _ reply: String,
+        recentCoachReplies: [String]
+    ) -> Bool {
+        guard !recentCoachReplies.isEmpty else { return false }
+        let current = Set(actionSentenceFingerprints(in: reply))
+        guard !current.isEmpty else { return false }
+        let recent = Set(recentCoachReplies.flatMap(actionSentenceFingerprints))
+        return !current.isDisjoint(with: recent)
+    }
+
+    private nonisolated static func recentActionSentenceFingerprints(
+        in replies: [String],
+        limit: Int
+    ) -> [String] {
+        Array(replies.flatMap(actionSentenceFingerprints).prefix(limit))
+    }
+
+    private nonisolated static func actionSentenceFingerprints(
+        in reply: String
+    ) -> [String] {
+        let delimiters = CharacterSet(charactersIn: ".!?\n")
+        return reply
+            .components(separatedBy: delimiters)
+            .flatMap(actionClauseCandidates)
+            .map(normalizedActionSentenceFingerprint)
+            .filter { !$0.isEmpty }
+    }
+
+    private nonisolated static func actionClauseCandidates(
+        in sentence: String
+    ) -> [String] {
+        let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        let lower = trimmed.lowercased()
+        let separators = [
+            ", so ", "; so ", " so ",
+            ", then ", "; then ", " then ",
+            ", and then ", "; and then ", " and then ",
+            ":"
+        ]
+        let fragments = separators.reduce([lower]) { partial, separator in
+            partial.flatMap { fragment in
+                fragment.components(separatedBy: separator)
+            }
+        }
+        let candidates = [lower] + fragments
+        var seen: Set<String> = []
+        return candidates.compactMap { candidate in
+            let normalized = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalized.isEmpty, seen.insert(normalized).inserted else {
+                return nil
+            }
+            return normalized
+        }
+    }
+
+    private nonisolated static func normalizedActionSentenceFingerprint(
+        _ sentence: String
+    ) -> String {
+        let lower = sentence.lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !lower.isEmpty else { return "" }
+        if lower.hasPrefix("no ")
+            || lower.hasPrefix("not ")
+            || lower.hasPrefix("don't ")
+            || lower.hasPrefix("do not ")
+            || lower.hasPrefix("avoid ") {
+            return ""
+        }
+
+        guard containsAny(lower, [
+            "record", "run", "repeat", "rewrite", "review", "check",
+            "listen", "use", "say", "open", "hold", "make", "end",
+            "answer", "practice", "state", "lead", "put", "give"
+        ]) else {
+            return ""
+        }
+
+        let ignored: Set<String> = [
+            "a", "an", "the", "one", "same", "next", "again", "then",
+            "exact", "exactly", "rep", "reply", "answer"
+        ]
+        let words = lower
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+            .filter { word in
+                !ignored.contains(word) &&
+                !word.allSatisfy(\.isNumber) &&
+                !word.hasSuffix("second")
+            }
+        guard words.count >= 3 else { return "" }
+        return words.joined(separator: " ")
     }
 
     /// Score a reply against the minimum shape a senior communications coach
@@ -2133,6 +2470,303 @@ actor AICoachChatService {
         )
     }
 
+    nonisolated static func coachVisionEvaluation(
+        reply: String,
+        latestUserTurn: String? = nil,
+        quoteGuard: CoachChatQuoteGuardContext? = nil,
+        systemContext: String? = nil,
+        turnDepth: CoachTurnDepth? = nil,
+        assessment: CoachAssessment? = nil,
+        surface: CoachReplySurface = .text
+    ) -> CoachVisionEvaluationResult {
+        let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return CoachVisionEvaluationResult(
+                score: 0,
+                earned: [],
+                missed: CoachVisionCriterion.allCases
+            )
+        }
+
+        let lower = trimmed.lowercased()
+        let latestLower = latestUserTurn?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        let effectiveDepth = turnDepth ?? (latestLower.isEmpty
+            ? .groundedRead
+            : TurnDepthClassifier.classify(userText: latestLower))
+        let expandedAnswer = turnRequestsExpandedAnswer(latestUserTurn)
+            || effectiveDepth == .deepAssessment
+            || effectiveDepth == .trustRepair
+        let limits = replyLengthLimits(
+            expandedAnswer: expandedAnswer,
+            turnDepth: effectiveDepth,
+            surface: surface
+        )
+
+        var earned: [CoachVisionCriterion] = []
+        var missed: [CoachVisionCriterion] = []
+        var score = 0
+
+        func evaluate(
+            _ criterion: CoachVisionCriterion,
+            weight: Int,
+            passes: Bool
+        ) {
+            if passes {
+                earned.append(criterion)
+                score += weight
+            } else {
+                missed.append(criterion)
+            }
+        }
+
+        let isCritique = isCritiqueTurn(latestLower)
+        let hasObservableAnchor = replyHasObservableAnchor(lower)
+        let hasSpecificPracticeMove = replyHasSpecificPracticeMove(lower)
+        let directAnswer: Bool
+        if isCritique {
+            directAnswer = replyRepairsTrust(lower)
+                && !trustRepairMissesSpecificFriction(lower, latestUserTurn: latestUserTurn)
+        } else if turnAsksWhyAnswerLandedBadly(latestUserTurn) {
+            directAnswer = replyExplainsWhyAnswerLanded(lower)
+        } else if effectiveDepth == .deepAssessment, let assessment {
+            directAnswer = replyStartsWithJudgement(trimmed, assessment: assessment)
+        } else {
+            directAnswer = !replyOffersMenu(lower)
+                && !((lower.contains("can you clarify") || lower.contains("could you clarify")) && wordCount(in: lower) <= 18)
+                && (hasObservableAnchor || hasSpecificPracticeMove)
+        }
+        evaluate(.directAnswer, weight: 12, passes: directAnswer)
+
+        let anchorExpected = turnExpectsCoaching(latestUserTurn)
+        evaluate(
+            .observableAnchor,
+            weight: 12,
+            passes: !anchorExpected || hasObservableAnchor
+        )
+
+        let actionExpected = turnExpectsPrescribedAction(latestUserTurn)
+        evaluate(
+            .prescribedAction,
+            weight: 12,
+            passes: !actionExpected || hasSpecificPracticeMove
+        )
+
+        let bridgeExpected = anchorExpected && actionExpected
+        let hasInsightBridge = replyHasInsightBridge(lower)
+        evaluate(
+            .insightBridge,
+            weight: 10,
+            passes: !bridgeExpected || hasInsightBridge
+        )
+
+        let evidenceHonest = !replyOverclaimsEvidence(lower)
+            && !replyMakesUnsupportedClosenessClaim(lower)
+            && (quoteGuard.map { !containsUnverifiedQuotedUserSpeech(in: trimmed, quoteGuard: $0) } ?? true)
+            && (assessment.map { assessment in
+                !(assessment.confidence < 0.70
+                    && !assessment.missingEvidence.isEmpty
+                    && effectiveDepth == .deepAssessment
+                    && !replyNamesMissingEvidence(lower))
+            } ?? true)
+        evaluate(.evidenceHonesty, weight: 14, passes: evidenceHonest)
+
+        let adaptiveRepair = isCritique
+            ? replyRepairsTrust(lower)
+                && !trustRepairMissesSpecificFriction(lower, latestUserTurn: latestUserTurn)
+                && !trustRepairLacksUserPracticeMove(lower, latestUserTurn: latestUserTurn)
+            : !replyOffersMenu(lower)
+                && !replyUsesUnrequestedNamedTechnique(lower, latestUserTurn: latestUserTurn)
+        evaluate(.adaptiveRepair, weight: 10, passes: adaptiveRepair)
+
+        let personalization: Bool
+        if replyShouldCiteRecentSession(systemContext) {
+            personalization = replyCitesRecentSessionAnchor(lower)
+        } else {
+            personalization = containsAny(lower, [
+                "no baseline", "not enough data", "your message",
+                "what you wrote", "your words", "your goal", "your case"
+            ]) || hasObservableAnchor
+        }
+        evaluate(.personalization, weight: 8, passes: personalization)
+
+        let transferProof = assessment.map {
+            replyContainsProofTest(lower, assessment: $0)
+        } ?? (hasSpecificPracticeMove && containsAny(lower, [
+            "next rep", "record", "run one", "repeat", "tomorrow",
+            "interview", "meeting", "leadership", "pressure", "proof"
+        ]))
+        evaluate(.transferProof, weight: 8, passes: transferProof)
+
+        let seniorRegister = !roboticPhrases.contains(where: { lower.contains($0) })
+            && !defensiveProductPhrases.contains(where: { lower.contains($0) })
+            && !replyUsesCoachScaffoldLabel(trimmed)
+            && !replyUsesUnrequestedNamedTechnique(lower, latestUserTurn: latestUserTurn)
+        evaluate(.seniorRegister, weight: 8, passes: seniorRegister)
+
+        let conciseEnough = trimmed.count <= limits.characters
+            && sentenceCount(in: trimmed) <= limits.sentences
+            && wordCount(in: trimmed) <= limits.words
+            && nonEmptyLineCount(in: trimmed) <= limits.lines
+        evaluate(.brevity, weight: 6, passes: conciseEnough)
+
+        var cappedScore = score
+        if !evidenceHonest {
+            cappedScore = min(cappedScore, 44)
+        }
+        if !seniorRegister {
+            cappedScore = min(cappedScore, 44)
+        }
+        if actionExpected && !hasSpecificPracticeMove {
+            cappedScore = min(cappedScore, 48)
+        }
+        if anchorExpected && !hasObservableAnchor {
+            cappedScore = min(cappedScore, 48)
+        }
+        if bridgeExpected && !hasInsightBridge {
+            cappedScore = min(cappedScore, 78)
+        }
+
+        return CoachVisionEvaluationResult(
+            score: max(0, min(100, cappedScore)),
+            earned: earned,
+            missed: missed
+        )
+    }
+
+    nonisolated static func visionQualityIssue(
+        in text: String,
+        latestUserTurn: String? = nil,
+        quoteGuard: CoachChatQuoteGuardContext? = nil,
+        systemContext: String? = nil,
+        turnDepth: CoachTurnDepth = .groundedRead,
+        assessment: CoachAssessment? = nil,
+        surface: CoachReplySurface = .text
+    ) -> CoachChatReplyQualityIssue? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard visionRuntimeGateApplies(
+            latestUserTurn: latestUserTurn,
+            turnDepth: turnDepth
+        ) else {
+            return nil
+        }
+
+        let vision = coachVisionEvaluation(
+            reply: trimmed,
+            latestUserTurn: latestUserTurn,
+            quoteGuard: quoteGuard,
+            systemContext: systemContext,
+            turnDepth: turnDepth,
+            assessment: assessment,
+            surface: surface
+        )
+        if !vision.criticalMisses.isEmpty {
+            return .visionGate(score: vision.score, misses: vision.criticalMisses)
+        }
+        if vision.score < visionRuntimeMinimumScore(
+            turnDepth: turnDepth,
+            surface: surface
+        ) {
+            return .visionGate(score: vision.score, misses: vision.missed)
+        }
+        return nil
+    }
+
+    private nonisolated static func visionRuntimeGateApplies(
+        latestUserTurn: String?,
+        turnDepth: CoachTurnDepth
+    ) -> Bool {
+        guard let latestUserTurn else {
+            return turnDepth == .deepAssessment || turnDepth == .trustRepair
+        }
+        let lower = latestUserTurn
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if lower.count <= 4, containsAny(lower, ["hi", "hey", "yo"]) {
+            return false
+        }
+        if containsAny(lower, [
+            "thanks", "thank you", "got it", "okay", "ok", "cool",
+            "makes sense", "that helps"
+        ]),
+           !turnExpectsPrescribedAction(latestUserTurn),
+           !turnAsksWhyAnswerLandedBadly(latestUserTurn),
+           !isCritiqueTurn(lower) {
+            return false
+        }
+        return turnClearlyAsksForCoachingOrJudgement(lower)
+            || turnDepth == .deepAssessment
+            || turnDepth == .trustRepair
+            || turnAsksWhyAnswerLandedBadly(latestUserTurn)
+            || isCritiqueTurn(lower)
+    }
+
+    private nonisolated static func turnClearlyAsksForCoachingOrJudgement(_ lower: String) -> Bool {
+        if turnExpectsPrescribedAction(lower) { return true }
+        return containsAny(lower, [
+            "feedback", "coach", "read", "notice", "diagnos",
+            "judge", "assess", "score", "rate", "far off",
+            "how close", "why did", "why does", "why is",
+            "land badly", "landed badly", "land weak", "landed weak",
+            "sound", "sounding", "authoritative", "authority",
+            "confident", "executive", "leadership", "interview",
+            "presentation", "meeting", "update", "pitch", "conflict",
+            "filler", "fillers", " um", "pace", "pause", "close",
+            "closing", "opening", "opener", "structure", "clarity",
+            "better", "improve", "weak", "strong", "good", "bad"
+        ])
+    }
+
+    private nonisolated static func visionRuntimeMinimumScore(
+        turnDepth: CoachTurnDepth,
+        surface: CoachReplySurface
+    ) -> Int {
+        if surface == .live {
+            return turnDepth == .deepAssessment ? 66 : 62
+        }
+        return turnDepth == .deepAssessment ? 74 : 70
+    }
+
+    private nonisolated static func qualityIssue(
+        forVisionMisses misses: [CoachVisionCriterion]
+    ) -> CoachChatReplyQualityIssue? {
+        if misses.contains(.seniorRegister) { return .roboticPhrase("vision score register miss") }
+        if misses.contains(.evidenceHonesty) { return .overclaimsEvidence }
+        if misses.contains(.directAnswer) { return .missingInsightBridge }
+        if misses.contains(.observableAnchor) { return .unanchoredCoaching }
+        if misses.contains(.prescribedAction) { return .missingPrescribedAction }
+        if misses.contains(.insightBridge) { return .missingInsightBridge }
+        return nil
+    }
+
+    private nonisolated static func replyHasSpecificPracticeMove(_ lower: String) -> Bool {
+        guard replyPrescribesAction(lower) || replyHasUserPracticeMove(lower) else {
+            return false
+        }
+        return !containsAny(lower, [
+            "keep practicing",
+            "practice more",
+            "practice often",
+            "sound more confident",
+            "be more confident",
+            "try to sound more confident",
+            "try to be more confident",
+            "communicate clearly",
+            "be clear and concise",
+            "structure your thoughts",
+            "focus on structure",
+            "focus on your structure",
+            "focus on clarity",
+            "focus on being confident",
+            "focus on sounding confident",
+            "prepare thoroughly",
+            "prepare more",
+            "think about your audience",
+            "work on confidence",
+            "improve your confidence"
+        ])
+    }
+
     nonisolated static func semanticQualityIssue(
         in text: String,
         turnDepth: CoachTurnDepth,
@@ -2169,6 +2803,10 @@ actor AICoachChatService {
             }
         case .trustRepair:
             if !replyRepairsTrust(lower) {
+                return .missingDirectVerdict
+            }
+            if let repairFocus = assessment.repairFocus,
+               !replyNamesRepairFocus(lower, repairFocus: repairFocus) {
                 return .missingDirectVerdict
             }
             if !replyContainsProofTest(lower, assessment: assessment),
@@ -2296,6 +2934,15 @@ actor AICoachChatService {
         "it's important to",
         "it is important to",
         "in order to improve",
+        "keep practicing",
+        "practice more",
+        "practice often",
+        "sound more confident",
+        "be more confident",
+        "work on confidence",
+        "structure your thoughts",
+        "think about your audience",
+        "communicate clearly",
         "to break this",
         "effective communication",
         "to communicate more clearly",
@@ -2580,6 +3227,31 @@ actor AICoachChatService {
             "i'll be", "i will be", "i'll keep", "i will keep", "i'll change",
             "i will change", "i'll cut", "i will cut", "i'll stop", "i will stop"
         ])
+    }
+
+    private nonisolated static func replyNamesRepairFocus(
+        _ lower: String,
+        repairFocus: String
+    ) -> Bool {
+        let focus = repairFocus.lowercased()
+        let needles: [String]
+        if containsAny(focus, ["cold", "human coach"]) {
+            needles = ["cold", "human", "coach read", "not coaching", "generic ai", "ai tips"]
+        } else if containsAny(focus, ["too much writing", "writing", "wordy"]) {
+            needles = ["too much writing", "too long", "shorter", "wordy", "overexplained", "dense"]
+        } else if containsAny(focus, ["actual question", "missed"]) {
+            needles = ["missed", "actual question", "didn't answer", "did not answer", "wrong question"]
+        } else if containsAny(focus, ["generic", "evidence"]) {
+            needles = ["generic", "evidence", "generic advice", "not evidence", "template", "templated"]
+        } else if containsAny(focus, ["polite pushback", "friction"]) {
+            needles = ["friction", "pushback", "however", "but"]
+        } else {
+            needles = focus
+                .split { !$0.isLetter && !$0.isNumber }
+                .map(String.init)
+                .filter { $0.count >= 5 }
+        }
+        return containsAny(lower, needles)
     }
 
     private nonisolated static func trustRepairMissesSpecificFriction(
@@ -3289,6 +3961,7 @@ actor AICoachChatService {
         system: String,
         messages: [CoachMessage],
         quoteGuard: CoachChatQuoteGuardContext?,
+        recentCoachReplies: [String],
         turnDepth: CoachTurnDepth,
         assessment: CoachAssessment?,
         surface: CoachReplySurface
@@ -3318,6 +3991,14 @@ actor AICoachChatService {
                 return "- Keep the repair short: one grounded read, one reason, one move."
             }
         }()
+        let recentActionRule: String = {
+            let recentActions = Self.recentActionSentenceFingerprints(
+                in: recentCoachReplies,
+                limit: 3
+            )
+            guard !recentActions.isEmpty else { return "" }
+            return "- Recent coach actions already prescribed: \(recentActions.joined(separator: "; ")). Do not repeat the same proof test; vary the condition, target, or evidence check."
+        }()
         let repairSystem = """
         \(system)
 
@@ -3342,6 +4023,7 @@ actor AICoachChatService {
         \(requiredAnchor.map { "- Required anchor: \($0)" } ?? "")
         \(referenceShape.map { "- Expert reference shape: \($0)" } ?? "")
         \(evidenceRepairSourceOfTruthRule)
+        \(recentActionRule)
         - The final answer must include a direct action verb the user can do now
           or in the next rep: say, run, record, hold, cut, use, answer,
           practice, review, end, state, make, lead, put, or give.
@@ -3444,6 +4126,7 @@ actor AICoachChatService {
             latestUserTurn: messages.last(where: { $0.role == .user })?.text,
             quoteGuard: quoteGuard,
             systemContext: system,
+            recentCoachReplies: recentCoachReplies,
             turnDepth: turnDepth,
             surface: surface
         ) {
@@ -3464,6 +4147,23 @@ actor AICoachChatService {
             recordChatDiagnostic(
                 .fallback,
                 "Repair reply failed semantic judgement gate: \(semanticIssue.rawValue)\(Self.liveEvalDraftSuffix(display))",
+                provider: provider
+            )
+            return nil
+        }
+        if let visionIssue = Self.visionQualityIssue(
+            in: display,
+            latestUserTurn: messages.last(where: { $0.role == .user })?.text,
+            quoteGuard: quoteGuard,
+            systemContext: system,
+            turnDepth: turnDepth,
+            assessment: assessment,
+            surface: surface
+        ) {
+            Self.log.error("repair pass still tripped vision gate (\(String(describing: visionIssue), privacy: .public))")
+            recordChatDiagnostic(
+                .fallback,
+                "Repair reply failed vision gate: \(String(describing: visionIssue))\(Self.liveEvalDraftSuffix(display))",
                 provider: provider
             )
             return nil
@@ -3548,7 +4248,10 @@ actor AICoachChatService {
         issue: CoachChatReplyQualityIssue,
         latestUserTurn: String?,
         system: String,
-        quoteGuard: CoachChatQuoteGuardContext?
+        quoteGuard: CoachChatQuoteGuardContext?,
+        turnDepth: CoachTurnDepth = .groundedRead,
+        assessment: CoachAssessment? = nil,
+        surface: CoachReplySurface = .text
     ) -> String? {
         guard issue == .overclaimsEvidence || issue == .missingInsightBridge else {
             return nil
@@ -3569,6 +4272,17 @@ actor AICoachChatService {
             latestUserTurn: latestUserTurn,
             quoteGuard: quoteGuard,
             systemContext: system
+        ) == nil else {
+            return nil
+        }
+        guard visionQualityIssue(
+            in: referenceShape,
+            latestUserTurn: latestUserTurn,
+            quoteGuard: quoteGuard,
+            systemContext: system,
+            turnDepth: turnDepth,
+            assessment: assessment,
+            surface: surface
         ) == nil else {
             return nil
         }
@@ -3731,7 +4445,8 @@ actor AICoachChatService {
         let shouldCarryAnchor: Bool
         switch issue {
         case .unanchoredCoaching, .missingInsightBridge, .missingPrescribedAction,
-                .missedTrustRepair, .defensiveProductLanguage, .scaffoldLabel:
+                .missedTrustRepair, .defensiveProductLanguage, .scaffoldLabel,
+                .visionGate, .repeatedProofTest:
             shouldCarryAnchor = true
         case .roboticPhrase:
             shouldCarryAnchor = true

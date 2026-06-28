@@ -11882,18 +11882,25 @@ struct AskNoumStoreTests {
     }
 
     private func sampleTurnMetadata(
-        userImmediatePushback: Bool = false
+        userImmediatePushback: Bool = false,
+        userPushbackWithinTwoTurns: Bool? = nil,
+        coldnessComplaintFlag: Bool? = nil
     ) -> CoachTurnMetadata {
         CoachTurnMetadata(
             turnDepth: .deepAssessment,
             providerTier: .claudeReasoning,
+            providerTierChosen: .claudeReasoning,
             semanticGateOutcome: .passed,
             evidenceCoverage: 0.42,
             ttftMs: 180,
             fullLatencyMs: 940,
+            timeToFirstVisibleTokenMs: 180,
+            timeToCompleteReplyMs: 940,
             providerName: "Claude",
             providerModel: "claude-sonnet-4-6",
             userImmediatePushback: userImmediatePushback,
+            userPushbackWithinTwoTurns: userPushbackWithinTwoTurns,
+            coldnessComplaintFlag: coldnessComplaintFlag,
             trajectoryCacheHit: true,
             surface: .text
         )
@@ -12122,12 +12129,18 @@ struct AskNoumStoreTests {
         let decoded = try JSONDecoder().decode(CoachMessage.self, from: data)
         #expect(decoded.metadata?.turnDepth == .deepAssessment)
         #expect(decoded.metadata?.providerTier == .claudeReasoning)
+        #expect(decoded.metadata?.providerTierChosen == .claudeReasoning)
         #expect(decoded.metadata?.semanticGateOutcome == .passed)
         #expect(decoded.metadata?.evidenceCoverage == 0.42)
         #expect(decoded.metadata?.ttftMs == 180)
         #expect(decoded.metadata?.fullLatencyMs == 940)
+        #expect(decoded.metadata?.timeToFirstVisibleTokenMs == 180)
+        #expect(decoded.metadata?.timeToCompleteReplyMs == 940)
         #expect(decoded.metadata?.providerName == "Claude")
         #expect(decoded.metadata?.providerModel == "claude-sonnet-4-6")
+        #expect(decoded.metadata?.userPushbackWithinTwoTurns == nil)
+        #expect(decoded.metadata?.coldnessComplaintFlag == nil)
+        #expect(decoded.metadata?.voiceBargeInOccurred == nil)
         #expect(decoded.metadata?.trajectoryCacheHit == true)
         #expect(decoded.metadata?.surface == .text)
     }
@@ -12146,13 +12159,19 @@ struct AskNoumStoreTests {
         let coach = store2.messages.first { $0.role == .coach }
         #expect(coach?.metadata?.turnDepth == .deepAssessment)
         #expect(coach?.metadata?.providerTier == .claudeReasoning)
+        #expect(coach?.metadata?.providerTierChosen == .claudeReasoning)
         #expect(coach?.metadata?.semanticGateOutcome == .passed)
         #expect(coach?.metadata?.evidenceCoverage == 0.42)
         #expect(coach?.metadata?.ttftMs == 180)
         #expect(coach?.metadata?.fullLatencyMs == 940)
+        #expect(coach?.metadata?.timeToFirstVisibleTokenMs == 180)
+        #expect(coach?.metadata?.timeToCompleteReplyMs == 940)
         #expect(coach?.metadata?.providerName == "Claude")
         #expect(coach?.metadata?.providerModel == "claude-sonnet-4-6")
         #expect(coach?.metadata?.userImmediatePushback == false)
+        #expect(coach?.metadata?.userPushbackWithinTwoTurns == nil)
+        #expect(coach?.metadata?.coldnessComplaintFlag == nil)
+        #expect(coach?.metadata?.voiceBargeInOccurred == nil)
     }
 
     @Test func provisionalCoachReadKeepsMetadataInMemoryButDoesNotPersistPendingRow() {
@@ -12196,6 +12215,49 @@ struct AskNoumStoreTests {
         #expect(store.messages[1].metadata?.ttftMs == 180)
     }
 
+    @Test func markLatestCoachTurnVoiceBargeInMarksPriorCoachRow() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("How do I recover live?")
+        store.completeCoachTurn(
+            id: ids.coachID,
+            outcome: .reply("Start with the verdict, then pause."),
+            metadata: sampleTurnMetadata()
+        )
+
+        #expect(store.markLatestCoachTurnVoiceBargeIn())
+        #expect(store.messages[1].metadata?.voiceBargeInOccurred == true)
+    }
+
+    @Test func finalMetadataPreservesVoiceBargeInFromProvisionalRead() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("How do I recover live?")
+        _ = store.setProvisionalCoachRead(
+            id: ids.coachID,
+            text: "Pacing is the next lever.",
+            metadata: sampleTurnMetadata()
+        )
+
+        #expect(store.markLatestCoachTurnVoiceBargeIn())
+        store.completeCoachTurn(
+            id: ids.coachID,
+            outcome: .reply("Pacing is the next lever: add one deliberate beat before the reason."),
+            metadata: CoachTurnMetadata(
+                turnDepth: .quickMove,
+                providerTier: .geminiFast,
+                semanticGateOutcome: .passed,
+                ttftMs: 220,
+                fullLatencyMs: 1_100,
+                providerName: "Gemini",
+                providerModel: "gemini-3.5-flash",
+                trajectoryCacheHit: true,
+                surface: .live
+            )
+        )
+
+        #expect(store.messages[1].metadata?.providerName == "Gemini")
+        #expect(store.messages[1].metadata?.voiceBargeInOccurred == true)
+    }
+
     @Test func appendUserTurnMarksPreviousCoachWhenImmediatePushback() {
         let store = freshStore()
         let ids = store.appendUserTurn("How far off am I from sounding authoritative?")
@@ -12210,6 +12272,25 @@ struct AskNoumStoreTests {
         #expect(store.messages[1].role == .coach)
         #expect(store.messages[1].metadata?.turnDepth == .deepAssessment)
         #expect(store.messages[1].metadata?.userImmediatePushback == true)
+        #expect(store.messages[1].metadata?.userPushbackWithinTwoTurns == true)
+        #expect(store.messages[1].metadata?.coldnessComplaintFlag == false)
+    }
+
+    @Test func appendUserTurnMarksColdnessComplaintOnPriorCoachTurn() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("How far off am I from sounding authoritative?")
+        store.completeCoachTurn(
+            id: ids.coachID,
+            outcome: .reply("Keep practicing and try to communicate clearly."),
+            metadata: sampleTurnMetadata()
+        )
+
+        _ = store.appendUserTurn("This still feels robotic and cold, like generic AI tips.")
+
+        #expect(store.messages[1].role == .coach)
+        #expect(store.messages[1].metadata?.userImmediatePushback == true)
+        #expect(store.messages[1].metadata?.userPushbackWithinTwoTurns == true)
+        #expect(store.messages[1].metadata?.coldnessComplaintFlag == true)
     }
 
     @Test func immediatePushbackRecordsDiagnosticWithPriorTurnContext() async {
@@ -12234,6 +12315,28 @@ struct AskNoumStoreTests {
         #expect(latest?.reason.contains("priorDepth=deepAssessment") == true)
         #expect(latest?.reason.contains("provider=Claude") == true)
         #expect(latest?.reason.contains("semanticGate=passed") == true)
+        #expect(latest?.reason.contains("userPushbackWithinTwoTurns=true") == true)
+        #expect(latest?.reason.contains("coldnessComplaint=false") == true)
+        AICallDiagnosticsStore.shared.reset()
+    }
+
+    @Test func immediatePushbackDiagnosticNamesColdnessComplaint() async {
+        AICallDiagnosticsStore.shared.reset()
+        let store = freshStore()
+        let ids = store.appendUserTurn("How far off am I from sounding authoritative?")
+        store.completeCoachTurn(
+            id: ids.coachID,
+            outcome: .reply("Keep practicing and try to communicate clearly."),
+            metadata: sampleTurnMetadata()
+        )
+
+        _ = store.appendUserTurn("This still feels robotic and cold, like generic AI tips.")
+        await Task.yield()
+        await Task.yield()
+
+        let latest = AICallDiagnosticsStore.shared.latest
+        #expect(latest?.surface == "Ask Noum immediate pushback")
+        #expect(latest?.reason.contains("coldnessComplaint=true") == true)
         AICallDiagnosticsStore.shared.reset()
     }
 
@@ -27241,13 +27344,18 @@ struct CoachChatEvaluationFixtureTests {
         #expect(first.rows.allSatisfy { $0.referenceReplyPassesRubric })
         #expect(first.rows.allSatisfy { $0.referenceReplyPassesQualityGate })
         #expect(first.rows.allSatisfy { $0.knownBadIssueMatched })
+        #expect(first.rows.allSatisfy { $0.referenceVisionScore > $0.knownBadVisionScore })
         #expect(first.rows.allSatisfy { $0.expertBaselineStatus == "pendingExpertReview" })
 
         let encoded = try first.encodedSortedJSON()
-        #expect(encoded.contains(#""schemaVersion":"coach-chat-eval-report-v2""#))
+        #expect(encoded.contains(#""schemaVersion":"coach-chat-eval-report-v4""#))
         #expect(encoded.contains(#""fixtureID":"cold-start-interview-baseline""#))
         #expect(encoded.contains(#""referenceReplyPassesRubric":true"#))
         #expect(encoded.contains(#""referenceReplyPassesQualityGate":true"#))
+        #expect(encoded.contains(#""referenceVisionScore":"#))
+        #expect(encoded.contains(#""knownBadVisionScore":"#))
+        #expect(encoded.contains(#""referencePassesVisionRuntimeGate":"#))
+        #expect(encoded.contains(#""knownBadTripsVisionRuntimeGate":"#))
     }
 
     @Test func expertReviewPacketCoversEveryFixtureWithoutClaimingValidation() throws {

@@ -95,6 +95,7 @@ struct CoachLiveEvaluationTests {
         emit("reportPath: \(resolvedOutputPath)")
         emit("fixtures: \(fixtures.map { $0.id }.joined(separator: ","))")
         emit("providerChain: \(Self.liveProviderChain().map { "\($0.displayName) (\($0.model))" }.joined(separator: " -> "))")
+        CoachAssessmentCache.shared.invalidate()
 
         for fixture in fixtures {
             let expertise = await KnowledgeRetriever.retrieveReranked(
@@ -119,6 +120,12 @@ struct CoachLiveEvaluationTests {
                 recentTimedTranscript: recentTimed?.transcript,
                 verifiedProofQuotes: []
             )
+            let requestedTier = CoachPromptBundle.preferredProviderTier(
+                for: judgement.turnDepth,
+                surface: .text
+            )
+            var providerChoice: CoachTurnProviderChoice?
+            let turnStartedAt = Date()
 
             let outcome = await service.reply(
                 history: history,
@@ -128,11 +135,12 @@ struct CoachLiveEvaluationTests {
                 turnDepth: judgement.turnDepth,
                 assessment: judgement.assessment,
                 surface: .text,
-                preferredTier: CoachPromptBundle.preferredProviderTier(
-                    for: judgement.turnDepth,
-                    surface: .text
-                )
+                preferredTier: requestedTier,
+                onProviderChosen: { choice in
+                    providerChoice = choice
+                }
             )
+            let turnCompletedAt = Date()
             let records = diagnostics.records
             let newRecords = Array(records.dropFirst(diagnosticCursor))
             diagnosticCursor = records.count
@@ -142,8 +150,14 @@ struct CoachLiveEvaluationTests {
             emit("")
             emit("userTurn: \(fixture.latestUserTurn)")
             emit("turnDepth: \(judgement.turnDepth.rawValue)")
-            emit("providerTier: \(CoachPromptBundle.preferredProviderTier(for: judgement.turnDepth, surface: .text).rawValue)")
+            emit("providerTierRequested: \(requestedTier.rawValue)")
+            emit("providerTierChosen: \(CoachReplyPipeline.providerTierChosen(for: providerChoice, requestedTier: requestedTier)?.rawValue ?? "none")")
+            emit("providerChosen: \(providerChoice?.providerName ?? "none")")
+            emit("providerModel: \(providerChoice?.model ?? "none")")
+            emit("timeToCompleteReplyMs: \(Int(turnCompletedAt.timeIntervalSince(turnStartedAt) * 1_000))")
             emit("trajectoryCacheHit: \(judgement.trajectory.cacheHit)")
+            emit("assessmentCacheHit: \(judgement.assessmentCacheHit)")
+            emit("assessmentCacheAgeMs: \(Int(turnCompletedAt.timeIntervalSince(judgement.assessmentGeneratedAt) * 1_000))")
             emit("assessmentConfidence: \(String(format: "%.2f", judgement.assessment.confidence))")
             emit("assessmentVerdict: \(judgement.assessment.directVerdict)")
             emit("assessmentImmediateRead: \(judgement.assessment.immediateCoachRead)")
@@ -181,6 +195,19 @@ struct CoachLiveEvaluationTests {
                     turnDepth: judgement.turnDepth,
                     assessment: judgement.assessment
                 )
+                let vision = AICoachChatService.coachVisionEvaluation(
+                    reply: reply,
+                    latestUserTurn: fixture.latestUserTurn,
+                    quoteGuard: CoachChatQuoteGuardContext(
+                        transcripts: [grounding.recentTimedTranscript],
+                        latestUserTurn: fixture.latestUserTurn,
+                        recentUserTurns: history.filter { $0.role == .user }.map { $0.text }
+                    ),
+                    systemContext: context,
+                    turnDepth: judgement.turnDepth,
+                    assessment: judgement.assessment,
+                    surface: .text
+                )
 
                 emit("")
                 emit("transcript:")
@@ -194,15 +221,17 @@ struct CoachLiveEvaluationTests {
                 emit(reply)
                 emit("")
                 emit("rubric: score=\(rubric.score) misses=\(rubric.misses.map { $0.rawValue }.joined(separator: ","))")
+                emit("visionScore: \(vision.score) passesProductionFloor=\(vision.passesProductionFloor) missed=\(vision.missed.map { $0.rawValue }.joined(separator: ","))")
                 emit("qualityIssue: \(String(describing: issue))")
                 emit("semanticIssue: \(String(describing: semanticIssue))")
 
-                if issue != nil || semanticIssue != nil || !rubric.passesSeniorCoachFloor {
+                if issue != nil || semanticIssue != nil || !rubric.passesSeniorCoachFloor || !vision.passesProductionFloor {
                     failed = true
                 }
                 #expect(issue == nil)
                 #expect(semanticIssue == nil)
                 #expect(rubric.passesSeniorCoachFloor)
+                #expect(vision.passesProductionFloor)
 
             case .failure(let failure):
                 emit("failure: \(failure)")
@@ -299,6 +328,8 @@ struct CoachLiveEvaluationTests {
         let trajectory: UserTrajectoryCacheResult
         let rubric: ActiveGoalRubric
         let assessment: CoachAssessment
+        let assessmentCacheHit: Bool
+        let assessmentGeneratedAt: Date
     }
 
     private static func judgement(
@@ -321,18 +352,32 @@ struct CoachLiveEvaluationTests {
             coachMemory: nil
         )
         let rubric = GoalRubricStore.activeRubric(for: fixture.profile)
-        let assessment = CoachReasoningPass.assess(
+        let assessmentResult = CoachAssessmentCache.shared.assessment(
             turnDepth: turnDepth,
             userQuestion: fixture.latestUserTurn,
             trajectory: trajectory.snapshot,
             rubric: rubric,
-            surface: surface
+            surface: surface,
+            recentProofTests: [],
+            previousCoachReply: fixture.previousCoachReply,
+            build: {
+                CoachReasoningPass.assess(
+                    turnDepth: turnDepth,
+                    userQuestion: fixture.latestUserTurn,
+                    trajectory: trajectory.snapshot,
+                    rubric: rubric,
+                    surface: surface,
+                    previousCoachReply: fixture.previousCoachReply
+                )
+            }
         )
         return JudgementContext(
             turnDepth: turnDepth,
             trajectory: trajectory,
             rubric: rubric,
-            assessment: assessment
+            assessment: assessmentResult.assessment,
+            assessmentCacheHit: assessmentResult.cacheHit,
+            assessmentGeneratedAt: assessmentResult.generatedAt
         )
     }
 

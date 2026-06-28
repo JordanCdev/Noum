@@ -104,6 +104,14 @@ enum CoachReplyPipeline {
         let previousCoachReply = latestUserIndex.flatMap { index in
             history[..<index].last { $0.role == .coach }?.text
         }
+        let recentProofTests = Self.recentProofTests(
+            beforeLatestUserIndex: latestUserIndex,
+            in: history
+        )
+        let recentProofTestHashes = Self.recentProofTestHashes(
+            beforeLatestUserIndex: latestUserIndex,
+            in: history
+        )
         // EQ — recent user turns for sustained emotional pattern detection.
         // Newest-first, capped at 6 so the arc detector can scan a meaningful
         // window without unbounded history reads.
@@ -159,23 +167,48 @@ enum CoachReplyPipeline {
         )
         let activeRubric = GoalRubricStore.activeRubric(for: profileStore.profile)
         let reasoningStartedAt = Date()
-        let assessment: CoachAssessment? = CoachBrainFlags.judgementPassEnabled
-            ? CoachReasoningPass.assess(
+        let assessmentResult: CoachAssessmentCacheResult? = CoachBrainFlags.judgementPassEnabled
+            ? CoachAssessmentCache.shared.assessment(
                 turnDepth: turnDepth,
                 userQuestion: latestUserTurn ?? "",
                 trajectory: trajectoryResult.snapshot,
                 rubric: activeRubric,
-                surface: surface
+                surface: surface,
+                recentProofTests: recentProofTests,
+                previousCoachReply: previousCoachReply,
+                build: {
+                    CoachReasoningPass.assess(
+                        turnDepth: turnDepth,
+                        userQuestion: latestUserTurn ?? "",
+                        trajectory: trajectoryResult.snapshot,
+                        rubric: activeRubric,
+                        surface: surface,
+                        recentProofTests: recentProofTests,
+                        previousCoachReply: previousCoachReply
+                    )
+                }
             )
             : nil
+        let assessment = assessmentResult?.assessment
+        let assessmentProofTestHash = assessment.map {
+            Self.proofTestHash(for: $0.nextProofTest)
+        }
+        let proofTestRecentlyRepeated = assessmentProofTestHash.map {
+            recentProofTestHashes.contains($0)
+        }
+        let assessmentCacheAgeMsAt: (Date) -> Int? = { date in
+            assessmentResult.map { Self.latencyMs(from: $0.generatedAt, to: date) }
+        }
+        let assessmentCacheAgeAtReasoning = assessmentCacheAgeMsAt(Date())
         var firstVisibleAt: Date?
+        var immediateCoachReadShown = false
         if let assessment {
             AICallDiagnostics.record(
                 surface: "Coach judgement pass",
                 providerName: "On-device coach brain",
                 model: "CoachReasoningPass",
                 outcome: .success,
-                reason: "turnDepth=\(turnDepth.rawValue) cacheHit=\(trajectoryResult.cacheHit) reasoningEvidence=\(assessment.evidenceReferenceCount)",
+                reason: "turnDepth=\(turnDepth.rawValue) trajectoryCacheHit=\(trajectoryResult.cacheHit) assessmentCacheHit=\(assessmentResult?.cacheHit ?? false) assessmentCacheAgeMs=\(assessmentCacheAgeAtReasoning ?? -1) reasoningEvidence=\(assessment.evidenceReferenceCount)",
                 startedAt: reasoningStartedAt
             )
             if Self.shouldShowProvisionalCoachRead(
@@ -193,7 +226,15 @@ enum CoachReplyPipeline {
                     providerTier: preferredTier,
                     semanticGateOutcome: .notEvaluated,
                     evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
+                    assessment: assessment,
+                    assessmentConfidence: assessment.confidence,
+                    proofTestHash: assessmentProofTestHash,
+                    proofTestRecentlyRepeated: proofTestRecentlyRepeated,
+                    assessmentCacheHit: assessmentResult?.cacheHit,
+                    assessmentCacheAgeMs: assessmentCacheAgeMsAt(provisionalVisibleAt),
+                    immediateCoachReadShown: true,
                     ttftMs: Self.latencyMs(from: turnStartedAt, to: provisionalVisibleAt),
+                    timeToFirstVisibleTokenMs: Self.latencyMs(from: turnStartedAt, to: provisionalVisibleAt),
                     trajectoryCacheHit: trajectoryResult.cacheHit,
                     surface: surface
                 )
@@ -203,6 +244,7 @@ enum CoachReplyPipeline {
                     metadata: provisionalMetadata
                 ) {
                     firstVisibleAt = provisionalVisibleAt
+                    immediateCoachReadShown = true
                     onProvisionalCoachReadVisible?(immediateCoachRead)
                 }
                 AICallDiagnostics.record(
@@ -276,6 +318,8 @@ enum CoachReplyPipeline {
             verifiedProofQuotes: recentProofs.map(\.proof.quote)
         )
 
+        var qualityGateEvents: [CoachTurnQualityGateEvent] = []
+        var providerAttemptEvents: [CoachProviderAttemptEvent] = []
         Self.log.debug("generating coach reply history=\(history.count, privacy: .public) sessions=\(sessionStore.sessions.count, privacy: .public) proofs=\(recentProofs.count, privacy: .public) weeklyCheckInDue=\(weeklyCheckInDue, privacy: .public)")
         let outcome = await AICoachChatService.shared.reply(
             history: history,
@@ -288,12 +332,21 @@ enum CoachReplyPipeline {
             preferredTier: preferredTier,
             onStreamedPartialVisible: { partialText in
                 let streamedVisibleAt = Date()
+                let streamedTTFT = Self.latencyMs(from: turnStartedAt, to: firstVisibleAt ?? streamedVisibleAt)
                 let streamedMetadata = CoachTurnMetadata(
                     turnDepth: turnDepth,
                     providerTier: preferredTier,
                     semanticGateOutcome: .notEvaluated,
                     evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
-                    ttftMs: Self.latencyMs(from: turnStartedAt, to: firstVisibleAt ?? streamedVisibleAt),
+                    assessment: assessment,
+                    assessmentConfidence: assessment?.confidence,
+                    proofTestHash: assessmentProofTestHash,
+                    proofTestRecentlyRepeated: proofTestRecentlyRepeated,
+                    assessmentCacheHit: assessmentResult?.cacheHit,
+                    assessmentCacheAgeMs: assessmentCacheAgeMsAt(streamedVisibleAt),
+                    immediateCoachReadShown: immediateCoachReadShown,
+                    ttftMs: streamedTTFT,
+                    timeToFirstVisibleTokenMs: streamedTTFT,
                     trajectoryCacheHit: trajectoryResult.cacheHit,
                     surface: surface
                 )
@@ -309,20 +362,82 @@ enum CoachReplyPipeline {
             },
             onProviderChosen: { choice in
                 providerChoice = choice
+            },
+            onProviderAttemptEvent: { event in
+                providerAttemptEvents.append(event)
+            },
+            onQualityGateEvent: { event in
+                qualityGateEvents.append(event)
             }
         )
         let completionAt = Date()
+        let finalVision: CoachVisionEvaluationResult? = {
+            guard case .reply(let rawText) = outcome else { return nil }
+            let reply = CoachReplyTextSanitizer.coachReplyText(from: rawText)
+            guard !reply.isEmpty else { return nil }
+            return AICoachChatService.coachVisionEvaluation(
+                reply: reply,
+                latestUserTurn: latestUserTurn,
+                quoteGuard: CoachChatQuoteGuardContext(
+                    transcripts: [groundingContext.recentTimedTranscript],
+                    verifiedProofQuotes: groundingContext.verifiedProofQuotes,
+                    latestUserTurn: latestUserTurn,
+                    recentUserTurns: recentUserTurns
+                ),
+                systemContext: context,
+                turnDepth: turnDepth,
+                assessment: assessment,
+                surface: surface
+            )
+        }()
+        let finalReplyWordCount: Int? = {
+            guard case .reply(let rawText) = outcome else { return nil }
+            return Self.wordCount(in: CoachReplyTextSanitizer.coachReplyText(from: rawText))
+        }()
+        let finalSemanticGateOutcome = Self.semanticGateOutcome(
+            for: outcome,
+            turnDepth: turnDepth,
+            assessment: assessment
+        )
+        let finalTTFT = Self.latencyMs(from: turnStartedAt, to: firstVisibleAt ?? completionAt)
+        let finalLatency = Self.latencyMs(from: turnStartedAt, to: completionAt)
         let finalMetadata = CoachTurnMetadata(
             turnDepth: turnDepth,
             providerTier: preferredTier,
-            semanticGateOutcome: Self.semanticGateOutcome(
-                for: outcome,
-                turnDepth: turnDepth,
-                assessment: assessment
+            providerTierChosen: Self.providerTierChosen(
+                for: providerChoice,
+                requestedTier: preferredTier
+            ),
+            semanticGateOutcome: finalSemanticGateOutcome,
+            semanticGateIssue: Self.semanticGateIssue(
+                for: finalSemanticGateOutcome,
+                qualityGateEvents: qualityGateEvents
             ),
             evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
-            ttftMs: Self.latencyMs(from: turnStartedAt, to: firstVisibleAt ?? completionAt),
-            fullLatencyMs: Self.latencyMs(from: turnStartedAt, to: completionAt),
+            assessment: assessment,
+            assessmentConfidence: assessment?.confidence,
+            proofTestHash: assessmentProofTestHash,
+            proofTestRecentlyRepeated: proofTestRecentlyRepeated,
+            visionScore: finalVision?.score,
+            visionCriticalMisses: finalVision?.criticalMisses,
+            visionPassesProductionFloor: finalVision?.passesProductionFloor,
+            qualityGateOutcome: Self.qualityGateOutcome(
+                for: qualityGateEvents,
+                outcome: outcome
+            ),
+            qualityGateFailureCount: Self.qualityGateFailureCount(qualityGateEvents),
+            qualityGateRepairCount: Self.qualityGateRepairCount(qualityGateEvents),
+            assessmentCacheHit: assessmentResult?.cacheHit,
+            assessmentCacheAgeMs: assessmentCacheAgeMsAt(completionAt),
+            immediateCoachReadShown: immediateCoachReadShown,
+            replyWordCount: finalReplyWordCount,
+            providerRetryCount: Self.providerRetryCount(providerAttemptEvents),
+            providerAttemptCount: Self.providerAttemptCount(providerAttemptEvents),
+            providerRefusalCount: Self.providerRefusalCount(providerAttemptEvents),
+            ttftMs: finalTTFT,
+            fullLatencyMs: finalLatency,
+            timeToFirstVisibleTokenMs: finalTTFT,
+            timeToCompleteReplyMs: finalLatency,
             providerName: providerChoice?.providerName,
             providerModel: providerChoice?.model,
             trajectoryCacheHit: trajectoryResult.cacheHit,
@@ -341,10 +456,29 @@ enum CoachReplyPipeline {
                 "cacheHit=\(trajectoryResult.cacheHit)",
                 "surface=\(surface.rawValue)",
                 "providerTier=\(preferredTier.rawValue)",
+                "providerTierChosen=\(finalMetadata.providerTierChosen?.rawValue ?? "none")",
                 "providerChosen=\(providerChoice?.providerName ?? "none")",
                 "providerModel=\(providerChoice?.model ?? "none")",
                 "ttftMs=\(finalMetadata.ttftMs ?? -1)",
                 "fullLatencyMs=\(finalMetadata.fullLatencyMs ?? -1)",
+                "timeToFirstVisibleTokenMs=\(finalMetadata.timeToFirstVisibleTokenMs ?? -1)",
+                "timeToCompleteReplyMs=\(finalMetadata.timeToCompleteReplyMs ?? -1)",
+                "assessmentCacheHit=\(assessmentResult.map { "\($0.cacheHit)" } ?? "unknown")",
+                "assessmentConfidence=\(assessment.map { String(format: "%.2f", $0.confidence) } ?? "none")",
+                "proofTestHash=\(finalMetadata.proofTestHash ?? "none")",
+                "proofTestRepeated=\(finalMetadata.proofTestRecentlyRepeated.map { "\($0)" } ?? "unknown")",
+                "visionScore=\(finalMetadata.visionScore.map { "\($0)" } ?? "none")",
+                "visionPassesFloor=\(finalMetadata.visionPassesProductionFloor.map { "\($0)" } ?? "unknown")",
+                "qualityGate=\(finalMetadata.qualityGateOutcome?.logValue ?? "notEvaluated")",
+                "qualityGateFailures=\(finalMetadata.qualityGateFailureCount ?? 0)",
+                "qualityGateRepairs=\(finalMetadata.qualityGateRepairCount ?? 0)",
+                "assessmentCacheAgeMs=\(finalMetadata.assessmentCacheAgeMs ?? -1)",
+                "immediateCoachReadShown=\(finalMetadata.immediateCoachReadShown.map { "\($0)" } ?? "unknown")",
+                "replyWordCount=\(finalMetadata.replyWordCount ?? -1)",
+                "providerRetryCount=\(finalMetadata.providerRetryCount ?? 0)",
+                "providerAttemptCount=\(finalMetadata.providerAttemptCount ?? 0)",
+                "providerRefusalCount=\(finalMetadata.providerRefusalCount ?? 0)",
+                "semanticGateIssue=\(finalMetadata.semanticGateIssue ?? "none")",
                 "semanticGate=\(finalMetadata.semanticGateOutcome?.logValue ?? "notEvaluated")"
             ].joined(separator: " "),
             startedAt: turnStartedAt,
@@ -387,8 +521,232 @@ enum CoachReplyPipeline {
         }
     }
 
+    nonisolated static func qualityGateOutcome(
+        for events: [CoachTurnQualityGateEvent],
+        outcome: ChatOutcome
+    ) -> CoachTurnQualityGateOutcome {
+        guard !events.isEmpty else { return .notEvaluated }
+
+        if let fallback = events.reversed().compactMap(Self.fallbackGate).first {
+            return .fallback(fallback)
+        }
+        if let repaired = events.reversed().compactMap(Self.repairedGate).first {
+            return .repaired(repaired)
+        }
+        if case .failure = outcome,
+           let failed = events.reversed().compactMap(Self.failedGate).first {
+            return .failed(failed)
+        }
+        if case .failure = outcome,
+           let rejected = events.reversed().compactMap(Self.rejectedGate).first {
+            return .failed(rejected)
+        }
+        if events.contains(.passed) {
+            return .passed
+        }
+        if let failed = events.reversed().compactMap(Self.failedGate).first {
+            return .failed(failed)
+        }
+        if let rejected = events.reversed().compactMap(Self.rejectedGate).first {
+            return .failed(rejected)
+        }
+        return .notEvaluated
+    }
+
+    nonisolated static func qualityGateFailureCount(
+        _ events: [CoachTurnQualityGateEvent]
+    ) -> Int {
+        events.reduce(0) { count, event in
+            switch event {
+            case .rejected, .failed:
+                return count + 1
+            case .passed, .repaired, .fallback:
+                return count
+            }
+        }
+    }
+
+    nonisolated static func qualityGateRepairCount(
+        _ events: [CoachTurnQualityGateEvent]
+    ) -> Int {
+        events.reduce(0) { count, event in
+            switch event {
+            case .repaired, .fallback:
+                return count + 1
+            case .passed, .rejected, .failed:
+                return count
+            }
+        }
+    }
+
+    nonisolated static func semanticGateIssue(
+        for semanticOutcome: CoachTurnSemanticGateOutcome,
+        qualityGateEvents events: [CoachTurnQualityGateEvent]
+    ) -> String? {
+        if case .failed(let issue) = semanticOutcome {
+            return issue
+        }
+
+        for event in events.reversed() {
+            guard let label = gateLabel(event) else { continue }
+            if label.hasPrefix("semanticDryRun:") {
+                return String(label.dropFirst("semanticDryRun:".count))
+            }
+            if label.hasPrefix("semantic:") {
+                return String(label.dropFirst("semantic:".count))
+            }
+        }
+        return nil
+    }
+
+    nonisolated static func providerAttemptCount(
+        _ events: [CoachProviderAttemptEvent]
+    ) -> Int {
+        events.reduce(0) { count, event in
+            switch event {
+            case .started:
+                return count + 1
+            case .retry, .refused:
+                return count
+            }
+        }
+    }
+
+    nonisolated static func providerRefusalCount(
+        _ events: [CoachProviderAttemptEvent]
+    ) -> Int {
+        events.reduce(0) { count, event in
+            switch event {
+            case .refused:
+                return count + 1
+            case .started, .retry:
+                return count
+            }
+        }
+    }
+
+    nonisolated static func providerRetryCount(
+        _ events: [CoachProviderAttemptEvent]
+    ) -> Int {
+        let chainFailoverCount = max(0, providerAttemptCount(events) - 1)
+        let sameProviderRetryCount = events.reduce(0) { count, event in
+            switch event {
+            case .retry:
+                return count + 1
+            case .started, .refused:
+                return count
+            }
+        }
+        return chainFailoverCount + sameProviderRetryCount
+    }
+
+    nonisolated static func providerTierChosen(
+        for choice: CoachTurnProviderChoice?,
+        requestedTier: CoachProviderTier
+    ) -> CoachProviderTier? {
+        guard let choice else { return nil }
+        let provider = choice.providerName.lowercased()
+        if provider.contains("claude") {
+            return .claudeReasoning
+        }
+        if provider.contains("gemini") || provider.contains("google cloud") {
+            return .geminiFast
+        }
+        if provider.contains("typed judgement fallback") {
+            return requestedTier
+        }
+        return nil
+    }
+
+    private static func repairedGate(_ event: CoachTurnQualityGateEvent) -> String? {
+        if case .repaired(let gate) = event { return gate }
+        return nil
+    }
+
+    private static func fallbackGate(_ event: CoachTurnQualityGateEvent) -> String? {
+        if case .fallback(let gate) = event { return gate }
+        return nil
+    }
+
+    private static func rejectedGate(_ event: CoachTurnQualityGateEvent) -> String? {
+        if case .rejected(let gate) = event { return gate }
+        return nil
+    }
+
+    private static func failedGate(_ event: CoachTurnQualityGateEvent) -> String? {
+        if case .failed(let gate) = event { return gate }
+        return nil
+    }
+
+    private static func gateLabel(_ event: CoachTurnQualityGateEvent) -> String? {
+        switch event {
+        case .passed:
+            return nil
+        case .repaired(let gate),
+             .fallback(let gate),
+             .rejected(let gate),
+             .failed(let gate):
+            return gate
+        }
+    }
+
     private static func latencyMs(from start: Date, to end: Date) -> Int {
         max(0, Int(end.timeIntervalSince(start) * 1_000))
+    }
+
+    private static func wordCount(in text: String) -> Int {
+        text.split { $0.isWhitespace || $0.isNewline }.count
+    }
+
+    private static func recentProofTests(
+        beforeLatestUserIndex latestUserIndex: Int?,
+        in history: [CoachMessage],
+        limit: Int = 6
+    ) -> [String] {
+        let upperBound = latestUserIndex ?? history.endIndex
+        guard upperBound > history.startIndex else { return [] }
+        return Array(history[..<upperBound]
+            .reversed()
+            .compactMap { $0.metadata?.assessment?.nextProofTest }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .prefix(limit))
+    }
+
+    private static func recentProofTestHashes(
+        beforeLatestUserIndex latestUserIndex: Int?,
+        in history: [CoachMessage],
+        limit: Int = 6
+    ) -> Set<String> {
+        let upperBound = latestUserIndex ?? history.endIndex
+        guard upperBound > history.startIndex else { return [] }
+        let hashes = history[..<upperBound]
+            .reversed()
+            .compactMap { message -> String? in
+                guard let metadata = message.metadata else { return nil }
+                if let proofTestHash = metadata.proofTestHash,
+                   !proofTestHash.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return proofTestHash
+                }
+                if let proofTest = metadata.assessment?.nextProofTest {
+                    return Self.proofTestHash(for: proofTest)
+                }
+                return nil
+            }
+            .prefix(limit)
+        return Set(hashes)
+    }
+
+    nonisolated static func proofTestHash(for proofTest: String) -> String {
+        let normalized = proofTest
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in normalized.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return String(hash, radix: 16)
     }
 }
 

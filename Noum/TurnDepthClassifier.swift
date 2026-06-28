@@ -19,6 +19,11 @@ enum TurnDepthClassifier {
             return .trustRepair
         }
 
+        if recentTurns.last(where: { $0.role == .coach }) != nil,
+           isSoftPushback(lower) {
+            return .trustRepair
+        }
+
         if isDeepAssessment(lower) {
             return .deepAssessment
         }
@@ -61,6 +66,18 @@ enum TurnDepthClassifier {
             "that doesn't mean", "that does not mean",
             "no where near", "nowhere near"
         ])
+    }
+
+    static func isSoftPushback(_ lower: String) -> Bool {
+        let acknowledgesPriorPoint = containsAny(lower, [
+            "okay", "ok", "cool", "that's cool", "thats cool",
+            "that is cool", "i get", "i hear", "makes sense",
+            "fair enough"
+        ])
+        let pivotsAgainstIt = containsAny(lower, [
+            "however", "but", "though", "still", "except"
+        ])
+        return acknowledgesPriorPoint && pivotsAgainstIt
     }
 
     static func isDeepAssessment(_ lower: String) -> Bool {

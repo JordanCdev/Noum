@@ -8,6 +8,14 @@ struct CoachAssessment: Codable, Equatable {
         case expandable
     }
 
+    enum ToneMode: String, Codable, Equatable {
+        case validate
+        case challenge
+        case explain
+        case prescribe
+        case repair
+    }
+
     var turnDepth: CoachTurnDepth
     var surface: CoachReplySurface
     var questionRestatement: String
@@ -18,6 +26,8 @@ struct CoachAssessment: Codable, Equatable {
     var missingEvidence: [String]
     var nextProofTest: String
     var responseMode: ResponseMode
+    var toneMode: ToneMode? = nil
+    var repairFocus: String? = nil
 
     var evidenceReferenceCount: Int {
         evidenceUsed.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
@@ -48,7 +58,11 @@ struct CoachAssessment: Codable, Equatable {
                 .compactMap { $0 }
                 .joined(separator: " ")
         case .trustRepair:
-            return "Fair push. The useful repair is a direct verdict, the evidence behind it, and one proof test."
+            if let repairFocus,
+               !repairFocus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return "Fair push: \(repairFocus). \(directVerdict) Proof test: \(nextProofTest)"
+            }
+            return "Fair push: I need to repair the answer before adding another drill. \(directVerdict) Proof test: \(nextProofTest)"
         }
     }
 }

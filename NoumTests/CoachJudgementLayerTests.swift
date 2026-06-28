@@ -113,6 +113,17 @@ struct TurnDepthClassifierTests {
             userText: "That's not informative at all. You missed the point."
         ) == .trustRepair)
     }
+
+    @Test func politeHoweverAfterCoachReplyIsTrustRepair() {
+        let history = [
+            CoachMessage(role: .coach, text: "Your next move is to run another timed rep.")
+        ]
+
+        #expect(TurnDepthClassifier.classify(
+            userText: "Okay, that's cool. However, I don't feel like that answered what I meant.",
+            recentTurns: history
+        ) == .trustRepair)
+    }
 }
 
 @Suite("CoachStreamingPartialGateTests")
@@ -280,6 +291,82 @@ struct UserTrajectoryCacheTests {
         cache.invalidate()
     }
 
+    @Test func usableSingleRepRaisesCoverageWithoutClaimingOverallReadiness() {
+        let cache = UserTrajectoryCache.shared
+        cache.invalidate()
+        let session = Self.session(id: UUID(), date: Date(timeIntervalSince1970: 6_000))
+
+        let result = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [session],
+            coachMemory: nil
+        )
+
+        #expect(result.snapshot.evidenceCoverage > 0.05)
+        #expect(result.snapshot.evidenceCoverage < 0.43)
+        cache.invalidate()
+    }
+
+    @Test @MainActor func practiceFinalizerPrewarmsCurrentStoreSnapshot() {
+        let cache = UserTrajectoryCache.shared
+        let sessionStore = PracticeSessionStore.shared
+        let previousSessions = sessionStore.sessions
+        let previousRating = RatingStore.shared.rating
+        let previousMemory = CoachMemoryStore.shared.currentMemory
+
+        sessionStore.replaceAllForDebug([])
+        BaselineStore.shared.rebuild(from: [])
+        RatingStore.shared.replaceForDebug(.initial)
+        CoachMemoryStore.shared.replaceForTesting(nil)
+        cache.invalidate()
+
+        defer {
+            sessionStore.replaceAllForDebug(previousSessions)
+            BaselineStore.shared.rebuild(from: previousSessions)
+            RatingStore.shared.replaceForDebug(previousRating)
+            CoachMemoryStore.shared.replaceForTesting(previousMemory)
+            cache.invalidate()
+        }
+
+        let finalized = PracticeSessionFinalizer.finalize(
+            store: sessionStore,
+            draft: PracticeSessionDraft(
+                transcript: "The decision is to keep one owner, name the risk, and close with the next checkpoint.",
+                fillerWordCount: 0,
+                duration: 54,
+                date: Date(timeIntervalSince1970: 7_000),
+                mode: .timed,
+                transcriptConfidence: 0.92,
+                transcriptionProvider: "unit-test",
+                pressureLevel: .elevated,
+                isRated: true
+            ),
+            annotation: PracticeSessionAnnotation(
+                score: 8,
+                xpEarned: 100,
+                headline: "Clear recommendation",
+                insights: ["Named the decision before the supporting detail."],
+                coachSummary: "The close was specific and calm."
+            )
+        )
+
+        let currentStoreSnapshot = cache.snapshot(
+            profile: CoachingProfileStore.shared.profile,
+            baseline: BaselineStore.shared.baseline,
+            rating: RatingStore.shared.rating,
+            sessions: sessionStore.sessions,
+            coachMemory: CoachMemoryStore.shared.currentMemory
+        )
+
+        #expect(currentStoreSnapshot.cacheHit == true)
+        #expect(currentStoreSnapshot.snapshot.sessionCount == 1)
+        #expect(currentStoreSnapshot.snapshot.latestRepEvidencePack?.score == 8)
+        #expect(currentStoreSnapshot.snapshot.latestRepEvidencePack?.transcriptWordCount ?? 0 > 10)
+        #expect(sessionStore.sessions.first?.id == finalized.id)
+    }
+
     private static func session(
         id: UUID,
         date: Date,
@@ -310,6 +397,147 @@ struct UserTrajectoryCacheTests {
             motivationWhyNow: "",
             successVision: "",
             chosenStyleGoal: voice
+        )
+    }
+}
+
+@Suite("CoachAssessmentCacheTests", .serialized)
+struct CoachAssessmentCacheTests {
+
+    @Test func repeatedInputsReuseTypedAssessment() {
+        let cache = CoachAssessmentCache.shared
+        cache.invalidate()
+        var buildCount = 0
+        let trajectory = Self.trajectory()
+        let rubric = ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative)
+
+        let first = cache.assessment(
+            turnDepth: .deepAssessment,
+            userQuestion: "How far off am I from sounding authoritative?",
+            trajectory: trajectory,
+            rubric: rubric,
+            surface: .text,
+            recentProofTests: [],
+            previousCoachReply: nil,
+            build: {
+                buildCount += 1
+                return CoachReasoningPass.assess(
+                    turnDepth: .deepAssessment,
+                    userQuestion: "How far off am I from sounding authoritative?",
+                    trajectory: trajectory,
+                    rubric: rubric,
+                    surface: .text
+                )
+            }
+        )
+        let second = cache.assessment(
+            turnDepth: .deepAssessment,
+            userQuestion: "How far off am I from sounding authoritative?",
+            trajectory: trajectory,
+            rubric: rubric,
+            surface: .text,
+            recentProofTests: [],
+            previousCoachReply: nil,
+            build: {
+                buildCount += 1
+                return CoachReasoningPass.assess(
+                    turnDepth: .deepAssessment,
+                    userQuestion: "How far off am I from sounding authoritative?",
+                    trajectory: trajectory,
+                    rubric: rubric,
+                    surface: .text
+                )
+            }
+        )
+
+        #expect(first.cacheHit == false)
+        #expect(second.cacheHit == true)
+        #expect(buildCount == 1)
+        #expect(second.assessment == first.assessment)
+        cache.invalidate()
+    }
+
+    @Test func recentProofTestsChangeAssessmentSignature() {
+        let cache = CoachAssessmentCache.shared
+        cache.invalidate()
+        var buildCount = 0
+        let trajectory = Self.trajectory()
+        let rubric = ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative)
+
+        let first = cache.assessment(
+            turnDepth: .quickMove,
+            userQuestion: "How do I slow down without sounding unsure?",
+            trajectory: trajectory,
+            rubric: rubric,
+            surface: .text,
+            recentProofTests: [],
+            previousCoachReply: nil,
+            build: {
+                buildCount += 1
+                return CoachReasoningPass.assess(
+                    turnDepth: .quickMove,
+                    userQuestion: "How do I slow down without sounding unsure?",
+                    trajectory: trajectory,
+                    rubric: rubric,
+                    surface: .text
+                )
+            }
+        )
+        let second = cache.assessment(
+            turnDepth: .quickMove,
+            userQuestion: "How do I slow down without sounding unsure?",
+            trajectory: trajectory,
+            rubric: rubric,
+            surface: .text,
+            recentProofTests: [first.assessment.nextProofTest],
+            previousCoachReply: nil,
+            build: {
+                buildCount += 1
+                return CoachReasoningPass.assess(
+                    turnDepth: .quickMove,
+                    userQuestion: "How do I slow down without sounding unsure?",
+                    trajectory: trajectory,
+                    rubric: rubric,
+                    surface: .text,
+                    recentProofTests: [first.assessment.nextProofTest]
+                )
+            }
+        )
+
+        #expect(second.cacheHit == false)
+        #expect(buildCount == 2)
+        #expect(second.assessment.nextProofTest != first.assessment.nextProofTest)
+        cache.invalidate()
+    }
+
+    private static func trajectory() -> UserTrajectorySnapshot {
+        UserTrajectorySnapshot(
+            generatedAt: Date(timeIntervalSince1970: 1_000),
+            sessionCount: 2,
+            ratedSessionCount: 1,
+            evidenceCoverage: 0.36,
+            recentSessionLines: [
+                "Timed Practice: 7/10, 1 fillers, 60s",
+                "Timed Practice: 6/10, 2 fillers, 55s"
+            ],
+            trendLines: ["recent filler average: 1.5 per rep across last 2"],
+            latestRepEvidencePack: LatestRepEvidencePack(
+                mode: "Timed Practice",
+                score: 7,
+                fillerCount: 1,
+                durationSeconds: 60,
+                wordsPerMinute: 118,
+                transcriptWordCount: 70,
+                transcriptExcerpt: "I would recommend one owner for the decision because the team needs a clear next step",
+                evidenceLines: ["latest rep: Timed Practice, 7/10, 1 fillers, 60s"]
+            ),
+            coachCaseSummary: CoachCaseSummary(
+                hypothesis: "The recommendation is clear but the close softens.",
+                focus: "clean close",
+                evidenceSummary: "Recent reps open better than they close.",
+                nextCoachMove: "test a decision-first close"
+            ),
+            activeInterventionState: nil
         )
     }
 }
@@ -345,6 +573,145 @@ struct CoachReasoningPassTests {
         let read = assessment.immediateCoachRead.lowercased()
         #expect(read.contains("missing"))
         #expect(read.contains("proof test"))
+    }
+
+    @Test func proofTestFollowsUserNamedPacingLever() {
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .quickMove,
+            userQuestion: "How do I slow down without sounding unsure?",
+            trajectory: Self.singleRepTrajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text
+        )
+
+        let proof = assessment.nextProofTest.lowercased()
+        #expect(proof.contains("silent beat"))
+        #expect(!proof.contains("pressure mode"))
+    }
+
+    @Test func proofTestFollowsUserNamedClosingLever() {
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .quickMove,
+            userQuestion: "How do I make the ending stronger?",
+            trajectory: Self.singleRepTrajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text
+        )
+
+        let proof = assessment.nextProofTest.lowercased()
+        #expect(proof.contains("exact decision") || proof.contains("ask"))
+        #expect(proof.contains("stop"))
+    }
+
+    @Test func quickMoveVerdictVariesWithUserNamedLever() {
+        let pacing = CoachReasoningPass.assess(
+            turnDepth: .quickMove,
+            userQuestion: "How do I slow down without sounding unsure?",
+            trajectory: Self.singleRepTrajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text
+        )
+        let ending = CoachReasoningPass.assess(
+            turnDepth: .quickMove,
+            userQuestion: "How do I make the ending stronger?",
+            trajectory: Self.singleRepTrajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text
+        )
+
+        #expect(pacing.directVerdict != ending.directVerdict)
+        #expect(pacing.directVerdict.lowercased().contains("pacing"))
+        #expect(ending.directVerdict.lowercased().contains("ending"))
+        #expect(!pacing.directVerdict.lowercased().contains("overall"))
+        #expect(!ending.directVerdict.lowercased().contains("overall"))
+    }
+
+    @Test func repeatedProofTestVariesWithinUserNamedLever() {
+        let first = CoachReasoningPass.assess(
+            turnDepth: .quickMove,
+            userQuestion: "How do I slow down without sounding unsure?",
+            trajectory: Self.singleRepTrajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text
+        )
+        let second = CoachReasoningPass.assess(
+            turnDepth: .quickMove,
+            userQuestion: "How do I slow down without sounding unsure?",
+            trajectory: Self.singleRepTrajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text,
+            recentProofTests: [first.nextProofTest]
+        )
+
+        #expect(second.nextProofTest != first.nextProofTest)
+        #expect(second.nextProofTest.lowercased().contains("pause") || second.nextProofTest.lowercased().contains("beat"))
+    }
+
+    @Test func trustRepairAssessmentNamesColdFrictionBeforePrescribing() {
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .trustRepair,
+            userQuestion: "This still feels robotic and cold, like generic AI tips.",
+            trajectory: Self.singleRepTrajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text,
+            previousCoachReply: "Keep practicing and try to communicate clearly."
+        )
+
+        #expect(assessment.toneMode == .repair)
+        #expect(assessment.repairFocus == "I sounded cold instead of giving a human coach read")
+        #expect(assessment.evidenceUsed.first == "trust repair signal: I sounded cold instead of giving a human coach read")
+        #expect(assessment.immediateCoachRead.lowercased().hasPrefix("fair push: i sounded cold"))
+        #expect(!assessment.immediateCoachRead.lowercased().contains("the useful repair is"))
+    }
+
+    @Test func promptBundleCarriesRepairFocusAsProviderConstraint() {
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .trustRepair,
+            userQuestion: "Okay, that's cool. However, that still feels generic.",
+            trajectory: Self.singleRepTrajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text,
+            previousCoachReply: "Keep practicing and try to communicate clearly."
+        )
+
+        let context = CoachPromptBundle.contextBlock(
+            assessment: assessment,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text
+        )
+
+        #expect(context.contains("- Tone mode: repair."))
+        #expect(context.contains("- Repair focus:"))
+        #expect(context.contains("Acknowledge this before prescribing again."))
+        #expect(context.contains("Do not give another drill until the repair focus has been named."))
+    }
+
+    @Test func assessmentConfidenceMovesWithEvidenceCoverage() {
+        var lowCoverage = Self.singleRepTrajectory
+        lowCoverage.evidenceCoverage = 0.05
+        var higherCoverage = Self.singleRepTrajectory
+        higherCoverage.sessionCount = 8
+        higherCoverage.ratedSessionCount = 5
+        higherCoverage.evidenceCoverage = 0.76
+
+        let low = CoachReasoningPass.assess(
+            turnDepth: .deepAssessment,
+            userQuestion: "How far off am I from sounding authoritative?",
+            trajectory: lowCoverage,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text
+        )
+        let higher = CoachReasoningPass.assess(
+            turnDepth: .deepAssessment,
+            userQuestion: "How far off am I from sounding authoritative?",
+            trajectory: higherCoverage,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text
+        )
+
+        #expect(low.confidence == 0.20)
+        #expect(higher.confidence > low.confidence + 0.30)
+        #expect(higher.confidence <= 0.82)
     }
 
     private static let singleRepTrajectory = UserTrajectorySnapshot(
@@ -577,6 +944,34 @@ struct CoachSemanticQualityGateAdversarialTests {
             turnDepth: .trustRepair,
             assessment: Self.baseDeep
         )
+        #expect(issue == nil)
+    }
+
+    @Test func trustRepairMustNameAssessmentRepairFocus() {
+        var assessment = Self.baseDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "I sounded cold instead of giving a human coach read"
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push — that was not good enough. Proof test: record one verdict-first rep.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        #expect(issue == .missingDirectVerdict)
+    }
+
+    @Test func trustRepairWithAssessmentRepairFocusIsAccepted() {
+        var assessment = Self.baseDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "I sounded cold instead of giving a human coach read"
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push — that sounded cold, not like a human coach read. Proof test: record one verdict-first rep.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
         #expect(issue == nil)
     }
 
@@ -1346,6 +1741,21 @@ struct CoachProvisionalReadEligibilityTests {
             responseMode: .expandable,
             realtimeCoachModeEnabled: false
         ) == false)
+    }
+
+    @Test func proofTestHashIsStableAndNormalized() {
+        let first = CoachReplyPipeline.proofTestHash(
+            for: " Record one verdict-first rep. "
+        )
+        let second = CoachReplyPipeline.proofTestHash(
+            for: "record one verdict-first rep."
+        )
+        let different = CoachReplyPipeline.proofTestHash(
+            for: "Use one silent beat after the verdict."
+        )
+
+        #expect(first == second)
+        #expect(first != different)
     }
 }
 

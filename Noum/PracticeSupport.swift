@@ -9244,6 +9244,13 @@ enum PracticeSessionFinalizer {
         // enforced by `PostRepCoachNoteStore.record`).
         Self.recordPostRepCoachNote(for: finalized)
 
+        // Ask Noum may be opened before the summary lifecycle performs the
+        // richer coach-memory refresh. Warm a session/baseline/rating snapshot
+        // now so the first chat turn after a rep is not a cold trajectory read;
+        // `SessionFinalizer` and `CoachMemoryStore.persist` will refresh it
+        // again once the durable case formulation lands.
+        _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
+
         return finalized
     }
 
