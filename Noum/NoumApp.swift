@@ -7,6 +7,9 @@
 
 #if canImport(SwiftUI)
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 #if canImport(FirebaseCore)
 import FirebaseCore
 #endif
@@ -14,12 +17,37 @@ import FirebaseCore
 import GoogleSignIn
 #endif
 
+#if canImport(UIKit)
+/// Minimal UIKit app delegate whose only job is to configure Firebase inside
+/// `didFinishLaunchingWithOptions`. That callback runs BEFORE a SwiftUI `App`
+/// struct's stored properties initialize and before FirebaseCore's launch-time
+/// configuration check — which is what actually silences the I-COR000003
+/// "default Firebase app has not yet been configured" warning AND the
+/// AppDelegate-swizzler "does not conform to UIApplicationDelegate" warning
+/// (now there IS a conforming delegate). The real work lives in
+/// `FirebaseBootstrap.configure()`, which no-ops once Firebase is set up, so
+/// the belt-and-suspenders call below stays safe.
+final class NoumAppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        FirebaseBootstrap.configure()
+        return true
+    }
+}
+#endif
+
 struct NoumApp: App {
-    // MUST be the first stored property: Swift runs property initializers
-    // in declaration order BEFORE init(), and the @StateObject singletons
-    // below can touch Firebase during their own init — configuring here
-    // (not in init()) is what guarantees FirebaseApp.configure() wins the
-    // race (fixes the I-COR000003 "not yet been configured" launch warning).
+    #if canImport(UIKit)
+    // Configures Firebase at `didFinishLaunchingWithOptions` time — early
+    // enough to satisfy FirebaseCore's launch check (see NoumAppDelegate).
+    @UIApplicationDelegateAdaptor(NoumAppDelegate.self) private var appDelegate
+    #endif
+    // Belt-and-suspenders: also configure as the first stored property so the
+    // @StateObject singletons below can never touch Firebase before it exists
+    // (e.g. on a platform without a UIKit delegate). Guarded no-op once the
+    // delegate above has already configured it.
     private let firebaseReady: Void = FirebaseBootstrap.configure()
     @StateObject private var firstRunOnboarding = FirstRunOnboardingManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared

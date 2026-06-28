@@ -57,6 +57,17 @@ actor KnowledgeSemanticReranker {
         guard readiness == .cold else { return }
         readiness = .warming
 
+        #if targetEnvironment(simulator)
+        // NLContextualEmbedding cannot load in the iOS Simulator (Apple
+        // FB22699606). Merely constructing/loading it spams the console on
+        // every launch with "Permission denied [/var/db/com.apple.naturallanguaged/…]"
+        // and "Failed to load embedding model" — noise that looks like an error
+        // but isn't. The reply path already falls back to BM25 whenever
+        // readiness != .ready, so short-circuit here to keep the Simulator
+        // console clean. Device builds skip this branch and load normally.
+        readiness = .unavailable
+        return
+        #else
         guard let embedding = NLContextualEmbedding(language: .english) else {
             readiness = .unavailable
             return
@@ -99,6 +110,7 @@ actor KnowledgeSemanticReranker {
             // Simulator permission error, offline, asset failure — degrade calmly.
             readiness = .unavailable
         }
+        #endif
     }
 
     // MARK: Rerank (reply path — never blocks on assets)
