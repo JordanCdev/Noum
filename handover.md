@@ -47,6 +47,45 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-28 (autonomous `noum2` run). **Turned the recurring #1 ceiling-blocker
+("heuristic, uncalibrated scoring") into a real artifact + fixed the honesty gap
+it surfaced. Build+test GREEN on the real toolchain; no push.** Full write-up:
+`docs/COACH_PARITY_EVAL_2026-06-28_noum2.md`; substrate doc:
+`docs/COACH_READ_CALIBRATION_SUBSTRATE.md`.
+
+- **Shipped the coach-read CALIBRATION SUBSTRATE** —
+  `NoumTests/CoachReadCalibrationBaselineTests.swift`: 15 expert-baseline fixtures
+  exercising `CoachReasoningPass.assess` across coverage 0.22→0.82, the 0.35
+  abstention boundary, the 175-WPM pacing flip, pressure-proven vs. unproven goals,
+  all four turn depths, both surfaces. Each asserts the *expert-acceptable band*
+  (abstain / no-overclaim / disclose-pressure / confidence bounds). Authored by a
+  5-role workflow (veteran coach · skeptical end-user · market/competitor · UX-honesty
+  · Swift-QA), adversarially screened (2 of 25 rejected — tautological / numerically
+  inconsistent with the real 0.68 mechanics threshold). This is `docs/VISION.md`'s
+  top "high-leverage next product move" (version-controlled eval set vs. expert
+  baselines, labelled substrate-not-validation), now real and extensible.
+- **Fixed a genuine honesty gap the substrate immediately caught** — in
+  `Noum/CoachReasoningPass.swift` `missingEvidence`, `.append(pressure) + .prefix(3)`
+  silently DROPPED the "unproven under pressure" disclosure on weak reps (≥3 failing
+  dimensions evicted it), exactly where stakes-readiness matters most. The two
+  cardinal disclosures (coverage floor + pressure-unproven) are now ordered ahead of
+  dimension-specific gaps so the cap can never evict them. 3 red fixtures → green;
+  **0 regressions** across `CoachReasoningPassTests`, `CoachSemanticQualityGate(+Adversarial)Tests`,
+  `AICoachChat*`, `AskNoumProvisionalReadTests`, provider-routing (82+ cases green via xcresult).
+- **Role panel scored the judgement layer in ISOLATION at mean 6.2/10** (NOT a
+  whole-app re-score — that holds at ~7.7 from the noum-1 run earlier today). Unanimous,
+  code-grounded read: it is a trustworthy honesty/calibration *governor* deliberately
+  built NOT to replace a coach; its ceiling is keyword/threshold PROXY scoring
+  (decision-word / hedge-token / WPM-band) standing in for perceived delivery.
+- **10/10 answer, unchanged:** literal "with no doubt replaces a human coach" stays
+  REFUSED by design (`CoachParityReadiness` `.forming` cap = the trust moat; do NOT
+  remove). What changed is the *credibility of the substrate beneath that answer*:
+  "scoring is uncalibrated" was a hand-wave, now it's a green 15-fixture measurement —
+  the precondition for ever lifting the cap with evidence. Most-cited *fixable* gap:
+  one `authoritative` rubric serves all voices (add a 2nd rubric + its fixtures next).
+  Human-only levers unchanged: flag-flip + device felt-QA [highest], real-coach review
+  of the 15 bands + longitudinal outcomes, delivery-signal/cloud-STT decision.
+
 2026-06-28 (autonomous `noum-1` run). **Verified the just-landed coach judgement
 layer is REAL (not stub), build+test GREEN on the real toolchain, and shipped one
 collision-safe slice: an adversarial test suite locking the semantic gate. No push.**

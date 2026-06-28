@@ -160,16 +160,27 @@ enum CoachReasoningPass {
         guard depth == .deepAssessment || depth == .trustRepair else {
             return []
         }
-        var missing = scores
+        let dimensionGaps = scores
             .filter { $0.score < 0.68 }
             .compactMap(\.missingEvidence)
+
+        // The two cardinal honesty disclosures — the coverage floor and the
+        // unproven-under-pressure gap — must never be evicted by dimension-
+        // specific gaps. On a weak rep that fails three-plus dimensions at once,
+        // the old `.append` + `.prefix(3)` quietly dropped the pressure
+        // disclosure exactly when stakes-readiness mattered most, letting the
+        // read imply more readiness than the evidence supports. Order the
+        // disclosures the coach must always surface ahead of the rest, then cap.
+        var priority: [String] = []
         if trajectory.evidenceCoverage < 0.70 {
-            missing.insert("Need repeated evidence across more than one clean rep before calling the user close overall.", at: 0)
+            priority.append("Need repeated evidence across more than one clean rep before calling the user close overall.")
         }
-        if !missing.contains(where: { $0.lowercased().contains("pressure") }) {
-            missing.append("Need pressure-mode evidence before treating the goal as ready for real stakes.")
+        let pressureGaps = dimensionGaps.filter { $0.lowercased().contains("pressure") }
+        let otherGaps = dimensionGaps.filter { !$0.lowercased().contains("pressure") }
+        if pressureGaps.isEmpty && !priority.contains(where: { $0.lowercased().contains("pressure") }) {
+            priority.append("Need pressure-mode evidence before treating the goal as ready for real stakes.")
         }
-        return Array(unique(missing).prefix(3))
+        return Array(unique(priority + pressureGaps + otherGaps).prefix(3))
     }
 
     private static func nextProofTest(
