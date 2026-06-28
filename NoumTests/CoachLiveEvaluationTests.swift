@@ -224,6 +224,16 @@ struct CoachLiveEvaluationTests {
                 emit("visionScore: \(vision.score) passesProductionFloor=\(vision.passesProductionFloor) missed=\(vision.missed.map { $0.rawValue }.joined(separator: ","))")
                 emit("qualityIssue: \(String(describing: issue))")
                 emit("semanticIssue: \(String(describing: semanticIssue))")
+                let reliability = CoachReliabilityGate.evaluate(
+                    replyText: reply,
+                    previousCoachReply: history.last { $0.role == .coach }?.text,
+                    turnDepth: judgement.turnDepth,
+                    assessment: judgement.assessment,
+                    evidenceCoverage: judgement.trajectory.snapshot.evidenceCoverage,
+                    surface: .text
+                )
+                emit("reliabilityFallbackApplied: \(reliability.blocked)")
+                emit("reliabilityIssues: \(reliability.issues.isEmpty ? "none" : reliability.issues.map(\.rawValue).joined(separator: ","))")
 
                 if issue != nil || semanticIssue != nil || !rubric.passesSeniorCoachFloor || !vision.passesProductionFloor {
                     failed = true

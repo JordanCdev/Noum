@@ -11,6 +11,7 @@ enum CoachBrainFlags {
     static let realtimeCoachModeEnabledKey = "NOUM_REALTIME_COACH_MODE_ENABLED"
     static let semanticGateDryRunEnabledKey = "NOUM_COACH_SEMANTIC_GATE_DRY_RUN"
     static let providerStreamingEnabledKey = "NOUM_COACH_PROVIDER_STREAMING_ENABLED"
+    static let reliabilityGateEnabledKey = "NOUM_COACH_RELIABILITY_GATE_ENABLED"
 
     /// Master switch for the deterministic assessment pass. Default on; a
     /// config value of false keeps the chat pipeline on its pre-judgement
@@ -50,6 +51,18 @@ enum CoachBrainFlags {
     static var providerStreamingEnabled: Bool {
         boolFlag(
             key: providerStreamingEnabledKey,
+            defaultValue: true
+        )
+    }
+
+    /// Master switch for the last-mile `CoachReliabilityGate`. Default on: a
+    /// final reply that is empty, a verbatim duplicate, a placeholder stub, or a
+    /// leaked scaffold is replaced with a truthful coach-shaped fallback before
+    /// it reaches the UI. Off keeps the pre-gate behaviour (whatever the provider
+    /// chain produced ships as-is).
+    static var reliabilityGateEnabled: Bool {
+        boolFlag(
+            key: reliabilityGateEnabledKey,
             defaultValue: true
         )
     }

@@ -371,8 +371,50 @@ enum CoachReplyPipeline {
             }
         )
         let completionAt = Date()
+
+        // Last-mile reliability gate: after the provider chain and its internal
+        // repair loops, catch a final reply that is empty, a verbatim repeat of
+        // the previous coach turn, a placeholder stub, or a leaked scaffold, and
+        // substitute a truthful coach-shaped fallback before it reaches the UI.
+        // Soft smells (floor-pinned confidence, missing attunement on pushback,
+        // repeated proof-test) are recorded in metadata but never replace an
+        // otherwise-fine reply. Flag-guarded; off keeps the pre-gate behaviour.
+        let reliabilityVerdict: CoachReliabilityVerdict
+        if CoachBrainFlags.reliabilityGateEnabled, case .reply(let rawText) = outcome {
+            reliabilityVerdict = CoachReliabilityGate.evaluate(
+                replyText: CoachReplyTextSanitizer.coachReplyText(from: rawText),
+                previousCoachReply: previousCoachReply,
+                turnDepth: turnDepth,
+                assessment: assessment,
+                evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
+                proofTestRecentlyRepeated: proofTestRecentlyRepeated ?? false,
+                surface: surface
+            )
+        } else {
+            reliabilityVerdict = .clean
+        }
+        let effectiveOutcome: ChatOutcome = reliabilityVerdict.fallbackText.map { .reply($0) } ?? outcome
+        if reliabilityVerdict.blocked {
+            AICallDiagnostics.record(
+                surface: "Coach reliability gate",
+                providerName: "CoachReplyPipeline",
+                model: "CoachReliabilityGate",
+                outcome: .fallback,
+                reason: "blocked=\(reliabilityVerdict.blockingIssues.map(\.rawValue).joined(separator: ",")) issues=\(reliabilityVerdict.issues.map(\.rawValue).joined(separator: ",")) turnDepth=\(turnDepth.rawValue) surface=\(surface.rawValue)"
+            )
+            Self.log.notice("reliability gate replaced reply blocking=\(reliabilityVerdict.blockingIssues.map(\.rawValue).joined(separator: ","), privacy: .public)")
+        } else if !reliabilityVerdict.issues.isEmpty {
+            AICallDiagnostics.record(
+                surface: "Coach reliability gate",
+                providerName: "CoachReplyPipeline",
+                model: "CoachReliabilityGate",
+                outcome: .success,
+                reason: "softIssues=\(reliabilityVerdict.issues.map(\.rawValue).joined(separator: ",")) turnDepth=\(turnDepth.rawValue) surface=\(surface.rawValue)"
+            )
+        }
+
         let finalVision: CoachVisionEvaluationResult? = {
-            guard case .reply(let rawText) = outcome else { return nil }
+            guard case .reply(let rawText) = effectiveOutcome else { return nil }
             let reply = CoachReplyTextSanitizer.coachReplyText(from: rawText)
             guard !reply.isEmpty else { return nil }
             return AICoachChatService.coachVisionEvaluation(
@@ -391,11 +433,11 @@ enum CoachReplyPipeline {
             )
         }()
         let finalReplyWordCount: Int? = {
-            guard case .reply(let rawText) = outcome else { return nil }
+            guard case .reply(let rawText) = effectiveOutcome else { return nil }
             return Self.wordCount(in: CoachReplyTextSanitizer.coachReplyText(from: rawText))
         }()
         let finalSemanticGateOutcome = Self.semanticGateOutcome(
-            for: outcome,
+            for: effectiveOutcome,
             turnDepth: turnDepth,
             assessment: assessment
         )
@@ -441,7 +483,9 @@ enum CoachReplyPipeline {
             providerName: providerChoice?.providerName,
             providerModel: providerChoice?.model,
             trajectoryCacheHit: trajectoryResult.cacheHit,
-            surface: surface
+            surface: surface,
+            reliabilityIssues: reliabilityVerdict.issues.isEmpty ? nil : reliabilityVerdict.issues,
+            reliabilityFallbackApplied: reliabilityVerdict.blocked ? true : nil
         )
         AICallDiagnostics.record(
             surface: "Coach response timing",
@@ -479,12 +523,14 @@ enum CoachReplyPipeline {
                 "providerAttemptCount=\(finalMetadata.providerAttemptCount ?? 0)",
                 "providerRefusalCount=\(finalMetadata.providerRefusalCount ?? 0)",
                 "semanticGateIssue=\(finalMetadata.semanticGateIssue ?? "none")",
-                "semanticGate=\(finalMetadata.semanticGateOutcome?.logValue ?? "notEvaluated")"
+                "semanticGate=\(finalMetadata.semanticGateOutcome?.logValue ?? "notEvaluated")",
+                "reliabilityFallback=\(reliabilityVerdict.blocked)",
+                "reliabilityIssues=\(reliabilityVerdict.issues.isEmpty ? "none" : reliabilityVerdict.issues.map(\.rawValue).joined(separator: ","))"
             ].joined(separator: " "),
             startedAt: turnStartedAt,
             now: completionAt
         )
-        switch outcome {
+        switch effectiveOutcome {
         case .reply(let text):
             Self.log.info("coach pipeline produced live reply chars=\(text.count, privacy: .public)")
         case .failure(let failure):
@@ -492,10 +538,10 @@ enum CoachReplyPipeline {
         }
         AskNoumStore.shared.completeCoachTurn(
             id: coachID,
-            outcome: outcome,
+            outcome: effectiveOutcome,
             metadata: finalMetadata
         )
-        return outcome
+        return effectiveOutcome
     }
 
     private static func semanticGateOutcome(

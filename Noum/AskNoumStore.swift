@@ -206,6 +206,12 @@ struct CoachTurnMetadata: Codable, Equatable {
     var voiceBargeInOccurred: Bool?
     var trajectoryCacheHit: Bool?
     var surface: CoachReplySurface?
+    /// Reliability-gate findings on the final reply (blocking + soft). Empty/nil
+    /// when the gate did not run or found nothing.
+    var reliabilityIssues: [CoachReliabilityIssue]?
+    /// True when a blocking reliability issue caused the truthful fallback to
+    /// replace the provider's reply before it reached the UI.
+    var reliabilityFallbackApplied: Bool?
 
     init(
         turnDepth: CoachTurnDepth? = nil,
@@ -242,7 +248,9 @@ struct CoachTurnMetadata: Codable, Equatable {
         coldnessComplaintFlag: Bool? = nil,
         voiceBargeInOccurred: Bool? = nil,
         trajectoryCacheHit: Bool? = nil,
-        surface: CoachReplySurface? = nil
+        surface: CoachReplySurface? = nil,
+        reliabilityIssues: [CoachReliabilityIssue]? = nil,
+        reliabilityFallbackApplied: Bool? = nil
     ) {
         self.turnDepth = turnDepth
         self.providerTier = providerTier
@@ -279,6 +287,8 @@ struct CoachTurnMetadata: Codable, Equatable {
         self.voiceBargeInOccurred = voiceBargeInOccurred
         self.trajectoryCacheHit = trajectoryCacheHit
         self.surface = surface
+        self.reliabilityIssues = reliabilityIssues
+        self.reliabilityFallbackApplied = reliabilityFallbackApplied
     }
 }
 
