@@ -88,8 +88,10 @@ struct CoachLiveEvaluationTests {
             ? outputPath!
             : Self.defaultReportPath()
 
-        emit("# Noum Live Coach Eval")
+        emit("# Noum Chat With Noum Live Transcripts")
         emit("")
+        emit("Purpose: live transcript capture through the Ask Noum chat service, context builder, retrieved coaching expertise, quote guard, professional-coach gate, and typed judgement pass.")
+        emit("Secrets: API keys and request bodies are not written to this report.")
         emit("reportPath: \(resolvedOutputPath)")
         emit("fixtures: \(fixtures.map { $0.id }.joined(separator: ","))")
         emit("providerChain: \(Self.liveProviderChain().map { "\($0.displayName) (\($0.model))" }.joined(separator: " -> "))")
@@ -101,9 +103,15 @@ struct CoachLiveEvaluationTests {
                 voice: fixture.profile?.speakingStyleGoal,
                 hasDiagnosis: !fixture.sessions.isEmpty
             )
-            let context = Self.liveContext(for: fixture, coachingExpertise: expertise)
+            var context = Self.liveContext(for: fixture, coachingExpertise: expertise)
             let system = CoachContextBuilder.systemPrompt(for: fixture.profile)
             let history = Self.history(for: fixture)
+            let judgement = Self.judgement(for: fixture, history: history, surface: .text)
+            context += "\n" + CoachPromptBundle.contextBlock(
+                assessment: judgement.assessment,
+                rubric: judgement.rubric,
+                surface: .text
+            )
             let recentTimed = fixture.sessions
                 .filter { $0.mode == .timed }
                 .max(by: { $0.date < $1.date })
@@ -116,7 +124,14 @@ struct CoachLiveEvaluationTests {
                 history: history,
                 systemPrompt: system,
                 userContext: context,
-                grounding: grounding
+                grounding: grounding,
+                turnDepth: judgement.turnDepth,
+                assessment: judgement.assessment,
+                surface: .text,
+                preferredTier: CoachPromptBundle.preferredProviderTier(
+                    for: judgement.turnDepth,
+                    surface: .text
+                )
             )
             let records = diagnostics.records
             let newRecords = Array(records.dropFirst(diagnosticCursor))
@@ -125,7 +140,17 @@ struct CoachLiveEvaluationTests {
             emit("")
             emit("## \(fixture.id)")
             emit("")
-            emit("turn: \(fixture.latestUserTurn)")
+            emit("userTurn: \(fixture.latestUserTurn)")
+            emit("turnDepth: \(judgement.turnDepth.rawValue)")
+            emit("providerTier: \(CoachPromptBundle.preferredProviderTier(for: judgement.turnDepth, surface: .text).rawValue)")
+            emit("trajectoryCacheHit: \(judgement.trajectory.cacheHit)")
+            emit("assessmentConfidence: \(String(format: "%.2f", judgement.assessment.confidence))")
+            emit("assessmentVerdict: \(judgement.assessment.directVerdict)")
+            emit("assessmentImmediateRead: \(judgement.assessment.immediateCoachRead)")
+            if !judgement.assessment.missingEvidence.isEmpty {
+                emit("missingEvidence: \(judgement.assessment.missingEvidence.joined(separator: " | "))")
+            }
+            emit("proofTest: \(judgement.assessment.nextProofTest)")
             emit("brain: \(expertise.map { $0.id }.joined(separator: ", "))")
             emit("diagnostics:")
             for record in newRecords {
@@ -147,21 +172,36 @@ struct CoachLiveEvaluationTests {
                         latestUserTurn: fixture.latestUserTurn,
                         recentUserTurns: history.filter { $0.role == .user }.map { $0.text }
                     ),
-                    systemContext: context
+                    systemContext: context,
+                    turnDepth: judgement.turnDepth,
+                    surface: .text
+                )
+                let semanticIssue = AICoachChatService.semanticQualityIssue(
+                    in: reply,
+                    turnDepth: judgement.turnDepth,
+                    assessment: judgement.assessment
                 )
 
                 emit("")
-                emit("reply:")
+                emit("transcript:")
+                emit("")
+                emit("User: \(fixture.latestUserTurn)")
+                emit("")
+                emit("Noum: \(reply)")
+                emit("")
+                emit("rawReply:")
                 emit("")
                 emit(reply)
                 emit("")
                 emit("rubric: score=\(rubric.score) misses=\(rubric.misses.map { $0.rawValue }.joined(separator: ","))")
                 emit("qualityIssue: \(String(describing: issue))")
+                emit("semanticIssue: \(String(describing: semanticIssue))")
 
-                if issue != nil || !rubric.passesSeniorCoachFloor {
+                if issue != nil || semanticIssue != nil || !rubric.passesSeniorCoachFloor {
                     failed = true
                 }
                 #expect(issue == nil)
+                #expect(semanticIssue == nil)
                 #expect(rubric.passesSeniorCoachFloor)
 
             case .failure(let failure):
@@ -252,6 +292,48 @@ struct CoachLiveEvaluationTests {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         return wanted.compactMap { id in all.first { $0.id == id } }
+    }
+
+    private struct JudgementContext {
+        let turnDepth: CoachTurnDepth
+        let trajectory: UserTrajectoryCacheResult
+        let rubric: ActiveGoalRubric
+        let assessment: CoachAssessment
+    }
+
+    private static func judgement(
+        for fixture: CoachChatEvaluationFixture,
+        history: [CoachMessage],
+        surface: CoachReplySurface
+    ) -> JudgementContext {
+        let turnDepth = CoachBrainFlags.judgementPassEnabled
+            ? TurnDepthClassifier.classify(
+                userText: fixture.latestUserTurn,
+                recentTurns: history,
+                liveMode: surface == .live
+            )
+            : .groundedRead
+        let trajectory = UserTrajectoryCache.shared.snapshot(
+            profile: fixture.profile,
+            baseline: .empty,
+            rating: .initial,
+            sessions: fixture.sessions,
+            coachMemory: nil
+        )
+        let rubric = GoalRubricStore.activeRubric(for: fixture.profile)
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: turnDepth,
+            userQuestion: fixture.latestUserTurn,
+            trajectory: trajectory.snapshot,
+            rubric: rubric,
+            surface: surface
+        )
+        return JudgementContext(
+            turnDepth: turnDepth,
+            trajectory: trajectory,
+            rubric: rubric,
+            assessment: assessment
+        )
     }
 
     private static func history(for fixture: CoachChatEvaluationFixture) -> [CoachMessage] {

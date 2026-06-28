@@ -174,9 +174,19 @@ enum CoachChatEvaluationCorpus {
         "critique-trust-repair",
         "markdown-tts-trust-repair",
         "assistant-explainer-register",
+        "authoritative-distance-deep-assessment",
         "what-next-single-move",
         "overclaim-hypothesis-boundary",
-        "leadership-transfer-setup"
+        "leadership-transfer-setup",
+        "pace-control-next-rep",
+        "closing-ask-proof-test",
+        "opening-verdict-next-rep",
+        "pause-before-answer-drill",
+        "concise-answer-next-rep",
+        "structure-one-reason-proof",
+        "confidence-clean-stop",
+        "answer-depth-one-example",
+        "closing-stop-no-summary"
     ]
 
     static let fixtures: [CoachChatEvaluationFixture] = [
@@ -365,6 +375,37 @@ enum CoachChatEvaluationCorpus {
             expectedBadIssue: .roboticPhrase("i understand your frustration")
         ),
         CoachChatEvaluationFixture(
+            id: "authoritative-distance-deep-assessment",
+            pillar: .honesty,
+            expertBaseline: .pending,
+            profile: profile(voice: .authoritative, challenge: .fillerWords),
+            sessions: [
+                session(
+                    id: "99999999-9999-9999-9999-999999999999",
+                    transcript: "My recommendation is to keep the launch date because the customer migration risk is contained, and the team needs a clear decision today.",
+                    fillerCount: 1,
+                    duration: 60,
+                    daysAgo: 0,
+                    mode: .timed,
+                    score: 7,
+                    prompt: "Give a direct stakeholder recommendation."
+                )
+            ],
+            trends: [],
+            latestUserTurn: "How far off am I from sounding authoritative?",
+            previousCoachReply: nil,
+            expectedContextNeedles: [
+                "RECENT (most-recent first)",
+                "7/10",
+                "1 filler",
+                "ARGUMENT LOGIC",
+                "authoritative"
+            ],
+            referenceReply: "You are closer mechanically than you are to sounding authoritative overall. Your last rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.",
+            knownBadReply: "This proves you are close to sounding authoritative. You scored 7/10, so use fewer fillers next time.",
+            expectedBadIssue: .overclaimsEvidence
+        ),
+        CoachChatEvaluationFixture(
             id: "what-next-single-move",
             pillar: .validation,
             expertBaseline: .pending,
@@ -467,6 +508,366 @@ enum CoachChatEvaluationCorpus {
             referenceReply: "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
             knownBadReply: "You should think about your audience and try to communicate clearly.",
             expectedBadIssue: .ignoredCoachingExpertise
+        ),
+        CoachChatEvaluationFixture(
+            id: "pace-control-next-rep",
+            pillar: .prescription,
+            expertBaseline: .pending,
+            profile: profile(voice: .executive, challenge: .rushing),
+            sessions: [
+                session(
+                    id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                    transcript: "The decision is to keep support staffed through Friday because the migration will create two peak windows, and I need approval today.",
+                    fillerCount: 0,
+                    duration: 38,
+                    daysAgo: 1,
+                    mode: .timed,
+                    score: 7,
+                    prompt: "Give a calm operations update."
+                )
+            ],
+            trends: [
+                SkillTrend(
+                    skillArea: .paceControl,
+                    direction: .declining,
+                    confidence: .medium,
+                    windowSize: 4,
+                    currentLevel: .developing,
+                    recentDelta: "recent reps are landing compressed"
+                )
+            ],
+            latestUserTurn: "How do I slow down without sounding unsure?",
+            previousCoachReply: nil,
+            expectedContextNeedles: [
+                "RECENT (most-recent first)",
+                "0 fillers",
+                "TRENDS",
+                "Current coaching hypothesis: Pace is the next lever",
+                "recent reps are landing compressed"
+            ],
+            referenceReply: "Your last rep is clean but compressed. Next rep, keep the same first sentence, then pause once after the decision so the reason has room to land.",
+            knownBadReply: "Based on your data, slow down and sound more confident.",
+            expectedBadIssue: .roboticPhrase("based on your data")
+        ),
+        CoachChatEvaluationFixture(
+            id: "closing-ask-proof-test",
+            pillar: .validation,
+            expertBaseline: .pending,
+            profile: profile(voice: .persuasive, challenge: .rambling),
+            sessions: [
+                session(
+                    id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                    transcript: "The pilot is working, adoption is up, and I need your approval to expand it next week.",
+                    fillerCount: 1,
+                    duration: 54,
+                    daysAgo: 1,
+                    mode: .timed,
+                    score: 7,
+                    prompt: "Make a persuasive request."
+                )
+            ],
+            trends: [
+                SkillTrend(
+                    skillArea: .closingStrength,
+                    direction: .declining,
+                    confidence: .medium,
+                    windowSize: 4,
+                    currentLevel: .developing,
+                    recentDelta: "final ask has softened in recent reps"
+                )
+            ],
+            latestUserTurn: "How do I make the ending stronger?",
+            previousCoachReply: nil,
+            expectedContextNeedles: [
+                "RECENT (most-recent first)",
+                "1 filler",
+                "TRENDS",
+                "Current coaching hypothesis: Closings is the next lever",
+                "final ask has softened in recent reps"
+            ],
+            referenceReply: "Your last rep already named the approval ask, but the close still softened after the evidence. Next rep, make the final sentence the ask itself: approve the expansion next week, then stop.",
+            knownBadReply: "Based on your data, think about your audience and communicate more clearly.",
+            expectedBadIssue: .roboticPhrase("based on your data")
+        ),
+        CoachChatEvaluationFixture(
+            id: "opening-verdict-next-rep",
+            pillar: .prescription,
+            expertBaseline: .pending,
+            profile: profile(voice: .authoritative, challenge: .rambling),
+            sessions: [
+                session(
+                    id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+                    transcript: "The answer is yes, the pilot is ready to expand because usage is up and support volume is stable.",
+                    fillerCount: 0,
+                    duration: 46,
+                    daysAgo: 1,
+                    mode: .timed,
+                    score: 8,
+                    prompt: "Give a concise recommendation."
+                )
+            ],
+            trends: [
+                SkillTrend(
+                    skillArea: .openingStrength,
+                    direction: .declining,
+                    confidence: .medium,
+                    windowSize: 4,
+                    currentLevel: .developing,
+                    recentDelta: "openers are warming up before the point"
+                )
+            ],
+            latestUserTurn: "How do I make the opening stronger?",
+            previousCoachReply: nil,
+            expectedContextNeedles: [
+                "RECENT (most-recent first)",
+                "0 fillers",
+                "TRENDS",
+                "openers are warming up before the point",
+                "COACHING EXPERTISE"
+            ],
+            referenceReply: "Your last rep is clean, but the useful gap is the opener: it warms into the point, so the verdict arrives late. Next rep, make sentence one the verdict, then add one reason.",
+            knownBadReply: "Based on your data, make the opening clearer.",
+            expectedBadIssue: .roboticPhrase("based on your data")
+        ),
+        CoachChatEvaluationFixture(
+            id: "pause-before-answer-drill",
+            pillar: .prescription,
+            expertBaseline: .pending,
+            profile: profile(voice: .executive, challenge: .freezing),
+            sessions: [
+                session(
+                    id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+                    transcript: "I think we should pause the rollout because the support queue is overloaded and the customer risk is still open.",
+                    fillerCount: 2,
+                    duration: 50,
+                    daysAgo: 1,
+                    mode: .timed,
+                    score: 6,
+                    prompt: "Respond to a difficult stakeholder question."
+                )
+            ],
+            trends: [
+                SkillTrend(
+                    skillArea: .pauseUsage,
+                    direction: .declining,
+                    confidence: .medium,
+                    windowSize: 4,
+                    currentLevel: .developing,
+                    recentDelta: "pauses are disappearing under pressure"
+                )
+            ],
+            latestUserTurn: "What should I practice when I freeze before answering?",
+            previousCoachReply: nil,
+            expectedContextNeedles: [
+                "RECENT (most-recent first)",
+                "2 fillers",
+                "TRENDS",
+                "pauses are disappearing under pressure",
+                "COACHING EXPERTISE"
+            ],
+            referenceReply: "Your last rep had 2 fillers, and the signal is the pause disappearing before the answer. Next rep, hold one silent beat before sentence one, then answer.",
+            knownBadReply: "Based on your data, practice confidence and communicate clearly.",
+            expectedBadIssue: .roboticPhrase("based on your data")
+        ),
+        CoachChatEvaluationFixture(
+            id: "concise-answer-next-rep",
+            pillar: .prescription,
+            expertBaseline: .pending,
+            profile: profile(voice: .concise, challenge: .rambling),
+            sessions: [
+                session(
+                    id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+                    transcript: "The proposal is ready, the cost is controlled, and the team can begin on Monday if we approve today.",
+                    fillerCount: 0,
+                    duration: 49,
+                    daysAgo: 1,
+                    mode: .timed,
+                    score: 8,
+                    prompt: "Give a concise project update."
+                )
+            ],
+            trends: [
+                SkillTrend(
+                    skillArea: .conciseSpeaking,
+                    direction: .declining,
+                    confidence: .medium,
+                    windowSize: 4,
+                    currentLevel: .developing,
+                    recentDelta: "recent answers are carrying extra context"
+                )
+            ],
+            latestUserTurn: "How do I tighten this answer?",
+            previousCoachReply: nil,
+            expectedContextNeedles: [
+                "RECENT (most-recent first)",
+                "0 fillers",
+                "TRENDS",
+                "recent answers are carrying extra context",
+                "COACHING EXPERTISE"
+            ],
+            referenceReply: "Your last rep is already clean; the signal is the extra condition adding drag. Next rep, say the recommendation in one sentence, give one reason, then stop.",
+            knownBadReply: "Based on your data, make it shorter and communicate clearly.",
+            expectedBadIssue: .roboticPhrase("based on your data")
+        ),
+        CoachChatEvaluationFixture(
+            id: "structure-one-reason-proof",
+            pillar: .prescription,
+            expertBaseline: .pending,
+            profile: profile(voice: .persuasive, challenge: .rambling),
+            sessions: [
+                session(
+                    id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+                    transcript: "The pilot should continue because adoption rose and support load stayed manageable.",
+                    fillerCount: 0,
+                    duration: 57,
+                    daysAgo: 1,
+                    mode: .timed,
+                    score: 7,
+                    prompt: "Make a persuasive case."
+                )
+            ],
+            trends: [
+                SkillTrend(
+                    skillArea: .structure,
+                    direction: .declining,
+                    confidence: .medium,
+                    windowSize: 4,
+                    currentLevel: .developing,
+                    recentDelta: "reasons are not consistently tied to the ask"
+                )
+            ],
+            latestUserTurn: "How do I make the middle clearer?",
+            previousCoachReply: nil,
+            expectedContextNeedles: [
+                "RECENT (most-recent first)",
+                "0 fillers",
+                "TRENDS",
+                "reasons are not consistently tied to the ask",
+                "COACHING EXPERTISE"
+            ],
+            referenceReply: "Your last rep has the claim and a reason; the signal is that the reason is not yet tied to the ask. Next rep, use claim, one reason, and one sentence that says what that reason makes possible.",
+            knownBadReply: "Based on your data, structure the middle more clearly.",
+            expectedBadIssue: .roboticPhrase("based on your data")
+        ),
+        CoachChatEvaluationFixture(
+            id: "confidence-clean-stop",
+            pillar: .prescription,
+            expertBaseline: .pending,
+            profile: profile(voice: .authoritative, challenge: .freezing),
+            sessions: [
+                session(
+                    id: "12121212-1212-1212-1212-121212121212",
+                    transcript: "My recommendation is to keep the launch date because the risk is contained.",
+                    fillerCount: 0,
+                    duration: 36,
+                    daysAgo: 1,
+                    mode: .timed,
+                    score: 7,
+                    prompt: "Give a direct recommendation."
+                )
+            ],
+            trends: [
+                SkillTrend(
+                    skillArea: .confidence,
+                    direction: .declining,
+                    confidence: .medium,
+                    windowSize: 4,
+                    currentLevel: .developing,
+                    recentDelta: "final lines are ending cautiously"
+                )
+            ],
+            latestUserTurn: "How do I sound more certain at the end?",
+            previousCoachReply: nil,
+            expectedContextNeedles: [
+                "RECENT (most-recent first)",
+                "0 fillers",
+                "TRENDS",
+                "final lines are ending cautiously",
+                "COACHING EXPERTISE"
+            ],
+            referenceReply: "Your last rep is clear; the signal is the close keeps softening. Next rep, say the recommendation once, give one reason, and stop without adding a softener.",
+            knownBadReply: "Based on your data, sound more confident and believe in yourself.",
+            expectedBadIssue: .roboticPhrase("based on your data")
+        ),
+        CoachChatEvaluationFixture(
+            id: "answer-depth-one-example",
+            pillar: .prescription,
+            expertBaseline: .pending,
+            profile: profile(voice: .executive, challenge: .rambling),
+            sessions: [
+                session(
+                    id: "34343434-3434-3434-3434-343434343434",
+                    transcript: "We should retain the vendor because implementation risk is lower, the team already knows the workflow, and switching now would slow the launch.",
+                    fillerCount: 0,
+                    duration: 63,
+                    daysAgo: 1,
+                    mode: .timed,
+                    score: 8,
+                    prompt: "Give an executive recommendation."
+                )
+            ],
+            trends: [
+                SkillTrend(
+                    skillArea: .answerDevelopment,
+                    direction: .declining,
+                    confidence: .medium,
+                    windowSize: 4,
+                    currentLevel: .developing,
+                    recentDelta: "answers need one concrete example before they expand"
+                )
+            ],
+            latestUserTurn: "How do I add depth without rambling?",
+            previousCoachReply: nil,
+            expectedContextNeedles: [
+                "RECENT (most-recent first)",
+                "0 fillers",
+                "TRENDS",
+                "answers need one concrete example before they expand",
+                "COACHING EXPERTISE"
+            ],
+            referenceReply: "Your last rep has strong reasons; the signal is no concrete example for the listener to picture. Next rep, keep the same claim, add one example, then stop before adding a second thread.",
+            knownBadReply: "Based on your data, add more depth but avoid rambling.",
+            expectedBadIssue: .roboticPhrase("based on your data")
+        ),
+        CoachChatEvaluationFixture(
+            id: "closing-stop-no-summary",
+            pillar: .prescription,
+            expertBaseline: .pending,
+            profile: profile(voice: .executive, challenge: .rambling),
+            sessions: [
+                session(
+                    id: "56565656-5656-5656-5656-565656565656",
+                    transcript: "The safest choice is to renew the contract, keep support stable, and review pricing after the pilot.",
+                    fillerCount: 0,
+                    duration: 48,
+                    daysAgo: 1,
+                    mode: .timed,
+                    score: 8,
+                    prompt: "Give a concise recommendation."
+                )
+            ],
+            trends: [
+                SkillTrend(
+                    skillArea: .closingStrength,
+                    direction: .declining,
+                    confidence: .medium,
+                    windowSize: 4,
+                    currentLevel: .developing,
+                    recentDelta: "final sentences are turning into summaries"
+                )
+            ],
+            latestUserTurn: "How do I stop trailing off at the end?",
+            previousCoachReply: nil,
+            expectedContextNeedles: [
+                "RECENT (most-recent first)",
+                "0 fillers",
+                "TRENDS",
+                "final sentences are turning into summaries",
+                "COACHING EXPERTISE"
+            ],
+            referenceReply: "Your last rep has the decision; the signal is the ending turns into a summary. Next rep, make the final sentence the decision itself and stop there.",
+            knownBadReply: "Based on your data, make the ending stronger and clearer.",
+            expectedBadIssue: .roboticPhrase("based on your data")
         )
     ]
 

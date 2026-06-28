@@ -72,13 +72,14 @@ enum CoachPromptBundle {
 
     static func preferredProviderTier(
         for depth: CoachTurnDepth,
-        surface: CoachReplySurface
+        surface: CoachReplySurface,
+        realtimeCoachModeEnabled: Bool = CoachBrainFlags.realtimeCoachModeEnabled
     ) -> CoachProviderTier {
         switch depth {
         case .quickMove, .groundedRead:
             return .geminiFast
         case .deepAssessment:
-            return surface == .live && CoachBrainFlags.realtimeCoachModeEnabled
+            return surface == .live && realtimeCoachModeEnabled
                 ? .geminiFast
                 : .claudeReasoning
         case .trustRepair:
