@@ -47,6 +47,48 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-29 (autonomous `noum2` run). **16th iteration. Tree was HOT — a
+concurrent `ultracode` session was actively editing the coach-chat surface
+(`AICoachChatService.swift` touched 13 min before this run + 2 judgement-layer
+test files inside 30 min). So this run did NOT re-score and did NOT touch the
+coach surface; it shipped the one competitor-parity slice all 15 priors named
+but always deferred — the annotated-transcript-timeline substrate — in two
+brand-new files that collide with nothing. Build + new suite GREEN (11/11) in an
+isolated worktree at HEAD. No push.** Commit pending. Full write-up:
+`docs/COACH_PARITY_EVAL_2026-06-29_noum2.md`.
+
+- **Shipped `Noum/TranscriptTimeline.swift` + `NoumTests/TranscriptTimelineTests.swift`**
+  — a PURE engine turning the rep's captured per-word timings
+  (`[TranscriptUpdate.WordTiming]`, today computed once for `PauseMetrics` then
+  **discarded** — "Word timings stay transient") into a typed, plottable timeline
+  of filler positions, real-duration pause gaps (filled/unfilled), and rushed
+  bursts. This is the data substrate behind Speeko/Yoodli's signature annotated
+  transcript — the "visible analytics surface" the competitor-delta names as
+  their edge, which Noum genuinely lacked. Reuse-first: `TranscriptUpdate.WordTiming`,
+  `PauseMetrics.minPauseSeconds`, `ConversationalPaceBand.maxWPM` — the ONLY new
+  constant is a documented sample-size floor (`minBurstWords = 4`), not a pace
+  knob. A cross-check test asserts the timeline's pause count equals
+  `PauseMetrics.compute`'s for the same stream, so the two reads can't diverge.
+- **Collision discipline:** concurrent `ultracode` session held uncommitted edits
+  to `AICoachChatService.swift` + `CoachReliabilityGate.swift` + 3 judgement-layer
+  test files. **None touched** — committed only the 2 new files + the eval doc via
+  explicit pathspecs. Project uses `PBXFileSystemSynchronizedRootGroup`
+  (objectVersion 77) so new files auto-join their targets with ZERO
+  `project.pbxproj` edit. Built in an isolated worktree at HEAD (`b8dad571`);
+  staged the 4 gitignored app config plists (`Info`/`AIConfig`/`BackendConfig`/
+  `GoogleService-Info`) into it so the full app compiled.
+- **Deferred (device-QA-gated, next when tree is quiet):** (1) persist the
+  timeline (or its inputs) onto the saved `PracticeSession` — touches shared
+  persistence; (2) SwiftUI render in the rep review surface (filler dots, gaps
+  sized to duration, burst bands) respecting reduced-motion + a11y — needs device
+  felt-QA so it stays out of an unattended run.
+- **10/10 answer, unchanged:** literal "with no doubt replaces a human coach"
+  stays REFUSED by design (`CoachParityReadiness.forming` trust moat). Human-gated
+  limitations unchanged: proxy-not-perception scoring, un-externally-validated
+  thresholds (this run added none), dark acquisition flag still default-OFF. What
+  moved is the *competitive-substance* axis: the first stone of the rivals'
+  signature visual analytics surface, in a pure, tested, render-ready form.
+
 2026-06-29 (autonomous `noum-1` run). **15th iteration. Did NOT re-score or touch
 the hot zone an active session was editing — ran a read-only 4-role panel to find
 the one genuinely-new, non-human-gated, collision-safe lever the 14 priors missed,
