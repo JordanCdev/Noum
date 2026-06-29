@@ -17,20 +17,38 @@ enum GoalRubricStore {
 
     static func rubric(for voice: SpeakingStyleGoal?) -> GoalRubric {
         switch voice {
-        case .authoritative, .executive, .persuasive, .concise, .warm, .storytelling, nil:
-            // The first shipped rubric is intentionally authoritative because
-            // the failure case is "How far off am I from sounding
-            // authoritative?" Other voices still benefit from the same
-            // verdict-first / close / pressure-stability standard until their
-            // own rubrics are added.
+        case .warm:
+            // Warmth is built on relational softeners and a natural cadence, so
+            // judging it on the authoritative hedge-control / verdict-first
+            // standard actively punishes a valid voice (CLAUDE.md: never punish
+            // semantically valid speech patterns). Warm reps land on pacing and a
+            // trustworthy point, not on stripped declaratives.
+            return warmRubric
+        case .storytelling:
+            // A story does not lead with the verdict and is not about clean
+            // declaratives; its whole job is a vivid, memorable arc. Scoring it
+            // verdict-first / hedge-control-heavy mis-reads the voice. Salience
+            // and a landed close carry it instead.
+            return storytellingRubric
+        case .authoritative, .executive, .persuasive, .concise, nil:
+            // These four share the authoritative spine — verdict-first, low
+            // filler, composed under pressure, committed close — so the
+            // authoritative rubric is a faithful (not punishing) proxy:
+            // executive = composed authority, persuasive still leads with a
+            // claim, concise is verdict-first by definition. They are mapped
+            // deliberately, not for lack of their own rubric; warm/storytelling
+            // are split out precisely because that spine would mis-judge them.
             return authoritativeRubric
         }
     }
 
-    static let authoritativeRubric = GoalRubric(
-        goalID: "authoritative",
-        displayName: "Authoritative communication",
-        dimensions: [
+    /// The six coaching dimensions are shared verbatim across every voice — only
+    /// the weights and display name change per voice. This keeps the deterministic
+    /// scorer (`CoachReasoningPass`, keyed on these exact dimension IDs) the single
+    /// source of scoring truth: a voice rubric is a *weighting of what matters*,
+    /// never a new heuristic or threshold. Weights mirror the already-shipped
+    /// per-voice priorities in `PracticeEvaluator.voiceDeliveryBonus`.
+    static let coreDimensions: [RubricDimension] = [
             RubricDimension(
                 id: "verdict_first",
                 label: "Verdict-first structure",
@@ -103,7 +121,12 @@ enum GoalRubricStore {
                 proofTest: "Make the recommendation memorable with one short phrase the listener could repeat afterward.",
                 missingIfAbsent: "Need salience evidence only after mechanics are already clean."
             )
-        ],
+    ]
+
+    static let authoritativeRubric = GoalRubric(
+        goalID: "authoritative",
+        displayName: "Authoritative communication",
+        dimensions: coreDimensions,
         defaultWeights: [
             "verdict_first": 0.22,
             "hedge_control": 0.18,
@@ -111,6 +134,42 @@ enum GoalRubricStore {
             "pressure_stability": 0.18,
             "controlled_pacing": 0.16,
             "salience": 0.08
+        ]
+    )
+
+    /// Warm voice: down-weight hedge control (softeners are part of warmth) and
+    /// verdict-first (warm builds rapport before the ask); reward natural pacing
+    /// and a point worth trusting. Mirrors `voiceDeliveryBonus(.warm)` rewarding
+    /// the 125–155 WPM band and substance over stripped declaratives.
+    static let warmRubric = GoalRubric(
+        goalID: "warm",
+        displayName: "Warm, credible communication",
+        dimensions: coreDimensions,
+        defaultWeights: [
+            "verdict_first": 0.12,
+            "hedge_control": 0.06,
+            "clean_close": 0.18,
+            "pressure_stability": 0.16,
+            "controlled_pacing": 0.26,
+            "salience": 0.22
+        ]
+    )
+
+    /// Storytelling voice: a story does not open with the verdict and is not a
+    /// clean-declarative exercise, so verdict-first and hedge-control fall back
+    /// hard; the memorable point (salience) and a landed close carry it. Mirrors
+    /// `voiceDeliveryBonus(.storytelling)` rewarding a developed, vivid arc.
+    static let storytellingRubric = GoalRubric(
+        goalID: "storytelling",
+        displayName: "Vivid, memorable communication",
+        dimensions: coreDimensions,
+        defaultWeights: [
+            "verdict_first": 0.08,
+            "hedge_control": 0.08,
+            "clean_close": 0.20,
+            "pressure_stability": 0.14,
+            "controlled_pacing": 0.20,
+            "salience": 0.30
         ]
     )
 }
