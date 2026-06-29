@@ -64,6 +64,13 @@ struct CoachChatEvaluationCIReport: Codable, Equatable {
             fixtureCount: fixtures.count,
             rows: fixtures.map { fixture in
                 let context = CoachChatEvaluationCorpus.renderedContext(for: fixture)
+                let recentTurns = fixture.previousCoachReply.map {
+                    [CoachMessage(role: .coach, text: $0)]
+                } ?? []
+                let turnDepth = TurnDepthClassifier.classify(
+                    userText: fixture.latestUserTurn,
+                    recentTurns: recentTurns
+                )
                 let referenceResult = AICoachChatService.professionalCoachRubric(
                     reply: fixture.referenceReply,
                     latestUserTurn: fixture.latestUserTurn
@@ -86,6 +93,14 @@ struct CoachChatEvaluationCIReport: Codable, Equatable {
                     quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
                     systemContext: context
                 )
+                let referenceReliability = CoachReliabilityGate.evaluate(
+                    replyText: fixture.referenceReply,
+                    previousCoachReply: fixture.previousCoachReply,
+                    turnDepth: turnDepth,
+                    assessment: nil,
+                    evidenceCoverage: nil,
+                    surface: .text
+                )
                 let issue = AICoachChatService.replyQualityIssue(
                     in: fixture.knownBadReply,
                     latestUserTurn: fixture.latestUserTurn,
@@ -104,18 +119,37 @@ struct CoachChatEvaluationCIReport: Codable, Equatable {
                     quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
                     systemContext: context
                 )
+                let knownBadReliability = CoachReliabilityGate.evaluate(
+                    replyText: fixture.knownBadReply,
+                    previousCoachReply: fixture.previousCoachReply,
+                    turnDepth: turnDepth,
+                    assessment: nil,
+                    evidenceCoverage: nil,
+                    surface: .text
+                )
+                let referencePassesReliabilityGate = referenceReliability.issues.isEmpty
                 return CoachChatEvaluationCIReportRow(
                     fixtureID: fixture.id,
                     pillar: fixture.pillar.rawValue,
                     expertBaselineStatus: fixture.expertBaseline.status.rawValue,
+                    turnDepth: turnDepth.rawValue,
                     referenceReplyPassesRubric: referenceResult.passesSeniorCoachFloor,
                     referenceReplyPassesQualityGate: referenceIssue == nil,
                     referenceVisionScore: referenceVision.score,
                     referencePassesVisionFloor: referenceVision.passesProductionFloor,
                     referencePassesVisionRuntimeGate: referenceVisionRuntimeIssue == nil,
+                    referenceReliabilityIssues: referenceReliability.issues.map(\.rawValue),
+                    referencePassesReliabilityGate: referencePassesReliabilityGate,
+                    referencePassesProductionFloor: referenceResult.passesSeniorCoachFloor &&
+                        referenceIssue == nil &&
+                        referenceVision.passesProductionFloor &&
+                        referenceVisionRuntimeIssue == nil &&
+                        referencePassesReliabilityGate,
                     knownBadIssueMatched: issue == fixture.expectedBadIssue,
                     knownBadVisionScore: knownBadVision.score,
                     knownBadTripsVisionRuntimeGate: knownBadVisionRuntimeIssue != nil,
+                    knownBadReliabilityIssues: knownBadReliability.issues.map(\.rawValue),
+                    knownBadTripsReliabilityGate: !knownBadReliability.issues.isEmpty,
                     expectedBadIssue: String(describing: fixture.expectedBadIssue),
                     contextNeedleCount: fixture.expectedContextNeedles.count
                 )
@@ -135,14 +169,20 @@ struct CoachChatEvaluationCIReportRow: Codable, Equatable {
     let fixtureID: String
     let pillar: String
     let expertBaselineStatus: String
+    let turnDepth: String
     let referenceReplyPassesRubric: Bool
     let referenceReplyPassesQualityGate: Bool
     let referenceVisionScore: Int
     let referencePassesVisionFloor: Bool
     let referencePassesVisionRuntimeGate: Bool
+    let referenceReliabilityIssues: [String]
+    let referencePassesReliabilityGate: Bool
+    let referencePassesProductionFloor: Bool
     let knownBadIssueMatched: Bool
     let knownBadVisionScore: Int
     let knownBadTripsVisionRuntimeGate: Bool
+    let knownBadReliabilityIssues: [String]
+    let knownBadTripsReliabilityGate: Bool
     let expectedBadIssue: String
     let contextNeedleCount: Int
 }
@@ -208,13 +248,54 @@ struct CoachChatConversationEvaluationReport: Codable, Equatable {
             conversationCount: conversations.count,
             rows: conversations.map { conversation in
                 let score = CoachChatConversationCorpus.evaluate(conversation)
+                let reliabilityIssuesByTurn = CoachChatConversationCorpus
+                    .reliabilityIssuesByTurn(in: conversation)
+                let runtimeIssuesByTurn = CoachChatConversationCorpus
+                    .runtimeIssueLabelsByTurn(in: conversation)
+                let semanticIssuesByTurn = CoachChatConversationCorpus
+                    .semanticIssueLabelsByTurn(in: conversation)
+                let turnDepths = CoachChatConversationCorpus.turnDepthsByTurn(in: conversation)
+                let trustRepairTurnIndices = CoachChatConversationCorpus
+                    .trustRepairTurnIndices(in: conversation)
+                let coldnessComplaintTurnIndices = CoachChatConversationCorpus
+                    .coldnessComplaintTurnIndices(in: conversation)
+                let softPushbackTurnIndices = CoachChatConversationCorpus
+                    .softPushbackTurnIndices(in: conversation)
+                let passesRuntimeGate = runtimeIssuesByTurn.allSatisfy(\.isEmpty)
+                let passesSemanticGate = semanticIssuesByTurn.allSatisfy(\.isEmpty)
+                let passesReliabilityGate = reliabilityIssuesByTurn.allSatisfy(\.isEmpty)
                 return CoachChatConversationEvaluationReportRow(
                     conversationID: conversation.id,
                     sourceFixtureID: conversation.sourceFixtureID,
                     turns: conversation.turns,
                     score: score.score,
                     passesConversationFloor: score.passesConversationFloor,
+                    passesRuntimeGate: passesRuntimeGate,
+                    passesSemanticGate: passesSemanticGate,
+                    passesReliabilityGate: passesReliabilityGate,
+                    passesProductionFloor: score.passesConversationFloor &&
+                        passesRuntimeGate &&
+                        passesSemanticGate &&
+                        passesReliabilityGate,
                     turnVisionScores: score.turnVisionScores,
+                    turnRuntimeIssues: runtimeIssuesByTurn,
+                    runtimeIssues: runtimeIssuesByTurn.flatMap { $0 },
+                    turnSemanticIssues: semanticIssuesByTurn,
+                    semanticIssues: semanticIssuesByTurn.flatMap { $0 },
+                    turnReliabilityIssues: reliabilityIssuesByTurn.map { issues in
+                        issues.map(\.rawValue)
+                    },
+                    reliabilityIssues: reliabilityIssuesByTurn
+                        .flatMap { $0 }
+                        .map(\.rawValue),
+                    turnDepths: turnDepths.map(\.rawValue),
+                    trustRepairTurnIndices: trustRepairTurnIndices,
+                    userPushbackWithinTwoTurns: CoachChatConversationCorpus
+                        .userPushbackWithinTwoTurns(in: conversation),
+                    coldnessComplaintFlag: !coldnessComplaintTurnIndices.isEmpty,
+                    coldnessComplaintTurnIndices: coldnessComplaintTurnIndices,
+                    softPushbackFlag: !softPushbackTurnIndices.isEmpty,
+                    softPushbackTurnIndices: softPushbackTurnIndices,
                     lowestTurnVisionScore: score.lowestTurnVisionScore,
                     earned: score.earned.map(\.rawValue),
                     missed: score.missed.map(\.rawValue)
@@ -237,7 +318,24 @@ struct CoachChatConversationEvaluationReportRow: Codable, Equatable {
     let turns: [CoachChatConversationTurn]
     let score: Int
     let passesConversationFloor: Bool
+    let passesRuntimeGate: Bool
+    let passesSemanticGate: Bool
+    let passesReliabilityGate: Bool
+    let passesProductionFloor: Bool
     let turnVisionScores: [Int]
+    let turnRuntimeIssues: [[String]]
+    let runtimeIssues: [String]
+    let turnSemanticIssues: [[String]]
+    let semanticIssues: [String]
+    let turnReliabilityIssues: [[String]]
+    let reliabilityIssues: [String]
+    let turnDepths: [String]
+    let trustRepairTurnIndices: [Int]
+    let userPushbackWithinTwoTurns: Bool
+    let coldnessComplaintFlag: Bool
+    let coldnessComplaintTurnIndices: [Int]
+    let softPushbackFlag: Bool
+    let softPushbackTurnIndices: [Int]
     let lowestTurnVisionScore: Int
     let earned: [String]
     let missed: [String]
@@ -295,7 +393,7 @@ struct CoachChatExpertReviewPacketRow: Codable, Equatable {
 }
 
 enum CoachChatEvaluationCorpus {
-    static let reportSchemaVersion = "coach-chat-eval-report-v4"
+    static let reportSchemaVersion = "coach-chat-eval-report-v5"
     static let expertReviewPacketSchemaVersion = "coach-chat-expert-review-packet-v1"
     static let latestManualEvalFixtureIDs = [
         "cold-start-interview-baseline",
@@ -467,7 +565,7 @@ enum CoachChatEvaluationCorpus {
                 "Never output literal Markdown markers",
                 "same text may be spoken aloud"
             ],
-            referenceReply: "Fair push: the stars should never reach you or the voice. Your last rep had 4 fillers, so state the recommendation first and stop after one proof — no symbols, no report shape.",
+            referenceReply: "Fair push: the stars should never reach you or the voice, and that made the coaching feel robotic and cold. Your last rep had 4 fillers, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape.",
             knownBadReply: "The app is designed to provide AI coaching, and formatting like **Read:** may appear while the system improves.",
             expectedBadIssue: .defensiveProductLanguage
         ),
@@ -531,7 +629,7 @@ enum CoachChatEvaluationCorpus {
                 "ARGUMENT LOGIC",
                 "authoritative"
             ],
-            referenceReply: "You are closer mechanically than you are to sounding authoritative overall. Your last rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.",
+            referenceReply: "You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.",
             knownBadReply: "This proves you are close to sounding authoritative. You scored 7/10, so use fewer fillers next time.",
             expectedBadIssue: .overclaimsEvidence
         ),
@@ -1301,6 +1399,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
             timeToCompleteReplyMs: 940,
             userPushbackWithinTwoTurns: true,
             coldnessComplaintFlag: true,
+            softPushbackFlag: true,
             voiceBargeInOccurred: true
         )
 
@@ -1327,6 +1426,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
         #expect(decoded.timeToCompleteReplyMs == 940)
         #expect(decoded.userPushbackWithinTwoTurns == true)
         #expect(decoded.coldnessComplaintFlag == true)
+        #expect(decoded.softPushbackFlag == true)
         #expect(decoded.voiceBargeInOccurred == true)
     }
 
@@ -1441,7 +1541,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
         #expect(CoachReplyPipeline.qualityGateRepairCount(events) == 0)
     }
 
-    @Test func broadStructureAdviceTripsVisionGateDespiteLexicalShape() throws {
+    @Test func broadStructureAdviceTripsQualityAndVisionGatesDespiteLexicalShape() throws {
         let fixture = try Self.fixture("cold-start-interview-baseline")
         let reply = "No baseline yet, so focus on structure and clarity before the interview."
 
@@ -1450,7 +1550,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
             latestUserTurn: fixture.latestUserTurn,
             quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
             systemContext: CoachChatEvaluationCorpus.renderedContext(for: fixture)
-        ) == nil)
+        ) == .ignoredCoachingExpertise)
 
         let issue = try #require(AICoachChatService.visionQualityIssue(
             in: reply,

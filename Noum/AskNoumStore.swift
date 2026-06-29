@@ -203,6 +203,7 @@ struct CoachTurnMetadata: Codable, Equatable {
     var userImmediatePushback: Bool
     var userPushbackWithinTwoTurns: Bool?
     var coldnessComplaintFlag: Bool?
+    var softPushbackFlag: Bool?
     var voiceBargeInOccurred: Bool?
     var trajectoryCacheHit: Bool?
     var surface: CoachReplySurface?
@@ -246,6 +247,7 @@ struct CoachTurnMetadata: Codable, Equatable {
         userImmediatePushback: Bool = false,
         userPushbackWithinTwoTurns: Bool? = nil,
         coldnessComplaintFlag: Bool? = nil,
+        softPushbackFlag: Bool? = nil,
         voiceBargeInOccurred: Bool? = nil,
         trajectoryCacheHit: Bool? = nil,
         surface: CoachReplySurface? = nil,
@@ -284,6 +286,7 @@ struct CoachTurnMetadata: Codable, Equatable {
         self.userImmediatePushback = userImmediatePushback
         self.userPushbackWithinTwoTurns = userPushbackWithinTwoTurns
         self.coldnessComplaintFlag = coldnessComplaintFlag
+        self.softPushbackFlag = softPushbackFlag
         self.voiceBargeInOccurred = voiceBargeInOccurred
         self.trajectoryCacheHit = trajectoryCacheHit
         self.surface = surface
@@ -595,11 +598,14 @@ final class AskNoumStore: ObservableObject {
         if existing.userImmediatePushback {
             metadata.userImmediatePushback = true
         }
-        if existing.userPushbackWithinTwoTurns == true {
-            metadata.userPushbackWithinTwoTurns = true
+        if existing.userPushbackWithinTwoTurns != nil {
+            metadata.userPushbackWithinTwoTurns = existing.userPushbackWithinTwoTurns
         }
-        if existing.coldnessComplaintFlag == true {
-            metadata.coldnessComplaintFlag = true
+        if existing.coldnessComplaintFlag != nil {
+            metadata.coldnessComplaintFlag = existing.coldnessComplaintFlag
+        }
+        if existing.softPushbackFlag != nil {
+            metadata.softPushbackFlag = existing.softPushbackFlag
         }
         if existing.voiceBargeInOccurred == true {
             metadata.voiceBargeInOccurred = true
@@ -624,6 +630,7 @@ final class AskNoumStore: ObservableObject {
         metadata.userImmediatePushback = true
         metadata.userPushbackWithinTwoTurns = true
         metadata.coldnessComplaintFlag = Self.isColdnessComplaint(trimmed)
+        metadata.softPushbackFlag = Self.isSoftPushback(trimmed)
         messages[idx].metadata = metadata
         AICallDiagnostics.record(
             surface: "Ask Noum immediate pushback",
@@ -633,6 +640,9 @@ final class AskNoumStore: ObservableObject {
             reason: [
                 "priorDepth=\(metadata.turnDepth?.rawValue ?? "unknown")",
                 "provider=\(metadata.providerName ?? "unknown")",
+                "userPushbackWithinTwoTurns=\(metadata.userPushbackWithinTwoTurns.map { "\($0)" } ?? "unknown")",
+                "coldnessComplaint=\(metadata.coldnessComplaintFlag.map { "\($0)" } ?? "unknown")",
+                "softPushback=\(metadata.softPushbackFlag.map { "\($0)" } ?? "unknown")",
                 "semanticGate=\(metadata.semanticGateOutcome?.logValue ?? "unknown")",
                 "semanticGateIssue=\(metadata.semanticGateIssue ?? "none")",
                 "qualityGate=\(metadata.qualityGateOutcome?.logValue ?? "unknown")",
@@ -646,8 +656,6 @@ final class AskNoumStore: ObservableObject {
                 "providerRetryCount=\(metadata.providerRetryCount ?? 0)",
                 "providerAttemptCount=\(metadata.providerAttemptCount ?? 0)",
                 "providerRefusalCount=\(metadata.providerRefusalCount ?? 0)",
-                "userPushbackWithinTwoTurns=\(metadata.userPushbackWithinTwoTurns.map { "\($0)" } ?? "unknown")",
-                "coldnessComplaint=\(metadata.coldnessComplaintFlag.map { "\($0)" } ?? "unknown")",
                 "voiceBargeInOccurred=\(metadata.voiceBargeInOccurred.map { "\($0)" } ?? "unknown")",
                 "visionScore=\(metadata.visionScore.map { "\($0)" } ?? "unknown")",
                 "visionPassesFloor=\(metadata.visionPassesProductionFloor.map { "\($0)" } ?? "unknown")",
@@ -655,6 +663,15 @@ final class AskNoumStore: ObservableObject {
                 "timeToFirstVisibleTokenMs=\(metadata.timeToFirstVisibleTokenMs ?? -1)",
                 "timeToCompleteReplyMs=\(metadata.timeToCompleteReplyMs ?? -1)"
             ].joined(separator: " ")
+        )
+    }
+
+    private static func isSoftPushback(_ text: String) -> Bool {
+        TurnDepthClassifier.isSoftPushback(
+            text
+                .replacingOccurrences(of: "\u{2019}", with: "'")
+                .replacingOccurrences(of: "\u{2018}", with: "'")
+                .lowercased()
         )
     }
 

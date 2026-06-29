@@ -1162,7 +1162,7 @@ struct AICallDiagnosticRecord: Codable, Equatable, Identifiable {
             provider: bounded(provider, fallback: "No provider", maxLength: 32),
             model: boundedOptional(model, maxLength: 48),
             outcome: outcome,
-            reason: bounded(reason, fallback: outcome.title, maxLength: 96),
+            reason: bounded(reason, fallback: outcome.title, maxLength: 256),
             statusCode: statusCode,
             latencyMs: latencyMs
         )

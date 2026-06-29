@@ -967,7 +967,105 @@ struct CoachSemanticQualityGateAdversarialTests {
         assessment.repairFocus = "I sounded cold instead of giving a human coach read"
 
         let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push — that sounded cold, not like a human coach read. The useful read is the last rep buried the recommendation behind setup. Proof test: record one verdict-first rep.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        #expect(issue == nil)
+    }
+
+    @Test func trustRepairPolitePushbackDoesNotPassBySayingBut() {
+        var assessment = Self.baseDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "there is friction underneath the polite pushback"
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push — but the move is a verdict-first rep. The actual read is your recommendation needs to land before the setup. Proof test: record one verdict-first rep.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        #expect(issue == .missingDirectVerdict)
+    }
+
+    @Test func trustRepairPolitePushbackNamesFrictionAndPasses() {
+        var assessment = Self.baseDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "there is friction underneath the polite pushback"
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push — there is friction underneath the polite pushback. The actual read is your recommendation needs to land before the setup. Proof test: record one verdict-first rep.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        #expect(issue == nil)
+    }
+
+    @Test func trustRepairRoboticAcknowledgementNamesColdRepairFocus() {
+        var assessment = Self.baseDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "I sounded cold instead of giving a human coach read"
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push: that read was robotic and too much like a report. The useful read is the last rep buried the recommendation behind setup. Proof test: record one verdict-first rep.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        #expect(issue == nil)
+    }
+
+    @Test func trustRepairFocusWithoutConcreteReadFails() {
+        var assessment = Self.baseDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "I sounded cold instead of giving a human coach read"
+
+        let issue = AICoachChatService.semanticQualityIssue(
             in: "Fair push — that sounded cold, not like a human coach read. Proof test: record one verdict-first rep.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        #expect(issue == .missingRepairInsight)
+    }
+
+    @Test func trustRepairBecauseApologyWithoutEvidenceReadFails() {
+        var assessment = Self.baseDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "I sounded cold instead of giving a human coach read"
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push — that sounded cold, not like a human coach read, because I missed the tone. Proof test: record one verdict-first rep.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        #expect(issue == .missingRepairInsight)
+    }
+
+    @Test func trustRepairTargetBehaviorWithoutEvidenceReadFails() {
+        var assessment = Self.baseDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "I sounded cold instead of giving a human coach read"
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push — that sounded cold, not like a human coach read. The target behavior is cleaner. Proof test: record one verdict-first rep.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        #expect(issue == .missingRepairInsight)
+    }
+
+    @Test func trustRepairExplicitActualReadIsAccepted() {
+        var assessment = Self.baseDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "I sounded cold instead of giving a human coach read"
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push — that sounded cold, not like a human coach read. The actual read is your recommendation needs to land before the setup. Proof test: record one verdict-first rep.",
             turnDepth: .trustRepair,
             assessment: assessment
         )
@@ -1756,6 +1854,181 @@ struct CoachProvisionalReadEligibilityTests {
 
         #expect(first == second)
         #expect(first != different)
+    }
+}
+
+@MainActor
+@Suite("CoachReplyPipelineProvisionalReadTests", .serialized)
+struct CoachReplyPipelineProvisionalReadTests {
+
+    @Test func liveGenerateSurfacesImmediateCoachReadBeforeProviderCompletion() async {
+        let suiteName = "CoachReplyPipelineProvisionalReadTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        CoachAssessmentCache.shared.invalidate()
+        defer {
+            CoachAssessmentCache.shared.invalidate()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let store = AskNoumStore(defaults: defaults, accountIDProvider: { "pipeline-provisional" })
+        let ids = store.appendUserTurn("How far off am I from sounding authoritative in a live call?")
+        let noProviderService = AICoachChatService(
+            keyedProviders: { [] },
+            keyLookup: { _ in nil },
+            localeSupportsAI: { true },
+            diagnosticRecorder: { _, _, _, _, _, _, _, _ in }
+        )
+
+        var callbackText: String?
+        var callbackSawPendingCoachRow = false
+        var callbackMetadata: CoachTurnMetadata?
+        let outcome = await CoachReplyPipeline.generate(
+            coachID: ids.coachID,
+            surface: .live,
+            store: store,
+            coachService: noProviderService,
+            judgementPassEnabled: true,
+            realtimeCoachModeEnabled: true,
+            onProvisionalCoachReadVisible: { text in
+                callbackText = text
+                let pending = store.messages.first { $0.id == ids.coachID }
+                callbackSawPendingCoachRow = pending?.role == .coach && pending?.isPending == true
+                callbackMetadata = pending?.metadata
+            }
+        )
+
+        switch outcome {
+        case .failure(.noProvider):
+            break
+        default:
+            #expect(Bool(false), "Expected injected no-provider service to finish with noProvider, got \(outcome)")
+        }
+
+        #expect(callbackText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+        #expect(callbackSawPendingCoachRow)
+        #expect(callbackMetadata?.immediateCoachReadShown == true)
+        #expect(callbackMetadata?.timeToFirstVisibleTokenMs != nil)
+        #expect(callbackMetadata?.surface == .live)
+
+        let final = store.messages.first { $0.id == ids.coachID }
+        #expect(final?.role == .systemNotice)
+        #expect(final?.isPending == false)
+        #expect(final?.metadata?.immediateCoachReadShown == true)
+        #expect(final?.metadata?.assessment != nil)
+        #expect(final?.metadata?.providerAttemptCount == 0)
+        #expect(final?.metadata?.surface == .live)
+    }
+
+    @Test func successfulTextTurnsUsePriorAssessmentToVaryNextProofTest() async {
+        let suiteName = "CoachReplyPipelineHistoryProgressionTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        CoachAssessmentCache.shared.invalidate()
+        UserTrajectoryCache.shared.invalidate()
+        defer {
+            CoachAssessmentCache.shared.invalidate()
+            UserTrajectoryCache.shared.invalidate()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let scriptedHTTP = CoachReplyPipelineScriptedHTTP(replies: [
+            """
+            Your latest rep points at pacing: the structure is there, but it needs one planned pause. Next rep, put the verdict first, hold one silent beat, then give one reason and stop. That tests whether control comes from silence instead of extra wording.
+            """,
+            """
+            Your latest rep still makes pacing the useful lever, but the proof should change now. Next rep, place one beat after the verdict, then finish the reason in one sentence. That tests whether the pause holds without adding more setup.
+            """
+        ])
+        let service = AICoachChatService(
+            keyedProviders: { [.openAI] },
+            keyLookup: { _ in "test-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { provider, endpoint, key, body in
+                await scriptedHTTP.next(provider: provider, endpoint: endpoint, key: key, body: body)
+            },
+            diagnosticRecorder: { _, _, _, _, _, _, _, _ in }
+        )
+        let store = AskNoumStore(defaults: defaults, accountIDProvider: { "pipeline-history" })
+
+        let firstIDs = store.appendUserTurn("How do I slow down without sounding unsure?")
+        let firstOutcome = await CoachReplyPipeline.generate(
+            coachID: firstIDs.coachID,
+            surface: .text,
+            store: store,
+            coachService: service,
+            judgementPassEnabled: true,
+            realtimeCoachModeEnabled: true
+        )
+        guard case .reply = firstOutcome else {
+            Issue.record("Expected first scripted provider reply, got \(firstOutcome)")
+            return
+        }
+
+        let firstCoach = store.messages.first { $0.id == firstIDs.coachID }
+        let firstProof = firstCoach?.metadata?.assessment?.nextProofTest
+        #expect(firstCoach?.role == .coach)
+        #expect(firstCoach?.metadata?.turnDepth == .quickMove)
+        #expect(firstCoach?.metadata?.assessmentCacheHit == false)
+        #expect(firstProof?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+
+        let secondIDs = store.appendUserTurn("How do I slow down without sounding unsure?")
+        let secondOutcome = await CoachReplyPipeline.generate(
+            coachID: secondIDs.coachID,
+            surface: .text,
+            store: store,
+            coachService: service,
+            judgementPassEnabled: true,
+            realtimeCoachModeEnabled: true
+        )
+        guard case .reply = secondOutcome else {
+            Issue.record("Expected second scripted provider reply, got \(secondOutcome)")
+            return
+        }
+
+        let secondCoach = store.messages.first { $0.id == secondIDs.coachID }
+        let secondProof = secondCoach?.metadata?.assessment?.nextProofTest
+        #expect(secondCoach?.role == .coach)
+        #expect(secondCoach?.metadata?.turnDepth == .quickMove)
+        #expect(secondCoach?.metadata?.assessmentCacheHit == false)
+        #expect(secondCoach?.metadata?.proofTestRecentlyRepeated == false)
+        #expect(secondProof?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+        #expect(secondProof != firstProof)
+        #expect(await scriptedHTTP.callCount == 2)
+    }
+
+    private actor CoachReplyPipelineScriptedHTTP {
+        private var replies: [String]
+        private(set) var callCount = 0
+
+        init(replies: [String]) {
+            self.replies = replies
+        }
+
+        func next(
+            provider: CoachChatProvider,
+            endpoint: URL,
+            key: String,
+            body: [String: Any]
+        ) -> AICoachChatService.ProviderHTTPResult {
+            callCount += 1
+            guard !replies.isEmpty else {
+                return .refused(status: 500, retryAfter: nil)
+            }
+            return .success(Self.openAIData(replies.removeFirst()))
+        }
+
+        private static func openAIData(_ content: String) -> Data {
+            let payload: [String: Any] = [
+                "choices": [
+                    [
+                        "message": ["content": content],
+                        "finish_reason": "stop"
+                    ]
+                ]
+            ]
+            return try! JSONSerialization.data(withJSONObject: payload)
+        }
     }
 }
 

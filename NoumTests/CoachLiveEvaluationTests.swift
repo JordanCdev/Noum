@@ -38,6 +38,7 @@ import Testing
 
 @Suite("CoachLiveEvaluationTests")
 struct CoachLiveEvaluationTests {
+    private static let liveReportSchemaVersion = "coach-live-eval-v1"
 
     @Test func latestTranscriptPresetCoversEveryManualEvalTurn() {
         let fixtures = Self.selectedFixtures(env: [
@@ -64,6 +65,420 @@ struct CoachLiveEvaluationTests {
         ) == [.agentPlatform, .gemini])
     }
 
+    @Test func liveProductionFloorRequiresEveryGateAndReliabilityCleanliness() {
+        #expect(Self.liveProductionFloor(
+            qualityIssuePresent: false,
+            semanticIssuePresent: false,
+            rubricPasses: true,
+            visionPasses: true,
+            reliabilityIssues: []
+        ))
+
+        #expect(!Self.liveProductionFloor(
+            qualityIssuePresent: true,
+            semanticIssuePresent: false,
+            rubricPasses: true,
+            visionPasses: true,
+            reliabilityIssues: []
+        ))
+        #expect(!Self.liveProductionFloor(
+            qualityIssuePresent: false,
+            semanticIssuePresent: true,
+            rubricPasses: true,
+            visionPasses: true,
+            reliabilityIssues: []
+        ))
+        #expect(!Self.liveProductionFloor(
+            qualityIssuePresent: false,
+            semanticIssuePresent: false,
+            rubricPasses: false,
+            visionPasses: true,
+            reliabilityIssues: []
+        ))
+        #expect(!Self.liveProductionFloor(
+            qualityIssuePresent: false,
+            semanticIssuePresent: false,
+            rubricPasses: true,
+            visionPasses: false,
+            reliabilityIssues: []
+        ))
+        #expect(!Self.liveProductionFloor(
+            qualityIssuePresent: false,
+            semanticIssuePresent: false,
+            rubricPasses: true,
+            visionPasses: true,
+            reliabilityIssues: [.nearDuplicateReply]
+        ))
+    }
+
+    @Test func liveJudgementCarriesRecentProofTestsAcrossFixtureSweep() {
+        CoachAssessmentCache.shared.invalidate()
+        UserTrajectoryCache.shared.invalidate()
+        guard let fixture = CoachChatEvaluationCorpus.fixtures.first(where: {
+            $0.id == "filler-pressure-prescription"
+        }) else {
+            #expect(Bool(false), "missing filler-pressure-prescription fixture")
+            return
+        }
+
+        let first = Self.judgement(
+            for: fixture,
+            history: Self.history(for: fixture),
+            surface: .text,
+            recentProofTests: []
+        )
+        let carried = Self.updatedRecentProofTests([], adding: first.assessment.nextProofTest)
+        let second = Self.judgement(
+            for: fixture,
+            history: Self.history(for: fixture),
+            surface: .text,
+            recentProofTests: carried
+        )
+
+        #expect(!carried.isEmpty)
+        #expect(second.assessment.nextProofTest != first.assessment.nextProofTest)
+        #expect(second.assessmentCacheHit == false)
+        CoachAssessmentCache.shared.invalidate()
+        UserTrajectoryCache.shared.invalidate()
+    }
+
+    @Test func proofTestRepeatDetectionNormalizesWhitespaceAndCase() {
+        let prior = [
+            "Run a 45-second answer with the recommendation first, then give exactly one proof point."
+        ]
+
+        #expect(Self.proofTestRecentlyRepeated(
+            "  run a 45-second answer   with the recommendation first, then give exactly one proof point. ",
+            in: prior
+        ))
+        #expect(!Self.proofTestRecentlyRepeated(
+            "Open the next rep with the decision before any context.",
+            in: prior
+        ))
+    }
+
+    @Test func liveTelemetrySummaryCountsProviderEventsAndFirstVisibleProxy() {
+        let gemini = CoachTurnProviderChoice(providerName: "Google Gemini", model: "gemini-test")
+        let claude = CoachTurnProviderChoice(providerName: "Claude", model: "claude-test")
+        let turnStartedAt = Date(timeIntervalSince1970: 100)
+        let turnCompletedAt = Date(timeIntervalSince1970: 103.4)
+        let records = [
+            CoachLiveDiagnosticRecord(
+                provider: "Google Gemini",
+                model: "gemini-test",
+                outcome: .success,
+                reason: "Streaming first provider token received",
+                statusCode: nil,
+                latencyMs: 420
+            )
+        ]
+
+        let summary = Self.liveTelemetrySummary(
+            providerEvents: [
+                .started(gemini),
+                .retry(gemini),
+                .refused(gemini),
+                .started(claude)
+            ],
+            diagnostics: records,
+            turnStartedAt: turnStartedAt,
+            turnCompletedAt: turnCompletedAt,
+            firstStreamedVisibleAt: nil,
+            completedReplyVisible: true
+        )
+
+        #expect(summary.providerAttemptCount == 2)
+        #expect(summary.providerRetryCount == 2)
+        #expect(summary.providerRefusalCount == 1)
+        #expect(summary.timeToFirstVisibleTokenMs == 420)
+        #expect(summary.timeToFirstVisibleTokenSource == .providerFirstTokenDiagnostic)
+    }
+
+    @Test func liveTelemetrySummaryPrefersStreamVisibleTimeOverProviderTokenDiagnostic() {
+        let gemini = CoachTurnProviderChoice(providerName: "Google Gemini", model: "gemini-test")
+        let turnStartedAt = Date(timeIntervalSince1970: 100)
+        let turnCompletedAt = Date(timeIntervalSince1970: 102)
+        let firstVisibleAt = Date(timeIntervalSince1970: 100.25)
+
+        let summary = Self.liveTelemetrySummary(
+            providerEvents: [.started(gemini)],
+            diagnostics: [
+                CoachLiveDiagnosticRecord(
+                    provider: "Google Gemini",
+                    model: "gemini-test",
+                    outcome: .success,
+                    reason: "Streaming first provider token received",
+                    statusCode: nil,
+                    latencyMs: 90
+                )
+            ],
+            turnStartedAt: turnStartedAt,
+            turnCompletedAt: turnCompletedAt,
+            firstStreamedVisibleAt: firstVisibleAt,
+            completedReplyVisible: true
+        )
+
+        #expect(summary.timeToFirstVisibleTokenMs == 250)
+        #expect(summary.timeToFirstVisibleTokenSource == .streamedPartialVisible)
+    }
+
+    @Test func liveTrustSignalsSeparateSoftPushbackFromColdnessComplaint() {
+        let priorCoach = [CoachMessage(role: .coach, text: "Try leading with the point.")]
+        let soft = Self.liveTrustSignals(
+            userTurn: "Okay, that's cool. However, I don't feel like that answered what I meant.",
+            turnDepth: .trustRepair,
+            history: priorCoach
+        )
+        let cold = Self.liveTrustSignals(
+            userTurn: "That still feels robotic and cold.",
+            turnDepth: .trustRepair,
+            history: priorCoach
+        )
+
+        #expect(soft.userPushbackWithinTwoTurns)
+        #expect(soft.softPushbackFlag)
+        #expect(!soft.coldnessComplaintFlag)
+        #expect(cold.userPushbackWithinTwoTurns)
+        #expect(!cold.softPushbackFlag)
+        #expect(cold.coldnessComplaintFlag)
+        #expect(!soft.voiceBargeInOccurred)
+    }
+
+    @Test func liveEvaluationReportEncodesTelemetryAndGateSchema() throws {
+        let row = CoachLiveEvaluationReportRow(
+            fixtureID: "polite-pushback-attunement",
+            userTurn: "Okay, that's cool. However, I don't feel like that answered what I meant.",
+            turnDepth: CoachTurnDepth.trustRepair.rawValue,
+            surface: CoachReplySurface.text.rawValue,
+            providerTierRequested: CoachProviderTier.claudeReasoning.rawValue,
+            providerTierChosen: CoachProviderTier.claudeReasoning.rawValue,
+            providerChosen: "Claude",
+            providerModel: "claude-test",
+            providerAttemptCount: 1,
+            providerRetryCount: 0,
+            providerRefusalCount: 0,
+            timeToFirstVisibleTokenMs: 240,
+            timeToFirstVisibleTokenSource: TimeToFirstVisibleTokenSource.streamedPartialVisible.rawValue,
+            timeToCompleteReplyMs: 980,
+            trajectoryCacheHit: true,
+            assessmentCacheHit: false,
+            assessmentCacheAgeMs: 12,
+            assessmentConfidence: 0.78,
+            assessmentProofTestHash: "abc123",
+            assessmentVerdict: "The actual miss is order, not warmth.",
+            assessmentImmediateRead: "Lead with the point, then reassure.",
+            assessmentResponseMode: CoachAssessment.ResponseMode.expandable.rawValue,
+            immediateCoachReadExpected: true,
+            immediateCoachReadShown: true,
+            missingEvidence: [],
+            proofTest: "Run a 45-second client concern answer.",
+            proofTestRecentlyRepeated: false,
+            userPushbackWithinTwoTurns: true,
+            coldnessComplaintFlag: false,
+            softPushbackFlag: true,
+            voiceBargeInOccurred: false,
+            brainIDs: ["repair-attunement"],
+            diagnostics: [
+                CoachLiveDiagnosticReportRecord(
+                    provider: "Claude",
+                    model: "claude-test",
+                    outcome: AICallDiagnosticOutcome.success.rawValue,
+                    reason: "Reply accepted",
+                    statusCode: nil,
+                    latencyMs: 980
+                )
+            ],
+            reply: "Fair push: I answered too generally.",
+            replyWordCount: 6,
+            rubricScore: 91,
+            rubricMisses: [],
+            passesRubric: true,
+            visionScore: 90,
+            visionPassesProductionFloor: true,
+            visionMisses: [],
+            qualityIssue: "none",
+            semanticGateIssue: "none",
+            reliabilityFallbackApplied: false,
+            reliabilityIssues: [],
+            liveProductionFloor: true,
+            failure: nil
+        )
+        let report = CoachLiveEvaluationReport.make(
+            providerChain: ["Claude (claude-test)"],
+            rows: [row]
+        )
+        let json = try report.encodedSortedJSON()
+
+        #expect(report.schemaVersion == Self.liveReportSchemaVersion)
+        #expect(report.fixtureCount == 1)
+        #expect(report.passesProductionFloor)
+        #expect(report.passesRunReadinessFloor)
+        #expect(report.summary.rowCount == 1)
+        #expect(report.summary.productionFloorFailureCount == 0)
+        #expect(report.summary.readinessWarnings.isEmpty)
+        #expect(report.summary.uniqueProofTestHashCount == 1)
+        #expect(report.summary.averageReplyWordCount == 6)
+        #expect(report.summary.maxProviderRetryCount == 0)
+        #expect(report.summary.firstVisibleTokenMaxMs == 240)
+        #expect(report.summary.immediateCoachReadExpectedCount == 1)
+        #expect(report.summary.immediateCoachReadMissingCount == 0)
+        #expect(report.summary.missingImmediateCoachReadFixtureIDs.isEmpty)
+        #expect(json.contains("\"schemaVersion\":\"coach-live-eval-v1\""))
+        #expect(json.contains("\"summary\""))
+        #expect(json.contains("\"passesRunReadinessFloor\":true"))
+        #expect(json.contains("\"readinessWarnings\":[]"))
+        #expect(json.contains("\"uniqueProofTestHashCount\":1"))
+        #expect(json.contains("\"averageReplyWordCount\":6"))
+        #expect(json.contains("\"providerAttemptCount\":1"))
+        #expect(json.contains("\"providerRetryCount\":0"))
+        #expect(json.contains("\"timeToFirstVisibleTokenSource\":\"streamedPartialVisible\""))
+        #expect(json.contains("\"assessmentProofTestHash\":\"abc123\""))
+        #expect(json.contains("\"assessmentResponseMode\":\"expandable\""))
+        #expect(json.contains("\"immediateCoachReadExpected\":true"))
+        #expect(json.contains("\"immediateCoachReadShown\":true"))
+        #expect(json.contains("\"semanticGateIssue\":\"none\""))
+        #expect(json.contains("\"softPushbackFlag\":true"))
+        #expect(json.contains("\"replyWordCount\":6"))
+        #expect(json.contains("\"liveProductionFloor\":true"))
+    }
+
+    @Test func liveEvaluationReportSummaryFlagsDistributionalSmells() {
+        let pass = Self.sampleLiveReportRow(
+            fixtureID: "one",
+            liveProductionFloor: true,
+            assessmentConfidence: 0.72,
+            assessmentProofTestHash: "hash-a",
+            replyWordCount: 12,
+            providerRetryCount: 0,
+            providerRefusalCount: 0,
+            timeToFirstVisibleTokenMs: 210,
+            userPushbackWithinTwoTurns: false,
+            coldnessComplaintFlag: false,
+            softPushbackFlag: false
+        )
+        let fail = Self.sampleLiveReportRow(
+            fixtureID: "two",
+            liveProductionFloor: false,
+            assessmentConfidence: 0.72,
+            assessmentProofTestHash: "hash-a",
+            replyWordCount: 28,
+            providerRetryCount: 2,
+            providerRefusalCount: 1,
+            timeToFirstVisibleTokenMs: 840,
+            userPushbackWithinTwoTurns: true,
+            coldnessComplaintFlag: true,
+            softPushbackFlag: false,
+            turnDepth: .deepAssessment,
+            assessmentResponseMode: .expandable,
+            immediateCoachReadShown: false
+        )
+        let noReply = Self.sampleLiveReportRow(
+            fixtureID: "three",
+            liveProductionFloor: false,
+            assessmentConfidence: 0.72,
+            assessmentProofTestHash: "hash-b",
+            replyWordCount: nil,
+            providerRetryCount: 1,
+            providerRefusalCount: 1,
+            timeToFirstVisibleTokenMs: nil,
+            userPushbackWithinTwoTurns: true,
+            coldnessComplaintFlag: false,
+            softPushbackFlag: true
+        )
+
+        let report = CoachLiveEvaluationReport.make(
+            providerChain: ["Google Gemini (gemini-test)"],
+            rows: [pass, fail, noReply]
+        )
+
+        #expect(!report.passesProductionFloor)
+        #expect(!report.passesRunReadinessFloor)
+        #expect(report.summary.rowCount == 3)
+        #expect(report.summary.productionFloorFailureCount == 2)
+        #expect(report.summary.failureFixtureIDs == ["two", "three"])
+        #expect(report.summary.readinessWarnings == [
+            CoachLiveReadinessWarning.productionFloorFailures.rawValue,
+            CoachLiveReadinessWarning.repeatedProofTestHash.rawValue,
+            CoachLiveReadinessWarning.flatAssessmentConfidence.rawValue,
+            CoachLiveReadinessWarning.missingImmediateCoachRead.rawValue,
+            CoachLiveReadinessWarning.providerRetryPressure.rawValue,
+            CoachLiveReadinessWarning.providerRefusalPressure.rawValue
+        ])
+        #expect(report.summary.uniqueProofTestHashCount == 2)
+        #expect(report.summary.repeatedProofTestHashCount == 1)
+        #expect(report.summary.assessmentConfidenceMin == 0.72)
+        #expect(report.summary.assessmentConfidenceMax == 0.72)
+        #expect(report.summary.assessmentConfidenceDistinctRoundedCount == 1)
+        #expect(report.summary.averageReplyWordCount == 20)
+        #expect(report.summary.replyWordCountMin == 12)
+        #expect(report.summary.replyWordCountMax == 28)
+        #expect(report.summary.maxProviderRetryCount == 2)
+        #expect(report.summary.totalProviderRefusalCount == 2)
+        #expect(report.summary.firstVisibleTokenMinMs == 210)
+        #expect(report.summary.firstVisibleTokenMaxMs == 840)
+        #expect(report.summary.immediateCoachReadExpectedCount == 1)
+        #expect(report.summary.immediateCoachReadMissingCount == 1)
+        #expect(report.summary.missingImmediateCoachReadFixtureIDs == ["two"])
+        #expect(report.summary.userPushbackWithinTwoTurnsCount == 2)
+        #expect(report.summary.coldnessComplaintCount == 1)
+        #expect(report.summary.softPushbackCount == 1)
+    }
+
+    @Test func liveEvaluationReportWithoutRowsIsNotRunReady() {
+        let report = CoachLiveEvaluationReport.make(
+            providerChain: [],
+            rows: []
+        )
+
+        #expect(!report.passesProductionFloor)
+        #expect(!report.passesRunReadinessFloor)
+        #expect(report.summary.rowCount == 0)
+        #expect(report.summary.readinessWarnings == [
+            CoachLiveReadinessWarning.noRows.rawValue
+        ])
+    }
+
+    @Test func liveJSONReportPathSitsBesideMarkdownReport() {
+        #expect(Self.jsonReportPath(for: "/tmp/noum-live-coach-eval.md") == "/tmp/noum-live-coach-eval.json")
+        #expect(Self.jsonReportPath(for: "/tmp/noum-live-coach-eval") == "/tmp/noum-live-coach-eval.json")
+    }
+
+    @Test func latestTranscriptJudgementSignalsAreNotFlatBeforeProviderRun() {
+        CoachAssessmentCache.shared.invalidate()
+        UserTrajectoryCache.shared.invalidate()
+        let fixtures = Self.selectedFixtures(env: [
+            "NOUM_LIVE_AI_FIXTURES": "latest-transcript"
+        ])
+        var recentProofTests: [String] = []
+        var assessments: [CoachAssessment] = []
+
+        for fixture in fixtures {
+            let judgement = Self.judgement(
+                for: fixture,
+                history: Self.history(for: fixture),
+                surface: .text,
+                recentProofTests: recentProofTests
+            )
+            assessments.append(judgement.assessment)
+            recentProofTests = Self.updatedRecentProofTests(
+                recentProofTests,
+                adding: judgement.assessment.nextProofTest
+            )
+        }
+
+        let roundedConfidences = Set(assessments.map { String(format: "%.2f", $0.confidence) })
+        let proofKeys = Set(assessments.map { Self.proofTestKey($0.nextProofTest) })
+        let verdicts = Set(assessments.map { $0.directVerdict })
+
+        #expect(assessments.count == CoachChatEvaluationCorpus.latestManualEvalFixtureIDs.count)
+        #expect(roundedConfidences.count >= 2, "latest transcript sweep should not pin every assessmentConfidence to one value")
+        #expect(assessments.contains { $0.confidence > CoachReliabilityGate.floorConfidence })
+        #expect(proofKeys.count >= 3, "latest transcript sweep should not reuse one canned proofTest")
+        #expect(verdicts.count >= 3, "latest transcript sweep should not reuse one canned assessment verdict")
+        CoachAssessmentCache.shared.invalidate()
+        UserTrajectoryCache.shared.invalidate()
+    }
+
     @Test func liveGeminiRepliesClearFixtureRubric() async {
         guard Self.liveEvalEnabled else {
             return
@@ -87,15 +502,21 @@ struct CoachLiveEvaluationTests {
         let resolvedOutputPath = (outputPath?.isEmpty == false)
             ? outputPath!
             : Self.defaultReportPath()
+        let resolvedJSONOutputPath = Self.jsonReportPath(for: resolvedOutputPath)
+        let providerChain = Self.liveProviderChain()
+        let providerChainLabels = providerChain.map { "\($0.displayName) (\($0.model))" }
 
         emit("# Noum Chat With Noum Live Transcripts")
         emit("")
         emit("Purpose: live transcript capture through the Ask Noum chat service, context builder, retrieved coaching expertise, quote guard, professional-coach gate, and typed judgement pass.")
         emit("Secrets: API keys and request bodies are not written to this report.")
         emit("reportPath: \(resolvedOutputPath)")
+        emit("jsonReportPath: \(resolvedJSONOutputPath)")
         emit("fixtures: \(fixtures.map { $0.id }.joined(separator: ","))")
-        emit("providerChain: \(Self.liveProviderChain().map { "\($0.displayName) (\($0.model))" }.joined(separator: " -> "))")
+        emit("providerChain: \(providerChainLabels.joined(separator: " -> "))")
         CoachAssessmentCache.shared.invalidate()
+        var recentLiveProofTests: [String] = []
+        var liveRows: [CoachLiveEvaluationReportRow] = []
 
         for fixture in fixtures {
             let expertise = await KnowledgeRetriever.retrieveReranked(
@@ -107,7 +528,20 @@ struct CoachLiveEvaluationTests {
             var context = Self.liveContext(for: fixture, coachingExpertise: expertise)
             let system = CoachContextBuilder.systemPrompt(for: fixture.profile)
             let history = Self.history(for: fixture)
-            let judgement = Self.judgement(for: fixture, history: history, surface: .text)
+            let judgement = Self.judgement(
+                for: fixture,
+                history: history,
+                surface: .text,
+                recentProofTests: recentLiveProofTests
+            )
+            let proofTestRecentlyRepeated = Self.proofTestRecentlyRepeated(
+                judgement.assessment.nextProofTest,
+                in: recentLiveProofTests
+            )
+            recentLiveProofTests = Self.updatedRecentProofTests(
+                recentLiveProofTests,
+                adding: judgement.assessment.nextProofTest
+            )
             context += "\n" + CoachPromptBundle.contextBlock(
                 assessment: judgement.assessment,
                 rubric: judgement.rubric,
@@ -125,6 +559,8 @@ struct CoachLiveEvaluationTests {
                 surface: .text
             )
             var providerChoice: CoachTurnProviderChoice?
+            var providerAttemptEvents: [CoachProviderAttemptEvent] = []
+            var firstStreamedVisibleAt: Date?
             let turnStartedAt = Date()
 
             let outcome = await service.reply(
@@ -136,14 +572,64 @@ struct CoachLiveEvaluationTests {
                 assessment: judgement.assessment,
                 surface: .text,
                 preferredTier: requestedTier,
+                onStreamedPartialVisible: { _ in
+                    if firstStreamedVisibleAt == nil {
+                        firstStreamedVisibleAt = Date()
+                    }
+                },
                 onProviderChosen: { choice in
                     providerChoice = choice
+                },
+                onProviderAttemptEvent: { event in
+                    providerAttemptEvents.append(event)
                 }
             )
             let turnCompletedAt = Date()
             let records = diagnostics.records
             let newRecords = Array(records.dropFirst(diagnosticCursor))
             diagnosticCursor = records.count
+            let timeToCompleteReplyMs = Self.latencyMs(
+                from: turnStartedAt,
+                to: turnCompletedAt
+            )
+            let completedReplyVisible: Bool = {
+                if case .reply = outcome {
+                    return true
+                }
+                return false
+            }()
+            let telemetry = Self.liveTelemetrySummary(
+                providerEvents: providerAttemptEvents,
+                diagnostics: newRecords,
+                turnStartedAt: turnStartedAt,
+                turnCompletedAt: turnCompletedAt,
+                firstStreamedVisibleAt: firstStreamedVisibleAt,
+                completedReplyVisible: completedReplyVisible
+            )
+            let trustSignals = Self.liveTrustSignals(
+                userTurn: fixture.latestUserTurn,
+                turnDepth: judgement.turnDepth,
+                history: history
+            )
+            let providerTierChosen = CoachReplyPipeline.providerTierChosen(
+                for: providerChoice,
+                requestedTier: requestedTier
+            )
+            let assessmentProofTestHash = CoachReplyPipeline.proofTestHash(
+                for: judgement.assessment.nextProofTest
+            )
+            let assessmentCacheAgeMs = Self.latencyMs(
+                from: judgement.assessmentGeneratedAt,
+                to: turnCompletedAt
+            )
+            let missingEvidence = judgement.assessment.missingEvidence
+            let brainIDs = expertise.map { $0.id }
+            let diagnosticRows = newRecords.map(CoachLiveDiagnosticReportRecord.make)
+            let immediateCoachReadExpected = Self.immediateCoachReadExpected(
+                turnDepth: judgement.turnDepth,
+                surface: .text,
+                responseMode: judgement.assessment.responseMode
+            )
 
             emit("")
             emit("## \(fixture.id)")
@@ -151,21 +637,35 @@ struct CoachLiveEvaluationTests {
             emit("userTurn: \(fixture.latestUserTurn)")
             emit("turnDepth: \(judgement.turnDepth.rawValue)")
             emit("providerTierRequested: \(requestedTier.rawValue)")
-            emit("providerTierChosen: \(CoachReplyPipeline.providerTierChosen(for: providerChoice, requestedTier: requestedTier)?.rawValue ?? "none")")
+            emit("providerTierChosen: \(providerTierChosen?.rawValue ?? "none")")
             emit("providerChosen: \(providerChoice?.providerName ?? "none")")
             emit("providerModel: \(providerChoice?.model ?? "none")")
-            emit("timeToCompleteReplyMs: \(Int(turnCompletedAt.timeIntervalSince(turnStartedAt) * 1_000))")
+            emit("providerAttemptCount: \(telemetry.providerAttemptCount)")
+            emit("providerRetryCount: \(telemetry.providerRetryCount)")
+            emit("providerRefusalCount: \(telemetry.providerRefusalCount)")
+            emit("timeToFirstVisibleTokenMs: \(telemetry.timeToFirstVisibleTokenMs.map(String.init) ?? "unknown")")
+            emit("timeToFirstVisibleTokenSource: \(telemetry.timeToFirstVisibleTokenSource.rawValue)")
+            emit("timeToCompleteReplyMs: \(timeToCompleteReplyMs)")
             emit("trajectoryCacheHit: \(judgement.trajectory.cacheHit)")
             emit("assessmentCacheHit: \(judgement.assessmentCacheHit)")
-            emit("assessmentCacheAgeMs: \(Int(turnCompletedAt.timeIntervalSince(judgement.assessmentGeneratedAt) * 1_000))")
+            emit("assessmentCacheAgeMs: \(assessmentCacheAgeMs)")
             emit("assessmentConfidence: \(String(format: "%.2f", judgement.assessment.confidence))")
+            emit("assessmentProofTestHash: \(assessmentProofTestHash)")
             emit("assessmentVerdict: \(judgement.assessment.directVerdict)")
             emit("assessmentImmediateRead: \(judgement.assessment.immediateCoachRead)")
-            if !judgement.assessment.missingEvidence.isEmpty {
-                emit("missingEvidence: \(judgement.assessment.missingEvidence.joined(separator: " | "))")
+            emit("assessmentResponseMode: \(judgement.assessment.responseMode.rawValue)")
+            emit("immediateCoachReadExpected: \(immediateCoachReadExpected)")
+            emit("immediateCoachReadShown: false")
+            if !missingEvidence.isEmpty {
+                emit("missingEvidence: \(missingEvidence.joined(separator: " | "))")
             }
             emit("proofTest: \(judgement.assessment.nextProofTest)")
-            emit("brain: \(expertise.map { $0.id }.joined(separator: ", "))")
+            emit("proofTestRecentlyRepeated: \(proofTestRecentlyRepeated)")
+            emit("userPushbackWithinTwoTurns: \(trustSignals.userPushbackWithinTwoTurns)")
+            emit("coldnessComplaintFlag: \(trustSignals.coldnessComplaintFlag)")
+            emit("softPushbackFlag: \(trustSignals.softPushbackFlag)")
+            emit("voiceBargeInOccurred: \(trustSignals.voiceBargeInOccurred)")
+            emit("brain: \(brainIDs.joined(separator: ", "))")
             emit("diagnostics:")
             for record in newRecords {
                 emit("- \(record.provider) \(record.model ?? "unknown-model") \(record.outcome.rawValue): \(record.reason) status=\(record.statusCode.map(String.init) ?? "nil") latencyMs=\(record.latencyMs.map(String.init) ?? "nil")")
@@ -174,6 +674,7 @@ struct CoachLiveEvaluationTests {
             switch outcome {
             case .reply(let raw):
                 let reply = CoachReplyTextSanitizer.coachReplyText(from: raw)
+                let replyWordCount = Self.wordCount(reply)
                 let rubric = AICoachChatService.professionalCoachRubric(
                     reply: reply,
                     latestUserTurn: fixture.latestUserTurn
@@ -220,31 +721,145 @@ struct CoachLiveEvaluationTests {
                 emit("")
                 emit(reply)
                 emit("")
+                emit("replyWordCount: \(replyWordCount)")
                 emit("rubric: score=\(rubric.score) misses=\(rubric.misses.map { $0.rawValue }.joined(separator: ","))")
                 emit("visionScore: \(vision.score) passesProductionFloor=\(vision.passesProductionFloor) missed=\(vision.missed.map { $0.rawValue }.joined(separator: ","))")
                 emit("qualityIssue: \(String(describing: issue))")
                 emit("semanticIssue: \(String(describing: semanticIssue))")
+                emit("semanticGateIssue: \(semanticIssue?.rawValue ?? "none")")
                 let reliability = CoachReliabilityGate.evaluate(
                     replyText: reply,
                     previousCoachReply: history.last { $0.role == .coach }?.text,
                     turnDepth: judgement.turnDepth,
                     assessment: judgement.assessment,
                     evidenceCoverage: judgement.trajectory.snapshot.evidenceCoverage,
+                    proofTestRecentlyRepeated: proofTestRecentlyRepeated,
                     surface: .text
                 )
                 emit("reliabilityFallbackApplied: \(reliability.blocked)")
                 emit("reliabilityIssues: \(reliability.issues.isEmpty ? "none" : reliability.issues.map(\.rawValue).joined(separator: ","))")
+                let reliabilityPasses = reliability.issues.isEmpty
+                let liveProductionFloor = Self.liveProductionFloor(
+                    qualityIssuePresent: issue != nil,
+                    semanticIssuePresent: semanticIssue != nil,
+                    rubricPasses: rubric.passesSeniorCoachFloor,
+                    visionPasses: vision.passesProductionFloor,
+                    reliabilityIssues: reliability.issues
+                )
+                emit("liveProductionFloor: \(liveProductionFloor)")
+                liveRows.append(CoachLiveEvaluationReportRow(
+                    fixtureID: fixture.id,
+                    userTurn: fixture.latestUserTurn,
+                    turnDepth: judgement.turnDepth.rawValue,
+                    surface: CoachReplySurface.text.rawValue,
+                    providerTierRequested: requestedTier.rawValue,
+                    providerTierChosen: providerTierChosen?.rawValue,
+                    providerChosen: providerChoice?.providerName,
+                    providerModel: providerChoice?.model,
+                    providerAttemptCount: telemetry.providerAttemptCount,
+                    providerRetryCount: telemetry.providerRetryCount,
+                    providerRefusalCount: telemetry.providerRefusalCount,
+                    timeToFirstVisibleTokenMs: telemetry.timeToFirstVisibleTokenMs,
+                    timeToFirstVisibleTokenSource: telemetry.timeToFirstVisibleTokenSource.rawValue,
+                    timeToCompleteReplyMs: timeToCompleteReplyMs,
+                    trajectoryCacheHit: judgement.trajectory.cacheHit,
+                    assessmentCacheHit: judgement.assessmentCacheHit,
+                    assessmentCacheAgeMs: assessmentCacheAgeMs,
+                    assessmentConfidence: judgement.assessment.confidence,
+                    assessmentProofTestHash: assessmentProofTestHash,
+                    assessmentVerdict: judgement.assessment.directVerdict,
+                    assessmentImmediateRead: judgement.assessment.immediateCoachRead,
+                    assessmentResponseMode: judgement.assessment.responseMode.rawValue,
+                    immediateCoachReadExpected: immediateCoachReadExpected,
+                    immediateCoachReadShown: false,
+                    missingEvidence: missingEvidence,
+                    proofTest: judgement.assessment.nextProofTest,
+                    proofTestRecentlyRepeated: proofTestRecentlyRepeated,
+                    userPushbackWithinTwoTurns: trustSignals.userPushbackWithinTwoTurns,
+                    coldnessComplaintFlag: trustSignals.coldnessComplaintFlag,
+                    softPushbackFlag: trustSignals.softPushbackFlag,
+                    voiceBargeInOccurred: trustSignals.voiceBargeInOccurred,
+                    brainIDs: brainIDs,
+                    diagnostics: diagnosticRows,
+                    reply: reply,
+                    replyWordCount: replyWordCount,
+                    rubricScore: rubric.score,
+                    rubricMisses: rubric.misses.map(\.rawValue),
+                    passesRubric: rubric.passesSeniorCoachFloor,
+                    visionScore: vision.score,
+                    visionPassesProductionFloor: vision.passesProductionFloor,
+                    visionMisses: vision.missed.map(\.rawValue),
+                    qualityIssue: issue.map { String(describing: $0) } ?? "none",
+                    semanticGateIssue: semanticIssue?.rawValue ?? "none",
+                    reliabilityFallbackApplied: reliability.blocked,
+                    reliabilityIssues: reliability.issues.map(\.rawValue),
+                    liveProductionFloor: liveProductionFloor,
+                    failure: nil
+                ))
 
-                if issue != nil || semanticIssue != nil || !rubric.passesSeniorCoachFloor || !vision.passesProductionFloor {
+                if !liveProductionFloor {
                     failed = true
                 }
                 #expect(issue == nil)
                 #expect(semanticIssue == nil)
                 #expect(rubric.passesSeniorCoachFloor)
                 #expect(vision.passesProductionFloor)
+                #expect(
+                    reliabilityPasses,
+                    "\(fixture.id) reliability issues: \(reliability.issues.map(\.rawValue).joined(separator: ","))"
+                )
 
             case .failure(let failure):
                 emit("failure: \(failure)")
+                liveRows.append(CoachLiveEvaluationReportRow(
+                    fixtureID: fixture.id,
+                    userTurn: fixture.latestUserTurn,
+                    turnDepth: judgement.turnDepth.rawValue,
+                    surface: CoachReplySurface.text.rawValue,
+                    providerTierRequested: requestedTier.rawValue,
+                    providerTierChosen: providerTierChosen?.rawValue,
+                    providerChosen: providerChoice?.providerName,
+                    providerModel: providerChoice?.model,
+                    providerAttemptCount: telemetry.providerAttemptCount,
+                    providerRetryCount: telemetry.providerRetryCount,
+                    providerRefusalCount: telemetry.providerRefusalCount,
+                    timeToFirstVisibleTokenMs: telemetry.timeToFirstVisibleTokenMs,
+                    timeToFirstVisibleTokenSource: telemetry.timeToFirstVisibleTokenSource.rawValue,
+                    timeToCompleteReplyMs: timeToCompleteReplyMs,
+                    trajectoryCacheHit: judgement.trajectory.cacheHit,
+                    assessmentCacheHit: judgement.assessmentCacheHit,
+                    assessmentCacheAgeMs: assessmentCacheAgeMs,
+                    assessmentConfidence: judgement.assessment.confidence,
+                    assessmentProofTestHash: assessmentProofTestHash,
+                    assessmentVerdict: judgement.assessment.directVerdict,
+                    assessmentImmediateRead: judgement.assessment.immediateCoachRead,
+                    assessmentResponseMode: judgement.assessment.responseMode.rawValue,
+                    immediateCoachReadExpected: immediateCoachReadExpected,
+                    immediateCoachReadShown: false,
+                    missingEvidence: missingEvidence,
+                    proofTest: judgement.assessment.nextProofTest,
+                    proofTestRecentlyRepeated: proofTestRecentlyRepeated,
+                    userPushbackWithinTwoTurns: trustSignals.userPushbackWithinTwoTurns,
+                    coldnessComplaintFlag: trustSignals.coldnessComplaintFlag,
+                    softPushbackFlag: trustSignals.softPushbackFlag,
+                    voiceBargeInOccurred: trustSignals.voiceBargeInOccurred,
+                    brainIDs: brainIDs,
+                    diagnostics: diagnosticRows,
+                    reply: nil,
+                    replyWordCount: nil,
+                    rubricScore: nil,
+                    rubricMisses: [],
+                    passesRubric: nil,
+                    visionScore: nil,
+                    visionPassesProductionFloor: nil,
+                    visionMisses: [],
+                    qualityIssue: "none",
+                    semanticGateIssue: "none",
+                    reliabilityFallbackApplied: nil,
+                    reliabilityIssues: [],
+                    liveProductionFloor: false,
+                    failure: String(describing: failure)
+                ))
                 failed = true
                 #expect(Bool(false), "\(fixture.id) failed with \(failure)")
             }
@@ -265,6 +880,19 @@ struct CoachLiveEvaluationTests {
             print("failed to write live eval report: \(error)")
             #expect(Bool(false))
         }
+        let jsonReport = CoachLiveEvaluationReport.make(
+            providerChain: providerChainLabels,
+            rows: liveRows
+        )
+        do {
+            try jsonReport
+                .encodedSortedJSON()
+                .write(toFile: resolvedJSONOutputPath, atomically: true, encoding: .utf8)
+            print("NOUM_LIVE_AI_EVAL_JSON_OUTPUT=\(resolvedJSONOutputPath)")
+        } catch {
+            print("failed to write live eval JSON report: \(error)")
+            #expect(Bool(false))
+        }
         if failed {
             #expect(!failed, "Live coach eval failed; report written to \(resolvedOutputPath)\n\(reportText)")
         }
@@ -276,6 +904,476 @@ struct CoachLiveEvaluationTests {
         #else
         return ProcessInfo.processInfo.environment["NOUM_LIVE_AI_EVAL"] == "1"
         #endif
+    }
+
+    private struct CoachLiveEvaluationReport: Codable, Equatable {
+        let schemaVersion: String
+        let fixtureCount: Int
+        let providerChain: [String]
+        let passesProductionFloor: Bool
+        let passesRunReadinessFloor: Bool
+        let summary: CoachLiveEvaluationSummary
+        let rows: [CoachLiveEvaluationReportRow]
+
+        static func make(
+            providerChain: [String],
+            rows: [CoachLiveEvaluationReportRow]
+        ) -> CoachLiveEvaluationReport {
+            let summary = CoachLiveEvaluationSummary.make(from: rows)
+            let passesProductionFloor = !rows.isEmpty && rows.allSatisfy(\.liveProductionFloor)
+            return CoachLiveEvaluationReport(
+                schemaVersion: CoachLiveEvaluationTests.liveReportSchemaVersion,
+                fixtureCount: rows.count,
+                providerChain: providerChain,
+                passesProductionFloor: passesProductionFloor,
+                passesRunReadinessFloor: passesProductionFloor && summary.readinessWarnings.isEmpty,
+                summary: summary,
+                rows: rows
+            )
+        }
+
+        func encodedSortedJSON() throws -> String {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = try encoder.encode(self)
+            return String(data: data, encoding: .utf8) ?? ""
+        }
+    }
+
+    private enum CoachLiveReadinessWarning: String, Codable, Equatable, CaseIterable {
+        case noRows
+        case productionFloorFailures
+        case repeatedProofTestHash
+        case flatAssessmentConfidence
+        case uniformReplyWordCount
+        case missingImmediateCoachRead
+        case providerRetryPressure
+        case providerRefusalPressure
+        case slowFirstVisibleToken
+    }
+
+    private struct CoachLiveEvaluationSummary: Codable, Equatable {
+        let rowCount: Int
+        let productionFloorFailureCount: Int
+        let failureFixtureIDs: [String]
+        let readinessWarnings: [String]
+        let uniqueProofTestHashCount: Int
+        let repeatedProofTestHashCount: Int
+        let assessmentConfidenceMin: Double?
+        let assessmentConfidenceMax: Double?
+        let assessmentConfidenceDistinctRoundedCount: Int
+        let averageReplyWordCount: Int?
+        let replyWordCountMin: Int?
+        let replyWordCountMax: Int?
+        let immediateCoachReadExpectedCount: Int
+        let immediateCoachReadMissingCount: Int
+        let missingImmediateCoachReadFixtureIDs: [String]
+        let maxProviderRetryCount: Int
+        let totalProviderRefusalCount: Int
+        let firstVisibleTokenMinMs: Int?
+        let firstVisibleTokenMaxMs: Int?
+        let userPushbackWithinTwoTurnsCount: Int
+        let coldnessComplaintCount: Int
+        let softPushbackCount: Int
+        let voiceBargeInCount: Int
+
+        static func make(from rows: [CoachLiveEvaluationReportRow]) -> CoachLiveEvaluationSummary {
+            let failures = rows.filter { !$0.liveProductionFloor }
+            let proofHashCounts = Dictionary(grouping: rows.map(\.assessmentProofTestHash), by: { $0 })
+            let repeatedProofHashCount = proofHashCounts.values.filter { $0.count > 1 }.count
+            let confidences = rows.map(\.assessmentConfidence)
+            let roundedConfidences = Set(confidences.map { String(format: "%.2f", $0) })
+            let wordCounts = rows.compactMap(\.replyWordCount)
+            let firstVisible = rows.compactMap(\.timeToFirstVisibleTokenMs)
+            let productionFloorFailureCount = failures.count
+            let maxProviderRetryCount = rows.map(\.providerRetryCount).max() ?? 0
+            let totalProviderRefusalCount = rows.reduce(0) { $0 + $1.providerRefusalCount }
+            let firstVisibleTokenMaxMs = firstVisible.max()
+            let immediateCoachReadExpectedRows = rows.filter(\.immediateCoachReadExpected)
+            let missingImmediateCoachReadRows = immediateCoachReadExpectedRows
+                .filter { !$0.immediateCoachReadShown }
+
+            return CoachLiveEvaluationSummary(
+                rowCount: rows.count,
+                productionFloorFailureCount: productionFloorFailureCount,
+                failureFixtureIDs: failures.map(\.fixtureID),
+                readinessWarnings: readinessWarnings(
+                    rowCount: rows.count,
+                    productionFloorFailureCount: productionFloorFailureCount,
+                    repeatedProofTestHashCount: repeatedProofHashCount,
+                    assessmentConfidenceDistinctRoundedCount: roundedConfidences.count,
+                    replyWordCounts: wordCounts,
+                    immediateCoachReadMissingCount: missingImmediateCoachReadRows.count,
+                    maxProviderRetryCount: maxProviderRetryCount,
+                    totalProviderRefusalCount: totalProviderRefusalCount,
+                    firstVisibleTokenMaxMs: firstVisibleTokenMaxMs
+                ),
+                uniqueProofTestHashCount: proofHashCounts.count,
+                repeatedProofTestHashCount: repeatedProofHashCount,
+                assessmentConfidenceMin: confidences.min(),
+                assessmentConfidenceMax: confidences.max(),
+                assessmentConfidenceDistinctRoundedCount: roundedConfidences.count,
+                averageReplyWordCount: averageInt(wordCounts),
+                replyWordCountMin: wordCounts.min(),
+                replyWordCountMax: wordCounts.max(),
+                immediateCoachReadExpectedCount: immediateCoachReadExpectedRows.count,
+                immediateCoachReadMissingCount: missingImmediateCoachReadRows.count,
+                missingImmediateCoachReadFixtureIDs: missingImmediateCoachReadRows.map(\.fixtureID),
+                maxProviderRetryCount: maxProviderRetryCount,
+                totalProviderRefusalCount: totalProviderRefusalCount,
+                firstVisibleTokenMinMs: firstVisible.min(),
+                firstVisibleTokenMaxMs: firstVisibleTokenMaxMs,
+                userPushbackWithinTwoTurnsCount: rows.filter(\.userPushbackWithinTwoTurns).count,
+                coldnessComplaintCount: rows.filter(\.coldnessComplaintFlag).count,
+                softPushbackCount: rows.filter(\.softPushbackFlag).count,
+                voiceBargeInCount: rows.filter(\.voiceBargeInOccurred).count
+            )
+        }
+
+        private static func averageInt(_ values: [Int]) -> Int? {
+            guard !values.isEmpty else { return nil }
+            let total = values.reduce(0, +)
+            return Int((Double(total) / Double(values.count)).rounded())
+        }
+
+        private static func readinessWarnings(
+            rowCount: Int,
+            productionFloorFailureCount: Int,
+            repeatedProofTestHashCount: Int,
+            assessmentConfidenceDistinctRoundedCount: Int,
+            replyWordCounts: [Int],
+            immediateCoachReadMissingCount: Int,
+            maxProviderRetryCount: Int,
+            totalProviderRefusalCount: Int,
+            firstVisibleTokenMaxMs: Int?
+        ) -> [String] {
+            var warnings: [CoachLiveReadinessWarning] = []
+            if rowCount == 0 {
+                warnings.append(.noRows)
+            }
+            if productionFloorFailureCount > 0 {
+                warnings.append(.productionFloorFailures)
+            }
+            if repeatedProofTestHashCount > 0 {
+                warnings.append(.repeatedProofTestHash)
+            }
+            if rowCount >= 3 && assessmentConfidenceDistinctRoundedCount <= 1 {
+                warnings.append(.flatAssessmentConfidence)
+            }
+            if replyWordCounts.count >= 3,
+               let min = replyWordCounts.min(),
+               let max = replyWordCounts.max(),
+               max - min <= 5 {
+                warnings.append(.uniformReplyWordCount)
+            }
+            if immediateCoachReadMissingCount > 0 {
+                warnings.append(.missingImmediateCoachRead)
+            }
+            if maxProviderRetryCount >= 2 {
+                warnings.append(.providerRetryPressure)
+            }
+            if totalProviderRefusalCount > 0 {
+                warnings.append(.providerRefusalPressure)
+            }
+            if let firstVisibleTokenMaxMs, firstVisibleTokenMaxMs > 2_500 {
+                warnings.append(.slowFirstVisibleToken)
+            }
+            return warnings.map(\.rawValue)
+        }
+    }
+
+    private struct CoachLiveEvaluationReportRow: Codable, Equatable {
+        let fixtureID: String
+        let userTurn: String
+        let turnDepth: String
+        let surface: String
+        let providerTierRequested: String
+        let providerTierChosen: String?
+        let providerChosen: String?
+        let providerModel: String?
+        let providerAttemptCount: Int
+        let providerRetryCount: Int
+        let providerRefusalCount: Int
+        let timeToFirstVisibleTokenMs: Int?
+        let timeToFirstVisibleTokenSource: String
+        let timeToCompleteReplyMs: Int
+        let trajectoryCacheHit: Bool
+        let assessmentCacheHit: Bool
+        let assessmentCacheAgeMs: Int
+        let assessmentConfidence: Double
+        let assessmentProofTestHash: String
+        let assessmentVerdict: String
+        let assessmentImmediateRead: String
+        let assessmentResponseMode: String
+        let immediateCoachReadExpected: Bool
+        let immediateCoachReadShown: Bool
+        let missingEvidence: [String]
+        let proofTest: String
+        let proofTestRecentlyRepeated: Bool
+        let userPushbackWithinTwoTurns: Bool
+        let coldnessComplaintFlag: Bool
+        let softPushbackFlag: Bool
+        let voiceBargeInOccurred: Bool
+        let brainIDs: [String]
+        let diagnostics: [CoachLiveDiagnosticReportRecord]
+        let reply: String?
+        let replyWordCount: Int?
+        let rubricScore: Int?
+        let rubricMisses: [String]
+        let passesRubric: Bool?
+        let visionScore: Int?
+        let visionPassesProductionFloor: Bool?
+        let visionMisses: [String]
+        let qualityIssue: String
+        let semanticGateIssue: String
+        let reliabilityFallbackApplied: Bool?
+        let reliabilityIssues: [String]
+        let liveProductionFloor: Bool
+        let failure: String?
+    }
+
+    private struct CoachLiveDiagnosticReportRecord: Codable, Equatable {
+        let provider: String
+        let model: String?
+        let outcome: String
+        let reason: String
+        let statusCode: Int?
+        let latencyMs: Int?
+
+        static func make(from record: CoachLiveDiagnosticRecord) -> CoachLiveDiagnosticReportRecord {
+            CoachLiveDiagnosticReportRecord(
+                provider: record.provider,
+                model: record.model,
+                outcome: record.outcome.rawValue,
+                reason: record.reason,
+                statusCode: record.statusCode,
+                latencyMs: record.latencyMs
+            )
+        }
+    }
+
+    private static func sampleLiveReportRow(
+        fixtureID: String,
+        liveProductionFloor: Bool,
+        assessmentConfidence: Double,
+        assessmentProofTestHash: String,
+        replyWordCount: Int?,
+        providerRetryCount: Int,
+        providerRefusalCount: Int,
+        timeToFirstVisibleTokenMs: Int?,
+        userPushbackWithinTwoTurns: Bool,
+        coldnessComplaintFlag: Bool,
+        softPushbackFlag: Bool,
+        turnDepth: CoachTurnDepth = .groundedRead,
+        surface: CoachReplySurface = .text,
+        assessmentResponseMode: CoachAssessment.ResponseMode = .immediateOnly,
+        immediateCoachReadShown: Bool = false
+    ) -> CoachLiveEvaluationReportRow {
+        let immediateCoachReadExpected = Self.immediateCoachReadExpected(
+            turnDepth: turnDepth,
+            surface: surface,
+            responseMode: assessmentResponseMode
+        )
+        return CoachLiveEvaluationReportRow(
+            fixtureID: fixtureID,
+            userTurn: "How should I handle this?",
+            turnDepth: turnDepth.rawValue,
+            surface: surface.rawValue,
+            providerTierRequested: CoachProviderTier.geminiFast.rawValue,
+            providerTierChosen: CoachProviderTier.geminiFast.rawValue,
+            providerChosen: "Google Gemini",
+            providerModel: "gemini-test",
+            providerAttemptCount: max(1, providerRetryCount + 1),
+            providerRetryCount: providerRetryCount,
+            providerRefusalCount: providerRefusalCount,
+            timeToFirstVisibleTokenMs: timeToFirstVisibleTokenMs,
+            timeToFirstVisibleTokenSource: timeToFirstVisibleTokenMs == nil
+                ? TimeToFirstVisibleTokenSource.unavailable.rawValue
+                : TimeToFirstVisibleTokenSource.completedReplyProxy.rawValue,
+            timeToCompleteReplyMs: 1_000,
+            trajectoryCacheHit: true,
+            assessmentCacheHit: false,
+            assessmentCacheAgeMs: 20,
+            assessmentConfidence: assessmentConfidence,
+            assessmentProofTestHash: assessmentProofTestHash,
+            assessmentVerdict: "Verdict",
+            assessmentImmediateRead: "Immediate read",
+            assessmentResponseMode: assessmentResponseMode.rawValue,
+            immediateCoachReadExpected: immediateCoachReadExpected,
+            immediateCoachReadShown: immediateCoachReadShown,
+            missingEvidence: [],
+            proofTest: "Run a short proof test.",
+            proofTestRecentlyRepeated: false,
+            userPushbackWithinTwoTurns: userPushbackWithinTwoTurns,
+            coldnessComplaintFlag: coldnessComplaintFlag,
+            softPushbackFlag: softPushbackFlag,
+            voiceBargeInOccurred: false,
+            brainIDs: [],
+            diagnostics: [],
+            reply: replyWordCount.map { words in
+                Array(repeating: "word", count: words).joined(separator: " ")
+            },
+            replyWordCount: replyWordCount,
+            rubricScore: liveProductionFloor ? 90 : 60,
+            rubricMisses: [],
+            passesRubric: liveProductionFloor,
+            visionScore: liveProductionFloor ? 90 : 60,
+            visionPassesProductionFloor: liveProductionFloor,
+            visionMisses: [],
+            qualityIssue: "none",
+            semanticGateIssue: "none",
+            reliabilityFallbackApplied: false,
+            reliabilityIssues: liveProductionFloor ? [] : ["fixtureFailure"],
+            liveProductionFloor: liveProductionFloor,
+            failure: liveProductionFloor ? nil : "fixture failure"
+        )
+    }
+
+    private static func jsonReportPath(for markdownPath: String) -> String {
+        let url = URL(fileURLWithPath: markdownPath)
+        guard !url.pathExtension.isEmpty else {
+            return markdownPath + ".json"
+        }
+        return url.deletingPathExtension().appendingPathExtension("json").path
+    }
+
+    private static func immediateCoachReadExpected(
+        turnDepth: CoachTurnDepth,
+        surface: CoachReplySurface,
+        responseMode: CoachAssessment.ResponseMode
+    ) -> Bool {
+        CoachReplyPipeline.shouldShowProvisionalCoachRead(
+            turnDepth: turnDepth,
+            surface: surface,
+            responseMode: responseMode,
+            realtimeCoachModeEnabled: true
+        )
+    }
+
+    private static func liveProductionFloor(
+        qualityIssuePresent: Bool,
+        semanticIssuePresent: Bool,
+        rubricPasses: Bool,
+        visionPasses: Bool,
+        reliabilityIssues: [CoachReliabilityIssue]
+    ) -> Bool {
+        !qualityIssuePresent &&
+        !semanticIssuePresent &&
+        rubricPasses &&
+        visionPasses &&
+        reliabilityIssues.isEmpty
+    }
+
+    private enum TimeToFirstVisibleTokenSource: String, Equatable {
+        case streamedPartialVisible
+        case providerFirstTokenDiagnostic
+        case completedReplyProxy
+        case unavailable
+    }
+
+    private struct LiveTelemetrySummary: Equatable {
+        let providerAttemptCount: Int
+        let providerRetryCount: Int
+        let providerRefusalCount: Int
+        let timeToFirstVisibleTokenMs: Int?
+        let timeToFirstVisibleTokenSource: TimeToFirstVisibleTokenSource
+    }
+
+    private struct LiveTrustSignalSummary: Equatable {
+        let userPushbackWithinTwoTurns: Bool
+        let coldnessComplaintFlag: Bool
+        let softPushbackFlag: Bool
+        let voiceBargeInOccurred: Bool
+    }
+
+    private static func liveTelemetrySummary(
+        providerEvents: [CoachProviderAttemptEvent],
+        diagnostics: [CoachLiveDiagnosticRecord],
+        turnStartedAt: Date,
+        turnCompletedAt: Date,
+        firstStreamedVisibleAt: Date?,
+        completedReplyVisible: Bool
+    ) -> LiveTelemetrySummary {
+        let firstVisible: (Int?, TimeToFirstVisibleTokenSource)
+        if let firstStreamedVisibleAt {
+            firstVisible = (
+                latencyMs(from: turnStartedAt, to: firstStreamedVisibleAt),
+                .streamedPartialVisible
+            )
+        } else if let firstProviderTokenMs = diagnostics.first(where: {
+            $0.outcome == .success &&
+            $0.reason == "Streaming first provider token received"
+        })?.latencyMs {
+            firstVisible = (firstProviderTokenMs, .providerFirstTokenDiagnostic)
+        } else if completedReplyVisible {
+            firstVisible = (
+                latencyMs(from: turnStartedAt, to: turnCompletedAt),
+                .completedReplyProxy
+            )
+        } else {
+            firstVisible = (nil, .unavailable)
+        }
+
+        return LiveTelemetrySummary(
+            providerAttemptCount: CoachReplyPipeline.providerAttemptCount(providerEvents),
+            providerRetryCount: CoachReplyPipeline.providerRetryCount(providerEvents),
+            providerRefusalCount: CoachReplyPipeline.providerRefusalCount(providerEvents),
+            timeToFirstVisibleTokenMs: firstVisible.0,
+            timeToFirstVisibleTokenSource: firstVisible.1
+        )
+    }
+
+    private static func liveTrustSignals(
+        userTurn: String,
+        turnDepth: CoachTurnDepth,
+        history: [CoachMessage]
+    ) -> LiveTrustSignalSummary {
+        let priorCoachReplyExists = history.contains { $0.role == .coach }
+        return LiveTrustSignalSummary(
+            userPushbackWithinTwoTurns: turnDepth == .trustRepair && priorCoachReplyExists,
+            coldnessComplaintFlag: isColdnessComplaint(userTurn),
+            softPushbackFlag: isSoftPushback(userTurn),
+            voiceBargeInOccurred: false
+        )
+    }
+
+    private static func isSoftPushback(_ text: String) -> Bool {
+        TurnDepthClassifier.isSoftPushback(normalizedTrustText(text))
+    }
+
+    private static func isColdnessComplaint(_ text: String) -> Bool {
+        let lower = normalizedTrustText(text)
+        return [
+            "cold",
+            "robotic",
+            "generic ai",
+            "generic tips",
+            "ai tips",
+            "ai wrapper",
+            "low eq",
+            "not high eq",
+            "not human",
+            "doesn't feel human",
+            "does not feel human",
+            "not like a coach",
+            "nowhere near an expert coach",
+            "no where near an expert coach"
+        ].contains { lower.contains($0) }
+    }
+
+    private static func normalizedTrustText(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\u{2019}", with: "'")
+            .replacingOccurrences(of: "\u{2018}", with: "'")
+            .lowercased()
+    }
+
+    private static func latencyMs(from start: Date, to end: Date) -> Int {
+        max(0, Int(end.timeIntervalSince(start) * 1_000))
+    }
+
+    private static func wordCount(_ text: String) -> Int {
+        text.split { $0.isWhitespace || $0.isNewline }.count
     }
 
     private static func selectedFixtures(
@@ -345,7 +1443,8 @@ struct CoachLiveEvaluationTests {
     private static func judgement(
         for fixture: CoachChatEvaluationFixture,
         history: [CoachMessage],
-        surface: CoachReplySurface
+        surface: CoachReplySurface,
+        recentProofTests: [String] = []
     ) -> JudgementContext {
         let turnDepth = CoachBrainFlags.judgementPassEnabled
             ? TurnDepthClassifier.classify(
@@ -368,7 +1467,7 @@ struct CoachLiveEvaluationTests {
             trajectory: trajectory.snapshot,
             rubric: rubric,
             surface: surface,
-            recentProofTests: [],
+            recentProofTests: recentProofTests,
             previousCoachReply: fixture.previousCoachReply,
             build: {
                 CoachReasoningPass.assess(
@@ -377,6 +1476,7 @@ struct CoachLiveEvaluationTests {
                     trajectory: trajectory.snapshot,
                     rubric: rubric,
                     surface: surface,
+                    recentProofTests: recentProofTests,
                     previousCoachReply: fixture.previousCoachReply
                 )
             }
@@ -389,6 +1489,32 @@ struct CoachLiveEvaluationTests {
             assessmentCacheHit: assessmentResult.cacheHit,
             assessmentGeneratedAt: assessmentResult.generatedAt
         )
+    }
+
+    private static func updatedRecentProofTests(
+        _ current: [String],
+        adding proofTest: String,
+        limit: Int = 6
+    ) -> [String] {
+        let trimmed = proofTest.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return current }
+        return Array(([trimmed] + current).prefix(limit))
+    }
+
+    private static func proofTestRecentlyRepeated(
+        _ proofTest: String,
+        in recentProofTests: [String]
+    ) -> Bool {
+        let key = proofTestKey(proofTest)
+        guard !key.isEmpty else { return false }
+        return recentProofTests.contains { proofTestKey($0) == key }
+    }
+
+    private static func proofTestKey(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     }
 
     private static func history(for fixture: CoachChatEvaluationFixture) -> [CoachMessage] {

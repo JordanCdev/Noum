@@ -109,6 +109,18 @@ struct CoachReliabilityGateTests {
         }
     }
 
+    @Test func legitimatePlaceholderAskDoesNotBlock() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "For the 75-second update, use a placeholder ask: I need alignment on the next step, because it trains the close before the business content is final.",
+            previousCoachReply: nil,
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.6
+        )
+        #expect(!verdict.issues.contains(.placeholder))
+        #expect(!verdict.blocked)
+    }
+
     @Test func verbatimDuplicateOfPreviousCoachReplyBlocks() {
         let prior = "Lead with the decision, then one reason. Try a 60-second rep and keep sentence one as the answer."
         let verdict = CoachReliabilityGate.evaluate(
@@ -277,6 +289,28 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.issues.contains(.noAttunementOnPushback))
     }
 
+    @Test func trustRepairLetMePrescribeDoesNotCountAsAcknowledgement() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Let me give you the drill: run a 60-second rep and put the verdict first.",
+            previousCoachReply: "Earlier read.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(verdict.issues.contains(.noAttunementOnPushback))
+    }
+
+    @Test func trustRepairLetMeRepairDoesCountAsAcknowledgement() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Let me repair that: I gave you advice before answering the friction. The real read is the opener.",
+            previousCoachReply: "Earlier read.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.noAttunementOnPushback))
+    }
+
     @Test func repeatedProofTestIsRecordedNotBlocked() {
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "Lead with the verdict and prove it once.",
@@ -311,7 +345,7 @@ struct CoachReliabilityGateTests {
     @Test func fallbackUsesHonestStaticLineWhenImmediateReadIsDirty() {
         // A proof test that itself leaks a placeholder marker → immediateCoachRead
         // is not a clean candidate → static honest line is used instead.
-        let assessment = Self.quickMoveAssessment(proofTest: "placeholder next step")
+        let assessment = Self.quickMoveAssessment(proofTest: "placeholder reply")
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "",
             previousCoachReply: nil,
@@ -397,7 +431,7 @@ struct CoachReliabilityGateTests {
             id: "how-far-off-am-i",
             depth: .deepAssessment,
             good: "Honest read: you're closer mechanically than under pressure. I don't have a stakes rep yet, so I won't claim you're ready.",
-            bad: "placeholder",
+            bad: "placeholder reply",
             previousCoachReply: nil
         ),
         Golden(

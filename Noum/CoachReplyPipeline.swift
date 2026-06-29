@@ -69,9 +69,14 @@ enum CoachReplyPipeline {
         coachID: UUID,
         pendingGoalIntent: CoachContextBuilder.GoalIntent? = nil,
         surface: CoachReplySurface = .text,
+        store: AskNoumStore? = nil,
+        coachService: AICoachChatService = .shared,
+        judgementPassEnabled: Bool = CoachBrainFlags.judgementPassEnabled,
+        realtimeCoachModeEnabled: Bool = CoachBrainFlags.realtimeCoachModeEnabled,
         onProvisionalCoachReadVisible: (@MainActor (String) -> Void)? = nil
     ) async -> ChatOutcome {
         let turnStartedAt = Date()
+        let store = store ?? AskNoumStore.shared
         let profileStore = CoachingProfileStore.shared
         let systemPrompt = CoachContextBuilder.systemPrompt(
             for: profileStore.profile,
@@ -87,10 +92,10 @@ enum CoachReplyPipeline {
         let coachMemoryStore = CoachMemoryStore.shared
         let weeklyCheckInDue = !sessionStore.sessions.isEmpty && CoachCheckInStore.shared.isCheckInDue()
         let recentProofs = ProofMomentStore.shared.recent(limit: 3)
-        let history = AskNoumStore.shared.replayForModel
+        let history = store.replayForModel
         let latestUserIndex = history.lastIndex { $0.role == .user }
         let latestUserTurn = latestUserIndex.map { history[$0].text }
-        let turnDepth = CoachBrainFlags.judgementPassEnabled
+        let turnDepth = judgementPassEnabled
             ? TurnDepthClassifier.classify(
                 userText: latestUserTurn ?? "",
                 recentTurns: history,
@@ -167,7 +172,7 @@ enum CoachReplyPipeline {
         )
         let activeRubric = GoalRubricStore.activeRubric(for: profileStore.profile)
         let reasoningStartedAt = Date()
-        let assessmentResult: CoachAssessmentCacheResult? = CoachBrainFlags.judgementPassEnabled
+        let assessmentResult: CoachAssessmentCacheResult? = judgementPassEnabled
             ? CoachAssessmentCache.shared.assessment(
                 turnDepth: turnDepth,
                 userQuestion: latestUserTurn ?? "",
@@ -215,7 +220,7 @@ enum CoachReplyPipeline {
                 turnDepth: turnDepth,
                 surface: surface,
                 responseMode: assessment.responseMode,
-                realtimeCoachModeEnabled: CoachBrainFlags.realtimeCoachModeEnabled
+                realtimeCoachModeEnabled: realtimeCoachModeEnabled
             ) {
                 let provisionalVisibleAt = Date()
                 let immediateCoachRead = CoachReplyTextSanitizer.coachReplyText(
@@ -238,7 +243,7 @@ enum CoachReplyPipeline {
                     trajectoryCacheHit: trajectoryResult.cacheHit,
                     surface: surface
                 )
-                if AskNoumStore.shared.setProvisionalCoachRead(
+                if store.setProvisionalCoachRead(
                     id: coachID,
                     text: immediateCoachRead,
                     metadata: provisionalMetadata
@@ -321,7 +326,7 @@ enum CoachReplyPipeline {
         var qualityGateEvents: [CoachTurnQualityGateEvent] = []
         var providerAttemptEvents: [CoachProviderAttemptEvent] = []
         Self.log.debug("generating coach reply history=\(history.count, privacy: .public) sessions=\(sessionStore.sessions.count, privacy: .public) proofs=\(recentProofs.count, privacy: .public) weeklyCheckInDue=\(weeklyCheckInDue, privacy: .public)")
-        let outcome = await AICoachChatService.shared.reply(
+        let outcome = await coachService.reply(
             history: history,
             systemPrompt: systemPrompt,
             userContext: context,
@@ -350,7 +355,7 @@ enum CoachReplyPipeline {
                     trajectoryCacheHit: trajectoryResult.cacheHit,
                     surface: surface
                 )
-                if AskNoumStore.shared.setProvisionalCoachRead(
+                if store.setProvisionalCoachRead(
                     id: coachID,
                     text: partialText,
                     metadata: streamedMetadata
@@ -536,7 +541,7 @@ enum CoachReplyPipeline {
         case .failure(let failure):
             Self.log.notice("coach pipeline produced failure=\(String(describing: failure), privacy: .public)")
         }
-        AskNoumStore.shared.completeCoachTurn(
+        store.completeCoachTurn(
             id: coachID,
             outcome: effectiveOutcome,
             metadata: finalMetadata

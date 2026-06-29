@@ -589,6 +589,7 @@ enum CoachSemanticQualityIssue: String, Equatable {
     case missingMechanicsGoalDistinction
     case missingEvidenceDisclosure
     case insufficientEvidenceReferences
+    case missingRepairInsight
     case unsupportedClosenessClaim
     case missingProofTest
 
@@ -602,6 +603,8 @@ enum CoachSemanticQualityIssue: String, Equatable {
             return "The draft fails to name missing evidence. Say exactly what evidence is still needed before a stronger verdict is fair."
         case .insufficientEvidenceReferences:
             return "The draft does not use enough concrete evidence. Include at least two evidence points from the typed assessment when available."
+        case .missingRepairInsight:
+            return "The draft acknowledges the trust repair but does not give a concrete coach read. Name the behavioral signal, evidence anchor, or actual read before prescribing the proof test."
         case .unsupportedClosenessClaim:
             return "The draft says the user is close or not far off without enough evidence. Remove the closeness claim or limit it to mechanics only."
         case .missingProofTest:
@@ -2809,6 +2812,10 @@ actor AICoachChatService {
                !replyNamesRepairFocus(lower, repairFocus: repairFocus) {
                 return .missingDirectVerdict
             }
+            if assessment.repairFocus != nil,
+               !replyContainsTrustRepairRead(lower, assessment: assessment) {
+                return .missingRepairInsight
+            }
             if !replyContainsProofTest(lower, assessment: assessment),
                !replyNamesMissingEvidence(lower) {
                 return .missingProofTest
@@ -3236,7 +3243,10 @@ actor AICoachChatService {
         let focus = repairFocus.lowercased()
         let needles: [String]
         if containsAny(focus, ["cold", "human coach"]) {
-            needles = ["cold", "human", "coach read", "not coaching", "generic ai", "ai tips"]
+            needles = [
+                "cold", "robotic", "human", "coach read", "not coaching",
+                "generic ai", "ai tips"
+            ]
         } else if containsAny(focus, ["too much writing", "writing", "wordy"]) {
             needles = ["too much writing", "too long", "shorter", "wordy", "overexplained", "dense"]
         } else if containsAny(focus, ["actual question", "missed"]) {
@@ -3244,7 +3254,12 @@ actor AICoachChatService {
         } else if containsAny(focus, ["generic", "evidence"]) {
             needles = ["generic", "evidence", "generic advice", "not evidence", "template", "templated"]
         } else if containsAny(focus, ["polite pushback", "friction"]) {
-            needles = ["friction", "pushback", "however", "but"]
+            needles = [
+                "friction", "pushback", "hesitation", "what you meant",
+                "what you were asking", "didn't answer", "did not answer",
+                "missed the question", "missed your question", "missed the ask",
+                "underneath the polite", "polite push"
+            ]
         } else {
             needles = focus
                 .split { !$0.isLetter && !$0.isNumber }
@@ -3252,6 +3267,45 @@ actor AICoachChatService {
                 .filter { $0.count >= 5 }
         }
         return containsAny(lower, needles)
+    }
+
+    private nonisolated static func replyContainsTrustRepairRead(
+        _ lower: String,
+        assessment: CoachAssessment
+    ) -> Bool {
+        if replyTouchesNonRepairEvidence(lower, assessment: assessment) {
+            return true
+        }
+        return containsAny(lower, [
+            "last rep", "recent rep", "latest rep", "available excerpt",
+            "transcript", "filler count", "fillers", "pace estimate",
+            "words per minute", " wpm", "/10",
+            "what i notice", "what i heard",
+            "the useful read is", "the actual read is", "the real read is",
+            "the coaching read is", "the signal i can use",
+            "one safe signal", "usable signal"
+        ])
+    }
+
+    private nonisolated static func replyTouchesNonRepairEvidence(
+        _ lower: String,
+        assessment: CoachAssessment
+    ) -> Bool {
+        assessment.evidenceUsed.contains { evidence in
+            let evidenceLower = evidence.lowercased()
+            guard !evidenceLower.hasPrefix("trust repair signal:") else {
+                return false
+            }
+            let words = evidenceLower
+                .split { !$0.isLetter && !$0.isNumber }
+                .map(String.init)
+                .filter { $0.count >= 4 }
+            guard !words.isEmpty else { return false }
+            let hitCount = words.reduce(0) { count, word in
+                count + (lower.contains(word) ? 1 : 0)
+            }
+            return hitCount >= min(2, words.count)
+        }
     }
 
     private nonisolated static func trustRepairMissesSpecificFriction(
@@ -3404,7 +3458,7 @@ actor AICoachChatService {
 
     private nonisolated static func replyHasInsightBridge(_ lower: String) -> Bool {
         containsAny(lower, [
-            " so ", " because ", " therefore ", " which is why",
+            " so ", " because ", "because ", " therefore ", " which is why",
             "that is why", "that's why", "that’s why", "that tests",
             "tests whether", "tests if", "the pattern", "the signal",
             "useful signal", "enough signal", "pressure cue", "the read",

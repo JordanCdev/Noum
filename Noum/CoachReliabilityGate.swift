@@ -111,10 +111,14 @@ enum CoachReliabilityGate {
         "full answer coming",
         "coach read coming",
         "response coming",
-        "placeholder",
+        "placeholder reply",
+        "placeholder response",
+        "placeholder text",
+        "placeholder copy",
         "lorem ipsum",
         "your response here",
         "insert response",
+        "[placeholder",
         "[insert",
         "[todo",
         "todo:",
@@ -156,7 +160,8 @@ enum CoachReliabilityGate {
         "i hear", "good push", "that's fair", "thats fair",
         "i missed", "i owe you", "right to push", "right to call",
         "makes sense", "i get it", "valid", "my read was off",
-        "let me", "i was", "i didn't", "i didnt", "you're pushing",
+        "let me repair", "let me fix", "let me correct",
+        "i was", "i didn't", "i didnt", "you're pushing",
         "i hear that", "i get that", "that's on me", "thats on me"
     ]
 
