@@ -47,6 +47,43 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-29 (autonomous `noum-1` run). **15th iteration. Did NOT re-score or touch
+the hot zone an active session was editing — ran a read-only 4-role panel to find
+the one genuinely-new, non-human-gated, collision-safe lever the 14 priors missed,
+and shipped it. Full app build + tests GREEN in an isolated worktree. No push.**
+Commit `52fc6aea`. Full write-up: `docs/COACH_PARITY_EVAL_2026-06-29.md`.
+
+- **Shipped per-voice rubrics (`52fc6aea`)** — `GoalRubricStore.rubric(for:)`
+  collapsed all six `SpeakingStyleGoal` voices onto `authoritativeRubric`, so a
+  user who chose "Warm and welcoming" was scored verdict-first / hedge-control
+  (opposite of warmth) and told they were "approaching the authoritative
+  standard" — a real CLAUDE.md "never punish valid speech patterns" violation on
+  the one un-voice-branched surface. Added `warmRubric` + `storytellingRubric`
+  reusing the SAME six scored dimension IDs (extracted to shared `coreDimensions`;
+  a new ID would score as an inert `0.45` default), weights mirroring the shipped
+  `voiceDeliveryBonus` priorities. NOT calibration — zero new thresholds, no
+  `CoachReasoningPass` edit. +10 tests (`GoalRubricVoiceRoutingTests`). The 14
+  priors mis-deferred this by filing a *weights/definition* change under
+  *threshold calibration*; the same codebase already ships per-voice models
+  headless, so the calibration objection doesn't apply.
+- **Collision discipline:** a concurrent `ultracode` session held uncommitted
+  edits to `AICoachChatService.swift` + `CoachReliabilityGate.swift` + 3 test
+  files (the real, QA-verified "near-duplicate soft signal" gate work). Committed
+  with explicit pathspecs; those six files preserved byte-for-byte. Built in an
+  isolated worktree at HEAD so their in-progress edits never polluted my signal.
+- **Logged, not shipped (tree too busy / felt-QA-gated):** (1) first-rep-ever
+  keep-prompt-visible in `TimedPracticeView` (the rep-1 disappearing-prompt trap);
+  (2) **annotated transcript timeline** — persist the discarded Deepgram per-word
+  timings + render filler/pause/burst positions (the Yoodli/Speeko signature,
+  absent from all 14 priors) = **strongest next buildable slice once the tree is
+  quiet.**
+- **10/10 answer, unchanged:** literal "with no doubt replaces a human coach"
+  stays REFUSED by design (`CoachParityReadiness.forming` trust moat). Genuine
+  limitations unchanged + all human-gated: proxy-not-perception scoring,
+  un-externally-validated thresholds (this run added zero new ones), dark
+  acquisition flag. Figma + Canva connectors are live but not auto-triggered in an
+  unattended run (external writes).
+
 2026-06-28 (autonomous `noum2` run). **Turned the recurring #1 ceiling-blocker
 ("heuristic, uncalibrated scoring") into a real artifact + fixed the honesty gap
 it surfaced. Build+test GREEN on the real toolchain; no push.** Full write-up:
