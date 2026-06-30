@@ -12908,6 +12908,31 @@ struct ProofMomentArchiveTests {
         #expect(storeAReload.records.first?.proof.quote == "A's quote.")
     }
 
+    @Test func reloadForCurrentAccountClearsInMemoryProofsWhenTargetAccountHasNoArchive() {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        var accountID = "alpha"
+        let store = ProofMomentStore(defaults: suite, accountIDProvider: { accountID })
+        store.record(sampleProof(quote: "A's quote."), for: UUID())
+
+        accountID = "beta"
+        store.reloadForCurrentAccount()
+
+        #expect(store.records.isEmpty, "Reloading into an account with no archive must not retain the prior account's proof quotes")
+    }
+
+    @Test func endSessionClearsInMemoryProofsWithoutWritingGuestArchive() {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        var accountID: String? = "alpha"
+        let store = ProofMomentStore(defaults: suite, accountIDProvider: { accountID })
+        store.record(sampleProof(quote: "A's quote."), for: UUID())
+
+        accountID = nil
+        store.endSession()
+
+        #expect(store.records.isEmpty)
+        #expect(suite.data(forKey: "proofMoment.archive.guest") == nil)
+    }
+
     @Test func capDropsOldestByAddedAt() {
         // Push more than the cap. Oldest-by-addedAt should be the one
         // that drops off so a recent refresh-replace doesn't accidentally
@@ -27430,6 +27455,8 @@ struct CoachChatEvaluationFixtureTests {
         #expect(first.rows.allSatisfy { $0.referenceReplyPassesQualityGate })
         #expect(first.rows.allSatisfy { $0.referencePassesReliabilityGate })
         #expect(first.rows.allSatisfy { $0.referencePassesProductionFloor })
+        #expect(first.rows.allSatisfy { $0.contextNeedlesPassed })
+        #expect(first.rows.allSatisfy { $0.missingContextNeedles.isEmpty })
         #expect(first.rows.allSatisfy { $0.knownBadIssueMatched })
         #expect(first.rows.allSatisfy { $0.referenceVisionScore > $0.knownBadVisionScore })
         #expect(first.rows.allSatisfy { $0.expertBaselineStatus == "pendingExpertReview" })
@@ -27437,7 +27464,7 @@ struct CoachChatEvaluationFixtureTests {
         #expect(first.rows.contains { !$0.knownBadReliabilityIssues.isEmpty })
 
         let encoded = try first.encodedSortedJSON()
-        #expect(encoded.contains(#""schemaVersion":"coach-chat-eval-report-v5""#))
+        #expect(encoded.contains(#""schemaVersion":"coach-chat-eval-report-v6""#))
         #expect(encoded.contains(#""fixtureID":"cold-start-interview-baseline""#))
         #expect(encoded.contains(#""referenceReplyPassesRubric":true"#))
         #expect(encoded.contains(#""referenceReplyPassesQualityGate":true"#))
@@ -27446,6 +27473,8 @@ struct CoachChatEvaluationFixtureTests {
         #expect(encoded.contains(#""referencePassesVisionRuntimeGate":"#))
         #expect(encoded.contains(#""referencePassesReliabilityGate":"#))
         #expect(encoded.contains(#""referencePassesProductionFloor":"#))
+        #expect(encoded.contains(#""contextNeedlesPassed":true"#))
+        #expect(encoded.contains(#""missingContextNeedles":[]"#))
         #expect(encoded.contains(#""referenceReliabilityIssues":"#))
         #expect(encoded.contains(#""knownBadTripsVisionRuntimeGate":"#))
         #expect(encoded.contains(#""knownBadTripsReliabilityGate":"#))

@@ -498,6 +498,9 @@ class AuthManager: ObservableObject {
             "coachingProfile.\(accountID)",
             "coachingProfileOnboardingComplete.\(accountID)",
             "practiceSessions.\(accountID)",
+            "communicationBaseline.\(accountID)",
+            "pressureProfile.\(accountID)",
+            "speakingRating.\(accountID)",
             "imRelationshipProfiles.\(accountID)",
             "recommendation.pending.\(accountID)",
             "recommendation.outcomes.\(accountID)",
@@ -546,6 +549,8 @@ class AuthManager: ObservableObject {
             "postRepCoachNote.\(accountID)",
             // M25: Coach memory — durable working formulation for Ask Noum
             "coachMemory.\(accountID)",
+            // Transcript-anchored quote archive used by Ask Noum.
+            "proofMoment.archive.\(accountID)",
             // Ask Noum coach thread — the full per-account chat/call dialogue.
             // Must be wiped on account deletion (GDPR) like every other store.
             "askNoum.thread.\(accountID)",
@@ -618,6 +623,8 @@ class AuthManager: ObservableObject {
             CoachingProfileStore.shared.reloadForCurrentAccount()
             FirstRunOnboardingManager.shared.reloadForCurrentAccount()
             PracticeSessionStore.shared.reloadForCurrentAccount()
+            BaselineStore.shared.reloadForCurrentAccount()
+            RatingStore.shared.reloadForCurrentAccount()
             ProfileManager.shared.reloadForCurrentAccount()
             IMRelationshipStore.shared.reloadForCurrentAccount()
             RecommendationLearningStore.shared.reloadForCurrentAccount()
@@ -629,6 +636,9 @@ class AuthManager: ObservableObject {
             CoachLetterStore.shared.reloadForCurrentAccount()
             PostRepCoachNoteStore.shared.reloadForCurrentAccount()
             CoachMemoryStore.shared.reloadForCurrentAccount()
+            if #available(iOS 17.0, *) {
+                ProofMomentStore.shared.reloadForCurrentAccount()
+            }
             AskNoumStore.shared.reloadForCurrentAccount()
             SuddenDeathRunHistoryStore.shared.reloadForCurrentAccount()
             completion?()
@@ -640,6 +650,8 @@ class AuthManager: ObservableObject {
             await Task.yield()
             CoachingProfileStore.shared.endSession()
             PracticeSessionStore.shared.endSession()
+            BaselineStore.shared.endSession()
+            RatingStore.shared.endSession()
             ProfileManager.shared.endSession()
             IMRelationshipStore.shared.endSession()
             BigMomentStore.shared.endSession()
@@ -650,6 +662,9 @@ class AuthManager: ObservableObject {
             CoachLetterStore.shared.endSession()
             PostRepCoachNoteStore.shared.endSession()
             CoachMemoryStore.shared.endSession()
+            if #available(iOS 17.0, *) {
+                ProofMomentStore.shared.endSession()
+            }
             AskNoumStore.shared.endSession()
             SuddenDeathRunHistoryStore.shared.endSession()
             AIRateLimiter.shared.endSession()

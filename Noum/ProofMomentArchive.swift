@@ -180,16 +180,36 @@ final class ProofMomentStore: ObservableObject {
         persist()
     }
 
+    func reloadForCurrentAccount() {
+        loadFromDisk()
+    }
+
+    func endSession() {
+        records = []
+    }
+
+    func deleteAllData(for accountID: String) {
+        defaults.removeObject(forKey: key(for: accountID))
+        if accountIDProvider() == accountID {
+            records = []
+        }
+    }
+
     // MARK: - Persistence
 
     private var currentKey: String {
         let id = accountIDProvider() ?? "guest"
-        return "\(Self.storagePrefix).\(id)"
+        return key(for: id)
+    }
+
+    private func key(for accountID: String) -> String {
+        "\(Self.storagePrefix).\(accountID)"
     }
 
     private func loadFromDisk() {
         guard let data = defaults.data(forKey: currentKey),
               let decoded = try? JSONDecoder().decode([ProofMomentRecord].self, from: data) else {
+            records = []
             return
         }
         records = decoded

@@ -3649,6 +3649,9 @@ actor AICoachChatService {
     }
 
     private nonisolated static func replyOverclaimsEvidence(_ lower: String) -> Bool {
+        if replyOverclaimsUnconfirmedPersonalPattern(lower) {
+            return true
+        }
         if containsAny(lower, [
             "this proves", "the data proves", "definitely means",
             "always do this", "you lack conviction", "you are weak",
@@ -3719,6 +3722,62 @@ actor AICoachChatService {
             return true
         }
         return false
+    }
+
+    private nonisolated static func replyOverclaimsUnconfirmedPersonalPattern(
+        _ lower: String
+    ) -> Bool {
+        guard containsAny(lower, [
+            "you are defensive", "you're defensive", "youre defensive", "you’re defensive",
+            "you seem defensive", "you sound defensive",
+            "you are evasive", "you're evasive", "youre evasive", "you’re evasive",
+            "you seem evasive", "you sound evasive",
+            "you are timid", "you're timid", "youre timid", "you’re timid",
+            "you seem timid", "you sound timid",
+            "you are detached", "you're detached", "youre detached", "you’re detached",
+            "emotionally detached", "you are insecure", "you're insecure",
+            "youre insecure", "you’re insecure",
+            "you avoid disagreement", "you're avoiding disagreement",
+            "you are avoiding disagreement", "you avoid conflict",
+            "you're avoiding conflict", "you are avoiding conflict",
+            "you fear disagreement", "you fear conflict",
+            "you're afraid of disagreement", "you are afraid of disagreement",
+            "you're afraid of conflict", "you are afraid of conflict",
+            "you're scared of disagreement", "you are scared of disagreement",
+            "you're scared of conflict", "you are scared of conflict",
+            "fear of disagreement is driving", "fear of conflict is driving",
+            "your fear of disagreement", "your fear of conflict",
+            "you hide from disagreement", "you're hiding from disagreement",
+            "you hide from conflict", "you're hiding from conflict",
+            "your defensiveness", "your avoidance", "your insecurity",
+            "your real blocker is fear", "the real blocker is fear",
+            "your issue is insecurity", "the issue is insecurity",
+            "lack of conviction is", "no conviction"
+        ]) else {
+            return false
+        }
+
+        return !replyFramesPersonalPatternAsHypothesis(lower)
+    }
+
+    private nonisolated static func replyFramesPersonalPatternAsHypothesis(
+        _ lower: String
+    ) -> Bool {
+        let hypothesisFrame = containsAny(lower, [
+            "hypothesis", "may be", "might be", "could be",
+            "could be that", "i would test", "i would treat",
+            "i'd treat", "it may be", "it might be",
+            "looks like", "reads like", "as a test",
+            "not a label", "not an identity label"
+        ])
+        let confirmationFrame = containsAny(lower, [
+            "does that fit", "if that fits", "if it fits",
+            "confirm", "reject", "disconfirm", "test whether",
+            "check whether", "compare whether", "keep it if",
+            "drop it if", "change my view", "what would change",
+            "not a label", "not an identity label"
+        ])
+        return hypothesisFrame && confirmationFrame
     }
 
     private nonisolated static func replyContradictsRecommendationPosition(

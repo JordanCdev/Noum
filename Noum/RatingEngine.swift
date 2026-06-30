@@ -436,6 +436,7 @@ final class RatingStore: ObservableObject {
             notePeakReachedForGlow()
         }
 
+        UserTrajectoryCache.shared.invalidate()
         return rating.overall - previousRating
     }
 
@@ -496,11 +497,19 @@ final class RatingStore: ObservableObject {
         )
         rating = updated
         save()
+        UserTrajectoryCache.shared.invalidate()
         return newPBs
     }
 
     func reloadForCurrentAccount() {
         load()
+        UserTrajectoryCache.shared.invalidate()
+    }
+
+    func endSession() {
+        rating = .initial
+        pendingPeakGlow = false
+        UserTrajectoryCache.shared.invalidate()
     }
 
     #if DEBUG
@@ -510,6 +519,7 @@ final class RatingStore: ObservableObject {
     func replaceForDebug(_ rating: SpeakingRating) {
         self.rating = rating
         save()
+        UserTrajectoryCache.shared.invalidate()
     }
     #endif
 

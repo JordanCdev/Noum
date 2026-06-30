@@ -15,19 +15,19 @@ enum CoachChatConversationCorpus {
     static let reportSchemaVersion = "coach-chat-conversation-eval-v10"
     static let longFormReportSchemaVersion = "coach-chat-long-form-conversation-eval-v1"
     static let longFormAdversarialReportSchemaVersion = "coach-chat-long-form-adversarial-eval-v1"
-    static let expertCalibrationPacketSchemaVersion = "coach-chat-conversation-expert-calibration-v1"
+    static let expertCalibrationPacketSchemaVersion = "coach-chat-conversation-expert-calibration-v2"
     static let appPathReportSchemaVersion = "coach-chat-conversation-app-path-eval-v1"
     static let liveAppPathReportSchemaVersion = "coach-chat-live-app-path-eval-v1"
     static let readinessEvidenceManifestSchemaVersion = CoachVisionProductionReadinessEvidenceManifest.schemaVersion
     static let liveProviderSweepArtifactFileName = "coach-live-eval-v1.json"
     static let professionalCoachCalibrationResultsArtifactFileName =
-        "coach-chat-conversation-expert-calibration-results-v1.json"
+        "coach-chat-conversation-expert-calibration-results-v2.json"
     static let realUserTransferOutcomesArtifactFileName =
-        "coach-real-user-transfer-outcomes-v1.json"
+        "coach-real-user-transfer-outcomes-v2.json"
     static let realDeviceTestFlightArtifactFileName =
-        "coach-real-device-testflight-qa-v1.json"
+        "coach-real-device-testflight-qa-v2.json"
     static let operationalLaunchChecklistArtifactFileName =
-        "coach-operational-launch-checklist-v1.json"
+        "coach-operational-launch-checklist-v2.json"
 
     static let conversations: [CoachChatConversationFixture] = [
         CoachChatConversationFixture(
@@ -189,6 +189,24 @@ enum CoachChatConversationCorpus {
                 CoachChatConversationTurn(
                     userTurn: "What test separates those?",
                     coachReply: "Run the same answer verdict-first because it separates structure from authority. If it lands better with the same voice and filler count, the issue was structure, not authority."
+                )
+            ]
+        ),
+        CoachChatConversationFixture(
+            id: "personal-pattern-consent-boundary-conversation",
+            sourceFixtureID: "personal-pattern-hypothesis-confirmation",
+            turns: [
+                CoachChatConversationTurn(
+                    userTurn: "Do I sound defensive when I disagree?",
+                    coachReply: "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop."
+                ),
+                CoachChatConversationTurn(
+                    userTurn: "What if that doesn't fit?",
+                    coachReply: "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner."
+                ),
+                CoachChatConversationTurn(
+                    userTurn: "What should Noum remember?",
+                    coachReply: "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it."
                 )
             ]
         ),
@@ -367,7 +385,7 @@ enum CoachChatConversationCorpus {
             ]
         ),
         longFormConversation(
-            baseIndex: 9,
+            baseIndex: 10,
             extraTurns: [
                 CoachChatConversationTurn(
                     userTurn: "I did the update. People asked for the timeline, not the decision.",
@@ -1112,8 +1130,8 @@ enum CoachChatConversationCorpus {
 @Suite("CoachChatConversationCorpusTests")
 struct CoachChatConversationCorpusTests {
 
-    @Test func conversationCorpusCoversTwelveThreeTurnTranscripts() {
-        #expect(CoachChatConversationCorpus.conversations.count == 12)
+    @Test func conversationCorpusCoversFullThreeTurnTranscripts() {
+        #expect(CoachChatConversationCorpus.conversations.count >= 13)
         for conversation in CoachChatConversationCorpus.conversations {
             #expect(conversation.turns.count == 3, "\(conversation.id) must be a full three-turn transcript")
             #expect(CoachChatEvaluationCorpus.fixtures.contains { $0.id == conversation.sourceFixtureID })
@@ -1478,7 +1496,7 @@ struct CoachChatConversationCorpusTests {
         )
 
         #expect(report.schemaVersion == CoachChatConversationCorpus.reportSchemaVersion)
-        #expect(report.conversationCount == 12)
+        #expect(report.conversationCount == CoachChatConversationCorpus.conversations.count)
         #expect(report.visionProductionReadiness.score == 18)
         #expect(report.visionProductionReadiness.maximumAllowedScore == 20)
         #expect(report.visionProductionReadiness.claim == .localEvaluationSubstrateOnly)
@@ -1615,13 +1633,22 @@ struct CoachChatConversationCorpusTests {
         })
 
         #expect(packet.schemaVersion == CoachChatConversationCorpus.expertCalibrationPacketSchemaVersion)
-        #expect(packet.rubricVersion == "coach-parity-conversation-calibration-v1")
+        #expect(packet.rubricVersion == CoachProfessionalCalibrationEvidence.expectedRubricVersion)
+        #expect(packet.sourceCorpusFingerprint == CoachProfessionalCalibrationEvidence.expectedSourcePacketFingerprint)
+        #expect(packet.sourceCorpusFingerprint.hasPrefix("fnv1a64:"))
         #expect(packet.humanGateStatus == .pendingExpertReview)
         #expect(packet.conversationCount == CoachProfessionalCalibrationEvidence.requiredConversationIDs.count)
         #expect(packet.rows.count == CoachProfessionalCalibrationEvidence.requiredConversationIDs.count)
+        #expect(
+            packet.requiredIndependentReviewsPerConversation ==
+                CoachProfessionalCalibrationEvidence.requiredReviewsPerConversation
+        )
+        #expect(packet.requiredReviewCount == CoachProfessionalCalibrationEvidence.requiredCalibrationReviewCount)
         #expect(packet.instructions.contains("do not assume the app is validated or production-ready"))
+        #expect(packet.instructions.contains("two independent professional communication-coach reviews"))
         #expect(packet.instructions.contains("longitudinal user outcomes"))
         #expect(packet.responseSchema.contains("\"calibrationDecision\""))
+        #expect(packet.responseSchema.contains("\"reviewerID\""))
         #expect(packet.responseSchema.contains("\"humanCoachReference\""))
 
         for row in packet.rows {
@@ -1635,7 +1662,7 @@ struct CoachChatConversationCorpusTests {
             #expect(row.turnDepths.count == row.turns.count)
         }
 
-        #expect(packet.rows.filter { $0.turns.count == 3 }.count == 12)
+        #expect(packet.rows.filter { $0.turns.count == 3 }.count == CoachChatConversationCorpus.conversations.count)
         #expect(packet.rows.filter { $0.turns.count == 5 }.count == 10)
         #expect(packet.rows.contains { !$0.trustRepairTurnIndices.isEmpty })
         #expect(packet.rows.contains { !$0.coldnessComplaintTurnIndices.isEmpty })
@@ -1649,10 +1676,11 @@ struct CoachChatConversationCorpusTests {
         let json = try packet.encodedSortedJSON()
         try Self.dumpEvaluationArtifactIfRequested(
             json,
-            fileName: "coach-chat-conversation-expert-calibration-v1.json"
+            fileName: "\(CoachChatConversationCorpus.expertCalibrationPacketSchemaVersion).json"
         )
 
-        #expect(json.contains("\"schemaVersion\":\"coach-chat-conversation-expert-calibration-v1\""))
+        #expect(json.contains("\"schemaVersion\":\"coach-chat-conversation-expert-calibration-v2\""))
+        #expect(json.contains("\"sourceCorpusFingerprint\":\"fnv1a64:"))
         #expect(json.contains("\"humanGateStatus\":\"pendingExpertReview\""))
         #expect(json.contains("\"conversationID\":\"polite-pushback-attunement-conversation\""))
         #expect(json.contains("\"conversationID\":\"long-form-leadership-transfer-setup-conversation\""))
@@ -1666,6 +1694,8 @@ struct CoachChatConversationCorpusTests {
     @MainActor
     @Test func scriptedConversationAppPathReportCoversFullCorpusWithoutClaimingReadiness() async throws {
         let rows = await Self.scriptedConversationAppPathRows(surface: .text)
+        let expectedConversationCount = CoachChatConversationCorpus.conversations.count
+        let expectedTurnCount = CoachChatConversationCorpus.conversations.flatMap(\.turns).count
         let targetReport = CoachChatConversationEvaluationReport.make(
             from: CoachChatConversationCorpus.conversations
         )
@@ -1682,10 +1712,10 @@ struct CoachChatConversationCorpusTests {
         )
 
         #expect(report.schemaVersion == CoachChatConversationCorpus.appPathReportSchemaVersion)
-        #expect(report.conversationCount == 12)
-        #expect(report.turnCount == 36)
-        #expect(report.summary.conversationCount == 12)
-        #expect(report.summary.turnCount == 36)
+        #expect(report.conversationCount == expectedConversationCount)
+        #expect(report.turnCount == expectedTurnCount)
+        #expect(report.summary.conversationCount == expectedConversationCount)
+        #expect(report.summary.turnCount == expectedTurnCount)
 
         let appPathTurns = report.rows.flatMap(\.turns)
         let appPathFloorFailureCount = report.rows
@@ -1720,8 +1750,8 @@ struct CoachChatConversationCorpusTests {
         #expect(report.summary.targetReplyMismatchCount == 0)
         #expect(report.summary.missingMetadataTurnCount == 0)
         #expect(report.summary.semanticGateFailureTurnCount == 0)
-        #expect(report.summary.qualityGateEventCounts == ["passed": 36])
-        #expect(report.summary.qualityGateFamilyCounts == ["passed": 36])
+        #expect(report.summary.qualityGateEventCounts == ["passed": expectedTurnCount])
+        #expect(report.summary.qualityGateFamilyCounts == ["passed": expectedTurnCount])
         #expect(report.summary.nonCleanQualityGateEvents.isEmpty)
         #expect(report.summary.acceptedFallbackTurnCount == 0)
         #expect(report.summary.typedAssessmentFallbackTurnCount == 0)
@@ -1756,6 +1786,8 @@ struct CoachChatConversationCorpusTests {
     @MainActor
     @Test func scriptedLiveConversationAppPathReportProvesTwoSpeedLocalReadWithoutClaimingReadiness() async throws {
         let rows = await Self.scriptedConversationAppPathRows(surface: .live)
+        let expectedConversationCount = CoachChatConversationCorpus.conversations.count
+        let expectedTurnCount = CoachChatConversationCorpus.conversations.flatMap(\.turns).count
         let targetReport = CoachChatConversationEvaluationReport.make(
             from: CoachChatConversationCorpus.conversations
         )
@@ -1773,18 +1805,18 @@ struct CoachChatConversationCorpusTests {
 
         #expect(report.schemaVersion == CoachChatConversationCorpus.liveAppPathReportSchemaVersion)
         #expect(report.surface == CoachReplySurface.live.rawValue)
-        #expect(report.conversationCount == 12)
-        #expect(report.turnCount == 36)
+        #expect(report.conversationCount == expectedConversationCount)
+        #expect(report.turnCount == expectedTurnCount)
 
         let turns = report.rows.flatMap(\.turns)
-        #expect(report.summary.immediateCoachReadExpectedCount == 36)
+        #expect(report.summary.immediateCoachReadExpectedCount == expectedTurnCount)
         #expect(report.summary.immediateCoachReadMissingCount == 0)
         #expect(turns.allSatisfy { $0.immediateCoachReadExpected })
         #expect(turns.allSatisfy { $0.immediateCoachReadShown })
         #expect(turns.allSatisfy { ($0.timeToFirstVisibleTokenMs ?? Int.max) < 500 })
         #expect(report.summary.missingMetadataTurnCount == 0)
-        #expect(report.summary.qualityGateEventCounts == ["passed": 36])
-        #expect(report.summary.qualityGateFamilyCounts == ["passed": 36])
+        #expect(report.summary.qualityGateEventCounts == ["passed": expectedTurnCount])
+        #expect(report.summary.qualityGateFamilyCounts == ["passed": expectedTurnCount])
         #expect(report.summary.nonCleanQualityGateEvents.isEmpty)
         #expect(report.summary.acceptedFallbackTurnCount == 0)
         #expect(report.summary.typedAssessmentFallbackTurnCount == 0)
@@ -1862,8 +1894,8 @@ struct CoachChatConversationCorpusTests {
         #expect(manifest.audit.claim == .localEvaluationSubstrateOnly)
         #expect(!manifest.audit.productionReady)
         #expect(manifest.audit.blockers == expectedBlockers)
-        #expect(manifest.evidence.localConversationCount == 12)
-        #expect(manifest.evidence.localRowsPassingProductionFloor == 12)
+        #expect(manifest.evidence.localConversationCount == CoachChatConversationCorpus.conversations.count)
+        #expect(manifest.evidence.localRowsPassingProductionFloor == CoachChatConversationCorpus.conversations.count)
         #expect(manifest.evidence.appPathImmediateReadVerified)
         #expect(manifest.evidence.appPathProofTestProgressionVerified)
         #expect(manifest.evidence.liveProviderRowsPassingFloor == (liveProviderRow?.observedCount ?? 0))
@@ -1980,7 +2012,7 @@ struct CoachChatConversationCorpusTests {
 
         #expect(
             manifest.evidence.professionalCoachCalibrationRows ==
-                CoachProfessionalCalibrationEvidence.requiredConversationIDs.count
+                CoachProfessionalCalibrationEvidence.requiredCalibrationReviewCount
         )
         #expect(rowsByKey["professionalCoachCalibration"]?.status == .earned)
         #expect(rowsByKey["professionalCoachCalibration"]?.blocker == nil)
@@ -2172,6 +2204,116 @@ struct CoachChatConversationCorpusTests {
         })
     }
 
+    @Test func liveProviderSweepEvidenceRequiresDetailedLongFormConversationRows() throws {
+        let missingDetailSweep = Self.liveProviderSweepEvidence(
+            omitLongFormConversationDetails: true
+        )
+        let missingDetailDecoded = try CoachLiveProviderSweepEvidence.decode(
+            from: missingDetailSweep.encodedSortedJSON()
+        )
+
+        #expect(!missingDetailDecoded.qualifiesForReadiness)
+        #expect(missingDetailDecoded.rowsPassingReadinessFloor == 0)
+        #expect(missingDetailDecoded.rejectionReasons.contains("missingDetailedLongFormConversations"))
+
+        let requiredIDs = CoachLiveProviderSweepEvidence.requiredLongFormConversationIDs
+        let detailedRows = Self.liveProviderLongFormConversations(
+            passingIDs: requiredIDs,
+            failureIDs: []
+        )
+        let mismatchedSummarySweep = Self.liveProviderSweepEvidence(
+            longFormConversationIDsPassingProductionFloor: Array(requiredIDs.dropLast()),
+            longFormConversationFailureIDs: [requiredIDs.last ?? "missing-long-form-id"],
+            longFormConversations: detailedRows
+        )
+        let mismatchedSummaryDecoded = try CoachLiveProviderSweepEvidence.decode(
+            from: mismatchedSummarySweep.encodedSortedJSON()
+        )
+
+        #expect(!mismatchedSummaryDecoded.qualifiesForReadiness)
+        #expect(mismatchedSummaryDecoded.rejectionReasons.contains("longFormConversationPassingSummaryMismatch"))
+        #expect(mismatchedSummaryDecoded.rejectionReasons.contains("longFormConversationFailureSummaryMismatch"))
+    }
+
+    @Test func liveProviderSweepEvidenceRequiresCompleteLongFormTurnTelemetry() throws {
+        var detailedRows = Self.liveProviderLongFormConversations(
+            passingIDs: CoachLiveProviderSweepEvidence.requiredLongFormConversationIDs,
+            failureIDs: []
+        )
+        let first = try #require(detailedRows.first)
+        let shortenedRows = Array(first.rows.dropLast())
+        detailedRows[0] = CoachLiveProviderSweepEvidence.LongFormConversation(
+            conversationID: first.conversationID,
+            sourceFixtureID: first.sourceFixtureID,
+            expectedTurnCount: first.expectedTurnCount,
+            observedTurnCount: shortenedRows.count,
+            liveProductionFloor: true,
+            failure: nil,
+            rows: shortenedRows
+        )
+
+        let incompleteTurnSweep = Self.liveProviderSweepEvidence(
+            longFormConversations: detailedRows
+        )
+        let incompleteTurnDecoded = try CoachLiveProviderSweepEvidence.decode(
+            from: incompleteTurnSweep.encodedSortedJSON()
+        )
+
+        #expect(!incompleteTurnDecoded.qualifiesForReadiness)
+        #expect(incompleteTurnDecoded.rejectionReasons.contains { reason in
+            reason.hasPrefix("malformedDetailedLongFormConversations=")
+        })
+
+        var telemetryRows = Self.liveProviderLongFormConversations(
+            passingIDs: CoachLiveProviderSweepEvidence.requiredLongFormConversationIDs,
+            failureIDs: []
+        )
+        let telemetryConversation = try #require(telemetryRows.first)
+        let telemetryRow = try #require(telemetryConversation.rows.first)
+        let badTelemetryRow = CoachLiveProviderSweepEvidence.Row(
+            fixtureID: telemetryRow.fixtureID,
+            turnDepth: telemetryRow.turnDepth,
+            providerChosen: telemetryRow.providerChosen,
+            providerModel: nil,
+            timeToFirstVisibleTokenMs: nil,
+            assessmentConfidence: telemetryRow.assessmentConfidence,
+            assessmentProofTestHash: "",
+            immediateCoachReadExpected: telemetryRow.immediateCoachReadExpected,
+            immediateCoachReadShown: telemetryRow.immediateCoachReadShown,
+            liveProductionFloor: true,
+            reply: "",
+            passesRubric: nil,
+            visionPassesProductionFloor: nil,
+            qualityIssue: nil,
+            semanticGateIssue: nil,
+            reliabilityIssues: nil
+        )
+        telemetryRows[0] = CoachLiveProviderSweepEvidence.LongFormConversation(
+            conversationID: telemetryConversation.conversationID,
+            sourceFixtureID: telemetryConversation.sourceFixtureID,
+            expectedTurnCount: telemetryConversation.expectedTurnCount,
+            observedTurnCount: telemetryConversation.observedTurnCount,
+            liveProductionFloor: true,
+            failure: nil,
+            rows: [badTelemetryRow] + Array(telemetryConversation.rows.dropFirst())
+        )
+
+        let missingTelemetrySweep = Self.liveProviderSweepEvidence(
+            longFormConversations: telemetryRows
+        )
+        let missingTelemetryDecoded = try CoachLiveProviderSweepEvidence.decode(
+            from: missingTelemetrySweep.encodedSortedJSON()
+        )
+
+        #expect(!missingTelemetryDecoded.qualifiesForReadiness)
+        #expect(missingTelemetryDecoded.rejectionReasons.contains { reason in
+            reason.hasPrefix("missingDetailedLongFormProviderEvidence=")
+        })
+        #expect(missingTelemetryDecoded.rejectionReasons.contains { reason in
+            reason.hasPrefix("missingDetailedLongFormTelemetry=")
+        })
+    }
+
     @Test func liveProviderSweepEvidenceRequiresTurnDepthAndJudgementVariety() throws {
         let shallowSweep = Self.liveProviderSweepEvidence(
             turnDepths: Array(
@@ -2193,6 +2335,154 @@ struct CoachChatConversationCorpusTests {
         })
         #expect(decoded.rejectionReasons.contains("flatAssessmentConfidence"))
         #expect(decoded.rejectionReasons.contains("weakProofTestVariety"))
+    }
+
+    @Test func liveProviderSweepEvidenceRejectsContradictoryGateTelemetry() throws {
+        let cleanSweep = Self.liveProviderSweepEvidence()
+        var latestRows = cleanSweep.rows
+        let latest = try #require(latestRows.first)
+        latestRows[0] = CoachLiveProviderSweepEvidence.Row(
+            fixtureID: latest.fixtureID,
+            turnDepth: latest.turnDepth,
+            providerChosen: latest.providerChosen,
+            providerModel: latest.providerModel,
+            timeToFirstVisibleTokenMs: latest.timeToFirstVisibleTokenMs,
+            assessmentConfidence: latest.assessmentConfidence,
+            assessmentProofTestHash: latest.assessmentProofTestHash,
+            immediateCoachReadExpected: latest.immediateCoachReadExpected,
+            immediateCoachReadShown: latest.immediateCoachReadShown,
+            liveProductionFloor: true,
+            reply: latest.reply,
+            passesRubric: false,
+            visionPassesProductionFloor: true,
+            qualityIssue: "missingIntentFit",
+            semanticGateIssue: "missingIntentFit",
+            reliabilityIssues: ["nearDuplicateReply"]
+        )
+        let latestContradiction = Self.copyLiveProviderSweepEvidence(
+            cleanSweep,
+            rows: latestRows
+        )
+        let latestDecoded = try CoachLiveProviderSweepEvidence.decode(
+            from: latestContradiction.encodedSortedJSON()
+        )
+
+        #expect(!latestDecoded.qualifiesForReadiness)
+        #expect(latestDecoded.rowsPassingReadinessFloor == 0)
+        #expect(latestDecoded.rejectionReasons.contains {
+            $0.hasPrefix("latestTurnGateTelemetryFailures=")
+        })
+
+        var longFormConversations = try #require(cleanSweep.longFormConversations)
+        let conversation = try #require(longFormConversations.first)
+        let firstLongFormRow = try #require(conversation.rows.first)
+        let badLongFormRow = CoachLiveProviderSweepEvidence.Row(
+            fixtureID: firstLongFormRow.fixtureID,
+            turnDepth: firstLongFormRow.turnDepth,
+            providerChosen: firstLongFormRow.providerChosen,
+            providerModel: firstLongFormRow.providerModel,
+            timeToFirstVisibleTokenMs: firstLongFormRow.timeToFirstVisibleTokenMs,
+            assessmentConfidence: firstLongFormRow.assessmentConfidence,
+            assessmentProofTestHash: firstLongFormRow.assessmentProofTestHash,
+            immediateCoachReadExpected: firstLongFormRow.immediateCoachReadExpected,
+            immediateCoachReadShown: firstLongFormRow.immediateCoachReadShown,
+            liveProductionFloor: true,
+            reply: firstLongFormRow.reply,
+            passesRubric: true,
+            visionPassesProductionFloor: false,
+            qualityIssue: "none",
+            semanticGateIssue: "unsupportedClosenessClaim",
+            reliabilityIssues: []
+        )
+        longFormConversations[0] = CoachLiveProviderSweepEvidence.LongFormConversation(
+            conversationID: conversation.conversationID,
+            sourceFixtureID: conversation.sourceFixtureID,
+            expectedTurnCount: conversation.expectedTurnCount,
+            observedTurnCount: conversation.observedTurnCount,
+            liveProductionFloor: true,
+            failure: nil,
+            rows: [badLongFormRow] + Array(conversation.rows.dropFirst())
+        )
+        let longFormContradiction = Self.copyLiveProviderSweepEvidence(
+            cleanSweep,
+            longFormConversations: longFormConversations
+        )
+        let longFormDecoded = try CoachLiveProviderSweepEvidence.decode(
+            from: longFormContradiction.encodedSortedJSON()
+        )
+
+        #expect(!longFormDecoded.qualifiesForReadiness)
+        #expect(longFormDecoded.rejectionReasons.contains {
+            $0.hasPrefix("detailedLongFormGateTelemetryFailures=")
+        })
+    }
+
+    @Test func liveProviderSweepEvidenceRejectsDuplicatedOrGenericReplyText() throws {
+        let cleanSweep = Self.liveProviderSweepEvidence()
+        var duplicateRows = cleanSweep.rows
+        let first = try #require(duplicateRows.first)
+        let second = try #require(duplicateRows.dropFirst().first)
+        duplicateRows[1] = CoachLiveProviderSweepEvidence.Row(
+            fixtureID: second.fixtureID,
+            turnDepth: second.turnDepth,
+            providerChosen: second.providerChosen,
+            providerModel: second.providerModel,
+            timeToFirstVisibleTokenMs: second.timeToFirstVisibleTokenMs,
+            assessmentConfidence: second.assessmentConfidence,
+            assessmentProofTestHash: second.assessmentProofTestHash,
+            immediateCoachReadExpected: second.immediateCoachReadExpected,
+            immediateCoachReadShown: second.immediateCoachReadShown,
+            liveProductionFloor: second.liveProductionFloor,
+            reply: first.reply,
+            passesRubric: second.passesRubric,
+            visionPassesProductionFloor: second.visionPassesProductionFloor,
+            qualityIssue: second.qualityIssue,
+            semanticGateIssue: second.semanticGateIssue,
+            reliabilityIssues: second.reliabilityIssues
+        )
+        let duplicateDecoded = try CoachLiveProviderSweepEvidence.decode(
+            from: Self.copyLiveProviderSweepEvidence(
+                cleanSweep,
+                rows: duplicateRows
+            ).encodedSortedJSON()
+        )
+
+        #expect(!duplicateDecoded.qualifiesForReadiness)
+        #expect(duplicateDecoded.rejectionReasons.contains {
+            $0.hasPrefix("duplicatedLatestTurnReplies=")
+        })
+
+        var genericRows = cleanSweep.rows
+        let generic = try #require(genericRows.first)
+        genericRows[0] = CoachLiveProviderSweepEvidence.Row(
+            fixtureID: generic.fixtureID,
+            turnDepth: generic.turnDepth,
+            providerChosen: generic.providerChosen,
+            providerModel: generic.providerModel,
+            timeToFirstVisibleTokenMs: generic.timeToFirstVisibleTokenMs,
+            assessmentConfidence: generic.assessmentConfidence,
+            assessmentProofTestHash: generic.assessmentProofTestHash,
+            immediateCoachReadExpected: generic.immediateCoachReadExpected,
+            immediateCoachReadShown: generic.immediateCoachReadShown,
+            liveProductionFloor: generic.liveProductionFloor,
+            reply: "Here is a focused coach reply with concrete evidence.",
+            passesRubric: generic.passesRubric,
+            visionPassesProductionFloor: generic.visionPassesProductionFloor,
+            qualityIssue: generic.qualityIssue,
+            semanticGateIssue: generic.semanticGateIssue,
+            reliabilityIssues: generic.reliabilityIssues
+        )
+        let genericDecoded = try CoachLiveProviderSweepEvidence.decode(
+            from: Self.copyLiveProviderSweepEvidence(
+                cleanSweep,
+                rows: genericRows
+            ).encodedSortedJSON()
+        )
+
+        #expect(!genericDecoded.qualifiesForReadiness)
+        #expect(genericDecoded.rejectionReasons.contains {
+            $0.hasPrefix("genericLatestTurnReplies=")
+        })
     }
 
     @Test func liveProviderSweepLoaderReturnsNilWhenSidecarIsMissing() throws {
@@ -2280,6 +2570,23 @@ struct CoachChatConversationCorpusTests {
     }
 
     @Test func professionalCalibrationEvidenceRequiresFullConversationCoverage() throws {
+        let singleReviewEvidence = Self.professionalCalibrationEvidence(
+            reviewsPerConversation: 1
+        )
+        let singleReviewDecoded = try CoachProfessionalCalibrationEvidence.decode(
+            from: singleReviewEvidence.encodedSortedJSON()
+        )
+
+        #expect(!singleReviewDecoded.qualifiesForReadiness)
+        #expect(singleReviewDecoded.rowsPassingCalibrationFloor == 0)
+        #expect(singleReviewDecoded.rejectionReasons.contains("missingFullConversationCoverage"))
+        #expect(singleReviewDecoded.rejectionReasons.contains { reason in
+            reason.hasPrefix("insufficientReviewsPerConversation=")
+        })
+        #expect(singleReviewDecoded.rejectionReasons.contains { reason in
+            reason.hasPrefix("insufficientPassingReviewsPerConversation=")
+        })
+
         let partialEvidence = Self.professionalCalibrationEvidence(
             conversationIDs: Array(CoachProfessionalCalibrationEvidence.requiredConversationIDs.prefix(10))
         )
@@ -2311,9 +2618,33 @@ struct CoachChatConversationCorpusTests {
         })
     }
 
+    @Test func professionalCalibrationEvidenceRequiresCurrentSourcePacketFingerprint() throws {
+        let stalePacketEvidence = Self.professionalCalibrationEvidence(
+            sourcePacketFingerprint: "fnv1a64:0000000000000000"
+        )
+        let stalePacketDecoded = try CoachProfessionalCalibrationEvidence.decode(
+            from: stalePacketEvidence.encodedSortedJSON()
+        )
+
+        #expect(!stalePacketDecoded.qualifiesForReadiness)
+        #expect(stalePacketDecoded.rowsPassingCalibrationFloor == 0)
+        #expect(stalePacketDecoded.rejectionReasons.contains("sourcePacketFingerprintMismatch"))
+
+        let missingPacketEvidence = Self.professionalCalibrationEvidence(
+            sourcePacketFingerprint: nil
+        )
+        let missingPacketDecoded = try CoachProfessionalCalibrationEvidence.decode(
+            from: missingPacketEvidence.encodedSortedJSON()
+        )
+
+        #expect(!missingPacketDecoded.qualifiesForReadiness)
+        #expect(missingPacketDecoded.rowsPassingCalibrationFloor == 0)
+        #expect(missingPacketDecoded.rejectionReasons.contains("sourcePacketFingerprintMissing"))
+    }
+
     @Test func professionalCalibrationEvidenceRequiresReviewerCoherenceAndResolvedRevisions() throws {
         let reviewerMismatchEvidence = Self.professionalCalibrationEvidence(
-            summaryReviewerCount: 2
+            summaryReviewerCount: 1
         )
         let reviewerMismatchDecoded = try CoachProfessionalCalibrationEvidence.decode(
             from: reviewerMismatchEvidence.encodedSortedJSON()
@@ -2331,6 +2662,19 @@ struct CoachChatConversationCorpusTests {
 
         #expect(!missingReviewerDecoded.qualifiesForReadiness)
         #expect(missingReviewerDecoded.rejectionReasons.contains("missingProfessionalReviewer"))
+
+        let singleReviewerEvidence = Self.professionalCalibrationEvidence(
+            reviewerIDs: ["coach-reviewer-1"]
+        )
+        let singleReviewerDecoded = try CoachProfessionalCalibrationEvidence.decode(
+            from: singleReviewerEvidence.encodedSortedJSON()
+        )
+
+        #expect(!singleReviewerDecoded.qualifiesForReadiness)
+        #expect(singleReviewerDecoded.rejectionReasons.contains("duplicateConversationReviewerPairs"))
+        #expect(singleReviewerDecoded.rejectionReasons.contains { reason in
+            reason.hasPrefix("insufficientReviewerDiversity=")
+        })
 
         let unresolvedRevisionEvidence = Self.professionalCalibrationEvidence(
             revisionNoteIndices: [0]
@@ -2375,7 +2719,7 @@ struct CoachChatConversationCorpusTests {
         #expect(loaded?.qualifiesForReadiness == true)
         #expect(
             loaded?.rowsPassingCalibrationFloor ==
-                CoachProfessionalCalibrationEvidence.requiredConversationIDs.count
+                CoachProfessionalCalibrationEvidence.requiredCalibrationReviewCount
         )
         #expect(loaded?.reviewerRole == "professionalCommunicationCoach")
     }
@@ -2426,6 +2770,48 @@ struct CoachChatConversationCorpusTests {
         #expect(rejectedDecoded.rejectionReasons.contains("insufficientAudienceResponseEvidence"))
         #expect(rejectedDecoded.rejectionReasons.contains("adverseOutcomesReported"))
         #expect(rejectedDecoded.rejectionReasons.contains("outcomeFloorFailures"))
+    }
+
+    @Test func realUserTransferOutcomeEvidenceRejectsThinOrSmoothedSidecars() throws {
+        let concentratedUsers = try CoachRealUserTransferOutcomeEvidence.decode(
+            from: Self.realUserTransferOutcomeEvidence(
+                collapsedUserIDs: true
+            ).encodedSortedJSON()
+        )
+
+        #expect(!concentratedUsers.qualifiesForReadiness)
+        #expect(concentratedUsers.rowsPassingOutcomeFloor == 0)
+        #expect(concentratedUsers.rejectionReasons.contains("insufficientUniqueUsers"))
+        #expect(concentratedUsers.rejectionReasons.contains("excessiveOutcomesPerUser"))
+
+        let narrowCategories = try CoachRealUserTransferOutcomeEvidence.decode(
+            from: Self.realUserTransferOutcomeEvidence(
+                collapsedMomentCategories: true
+            ).encodedSortedJSON()
+        )
+
+        #expect(!narrowCategories.qualifiesForReadiness)
+        #expect(narrowCategories.rejectionReasons.contains("insufficientMomentCategoryDiversity"))
+
+        let missingEvidence = try CoachRealUserTransferOutcomeEvidence.decode(
+            from: Self.realUserTransferOutcomeEvidence(
+                missingEvidenceReferenceIndices: [0]
+            ).encodedSortedJSON()
+        )
+
+        #expect(!missingEvidence.qualifiesForReadiness)
+        #expect(missingEvidence.rejectionReasons.contains("insufficientEvidenceReferences"))
+        #expect(missingEvidence.rejectionReasons.contains("outcomeFloorFailures"))
+
+        let sameHourFollowUp = try CoachRealUserTransferOutcomeEvidence.decode(
+            from: Self.realUserTransferOutcomeEvidence(
+                lowFollowUpDelayIndices: [0]
+            ).encodedSortedJSON()
+        )
+
+        #expect(!sameHourFollowUp.qualifiesForReadiness)
+        #expect(sameHourFollowUp.rejectionReasons.contains("insufficientFollowUpDelay"))
+        #expect(sameHourFollowUp.rejectionReasons.contains("outcomeFloorFailures"))
     }
 
     @Test func realUserTransferOutcomeLoaderReturnsNilWhenSidecarIsMissing() throws {
@@ -2507,6 +2893,43 @@ struct CoachChatConversationCorpusTests {
         #expect(rejectedDecoded.rejectionReasons.contains("rowSurfaceFloorFailures"))
     }
 
+    @Test func realDeviceTestFlightEvidenceRejectsSmoothedOrIncompleteEvidence() throws {
+        let wrongEvidenceKind = try CoachRealDeviceTestFlightEvidence.decode(
+            from: Self.realDeviceTestFlightEvidence(
+                evidenceKindOverrides: ["liveActivity": "manualNote"]
+            ).encodedSortedJSON()
+        )
+        let overBudgetLatency = try CoachRealDeviceTestFlightEvidence.decode(
+            from: Self.realDeviceTestFlightEvidence(
+                overBudgetLatencySurfaceKeys: ["aiPromptLatency"]
+            ).encodedSortedJSON()
+        )
+        let mixedBuild = try CoachRealDeviceTestFlightEvidence.decode(
+            from: Self.realDeviceTestFlightEvidence(
+                buildMismatchSurfaceKeys: ["soundscapeAudioSession"]
+            ).encodedSortedJSON()
+        )
+        let thinEvidence = try CoachRealDeviceTestFlightEvidence.decode(
+            from: Self.realDeviceTestFlightEvidence(
+                missingEvidenceReferenceSurfaceKeys: ["paywallPurchase"],
+                missingEvidenceTimestampSurfaceKeys: ["paywallPurchase"],
+                missingDeviceIdentitySurfaceKeys: ["paywallPurchase"]
+            ).encodedSortedJSON()
+        )
+
+        #expect(!wrongEvidenceKind.qualifiesForReadiness)
+        #expect(wrongEvidenceKind.rejectionReasons.contains("evidenceKindMismatch=liveActivity"))
+        #expect(wrongEvidenceKind.rejectionReasons.contains("rowSurfaceFloorFailures"))
+        #expect(!overBudgetLatency.qualifiesForReadiness)
+        #expect(overBudgetLatency.rejectionReasons.contains("aiPromptLatencyOverBudget"))
+        #expect(overBudgetLatency.rejectionReasons.contains("rowSurfaceFloorFailures"))
+        #expect(!mixedBuild.qualifiesForReadiness)
+        #expect(mixedBuild.rejectionReasons.contains("buildNumberMismatch=soundscapeAudioSession"))
+        #expect(!thinEvidence.qualifiesForReadiness)
+        #expect(thinEvidence.rejectionReasons.contains("missingDeviceEvidence=paywallPurchase"))
+        #expect(thinEvidence.rejectionReasons.contains("missingDeviceIdentity=paywallPurchase"))
+    }
+
     @Test func realDeviceTestFlightLoaderReturnsNilWhenSidecarIsMissing() throws {
         let directory = try Self.temporaryEvaluationDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -2583,6 +3006,52 @@ struct CoachChatConversationCorpusTests {
         #expect(!rejectedDecoded.qualifiesForReadiness)
         #expect(rejectedDecoded.rejectionReasons.contains("incompleteRequiredItems"))
         #expect(rejectedDecoded.rejectionReasons.contains("failedRequiredItems"))
+    }
+
+    @Test func operationalLaunchChecklistEvidenceRejectsThinOrSmoothedItems() throws {
+        let wrongEvidenceKind = try CoachOperationalLaunchChecklistEvidence.decode(
+            from: Self.operationalLaunchChecklistEvidence(
+                evidenceKindOverrides: ["firestoreRulesDeployed": "manualNote"]
+            ).encodedSortedJSON()
+        )
+        let wrongEnvironment = try CoachOperationalLaunchChecklistEvidence.decode(
+            from: Self.operationalLaunchChecklistEvidence(
+                environmentOverrides: ["privacyPolicyURLHosted": "staging"]
+            ).encodedSortedJSON()
+        )
+        let mixedBuild = try CoachOperationalLaunchChecklistEvidence.decode(
+            from: Self.operationalLaunchChecklistEvidence(
+                buildMismatchItemKeys: ["testFlightBuildUploaded"]
+            ).encodedSortedJSON()
+        )
+        let missingOperationalProof = try CoachOperationalLaunchChecklistEvidence.decode(
+            from: Self.operationalLaunchChecklistEvidence(
+                missingEvidenceReferenceItemKeys: ["appStorePrivacyDisclosuresReviewed"],
+                missingVerificationReferenceItemKeys: ["appStorePrivacyDisclosuresReviewed"],
+                missingOutputReferenceItemKeys: ["appStorePrivacyDisclosuresReviewed"]
+            ).encodedSortedJSON()
+        )
+        let missingVerificationIdentity = try CoachOperationalLaunchChecklistEvidence.decode(
+            from: Self.operationalLaunchChecklistEvidence(
+                missingVerifiedAtItemKeys: ["releaseBlockingBugsTriaged"],
+                missingVerifiedByRoleItemKeys: ["releaseBlockingBugsTriaged"]
+            ).encodedSortedJSON()
+        )
+
+        #expect(!wrongEvidenceKind.qualifiesForReadiness)
+        #expect(wrongEvidenceKind.rejectionReasons.contains("evidenceKindMismatch=firestoreRulesDeployed"))
+        #expect(wrongEvidenceKind.rejectionReasons.contains("itemFloorFailures"))
+        #expect(!wrongEnvironment.qualifiesForReadiness)
+        #expect(wrongEnvironment.rejectionReasons.contains("environmentMismatch=privacyPolicyURLHosted"))
+        #expect(wrongEnvironment.rejectionReasons.contains("itemFloorFailures"))
+        #expect(!mixedBuild.qualifiesForReadiness)
+        #expect(mixedBuild.rejectionReasons.contains("releaseCandidateBuildMismatch=testFlightBuildUploaded"))
+        #expect(!missingOperationalProof.qualifiesForReadiness)
+        #expect(missingOperationalProof.rejectionReasons.contains("missingOperationalEvidence=appStorePrivacyDisclosuresReviewed"))
+        #expect(missingOperationalProof.rejectionReasons.contains("itemFloorFailures"))
+        #expect(!missingVerificationIdentity.qualifiesForReadiness)
+        #expect(missingVerificationIdentity.rejectionReasons.contains("missingOperationalVerification=releaseBlockingBugsTriaged"))
+        #expect(missingVerificationIdentity.rejectionReasons.contains("itemFloorFailures"))
     }
 
     @Test func operationalLaunchChecklistLoaderReturnsNilWhenSidecarIsMissing() throws {
@@ -3134,7 +3603,9 @@ struct CoachChatConversationCorpusTests {
         repeatedProofTestHashCount: Int = 0,
         longFormConversationIDsPassingProductionFloor: [String] =
             CoachLiveProviderSweepEvidence.requiredLongFormConversationIDs,
-        longFormConversationFailureIDs: [String] = []
+        longFormConversationFailureIDs: [String] = [],
+        longFormConversations: [CoachLiveProviderSweepEvidence.LongFormConversation]? = nil,
+        omitLongFormConversationDetails: Bool = false
     ) -> CoachLiveProviderSweepEvidence {
         let rowCount = fixtureIDs.count
         let requiredDepths = CoachLiveProviderSweepEvidence.requiredTurnDepths
@@ -3152,11 +3623,25 @@ struct CoachChatConversationCorpusTests {
                 assessmentProofTestHash: "proof-\(index % (uniqueProofTestHashCount ?? rowCount))",
                 immediateCoachReadExpected: true,
                 immediateCoachReadShown: true,
-                liveProductionFloor: !failingRowIndices.contains(index)
+                liveProductionFloor: !failingRowIndices.contains(index),
+                reply: "For \(fixtureID), the live coach names the observed turn signal and gives one bounded next move.",
+                passesRubric: true,
+                visionPassesProductionFloor: true,
+                qualityIssue: "none",
+                semanticGateIssue: "none",
+                reliabilityIssues: []
             )
         }
         let failureCount = rows.filter { !$0.liveProductionFloor }.count
         let longFormFailureCount = longFormConversationFailureIDs.count
+        let detailedLongFormConversations = omitLongFormConversationDetails
+            ? nil
+            : (
+                longFormConversations ?? Self.liveProviderLongFormConversations(
+                    passingIDs: longFormConversationIDsPassingProductionFloor,
+                    failureIDs: longFormConversationFailureIDs
+                )
+            )
         return CoachLiveProviderSweepEvidence(
             schemaVersion: CoachLiveProviderSweepEvidence.expectedSchemaVersion,
             fixtureCount: rowCount,
@@ -3164,6 +3649,7 @@ struct CoachChatConversationCorpusTests {
                 longFormFailureCount,
             longFormConversationIDsPassingProductionFloor: longFormConversationIDsPassingProductionFloor,
             longFormConversationFailureIDs: longFormConversationFailureIDs,
+            longFormConversations: detailedLongFormConversations,
             providerChain: ["Gemini (gemini-test)"],
             passesProductionFloor: passesProductionFloor && failureCount == 0 && longFormFailureCount == 0,
             passesRunReadinessFloor: passesRunReadinessFloor &&
@@ -3187,42 +3673,119 @@ struct CoachChatConversationCorpusTests {
         )
     }
 
+    private static func copyLiveProviderSweepEvidence(
+        _ evidence: CoachLiveProviderSweepEvidence,
+        rows: [CoachLiveProviderSweepEvidence.Row]? = nil,
+        longFormConversations: [CoachLiveProviderSweepEvidence.LongFormConversation]? = nil
+    ) -> CoachLiveProviderSweepEvidence {
+        CoachLiveProviderSweepEvidence(
+            schemaVersion: evidence.schemaVersion,
+            fixtureCount: evidence.fixtureCount,
+            longFormConversationCount: evidence.longFormConversationCount,
+            longFormConversationIDsPassingProductionFloor: evidence.longFormConversationIDsPassingProductionFloor,
+            longFormConversationFailureIDs: evidence.longFormConversationFailureIDs,
+            longFormConversations: longFormConversations ?? evidence.longFormConversations,
+            providerChain: evidence.providerChain,
+            passesProductionFloor: evidence.passesProductionFloor,
+            passesRunReadinessFloor: evidence.passesRunReadinessFloor,
+            summary: evidence.summary,
+            rows: rows ?? evidence.rows
+        )
+    }
+
+    private static func liveProviderLongFormConversations(
+        passingIDs: [String],
+        failureIDs: [String]
+    ) -> [CoachLiveProviderSweepEvidence.LongFormConversation] {
+        let ids = passingIDs + failureIDs
+        let failureIDSet = Set(failureIDs)
+        return ids.map { conversationID in
+            let source = CoachChatConversationCorpus.longFormConversations.first {
+                $0.id == conversationID
+            }
+            let expectedTurnCount = source?.turns.count ?? 5
+            let liveProductionFloor = !failureIDSet.contains(conversationID)
+            let rows = (0..<expectedTurnCount).map { index in
+                CoachLiveProviderSweepEvidence.Row(
+                    fixtureID: "\(conversationID)#turn-\(index + 1)",
+                    turnDepth: CoachLiveProviderSweepEvidence
+                        .requiredTurnDepths[index % CoachLiveProviderSweepEvidence.requiredTurnDepths.count],
+                    providerChosen: "Gemini",
+                    providerModel: "gemini-test",
+                    timeToFirstVisibleTokenMs: 520 + index,
+                    assessmentConfidence: 0.64 + (Double(index % 4) * 0.04),
+                    assessmentProofTestHash: "\(conversationID)-proof-\(index)",
+                    immediateCoachReadExpected: false,
+                    immediateCoachReadShown: false,
+                    liveProductionFloor: liveProductionFloor,
+                    reply: liveProductionFloor
+                        ? "\(conversationID) turn \(index + 1) names the current evidence, answers the user's ask, and gives one proof test."
+                        : nil,
+                    passesRubric: liveProductionFloor,
+                    visionPassesProductionFloor: liveProductionFloor,
+                    qualityIssue: "none",
+                    semanticGateIssue: "none",
+                    reliabilityIssues: []
+                )
+            }
+            return CoachLiveProviderSweepEvidence.LongFormConversation(
+                conversationID: conversationID,
+                sourceFixtureID: source?.sourceFixtureID ?? "unknown-source",
+                expectedTurnCount: expectedTurnCount,
+                observedTurnCount: expectedTurnCount,
+                liveProductionFloor: liveProductionFloor,
+                failure: liveProductionFloor ? nil : "failed live production floor",
+                rows: rows
+            )
+        }
+    }
+
     private static func professionalCalibrationEvidence(
         conversationIDs: [String] = CoachProfessionalCalibrationEvidence.requiredConversationIDs,
+        reviewsPerConversation: Int = CoachProfessionalCalibrationEvidence.requiredReviewsPerConversation,
         readinessWarnings: [String] = [],
         rejectedRowIndices: Set<Int> = [],
         rejectionDecision: String = "unsafeOrUnready",
         reviewerIDs: [String]? = nil,
         summaryReviewerCount: Int? = nil,
-        revisionNoteIndices: Set<Int> = []
+        revisionNoteIndices: Set<Int> = [],
+        sourcePacketFingerprint: String? = CoachProfessionalCalibrationEvidence
+            .expectedSourcePacketFingerprint
     ) -> CoachProfessionalCalibrationEvidence {
-        let rows = conversationIDs.enumerated().map { index, conversationID in
-            let rejected = rejectedRowIndices.contains(index)
-            let ratings = CoachProfessionalCalibrationEvidence.Ratings(
-                diagnosis: rejected ? 3 : 4,
-                caseFormulation: rejected ? 3 : 4,
-                intervention: rejected ? 3 : 4,
-                adaptation: rejected ? 3 : 4,
-                perceptionHonesty: rejected ? 3 : 4,
-                transferSetup: rejected ? 3 : 4,
-                trustRepair: rejected ? 3 : 4,
-                overallUsefulness: rejected ? 3 : 4
-            )
-            let reviewerID = reviewerIDs?.isEmpty == false
-                ? reviewerIDs![index % reviewerIDs!.count]
-                : "coach-reviewer-1"
-            return CoachProfessionalCalibrationEvidence.Row(
-                conversationID: conversationID,
-                reviewerID: reviewerID,
-                calibrationDecision: rejected ? rejectionDecision : "roughTie",
-                wouldUseWithClient: !rejected,
-                ratings: ratings,
-                humanCoachReferenceCount: rejected ? 0 : 2,
-                overclaimNotes: rejected ? ["Too much certainty for the evidence."] : [],
-                revisionNotes: rejected || revisionNoteIndices.contains(index)
-                    ? ["Needs stronger evidence calibration."]
-                    : []
-            )
+        let defaultReviewerIDs = (1...CoachProfessionalCalibrationEvidence.requiredReviewsPerConversation)
+            .map { "coach-reviewer-\($0)" }
+        let rows = conversationIDs.enumerated().flatMap { conversationIndex, conversationID in
+            (0..<reviewsPerConversation).map { reviewIndex in
+                let rowIndex = conversationIndex * reviewsPerConversation +
+                    reviewIndex
+                let rejected = rejectedRowIndices.contains(rowIndex)
+                let ratings = CoachProfessionalCalibrationEvidence.Ratings(
+                    diagnosis: rejected ? 3 : 4,
+                    caseFormulation: rejected ? 3 : 4,
+                    intervention: rejected ? 3 : 4,
+                    adaptation: rejected ? 3 : 4,
+                    perceptionHonesty: rejected ? 3 : 4,
+                    transferSetup: rejected ? 3 : 4,
+                    trustRepair: rejected ? 3 : 4,
+                    overallUsefulness: rejected ? 3 : 4
+                )
+                let availableReviewerIDs = reviewerIDs ?? defaultReviewerIDs
+                let reviewerID = availableReviewerIDs.isEmpty
+                    ? ""
+                    : availableReviewerIDs[rowIndex % availableReviewerIDs.count]
+                return CoachProfessionalCalibrationEvidence.Row(
+                    conversationID: conversationID,
+                    reviewerID: reviewerID,
+                    calibrationDecision: rejected ? rejectionDecision : "roughTie",
+                    wouldUseWithClient: !rejected,
+                    ratings: ratings,
+                    humanCoachReferenceCount: rejected ? 0 : 2,
+                    overclaimNotes: rejected ? ["Too much certainty for the evidence."] : [],
+                    revisionNotes: rejected || revisionNoteIndices.contains(rowIndex)
+                        ? ["Needs stronger evidence calibration."]
+                        : []
+                )
+            }
         }
         let rowCount = rows.count
         let passingRows = rows.filter(\.passesCalibrationFloor)
@@ -3237,6 +3800,7 @@ struct CoachChatConversationCorpusTests {
         return CoachProfessionalCalibrationEvidence(
             schemaVersion: CoachProfessionalCalibrationEvidence.expectedSchemaVersion,
             sourcePacketSchemaVersion: CoachChatConversationCorpus.expertCalibrationPacketSchemaVersion,
+            sourcePacketFingerprint: sourcePacketFingerprint,
             rubricVersion: CoachProfessionalCalibrationEvidence.expectedRubricVersion,
             reviewerRole: "professionalCommunicationCoach",
             reviewCount: rowCount,
@@ -3258,28 +3822,53 @@ struct CoachChatConversationCorpusTests {
     private static func realUserTransferOutcomeEvidence(
         rowCount: Int = 12,
         readinessWarnings: [String] = [],
-        rejectedRowIndices: Set<Int> = []
+        rejectedRowIndices: Set<Int> = [],
+        collapsedUserIDs: Bool = false,
+        collapsedMomentCategories: Bool = false,
+        missingEvidenceReferenceIndices: Set<Int> = [],
+        lowFollowUpDelayIndices: Set<Int> = []
     ) -> CoachRealUserTransferOutcomeEvidence {
         let rows = (0..<rowCount).map { index in
             let rejected = rejectedRowIndices.contains(index)
+            let missingEvidence = missingEvidenceReferenceIndices.contains(index)
+            let momentCategory = collapsedMomentCategories ? "presentation" : [
+                "presentation",
+                "interview",
+                "leadership",
+                "conflict",
+                "client-call",
+                "networking"
+            ][index % 6]
             return CoachRealUserTransferOutcomeEvidence.Row(
                 outcomeID: "transfer-outcome-\(index)",
-                userIDHash: "user-\(index % 6)",
-                momentCategory: [
-                    "presentation",
-                    "interview",
-                    "leadership",
-                    "conflict"
-                ][index % 4],
+                userIDHash: collapsedUserIDs ? "user-\(index % 3)" : "user-\(index % 10)",
+                momentCategory: momentCategory,
+                interventionID: "intervention-\(index)",
                 realWorldMomentOccurred: !rejected,
                 followUpCompleted: !rejected,
                 linkedCoachInterventionCount: rejected ? 0 : 2,
                 daysSinceFirstNoumSession: rejected ? 3 : 14 + index,
+                followUpDelayHours: lowFollowUpDelayIndices.contains(index) ? 4 : 36 + index,
                 preMomentConfidence: 2 + (index % 2),
                 postMomentConfidence: rejected ? 1 : 3 + (index % 2),
                 positiveTransferReported: !rejected,
                 audienceResponseEvidenceCollected: !rejected,
                 adverseOutcomeReported: rejected,
+                interventionEvidenceReference: missingEvidence
+                    ? ""
+                    : "noum://intervention/intervention-\(index)",
+                momentEvidenceReference: missingEvidence
+                    ? ""
+                    : "beta://moment/\(momentCategory)/\(index)",
+                followUpEvidenceReference: missingEvidence
+                    ? ""
+                    : "beta://follow-up/transfer-outcome-\(index)",
+                audienceResponseEvidenceReference: missingEvidence
+                    ? ""
+                    : "beta://audience-response/transfer-outcome-\(index)",
+                selfReportEvidenceReference: missingEvidence
+                    ? ""
+                    : "beta://self-report/transfer-outcome-\(index)",
                 causalityClaims: rejected ? ["Noum caused the outcome."] : [],
                 notes: rejected ? ["Follow-up did not establish transfer."] : [
                     "User reported the prescribed proof test carried into the real moment."
@@ -3288,7 +3877,11 @@ struct CoachChatConversationCorpusTests {
         }
         let passingRows = rows.filter(\.passesOutcomeFloor)
         let uniqueUsers = Set(rows.map(\.userIDHash)).count
+        let uniqueMomentCategories = Set(rows.map(\.momentCategory)).count
+        let rowsByUser = Dictionary(grouping: rows, by: \.userIDHash)
+        let maximumOutcomesPerUser = rowsByUser.values.map(\.count).max() ?? 0
         let minimumDays = rows.map(\.daysSinceFirstNoumSession).min() ?? 0
+        let minimumFollowUpDelay = rows.map(\.followUpDelayHours).min() ?? 0
         return CoachRealUserTransferOutcomeEvidence(
             schemaVersion: CoachRealUserTransferOutcomeEvidence.expectedSchemaVersion,
             studyProtocolVersion: CoachRealUserTransferOutcomeEvidence.expectedProtocolVersion,
@@ -3311,6 +3904,10 @@ struct CoachChatConversationCorpusTests {
                 passingOutcomeCount: passingRows.count,
                 minimumDaysSinceFirstSession: minimumDays,
                 studyDurationDays: rowCount > 0 ? 42 : 0,
+                uniqueMomentCategoryCount: uniqueMomentCategories,
+                verifiedEvidenceReferenceCount: rows.filter(\.hasRequiredEvidenceReferences).count,
+                minimumFollowUpDelayHours: minimumFollowUpDelay,
+                maximumOutcomesPerUser: maximumOutcomesPerUser,
                 readinessWarnings: readinessWarnings
             ),
             rows: rows
@@ -3319,17 +3916,39 @@ struct CoachChatConversationCorpusTests {
 
     private static func realDeviceTestFlightEvidence(
         readinessWarnings: [String] = [],
-        failingSurfaceKeys: Set<String> = []
+        failingSurfaceKeys: Set<String> = [],
+        evidenceKindOverrides: [String: String] = [:],
+        missingEvidenceReferenceSurfaceKeys: Set<String> = [],
+        missingEvidenceTimestampSurfaceKeys: Set<String> = [],
+        buildMismatchSurfaceKeys: Set<String> = [],
+        missingDeviceIdentitySurfaceKeys: Set<String> = [],
+        overBudgetLatencySurfaceKeys: Set<String> = []
     ) -> CoachRealDeviceTestFlightEvidence {
+        let buildNumber = "2026.06.30.1"
         let rows = CoachRealDeviceTestFlightEvidence.requiredSurfaceKeys.map { key in
             let failed = failingSurfaceKeys.contains(key)
+            let missingEvidenceReference = missingEvidenceReferenceSurfaceKeys.contains(key)
+            let missingEvidenceTimestamp = missingEvidenceTimestampSurfaceKeys.contains(key)
+            let missingDeviceIdentity = missingDeviceIdentitySurfaceKeys.contains(key)
+            let buildNumberForRow = buildMismatchSurfaceKeys.contains(key) ?
+                "2026.06.29.9" : buildNumber
+            let latency = key == "aiPromptLatency" ?
+                (overBudgetLatencySurfaceKeys.contains(key) || failed ? 4_200 : 1_850) : nil
             return CoachRealDeviceTestFlightEvidence.Row(
                 surfaceKey: key,
                 passed: !failed,
                 realDevice: true,
                 testFlightBuildInstalled: true,
-                evidenceReference: failed ? "" : "testflight://noum/qa/\(key)",
-                latencyMs: key == "aiPromptLatency" ? (failed ? 4_200 : 1_850) : nil,
+                evidenceReference: failed || missingEvidenceReference ?
+                    "" : "testflight://noum/qa/\(buildNumber)/\(key)",
+                evidenceKind: evidenceKindOverrides[key] ??
+                    CoachRealDeviceTestFlightEvidence.expectedEvidenceKindBySurface[key] ?? "",
+                evidenceCapturedAtISO8601: missingEvidenceTimestamp ?
+                    "" : "2026-06-30T09:12:00Z",
+                testFlightBuildNumber: buildNumberForRow,
+                deviceIdentifierHash: missingDeviceIdentity ?
+                    "" : "sha256:iphone15pro-real-device-qa",
+                latencyMs: latency,
                 blockingIssueCount: failed ? 1 : 0,
                 notes: failed ? ["Blocking issue observed on \(key)."] : [
                     "Verified on physical device through TestFlight."
@@ -3346,12 +3965,30 @@ struct CoachChatConversationCorpusTests {
         let testFlightRequiredRows = rows.filter {
             requiredKeys.contains($0.surfaceKey) && $0.testFlightBuildInstalled
         }
+        let artifactBackedRows = rows.filter {
+            requiredKeys.contains($0.surfaceKey) && $0.hasRequiredArtifactTrail
+        }
+        let expectedEvidenceKindRows = rows.filter {
+            requiredKeys.contains($0.surfaceKey) && $0.evidenceKindMatchesSurface
+        }
+        let sameBuildRows = rows.filter {
+            requiredKeys.contains($0.surfaceKey) && $0.testFlightBuildNumber == buildNumber
+        }
+        let deviceIdentityRows = rows.filter {
+            requiredKeys.contains($0.surfaceKey) &&
+                CoachRealDeviceTestFlightEvidence.usableEvidenceReference($0.deviceIdentifierHash)
+        }
+        let latencyWithinBudgetRows = rows.filter {
+            requiredKeys.contains($0.surfaceKey) &&
+                $0.surfaceKey == "aiPromptLatency" &&
+                $0.latencyWithinBudget
+        }
         let blockingIssueCount = rows.reduce(0) { $0 + $1.blockingIssueCount }
         return CoachRealDeviceTestFlightEvidence(
             schemaVersion: CoachRealDeviceTestFlightEvidence.expectedSchemaVersion,
             testRunID: "real-device-qa-2026-06-30",
             appVersion: "1.0",
-            buildNumber: "2026.06.30.1",
+            buildNumber: buildNumber,
             deviceModel: "iPhone 15 Pro",
             osVersion: "iOS 26.2",
             testerRole: "internalTestFlightQA",
@@ -3361,6 +3998,11 @@ struct CoachChatConversationCorpusTests {
                 passedRequiredSurfaceCount: passedRequiredRows.count,
                 realDeviceSurfaceCount: realDeviceRequiredRows.count,
                 testFlightBuildSurfaceCount: testFlightRequiredRows.count,
+                artifactBackedSurfaceCount: artifactBackedRows.count,
+                expectedEvidenceKindSurfaceCount: expectedEvidenceKindRows.count,
+                sameBuildSurfaceCount: sameBuildRows.count,
+                deviceIdentitySurfaceCount: deviceIdentityRows.count,
+                latencyWithinBudgetSurfaceCount: latencyWithinBudgetRows.count,
                 blockingIssueCount: blockingIssueCount,
                 crashFree: blockingIssueCount == 0,
                 readinessWarnings: readinessWarnings
@@ -3371,15 +4013,48 @@ struct CoachChatConversationCorpusTests {
 
     private static func operationalLaunchChecklistEvidence(
         readinessWarnings: [String] = [],
-        failingItemKeys: Set<String> = []
+        failingItemKeys: Set<String> = [],
+        evidenceKindOverrides: [String: String] = [:],
+        environmentOverrides: [String: String] = [:],
+        missingEvidenceReferenceItemKeys: Set<String> = [],
+        missingVerificationReferenceItemKeys: Set<String> = [],
+        missingOutputReferenceItemKeys: Set<String> = [],
+        missingCompletedAtItemKeys: Set<String> = [],
+        missingVerifiedAtItemKeys: Set<String> = [],
+        missingVerifiedByRoleItemKeys: Set<String> = [],
+        buildMismatchItemKeys: Set<String> = []
     ) -> CoachOperationalLaunchChecklistEvidence {
+        let releaseCandidateBuild = "2026.06.30.1"
         let items = CoachOperationalLaunchChecklistEvidence.requiredItemKeys.map { key in
             let failed = failingItemKeys.contains(key)
+            let missingEvidenceReference = missingEvidenceReferenceItemKeys.contains(key)
+            let missingVerificationReference = missingVerificationReferenceItemKeys.contains(key)
+            let missingOutputReference = missingOutputReferenceItemKeys.contains(key)
+            let missingCompletedAt = missingCompletedAtItemKeys.contains(key)
+            let missingVerifiedAt = missingVerifiedAtItemKeys.contains(key)
+            let missingVerifiedByRole = missingVerifiedByRoleItemKeys.contains(key)
+            let itemBuild = buildMismatchItemKeys.contains(key) ?
+                "2026.06.29.9" : releaseCandidateBuild
             return CoachOperationalLaunchChecklistEvidence.Item(
                 key: key,
                 completed: !failed,
-                evidenceReference: failed ? "" : "m14://launch-checklist/\(key)",
-                completedAtISO8601: failed ? nil : "2026-06-30T00:00:00Z",
+                evidenceReference: failed || missingEvidenceReference ?
+                    "" : "m14://launch-checklist/\(releaseCandidateBuild)/\(key)",
+                evidenceKind: evidenceKindOverrides[key] ??
+                    CoachOperationalLaunchChecklistEvidence.expectedEvidenceKindByItem[key] ?? "",
+                verificationReference: failed || missingVerificationReference ?
+                    "" : "m14://launch-verification/\(releaseCandidateBuild)/\(key)",
+                commandOrReviewOutputReference: failed || missingOutputReference ?
+                    "" : "m14://launch-output/\(releaseCandidateBuild)/\(key)",
+                releaseCandidateBuild: itemBuild,
+                environment: environmentOverrides[key] ??
+                    CoachOperationalLaunchChecklistEvidence.expectedEnvironmentByItem[key] ?? "",
+                completedAtISO8601: failed || missingCompletedAt ?
+                    nil : "2026-06-30T00:00:00Z",
+                verifiedAtISO8601: failed || missingVerifiedAt ?
+                    nil : "2026-06-30T00:15:00Z",
+                verifiedByRole: failed || missingVerifiedByRole ?
+                    "" : "releaseManager",
                 notes: failed ? ["Required launch item incomplete."] : [
                     "Launch item completed and evidence captured."
                 ]
@@ -3392,15 +4067,35 @@ struct CoachChatConversationCorpusTests {
         let failedRequiredItems = items.filter {
             requiredKeys.contains($0.key) && !$0.completed
         }
+        let artifactBackedItems = items.filter {
+            requiredKeys.contains($0.key) && $0.hasRequiredArtifactTrail
+        }
+        let expectedEvidenceKindItems = items.filter {
+            requiredKeys.contains($0.key) && $0.evidenceKindMatchesItem
+        }
+        let expectedEnvironmentItems = items.filter {
+            requiredKeys.contains($0.key) && $0.environmentMatchesItem
+        }
+        let sameBuildItems = items.filter {
+            requiredKeys.contains($0.key) && $0.releaseCandidateBuild == releaseCandidateBuild
+        }
+        let verifiedRequiredItems = items.filter {
+            requiredKeys.contains($0.key) && $0.hasVerificationIdentity
+        }
         return CoachOperationalLaunchChecklistEvidence(
             schemaVersion: CoachOperationalLaunchChecklistEvidence.expectedSchemaVersion,
             checklistVersion: CoachOperationalLaunchChecklistEvidence.expectedChecklistVersion,
-            releaseCandidateBuild: "2026.06.30.1",
+            releaseCandidateBuild: releaseCandidateBuild,
             completedByRole: "releaseManager",
             summary: CoachOperationalLaunchChecklistEvidence.Summary(
                 itemCount: items.count,
                 completedRequiredItemCount: completedRequiredItems.count,
                 failedRequiredItemCount: failedRequiredItems.count,
+                artifactBackedItemCount: artifactBackedItems.count,
+                expectedEvidenceKindItemCount: expectedEvidenceKindItems.count,
+                expectedEnvironmentItemCount: expectedEnvironmentItems.count,
+                sameBuildItemCount: sameBuildItems.count,
+                verifiedRequiredItemCount: verifiedRequiredItems.count,
                 readinessWarnings: readinessWarnings
             ),
             items: items
@@ -3577,7 +4272,7 @@ struct CoachVisionProductionReadinessAuditTests {
             )
         )
 
-        #expect(report.conversationCount == 12)
+        #expect(report.conversationCount == CoachChatConversationCorpus.conversations.count)
         #expect(expertPacket.humanGateStatus == .pendingExpertReview)
         #expect(expertPacket.conversationCount == CoachProfessionalCalibrationEvidence.requiredConversationIDs.count)
         #expect(localTargetShapeScore >= 80)
@@ -3610,7 +4305,7 @@ struct CoachVisionProductionReadinessAuditTests {
                 appPathImmediateReadVerified: true,
                 appPathProofTestProgressionVerified: true,
                 liveProviderRowsPassingFloor: CoachLiveProviderSweepEvidence.requiredReadinessEvidenceCount,
-                professionalCoachCalibrationRows: CoachProfessionalCalibrationEvidence.requiredConversationIDs.count,
+                professionalCoachCalibrationRows: CoachProfessionalCalibrationEvidence.requiredCalibrationReviewCount,
                 realUserLongitudinalOutcomeCount: 12,
                 realDeviceTestFlightVerified: true,
                 operationalLaunchChecklistComplete: true

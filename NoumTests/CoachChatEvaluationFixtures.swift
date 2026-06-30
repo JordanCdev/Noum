@@ -64,6 +64,9 @@ struct CoachChatEvaluationCIReport: Codable, Equatable {
             fixtureCount: fixtures.count,
             rows: fixtures.map { fixture in
                 let context = CoachChatEvaluationCorpus.renderedContext(for: fixture)
+                let missingContextNeedles = fixture.expectedContextNeedles.filter {
+                    !CoachChatEvaluationCorpus.contains(context, $0)
+                }
                 let recentTurns = fixture.previousCoachReply.map {
                     [CoachMessage(role: .coach, text: $0)]
                 } ?? []
@@ -144,14 +147,17 @@ struct CoachChatEvaluationCIReport: Codable, Equatable {
                         referenceIssue == nil &&
                         referenceVision.passesProductionFloor &&
                         referenceVisionRuntimeIssue == nil &&
-                        referencePassesReliabilityGate,
+                        referencePassesReliabilityGate &&
+                        missingContextNeedles.isEmpty,
                     knownBadIssueMatched: issue == fixture.expectedBadIssue,
                     knownBadVisionScore: knownBadVision.score,
                     knownBadTripsVisionRuntimeGate: knownBadVisionRuntimeIssue != nil,
                     knownBadReliabilityIssues: knownBadReliability.issues.map(\.rawValue),
                     knownBadTripsReliabilityGate: !knownBadReliability.issues.isEmpty,
                     expectedBadIssue: String(describing: fixture.expectedBadIssue),
-                    contextNeedleCount: fixture.expectedContextNeedles.count
+                    contextNeedleCount: fixture.expectedContextNeedles.count,
+                    contextNeedlesPassed: missingContextNeedles.isEmpty,
+                    missingContextNeedles: missingContextNeedles
                 )
             }
         )
@@ -185,6 +191,8 @@ struct CoachChatEvaluationCIReportRow: Codable, Equatable {
     let knownBadTripsReliabilityGate: Bool
     let expectedBadIssue: String
     let contextNeedleCount: Int
+    let contextNeedlesPassed: Bool
+    let missingContextNeedles: [String]
 }
 
 enum CoachChatConversationCriterion: String, Codable, Equatable, CaseIterable {
@@ -398,10 +406,13 @@ struct CoachChatConversationEvaluationReportRow: Codable, Equatable {
 struct CoachChatConversationExpertCalibrationPacket: Codable, Equatable {
     let schemaVersion: String
     let rubricVersion: String
+    let sourceCorpusFingerprint: String
     let humanGateStatus: CoachChatExpertBaselineStatus
     let instructions: String
     let responseSchema: String
     let conversationCount: Int
+    let requiredIndependentReviewsPerConversation: Int
+    let requiredReviewCount: Int
     let rows: [CoachChatConversationExpertCalibrationPacketRow]
 
     static func make(
@@ -409,24 +420,31 @@ struct CoachChatConversationExpertCalibrationPacket: Codable, Equatable {
     ) -> CoachChatConversationExpertCalibrationPacket {
         CoachChatConversationExpertCalibrationPacket(
             schemaVersion: CoachChatConversationCorpus.expertCalibrationPacketSchemaVersion,
-            rubricVersion: "coach-parity-conversation-calibration-v1",
+            rubricVersion: CoachProfessionalCalibrationEvidence.expectedRubricVersion,
+            sourceCorpusFingerprint: sourceCorpusFingerprint(for: conversations),
             humanGateStatus: .pendingExpertReview,
             instructions: [
                 "Blinded professional-coach review packet: compare Noum's full multi-turn coaching conversation against what an excellent human communication coach would do.",
                 "Use the supplied user turns, candidate coach replies, and Noum context only; do not assume the app is validated or production-ready.",
                 "Evaluate diagnosis, case formulation, intervention, adaptation, perception limits, transfer setup, trust repair, and evidence calibration across the whole conversation.",
+                "Each conversation needs at least two independent professional communication-coach reviews before it can count as calibration evidence.",
                 "Prefer useful, attuned, evidence-led coaching over polished generic advice; mark thin evidence and overclaims explicitly.",
                 "This packet gathers human calibration evidence only. Do not treat a completed packet as production readiness without longitudinal user outcomes and real-device QA."
             ].joined(separator: " "),
             responseSchema: [
-                "Return one JSON object per conversation:",
+                "Return one JSON object per reviewer per conversation:",
                 "{\"conversationID\": string,",
+                "\"reviewerID\": string,",
                 "\"ratings\": {\"diagnosis\": 1-5, \"caseFormulation\": 1-5, \"intervention\": 1-5, \"adaptation\": 1-5, \"perceptionHonesty\": 1-5, \"transferSetup\": 1-5, \"trustRepair\": 1-5, \"overallUsefulness\": 1-5},",
                 "\"calibrationDecision\": \"expertBetter|noumBetter|roughTie|unsafeOrUnready\",",
                 "\"humanCoachReference\": [{\"turnIndex\": number, \"idealCoachMove\": string, \"evidenceUsed\": [string], \"uncertainty\": string}],",
                 "\"overclaimNotes\": [string], \"revisionNotes\": [string], \"wouldUseWithClient\": boolean}."
             ].joined(separator: " "),
             conversationCount: conversations.count,
+            requiredIndependentReviewsPerConversation:
+                CoachProfessionalCalibrationEvidence.requiredReviewsPerConversation,
+            requiredReviewCount: conversations.count *
+                CoachProfessionalCalibrationEvidence.requiredReviewsPerConversation,
             rows: conversations.map { conversation in
                 let source = CoachChatEvaluationCorpus.fixtures.first {
                     $0.id == conversation.sourceFixtureID
@@ -453,6 +471,45 @@ struct CoachChatConversationExpertCalibrationPacket: Codable, Equatable {
         )
     }
 
+    static func sourceCorpusFingerprint(
+        for conversations: [CoachChatConversationFixture]
+    ) -> String {
+        let canonical = conversations
+            .sorted { $0.id < $1.id }
+            .map { conversation -> String in
+                let turnText = conversation.turns.enumerated().flatMap { index, turn in
+                    [
+                        canonicalField("turnIndex=\(index)"),
+                        canonicalField("user=\(turn.userTurn)"),
+                        canonicalField("coach=\(turn.coachReply)")
+                    ]
+                }.joined(separator: "|")
+                return [
+                    canonicalField("conversationID=\(conversation.id)"),
+                    canonicalField("sourceFixtureID=\(conversation.sourceFixtureID)"),
+                    canonicalField("turnCount=\(conversation.turns.count)"),
+                    turnText
+                ].joined(separator: "|")
+            }
+            .joined(separator: "\n")
+        let hex = String(fnv1a64(canonical), radix: 16)
+        return "fnv1a64:\(String(repeating: "0", count: max(0, 16 - hex.count)))\(hex)"
+    }
+
+    private static func canonicalField(_ value: String) -> String {
+        "\(value.utf8.count):\(value)"
+    }
+
+    private static func fnv1a64(_ value: String) -> UInt64 {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        let prime: UInt64 = 0x0000_0100_0000_01b3
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* prime
+        }
+        return hash
+    }
+
     func encodedSortedJSON() throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -475,14 +532,24 @@ struct CoachChatConversationExpertCalibrationPacketRow: Codable, Equatable {
 }
 
 struct CoachProfessionalCalibrationEvidence: Codable, Equatable {
-    static let expectedSchemaVersion = "coach-chat-conversation-expert-calibration-results-v1"
-    static let expectedRubricVersion = "coach-parity-conversation-calibration-v1"
+    static let expectedSchemaVersion = "coach-chat-conversation-expert-calibration-results-v2"
+    static let expectedRubricVersion = "coach-parity-conversation-calibration-v2"
+    static let requiredReviewsPerConversation = 2
     static let requiredConversationIDs = CoachChatConversationCorpus
         .professionalCalibrationConversations
         .map(\.id)
+    static var expectedSourcePacketFingerprint: String {
+        CoachChatConversationExpertCalibrationPacket.sourceCorpusFingerprint(
+            for: CoachChatConversationCorpus.professionalCalibrationConversations
+        )
+    }
+    static var requiredCalibrationReviewCount: Int {
+        requiredConversationIDs.count * requiredReviewsPerConversation
+    }
 
     let schemaVersion: String
     let sourcePacketSchemaVersion: String
+    let sourcePacketFingerprint: String?
     let rubricVersion: String
     let reviewerRole: String
     let reviewCount: Int
@@ -504,27 +571,41 @@ struct CoachProfessionalCalibrationEvidence: Codable, Equatable {
         let uniqueReviewerIDs = Set(rows.map(\.reviewerID).filter {
             !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         })
+        let rowsByConversationID = Dictionary(grouping: rows, by: \.conversationID)
+        let passingRowsByConversationID = Dictionary(grouping: passingRows, by: \.conversationID)
+        let reviewSlots = rows.map {
+            "\($0.conversationID)|\($0.reviewerID.trimmingCharacters(in: .whitespacesAndNewlines))"
+        }
+        let uniqueReviewSlots = Set(reviewSlots)
         if schemaVersion != Self.expectedSchemaVersion {
             reasons.append("schemaVersion=\(schemaVersion)")
         }
         if sourcePacketSchemaVersion != CoachChatConversationCorpus.expertCalibrationPacketSchemaVersion {
             reasons.append("sourcePacketSchemaVersion=\(sourcePacketSchemaVersion)")
         }
+        let trimmedSourcePacketFingerprint = sourcePacketFingerprint?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmedSourcePacketFingerprint.isEmpty {
+            reasons.append("sourcePacketFingerprintMissing")
+        } else if trimmedSourcePacketFingerprint != Self.expectedSourcePacketFingerprint {
+            reasons.append("sourcePacketFingerprintMismatch")
+        }
         if rubricVersion != Self.expectedRubricVersion {
             reasons.append("rubricVersion=\(rubricVersion)")
         }
-        if reviewCount < 10 || rows.count < 10 {
-            reasons.append("fewerThanTenReviews")
+        if reviewCount < Self.requiredCalibrationReviewCount ||
+            rows.count < Self.requiredCalibrationReviewCount {
+            reasons.append("fewerThanRequiredReviews")
         }
-        if reviewCount < Self.requiredConversationIDs.count ||
-            rows.count < Self.requiredConversationIDs.count {
+        if reviewCount < Self.requiredCalibrationReviewCount ||
+            rows.count < Self.requiredCalibrationReviewCount {
             reasons.append("missingFullConversationCoverage")
         }
         if reviewCount != rows.count || summary.rowCount != rows.count {
             reasons.append("rowCountMismatch")
         }
-        if uniqueConversationIDs.count != rows.count {
-            reasons.append("duplicateConversationIDs")
+        if uniqueReviewSlots.count != rows.count {
+            reasons.append("duplicateConversationReviewerPairs")
         }
         let missingConversationIDs = Self.requiredConversationIDs.filter {
             !uniqueConversationIDs.contains($0)
@@ -538,8 +619,35 @@ struct CoachProfessionalCalibrationEvidence: Codable, Equatable {
         if !unexpectedConversationIDs.isEmpty {
             reasons.append("unexpectedConversationIDs=\(unexpectedConversationIDs.joined(separator: ","))")
         }
+        let insufficientReviewConversationIDs = Self.requiredConversationIDs.filter {
+            (rowsByConversationID[$0]?.count ?? 0) < Self.requiredReviewsPerConversation
+        }
+        if !insufficientReviewConversationIDs.isEmpty {
+            reasons.append(
+                "insufficientReviewsPerConversation=\(insufficientReviewConversationIDs.joined(separator: ","))"
+            )
+        }
+        let insufficientPassingConversationIDs = Self.requiredConversationIDs.filter {
+            (passingRowsByConversationID[$0]?.count ?? 0) < Self.requiredReviewsPerConversation
+        }
+        if !insufficientPassingConversationIDs.isEmpty {
+            reasons.append(
+                "insufficientPassingReviewsPerConversation=\(insufficientPassingConversationIDs.joined(separator: ","))"
+            )
+        }
+        let insufficientReviewerDiversityIDs = Self.requiredConversationIDs.filter { conversationID in
+            let reviewerIDs = Set((rowsByConversationID[conversationID] ?? []).map {
+                $0.reviewerID.trimmingCharacters(in: .whitespacesAndNewlines)
+            }.filter { !$0.isEmpty })
+            return reviewerIDs.count < Self.requiredReviewsPerConversation
+        }
+        if !insufficientReviewerDiversityIDs.isEmpty {
+            reasons.append(
+                "insufficientReviewerDiversity=\(insufficientReviewerDiversityIDs.joined(separator: ","))"
+            )
+        }
         if summary.reviewerCount != uniqueReviewerIDs.count ||
-            summary.reviewerCount < 1 ||
+            summary.reviewerCount < Self.requiredReviewsPerConversation ||
             reviewerRole.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
             rows.contains(where: { $0.reviewerID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
             reasons.append("missingProfessionalReviewer")
@@ -548,10 +656,10 @@ struct CoachProfessionalCalibrationEvidence: Codable, Equatable {
             reasons.append("incompleteReviews")
         }
         if summary.passingCalibrationCount != passingRows.count ||
-            summary.passingCalibrationCount < 10 {
+            summary.passingCalibrationCount < Self.requiredCalibrationReviewCount {
             reasons.append("insufficientPassingCalibrationRows")
         }
-        if summary.wouldUseWithClientCount < 10 {
+        if summary.wouldUseWithClientCount < Self.requiredCalibrationReviewCount {
             reasons.append("insufficientWouldUseWithClientRows")
         }
         if summary.unsafeOrUnreadyCount > 0 ||
@@ -643,8 +751,13 @@ struct CoachProfessionalCalibrationEvidence: Codable, Equatable {
 }
 
 struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
-    static let expectedSchemaVersion = "coach-real-user-transfer-outcomes-v1"
-    static let expectedProtocolVersion = "coach-transfer-outcome-ledger-v1"
+    static let expectedSchemaVersion = "coach-real-user-transfer-outcomes-v2"
+    static let expectedProtocolVersion = "coach-transfer-outcome-ledger-v2"
+    static let requiredOutcomeCount = 10
+    static let requiredUniqueUserCount = 8
+    static let requiredMomentCategoryCount = 4
+    static let maximumOutcomesPerUser = 2
+    static let minimumFollowUpDelayHours = 24
 
     let schemaVersion: String
     let studyProtocolVersion: String
@@ -664,8 +777,13 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
     var rejectionReasons: [String] {
         var reasons: [String] = []
         let passingRows = rows.filter(\.passesOutcomeFloor)
-        let uniqueOutcomeIDs = Set(rows.map(\.outcomeID))
-        let uniqueUserIDs = Set(rows.map(\.userIDHash))
+        let uniqueOutcomeIDs = Set(rows.map { Self.normalizedKey($0.outcomeID) })
+        let uniqueUserIDs = Set(rows.map { Self.normalizedKey($0.userIDHash) })
+        let uniqueMomentCategories = Set(rows.map { Self.normalizedKey($0.momentCategory) })
+        let rowsByUser = Dictionary(grouping: rows, by: { Self.normalizedKey($0.userIDHash) })
+        let maximumObservedOutcomesPerUser = rowsByUser.values.map(\.count).max() ?? 0
+        let verifiedEvidenceReferenceRows = rows.filter(\.hasRequiredEvidenceReferences).count
+        let minimumObservedFollowUpDelay = rows.map(\.followUpDelayHours).min() ?? 0
         let completedFollowUps = rows.filter(\.followUpCompleted).count
         let realWorldMoments = rows.filter(\.realWorldMomentOccurred).count
         let linkedInterventions = rows.filter { $0.linkedCoachInterventionCount > 0 }.count
@@ -673,13 +791,16 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         let audienceEvidence = rows.filter(\.audienceResponseEvidenceCollected).count
         let noRegression = rows.filter { $0.postMomentConfidence >= $0.preMomentConfidence }.count
         let adverseOutcomes = rows.filter(\.adverseOutcomeReported).count
+        let rowsMissingIdentity = rows.enumerated().compactMap { index, row -> String? in
+            row.hasRequiredIdentity ? nil : row.outcomeIDForDiagnostics(index: index)
+        }
         if schemaVersion != Self.expectedSchemaVersion {
             reasons.append("schemaVersion=\(schemaVersion)")
         }
         if studyProtocolVersion != Self.expectedProtocolVersion {
             reasons.append("studyProtocolVersion=\(studyProtocolVersion)")
         }
-        if outcomeCount < 10 || rows.count < 10 {
+        if outcomeCount < Self.requiredOutcomeCount || rows.count < Self.requiredOutcomeCount {
             reasons.append("fewerThanTenOutcomes")
         }
         if outcomeCount != rows.count || summary.rowCount != rows.count {
@@ -688,8 +809,28 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         if uniqueOutcomeIDs.count != rows.count {
             reasons.append("duplicateOutcomeIDs")
         }
-        if summary.uniqueUserCount != uniqueUserIDs.count || summary.uniqueUserCount < 5 {
+        if !rowsMissingIdentity.isEmpty {
+            reasons.append("missingRowIdentity=\(rowsMissingIdentity.joined(separator: ","))")
+        }
+        if summary.uniqueUserCount != uniqueUserIDs.count ||
+            summary.uniqueUserCount < Self.requiredUniqueUserCount {
             reasons.append("insufficientUniqueUsers")
+        }
+        if summary.uniqueMomentCategoryCount != uniqueMomentCategories.count ||
+            summary.uniqueMomentCategoryCount < Self.requiredMomentCategoryCount {
+            reasons.append("insufficientMomentCategoryDiversity")
+        }
+        if summary.maximumOutcomesPerUser != maximumObservedOutcomesPerUser ||
+            maximumObservedOutcomesPerUser > Self.maximumOutcomesPerUser {
+            reasons.append("excessiveOutcomesPerUser")
+        }
+        if summary.verifiedEvidenceReferenceCount != verifiedEvidenceReferenceRows ||
+            verifiedEvidenceReferenceRows < Self.requiredOutcomeCount {
+            reasons.append("insufficientEvidenceReferences")
+        }
+        if summary.minimumFollowUpDelayHours != minimumObservedFollowUpDelay ||
+            minimumObservedFollowUpDelay < Self.minimumFollowUpDelayHours {
+            reasons.append("insufficientFollowUpDelay")
         }
         if summary.completedFollowUpCount != completedFollowUps || completedFollowUps < 10 {
             reasons.append("insufficientCompletedFollowUps")
@@ -729,6 +870,27 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         return reasons
     }
 
+    private static func normalizedKey(_ value: String) -> String {
+        value
+            .lowercased()
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    fileprivate static func usableEvidenceReference(_ value: String) -> Bool {
+        let normalized = normalizedKey(value)
+        guard !normalized.isEmpty else { return false }
+        return ![
+            "n/a",
+            "na",
+            "none",
+            "todo",
+            "tbd",
+            "placeholder",
+            "unknown"
+        ].contains(normalized)
+    }
+
     static func decode(from json: String) throws -> CoachRealUserTransferOutcomeEvidence {
         let data = Data(json.utf8)
         return try JSONDecoder().decode(CoachRealUserTransferOutcomeEvidence.self, from: data)
@@ -754,6 +916,10 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         let passingOutcomeCount: Int
         let minimumDaysSinceFirstSession: Int
         let studyDurationDays: Int
+        let uniqueMomentCategoryCount: Int
+        let verifiedEvidenceReferenceCount: Int
+        let minimumFollowUpDelayHours: Int
+        let maximumOutcomesPerUser: Int
         let readinessWarnings: [String]
     }
 
@@ -761,39 +927,78 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
         let outcomeID: String
         let userIDHash: String
         let momentCategory: String
+        let interventionID: String
         let realWorldMomentOccurred: Bool
         let followUpCompleted: Bool
         let linkedCoachInterventionCount: Int
         let daysSinceFirstNoumSession: Int
+        let followUpDelayHours: Int
         let preMomentConfidence: Int
         let postMomentConfidence: Int
         let positiveTransferReported: Bool
         let audienceResponseEvidenceCollected: Bool
         let adverseOutcomeReported: Bool
+        let interventionEvidenceReference: String
+        let momentEvidenceReference: String
+        let followUpEvidenceReference: String
+        let audienceResponseEvidenceReference: String
+        let selfReportEvidenceReference: String
         let causalityClaims: [String]
         let notes: [String]
+
+        var hasRequiredIdentity: Bool {
+            !outcomeID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !userIDHash.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !momentCategory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !interventionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        var hasRequiredEvidenceReferences: Bool {
+            [
+                interventionEvidenceReference,
+                momentEvidenceReference,
+                followUpEvidenceReference,
+                audienceResponseEvidenceReference,
+                selfReportEvidenceReference
+            ].allSatisfy(CoachRealUserTransferOutcomeEvidence.usableEvidenceReference)
+        }
 
         var passesOutcomeFloor: Bool {
             realWorldMomentOccurred &&
                 followUpCompleted &&
+                hasRequiredIdentity &&
+                hasRequiredEvidenceReferences &&
                 linkedCoachInterventionCount > 0 &&
                 daysSinceFirstNoumSession >= 7 &&
+                followUpDelayHours >= CoachRealUserTransferOutcomeEvidence.minimumFollowUpDelayHours &&
                 postMomentConfidence >= preMomentConfidence &&
                 positiveTransferReported &&
                 audienceResponseEvidenceCollected &&
                 !adverseOutcomeReported &&
                 causalityClaims.isEmpty
         }
+
+        func outcomeIDForDiagnostics(index: Int) -> String {
+            let trimmed = outcomeID.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "row-\(index)" : trimmed
+        }
     }
 }
 
 struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
-    static let expectedSchemaVersion = "coach-real-device-testflight-qa-v1"
+    static let expectedSchemaVersion = "coach-real-device-testflight-qa-v2"
+    static let maximumAIPromptLatencyMs = 3_000
     static let requiredSurfaceKeys = [
         "liveActivity",
         "aiPromptLatency",
         "soundscapeAudioSession",
         "paywallPurchase"
+    ]
+    static let expectedEvidenceKindBySurface = [
+        "liveActivity": "screenRecording",
+        "aiPromptLatency": "latencyTrace",
+        "soundscapeAudioSession": "audioSessionLog",
+        "paywallPurchase": "storeKitReceipt"
     ]
 
     let schemaVersion: String
@@ -827,6 +1032,24 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
         let testFlightRequiredRows = rows.filter {
             requiredSurfaceKeys.contains($0.surfaceKey) && $0.testFlightBuildInstalled
         }
+        let artifactBackedRows = rows.filter {
+            requiredSurfaceKeys.contains($0.surfaceKey) && $0.hasRequiredArtifactTrail
+        }
+        let expectedEvidenceKindRows = rows.filter {
+            requiredSurfaceKeys.contains($0.surfaceKey) && $0.evidenceKindMatchesSurface
+        }
+        let sameBuildRows = rows.filter {
+            requiredSurfaceKeys.contains($0.surfaceKey) &&
+                $0.testFlightBuildNumber.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedBuild
+        }
+        let deviceIdentityRows = rows.filter {
+            requiredSurfaceKeys.contains($0.surfaceKey) &&
+                Self.usableEvidenceReference($0.deviceIdentifierHash)
+        }
+        let latencyRows = rows.filter {
+            requiredSurfaceKeys.contains($0.surfaceKey) && $0.surfaceKey == "aiPromptLatency"
+        }
+        let latencyWithinBudgetRows = latencyRows.filter(\.latencyWithinBudget)
         let blockingIssueCount = rows.reduce(0) { $0 + $1.blockingIssueCount }
         if schemaVersion != Self.expectedSchemaVersion {
             reasons.append("schemaVersion=\(schemaVersion)")
@@ -859,6 +1082,31 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
             testFlightRequiredRows.count < Self.requiredSurfaceKeys.count {
             reasons.append("notAllSurfacesOnTestFlightBuild")
         }
+        let missingArtifactKeys = requiredSurfaceKeys.subtracting(Set(artifactBackedRows.map(\.surfaceKey)))
+        if summary.artifactBackedSurfaceCount != artifactBackedRows.count ||
+            !missingArtifactKeys.isEmpty {
+            reasons.append("missingDeviceEvidence=\(missingArtifactKeys.sorted().joined(separator: ","))")
+        }
+        let evidenceKindMismatchKeys = requiredSurfaceKeys.subtracting(Set(expectedEvidenceKindRows.map(\.surfaceKey)))
+        if summary.expectedEvidenceKindSurfaceCount != expectedEvidenceKindRows.count ||
+            !evidenceKindMismatchKeys.isEmpty {
+            reasons.append("evidenceKindMismatch=\(evidenceKindMismatchKeys.sorted().joined(separator: ","))")
+        }
+        let buildMismatchKeys = requiredSurfaceKeys.subtracting(Set(sameBuildRows.map(\.surfaceKey)))
+        if summary.sameBuildSurfaceCount != sameBuildRows.count ||
+            !buildMismatchKeys.isEmpty {
+            reasons.append("buildNumberMismatch=\(buildMismatchKeys.sorted().joined(separator: ","))")
+        }
+        let missingDeviceIdentityKeys = requiredSurfaceKeys.subtracting(Set(deviceIdentityRows.map(\.surfaceKey)))
+        if summary.deviceIdentitySurfaceCount != deviceIdentityRows.count ||
+            !missingDeviceIdentityKeys.isEmpty {
+            reasons.append("missingDeviceIdentity=\(missingDeviceIdentityKeys.sorted().joined(separator: ","))")
+        }
+        if latencyRows.count != 1 ||
+            summary.latencyWithinBudgetSurfaceCount != latencyWithinBudgetRows.count ||
+            latencyWithinBudgetRows.count != 1 {
+            reasons.append("aiPromptLatencyOverBudget")
+        }
         if summary.blockingIssueCount != blockingIssueCount || blockingIssueCount > 0 {
             reasons.append("blockingIssuesPresent")
         }
@@ -872,6 +1120,13 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
             reasons.append("readinessWarnings=\(summary.readinessWarnings.joined(separator: ","))")
         }
         return reasons
+    }
+
+    static func usableEvidenceReference(_ value: String) -> Bool {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return false }
+        let lowercased = normalized.lowercased()
+        return !["n/a", "na", "none", "todo", "tbd", "placeholder", "unknown"].contains(lowercased)
     }
 
     static func decode(from json: String) throws -> CoachRealDeviceTestFlightEvidence {
@@ -892,6 +1147,11 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
         let passedRequiredSurfaceCount: Int
         let realDeviceSurfaceCount: Int
         let testFlightBuildSurfaceCount: Int
+        let artifactBackedSurfaceCount: Int
+        let expectedEvidenceKindSurfaceCount: Int
+        let sameBuildSurfaceCount: Int
+        let deviceIdentitySurfaceCount: Int
+        let latencyWithinBudgetSurfaceCount: Int
         let blockingIssueCount: Int
         let crashFree: Bool
         let readinessWarnings: [String]
@@ -903,23 +1163,50 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
         let realDevice: Bool
         let testFlightBuildInstalled: Bool
         let evidenceReference: String
+        let evidenceKind: String
+        let evidenceCapturedAtISO8601: String
+        let testFlightBuildNumber: String
+        let deviceIdentifierHash: String
         let latencyMs: Int?
         let blockingIssueCount: Int
         let notes: [String]
+
+        var hasRequiredArtifactTrail: Bool {
+            CoachRealDeviceTestFlightEvidence.usableEvidenceReference(evidenceReference) &&
+                CoachRealDeviceTestFlightEvidence.usableEvidenceReference(evidenceKind) &&
+                CoachRealDeviceTestFlightEvidence.usableEvidenceReference(evidenceCapturedAtISO8601) &&
+                CoachRealDeviceTestFlightEvidence.usableEvidenceReference(testFlightBuildNumber) &&
+                CoachRealDeviceTestFlightEvidence.usableEvidenceReference(deviceIdentifierHash)
+        }
+
+        var evidenceKindMatchesSurface: Bool {
+            guard let expectedKind = CoachRealDeviceTestFlightEvidence.expectedEvidenceKindBySurface[surfaceKey] else {
+                return false
+            }
+            return evidenceKind.trimmingCharacters(in: .whitespacesAndNewlines) == expectedKind
+        }
+
+        var latencyWithinBudget: Bool {
+            guard surfaceKey == "aiPromptLatency" else { return true }
+            guard let latencyMs else { return false }
+            return latencyMs <= CoachRealDeviceTestFlightEvidence.maximumAIPromptLatencyMs
+        }
 
         var passesSurfaceFloor: Bool {
             passed &&
                 realDevice &&
                 testFlightBuildInstalled &&
                 blockingIssueCount == 0 &&
-                !evidenceReference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                hasRequiredArtifactTrail &&
+                evidenceKindMatchesSurface &&
+                latencyWithinBudget
         }
     }
 }
 
 struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
-    static let expectedSchemaVersion = "coach-operational-launch-checklist-v1"
-    static let expectedChecklistVersion = "m14-launch-gate-v1"
+    static let expectedSchemaVersion = "coach-operational-launch-checklist-v2"
+    static let expectedChecklistVersion = "m14-launch-gate-v2"
     static let requiredItemKeys = [
         "firestoreRulesDeployed",
         "privacyPolicyURLHosted",
@@ -927,6 +1214,22 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
         "appStorePrivacyDisclosuresReviewed",
         "testFlightBuildUploaded",
         "releaseBlockingBugsTriaged"
+    ]
+    static let expectedEvidenceKindByItem = [
+        "firestoreRulesDeployed": "firebaseDeployLog",
+        "privacyPolicyURLHosted": "publicURLProbe",
+        "settingsPrivacyURLVerified": "settingsScreenshot",
+        "appStorePrivacyDisclosuresReviewed": "appStorePrivacyExport",
+        "testFlightBuildUploaded": "appStoreConnectBuildRecord",
+        "releaseBlockingBugsTriaged": "releaseTriageReport"
+    ]
+    static let expectedEnvironmentByItem = [
+        "firestoreRulesDeployed": "production",
+        "privacyPolicyURLHosted": "production",
+        "settingsPrivacyURLVerified": "releaseCandidate",
+        "appStorePrivacyDisclosuresReviewed": "appStoreConnect",
+        "testFlightBuildUploaded": "appStoreConnect",
+        "releaseBlockingBugsTriaged": "releaseBoard"
     ]
 
     let schemaVersion: String
@@ -951,6 +1254,22 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
         }
         let failedRequiredItems = items.filter {
             requiredKeys.contains($0.key) && !$0.completed
+        }
+        let artifactBackedItems = items.filter {
+            requiredKeys.contains($0.key) && $0.hasRequiredArtifactTrail
+        }
+        let expectedEvidenceKindItems = items.filter {
+            requiredKeys.contains($0.key) && $0.evidenceKindMatchesItem
+        }
+        let expectedEnvironmentItems = items.filter {
+            requiredKeys.contains($0.key) && $0.environmentMatchesItem
+        }
+        let sameBuildItems = items.filter {
+            requiredKeys.contains($0.key) &&
+                $0.releaseCandidateBuild.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedBuild
+        }
+        let verifiedRequiredItems = items.filter {
+            requiredKeys.contains($0.key) && $0.hasVerificationIdentity
         }
         if schemaVersion != Self.expectedSchemaVersion {
             reasons.append("schemaVersion=\(schemaVersion)")
@@ -979,15 +1298,50 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
             !failedRequiredItems.isEmpty {
             reasons.append("failedRequiredItems")
         }
-        if completedRequiredItems.contains(where: {
-            $0.evidenceReference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }) {
-            reasons.append("missingEvidenceReferences")
+        let missingArtifactKeys = requiredKeys.subtracting(Set(artifactBackedItems.map(\.key)))
+        if summary.artifactBackedItemCount != artifactBackedItems.count ||
+            !missingArtifactKeys.isEmpty {
+            reasons.append("missingOperationalEvidence=\(missingArtifactKeys.sorted().joined(separator: ","))")
+        }
+        let evidenceKindMismatchKeys = requiredKeys.subtracting(Set(expectedEvidenceKindItems.map(\.key)))
+        if summary.expectedEvidenceKindItemCount != expectedEvidenceKindItems.count ||
+            !evidenceKindMismatchKeys.isEmpty {
+            reasons.append("evidenceKindMismatch=\(evidenceKindMismatchKeys.sorted().joined(separator: ","))")
+        }
+        let environmentMismatchKeys = requiredKeys.subtracting(Set(expectedEnvironmentItems.map(\.key)))
+        if summary.expectedEnvironmentItemCount != expectedEnvironmentItems.count ||
+            !environmentMismatchKeys.isEmpty {
+            reasons.append("environmentMismatch=\(environmentMismatchKeys.sorted().joined(separator: ","))")
+        }
+        let buildMismatchKeys = requiredKeys.subtracting(Set(sameBuildItems.map(\.key)))
+        if summary.sameBuildItemCount != sameBuildItems.count ||
+            !buildMismatchKeys.isEmpty {
+            reasons.append("releaseCandidateBuildMismatch=\(buildMismatchKeys.sorted().joined(separator: ","))")
+        }
+        let missingVerificationKeys = requiredKeys.subtracting(Set(verifiedRequiredItems.map(\.key)))
+        if summary.verifiedRequiredItemCount != verifiedRequiredItems.count ||
+            !missingVerificationKeys.isEmpty {
+            reasons.append("missingOperationalVerification=\(missingVerificationKeys.sorted().joined(separator: ","))")
+        }
+        if items.contains(where: { requiredKeys.contains($0.key) && !$0.passesItemFloor }) {
+            reasons.append("itemFloorFailures")
         }
         if !summary.readinessWarnings.isEmpty {
             reasons.append("readinessWarnings=\(summary.readinessWarnings.joined(separator: ","))")
         }
         return reasons
+    }
+
+    static func usableEvidenceReference(_ value: String) -> Bool {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return false }
+        let lowercased = normalized.lowercased()
+        return !["n/a", "na", "none", "todo", "tbd", "placeholder", "unknown"].contains(lowercased)
+    }
+
+    static func usableEvidenceReference(_ value: String?) -> Bool {
+        guard let value else { return false }
+        return usableEvidenceReference(value)
     }
 
     static func decode(from json: String) throws -> CoachOperationalLaunchChecklistEvidence {
@@ -1006,6 +1360,11 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
         let itemCount: Int
         let completedRequiredItemCount: Int
         let failedRequiredItemCount: Int
+        let artifactBackedItemCount: Int
+        let expectedEvidenceKindItemCount: Int
+        let expectedEnvironmentItemCount: Int
+        let sameBuildItemCount: Int
+        let verifiedRequiredItemCount: Int
         let readinessWarnings: [String]
     }
 
@@ -1013,8 +1372,49 @@ struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
         let key: String
         let completed: Bool
         let evidenceReference: String
+        let evidenceKind: String
+        let verificationReference: String
+        let commandOrReviewOutputReference: String
+        let releaseCandidateBuild: String
+        let environment: String
         let completedAtISO8601: String?
+        let verifiedAtISO8601: String?
+        let verifiedByRole: String
         let notes: [String]
+
+        var hasRequiredArtifactTrail: Bool {
+            CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(evidenceReference) &&
+                CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(verificationReference) &&
+                CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(commandOrReviewOutputReference) &&
+                CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(completedAtISO8601)
+        }
+
+        var evidenceKindMatchesItem: Bool {
+            guard let expectedKind = CoachOperationalLaunchChecklistEvidence.expectedEvidenceKindByItem[key] else {
+                return false
+            }
+            return evidenceKind.trimmingCharacters(in: .whitespacesAndNewlines) == expectedKind
+        }
+
+        var environmentMatchesItem: Bool {
+            guard let expectedEnvironment = CoachOperationalLaunchChecklistEvidence.expectedEnvironmentByItem[key] else {
+                return false
+            }
+            return environment.trimmingCharacters(in: .whitespacesAndNewlines) == expectedEnvironment
+        }
+
+        var hasVerificationIdentity: Bool {
+            CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(verifiedAtISO8601) &&
+                CoachOperationalLaunchChecklistEvidence.usableEvidenceReference(verifiedByRole)
+        }
+
+        var passesItemFloor: Bool {
+            completed &&
+                hasRequiredArtifactTrail &&
+                evidenceKindMatchesItem &&
+                environmentMatchesItem &&
+                hasVerificationIdentity
+        }
     }
 }
 
@@ -1311,6 +1711,7 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
     let longFormConversationCount: Int
     let longFormConversationIDsPassingProductionFloor: [String]
     let longFormConversationFailureIDs: [String]
+    let longFormConversations: [LongFormConversation]?
     let providerChain: [String]
     let passesProductionFloor: Bool
     let passesRunReadinessFloor: Bool
@@ -1359,6 +1760,19 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
         if uniqueLongFormConversationIDs.count != longFormConversationIDsPassingProductionFloor.count {
             reasons.append("duplicateLongFormConversationIDs")
         }
+        let detailedLongFormRows = longFormConversations ?? []
+        if detailedLongFormRows.isEmpty {
+            reasons.append("missingDetailedLongFormConversations")
+        }
+        let detailedLongFormIDs = detailedLongFormRows.map(\.conversationID)
+        let uniqueDetailedLongFormIDs = Set(detailedLongFormIDs)
+        if uniqueDetailedLongFormIDs.count != detailedLongFormIDs.count {
+            reasons.append("duplicateDetailedLongFormConversationIDs")
+        }
+        if !detailedLongFormRows.isEmpty &&
+            detailedLongFormRows.count != longFormConversationCount {
+            reasons.append("detailedLongFormConversationCountMismatch")
+        }
         let missingFixtureIDs = Self.requiredFixtureIDs.filter {
             !uniqueFixtureIDs.contains($0)
         }
@@ -1373,12 +1787,142 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
                 "missingRequiredLongFormConversations=\(missingLongFormConversationIDs.joined(separator: ","))"
             )
         }
+        let missingDetailedLongFormConversationIDs = Self.requiredLongFormConversationIDs.filter {
+            !uniqueDetailedLongFormIDs.contains($0)
+        }
+        if !missingDetailedLongFormConversationIDs.isEmpty {
+            reasons.append(
+                "missingDetailedLongFormConversations=\(missingDetailedLongFormConversationIDs.joined(separator: ","))"
+            )
+        }
         let unexpectedLongFormConversationIDs = uniqueLongFormConversationIDs
             .filter { !Self.requiredLongFormConversationIDs.contains($0) }
             .sorted()
         if !unexpectedLongFormConversationIDs.isEmpty {
             reasons.append(
                 "unexpectedLongFormConversationIDs=\(unexpectedLongFormConversationIDs.joined(separator: ","))"
+            )
+        }
+        let unexpectedDetailedLongFormConversationIDs = uniqueDetailedLongFormIDs
+            .filter { !Self.requiredLongFormConversationIDs.contains($0) }
+            .sorted()
+        if !unexpectedDetailedLongFormConversationIDs.isEmpty {
+            reasons.append(
+                "unexpectedDetailedLongFormConversations=\(unexpectedDetailedLongFormConversationIDs.joined(separator: ","))"
+            )
+        }
+        let detailedPassingIDs = Set(
+            detailedLongFormRows
+                .filter(\.liveProductionFloor)
+                .map(\.conversationID)
+        )
+        let detailedFailureIDs = Set(
+            detailedLongFormRows
+                .filter { !$0.liveProductionFloor }
+                .map(\.conversationID)
+        )
+        if !detailedLongFormRows.isEmpty &&
+            uniqueLongFormConversationIDs != detailedPassingIDs {
+            reasons.append("longFormConversationPassingSummaryMismatch")
+        }
+        if !detailedLongFormRows.isEmpty &&
+            Set(longFormConversationFailureIDs) != detailedFailureIDs {
+            reasons.append("longFormConversationFailureSummaryMismatch")
+        }
+        let malformedDetailedLongFormIDs = detailedLongFormRows.compactMap { conversation -> String? in
+            let expectedTurnCount = Self.requiredLongFormConversationTurnCountsByID[conversation.conversationID]
+            let hasExpectedTurnCount = expectedTurnCount.map { $0 == conversation.expectedTurnCount } ?? false
+            let observedMatchesRows = conversation.observedTurnCount == conversation.rows.count
+            let observedMatchesExpected = conversation.observedTurnCount == conversation.expectedTurnCount
+            let hasRows = !conversation.rows.isEmpty
+            return hasExpectedTurnCount && observedMatchesRows && observedMatchesExpected && hasRows
+                ? nil
+                : conversation.conversationID
+        }
+        if !malformedDetailedLongFormIDs.isEmpty {
+            reasons.append(
+                "malformedDetailedLongFormConversations=\(malformedDetailedLongFormIDs.joined(separator: ","))"
+            )
+        }
+        let failedDetailedLongFormIDs = detailedLongFormRows.compactMap { conversation -> String? in
+            conversation.liveProductionFloor && conversation.failure == nil &&
+                conversation.rows.allSatisfy(\.liveProductionFloor)
+                ? nil
+                : conversation.conversationID
+        }
+        if !failedDetailedLongFormIDs.isEmpty {
+            reasons.append(
+                "detailedLongFormProductionFloorFailures=\(failedDetailedLongFormIDs.joined(separator: ","))"
+            )
+        }
+        let missingDetailedProviderEvidenceIDs = detailedLongFormRows.compactMap { conversation -> String? in
+            conversation.rows.contains(where: { !$0.hasProviderEvidence })
+                ? conversation.conversationID
+                : nil
+        }
+        if !missingDetailedProviderEvidenceIDs.isEmpty {
+            reasons.append(
+                "missingDetailedLongFormProviderEvidence=\(missingDetailedProviderEvidenceIDs.joined(separator: ","))"
+            )
+        }
+        let missingDetailedTelemetryIDs = detailedLongFormRows.compactMap { conversation -> String? in
+            conversation.rows.contains(where: { !$0.hasReadinessTelemetry })
+                ? conversation.conversationID
+                : nil
+        }
+        if !missingDetailedTelemetryIDs.isEmpty {
+            reasons.append(
+                "missingDetailedLongFormTelemetry=\(missingDetailedTelemetryIDs.joined(separator: ","))"
+            )
+        }
+        let latestGateTelemetryFailureIDs = rows.compactMap { row -> String? in
+            row.hasCleanProductionTelemetry ? nil : row.fixtureID
+        }
+        if !latestGateTelemetryFailureIDs.isEmpty {
+            reasons.append(
+                "latestTurnGateTelemetryFailures=\(latestGateTelemetryFailureIDs.joined(separator: ","))"
+            )
+        }
+        let detailedGateTelemetryFailureIDs = detailedLongFormRows.compactMap { conversation -> String? in
+            conversation.rows.contains { !$0.hasCleanProductionTelemetry }
+                ? conversation.conversationID
+                : nil
+        }
+        if !detailedGateTelemetryFailureIDs.isEmpty {
+            reasons.append(
+                "detailedLongFormGateTelemetryFailures=\(detailedGateTelemetryFailureIDs.joined(separator: ","))"
+            )
+        }
+        let duplicatedLatestReplyIDs = Self.duplicateReplyIDs(in: rows)
+        if !duplicatedLatestReplyIDs.isEmpty {
+            reasons.append(
+                "duplicatedLatestTurnReplies=\(duplicatedLatestReplyIDs.joined(separator: ","))"
+            )
+        }
+        let genericLatestReplyIDs = rows.compactMap { row -> String? in
+            row.hasGenericPlaceholderReply ? row.fixtureID : nil
+        }
+        if !genericLatestReplyIDs.isEmpty {
+            reasons.append(
+                "genericLatestTurnReplies=\(genericLatestReplyIDs.joined(separator: ","))"
+            )
+        }
+        let duplicatedDetailedReplyIDs = detailedLongFormRows.compactMap { conversation -> String? in
+            Self.duplicateReplyIDs(in: conversation.rows).isEmpty ? nil : conversation.conversationID
+        }
+        if !duplicatedDetailedReplyIDs.isEmpty {
+            reasons.append(
+                "duplicatedDetailedLongFormReplies=\(duplicatedDetailedReplyIDs.joined(separator: ","))"
+            )
+        }
+        let genericDetailedReplyIDs = detailedLongFormRows.compactMap { conversation -> String? in
+            conversation.rows.contains(where: \.hasGenericPlaceholderReply)
+                ? conversation.conversationID
+                : nil
+        }
+        if !genericDetailedReplyIDs.isEmpty {
+            reasons.append(
+                "genericDetailedLongFormReplies=\(genericDetailedReplyIDs.joined(separator: ","))"
             )
         }
         let observedDepths = Set(rows.compactMap(\.turnDepth))
@@ -1428,6 +1972,48 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
         return try JSONDecoder().decode(CoachLiveProviderSweepEvidence.self, from: data)
     }
 
+    private static func duplicateReplyIDs(in rows: [Row]) -> [String] {
+        var firstIDByReply: [String: String] = [:]
+        var duplicateIDs = Set<String>()
+        for row in rows {
+            let key = row.normalizedReplyKey
+            guard !key.isEmpty else { continue }
+            if let firstID = firstIDByReply[key] {
+                duplicateIDs.insert(firstID)
+                duplicateIDs.insert(row.fixtureID)
+            } else {
+                firstIDByReply[key] = row.fixtureID
+            }
+        }
+        return duplicateIDs.sorted()
+    }
+
+    private static func normalizedReplyKey(_ value: String?) -> String {
+        (value ?? "")
+            .lowercased()
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func cleanIssueValue(_ value: String?) -> Bool {
+        let normalized = normalizedReplyKey(value)
+        return ["none", "passed", "clean", "no issue", "no issues"].contains(normalized)
+    }
+
+    private static func genericPlaceholderReply(_ value: String?) -> Bool {
+        let normalized = normalizedReplyKey(value)
+        guard !normalized.isEmpty else { return false }
+        return [
+            "focused coach reply with concrete evidence",
+            "grounded coach reply with a proof test",
+            "generic coach reply",
+            "placeholder",
+            "practice more and communicate clearly",
+            "based on your data",
+            "keep practicing and track your progress"
+        ].contains { normalized.contains($0) }
+    }
+
     func encodedSortedJSON() throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -1460,7 +2046,70 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
         let immediateCoachReadExpected: Bool?
         let immediateCoachReadShown: Bool?
         let liveProductionFloor: Bool
+        let reply: String?
+        let passesRubric: Bool?
+        let visionPassesProductionFloor: Bool?
+        let qualityIssue: String?
+        let semanticGateIssue: String?
+        let reliabilityIssues: [String]?
+
+        var hasProviderEvidence: Bool {
+            !(providerChosen ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !(providerModel ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        var hasReadinessTelemetry: Bool {
+            let proofHash = (assessmentProofTestHash ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let replyText = (reply ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let quality = (qualityIssue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let semantic = (semanticGateIssue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return !(turnDepth ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                timeToFirstVisibleTokenMs != nil &&
+                assessmentConfidence != nil &&
+                !proofHash.isEmpty &&
+                !replyText.isEmpty &&
+                passesRubric != nil &&
+                visionPassesProductionFloor != nil &&
+                !quality.isEmpty &&
+                !semantic.isEmpty &&
+                reliabilityIssues != nil &&
+                ((immediateCoachReadExpected ?? false) ? immediateCoachReadShown == true : true)
+        }
+
+        var hasCleanProductionTelemetry: Bool {
+            liveProductionFloor &&
+                passesRubric == true &&
+                visionPassesProductionFloor == true &&
+                CoachLiveProviderSweepEvidence.cleanIssueValue(qualityIssue) &&
+                CoachLiveProviderSweepEvidence.cleanIssueValue(semanticGateIssue) &&
+                (reliabilityIssues ?? []).isEmpty
+        }
+
+        var normalizedReplyKey: String {
+            CoachLiveProviderSweepEvidence.normalizedReplyKey(reply)
+        }
+
+        var hasGenericPlaceholderReply: Bool {
+            CoachLiveProviderSweepEvidence.genericPlaceholderReply(reply)
+        }
     }
+
+    struct LongFormConversation: Codable, Equatable {
+        let conversationID: String
+        let sourceFixtureID: String
+        let expectedTurnCount: Int
+        let observedTurnCount: Int
+        let liveProductionFloor: Bool
+        let failure: String?
+        let rows: [Row]
+    }
+
+    private static let requiredLongFormConversationTurnCountsByID: [String: Int] =
+        Dictionary(
+            uniqueKeysWithValues: CoachChatConversationCorpus.longFormConversations.map {
+                ($0.id, $0.turns.count)
+            }
+        )
 }
 
 struct CoachVisionProductionReadinessAudit: Codable, Equatable {
@@ -1534,7 +2183,7 @@ struct CoachVisionProductionReadinessAudit: Codable, Equatable {
         if evidence.liveProviderRowsPassingFloor >= CoachLiveProviderSweepEvidence.requiredReadinessEvidenceCount {
             score += 16
         }
-        if evidence.professionalCoachCalibrationRows >= CoachProfessionalCalibrationEvidence.requiredConversationIDs.count {
+        if evidence.professionalCoachCalibrationRows >= CoachProfessionalCalibrationEvidence.requiredCalibrationReviewCount {
             score += 20
         }
         if evidence.realUserLongitudinalOutcomeCount >= 10 {
@@ -1556,7 +2205,7 @@ struct CoachVisionProductionReadinessAudit: Codable, Equatable {
         if evidence.liveProviderRowsPassingFloor < CoachLiveProviderSweepEvidence.requiredReadinessEvidenceCount {
             blockers.append(.noLiveProviderTranscriptSweep)
         }
-        if evidence.professionalCoachCalibrationRows < CoachProfessionalCalibrationEvidence.requiredConversationIDs.count {
+        if evidence.professionalCoachCalibrationRows < CoachProfessionalCalibrationEvidence.requiredCalibrationReviewCount {
             blockers.append(.noProfessionalCoachCalibration)
         }
         if evidence.realUserLongitudinalOutcomeCount < 10 {
@@ -1791,7 +2440,7 @@ struct CoachVisionProductionReadinessEvidenceManifest: Codable, Equatable {
             return "Live-provider report rejected: \(liveProviderSweep.rejectionReasons.joined(separator: ","))"
         }()
         let professionalCalibrationEarned = evidence.professionalCoachCalibrationRows >=
-            CoachProfessionalCalibrationEvidence.requiredConversationIDs.count &&
+            CoachProfessionalCalibrationEvidence.requiredCalibrationReviewCount &&
             professionalCalibration?.qualifiesForReadiness == true
         let professionalCalibrationSource = professionalCalibration?.schemaVersion ??
             CoachProfessionalCalibrationEvidence.expectedSchemaVersion
@@ -1800,7 +2449,7 @@ struct CoachVisionProductionReadinessEvidenceManifest: Codable, Equatable {
                 return "Packet status \(expertPacket.humanGateStatus.rawValue) for \(expertPacket.conversationCount) conversations; pending expert review does not count as calibration."
             }
             if professionalCalibration.qualifiesForReadiness {
-                return "\(professionalCalibration.rows.count) professional-coach calibration rows passed; reviewerRole=\(professionalCalibration.reviewerRole)"
+                return "\(professionalCalibration.rows.count) professional-coach calibration rows passed; reviewerRole=\(professionalCalibration.reviewerRole); sourcePacketFingerprint=\(professionalCalibration.sourcePacketFingerprint ?? "missing")"
             }
             return "Professional calibration results rejected: \(professionalCalibration.rejectionReasons.joined(separator: ","))"
         }()
@@ -1903,7 +2552,7 @@ struct CoachVisionProductionReadinessEvidenceManifest: Codable, Equatable {
                 key: "professionalCoachCalibration",
                 status: professionalCalibrationEarned ? .earned : .pending,
                 observedCount: evidence.professionalCoachCalibrationRows,
-                requiredCount: CoachProfessionalCalibrationEvidence.requiredConversationIDs.count,
+                requiredCount: CoachProfessionalCalibrationEvidence.requiredCalibrationReviewCount,
                 source: professionalCalibrationSource,
                 blocker: professionalCalibrationEarned ? nil : .noProfessionalCoachCalibration,
                 notes: professionalCalibrationNotes
@@ -2020,7 +2669,7 @@ struct CoachChatExpertReviewPacketRow: Codable, Equatable {
 }
 
 enum CoachChatEvaluationCorpus {
-    static let reportSchemaVersion = "coach-chat-eval-report-v5"
+    static let reportSchemaVersion = "coach-chat-eval-report-v6"
     static let expertReviewPacketSchemaVersion = "coach-chat-expert-review-packet-v1"
     static let latestManualEvalFixtureIDs = [
         "cold-start-interview-baseline",
@@ -2032,6 +2681,7 @@ enum CoachChatEvaluationCorpus {
         "authoritative-distance-deep-assessment",
         "what-next-single-move",
         "overclaim-hypothesis-boundary",
+        "personal-pattern-hypothesis-confirmation",
         "leadership-transfer-setup",
         "pace-control-next-rep",
         "closing-ask-proof-test",
@@ -2331,6 +2981,37 @@ enum CoachChatEvaluationCorpus {
             ],
             referenceReply: "From the transcript, I would treat it as a hypothesis: the recommendation arrived late. Next rep, say the conclusion first, then add one reason.",
             knownBadReply: "You are clearly evasive, and this proves you lack conviction.",
+            expectedBadIssue: .overclaimsEvidence
+        ),
+        CoachChatEvaluationFixture(
+            id: "personal-pattern-hypothesis-confirmation",
+            pillar: .honesty,
+            expertBaseline: .pending,
+            profile: profile(voice: .executive, challenge: .rambling),
+            sessions: [
+                session(
+                    id: "12121212-1212-1212-1212-121212121212",
+                    transcript: "I disagree with the direction, but I understand the concern, and maybe we can keep exploring options before I say no.",
+                    fillerCount: 1,
+                    duration: 63,
+                    daysAgo: 1,
+                    mode: .timed,
+                    score: 6,
+                    prompt: "Disagree with a stakeholder calmly."
+                )
+            ],
+            trends: [],
+            latestUserTurn: "Do I sound defensive when I disagree?",
+            previousCoachReply: nil,
+            expectedContextNeedles: [
+                "RECENT (most-recent first)",
+                "1 filler",
+                "COACH FORMULATION",
+                "hypothesis",
+                "do not label the user"
+            ],
+            referenceReply: "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop.",
+            knownBadReply: "You are defensive because you fear disagreement and lack conviction.",
             expectedBadIssue: .overclaimsEvidence
         ),
         CoachChatEvaluationFixture(
@@ -2821,6 +3502,48 @@ enum CoachChatEvaluationCorpus {
 /// concrete drafts that made Ask Noum feel less than expert-coach level.
 @Suite("CoachChatLatestLiveEvalRegressionTests")
 struct CoachChatLatestLiveEvalRegressionTests {
+
+    @Test func fixtureContextsContainExpectedEvidenceNeedles() throws {
+        for fixture in CoachChatEvaluationCorpus.fixtures {
+            let context = CoachChatEvaluationCorpus.renderedContext(for: fixture)
+            let missing = fixture.expectedContextNeedles.filter {
+                !CoachChatEvaluationCorpus.contains(context, $0)
+            }
+
+            #expect(missing.isEmpty, "\(fixture.id) missing context needles: \(missing)")
+        }
+    }
+
+    @Test func ciReportRejectsFixtureWhenExpectedContextEvidenceIsMissing() throws {
+        let fixture = try Self.fixture("cold-start-interview-baseline")
+        let missingNeedle = "MISSING CONTEXT NEEDLE: impossible evidence anchor"
+        let brokenFixture = CoachChatEvaluationFixture(
+            id: "\(fixture.id)-missing-context-needle",
+            pillar: fixture.pillar,
+            expertBaseline: fixture.expertBaseline,
+            profile: fixture.profile,
+            sessions: fixture.sessions,
+            trends: fixture.trends,
+            latestUserTurn: fixture.latestUserTurn,
+            previousCoachReply: fixture.previousCoachReply,
+            expectedContextNeedles: fixture.expectedContextNeedles + [missingNeedle],
+            referenceReply: fixture.referenceReply,
+            knownBadReply: fixture.knownBadReply,
+            expectedBadIssue: fixture.expectedBadIssue
+        )
+
+        let report = CoachChatEvaluationCIReport.make(from: [brokenFixture])
+        let row = try #require(report.rows.first)
+
+        #expect(row.referenceReplyPassesRubric)
+        #expect(row.referenceReplyPassesQualityGate)
+        #expect(row.referencePassesVisionFloor)
+        #expect(row.referencePassesReliabilityGate)
+        #expect(row.contextNeedleCount == fixture.expectedContextNeedles.count + 1)
+        #expect(row.contextNeedlesPassed == false)
+        #expect(row.missingContextNeedles == [missingNeedle])
+        #expect(row.referencePassesProductionFloor == false)
+    }
 
     @Test func latestManualEvalWeakDraftsTripTheProfessionalGate() throws {
         let samples: [(fixtureID: String, reply: String, issue: CoachChatReplyQualityIssue)] = [

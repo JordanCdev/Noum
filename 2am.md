@@ -12,7 +12,7 @@ Verified green (25 unit + golden test cases, 0 failures; full app + test compile
 
 This file proves a useful response-path guard, not a production-ready coach.
 Codex now pins that distinction in `CoachVisionProductionReadinessAuditTests`:
-the 12 local three-turn conversations plus app-path immediate-read/proof-test
+the local short three-turn conversation corpus plus app-path immediate-read/proof-test
 verification earn **18/100** against `docs/VISION.md`, with a hard cap of
 20/100 while live-provider sweeps, professional coach calibration, real-user
 longitudinal transfer outcomes, real-device TestFlight QA, and launch operations
@@ -21,7 +21,7 @@ The same audit is now serialized in `CoachChatConversationEvaluationReport`
 schema v10 as `visionProductionReadiness`, so transcript exports carry the
 readiness claim and blockers instead of only row-level pass/fail gates.
 Codex also added `CoachChatConversationExpertCalibrationPacket` schema v1. The
-current packet covers 22 required conversations: the 12 local three-turn
+current packet covers 23 required conversations: the 13 local three-turn
 conversations plus the 10 five-turn long-form conversations. It exports a
 pending professional-coach review packet with multi-turn ratings for diagnosis,
 formulation, intervention, adaptation, perception honesty, transfer setup, trust
@@ -29,9 +29,9 @@ repair, and usefulness. This makes the human calibration blocker actionable, but
 it does not satisfy it.
 
 Codex follow-up also added `CoachChatConversationAppPathReport` schema v1 and a
-focused corpus test that replays the same 12 three-turn conversations through an
+focused corpus test that replays the same 13 three-turn conversations through an
 isolated `AskNoumStore` plus the shared `CoachReplyPipeline` with scripted
-provider replies. The stricter app-path replay is now green locally: all 36
+provider replies. The stricter app-path replay is now green locally: all 39
 scripted app turns pass the quality gate, target replies match, semantic and
 reliability gates stay clean, and no typed-assessment fallback or content
 rejection is accepted into stored coach rows. The fix was not a looser floor:
@@ -55,16 +55,16 @@ generic hard-fail bucket.
 The focused XCTest now writes seven host-visible JSON artifacts to
 `/private/tmp/noum-coach-eval` by default:
 `coach-chat-conversation-eval-v10.json`,
-`coach-chat-conversation-expert-calibration-v1.json`, and
+`coach-chat-conversation-expert-calibration-v2.json`, and
 `coach-chat-conversation-app-path-eval-v1.json`, plus
 `coach-chat-long-form-conversation-eval-v1.json`,
 `coach-chat-long-form-adversarial-eval-v1.json`, and
-`coach-chat-live-app-path-eval-v1.json`, which replays the same 12
+`coach-chat-live-app-path-eval-v1.json`, which replays the same 13
 three-turn conversations through the same isolated `AskNoumStore` +
 `CoachReplyPipeline` with `surface: live`. This covers the exact gap the
 provider-only live transcript harness cannot prove: the app path must show the
 deterministic local coach read before the final model answer. The live artifact
-is clean locally: 36 expected immediate reads, 36 shown, 0 missing, all 36
+is clean locally: 39 expected immediate reads, 39 shown, 0 missing, all 39
 quality-gate events `passed`, 0 target mismatches, 0 semantic failures, 0
 typed fallbacks, 0 reliability issues, and 0 vision-floor failures. It is still
 local scripted architecture evidence, not a live-provider sweep or real-device
@@ -120,7 +120,7 @@ it does not add a manifest readiness row or lift the VISION score beyond
 Codex then hardened the manifest's live-provider evidence path: it now decodes
 `coach-live-eval-v1` JSON through `CoachLiveProviderSweepEvidence` and counts
 live-provider rows only when the sweep has matching schema, covers the full
-29 required live evidence units: 19 latest-turn fixture rows plus 10 live
+30 required live evidence units: 20 latest-turn fixture rows plus 10 live
 five-turn long-form conversations. The latest-turn rows must use unique fixture
 IDs, represent all four turn-depth classes, carry provider/model evidence, have
 clean production/readiness floors, no readiness warnings, no row-level floor
@@ -139,7 +139,7 @@ credentials, and the approvals layer rejected that execution path. No live
 sidecar was emitted in this pass.
 Codex then made that stricter live-provider contract collectible instead of
 merely aspirational. `CoachLiveEvaluationTests` now has a `readiness` preset:
-`NOUM_LIVE_AI_FIXTURES=readiness` selects the 19 latest-turn rows and the 10
+`NOUM_LIVE_AI_FIXTURES=readiness` selects the 20 latest-turn rows and the 10
 long-form conversations. `NOUM_LIVE_AI_LONG_FORM=required` can also opt a
 manual run into just the long-form side of the sweep, or a comma-separated list
 can target specific long-form IDs. The JSON report now carries detailed
@@ -148,51 +148,207 @@ can target specific long-form IDs. The JSON report now carries detailed
 `longFormConversationFailureIDs` fields from the real provider replies. Local
 tests verify the harness contract, but no external-provider long-form sidecar
 has been captured yet, so `noLiveProviderTranscriptSweep` remains.
+Codex then tightened the manifest-facing decoder so those detailed rows are no
+longer just nice-to-have audit material. `CoachLiveProviderSweepEvidence` now
+rejects a live sidecar that omits `longFormConversations`, disagrees between
+top-level long-form pass/failure IDs and detailed rows, reports incomplete
+observed turn counts, or lacks per-turn provider, reply, latency, rubric,
+vision, semantic, reliability, and proof-test telemetry. The new negative
+controls prove that a summary-only or hand-smoothed sidecar cannot clear the
+readiness gate. Local artifacts were regenerated after the change: clean
+long-form corpus still passes 10/10, adversarial long-form still passes 0/10,
+and the VISION manifest remains **18/100** with claim
+`localEvaluationSubstrateOnly`.
 Codex then made the human-calibration blocker concrete without weakening it: the
 manifest now auto-loads a completed
-`coach-chat-conversation-expert-calibration-results-v1.json` sidecar when it
+`coach-chat-conversation-expert-calibration-results-v2.json` sidecar when it
 exists, decodes it through `CoachProfessionalCalibrationEvidence`, and counts it
-only if the completed reviews cover the full current 22-conversation calibration
-corpus: the 12 short three-turn conversations and the 10 full five-turn
-long-form conversations, with no unexpected conversation IDs. Every counted row
-must pass the calibrated coach-parity floor: matching schema/source/rubric, no readiness
-warnings, no unsafe rows, every rating at least 4, `roughTie` or `noumBetter`
-against the human reference, client-usable, reference-backed, free of overclaim
-notes, and free of unresolved revision notes. The summary reviewer count must
-match the nonblank reviewer IDs in the rows. A thin 10-row or reviewer-ambiguous
-sidecar no longer clears the blocker. The current dump has no completed result
-sidecar, so `noProfessionalCoachCalibration` still blocks production readiness
-and the score remains **18/100**.
+only if the completed reviews cover the full current 23-conversation calibration
+corpus: the 13 short three-turn conversations and the 10 full five-turn
+long-form conversations, with no unexpected conversation IDs. Every conversation
+now needs two independent professional communication-coach review rows, so the
+manifest requires 46 passing rows rather than a single reviewer sweep. Every
+counted row must pass the calibrated coach-parity floor: matching result schema
+v2, source packet schema v2, exact source packet fingerprint, rubric v2, no
+readiness warnings, no unsafe rows, every rating at least 4,
+`roughTie` or `noumBetter` against the human reference, client-usable,
+reference-backed, free of overclaim notes, and free of unresolved revision
+notes. The summary reviewer count must match the nonblank reviewer IDs in the
+rows, and each conversation must have two distinct reviewers. A thin 10-row,
+one-review-per-conversation, reviewer-ambiguous sidecar, or sidecar reviewed
+against a stale packet fingerprint no longer clears the blocker. The current
+dump has no completed result sidecar, so
+`noProfessionalCoachCalibration` still blocks production readiness and the score
+remains **18/100**.
 Codex then closed the remaining coverage loophole in that same blocker: a clean
 professional result sidecar can no longer clear calibration by reviewing only the
-12 short fixtures. The pending expert packet now emits 22 rows, split as 12
-three-turn rows and 10 five-turn rows, and the manifest row reports
-`requiredCount: 22` while remaining pending with observed count 0.
+13 short fixtures. The pending expert packet still emits 23 conversation rows,
+split as 13 three-turn rows and 10 five-turn rows, but it now declares
+`requiredReviewCount: 46` and a stable `sourceCorpusFingerprint`; the manifest
+row reports `requiredCount: 46` while remaining pending with observed count 0.
+The calibration packet/results contract is now v2. Any old
+`coach-chat-conversation-expert-calibration-v1.json` packet in
+`/private/tmp/noum-coach-eval` is stale until the corpus/audit XCTest can
+regenerate artifacts; completed result sidecars must use
+`coach-chat-conversation-expert-calibration-results-v2.json` and echo the v2
+packet fingerprint as `sourcePacketFingerprint`.
+Verification note: `swiftc -parse` and `git diff --check` pass for the v2
+contract, but an escalated targeted `xcodebuild test` still blocked at
+`waiting for workers to materialize`, and a warmed `build-for-testing` attempt
+also had to be interrupted. No v2 artifacts were emitted in
+`/private/tmp/noum-coach-eval`.
+Codex then tightened the local judgement cache that feeds Ask Noum / Live Coach.
+`UserTrajectoryCache.signature` now includes compact evidence fingerprints for
+the five freshest sessions — transcript hash, score, filler count, duration,
+word count, transcript confidence, pressure level, mode, rating flag, and intent
+focus — plus aggregate mode/pressure/rated counts. This closes a stale-read
+loophole where the same session ID/date could be rehydrated or replaced with
+different evidence while the cache still returned the previous
+`UserTrajectorySnapshot`, causing the coach assessment to read old fillers,
+scores, or transcript signals. A new `UserTrajectoryCacheTests` regression pins
+same-ID/same-date evidence changes as cache misses. This does not move the
+VISION readiness score, but it directly supports personalized, case-specific
+judgement and the research-doc complaint about flat/stale assessment signals.
+Codex extended the same cache-freshness fix to the baseline side: the trajectory
+signature now fingerprints stable baseline metric values and confidence/trend
+state for filler rate, pace, duration, pauses, structure, clarity, vocabulary,
+hedging, pitch, score, strengths, and blockers. The prior key only carried
+`overallConfidence`, so two baselines with the same evidence depth but different
+actual filler/pace/hedging readings could reuse a stale trajectory snapshot. A
+new regression keeps same-session/same-confidence baseline metric changes as
+cache misses and verifies the rebuilt snapshot carries the revised baseline
+trend lines. This is architecture hygiene for Ask Noum judgement quality, not
+production-readiness evidence.
+Codex then fixed the baseline store ownership path itself. `BaselineStore` now
+invalidates `UserTrajectoryCache` after rebuilds, session updates, mini-drill
+updates, account reloads, and session resets; `AuthManager` now reloads it on
+account switch and clears its in-memory baseline on sign-out; account deletion
+now removes `communicationBaseline.<accountID>` and `pressureProfile.<accountID>`
+alongside session/profile/chat evidence. A focused cache regression proves a
+baseline-store rebuild breaks a same-input trajectory cache hit. This was guided
+by the current external eval/risk guidance used in the pass: OpenAI eval docs
+for explicit test data + criteria, NIST AI 600-1 for lifecycle/context risk and
+confabulation, and HELM-style multi-metric evaluation. The transcript target set
+now includes an `account-baseline-isolation` conversation, but the production
+readiness score remains **18/100**.
+Codex then applied the same account-lifecycle fix to `RatingStore`, another
+state owner Ask Noum reads directly for trajectory coverage and rating/tier
+context. `RatingStore` now invalidates `UserTrajectoryCache` after rated-session
+updates, personal-best updates, reloads, session resets, and debug seed
+replacements; `AuthManager` reloads it on account switch and clears it on
+sign-out; account deletion now removes `speakingRating.<accountID>` as well as
+the week-peak cursor. A focused regression proves rating-store mutation breaks a
+same-input trajectory cache hit. The transcript target set now includes
+`rating-evidence-isolation`, but the production readiness score remains
+**18/100** because no live-provider, real-device, professional-calibration, or
+real-user transfer evidence has been added.
+Codex then closed the quote-specific account-isolation path in
+`ProofMomentStore`. Ask Noum can read saved transcript proof lines from
+`ProofMomentStore.shared.recent(limit: 3)`, but a single live store could keep
+account A's in-memory quote records when reloaded into account B with no archive.
+`ProofMomentStore` now clears memory when disk load finds no valid archive,
+exposes reload/sign-out/delete lifecycle hooks, and `AuthManager` now reloads it
+on account switch, clears it on sign-out, and deletes
+`proofMoment.archive.<accountID>` during account deletion. Focused proof archive
+regressions cover both same-store account switching and sign-out without writing
+a guest archive. The transcript target set now includes
+`proof-quote-account-isolation` and totals 16 full three-turn conversations, but
+the production readiness score remains **18/100** for the same unresolved live,
+device, expert-calibration, and longitudinal-transfer blockers.
+Codex then hardened the live-provider sidecar path against smoothed or
+self-contradictory artifacts. `CoachLiveProviderSweepEvidence` already required
+latest-turn coverage, detailed long-form coverage, depth variety, confidence and
+proof-test variety, and complete per-turn telemetry. It now also rejects rows
+where `liveProductionFloor: true` contradicts row-level rubric, vision,
+quality-gate, semantic-gate, or reliability telemetry; rejects exact duplicate
+reply text across latest-turn rows or within a detailed long-form conversation;
+and rejects obvious placeholder/generic live replies such as "focused coach
+reply with concrete evidence." Negative-control tests cover contradictory gate
+telemetry and duplicated/generic provider text; the targeted simulator run for
+those two tests succeeded after fixing the broader target's `scaled(_:)` return
+and marking the rating-store cache invalidation regression `@MainActor`. The
+transcript target set now
+includes `live-sidecar-smoothed-reply-rejection` and totals 17 full three-turn
+conversations, but the production readiness score remains **18/100** because no
+real live-provider sweep artifact has been captured.
 Codex also hardened the real-user transfer blocker: the manifest now auto-loads
-`coach-real-user-transfer-outcomes-v1.json` when present, decodes it through
+`coach-real-user-transfer-outcomes-v2.json` when present, decodes it through
 `CoachRealUserTransferOutcomeEvidence`, and counts only completed off-app
 outcome follow-ups that are longitudinal, linked to a Noum intervention, backed
-by audience-response evidence, non-regressing on confidence, positive on user
-reported transfer, free of adverse-outcome flags, and free of causal overclaim.
-The current dump has no completed real-user transfer sidecar, so
-`noRealUserLongitudinalTransferOutcomes` still blocks production readiness and
-the score remains **18/100**.
+by row-level intervention/moment/follow-up/audience/self-report evidence
+references, spread across at least eight users and four moment categories, no
+more than two outcomes from any one user, delayed at least 24 hours after the
+moment, non-regressing on confidence, positive on user-reported transfer, free
+of adverse-outcome flags, and free of causal overclaim. Negative-control tests
+reject over-concentrated users, one-category ledgers, missing evidence
+references, and same-hour follow-ups. The current dump has no completed real-user
+transfer sidecar, so `noRealUserLongitudinalTransferOutcomes` still blocks
+production readiness and the score remains **18/100**. The transcript target set
+now includes `transfer-ledger-evidence-discipline` and totals 18 full three-turn
+conversations. The targeted simulator run for the longitudinal-transfer tests
+and manifest ingestion succeeded.
 Codex then removed the last raw launch booleans from the manifest path. The
-manifest now auto-loads `coach-real-device-testflight-qa-v1.json` and
-`coach-operational-launch-checklist-v1.json` when present. Real-device evidence
+manifest now auto-loads `coach-real-device-testflight-qa-v2.json` and
+`coach-operational-launch-checklist-v2.json` when present. Real-device evidence
 counts only when Live Activity, AI prompt latency, soundscape audio session, and
-paywall purchase all pass on a physical TestFlight build with evidence
-references, no blocking issues, no crashes, and no readiness warnings. Launch
-ops evidence counts only when the `m14-launch-gate-v1` checklist is complete
-for Firestore rules, privacy URLs/disclosures, TestFlight upload, and
-release-blocking bug triage. The current dump has neither sidecar, so
+paywall purchase all pass on the same physical TestFlight build with the
+expected artifact kind, usable evidence reference, capture timestamp, device
+identity hash, no blocking issues, no crashes, no readiness warnings, and the AI
+prompt latency row at or below 3,000 ms. Negative-control tests reject wrong
+artifact kind, over-budget latency, mixed build rows, and missing/placeholder
+device evidence. Launch ops evidence counts only when the `m14-launch-gate-v2`
+checklist is complete for Firestore rules, privacy URLs/disclosures, TestFlight
+upload, and release-blocking bug triage with the expected artifact kind,
+expected environment, matching release-candidate build, usable evidence
+reference, verification reference, command/review output reference, completion
+time, verification time, and verifier role. Negative-control tests reject
+manual-note artifact substitutions, staging privacy URL proof, mixed TestFlight
+build records, missing App Store privacy-review output, and missing verifier
+identity. The current dump has neither sidecar, so
 `noRealDeviceTestFlightVerification` and `operationalLaunchChecklistIncomplete`
-still block production readiness and the score remains **18/100**.
+still block production readiness and the score remains **18/100**. The
+transcript target set now includes `real-device-qa-evidence-discipline` and
+`launch-ops-evidence-discipline`, totaling 20 full three-turn conversations.
+Codex then tightened the Ask Noum runtime gate for unconfirmed personal-pattern
+claims. `AICoachChatService.replyOverclaimsEvidence(_:)` now rejects thin,
+identity-like or hidden-motive reads such as "you are defensive because you fear
+disagreement" unless the reply frames the read as a testable hypothesis and
+gives the user a way to confirm, reject, or compare it against observable
+speech structure. The new fixture
+`personal-pattern-hypothesis-confirmation` and conversation
+`personal-pattern-consent-boundary-conversation` preserve the useful coaching
+move: "defensiveness" can be treated as a hypothesis, not a label, while the
+action stays concrete. The transcript target set now totals 21 full three-turn
+conversations, the short local corpus has 13 rows, the expert packet covers 23
+conversations and requires 46 independent professional review rows, and the
+production readiness score remains **18/100**.
+Verification for the personal-pattern pass included parse checks for
+`AICoachChatService`, `CoachJudgementLayerTests`,
+`CoachChatEvaluationFixtures`, and `CoachChatConversationEvaluationTests`; a
+green targeted simulator slice for the three new semantic-gate cases plus the
+conversation corpus/report/calibration packet checks; a second green targeted
+simulator slice for the latest-manual eval reference/weak-draft/vision/known-bad
+harness; and `git diff --check`.
+Codex then made the latest-turn manual evaluator prove its context evidence
+instead of only counting declared anchors. `CoachChatEvaluationCIReport` now
+checks each fixture's `expectedContextNeedles` against the rendered coach
+context, serializes `contextNeedlesPassed` plus `missingContextNeedles`, and
+requires the context-needle check before a reference row can clear the local
+production-floor projection. The report schema is now
+`coach-chat-eval-report-v6`, and a deliberate missing-anchor negative control
+proves the row fails even when the reference reply still passes rubric, quality,
+vision, and reliability gates. The new
+`fixtureContextsContainExpectedEvidenceNeedles` simulator regression passes
+against the current full fixture set, and the warmed latest-manual report slice
+still passes the reference, weak-draft, short/actionable, vision, and known-bad
+regressions. This is evaluator-integrity hardening for the research report's
+"polished but ungrounded" failure mode; it does not move the **18/100**
+production readiness score.
 The dump path can still be
 overridden with `NOUM_COACH_EVAL_DUMP_DIR`, `SIMCTL_CHILD_NOUM_COACH_EVAL_DUMP_DIR`,
 `-NOUM_COACH_EVAL_DUMP_DIR <path>`, or the matching `UserDefaults` launch
 override. The latest app-path artifact reports `passesAppPathFloor: true`,
-`passed: 36`, 0 app-path floor failures, 0 target-reply mismatches, 0
+`passed: 39`, 0 app-path floor failures, 0 target-reply mismatches, 0
 semantic-gate failures, 0 accepted fallback turns, 0 typed-assessment fallback
 turns, 0 blocking quality-gate failures, 0 reliability issues, and 0
 vision-floor failures.

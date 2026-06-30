@@ -287,6 +287,144 @@ struct UserTrajectoryCacheTests {
         cache.invalidate()
     }
 
+    @Test func changedEvidenceOnSameSessionIdentityMissesCacheWithoutManualInvalidation() {
+        let cache = UserTrajectoryCache.shared
+        cache.invalidate()
+        let sessionID = UUID()
+        let date = Date(timeIntervalSince1970: 3_500)
+        let first = Self.session(
+            id: sessionID,
+            date: date,
+            fillerWordCount: 1,
+            transcript: "We should make the decision now because the team needs a clear recommendation.",
+            duration: 60,
+            score: 7,
+            confidence: 0.90
+        )
+        let revised = Self.session(
+            id: sessionID,
+            date: date,
+            fillerWordCount: 5,
+            transcript: "Um maybe we could sort of wait because I am not sure what recommendation to make.",
+            duration: 42,
+            score: 4,
+            confidence: 0.61
+        )
+
+        _ = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [first],
+            coachMemory: nil
+        )
+        let rebuilt = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [revised],
+            coachMemory: nil
+        )
+
+        #expect(rebuilt.cacheHit == false)
+        #expect(rebuilt.snapshot.latestRepEvidencePack?.fillerCount == 5)
+        #expect(rebuilt.snapshot.latestRepEvidencePack?.score == 4)
+        #expect(rebuilt.snapshot.latestRepEvidencePack?.durationSeconds == 42)
+        #expect(rebuilt.snapshot.latestRepEvidencePack?.transcriptExcerpt?.lowercased().contains("maybe") == true)
+        cache.invalidate()
+    }
+
+    @Test func changedBaselineMetricsMissCacheWithoutManualInvalidation() {
+        let cache = UserTrajectoryCache.shared
+        cache.invalidate()
+        let session = Self.session(id: UUID(), date: Date(timeIntervalSince1970: 4_250))
+        let firstBaseline = Self.baseline(fillerRate: 1.2, pace: 128, hedgingRate: 0.2)
+        let revisedBaseline = Self.baseline(fillerRate: 4.4, pace: 151, hedgingRate: 1.6)
+
+        _ = cache.snapshot(
+            profile: nil,
+            baseline: firstBaseline,
+            rating: .initial,
+            sessions: [session],
+            coachMemory: nil
+        )
+        let rebuilt = cache.snapshot(
+            profile: nil,
+            baseline: revisedBaseline,
+            rating: .initial,
+            sessions: [session],
+            coachMemory: nil
+        )
+
+        #expect(rebuilt.cacheHit == false)
+        #expect(rebuilt.snapshot.trendLines.contains("baseline filler rate: 4.4/min"))
+        #expect(rebuilt.snapshot.trendLines.contains("baseline pace: 151 WPM"))
+        #expect(rebuilt.snapshot.trendLines.contains("baseline hedging: 1.6/min"))
+        cache.invalidate()
+    }
+
+    @Test @MainActor func baselineStoreRebuildInvalidatesTrajectoryCacheForSameInputs() {
+        let cache = UserTrajectoryCache.shared
+        let previousSessions = PracticeSessionStore.shared.sessions
+        let session = Self.session(id: UUID(), date: Date(timeIntervalSince1970: 4_500))
+        cache.invalidate()
+        defer {
+            BaselineStore.shared.rebuild(from: previousSessions)
+            cache.invalidate()
+        }
+
+        _ = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [session],
+            coachMemory: nil
+        )
+        BaselineStore.shared.rebuild(from: [])
+        let rebuilt = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [session],
+            coachMemory: nil
+        )
+
+        #expect(rebuilt.cacheHit == false)
+    }
+
+    @Test @MainActor func ratingStoreMutationInvalidatesTrajectoryCacheForSameInputs() {
+        let cache = UserTrajectoryCache.shared
+        let previousRating = RatingStore.shared.rating
+        let session = Self.session(id: UUID(), date: Date(timeIntervalSince1970: 4_750))
+        cache.invalidate()
+        defer {
+            RatingStore.shared.replaceForDebug(previousRating)
+            cache.invalidate()
+        }
+
+        _ = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [session],
+            coachMemory: nil
+        )
+        RatingStore.shared.recordRatedSession(
+            score: 8,
+            sessionId: UUID(),
+            pressureLevel: .elevated
+        )
+        let rebuilt = cache.snapshot(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [session],
+            coachMemory: nil
+        )
+
+        #expect(rebuilt.cacheHit == false)
+    }
+
     @Test func changedProfileVoiceMissesCacheWithoutManualInvalidation() {
         let cache = UserTrajectoryCache.shared
         cache.invalidate()
@@ -390,18 +528,48 @@ struct UserTrajectoryCacheTests {
     private static func session(
         id: UUID,
         date: Date,
-        fillerWordCount: Int = 1
+        fillerWordCount: Int = 1,
+        transcript: String = "We should make the decision now because the team needs a clear recommendation.",
+        duration: TimeInterval = 60,
+        score: Int? = 7,
+        confidence: Double? = nil
     ) -> PracticeSession {
         var session = PracticeSession(
-            transcript: "We should make the decision now because the team needs a clear recommendation.",
+            transcript: transcript,
             fillerWordCount: fillerWordCount,
-            duration: 60,
+            duration: duration,
             date: date,
             mode: .timed,
-            score: 7
+            score: score,
+            transcriptConfidence: confidence
         )
         session.id = id
         return session
+    }
+
+    private static func baseline(
+        fillerRate: Double,
+        pace: Double,
+        hedgingRate: Double
+    ) -> CommunicationBaseline {
+        var baseline = CommunicationBaseline.empty
+        baseline.sessionCount = 5
+        baseline.qualifyingSessionCount = 5
+        baseline.fillerRate = Self.stat(fillerRate)
+        baseline.pace = Self.stat(pace)
+        baseline.hedgingRate = Self.stat(hedgingRate)
+        return baseline
+    }
+
+    private static func stat(_ value: Double) -> BaselineStat {
+        BaselineStat(
+            value: value,
+            sampleCount: 5,
+            confidence: .moderate,
+            trend: .stable,
+            percentile25: value,
+            percentile75: value
+        )
     }
 
     private static func profile(voice: SpeakingStyleGoal) -> CoachingProfile {
@@ -819,6 +987,40 @@ struct CoachSemanticQualityGateTests {
             latestUserTurn: "Can you give me an example of me doing this in sessions?",
             turnDepth: .quickMove,
             assessment: Self.quickAssessment
+        )
+
+        #expect(issue == nil)
+    }
+
+    @Test func unconfirmedPersonalPatternLabelFailsProfessionalGate() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You are defensive because you fear disagreement. Run a 60-second rep with the disagreement first, then one reason.",
+            latestUserTurn: "Do I sound defensive when I disagree?",
+            turnDepth: .groundedRead
+        )
+
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func confirmablePersonalPatternHypothesisClearsProfessionalGate() {
+        let reply = "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop."
+
+        let issue = AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "Do I sound defensive when I disagree?",
+            systemContext: "RECENT (most-recent first)\n- Transcript: I softened the disagreement and added context before the point.",
+            turnDepth: .groundedRead
+        )
+
+        #expect(issue == nil)
+    }
+
+    @Test func observableStructureReadDoesNotTripPersonalPatternGate() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "From the transcript, the disagreement arrived after too much setup, so run the same answer once with the disagreement in sentence one.",
+            latestUserTurn: "Do I sound defensive when I disagree?",
+            systemContext: "RECENT (most-recent first)\n- Transcript: I softened the disagreement and added context before the point.",
+            turnDepth: .groundedRead
         )
 
         #expect(issue == nil)

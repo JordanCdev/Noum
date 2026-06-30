@@ -1661,6 +1661,7 @@ final class BaselineStore: ObservableObject {
         }
         pressureProfile = profile
         save()
+        UserTrajectoryCache.shared.invalidate()
     }
 
     /// Incrementally update with a new session.
@@ -1668,16 +1669,25 @@ final class BaselineStore: ObservableObject {
         baseline = BaselineEngine.updateWithClutchWords(baseline, with: session)
         pressureProfile = BaselineEngine.updatePressureProfile(pressureProfile, session: session, pressure: pressure)
         save()
+        UserTrajectoryCache.shared.invalidate()
     }
 
     func recordMiniDrillOutcome(_ outcome: MiniDrillOutcome, prompt: String?) {
         ClutchWordStore.shared.analyzeSession(transcript: outcome.transcript, prompt: prompt)
         baseline = BaselineEngine.updateWithMiniDrill(baseline, outcome: outcome)
         save()
+        UserTrajectoryCache.shared.invalidate()
     }
 
     func reloadForCurrentAccount() {
         load()
+        UserTrajectoryCache.shared.invalidate()
+    }
+
+    func endSession() {
+        baseline = .empty
+        pressureProfile = .empty
+        UserTrajectoryCache.shared.invalidate()
     }
 
     // MARK: - Persistence

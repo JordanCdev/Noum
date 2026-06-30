@@ -86,14 +86,22 @@ final class UserTrajectoryCache {
         let latestCount = sessions.count
         let profileVoice = profile?.speakingStyleGoal.rawValue ?? "none"
         let memoryUpdated = coachMemory?.updatedAt.timeIntervalSince1970 ?? 0
+        let recentEvidence = sessions
+            .sorted { $0.date > $1.date }
+            .prefix(5)
+            .map(sessionEvidenceSignature)
+            .joined(separator: ";")
+        let sessionAggregate = sessionAggregateSignature(sessions)
         return [
             "voice=\(profileVoice)",
             "sessions=\(latestCount)",
             "latest=\(latestID)",
             "latestDate=\(Int(latestDate))",
+            "recentEvidence=\(recentEvidence)",
+            "sessionAggregate=\(sessionAggregate)",
             "rating=\(rating.overall)",
             "rated=\(rating.totalRatedSessions)",
-            "baseline=\(baseline.overallConfidence.rawValue)",
+            "baseline=\(baselineSignature(baseline))",
             "memory=\(Int(memoryUpdated))"
         ].joined(separator: "|")
     }
@@ -133,6 +141,100 @@ final class UserTrajectoryCache {
             coachCaseSummary: coachMemory.map(caseSummary),
             activeInterventionState: coachMemory.flatMap(activeIntervention)
         )
+    }
+
+    private static func sessionEvidenceSignature(_ session: PracticeSession) -> String {
+        let transcriptWords = session.transcript
+            .split { $0.isWhitespace || $0.isNewline }
+            .count
+        let transcriptHash = stableHash(normalized(session.transcript))
+        let confidence = session.transcriptConfidence.map { Int(($0 * 100).rounded()) } ?? -1
+        return [
+            session.id.uuidString,
+            "date=\(Int(session.date.timeIntervalSince1970))",
+            "mode=\(session.mode.rawValue)",
+            "pressure=\(session.pressureLevel.rawValue)",
+            "score=\(session.score ?? -1)",
+            "fillers=\(session.fillerWordCount)",
+            "duration=\(Int(session.duration.rounded()))",
+            "words=\(transcriptWords)",
+            "confidence=\(confidence)",
+            "rated=\(session.isRated)",
+            "intent=\(session.intentFocus?.rawValue ?? "none")",
+            "transcript=\(transcriptHash)"
+        ].joined(separator: "#")
+    }
+
+    private static func sessionAggregateSignature(_ sessions: [PracticeSession]) -> String {
+        let modes = Set(sessions.map(\.mode.rawValue)).sorted().joined(separator: ",")
+        let pressureCount = sessions.filter {
+            $0.pressureLevel >= .elevated || $0.mode == .suddenDeath
+        }.count
+        let ratedCount = sessions.filter(\.isRated).count
+        return [
+            "modes=\(modes)",
+            "pressureCount=\(pressureCount)",
+            "ratedCount=\(ratedCount)"
+        ].joined(separator: "#")
+    }
+
+    private static func baselineSignature(_ baseline: CommunicationBaseline) -> String {
+        [
+            "sessions=\(baseline.sessionCount)",
+            "qualifying=\(baseline.qualifyingSessionCount)",
+            "overall=\(baseline.overallConfidence.rawValue)",
+            "filler=\(baselineStatSignature(baseline.fillerRate))",
+            "pace=\(baselineStatSignature(baseline.pace))",
+            "duration=\(baselineStatSignature(baseline.durationTendency))",
+            "pause=\(baselineStatSignature(baseline.pauseRate))",
+            "filledPause=\(baselineStatSignature(baseline.pauseFilledRatio))",
+            "opening=\(baselineStatSignature(baseline.openingStrength))",
+            "closing=\(baselineStatSignature(baseline.closingStrength))",
+            "structure=\(baselineStatSignature(baseline.structureQuality))",
+            "depth=\(baselineStatSignature(baseline.answerDepth))",
+            "clarity=\(baselineStatSignature(baseline.clarity))",
+            "vocab=\(baselineStatSignature(baseline.vocabularyRange))",
+            "hedging=\(baselineStatSignature(baseline.hedgingRate))",
+            "pitch=\(baselineStatSignature(baseline.pitchVariation))",
+            "score=\(baselineStatSignature(baseline.averageScore))",
+            "strengths=\(normalizedListSignature(baseline.topStrengths))",
+            "blockers=\(normalizedListSignature(baseline.persistentBlockers))"
+        ].joined(separator: "#")
+    }
+
+    private static func baselineStatSignature(_ stat: BaselineStat) -> String {
+        [
+            "value=\(scaled(stat.value))",
+            "samples=\(stat.sampleCount)",
+            "confidence=\(stat.confidence.rawValue)",
+            "trend=\(stat.trend.rawValue)"
+        ].joined(separator: ",")
+    }
+
+    private static func normalizedListSignature(_ values: [String]) -> String {
+        values.map(normalized).joined(separator: ",")
+    }
+
+    private static func scaled(_ value: Double) -> Int {
+        guard value.isFinite else { return 0 }
+        return Int((value * 100).rounded())
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value
+            .lowercased()
+            .split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+            .joined(separator: " ")
+    }
+
+    private static func stableHash(_ value: String) -> String {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        let prime: UInt64 = 0x0000_0100_0000_01b3
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* prime
+        }
+        return String(hash, radix: 16)
     }
 
     private static func evidenceCoverage(
