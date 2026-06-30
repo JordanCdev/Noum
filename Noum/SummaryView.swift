@@ -1069,6 +1069,14 @@ struct SummaryView: View {
                         if let pitchMetrics = sessionStore.sessions.first?.pitchMetrics {
                             PitchSummaryCard(metrics: pitchMetrics)
                         }
+                        // Positional read — WHERE the rep's notable moments
+                        // fell (opening/middle/close). The visible companion
+                        // to the coach's positional prompt block; self-hides
+                        // (engine returns nil) when no credible positional
+                        // signal exists, so it never pads a non-finding.
+                        if let eventLocations = sessionStore.sessions.first?.repEventLocations {
+                            RepTimelineCard(locations: eventLocations)
+                        }
                         WordChoiceCard(metrics: WordChoiceMetrics.compute(transcript: transcriptText))
                         GrammarPolishCard(session: sessionStore.sessions.first)
                         // M25: FillerBreakdownCard dropped — its top-6 chips
