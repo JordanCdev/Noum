@@ -45,12 +45,43 @@ struct CoachChatEvaluationFixture {
     let profile: CoachingProfile?
     let sessions: [PracticeSession]
     let trends: [SkillTrend]
+    let recentMomentOutcomes: [BigMomentOutcomeReport]
     let latestUserTurn: String
     let previousCoachReply: String?
     let expectedContextNeedles: [String]
     let referenceReply: String
     let knownBadReply: String
     let expectedBadIssue: CoachChatReplyQualityIssue
+
+    init(
+        id: String,
+        pillar: CoachChatEvaluationPillar,
+        expertBaseline: CoachChatExpertBaselineSlot,
+        profile: CoachingProfile?,
+        sessions: [PracticeSession],
+        trends: [SkillTrend],
+        recentMomentOutcomes: [BigMomentOutcomeReport] = [],
+        latestUserTurn: String,
+        previousCoachReply: String?,
+        expectedContextNeedles: [String],
+        referenceReply: String,
+        knownBadReply: String,
+        expectedBadIssue: CoachChatReplyQualityIssue
+    ) {
+        self.id = id
+        self.pillar = pillar
+        self.expertBaseline = expertBaseline
+        self.profile = profile
+        self.sessions = sessions
+        self.trends = trends
+        self.recentMomentOutcomes = recentMomentOutcomes
+        self.latestUserTurn = latestUserTurn
+        self.previousCoachReply = previousCoachReply
+        self.expectedContextNeedles = expectedContextNeedles
+        self.referenceReply = referenceReply
+        self.knownBadReply = knownBadReply
+        self.expectedBadIssue = expectedBadIssue
+    }
 }
 
 struct CoachChatEvaluationCIReport: Codable, Equatable {
@@ -99,6 +130,7 @@ struct CoachChatEvaluationCIReport: Codable, Equatable {
                 let referenceReliability = CoachReliabilityGate.evaluate(
                     replyText: fixture.referenceReply,
                     previousCoachReply: fixture.previousCoachReply,
+                    latestUserTurn: fixture.latestUserTurn,
                     turnDepth: turnDepth,
                     assessment: nil,
                     evidenceCoverage: nil,
@@ -125,6 +157,7 @@ struct CoachChatEvaluationCIReport: Codable, Equatable {
                 let knownBadReliability = CoachReliabilityGate.evaluate(
                     replyText: fixture.knownBadReply,
                     previousCoachReply: fixture.previousCoachReply,
+                    latestUserTurn: fixture.latestUserTurn,
                     turnDepth: turnDepth,
                     assessment: nil,
                     evidenceCoverage: nil,
@@ -205,6 +238,8 @@ enum CoachChatConversationCriterion: String, Codable, Equatable, CaseIterable {
     case stateRetention
     case nonRepetitiveTrajectory
     case proofTestProgression
+    case discourseMoveDiversity
+    case planContinuity
     case adaptiveRepair
     case repairCarryover
     case transferProof
@@ -239,6 +274,8 @@ struct CoachChatConversationScore: Codable, Equatable {
         !missed.contains(.stateRetention) &&
         !missed.contains(.nonRepetitiveTrajectory) &&
         !missed.contains(.proofTestProgression) &&
+        !missed.contains(.discourseMoveDiversity) &&
+        !missed.contains(.planContinuity) &&
         !missed.contains(.seniorRegister)
     }
 }
@@ -1483,6 +1520,10 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
     let reliabilityIssueTurnCount: Int
     let immediateCoachReadExpectedCount: Int
     let immediateCoachReadMissingCount: Int
+    let retrievalTracePresentCount: Int
+    let assessmentConfidenceDistinctRoundedCount: Int
+    let uniqueProofTestHashCount: Int
+    let repeatedProofTestHashCount: Int
     let readinessWarnings: [String]
 
     static func make(
@@ -1509,6 +1550,22 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
         let reliabilityIssueTurnCount = turns.filter { !$0.reliabilityIssues.isEmpty }.count
         let immediateExpected = turns.filter(\.immediateCoachReadExpected)
         let immediateMissing = immediateExpected.filter { !$0.immediateCoachReadShown }
+        let retrievalTracePresentCount = turns.filter { $0.retrievalTrace != nil }.count
+        let assessmentConfidenceDistinctRoundedCount = Set(
+            turns
+                .compactMap(\.assessmentConfidence)
+                .map { Int(($0 * 100).rounded()) }
+        ).count
+        let proofTestHashes = turns
+            .compactMap { $0.proofTestHash?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let uniqueProofTestHashCount = Set(proofTestHashes).count
+        let repeatedProofTestHashCount = rows.reduce(0) { total, row in
+            let counts = row.proofTestHashes.reduce(into: [:]) { partial, hash in
+                partial[hash, default: 0] += 1
+            }
+            return total + counts.values.filter { $0 > 1 }.count
+        }
         let warnings = readinessWarnings(
             conversationCount: rows.count,
             floorFailureCount: floorFailures.count,
@@ -1517,7 +1574,11 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
             semanticGateFailureTurnCount: semanticGateFailureTurnCount,
             visionFloorFailureTurnCount: visionFloorFailureTurnCount,
             reliabilityIssueTurnCount: reliabilityIssueTurnCount,
-            immediateCoachReadMissingCount: immediateMissing.count
+            immediateCoachReadMissingCount: immediateMissing.count,
+            retrievalTraceMissingCount: turns.count - retrievalTracePresentCount,
+            assessmentConfidenceDistinctRoundedCount: assessmentConfidenceDistinctRoundedCount,
+            uniqueProofTestHashCount: uniqueProofTestHashCount,
+            repeatedProofTestHashCount: repeatedProofTestHashCount
         )
 
         return CoachChatConversationAppPathSummary(
@@ -1538,6 +1599,10 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
             reliabilityIssueTurnCount: reliabilityIssueTurnCount,
             immediateCoachReadExpectedCount: immediateExpected.count,
             immediateCoachReadMissingCount: immediateMissing.count,
+            retrievalTracePresentCount: retrievalTracePresentCount,
+            assessmentConfidenceDistinctRoundedCount: assessmentConfidenceDistinctRoundedCount,
+            uniqueProofTestHashCount: uniqueProofTestHashCount,
+            repeatedProofTestHashCount: repeatedProofTestHashCount,
             readinessWarnings: warnings
         )
     }
@@ -1584,7 +1649,11 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
         semanticGateFailureTurnCount: Int,
         visionFloorFailureTurnCount: Int,
         reliabilityIssueTurnCount: Int,
-        immediateCoachReadMissingCount: Int
+        immediateCoachReadMissingCount: Int,
+        retrievalTraceMissingCount: Int,
+        assessmentConfidenceDistinctRoundedCount: Int,
+        uniqueProofTestHashCount: Int,
+        repeatedProofTestHashCount: Int
     ) -> [String] {
         var warnings: [CoachChatConversationAppPathWarning] = []
         if conversationCount < 10 {
@@ -1611,6 +1680,15 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
         if immediateCoachReadMissingCount > 0 {
             warnings.append(.missingImmediateCoachRead)
         }
+        if retrievalTraceMissingCount > 0 {
+            warnings.append(.missingRetrievalTrace)
+        }
+        if assessmentConfidenceDistinctRoundedCount < 3 {
+            warnings.append(.flatAssessmentConfidence)
+        }
+        if uniqueProofTestHashCount < 3 || repeatedProofTestHashCount > 0 {
+            warnings.append(.weakProofTestVariety)
+        }
         return warnings.map(\.rawValue)
     }
 }
@@ -1624,6 +1702,9 @@ enum CoachChatConversationAppPathWarning: String, Codable, Equatable {
     case visionFloorFailures
     case reliabilityIssues
     case missingImmediateCoachRead
+    case missingRetrievalTrace
+    case flatAssessmentConfidence
+    case weakProofTestVariety
 }
 
 struct CoachChatConversationAppPathReportRow: Codable, Equatable {
@@ -1683,8 +1764,10 @@ struct CoachChatConversationAppPathTurnRow: Codable, Equatable {
     let visionPassesProductionFloor: Bool?
     let immediateCoachReadExpected: Bool
     let immediateCoachReadShown: Bool
+    let assessmentConfidence: Double?
     let proofTestHash: String?
     let proofTestRecentlyRepeated: Bool?
+    let retrievalTrace: CoachRetrievalTrace?
     let timeToFirstVisibleTokenMs: Int?
     let timeToCompleteReplyMs: Int?
     let passesAppPathFloor: Bool
@@ -3032,12 +3115,15 @@ enum CoachChatEvaluationCorpus {
                 )
             ],
             trends: [],
+            recentMomentOutcomes: leadershipTransferReports,
             latestUserTurn: "I have a leadership update tomorrow, what should I practice?",
             previousCoachReply: nil,
             expectedContextNeedles: [
                 "Where they want to use this",
                 "RECENT (most-recent first)",
                 "0 fillers",
+                "REAL-WORLD TRANSFER",
+                "not objective evidence or proof",
                 "COACH FORMULATION",
                 "75-second update"
             ],
@@ -3436,12 +3522,41 @@ enum CoachChatEvaluationCorpus {
             currentStreak: fixture.sessions.isEmpty ? 0 : 2,
             pathStatus: nil,
             pathGatingPhrase: nil,
+            recentMomentOutcomes: fixture.recentMomentOutcomes,
             trends: fixture.trends,
             latestUserTurn: fixture.latestUserTurn,
             previousCoachReply: fixture.previousCoachReply,
             coachingExpertise: deterministicCoachingExpertise(for: fixture)
         )
     }
+
+    private static let leadershipMoment = BigMoment(
+        id: UUID(uuidString: "f0e0e150-3f86-4f57-a50f-1b01f24f5d11")!,
+        title: "Leadership update",
+        category: .presentation,
+        createdAt: Date(timeIntervalSince1970: 1_782_144_000)
+    )
+
+    private static let leadershipTransferReports: [BigMomentOutcomeReport] = [
+        BigMomentOutcomeReport(
+            id: UUID(uuidString: "5e9087e0-a9c7-4f24-a7d9-08b9e0dc1001")!,
+            moment: leadershipMoment,
+            outcome: .wentWell,
+            audienceResponse: .engaged,
+            note: "People asked for the timeline instead of debating the decision.",
+            drillTransfer: .transferred,
+            recordedAt: Date(timeIntervalSince1970: 1_782_576_000)
+        ),
+        BigMomentOutcomeReport(
+            id: UUID(uuidString: "5e9087e0-a9c7-4f24-a7d9-08b9e0dc1002")!,
+            moment: leadershipMoment,
+            outcome: .mixed,
+            audienceResponse: .unclear,
+            note: "The ask landed, but I was not sure they bought the sequencing.",
+            drillTransfer: .partly,
+            recordedAt: Date(timeIntervalSince1970: 1_782_489_600)
+        )
+    ]
 
     static func contains(_ haystack: String, _ needle: String) -> Bool {
         haystack.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
@@ -3730,6 +3845,18 @@ struct CoachChatLatestLiveEvalRegressionTests {
             providerTier: .claudeReasoning,
             providerTierChosen: .claudeReasoning,
             semanticGateIssue: "trustRepairMissed",
+            retrievalTrace: CoachRetrievalTrace(
+                strategy: "BM25",
+                queryPresent: true,
+                queryCharacterCount: 42,
+                hasDiagnosis: true,
+                activeLever: SkillArea.openingStrength.rawValue,
+                voice: SpeakingStyleGoal.authoritative.rawValue,
+                semanticRerankAllowed: false,
+                retrievedCardCount: 2,
+                retrievedCardIDs: ["verdict-first", "clean-stop"],
+                diagnosticReason: "Retrieved 2 cards: verdict-first, clean-stop"
+            ),
             visionScore: 32,
             visionCriticalMisses: [.directAnswer, .observableAnchor],
             visionPassesProductionFloor: false,
@@ -3765,6 +3892,8 @@ struct CoachChatLatestLiveEvalRegressionTests {
         #expect(decoded.qualityGateOutcome == .repaired("vision:32:directAnswer,observableAnchor"))
         #expect(decoded.qualityGateFailureCount == 1)
         #expect(decoded.qualityGateRepairCount == 1)
+        #expect(decoded.retrievalTrace?.strategy == "BM25")
+        #expect(decoded.retrievalTrace?.retrievedCardIDs == ["verdict-first", "clean-stop"])
         #expect(decoded.assessmentCacheHit == true)
         #expect(decoded.assessmentCacheAgeMs == 240)
         #expect(decoded.immediateCoachReadShown == true)

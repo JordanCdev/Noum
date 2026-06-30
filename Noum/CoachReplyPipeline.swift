@@ -40,6 +40,33 @@ enum CoachReplyPipeline {
         return "No cards matched turn"
     }
 
+    nonisolated static func retrievalTrace(
+        cards: [CoachKnowledgeCard],
+        latestUserTurn: String?,
+        activeLever: SkillArea?,
+        voice: SpeakingStyleGoal?,
+        hasDiagnosis: Bool,
+        semanticRerankAllowed: Bool
+    ) -> CoachRetrievalTrace {
+        let trimmedTurn = latestUserTurn?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return CoachRetrievalTrace(
+            strategy: semanticRerankAllowed ? "BM25 + semantic rerank" : "BM25",
+            queryPresent: !trimmedTurn.isEmpty,
+            queryCharacterCount: trimmedTurn.count,
+            hasDiagnosis: hasDiagnosis,
+            activeLever: activeLever?.rawValue,
+            voice: voice?.rawValue,
+            semanticRerankAllowed: semanticRerankAllowed,
+            retrievedCardCount: cards.count,
+            retrievedCardIDs: cards.map(\.id),
+            diagnosticReason: brainDiagnosticReason(
+                cards: cards,
+                latestUserTurn: latestUserTurn,
+                hasDiagnosis: hasDiagnosis
+            )
+        )
+    }
+
     nonisolated static func shouldShowProvisionalCoachRead(
         turnDepth: CoachTurnDepth,
         surface: CoachReplySurface,
@@ -172,6 +199,14 @@ enum CoachReplyPipeline {
                 hasDiagnosis: hasDiagnosis
             )
         )
+        let retrievalTrace = Self.retrievalTrace(
+            cards: coachingExpertise,
+            latestUserTurn: latestUserTurn,
+            activeLever: activeLever,
+            voice: profileStore.profile?.speakingStyleGoal,
+            hasDiagnosis: hasDiagnosis,
+            semanticRerankAllowed: semanticRerankAllowed
+        )
 
         let trajectoryResult = UserTrajectoryCache.shared.snapshot(
             profile: profileStore.profile,
@@ -245,6 +280,7 @@ enum CoachReplyPipeline {
                     assessmentConfidence: assessment.confidence,
                     proofTestHash: assessmentProofTestHash,
                     proofTestRecentlyRepeated: proofTestRecentlyRepeated,
+                    retrievalTrace: retrievalTrace,
                     assessmentCacheHit: assessmentResult?.cacheHit,
                     assessmentCacheAgeMs: assessmentCacheAgeMsAt(provisionalVisibleAt),
                     immediateCoachReadShown: true,
@@ -357,6 +393,7 @@ enum CoachReplyPipeline {
                     assessmentConfidence: assessment?.confidence,
                     proofTestHash: assessmentProofTestHash,
                     proofTestRecentlyRepeated: proofTestRecentlyRepeated,
+                    retrievalTrace: retrievalTrace,
                     assessmentCacheHit: assessmentResult?.cacheHit,
                     assessmentCacheAgeMs: assessmentCacheAgeMsAt(streamedVisibleAt),
                     immediateCoachReadShown: immediateCoachReadShown,
@@ -395,14 +432,18 @@ enum CoachReplyPipeline {
         // Missing attunement on trust repair is treated as a user-facing defect:
         // if the user pushes back and the final answer opens by prescribing, the
         // gate substitutes the deterministic repair read. Softer calibration
-        // smells (near-duplicate phrasing, floor-pinned confidence, repeated
-        // proof-test) are recorded in metadata but never replace an
-        // otherwise-fine reply. Flag-guarded; off keeps the pre-gate behaviour.
+        // smells (near-duplicate phrasing, floor-pinned confidence) are
+        // recorded in metadata but never replace an otherwise-fine reply.
+        // Repeated proof tests and repeated prescription-only discourse moves
+        // are user-facing loop defects, so they block. Flag-guarded; off keeps
+        // the pre-gate behaviour.
         let reliabilityVerdict: CoachReliabilityVerdict
         if CoachBrainFlags.reliabilityGateEnabled, case .reply(let rawText) = outcome {
             reliabilityVerdict = CoachReliabilityGate.evaluate(
                 replyText: CoachReplyTextSanitizer.coachReplyText(from: rawText),
                 previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies,
+                latestUserTurn: latestUserTurn,
                 turnDepth: turnDepth,
                 assessment: assessment,
                 evidenceCoverage: trajectoryResult.snapshot.evidenceCoverage,
@@ -481,6 +522,7 @@ enum CoachReplyPipeline {
             assessmentConfidence: assessment?.confidence,
             proofTestHash: assessmentProofTestHash,
             proofTestRecentlyRepeated: proofTestRecentlyRepeated,
+            retrievalTrace: retrievalTrace,
             visionScore: finalVision?.score,
             visionCriticalMisses: finalVision?.criticalMisses,
             visionPassesProductionFloor: finalVision?.passesProductionFloor,

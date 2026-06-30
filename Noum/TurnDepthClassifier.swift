@@ -28,6 +28,10 @@ enum TurnDepthClassifier {
             return .deepAssessment
         }
 
+        if isMemoryHandoff(lower) {
+            return .groundedRead
+        }
+
         if isGroundedRead(lower) {
             return .groundedRead
         }
@@ -57,9 +61,15 @@ enum TurnDepthClassifier {
         containsAny(lower, [
             "that wasn't helpful", "that wasnt helpful",
             "not helpful", "not informative", "not useful",
+            "it's not easy", "its not easy", "not that easy",
+            "easier said than done", "harder than that",
             "you missed the point", "missed the point",
             "that is wrong", "that's wrong", "thats wrong",
             "that doesn't answer", "that does not answer",
+            "you're repeating yourself", "you are repeating yourself",
+            "repeating yourself", "same thing again", "said that already",
+            "you already said that",
+            "too much writing", "too long", "get to the point",
             "too generic", "generic ai", "generic tips",
             "robotic", "low eq", "not high eq",
             "try again", "you are just saying", "you're just saying",
@@ -109,6 +119,16 @@ enum TurnDepthClassifier {
             "latest rep", "use my last rep", "what am i doing wrong",
             "why did that happen", "why did my score",
             "what went wrong", "what went well", "how did that land"
+        ])
+    }
+
+    static func isMemoryHandoff(_ lower: String) -> Bool {
+        containsAny(lower, [
+            "what should noum remember", "what should you remember",
+            "what do you remember", "remember next time",
+            "what should we remember", "what should i save",
+            "what do we keep", "what should we keep",
+            "what should i keep from this", "what should you keep from this"
         ])
     }
 

@@ -13,6 +13,7 @@ enum CoachReasoningPass {
         recentProofTests: [String] = [],
         previousCoachReply: String? = nil
     ) -> CoachAssessment {
+        let isMemoryHandoff = TurnDepthClassifier.isMemoryHandoff(userQuestion.lowercased())
         let repairFocus = repairFocus(
             for: userQuestion,
             previousCoachReply: previousCoachReply,
@@ -26,42 +27,54 @@ enum CoachReasoningPass {
         let preferredDimensionID = preferredProofDimensionID(
             for: userQuestion,
             scores: scores,
-            turnDepth: turnDepth
+            turnDepth: turnDepth,
+            isMemoryHandoff: isMemoryHandoff
         )
         let focusLabel = preferredDimensionID.flatMap { id in
             rubric.rubric.dimensions.first { $0.id == id }?.label
         }
-        let directVerdict = verdict(
-            depth: turnDepth,
-            mechanics: weightedMechanics,
-            goalReadiness: goalReadiness,
-            coverage: trajectory.evidenceCoverage,
-            rubricName: rubric.rubric.displayName,
-            focusDimensionID: preferredDimensionID,
-            focusLabel: focusLabel,
-            repairFocus: repairFocus
-        )
+        let directVerdict = isMemoryHandoff
+            ? memoryHandoffVerdict(previousCoachReply: previousCoachReply)
+            : verdict(
+                depth: turnDepth,
+                mechanics: weightedMechanics,
+                goalReadiness: goalReadiness,
+                coverage: trajectory.evidenceCoverage,
+                rubricName: rubric.rubric.displayName,
+                focusDimensionID: preferredDimensionID,
+                focusLabel: focusLabel,
+                repairFocus: repairFocus
+            )
         let evidence = evidenceLines(
             from: trajectory,
-            limit: turnDepth == .deepAssessment ? 4 : 2,
+            limit: evidenceLimit(for: turnDepth),
             repairFocus: repairFocus,
-            turnDepth: turnDepth
+            turnDepth: turnDepth,
+            isMemoryHandoff: isMemoryHandoff,
+            previousCoachReply: previousCoachReply
         )
         let missing = missingEvidence(from: scores, trajectory: trajectory, depth: turnDepth)
-        let proofTest = nextProofTest(
-            from: scores,
-            rubric: rubric.rubric,
-            surface: surface,
-            preferredDimensionID: preferredDimensionID,
-            recentProofTests: recentProofTests
-        )
+        let proofTest = isMemoryHandoff
+            ? memoryHandoffProofTest(previousCoachReply: previousCoachReply)
+            : nextProofTest(
+                from: scores,
+                rubric: rubric.rubric,
+                surface: surface,
+                preferredDimensionID: preferredDimensionID,
+                recentProofTests: recentProofTests
+            )
 
         return CoachAssessment(
             turnDepth: turnDepth,
             surface: surface,
             questionRestatement: restatement(for: userQuestion, depth: turnDepth),
             directVerdict: directVerdict,
-            confidence: confidence(coverage: trajectory.evidenceCoverage, mechanics: weightedMechanics, depth: turnDepth),
+            confidence: confidence(
+                coverage: trajectory.evidenceCoverage,
+                mechanics: weightedMechanics,
+                scores: scores,
+                depth: turnDepth
+            ),
             evidenceUsed: evidence,
             rubricScores: scores,
             missingEvidence: missing,
@@ -208,22 +221,115 @@ enum CoachReasoningPass {
         from trajectory: UserTrajectorySnapshot,
         limit: Int,
         repairFocus: String?,
-        turnDepth: CoachTurnDepth
+        turnDepth: CoachTurnDepth,
+        isMemoryHandoff: Bool,
+        previousCoachReply: String?
     ) -> [String] {
         var lines: [String] = []
         if turnDepth == .trustRepair,
            let repairFocus {
             lines.append("trust repair signal: \(repairFocus)")
         }
+        if isMemoryHandoff,
+           let line = memoryHandoffEvidenceLine(previousCoachReply: previousCoachReply) {
+            lines.append(line)
+        }
         if let pack = trajectory.latestRepEvidencePack {
             lines.append(contentsOf: pack.evidenceLines)
         }
-        lines.append(contentsOf: trajectory.trendLines)
         if let summary = trajectory.coachCaseSummary {
-            if let focus = summary.focus { lines.append("case focus: \(focus)") }
-            if let evidence = summary.evidenceSummary { lines.append("case evidence: \(evidence)") }
+            if let line = caseSummaryLine(from: summary) {
+                lines.append(line)
+            }
         }
-        return Array(lines.prefix(limit))
+        if let intervention = trajectory.activeInterventionState,
+           let line = activeInterventionLine(from: intervention) {
+            lines.append(line)
+        }
+        lines.append(contentsOf: trajectory.trendLines)
+        return Array(unique(lines).prefix(limit))
+    }
+
+    private static func evidenceLimit(for depth: CoachTurnDepth) -> Int {
+        switch depth {
+        case .quickMove:
+            return 2
+        case .groundedRead:
+            return 4
+        case .deepAssessment, .trustRepair:
+            return 8
+        }
+    }
+
+    private static func caseSummaryLine(from summary: CoachCaseSummary) -> String? {
+        var parts: [String] = []
+        appendCasePart(&parts, label: "hypothesis", value: summary.hypothesis)
+        appendCasePart(&parts, label: "focus", value: summary.focus)
+        appendCasePart(&parts, label: "evidence", value: summary.evidenceSummary)
+        appendCasePart(&parts, label: "next move", value: summary.nextCoachMove)
+        guard !parts.isEmpty else { return nil }
+        return "case summary: \(parts.joined(separator: "; "))"
+    }
+
+    private static func activeInterventionLine(from intervention: ActiveInterventionState) -> String? {
+        var parts: [String] = []
+        let title = intervention.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !title.isEmpty {
+            parts.append(title)
+        }
+        appendCasePart(&parts, label: "target", value: intervention.target)
+        parts.append("followed reps: \(intervention.followedRepCount)")
+        appendCasePart(&parts, label: "review", value: intervention.reviewStatus)
+        guard !parts.isEmpty else { return nil }
+        return "active intervention: \(parts.joined(separator: "; "))"
+    }
+
+    private static func appendCasePart(
+        _ parts: inout [String],
+        label: String,
+        value: String?
+    ) {
+        guard let value else { return }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        parts.append("\(label): \(trimmed)")
+    }
+
+    private static func memoryHandoffVerdict(previousCoachReply: String?) -> String {
+        if previousCoachReplyContainsDisagreementSetup(previousCoachReply) {
+            return "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup."
+        }
+        return "Use this memory as a testable hypothesis only, not a label."
+    }
+
+    private static func memoryHandoffEvidenceLine(previousCoachReply: String?) -> String? {
+        guard let previousCoachReply,
+              !previousCoachReply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        if previousCoachReplyContainsDisagreementSetup(previousCoachReply) {
+            return "conversation hypothesis: disagreement may be getting softened by setup"
+        }
+        let first = previousCoachReply
+            .components(separatedBy: CharacterSet(charactersIn: ".!?"))
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first, !first.isEmpty else { return nil }
+        return "prior coach read: \(first)"
+    }
+
+    private static func memoryHandoffProofTest(previousCoachReply: String?) -> String {
+        if previousCoachReplyContainsDisagreementSetup(previousCoachReply) {
+            return "Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it."
+        }
+        return "Keep it only if two more reps show the same pattern; drop it if the targeted rep solves it."
+    }
+
+    private static func previousCoachReplyContainsDisagreementSetup(_ previousCoachReply: String?) -> Bool {
+        guard let previousCoachReply else { return false }
+        let lower = previousCoachReply.lowercased()
+        return lower.contains("disagreement") &&
+            (lower.contains("setup") || lower.contains("arrived after"))
     }
 
     private static func missingEvidence(
@@ -368,9 +474,48 @@ enum CoachReasoningPass {
         return min(average, coverage)
     }
 
-    private static func confidence(coverage: Double, mechanics: Double, depth: CoachTurnDepth) -> Double {
-        let depthCap: Double = depth == .deepAssessment ? 0.82 : 0.72
-        return min(depthCap, max(0.20, coverage * 0.80 + mechanics * 0.20))
+    private static func confidence(
+        coverage: Double,
+        mechanics: Double,
+        scores: [RubricScore],
+        depth: CoachTurnDepth
+    ) -> Double {
+        if coverage < 0.15 {
+            return 0.20
+        }
+
+        let scoreValues = scores.map(\.score)
+        let weakest = scoreValues.min() ?? mechanics
+        let strongest = scoreValues.max() ?? mechanics
+        let spread = max(0, strongest - weakest)
+        let evidenceBreadth = scoreValues.isEmpty
+            ? 0
+            : Double(scoreValues.filter { $0 >= 0.55 }.count) / Double(scoreValues.count)
+        let depthCap: Double
+        let depthAdjustment: Double
+        switch depth {
+        case .quickMove:
+            depthCap = 0.74
+            depthAdjustment = -0.01
+        case .groundedRead:
+            depthCap = 0.76
+            depthAdjustment = 0.00
+        case .trustRepair:
+            depthCap = 0.70
+            depthAdjustment = -0.03
+        case .deepAssessment:
+            depthCap = 0.82
+            depthAdjustment = 0.03
+        }
+
+        let raw = coverage * 0.40 +
+            mechanics * 0.30 +
+            weakest * 0.15 +
+            evidenceBreadth * 0.15 -
+            spread * 0.04 +
+            depthAdjustment
+        let bounded = min(depthCap, max(0.20, raw))
+        return (bounded * 100).rounded() / 100
     }
 
     private static func responseMode(depth: CoachTurnDepth, surface: CoachReplySurface) -> CoachAssessment.ResponseMode {
@@ -413,6 +558,12 @@ enum CoachReasoningPass {
         if containsAny(lower, ["too much writing", "too long", "less writing", "shorter", "get to the point", "straight to the point"]) {
             return "I used too much writing before the useful read"
         }
+        if containsAny(lower, ["repeating yourself", "same thing again", "said that already", "already said that"]) {
+            return "I repeated the same coaching move instead of advancing the read"
+        }
+        if containsAny(lower, ["it's not easy", "its not easy", "not that easy", "easier said than done", "harder than that"]) {
+            return "I made the move sound easier than it feels under pressure"
+        }
         if containsAny(lower, ["not informative", "not helpful", "not useful", "missed the point", "doesn't answer", "does not answer"]) {
             return "I missed the actual question before prescribing"
         }
@@ -429,8 +580,12 @@ enum CoachReasoningPass {
     private static func preferredProofDimensionID(
         for userQuestion: String,
         scores: [RubricScore],
-        turnDepth: CoachTurnDepth
+        turnDepth: CoachTurnDepth,
+        isMemoryHandoff: Bool = false
     ) -> String? {
+        if isMemoryHandoff {
+            return nil
+        }
         let lower = userQuestion.lowercased()
         if containsAny(lower, ["slow", "pace", "rushing", "too fast", "unsure", "pause", "breath"]) {
             return "controlled_pacing"

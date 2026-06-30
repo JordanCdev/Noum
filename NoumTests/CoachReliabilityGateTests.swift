@@ -26,8 +26,8 @@ struct CoachReliabilityGateTests {
 
     // MARK: Fixtures
 
-    /// A clean quick-move assessment whose `immediateCoachRead` is the proof
-    /// test — usable as a clean fallback source.
+    /// A clean quick-move assessment whose `immediateCoachRead` wraps the proof
+    /// test in a local read — usable as a clean fallback source.
     private static func quickMoveAssessment(
         proofTest: String = "Run one 60-second rep with the verdict first, then one reason, then stop.",
         confidence: Double = 0.55,
@@ -316,16 +316,271 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.issues.contains(.noAttunementOnPushback))
     }
 
-    @Test func repeatedProofTestIsRecordedNotBlocked() {
+    @Test func thinTrustRepairAcknowledgesButSkipsRepairBlocks() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Fair push. Run a 45-second rep with the opener first because it gives the point somewhere to land.",
+            previousCoachReply: "Earlier read.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.noAttunementOnPushback))
+        #expect(verdict.issues.contains(.thinTrustRepair))
+        #expect(verdict.blockingIssues.contains(.thinTrustRepair))
+        #expect(verdict.blocked)
+        #expect(verdict.fallbackText?.isEmpty == false)
+    }
+
+    @Test func trustRepairThatNamesMissBeforePrescriptionPasses() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Fair push. I gave you advice before answering the friction. The real read is the opener, then one proof point.",
+            previousCoachReply: "Earlier read.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.noAttunementOnPushback))
+        #expect(!verdict.issues.contains(.thinTrustRepair))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func trustRepairStraightAnswerCountsAsSubstantiveRepair() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Fair. Straight answer: the close is not decisive yet; proof it with one timer rep.",
+            previousCoachReply: "Earlier read.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.noAttunementOnPushback))
+        #expect(!verdict.issues.contains(.thinTrustRepair))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func genericReplyAfterTrustRepairBlocksCarryoverBreak() {
+        let previousRepair = "Fair push: that was advice, not coaching. The real read is warmth came before the recommendation, so next rep say the recommendation first."
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "A good next step is to practice more and communicate clearly over time. Track your progress and keep going.",
+            previousCoachReply: previousRepair,
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(verdict.issues.contains(.repairCarryoverBreak))
+        #expect(verdict.blockingIssues.contains(.repairCarryoverBreak))
+        #expect(verdict.blocked)
+        #expect(verdict.fallbackText?.isEmpty == false)
+    }
+
+    @Test func specificReplyAfterTrustRepairCarriesForward() {
+        let previousRepair = "Fair push: that was advice, not coaching. The real read is warmth came before the recommendation, so next rep say the recommendation first."
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Carry the repaired read forward: the target is still order, not less warmth. Recommendation first, then one reassurance so the point lands without sounding abrupt.",
+            previousCoachReply: previousRepair,
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.repairCarryoverBreak))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func rejectingGenericPhraseAfterRepairDoesNotBlockCarryover() {
+        let previousRepair = "Fair push: that sounded cold and too generic. The actual question was whether warmth can follow the recommendation without weakening it."
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Do not practice more in general. Keep the repaired read: sentence one is the recommendation, sentence two is one reassurance, then stop.",
+            previousCoachReply: previousRepair,
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.repairCarryoverBreak))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func genericReplyWithoutPreviousTrustRepairDoesNotTripCarryoverBreak() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "A good next step is to practice more and communicate clearly over time.",
+            previousCoachReply: "Earlier we worked on the close.",
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.repairCarryoverBreak))
+    }
+
+    @Test func explicitSilentPlanSwitchBlocksWithFallback() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Actually, change target. New plan instead: ignore the earlier read and work on vocal warmth with a 60-second confidence rep.",
+            previousCoachReply: "The pressure rep target is verdict first: protect sentence one under the timer, then check the clean stop.",
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.6
+        )
+        #expect(verdict.issues.contains(.silentPlanSwitch))
+        #expect(verdict.blockingIssues.contains(.silentPlanSwitch))
+        #expect(verdict.blocked)
+        #expect(verdict.fallbackText?.isEmpty == false)
+    }
+
+    @Test func negatedPriorTargetWithoutRationaleBlocksPlanSwitch() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Not the opener now. Work on vocal warmth with a 60-second confidence rep.",
+            previousCoachReply: "The opener is the target: put the recommendation in sentence one, then prove it once.",
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.6
+        )
+        #expect(verdict.issues.contains(.silentPlanSwitch))
+        #expect(verdict.blocked)
+    }
+
+    @Test func explainedTargetRevisionDoesNotBlockPlanSwitch() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "That tells us order improved faster than tone. Keep the recommendation first, then add one reassurance so clarity does not sound abrupt.",
+            previousCoachReply: "The opener is the target: put the recommendation in sentence one, then prove it once.",
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.6
+        )
+        #expect(!verdict.issues.contains(.silentPlanSwitch))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func repetitivePrescriptionOnlyDiscourseMoveBlocksWithFallback() {
+        let assessment = Self.quickMoveAssessment(
+            proofTest: "Run a different proof: make the close the ask, then stop."
+        )
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Run one focused rep on the timeline detail. Check whether the date answers sequence.",
+            previousCoachReply: "Run one focused rep on the proof line. Check whether one proof line is concrete.",
+            recentCoachReplies: [
+                "Run one focused rep on the proof line. Check whether one proof line is concrete.",
+                "Run one focused rep on the opener. Check whether sentence one lands before setup."
+            ],
+            turnDepth: .quickMove,
+            assessment: assessment,
+            evidenceCoverage: 0.5
+        )
+        #expect(verdict.issues.contains(.repetitiveDiscourseMove))
+        #expect(verdict.blockingIssues.contains(.repetitiveDiscourseMove))
+        #expect(verdict.blocked)
+        #expect(verdict.fallbackText == assessment.immediateCoachRead)
+    }
+
+    @Test func narrowedRepeatFollowUpDoesNotTripDiscourseLoopWhenReplyNamesExactLine() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Repeat the final sentence only: ask, period, because that isolates the confidence leak. If you add a qualifier after it, rewrite that same line until it ends cleanly.",
+            previousCoachReply: "Use the close in your next rep: directness is fine if the reason already came before the ask, so keep the reason before it and stop.",
+            recentCoachReplies: [
+                "Use the close in your next rep: directness is fine if the reason already came before the ask, so keep the reason before it and stop.",
+                "Cut the softener after the ask. The close keeps adding maybe or just after the decision, so make the ask and stop before the confidence leaks."
+            ],
+            latestUserTurn: "What do I repeat?",
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.repetitiveDiscourseMove))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func narrowedRepeatFollowUpStillBlocksGenericTimerPrescription() {
+        let assessment = Self.quickMoveAssessment()
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Repeat the same answer under a timer and protect sentence one.",
+            previousCoachReply: "Use the close in your next rep: directness is fine if the reason already came before the ask, so keep the reason before it and stop.",
+            recentCoachReplies: [
+                "Use the close in your next rep: directness is fine if the reason already came before the ask, so keep the reason before it and stop.",
+                "Cut the softener after the ask. The close keeps adding maybe or just after the decision, so make the ask and stop before the confidence leaks."
+            ],
+            latestUserTurn: "What do I repeat?",
+            turnDepth: .quickMove,
+            assessment: assessment,
+            evidenceCoverage: 0.5
+        )
+        #expect(verdict.issues.contains(.repetitiveDiscourseMove))
+        #expect(verdict.blockingIssues.contains(.repetitiveDiscourseMove))
+        #expect(verdict.blocked)
+        #expect(verdict.fallbackText == assessment.immediateCoachRead)
+    }
+
+    @Test func twoPrescriptionOnlyTurnsDoNotTripDiscourseLoop() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Run one focused rep on the proof line. Check whether one proof line is concrete.",
+            previousCoachReply: "Run one focused rep on the opener. Check whether sentence one lands before setup.",
+            recentCoachReplies: [
+                "Run one focused rep on the opener. Check whether sentence one lands before setup."
+            ],
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.repetitiveDiscourseMove))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func answerOrDiagnosisBreaksPrescriptionOnlyDiscourseLoop() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "No. The target is still the opener, because sentence one is where the listener gets the point. Run one clean rep.",
+            previousCoachReply: "Run one focused rep on the proof line. Check whether one proof line is concrete.",
+            recentCoachReplies: [
+                "Run one focused rep on the proof line. Check whether one proof line is concrete.",
+                "Run one focused rep on the opener. Check whether sentence one lands before setup."
+            ],
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.repetitiveDiscourseMove))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func rationaleBecauseDoesNotCountAsUsePrescriptionInDiscourseLoop() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Then the decision line is cleaner, but the proof handoff is leaking, so review the transcript from the first proof sentence and rewrite only that transition: decision, because, proof.",
+            previousCoachReply: "Use a 45-second recommendation prompt because it tests the decision line without inviting a full essay. Sentence one is the decision, sentence two is one reason, then stop cleanly.",
+            recentCoachReplies: [
+                "Use a 45-second recommendation prompt because it tests the decision line without inviting a full essay. Sentence one is the decision, sentence two is one reason, then stop cleanly.",
+                "Because the filler interrupts the moment where authority should sound settled. The pause after the decision gives your reason somewhere to go without weakening the recommendation."
+            ],
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.repetitiveDiscourseMove))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func repeatedProofTestBlocksWithAssessmentFallback() {
+        let assessment = Self.quickMoveAssessment(
+            proofTest: "Run a different proof: make the final sentence the ask, then stop."
+        )
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Lead with the verdict and prove it once.",
+            previousCoachReply: nil,
+            turnDepth: .quickMove,
+            assessment: assessment,
+            evidenceCoverage: 0.5,
+            proofTestRecentlyRepeated: true
+        )
+        #expect(verdict.issues.contains(.repeatedProofTest))
+        #expect(verdict.blockingIssues.contains(.repeatedProofTest))
+        #expect(verdict.blocked)
+        #expect(verdict.fallbackText == assessment.immediateCoachRead)
+        #expect(verdict.fallbackText?.contains("Run a different proof") == true)
+    }
+
+    @Test func freshProofTestDoesNotTripRepeatedProofGate() {
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "Lead with the verdict and prove it once.",
             previousCoachReply: nil,
             turnDepth: .quickMove,
             assessment: Self.quickMoveAssessment(),
             evidenceCoverage: 0.5,
-            proofTestRecentlyRepeated: true
+            proofTestRecentlyRepeated: false
         )
-        #expect(verdict.issues.contains(.repeatedProofTest))
+        #expect(!verdict.issues.contains(.repeatedProofTest))
         #expect(!verdict.blocked)
     }
 
@@ -343,7 +598,8 @@ struct CoachReliabilityGateTests {
             evidenceCoverage: 0.5
         )
         #expect(verdict.blocked)
-        // immediateCoachRead for a quickMove == the proof test, which is clean.
+        #expect(assessment.immediateCoachRead.lowercased().contains("the signal i can use"))
+        #expect(assessment.immediateCoachRead.lowercased().contains("try this next"))
         #expect(verdict.fallbackText == assessment.immediateCoachRead)
     }
 
@@ -364,8 +620,8 @@ struct CoachReliabilityGateTests {
     }
 
     @Test func fallbackNeverReintroducesTheDuplicateItIsEscaping() {
-        // The provider duplicated the previous reply AND the immediate read equals
-        // it too — the fallback must not re-emit the duplicate.
+        // The provider duplicated the previous reply. Even if the local read wraps
+        // that same proof test in extra context, the fallback must not re-emit it.
         let dupe = "Run one 60-second rep with the verdict first, then one reason, then stop."
         let assessment = Self.quickMoveAssessment(proofTest: dupe)
         let verdict = CoachReliabilityGate.evaluate(
@@ -377,6 +633,7 @@ struct CoachReliabilityGateTests {
         )
         #expect(verdict.blocked)
         #expect(CoachReliabilityGate.normalize(verdict.fallbackText ?? "") != CoachReliabilityGate.normalize(dupe))
+        #expect(!(verdict.fallbackText ?? "").lowercased().contains(dupe.lowercased()))
     }
 
     @Test func staticFallbackVariesByDepthAndIsHonest() {
@@ -428,7 +685,7 @@ struct CoachReliabilityGateTests {
         Golden(
             id: "pushback-after-partial-agreement",
             depth: .trustRepair,
-            good: "Fair — you're right that a drill isn't what you asked for. The real answer: your close trails off, so the ask never lands.",
+            good: "Fair — you're right that a drill isn't what you asked for. Straight answer: your close trails off, so the ask never lands.",
             bad: "Lead with the decision, then one reason. Try a 60-second rep.",
             previousCoachReply: "Lead with the decision, then one reason. Try a 60-second rep."
         ),
@@ -442,14 +699,14 @@ struct CoachReliabilityGateTests {
         Golden(
             id: "robotic-cold-complaint",
             depth: .trustRepair,
-            good: "You're right — that came out clinical. Let me drop the scaffolding: the one thing holding you back is the soft ending.",
+            good: "You're right — I sounded cold and clinical. Straight answer: the one thing holding you back is the soft ending.",
             bad: "turnDepth=trustRepair toneMode=repair",
             previousCoachReply: nil
         ),
         Golden(
             id: "tts-formatting-complaint",
             depth: .trustRepair,
-            good: "Fair, the formatting got in the way. Plainly: slow the open by one beat and put the verdict first.",
+            good: "Fair, the formatting should never reach the voice. Plain answer: slow the open by one beat and put the verdict first.",
             bad: "",
             previousCoachReply: nil
         ),

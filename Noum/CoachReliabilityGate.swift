@@ -19,15 +19,18 @@ import Foundation
 //
 // Design split — HARD vs SOFT:
 //   • HARD issues (empty / placeholder / duplicateReply / scaffoldLeak /
-//     noAttunementOnPushback) are unambiguous user-facing defects. They BLOCK:
-//     the gate substitutes a truthful, coach-shaped fallback (preferring the
-//     deterministic on-device read the judgement pass already produced) and
-//     records that a fallback was applied.
-//   • SOFT issues (nearDuplicateReply / floorConfidenceWithEvidence /
-//     repeatedProofTest) are calibration smells the report flagged. They are
-//     RECORDED for evals + metadata but never blanket-replace an
-//     otherwise-fine reply, because doing so would degrade a good answer into a
-//     generic one.
+//     noAttunementOnPushback / thinTrustRepair / repairCarryoverBreak /
+//     silentPlanSwitch / repetitiveDiscourseMove) are unambiguous user-facing
+//     defects. They BLOCK: the gate substitutes a truthful, coach-shaped
+//     fallback (preferring the deterministic on-device read the judgement pass
+//     already produced) and records that a fallback was applied.
+//   • SOFT issues (nearDuplicateReply / floorConfidenceWithEvidence) are
+//     calibration smells the report flagged. They are RECORDED for evals +
+//     metadata but never blanket-replace an otherwise-fine reply.
+//   • repeatedProofTest is blocking because the deterministic assessment
+//     builder already has recent proof-test context and can usually supply a
+//     non-repeated local read. Shipping the repeated action anyway is the
+//     "same drill assistant" failure users notice immediately.
 //
 // Pure + flag-guarded (`CoachBrainFlags.reliabilityGateEnabled`, default on) so it
 // is fully unit-testable and instantly revertable without a new state owner.
@@ -53,16 +56,31 @@ enum CoachReliabilityIssue: String, Codable, Equatable, CaseIterable {
     /// A trust-repair turn whose opening does not acknowledge the user's push
     /// before prescribing.
     case noAttunementOnPushback
-    /// The proof-test is the same one offered on a recent turn. Recorded only.
+    /// A trust-repair turn that acknowledges the push but skips the actual
+    /// repair move before prescribing again.
+    case thinTrustRepair
+    /// The turn after a substantive trust repair drops back into generic advice
+    /// instead of carrying the repaired read forward.
+    case repairCarryoverBreak
+    /// The reply silently abandons the prior intervention target without an
+    /// evidence-backed revision rationale.
+    case silentPlanSwitch
+    /// The current reply continues a short run of prescription-only coach turns:
+    /// varied wording, same discourse move.
+    case repetitiveDiscourseMove
+    /// The proof-test is the same one offered on a recent turn.
     case repeatedProofTest
 
     /// Issues that are unambiguous user-facing defects and therefore trigger the
     /// truthful fallback substitution.
     var isBlocking: Bool {
         switch self {
-        case .empty, .placeholder, .duplicateReply, .scaffoldLeak, .noAttunementOnPushback:
+        case .empty, .placeholder, .duplicateReply, .scaffoldLeak,
+                .noAttunementOnPushback, .thinTrustRepair,
+                .repairCarryoverBreak, .silentPlanSwitch,
+                .repetitiveDiscourseMove, .repeatedProofTest:
             return true
-        case .nearDuplicateReply, .floorConfidenceWithEvidence, .repeatedProofTest:
+        case .nearDuplicateReply, .floorConfidenceWithEvidence:
             return false
         }
     }
@@ -167,6 +185,128 @@ enum CoachReliabilityGate {
         "i hear that", "i get that", "that's on me", "thats on me"
     ]
 
+    /// Trust repair is more than a polite first word. These markers prove the
+    /// reply named the miss, the real question, or a straight corrected read
+    /// before returning to prescription.
+    static let trustRepairMoveMarkers: [String] = [
+        "i missed",
+        "i gave you advice",
+        "i gave advice",
+        "i used too much",
+        "i sounded cold",
+        "i leaned on generic",
+        "i was too generic",
+        "that read was",
+        "that sounded cold",
+        "robotic and cold",
+        "too much writing",
+        "that was generic",
+        "generic advice",
+        "too generic",
+        "should never",
+        "i did not answer",
+        "i didn't answer",
+        "i didnt answer",
+        "answered around",
+        "useful read",
+        "repeated the same",
+        "repeated the same test",
+        "changing the evidence",
+        "same test",
+        "same coaching move",
+        "advancing the read",
+        "advancing the coaching",
+        "sound easier than it feels",
+        "easier than it feels",
+        "not easy",
+        "hard part",
+        "close is the leak",
+        "under pressure",
+        "before answering",
+        "before prescribing",
+        "before adding another drill",
+        "the prior answer",
+        "my prior answer",
+        "that answer",
+        "the miss",
+        "the real question",
+        "the actual question",
+        "the friction",
+        "answer the friction",
+        "advice, not coaching",
+        "not coaching",
+        "let me repair",
+        "let me fix",
+        "let me correct",
+        "what i should have said",
+        "plain answer:",
+        "straight answer:",
+        "the real read is",
+        "real read:",
+        "what matters is"
+    ]
+
+    /// Source markers that make the previous coach turn look like a repair, not
+    /// just any ordinary coaching reply. Combined with `trustRepairMoveMarkers`
+    /// so a bare "fair" cannot raise the follow-up obligation by itself.
+    static let trustRepairCarryoverSourceMarkers: [String] = [
+        "fair push",
+        "you're right",
+        "youre right",
+        "you are right",
+        "right to push",
+        "right to call",
+        "let me repair",
+        "let me fix",
+        "let me correct",
+        "i missed",
+        "that's on me",
+        "thats on me",
+        "agreed"
+    ]
+
+    /// Generic reset/advice phrases that are unacceptable immediately after a
+    /// repair. Kept intentionally narrow: specific drills can still follow a
+    /// repair, but the broad advice the user just complained about cannot.
+    static let repairCarryoverBreakMarkers: [String] = [
+        "practice more",
+        "keep practicing",
+        "communicate clearly",
+        "be clear and concise",
+        "structure your thoughts",
+        "think about your audience",
+        "sound more confident",
+        "believe in yourself",
+        "optimize your communication plan",
+        "start with a general communication goal",
+        "choose whether you want",
+        "what is your priority today",
+        "let's reset",
+        "lets reset",
+        "track your progress over time"
+    ]
+
+    /// A good repair may explicitly reject the bad generic phrase. Do not punish
+    /// that correction just because the phrase appears.
+    static let repairCarryoverSafeNegations: [String] = [
+        "not practice more",
+        "do not practice more",
+        "don't practice more",
+        "dont practice more",
+        "is not more practice",
+        "not more practice",
+        "not more volume",
+        "not more reps"
+    ]
+
+    private enum DiscourseMove: String, CaseIterable {
+        case answer
+        case attune
+        case diagnose
+        case evidenceBoundary
+        case prescribe
+    }
+
     // MARK: Evaluation
 
     /// Evaluate a final reply. Pure: no store reads, no clock, no I/O.
@@ -176,6 +316,10 @@ enum CoachReliabilityGate {
     ///     caller via `CoachReplyTextSanitizer`, but re-trimmed here for safety).
     ///   - previousCoachReply: the most recent prior coach turn's text, for the
     ///     verbatim-duplicate check.
+    ///   - recentCoachReplies: newest-first prior coach turns, used to detect
+    ///     short discourse-move loops that are not lexical duplicates.
+    ///   - latestUserTurn: the current user turn, used only for narrow follow-up
+    ///     exceptions where the user explicitly asks what exact line to repeat.
     ///   - turnDepth: the classified depth of this turn.
     ///   - assessment: the deterministic judgement object (source of the fallback
     ///     read and the confidence/evidence smell).
@@ -186,6 +330,8 @@ enum CoachReliabilityGate {
     static func evaluate(
         replyText: String,
         previousCoachReply: String?,
+        recentCoachReplies: [String] = [],
+        latestUserTurn: String? = nil,
         turnDepth: CoachTurnDepth,
         assessment: CoachAssessment?,
         evidenceCoverage: Double?,
@@ -218,6 +364,19 @@ enum CoachReliabilityGate {
                 // — the real "same response back" complaint. Recorded only.
                 issues.append(.nearDuplicateReply)
             }
+            if silentlySwitchesPlan(reply: lowered, previousCoachReply: normalizedPrevious) {
+                issues.append(.silentPlanSwitch)
+            }
+            if breaksRepairCarryover(reply: lowered, previousCoachReply: normalizedPrevious) {
+                issues.append(.repairCarryoverBreak)
+            }
+        }
+        if repeatsPrescriptionOnlyMove(
+            reply: lowered,
+            recentCoachReplies: recentCoachReplies,
+            latestUserTurn: latestUserTurn
+        ) {
+            issues.append(.repetitiveDiscourseMove)
         }
 
         // --- RECORDED ISSUES ---
@@ -227,9 +386,12 @@ enum CoachReliabilityGate {
             issues.append(.floorConfidenceWithEvidence)
         }
         if turnDepth == .trustRepair,
-           !trimmed.isEmpty,
-           !openingAcknowledges(trimmed) {
-            issues.append(.noAttunementOnPushback)
+           !trimmed.isEmpty {
+            if !openingAcknowledges(trimmed) {
+                issues.append(.noAttunementOnPushback)
+            } else if lacksTrustRepairMove(trimmed) {
+                issues.append(.thinTrustRepair)
+            }
         }
         if proofTestRecentlyRepeated {
             issues.append(.repeatedProofTest)
@@ -283,8 +445,13 @@ enum CoachReliabilityGate {
         if containsAny(lowered, scaffoldMarkers) { return false }
         if let previous = previousCoachReply?.trimmingCharacters(in: .whitespacesAndNewlines),
            !previous.isEmpty,
-           normalize(previous) == lowered {
-            return false
+           normalize(previous).count >= 20 {
+            let previousLowered = normalize(previous)
+            if previousLowered == lowered ||
+                lowered.contains(previousLowered) ||
+                previousLowered.contains(lowered) {
+                return false
+            }
         }
         return true
     }
@@ -314,6 +481,144 @@ enum CoachReliabilityGate {
         return containsAny(opening, acknowledgementMarkers)
     }
 
+    /// True when a trust-repair reply has a warm opening but still never names
+    /// what it is repairing. This catches the high-EQ failure mode where the
+    /// answer says "fair" and immediately resumes the same drill loop.
+    static func lacksTrustRepairMove(_ text: String) -> Bool {
+        let normalized = normalize(text)
+        return !containsAny(normalized, trustRepairMoveMarkers)
+    }
+
+    /// True when the reply after a real repair returns to generic reset advice
+    /// instead of preserving the repaired read. This is intentionally stricter
+    /// than the general conversation-level `repairCarryover` criterion: it only
+    /// blocks obvious generic regression at the runtime boundary.
+    static func breaksRepairCarryover(reply: String, previousCoachReply: String) -> Bool {
+        let reply = normalize(reply)
+        let previous = normalize(previousCoachReply)
+        guard containsAny(previous, trustRepairCarryoverSourceMarkers),
+              containsAny(previous, trustRepairMoveMarkers),
+              !containsAny(reply, repairCarryoverSafeNegations) else {
+            return false
+        }
+        return containsAny(reply, repairCarryoverBreakMarkers)
+    }
+
+    /// Detects a same-discourse-move loop that surface similarity misses:
+    /// current reply + the previous two coach replies are all prescription-only.
+    /// This deliberately does not fire on one or two concise drill replies, and
+    /// it does not fire when the coach also answers, attunes, diagnoses, or
+    /// states an evidence boundary.
+    static func repeatsPrescriptionOnlyMove(
+        reply: String,
+        recentCoachReplies: [String],
+        latestUserTurn: String? = nil
+    ) -> Bool {
+        if isNarrowRepeatFollowUp(latestUserTurn),
+           replyAnswersNarrowRepeatFollowUp(reply) {
+            return false
+        }
+        let window = [reply] + recentCoachReplies.prefix(2)
+        guard window.count >= 3 else { return false }
+        return window.allSatisfy { text in
+            discourseMoveProfile(in: text) == Set([.prescribe])
+        }
+    }
+
+    static func isNarrowRepeatFollowUp(_ latestUserTurn: String?) -> Bool {
+        let turn = normalize(latestUserTurn ?? "")
+        guard !turn.isEmpty, turn.count <= 90 else { return false }
+        return containsAny(turn, [
+            "what do i repeat",
+            "what should i repeat",
+            "what exactly do i repeat",
+            "which line do i repeat",
+            "which sentence do i repeat"
+        ])
+    }
+
+    static func replyAnswersNarrowRepeatFollowUp(_ reply: String) -> Bool {
+        let lower = normalize(reply)
+        guard containsAny(lower, ["repeat", "rewrite", "say", "use", "make"]) else {
+            return false
+        }
+        guard containsAny(lower, [
+            "final sentence",
+            "last sentence",
+            "same line",
+            "that same line",
+            "final line",
+            "the ask",
+            "ask, period",
+            "qualifier",
+            "softener",
+            "close"
+        ]) else {
+            return false
+        }
+        return containsAny(lower, [
+            "only",
+            "exact",
+            "exactly",
+            "same",
+            "period",
+            "line"
+        ])
+    }
+
+    private static func discourseMoveProfile(in reply: String) -> Set<DiscourseMove> {
+        let lower = normalize(reply)
+        var moves = Set<DiscourseMove>()
+
+        if containsAny(lower, [
+            "no,", "no.", "yes,", "yes.", "short version",
+            "straight answer", "only after", "i would not claim",
+            "not another", "not a harder", "not more",
+            "placeholder ask", "check only", "write the audience response"
+        ]) {
+            moves.insert(.answer)
+        }
+        if containsAny(lower, [
+            "fair push", "you're right", "you are right", "good boundary",
+            "right distinction", "that matters", "that is useful",
+            "useful push", "i missed", "i leaned on generic",
+            "that's fair", "thats fair", "i hear"
+        ]) {
+            moves.insert(.attune)
+        }
+        if containsAny(lower, [
+            "the signal", "the pattern", "the issue", "the target",
+            "the move", "the read", "the actual read", "the real read",
+            "the bottleneck", "that tells us", "supports the",
+            "outcome matters", "mechanics", "goal readiness",
+            "solid on", "light on", "that is where",
+            "listener asked", "asked for sequence", "proof handoff",
+            "decision line is", "is cleaner", "is leaking"
+        ]) {
+            moves.insert(.diagnose)
+        }
+        if containsAny(lower, [
+            "not enough", "missing", "too thin", "hypothesis",
+            "from this sample", "from the transcript", "not proven",
+            "need repeated", "before calling", "i still need"
+        ]) {
+            moves.insert(.evidenceBoundary)
+        }
+        if containsAny(lower, [
+            "proof test", "next rep", "record", "run one",
+            "run a", "run the", "rewrite", "review", "check whether",
+            "listen for", "open with", "hold one",
+            "make the", "try this next", "practice"
+        ]) || containsAnyWholeWord(lower, ["use", "say"]) {
+            moves.insert(.prescribe)
+        }
+
+        if moves.isEmpty {
+            moves.insert(.answer)
+        }
+        return moves
+    }
+
     /// Whether two already-normalised strings are near-duplicates by distinct
     /// token (word) Jaccard overlap, given the configured threshold and minimum
     /// token floor. Pure; symmetric.
@@ -341,5 +646,133 @@ enum CoachReliabilityGate {
 
     static func containsAny(_ haystack: String, _ needles: [String]) -> Bool {
         needles.contains { haystack.contains($0) }
+    }
+
+    static func containsAnyWholeWord(_ haystack: String, _ words: [String]) -> Bool {
+        words.contains { word in
+            let escaped = NSRegularExpression.escapedPattern(for: word)
+            return haystack.range(
+                of: "(?<![a-z0-9])\(escaped)(?![a-z0-9])",
+                options: .regularExpression
+            ) != nil
+        }
+    }
+
+    // MARK: Plan continuity
+
+    private enum InterventionTarget: String, CaseIterable {
+        case opening
+        case close
+        case pause
+        case proof
+        case tone
+        case pressure
+        case timeline
+    }
+
+    /// Detects the most visible self-coherence break: the coach explicitly drops
+    /// or reverses its previous intervention target without naming what changed.
+    static func silentlySwitchesPlan(reply: String, previousCoachReply: String) -> Bool {
+        let reply = normalize(reply)
+        let previous = normalize(previousCoachReply)
+        guard !reply.isEmpty, !previous.isEmpty else { return false }
+
+        let priorTargets = interventionTargets(in: previous)
+        guard !priorTargets.isEmpty else { return false }
+
+        if containsAny(reply, explicitPlanSwitchMarkers),
+           !explainsTargetRevision(reply) {
+            return true
+        }
+
+        let currentTargets = interventionTargets(in: reply)
+        guard !currentTargets.isEmpty,
+              !currentTargets.isSubset(of: priorTargets) else {
+            return false
+        }
+        return negatesPriorTarget(in: reply, priorTargets: priorTargets) &&
+            !explainsTargetRevision(reply)
+    }
+
+    private static let explicitPlanSwitchMarkers: [String] = [
+        "forget what i said",
+        "ignore what i said",
+        "ignore the earlier",
+        "new plan instead",
+        "different target now",
+        "actually change target",
+        "actually, change target",
+        "switch targets",
+        "drop the previous target"
+    ]
+
+    private static func interventionTargets(in reply: String) -> Set<InterventionTarget> {
+        var targets = Set<InterventionTarget>()
+        func add(_ target: InterventionTarget, ifAny needles: [String]) {
+            if containsAny(reply, needles) {
+                targets.insert(target)
+            }
+        }
+
+        add(.opening, ifAny: [
+            "sentence one", "first sentence", "opener", "opening",
+            "verdict first", "verdict-first", "recommendation first",
+            "lead with", "open with", "decision line"
+        ])
+        add(.close, ifAny: [
+            "final sentence", "last sentence", "clean stop", "the close",
+            "close ", "ask", "stop cleanly", "stop before"
+        ])
+        add(.pause, ifAny: [
+            "pause", "beat", "silence", "filler", "fillers"
+        ])
+        add(.proof, ifAny: [
+            "proof", "reason", "example", "concrete detail", "evidence line"
+        ])
+        add(.tone, ifAny: [
+            "warmth", "reassurance", "tone", "natural", "stiff", "cold",
+            "harsh", "abrupt"
+        ])
+        add(.pressure, ifAny: [
+            "pressure", "timer", "timed", "stakes", "consequential"
+        ])
+        add(.timeline, ifAny: [
+            "timeline", "sequence", "date", "next step"
+        ])
+        return targets
+    }
+
+    private static func negatesPriorTarget(
+        in reply: String,
+        priorTargets: Set<InterventionTarget>
+    ) -> Bool {
+        let targetPhrases: [(InterventionTarget, [String])] = [
+            (.opening, ["not the opener", "not the opening", "not sentence one", "not the recommendation"]),
+            (.close, ["not the close", "not the ask", "not the final sentence", "not the last sentence"]),
+            (.pause, ["not the pause", "not the beat", "not the filler"]),
+            (.proof, ["not the proof", "not the reason", "not the example"]),
+            (.tone, ["not warmth", "not the tone", "not reassurance"]),
+            (.pressure, ["not pressure", "not the timer", "not stakes"]),
+            (.timeline, ["not the timeline", "not the sequence", "not the date"])
+        ]
+        return targetPhrases.contains { target, phrases in
+            priorTargets.contains(target) && containsAny(reply, phrases)
+        }
+    }
+
+    private static func explainsTargetRevision(_ reply: String) -> Bool {
+        containsAny(reply, [
+            "because",
+            "that tells us",
+            "the issue is",
+            "the risk",
+            "the bottleneck",
+            "that outcome matters",
+            "good boundary",
+            "right distinction",
+            "supports the structure hypothesis",
+            "order improved faster than tone",
+            "the ask may have been clear"
+        ])
     }
 }

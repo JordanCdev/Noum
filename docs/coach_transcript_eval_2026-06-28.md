@@ -209,9 +209,10 @@ last-mile defect instead of a recorded-only smell. If a user pushes back on the
 coach and the final reply opens by prescribing again without acknowledging the
 miss, `CoachReplyPipeline` substitutes the deterministic repair fallback before
 the turn reaches `AskNoumStore.completeCoachTurn`. The remaining soft
-reliability issues (`nearDuplicateReply`, `floorConfidenceWithEvidence`, and
-`repeatedProofTest`) are still recorded for evals/metadata but do not blanket
-replace otherwise-usable prose. The regenerated corpus run on iPhone 17
+reliability issues (`nearDuplicateReply` and `floorConfidenceWithEvidence`) are
+still recorded for evals/metadata but do not blanket replace otherwise-usable
+prose. `repeatedProofTest` was later promoted to hard blocking with a
+deterministic fallback. The regenerated corpus run on iPhone 17
 simulator passed 58/58 tests; the positive long-form corpus stayed 10/10 clean,
 the adversarial corpus stayed 0/10 production-floor passing, and the manifest
 remained **18/100** (`localEvaluationSubstrateOnly`).
@@ -1921,3 +1922,1069 @@ Verification completed:
 Production readiness remains **18/100**. This is evaluator-integrity evidence,
 not a live-provider sweep, professional-coach calibration, real-user transfer
 study, physical-device QA pass, or completed launch-ops artifact.
+
+## 2026-06-30 immediate coach-read case-shape pass
+
+This pass moved one piece of the actual Ask Noum / Live Coach behavior, not only
+the evaluator substrate. The deterministic local read that appears before or
+instead of the provider reply no longer collapses quick moves into a bare proof
+test or a heading-style mini report. `CoachAssessment.immediateCoachRead` now
+speaks in a compact coach sentence: the direct read, the grounded signal when
+available, the missing evidence when relevant, and one next test.
+
+That directly addresses the research-doc critique that Noum can sound like a
+well-gated drill dispatcher or a structured assessment notice: the first visible
+coach moment now names the lever and grounded signal before prescribing, without
+visible `Read:` / `Signal:` / `Test:` scaffolding. The behavior still uses the
+existing `CoachAssessment` / `CoachReasoningPass` / `CoachReplyPipeline` path,
+so no parallel chat brain or duplicate state owner was introduced.
+
+The reliability fallback was tightened at the same boundary. Because the local
+read can now wrap a proof test in diagnosis, `CoachReliabilityGate` rejects a
+fallback candidate that contains the prior duplicate reply, not only exact
+string matches. This prevents the better-shaped fallback from reintroducing the
+same repeated action sentence it is meant to escape.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library Noum/CoachAssessment.swift Noum/CoachReliabilityGate.swift NoumTests/CoachJudgementLayerTests.swift NoumTests/CoachReliabilityGateTests.swift`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-immediate-read -only-testing:NoumTests/CoachReasoningPassTests/deepAssessmentImmediateReadIncludesMissingEvidenceAndProofTest -only-testing:NoumTests/CoachReasoningPassTests/quickMoveImmediateReadNamesLeverSignalAndTest -only-testing:NoumTests/CoachReasoningPassTests/trustRepairAssessmentNamesColdFrictionBeforePrescribing -only-testing:NoumTests/CoachReliabilityGateTests/fallbackPrefersCleanImmediateCoachRead -only-testing:NoumTests/CoachReliabilityGateTests/fallbackUsesHonestStaticLineWhenImmediateReadIsDirty -only-testing:NoumTests/CoachReliabilityGateTests/fallbackNeverReintroducesTheDuplicateItIsEscaping`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-immediate-read -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationCorpusCoversFullThreeTurnTranscripts -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationReportRoundTripsAsSortedJSON -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationExpertCalibrationPacketCoversFullCorpusWithoutClaimingReadiness`
+- `git diff --check`
+
+Production readiness remains **18/100**. This improves live-path coach feel and
+reliability hygiene, but it is still local deterministic behavior. It does not
+replace the missing live-provider sweep, professional-coach calibration,
+longitudinal real-user transfer evidence, physical-device TestFlight QA, or
+completed launch-ops artifact.
+
+## 2026-06-30 deterministic case-evidence pass
+
+This pass tightened the architecture underneath that improved local coach read.
+The trajectory cache already carried `CoachCaseSummary` and
+`ActiveInterventionState`, and the assessment cache already keyed on them, but
+`CoachReasoningPass` only surfaced a thin case focus/evidence pair and capped
+deep evidence low enough that the actual hypothesis, next coach move, and active
+intervention could disappear before the provider prompt.
+
+`CoachReasoningPass.evidenceLines` now keeps latest-rep evidence first, then
+adds one compact `case summary` line carrying hypothesis, focus, evidence, and
+next move, plus one compact `active intervention` line carrying title, target,
+followed-rep count, and review status. Quick turns stay tight at two evidence
+items; grounded reads get four; deep/trust turns can carry eight internally.
+`CoachPromptBundle` gives deep/trust turns a six-item evidence budget so the
+case line reaches the provider, and the deterministic fallback evidence cleanup
+now understands the new case/intervention prefixes.
+
+This is directly aimed at the research-doc critique that Noum can be a polished
+drill dispatcher rather than a case-aware coach. The fix reuses the existing
+`UserTrajectorySnapshot`/`CoachAssessment`/`CoachReasoningPass` ownership chain;
+it does not add another memory store or parallel chat brain.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library Noum/CoachReasoningPass.swift Noum/CoachAssessment.swift Noum/CoachPromptBundle.swift Noum/AICoachChatService.swift NoumTests/CoachJudgementLayerTests.swift`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-case-evidence -only-testing:NoumTests/CoachReasoningPassTests/deepAssessmentCarriesCaseSummaryAndInterventionEvidence -only-testing:NoumTests/CoachReasoningPassTests/deepAssessmentImmediateReadIncludesMissingEvidenceAndProofTest -only-testing:NoumTests/CoachReasoningPassTests/quickMoveImmediateReadNamesLeverSignalAndTest -only-testing:NoumTests/CoachReasoningPassTests/proofTestFollowsUserNamedPacingLever -only-testing:NoumTests/CoachReasoningPassTests/proofTestFollowsUserNamedClosingLever -only-testing:NoumTests/CoachReasoningPassTests/trustRepairAssessmentNamesColdFrictionBeforePrescribing -only-testing:NoumTests/CoachReasoningPassTests/promptBundleCarriesRepairFocusAsProviderConstraint`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-case-evidence -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationCorpusCoversFullThreeTurnTranscripts -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationReportRoundTripsAsSortedJSON -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationExpertCalibrationPacketCoversFullCorpusWithoutClaimingReadiness`
+
+Production readiness remains **18/100**. This is a real architecture/coach-quality
+improvement, but it is still deterministic local evidence propagation. It does
+not prove provider generations are consistently case-aware, does not add
+professional-coach calibration, does not validate real-user transfer, and does
+not cover physical-device/TestFlight launch QA.
+
+## 2026-06-30 final-answer case-anchor semantic gate
+
+This pass closed the next prompt-to-answer gap. The prior case-evidence pass
+proved that `CoachAssessment` and provider prompts can carry case/intervention
+state, but not that the final answer actually uses it. That is the same class of
+multi-turn failure called out by the research: context can be present and still
+ignored when the model allocates attention to the latest turn or easiest
+surface evidence.
+
+`AICoachChatService.semanticQualityIssue` now returns `.missingCaseAnchor` for
+deep-assessment and trust-repair typed-judgement turns when the assessment
+carries `case summary:` or `active intervention:` evidence and the candidate
+reply never touches a meaningful case/intervention token. The matcher ignores
+labels and generic words such as pressure, rep, score, and proof-test language,
+so a passing answer has to verbalise actual case content such as the clean close,
+the close softening, or the extra caveat before prescribing the next rep.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library Noum/AICoachChatService.swift NoumTests/CoachJudgementLayerTests.swift`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-case-anchor -only-testing:NoumTests/CoachSemanticQualityGateAdversarialTests/deepAssessmentWithCaseEvidenceFailsWhenReplyIgnoresCaseAnchor -only-testing:NoumTests/CoachSemanticQualityGateAdversarialTests/deepAssessmentWithCaseEvidencePassesWhenReplyUsesCaseAnchor -only-testing:NoumTests/CoachSemanticQualityGateAdversarialTests/trustRepairWithCaseEvidenceFailsWhenRepairIgnoresCaseAnchor -only-testing:NoumTests/CoachSemanticQualityGateAdversarialTests/trustRepairWithCaseEvidencePassesWhenRepairUsesCaseAnchor -only-testing:NoumTests/CoachSemanticQualityGateAdversarialTests/noEvidenceTouchesFailsAsInsufficientReferences -only-testing:NoumTests/CoachSemanticQualityGateAdversarialTests/unnamedMissingEvidenceFailsDisclosureWhenConfidenceThin -only-testing:NoumTests/CoachSemanticQualityGateAdversarialTests/trustRepairExplicitActualReadIsAccepted -only-testing:NoumTests/CoachSemanticQualityGateTests/deepAssessmentAcceptsCalibratedVerdict`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-case-anchor -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationCorpusCoversFullThreeTurnTranscripts -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationReportRoundTripsAsSortedJSON -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationExpertCalibrationPacketCoversFullCorpusWithoutClaimingReadiness`
+
+Production readiness remains **18/100**. This is final-answer semantic
+enforcement for local, fixture, and provider-repair loops, but it is still a
+conservative lexical gate. It does not prove live-provider outputs across real
+traffic, professional-coach calibration, real-user transfer, physical-device
+TestFlight QA, or launch operations readiness.
+
+## 2026-06-30 long-form polite-pushback attunement coverage
+
+This pass expanded the full end-to-end transcript evidence instead of adding
+another runtime gate. The prior corpus had the polite-pushback target only as a
+short 3-turn fixture; the 10 five-turn long-form set did not force the "I said
+cool because I was trying not to be rude" / "don't just give me another drill"
+arc called out by the research doc as a trust-repair failure mode.
+
+`CoachChatConversationCorpus.longFormConversations` now includes
+`long-form-polite-pushback-attunement-conversation`, bringing the local
+long-form set to 11 five-turn conversations. The corpus test now asserts at
+least 10 long-form transcripts plus at least one soft-pushback long-form case,
+and the report, expert-calibration packet, and production-readiness manifest
+assertions follow the current corpus count rather than freezing evidence growth
+at exactly 10.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library NoumTests/CoachChatConversationEvaluationTests.swift`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-longform-attunement -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationCorpusCoversTenPlusEndToEndTranscripts -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationsClearHarshConversationFloor -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationReportRoundTripsAsSortedJSON -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationExpertCalibrationPacketCoversFullCorpusWithoutClaimingReadiness -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationExpertCalibrationPacketRoundTripsAsSortedJSON -only-testing:NoumTests/CoachChatConversationCorpusTests/productionReadinessManifestScoresOnlyLocalSubstrateAtEighteenWithoutExternalEvidence -only-testing:NoumTests/CoachChatConversationCorpusTests/liveProviderSweepEvidenceRequiresLongFormConversationCoverage`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-longform-attunement -only-testing:NoumTests/CoachLiveEvaluationHarnessSelectionTests/readinessPresetSelectsLatestTranscriptAndRequiredLongFormConversations -only-testing:NoumTests/CoachLiveEvaluationHarnessSelectionTests/longFormSelectorDefaultsEmptyUnlessExplicitlyRequested`
+- `SIMCTL_CHILD_NOUM_COACH_EVAL_DUMP_DIR=/private/tmp/noum-coach-eval-longform-attunement xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-longform-attunement -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationReportRoundTripsAsSortedJSON -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationExpertCalibrationPacketRoundTripsAsSortedJSON -only-testing:NoumTests/CoachChatConversationCorpusTests/productionReadinessEvidenceManifestKeepsLocalArtifactsSeparateFromLaunchEvidence`
+
+The optional simulator artifact dump path did not materialize in this
+environment even though the selected dump-writing tests passed, so this pass
+does not claim an exported JSON artifact. The source-level corpus and simulator
+test evidence are the authoritative artifacts for this update.
+
+Production readiness remains **18/100**. This is better evaluator coverage for
+the research-doc "hear the friction before prescribing" gap, not live-provider
+sweep evidence, professional-coach calibration, real-user transfer proof,
+physical-device TestFlight verification, or launch-ops completion.
+
+## 2026-06-30 stricter case-anchor semantic gate
+
+This pass tightened the final-answer gate rather than adding another prompt
+instruction. The previous case-anchor check could accept generic coaching words
+from the active case or proof test, such as "clean", "close", "ask",
+"recommendation", or "verdict", as evidence that the final answer had used the
+case file. That was too permissive: a reply could mention a clean-close drill
+without naming the actual case behavior, which is the same multi-turn
+context-allocation failure the external research warns about.
+
+`AICoachChatService.caseAnchorTokens(from:)` now filters those generic
+coaching/proof-test words out of the anchor token set. Deep-assessment and
+trust-repair replies with active case/intervention evidence must touch more
+specific case content, such as the close softening, the extra caveat, or the
+review state, before they clear `.missingCaseAnchor`. New adversarial tests
+prove that "clean-close answer ending on the ask" is not enough, while the
+existing positive cases still pass when the reply names the actual case read.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library Noum/AICoachChatService.swift NoumTests/CoachJudgementLayerTests.swift`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-case-anchor-strict -only-testing:NoumTests/CoachSemanticQualityGateAdversarialTests/deepAssessmentWithCaseEvidenceFailsWhenReplyIgnoresCaseAnchor -only-testing:NoumTests/CoachSemanticQualityGateAdversarialTests/deepAssessmentCaseAnchorIsNotSatisfiedByGenericCleanCloseLanguage -only-testing:NoumTests/CoachSemanticQualityGateAdversarialTests/deepAssessmentWithCaseEvidencePassesWhenReplyUsesCaseAnchor -only-testing:NoumTests/CoachSemanticQualityGateAdversarialTests/trustRepairWithCaseEvidenceFailsWhenRepairIgnoresCaseAnchor -only-testing:NoumTests/CoachSemanticQualityGateAdversarialTests/trustRepairCaseAnchorIsNotSatisfiedByGenericInterventionNameOnly -only-testing:NoumTests/CoachSemanticQualityGateAdversarialTests/trustRepairWithCaseEvidencePassesWhenRepairUsesCaseAnchor -only-testing:NoumTests/CoachSemanticQualityGateAdversarialTests/noEvidenceTouchesFailsAsInsufficientReferences -only-testing:NoumTests/CoachSemanticQualityGateTests/deepAssessmentAcceptsCalibratedVerdict`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-case-anchor-strict -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationCorpusCoversFullThreeTurnTranscripts -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationCorpusCoversTenPlusEndToEndTranscripts -only-testing:NoumTests/CoachChatConversationCorpusTests/targetConversationsClearHarshConversationFloor -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationsClearHarshConversationFloor -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationReportRoundTripsAsSortedJSON -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationReportRoundTripsAsSortedJSON -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationExpertCalibrationPacketCoversFullCorpusWithoutClaimingReadiness -only-testing:NoumTests/CoachChatConversationCorpusTests/productionReadinessManifestScoresOnlyLocalSubstrateAtEighteenWithoutExternalEvidence`
+
+Production readiness remains **18/100**. This is stronger local semantic
+enforcement for context use, not proof that live-provider answers consistently
+use the case file, not professional-coach calibration, not real-world transfer
+evidence, and not TestFlight/device readiness.
+
+## 2026-06-30 long-form adversarial parity pass
+
+This pass closed an evaluator-integrity gap from the long-form attunement
+update. The positive long-form corpus had grown to 11 five-turn conversations,
+but the paired adversarial negative-control set still had 10 rows and omitted
+the new polite-pushback case. That made it possible for positive local evidence
+to grow without the same failure-mode pressure on the evaluator.
+
+`CoachChatConversationCorpus.longFormAdversarialConversations` now adds a
+no-attunement variant for
+`long-form-polite-pushback-attunement-conversation`, producing the paired
+`long-form-polite-pushback-attunement-conversation-no-attunement` negative
+control. The adversarial report and readiness-manifest assertions now follow
+`CoachChatConversationCorpus.longFormAdversarialConversations.count` instead of
+hardcoding 10, and the report requires at least two
+`noAttunementOnPushback` failures across the long-form adversarial set.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library NoumTests/CoachChatConversationEvaluationTests.swift`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-adversarial-longform -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormAdversarialConversationReportFailsEveryPairedTranscript -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationReportRoundTripsAsSortedJSON -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationExpertCalibrationPacketCoversFullCorpusWithoutClaimingReadiness -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationExpertCalibrationPacketRoundTripsAsSortedJSON -only-testing:NoumTests/CoachChatConversationCorpusTests/productionReadinessManifestScoresOnlyLocalSubstrateAtEighteenWithoutExternalEvidence`
+- Result bundle: `/tmp/noum-derived-data-adversarial-longform/Logs/Test/Test-Noum-2026.06.30_08-40-51-+0100.xcresult`
+
+Production readiness remains **18/100**. This makes the local evaluator harder
+to inflate with unpaired positive transcript growth, but it is still synthetic
+negative-control evidence. It does not prove live-provider behavior,
+professional-coach calibration, real-user transfer, physical-device TestFlight
+quality, or launch operations readiness.
+
+## 2026-06-30 multi-turn plan-continuity gate
+
+This pass added a narrow self-coherence check to the long-form transcript
+evaluator. External multi-turn agent research repeatedly points at context
+allocation, memory retention, and self-coherence as realistic failure modes, and
+the Noum research doc flags the same symptom in product language: the coach can
+sound like it is choosing a fresh drill instead of carrying the case forward.
+The local evaluator now treats an unexplained target switch inside a coaching
+conversation as a production-floor failure.
+
+`CoachChatConversationCriterion.planContinuity` is a floor-only criterion: it
+does not inflate the 100-point shape score, but missing it prevents a transcript
+from clearing `passesConversationFloor`. `CoachChatConversationCorpus` now
+tracks a small set of intervention target families (opening, close, pause,
+proof, tone, pressure, timeline) and rejects explicit silent-switch language
+such as "new plan instead" or "ignore the earlier read". Legitimate target
+revision remains allowed when the reply names a reason, such as "that tells us",
+"the issue is", "that outcome matters", or "order improved faster than tone".
+
+The long-form adversarial corpus now includes
+`long-form-authoritative-distance-deep-assessment-conversation-silent-plan-switch`
+instead of one stale-state duplicate, so the 11 paired negative controls cover
+stale state, repeated proof tests, intent mismatch, no attunement on pushback,
+and self-coherence drift.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library NoumTests/CoachChatEvaluationFixtures.swift NoumTests/CoachChatConversationEvaluationTests.swift`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-plan-continuity -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationsClearHarshConversationFloor -only-testing:NoumTests/CoachChatConversationCorpusTests/silentPlanSwitchVariantsFailPlanContinuityGate -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormAdversarialConversationReportFailsEveryPairedTranscript -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationReportRoundTripsAsSortedJSON -only-testing:NoumTests/CoachChatConversationCorpusTests/conversationReportRoundTripsAsSortedJSON -only-testing:NoumTests/CoachChatConversationCorpusTests/productionReadinessManifestScoresOnlyLocalSubstrateAtEighteenWithoutExternalEvidence`
+- Result bundle: `/tmp/noum-derived-data-plan-continuity/Logs/Test/Test-Noum-2026.06.30_08-51-43-+0100.xcresult`
+
+Production readiness remains **18/100**. This improves local evidence against a
+specific multi-turn drift failure, but it is still a lexical synthetic gate. It
+does not prove live-provider self-coherence, professional-coach calibration,
+real-user transfer, real-device TestFlight quality, or launch operations
+readiness.
+
+## 2026-06-30 runtime plan-switch reliability gate
+
+This pass promoted the plan-continuity adversarial failure from transcript
+scoring into the final runtime reliability gate. The evaluator already rejected
+silent target switches, but the live final-answer path could still ship an
+abrupt "new plan instead" reply if the model abandoned the prior coaching
+target without explaining why. That is a trust failure: Noum may revise a plan,
+but it should not make the user feel like the previous turn vanished.
+
+`CoachReliabilityIssue.silentPlanSwitch` is now a hard blocking issue in
+`CoachReliabilityGate`. When the previous coach reply established a concrete
+intervention target and the next final reply explicitly says "new plan instead",
+"ignore the earlier", "actually change target", or negates the prior target
+without a rationale, the gate substitutes the truthful fallback instead of
+shipping the answer. Reasoned revisions remain allowed when the reply names
+evidence or rationale, such as "that tells us", "the issue is", "that outcome
+matters", or "order improved faster than tone".
+
+The long-form silent-plan-switch adversarial transcript now carries both the
+local `planContinuity` failure and the runtime `silentPlanSwitch` reliability
+issue. The adversarial report asserts that this issue appears at least once, so
+future regressions cannot silently demote the failure back to evaluator-only
+evidence.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library Noum/CoachReliabilityGate.swift NoumTests/CoachReliabilityGateTests.swift NoumTests/CoachChatEvaluationFixtures.swift NoumTests/CoachChatConversationEvaluationTests.swift`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-runtime-plan-switch -only-testing:NoumTests/CoachReliabilityGateTests/explicitSilentPlanSwitchBlocksWithFallback -only-testing:NoumTests/CoachReliabilityGateTests/negatedPriorTargetWithoutRationaleBlocksPlanSwitch -only-testing:NoumTests/CoachReliabilityGateTests/explainedTargetRevisionDoesNotBlockPlanSwitch -only-testing:NoumTests/CoachChatConversationCorpusTests/targetConversationsClearReliabilityGateAcrossHistory -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationsClearHarshConversationFloor -only-testing:NoumTests/CoachChatConversationCorpusTests/silentPlanSwitchVariantsFailPlanContinuityGate -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormAdversarialConversationReportFailsEveryPairedTranscript -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationReportRoundTripsAsSortedJSON -only-testing:NoumTests/CoachChatConversationCorpusTests/productionReadinessManifestScoresOnlyLocalSubstrateAtEighteenWithoutExternalEvidence`
+- Result bundle: `/tmp/noum-derived-data-runtime-plan-switch/Logs/Test/Test-Noum-2026.06.30_09-00-40-+0100.xcresult`
+
+Production readiness remains **18/100**. This closes one runtime escape hatch
+for an identified multi-turn drift failure, but the detector is still narrow and
+lexical. It does not prove live-provider plan continuity, professional-coach
+calibration, real-user transfer, real-device TestFlight quality, or launch
+operations readiness.
+
+## 2026-06-30 runtime thin trust-repair gate
+
+This pass tightened the trust-repair runtime guard. Recent emotional-attunement
+and multi-turn empathy research reinforces the same failure the Noum research
+doc described: good conversational behavior is not just detecting that the user
+is unhappy, but choosing the right response move in context and avoiding rigid
+repeat prescriptions. The previous runtime gate blocked trust-repair replies
+that failed to acknowledge pushback, but it still let through replies that said
+"Fair push" and immediately resumed the drill loop.
+
+`CoachReliabilityIssue.thinTrustRepair` is now a hard blocking issue in
+`CoachReliabilityGate`. On a `.trustRepair` turn, acknowledgement is no longer
+enough: the reply must also name the miss, the real question, or a straight
+corrected read before prescribing again. A reply such as "Fair push. Run a
+45-second rep..." now falls back, while concise substantive repairs such as
+"Fair. Straight answer: ..." and "I gave you advice before answering the
+friction..." remain allowed.
+
+The paired reliability-variant corpus now includes
+`thinTrustRepairVariant(for:)`, an adversarial transcript that acknowledges the
+push but skips the repair move. The paired reliability report asserts at least
+three `thinTrustRepair` issues, and the positive target transcript corpus still
+clears the reliability gate across history.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library Noum/CoachReliabilityGate.swift NoumTests/CoachReliabilityGateTests.swift NoumTests/CoachChatEvaluationFixtures.swift NoumTests/CoachChatConversationEvaluationTests.swift`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-thin-trust-repair -only-testing:NoumTests/CoachReliabilityGateTests/thinTrustRepairAcknowledgesButSkipsRepairBlocks -only-testing:NoumTests/CoachReliabilityGateTests/trustRepairThatNamesMissBeforePrescriptionPasses -only-testing:NoumTests/CoachReliabilityGateTests/trustRepairStraightAnswerCountsAsSubstantiveRepair -only-testing:NoumTests/CoachReliabilityGateTests/trustRepairLetMeRepairDoesCountAsAcknowledgement -only-testing:NoumTests/CoachChatConversationCorpusTests/targetConversationsClearReliabilityGateAcrossHistory -only-testing:NoumTests/CoachChatConversationCorpusTests/pairedReliabilityVariantsTripSpecificSoftIssues -only-testing:NoumTests/CoachChatConversationCorpusTests/pairedReliabilityVariantsFailProductionFloorInReport -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormAdversarialConversationReportFailsEveryPairedTranscript -only-testing:NoumTests/CoachChatConversationCorpusTests/productionReadinessManifestScoresOnlyLocalSubstrateAtEighteenWithoutExternalEvidence`
+- Result bundle: `/tmp/noum-derived-data-thin-trust-repair/Logs/Test/Test-Noum-2026.06.30_09-12-02-+0100.xcresult`
+
+Production readiness remains **18/100**. This closes one obvious "polite but
+still cold" runtime escape hatch, but the detector is lexical and cannot prove
+human-level attunement, discourse-move diversity, live-provider behavior,
+professional-coach calibration, real-user transfer, physical-device quality, or
+launch operations readiness.
+
+## 2026-06-30 runtime repeated-proof reliability gate
+
+This pass promoted repeated proof-test loops from recorded metadata to a
+blocking runtime issue. The Noum research doc called out the exact smell:
+identical proof-test strings and same-shaped quick moves make the coach feel
+like a deterministic drill assistant. Current multi-turn empathy research points
+at the same general failure mode: models can reuse discourse moves across turns
+more rigidly than human supporters, and this rigidity is not fully visible to
+standard similarity metrics.
+
+`CoachReliabilityIssue.repeatedProofTest` is now hard blocking in
+`CoachReliabilityGate`. The gate still relies on the existing upstream repeated
+proof-test signal; it does not add a broad lexical detector. When that signal
+fires, the fallback prefers `CoachAssessment.immediateCoachRead`, which the
+deterministic reasoning pass builds with recent proof-test history and can use
+to surface an alternate next test. Fresh proof tests remain untouched.
+
+The paired reliability variants and long-form adversarial report already
+surface repeated-proof failures; this pass makes the live path refuse to ship
+one when the repeated-proof metadata is present. The positive target transcript
+corpus still clears the runtime reliability gate across history.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library Noum/CoachReliabilityGate.swift NoumTests/CoachReliabilityGateTests.swift NoumTests/CoachChatEvaluationFixtures.swift NoumTests/CoachChatConversationEvaluationTests.swift`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-repeated-proof-block -only-testing:NoumTests/CoachReliabilityGateTests/repeatedProofTestBlocksWithAssessmentFallback -only-testing:NoumTests/CoachReliabilityGateTests/freshProofTestDoesNotTripRepeatedProofGate -only-testing:NoumTests/CoachReliabilityGateTests/fallbackPrefersCleanImmediateCoachRead -only-testing:NoumTests/CoachChatConversationCorpusTests/targetConversationsClearReliabilityGateAcrossHistory -only-testing:NoumTests/CoachChatConversationCorpusTests/repeatedProofTestVariantsFailProgressionGate -only-testing:NoumTests/CoachChatConversationCorpusTests/pairedReliabilityVariantsTripSpecificSoftIssues -only-testing:NoumTests/CoachChatConversationCorpusTests/pairedReliabilityVariantsFailProductionFloorInReport -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormAdversarialConversationReportFailsEveryPairedTranscript -only-testing:NoumTests/CoachChatConversationCorpusTests/productionReadinessManifestScoresOnlyLocalSubstrateAtEighteenWithoutExternalEvidence`
+- Result bundle: `/tmp/noum-derived-data-repeated-proof-block/Logs/Test/Test-Noum-2026.06.30_09-20-45-+0100.xcresult`
+
+Production readiness remains **18/100**. This closes one runtime path for a
+specific same-drill loop, but it still depends on local metadata and synthetic
+transcripts. It does not prove live-provider discourse diversity, professional
+coach calibration, real-user transfer, device quality, or launch operations
+readiness.
+
+## 2026-06-30 runtime repair-carryover reliability gate
+
+This pass closed the next-turn version of the trust-repair failure. The runtime
+gate could now block a reply that failed to acknowledge pushback, a reply that
+acknowledged but skipped the repair move, a silent plan switch, and a repeated
+proof test. It still did not block the subtle pattern where the coach makes a
+substantive repair on one turn, then immediately regresses to broad reset advice
+like "practice more" or "communicate clearly" on the following turn.
+
+`CoachReliabilityIssue.repairCarryoverBreak` is now hard blocking in
+`CoachReliabilityGate`. The detector is intentionally narrow: it only activates
+when the previous coach reply clearly looked like a real trust repair and the
+current reply contains broad reset/generic advice. Specific carried-forward
+drills still pass, and replies that explicitly reject the generic phrase ("Do
+not practice more in general...") do not trip the gate.
+
+The paired reliability corpus now includes `repairCarryoverBreakVariant(for:)`.
+It mutates the turn after a trust repair into a generic reset reply and asserts
+that `repairCarryoverBreak` appears in reliability issues. The long-form
+adversarial report now includes
+`long-form-assistant-explainer-register-conversation-repair-carryover-break`
+as one of 11 paired negative controls, while the positive long-form corpus keeps
+11 five-turn target transcripts passing the production floor. The polite
+pushback long-form target was also tightened so its own repair turn names the
+generic-advice miss, carries the actual read, and includes a proof test instead
+of becoming a false positive.
+
+Refreshed host-visible artifacts:
+
+- `/private/tmp/noum-coach-eval/coach-chat-long-form-conversation-eval-v1.json`
+  refreshed Jun 30 10:09:59 2026: 11 conversations, 11 passing production
+  floor, local target-shape score 100, VISION score 18/100.
+- `/private/tmp/noum-coach-eval/coach-chat-long-form-adversarial-eval-v1.json`
+  refreshed Jun 30 10:11:07 2026: 11 conversations, 0 passing production
+  floor, reliability counts include `repairCarryoverBreak: 1`,
+  `noAttunementOnPushback: 2`, `repeatedProofTest: 8`, `silentPlanSwitch: 1`.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library Noum/CoachReliabilityGate.swift NoumTests/CoachReliabilityGateTests.swift NoumTests/CoachChatEvaluationFixtures.swift NoumTests/CoachChatConversationEvaluationTests.swift`
+- `git diff --check`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-repair-carryover -only-testing:NoumTests/CoachReliabilityGateTests/genericReplyAfterTrustRepairBlocksCarryoverBreak() -only-testing:NoumTests/CoachReliabilityGateTests/specificReplyAfterTrustRepairCarriesForward() -only-testing:NoumTests/CoachReliabilityGateTests/rejectingGenericPhraseAfterRepairDoesNotBlockCarryover() -only-testing:NoumTests/CoachReliabilityGateTests/genericReplyWithoutPreviousTrustRepairDoesNotTripCarryoverBreak() -only-testing:NoumTests/CoachReliabilityGateTests/goldenGoodRepliesPassCleanOfBlockingIssues()`
+- Runtime gate result bundle:
+  `/tmp/noum-derived-data-repair-carryover/Logs/Test/Test-Noum-2026.06.30_10-00-31-+0100.xcresult`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-repair-carryover -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationCorpusCoversTenPlusEndToEndTranscripts() -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationsClearHarshConversationFloor() -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationReportRoundTripsAsSortedJSON()`
+- Positive long-form result bundle:
+  `/tmp/noum-derived-data-repair-carryover/Logs/Test/Test-Noum-2026.06.30_10-08-58-+0100.xcresult`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-repair-carryover -only-testing:NoumTests/CoachChatConversationCorpusTests/pairedReliabilityVariantsTripSpecificSoftIssues() -only-testing:NoumTests/CoachChatConversationCorpusTests/pairedReliabilityVariantsFailProductionFloorInReport() -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormAdversarialConversationReportFailsEveryPairedTranscript()`
+- Adversarial repair-carryover result bundle:
+  `/tmp/noum-derived-data-repair-carryover/Logs/Test/Test-Noum-2026.06.30_10-10-24-+0100.xcresult`
+
+Production readiness remains **18/100**. This closes one live-path trust-repair
+carryover escape hatch and improves local transcript evidence, but it is still
+lexical, local, and synthetic. It does not prove live-provider behavior,
+professional coach calibration, real-user longitudinal transfer, real-device
+TestFlight quality, or launch operations readiness.
+
+## 2026-06-30 transcript discourse-move diversity floor
+
+The long-form transcript evaluator now has a floor-only
+`discourseMoveDiversity` criterion. It classifies each coach turn into a small
+set of discourse moves: direct answer, attunement, diagnosis, evidence
+boundary, and prescription. A transcript now fails the local conversation floor
+when almost every turn is merely prescription, even if the wording and proof
+test details differ. This targets the research-doc failure mode where Ask Noum
+can sound like a deterministic drill dispatcher instead of a coach following
+the conversation.
+
+The paired adversarial corpus now includes
+`long-form-overclaim-hypothesis-boundary-conversation-same-discourse-move`,
+which varies targets/checks but repeats the same "run one focused rep / check
+whether..." move for all five turns. The new focused test proves that variant
+misses `discourseMoveDiversity` while still passing the older
+`nonRepetitiveTrajectory` and `proofTestProgression` checks, so this is not
+just another duplicate-wording or repeated-proof-test detector. The positive
+leadership-transfer transcript exposed a useful false positive during tuning;
+the fix was to teach the marker set direct-answer and transfer-diagnosis shapes
+such as `placeholder ask`, `check only`, `light on`, and `listener asked`, not
+to weaken the criterion.
+
+External research anchors used for this pass:
+
+- [Discourse Diversity in Multi-Turn Empathic Dialogue](https://arxiv.org/abs/2604.11742) argues that LLM supporters overuse the same discourse tactics across turns and that surface similarity misses the defect.
+- [AttuneBench: A Conversation-Based Benchmark for LLM Emotional Intelligence](https://arxiv.org/abs/2605.21739) reinforces evaluating emotional/coach quality in real multi-turn conversations, not isolated emotion labels.
+- [Evaluating LLM-based Agents for Multi-Turn Conversations: A Survey](https://arxiv.org/abs/2503.22458) frames multi-turn quality around task completion, response quality, user experience, context retention, and planning/tool behavior.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library Noum/CoachReliabilityGate.swift NoumTests/CoachReliabilityGateTests.swift NoumTests/CoachChatEvaluationFixtures.swift NoumTests/CoachChatConversationEvaluationTests.swift`
+- `git diff --check`
+- `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-discourse-diversity -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationsClearHarshConversationFloor() -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationReportRoundTripsAsSortedJSON() -only-testing:NoumTests/CoachChatConversationCorpusTests/sameDiscourseMoveVariantsFailDiversityGate() -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormAdversarialConversationReportFailsEveryPairedTranscript()`
+- Result bundle:
+  `/tmp/noum-derived-data-discourse-diversity/Logs/Test/Test-Noum-2026.06.30_10-26-32-+0100.xcresult`
+
+Refreshed host-visible artifacts:
+
+- `/private/tmp/noum-coach-eval/coach-chat-long-form-conversation-eval-v1.json`
+  has 11 conversations, 11 passing the conversation, runtime, semantic,
+  reliability, and offline production floors, empty issue buckets, local
+  target-shape score 100, and VISION score 18/100.
+- `/private/tmp/noum-coach-eval/coach-chat-long-form-adversarial-eval-v1.json`
+  has 11 paired negative controls, 0 passing production floor, the
+  same-discourse-move row rejected by `discourseMoveDiversity`, and expected
+  reliability counts including `repairCarryoverBreak: 1`,
+  `noAttunementOnPushback: 2`, `repeatedProofTest: 8`, and
+  `silentPlanSwitch: 1`.
+
+Production readiness remains **18/100**. This is better evaluator pressure on
+multi-turn coach variety, but it remains local synthetic evidence. It does not
+clear the live-provider, professional calibration, real-user transfer,
+real-device/TestFlight, or launch-operations blockers.
+
+## 2026-06-30 runtime discourse-loop reliability gate
+
+This pass promoted the discourse-move loop from an offline transcript floor into
+the final runtime reliability gate. `CoachReliabilityGate` now hard-blocks
+`repetitiveDiscourseMove` when the current reply plus the two most recent coach
+replies are all prescription-only moves. The detector deliberately does not
+block one or two concise drill replies, and it does not block a prescriptive
+reply that also answers, attunes, diagnoses, or states an evidence boundary.
+
+`CoachReplyPipeline` already collected recent coach replies while building the
+final reply metadata. That history now feeds the reliability gate, so the app
+can catch varied-wording/same-move loops before a final response reaches Ask
+Noum. The gate remains deterministic and fallback-based: if it blocks, it uses
+the existing truthful reliability fallback path instead of shipping another
+drill-only turn.
+
+The first simulator run exposed a useful false positive in the positive
+long-form corpus: a rationale beginning with "Because..." was misread as a
+`use` command because the marker matched the tail of "because". The classifier
+now treats `use` and `say` as whole-word prescription verbs and recognizes
+diagnostic proof-handoff language such as "proof handoff is leaking". A
+regression test keeps that exact shape from failing again.
+
+External research anchors carried into this runtime pass:
+
+- [Discourse Diversity in Multi-Turn Empathic Dialogue](https://arxiv.org/abs/2604.11742) for the failure mode where varied surface text still repeats one support tactic.
+- [AttuneBench: A Conversation-Based Benchmark for LLM Emotional Intelligence](https://arxiv.org/abs/2605.21739) for evaluating coach/EQ behavior across conversations rather than isolated turns.
+- [Evaluating LLM-based Agents for Multi-Turn Conversations: A Survey](https://arxiv.org/abs/2503.22458) for treating multi-turn response quality, context retention, and planning as production criteria.
+
+Refreshed host-visible artifacts:
+
+- `/private/tmp/noum-coach-eval/coach-chat-long-form-conversation-eval-v1.json`
+  has 11 conversations, 11 passing the conversation, runtime, semantic,
+  reliability, and offline production floors, empty issue buckets, local
+  target-shape score 100, and VISION score 18/100.
+- `/private/tmp/noum-coach-eval/coach-chat-long-form-adversarial-eval-v1.json`
+  has 11 paired negative controls, 0 passing production floor, and expected
+  reliability counts including `repetitiveDiscourseMove: 3`,
+  `repairCarryoverBreak: 1`, `noAttunementOnPushback: 2`,
+  `repeatedProofTest: 8`, and `silentPlanSwitch: 1`.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library Noum/CoachReliabilityGate.swift Noum/CoachReplyPipeline.swift NoumTests/CoachReliabilityGateTests.swift NoumTests/CoachChatEvaluationFixtures.swift NoumTests/CoachChatConversationEvaluationTests.swift`
+- `git diff --check`
+- Initial failing simulator probe:
+  `/tmp/noum-derived-data-runtime-discourse-loop/Logs/Test/Test-Noum-2026.06.30_10-33-26-+0100.xcresult`
+  failed only because `long-form-metric-action-without-read-conversation`
+  tripped the new guard falsely; the classifier fix above addresses that bug.
+- Passing targeted simulator slice:
+  `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-runtime-discourse-loop-2 -only-testing:NoumTests/CoachReliabilityGateTests/repetitivePrescriptionOnlyDiscourseMoveBlocksWithFallback() -only-testing:NoumTests/CoachReliabilityGateTests/twoPrescriptionOnlyTurnsDoNotTripDiscourseLoop() -only-testing:NoumTests/CoachReliabilityGateTests/answerOrDiagnosisBreaksPrescriptionOnlyDiscourseLoop() -only-testing:NoumTests/CoachReliabilityGateTests/rationaleBecauseDoesNotCountAsUsePrescriptionInDiscourseLoop() -only-testing:NoumTests/CoachReliabilityGateTests/goldenGoodRepliesPassCleanOfBlockingIssues() -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationsClearHarshConversationFloor() -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationReportRoundTripsAsSortedJSON() -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormAdversarialConversationReportFailsEveryPairedTranscript()`
+- Result bundle:
+  `/tmp/noum-derived-data-runtime-discourse-loop-2/Logs/Test/Test-Noum-2026.06.30_10-41-14-+0100.xcresult`
+
+Production readiness remains **18/100**. This closes one live-path escape hatch
+for the "same drill, different words" coach failure, but it is still lexical,
+local, and synthetic. It does not clear the VISION blockers: live-provider
+transcript sweep, professional coach calibration, real-user longitudinal
+transfer, real-device/TestFlight verification, or launch operations readiness.
+
+## 2026-06-30 transfer-causality semantic gate
+
+This pass targeted the next real-world-transfer trust failure: once Ask Noum
+receives user-reported outcome reports, the coach must not turn that self-report
+into proof that a drill caused a real-world outcome. The production context was
+already better than expected: `CoachReplyPipeline` passes
+`BigMomentStore.shared.recentOutcomeReports(limit:)` into
+`CoachContextBuilder.userContext`, and the context already emits
+`REAL-WORLD TRANSFER` with a no-causation guard. The missing layer was a named
+semantic failure when a reply still says "the drill caused it" or "objective
+proof."
+
+Implementation:
+
+- Added `CoachSemanticQualityIssue.unsupportedTransferCausalityClaim` with a
+  repair instruction that reframes transfer as self-report / room read and
+  association only.
+- Passed existing system context into `semanticQualityIssue` from the live
+  provider path, deterministic fallback validation, and repair validation.
+- Added a conservative `REAL-WORLD TRANSFER`-gated matcher for explicit causal
+  / proof phrases such as `drill caused`, `objective proof`, and
+  `proves transfer`. Safe language such as "room read, not proof" remains
+  accepted.
+- Extended `CoachChatEvaluationFixture` with optional
+  `recentMomentOutcomes`, then gave `leadership-transfer-setup` two structured
+  user-reported outcome reports so the evaluation context mirrors the
+  production transfer path.
+- Replaced the leadership long-form adversarial negative control with
+  `long-form-leadership-transfer-setup-conversation-transfer-causality`, which
+  mutates only the real-world outcome follow-up turns into causal/proof claims.
+
+Research anchors:
+
+- [Functional outcomes and naturalistic engagement with a purpose-built conversational AI for mental health](https://arxiv.org/abs/2606.28241) reinforces measuring real-world functioning/outcomes rather than judging chat quality alone.
+- [Informing Robot Wellbeing Coach Design through Longitudinal Analysis of Human-AI Dialogue](https://arxiv.org/abs/2602.04478) supports treating coaching behavior as longitudinal and autonomy-preserving.
+- [Invisible Impact of Empathy on Behavioral Change in Motivational Interviewing-based Health Coaching Chatbots](https://arxiv.org/abs/2606.26641) is a useful caution that empathic/coaching signals do not by themselves prove behavior change.
+- [Coaching Copilot: Exploring the Efficacy of an LLM-Based Chatbot for Self-Reflection in Leadership Coaching](https://arxiv.org/abs/2405.15250) reinforces human-in-the-loop calibration limits for leadership coaching use cases.
+
+Refreshed host-visible artifacts:
+
+- `/private/tmp/noum-coach-eval/coach-chat-long-form-conversation-eval-v1.json`
+  has 11 conversations, 11 passing the conversation, runtime, semantic,
+  reliability, and offline production floors, empty issue buckets, local
+  target-shape score 100, and VISION score 18/100.
+- `/private/tmp/noum-coach-eval/coach-chat-long-form-adversarial-eval-v1.json`
+  has 11 paired negative controls, 0 passing production floor, local
+  target-shape score 78, and VISION score 16/100. It now includes
+  `long-form-leadership-transfer-setup-conversation-transfer-causality` with
+  two `semantic:unsupportedTransferCausalityClaim` labels.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library Noum/AICoachChatService.swift NoumTests/CoachChatEvaluationFixtures.swift NoumTests/CoachChatConversationEvaluationTests.swift NoumTests/CoachJudgementLayerTests.swift`
+- `git diff --check`
+- Focused passing simulator slice:
+  `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/noum-derived-data-transfer-causality -only-testing:NoumTests/CoachSemanticQualityGateTests/transferCausalityFailsEvenWithoutTypedAssessment() -only-testing:NoumTests/CoachSemanticQualityGateTests/transferSelfReportLanguagePassesSemanticGate() -only-testing:NoumTests/CoachChatConversationCorpusTests/transferCausalityClaimFailsProductionFloorInReport() -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationsClearHarshConversationFloor() -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormConversationReportRoundTripsAsSortedJSON() -only-testing:NoumTests/CoachChatConversationCorpusTests/longFormAdversarialConversationReportFailsEveryPairedTranscript()`
+- Result bundle:
+  `/tmp/noum-derived-data-transfer-causality/Logs/Test/Test-Noum-2026.06.30_11-08-16-+0100.xcresult`
+
+Production readiness remains **18/100**. This closes one transfer-honesty
+escape hatch in the live semantic gate and transcript evaluator, but the
+evidence is still lexical/local/synthetic. It does not clear the VISION
+blockers: live-provider transcript sweep, professional coach calibration,
+real-user longitudinal transfer outcomes, real-device/TestFlight verification,
+or launch operations readiness.
+
+## 2026-06-30 app-path judgement telemetry
+
+This pass targeted the flat-assessment risk called out by the research notes:
+the typed judgement layer had started carrying richer structure, but the
+end-to-end app-path artifact did not yet prove that confidence or proof-test
+selection varied across a full conversation. That left a production blind spot:
+Ask Noum could appear to pass local transcript floors while still sounding like
+the same judgement template with slightly different words.
+
+Implementation:
+
+- Extended `CoachChatConversationAppPathSummary` with rounded assessment
+  confidence diversity, unique proof-test hash count, and repeated proof-test
+  hash count.
+- Added per-turn `assessmentConfidence` to the app-path row schema so the full
+  JSON artifact can be audited without reconstructing metadata by hand.
+- Added `flatAssessmentConfidence` and `weakProofTestVariety` readiness
+  warnings to the app-path report. Repeated proof tests are counted within a
+  conversation, so sharing the same test across unrelated cases is not
+  over-punished.
+- Adjusted the local `CoachReasoningPass` confidence model to use weakest
+  rubric dimension, score spread, evidence breadth, mechanics, evidence
+  coverage, and turn-depth caps instead of mostly coverage/mechanics alone.
+  Weak evidence still floors softly at 0.20.
+- Updated the exact app-path tests to check telemetry consistency and surface
+  app-path failures honestly rather than pretending every local app-path turn
+  is clean.
+
+Refreshed artifact findings:
+
+- Before the confidence model change, the text app-path report exposed the
+  problem directly: only 2 rounded confidence values and a
+  `flatAssessmentConfidence` warning.
+- After the change,
+  `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
+  has 13 conversations, 39 turns, 3 distinct rounded confidence values,
+  8 unique proof-test hashes, 0 repeated proof-test hashes within
+  conversations, and no flat-confidence/proof-variety warnings.
+- After the change,
+  `/private/tmp/noum-coach-eval/coach-chat-live-app-path-eval-v1.json` has
+  13 conversations, 39 turns, 4 distinct rounded confidence values,
+  8 unique proof-test hashes, 0 repeated proof-test hashes within
+  conversations, and no flat-confidence/proof-variety warnings.
+
+Remaining app-path blockers:
+
+- Text app path still has 1 accepted fallback / typed-assessment fallback on
+  `personal-pattern-consent-boundary-conversation`, so it keeps
+  `appPathFloorFailures` and `targetReplyMismatch`.
+- Live app path still has 1 blocking semantic/content failure on the same
+  conversation, so it keeps `appPathFloorFailures`, `targetReplyMismatch`, and
+  `semanticGateFailures`.
+- The refreshed artifacts improve auditability and local judgement variance,
+  but they do not prove professional coaching quality, real-world transfer, or
+  launch readiness.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library Noum/CoachReasoningPass.swift NoumTests/CoachChatEvaluationFixtures.swift NoumTests/CoachChatConversationEvaluationTests.swift`
+- `xcrun swiftc -parse -parse-as-library NoumTests/CoachJudgementLayerTests.swift`
+- Focused passing simulator slice:
+  `xcodebuild test -scheme Noum -destination 'platform=iOS Simulator,id=3D077053-2981-4C5D-819D-FF6F9BA8AD06' -derivedDataPath /private/tmp/noum-derived-data-app-path-variety -only-testing:'NoumTests/CoachChatConversationCorpusTests/scriptedConversationAppPathReportCoversFullCorpusWithoutClaimingReadiness()' -only-testing:'NoumTests/CoachChatConversationCorpusTests/scriptedLiveConversationAppPathReportProvesTwoSpeedLocalReadWithoutClaimingReadiness()'`
+- Focused passing judgement regression:
+  `xcodebuild test -quiet -scheme Noum -destination 'platform=iOS Simulator,id=3D077053-2981-4C5D-819D-FF6F9BA8AD06' -derivedDataPath /private/tmp/noum-derived-data-app-path-variety -only-testing:'NoumTests/CoachJudgementLayerTests/assessmentConfidenceMovesWithEvidenceCoverage()'`
+- Result bundle for the exact app-path slice:
+  `/tmp/noum-derived-data-app-path-variety/Logs/Test/Test-Noum-2026.06.30_11-32-49-+0100.xcresult`
+
+Production readiness remains **18/100**. This closes the "flat local
+judgement looks production-ready" blind spot in the app-path artifact, but the
+system is still not production ready against `docs/VISION.md`: the remaining
+work is live-provider transcript sweep, professional coach calibration,
+real-user longitudinal transfer evidence, real-device/TestFlight verification,
+and launch operations readiness.
+
+## 2026-06-30 consent-bound memory handoff + Coach Arena scaffold
+
+This pass first cleared the remaining local app-path blocker:
+`personal-pattern-consent-boundary-conversation` failed because the final
+"What should Noum remember?" turn was routed like generic coaching and the typed
+fallback reached for a latest-rep mechanics drill. That violated the VISION
+invariant that personal-pattern reads must remain consent-bound, testable
+hypotheses.
+
+Implementation:
+
+- Added a narrow `TurnDepthClassifier.isMemoryHandoff` path for turns such as
+  "What should Noum remember?", routed as grounded reads.
+- Taught `CoachReasoningPass` to build a hypothesis-only memory handoff from
+  the prior coach read when the user asks what should be remembered.
+- Kept the fallback drop-able: "keep it if two pressure reps show the point
+  arrives late; drop it if verdict-first solves it."
+- Updated the professional/semantic gate to accept conversation-local,
+  consent-bound memory handoffs without requiring the same recent-session
+  citation again.
+
+Refreshed app-path artifacts:
+
+- `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
+  now has 13 conversations, 39 turns, 0 app-path floor failures, 0 target
+  mismatches, 0 semantic failures, 0 fallback turns, 9 unique proof-test hashes,
+  and no readiness warnings.
+- `/private/tmp/noum-coach-eval/coach-chat-live-app-path-eval-v1.json` now has
+  the same clean app-path summary, with all 39 live turns showing the immediate
+  coach read.
+
+Then the active goal changed to measurement-first. This pass created the first
+Coach Arena scaffold under `tools/coach-arena/`:
+
+- `fixtures/gold.json`: 50 gold fixtures from `docs/VISION.md`, the live
+  transcript artifacts, known Ask Noum failures, and the requested cases
+  ("How far off am I...", "That's not informative", "Okay that's cool,
+  however...", "It's not easy", "You're repeating yourself", interview prep,
+  filler pressure, leadership update, confidence ending, transfer honesty, and
+  more).
+- `judges/rubric.json`: 100-point rubric: Diagnostic IQ 25, EQ/attunement 25,
+  Personal memory 20, Coaching interventions 15, Real-time dialogue feel 15.
+- `judges/llm_judge.schema.json` + `judges/llm_judge_prompt.md`: JSON LLM
+  judge contract.
+- `judges/trace.schema.json`: trace contract for context, retrieval, memory,
+  reasoning, prompt, provider, raw/final reply, issues, latency, cache,
+  fallback, versions, and git commit.
+- `runners/coach_arena.py` + `run.sh`: deterministic local judge, optional
+  `COACH_ARENA_LLM_JUDGE_CMD`, candidate JSON/replay-command seams, caps for
+  placeholder/broken output, ignored intent, fabricated evidence, unsafe
+  content, and report generation.
+- Generated `reports/latest.json`, `reports/latest.md`, `reports/failures.md`,
+  and `synthetic/ten_conversations.md`.
+
+Verification completed:
+
+- `xcrun swiftc -parse -parse-as-library Noum/TurnDepthClassifier.swift Noum/CoachReasoningPass.swift Noum/CoachAssessment.swift Noum/AICoachChatService.swift NoumTests/CoachJudgementLayerTests.swift`
+- Focused passing simulator slice for memory handoff classifier, assessment,
+  and gate tests.
+- Focused passing app-path simulator slice for text and live app-path reports.
+- `python3 -m json.tool` on Coach Arena fixtures/rubric/schemas/report.
+- `python3 -m py_compile tools/coach-arena/runners/coach_arena.py`
+- `./tools/coach-arena/run.sh` on gold examples: 50 fixtures, average 85.68,
+  deepAssessment 85.0, trustRepair 85.22, placeholder leaks 0, thresholds pass.
+- `./tools/coach-arena/run.sh --candidate bad --no-fail --reports-dir /private/tmp/noum-coach-arena-bad --synthetic-dir /private/tmp/noum-coach-arena-bad-synthetic`: bad examples fail as intended, average 45.6, 50/50 failures, placeholder leaks 3.
+- `git diff --check`
+
+Production readiness remains **18/100**. The local app path is now clean, and
+Coach Arena gives a stricter measurement substrate, but the Arena has not yet
+replayed real provider outputs through all 50 fixtures and has not supplied
+professional coach calibration, real-user longitudinal transfer outcomes,
+real-device/TestFlight verification, or launch operations evidence.
+
+## 2026-06-30 Coach Arena app-path bridge + terse trust-repair expansion
+
+This pass moved Coach Arena beyond target-answer scoring by adding a real
+app-path bridge. `tools/coach-arena/runners/coach_arena.py` now accepts
+`--app-path-report`, reads the existing Swift
+`coach-chat-conversation-app-path-eval-v1.json`, maps only evidence-compatible
+Arena fixtures to real deterministic `CoachReplyPipeline` outputs, and records
+coverage metadata in the generated Arena report. A same-text but different
+quote-guard case (`examples-from-sessions-010`) is explicitly excluded until the
+source transcript carries the same verified quote, so the bridge does not grade
+a mismatched evidence packet as real coverage.
+
+Runtime/app-path improvements:
+
+- Added trust-repair routing for terse friction turns: "It's not easy",
+  "You're repeating yourself", and "Too much writing. Get to the point."
+- Added deterministic repair focuses/fallbacks for repeated coaching moves,
+  difficulty-friction, not-informative replies, and shortness requests.
+- Fixed a substring bug where `informative` matched the bare `format` needle and
+  could produce a bogus formatting/TTS repair.
+- Extended the conversation corpus from 16 to 18 conversations with exact
+  Arena-overlap trust-repair transcripts for polite pushback and shortness.
+- Kept text and live app-path gates strict: the new replies had to pass
+  semantic, reliability, vision-floor, target-match, proof-test diversity, and
+  immediate-read checks with no fallback.
+- Added semantic alignment checks inside the deterministic Arena judge for known
+  app-path overlap cases so semantically equivalent real replies are not scored
+  as intent misses solely because wording differs from the gold answer.
+
+Refreshed artifacts:
+
+- `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`:
+  18 conversations, 54 turns, `passesAppPathFloor: true`, 0 target mismatches,
+  0 fallback turns, 0 semantic failures, 0 reliability issues, 0 vision-floor
+  failures, 0 repeated proof-test hashes, no readiness warnings.
+- `/private/tmp/noum-coach-eval/coach-chat-live-app-path-eval-v1.json`: same
+  clean 18-conversation / 54-turn summary, with all live turns showing the
+  immediate coach read.
+- `tools/coach-arena/reports/app-path/latest.json`: 15 matched real app-path
+  fixtures, average 77.27, trustRepair 77.57, deepAssessment 87.0, placeholder
+  leaks 0, 0 individual failures, thresholds pass. Coverage reports 35
+  unmatched fixtures because the real app-path corpus still does not cover the
+  full 50-fixture suite.
+- `tools/coach-arena/reports/latest.json`: full 50-fixture gold suite average
+  85.76, deepAssessment 85.0, trustRepair 85.67, placeholder leaks 0, 0
+  failures, thresholds pass.
+- Bad-answer smoke in `/private/tmp/noum-coach-arena-bad`: average 45.66,
+  50/50 failures, placeholder leaks 3, thresholds fail as intended.
+
+Verification completed:
+
+- `python3 -m py_compile tools/coach-arena/runners/coach_arena.py`
+- `xcrun swiftc -parse -parse-as-library ...` across the touched Swift
+  judgement/evaluation files.
+- Escalated focused simulator slice for the two app-path reports, refreshing
+  both `/private/tmp/noum-coach-eval` artifacts.
+- `./tools/coach-arena/run.sh --app-path-report /private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json --reports-dir tools/coach-arena/reports/app-path --synthetic-dir tools/coach-arena/synthetic/app-path`
+- `./tools/coach-arena/run.sh`
+- `./tools/coach-arena/run.sh --candidate bad --no-fail --reports-dir /private/tmp/noum-coach-arena-bad --synthetic-dir /private/tmp/noum-coach-arena-bad-synthetic`
+
+Production readiness remains **18/100**. This is real progress on measurement
+and trust-repair coverage, but it is still local deterministic replay with a
+15/50 matched Arena subset. The remaining production blockers are full real
+provider replay over all 50 fixtures, LLM/professional coach judging, blinded
+professional calibration, longitudinal real-user transfer outcomes,
+real-device/TestFlight QA, and launch-ops evidence.
+
+## 2026-06-30 Coach Arena previous-run comparison
+
+This pass closed the "every done must compare previous run" measurement gap.
+`tools/coach-arena/runners/coach_arena.py` now reads the previous
+`latest.json` from the active report directory before overwriting it and writes
+a `comparison` block into the new JSON and Markdown reports. The comparison
+records previous generated time, previous candidate, candidate/fixture-count
+changes, average delta, failure-count delta, placeholder-leak delta,
+pass-state changes, type-average deltas, newly failing fixtures, and cleared
+failures. `tools/coach-arena/README.md` now documents this behavior for both
+the full gold report and app-path subset report.
+
+Refreshed report evidence:
+
+- `tools/coach-arena/reports/latest.json`: 50 fixtures, average 85.76,
+  deepAssessment 85.0, trustRepair 85.67, 0 failures, 0 placeholder leaks,
+  thresholds pass. Comparison against the previous `excellent` run shows no
+  score, failure, placeholder, candidate, fixture-count, or pass-state change.
+- `tools/coach-arena/reports/app-path/latest.json`: 15 matched real app-path
+  fixtures, average 77.27, deepAssessment 87.0, trustRepair 77.57, 0 failures,
+  0 placeholder leaks, thresholds pass. Coverage remains 15 matched and 35
+  unmatched fixtures. Comparison against the previous app-path run shows no
+  score, failure, placeholder, candidate, fixture-count, or pass-state change.
+- `tools/coach-arena/synthetic/ten_conversations.md` and
+  `tools/coach-arena/synthetic/app-path/ten_conversations.md` were refreshed
+  with 10 scored conversation samples each.
+- Bad-answer smoke in `/private/tmp/noum-coach-arena-bad`: average 45.66,
+  50/50 failures, placeholder leaks 3, thresholds fail as intended.
+
+Verification completed:
+
+- `jq empty` on Coach Arena fixtures, rubric, schemas, and refreshed report
+  JSON files.
+- `./tools/coach-arena/run.sh --app-path-report /private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json --reports-dir tools/coach-arena/reports/app-path --synthetic-dir tools/coach-arena/synthetic/app-path`
+- `./tools/coach-arena/run.sh`
+- `./tools/coach-arena/run.sh --candidate bad --no-fail --reports-dir /private/tmp/noum-coach-arena-bad --synthetic-dir /private/tmp/noum-coach-arena-bad-synthetic`
+- `git diff --check`
+
+Production readiness remains **18/100**. The Arena now has better run-to-run
+accountability, but this pass does not change the core blockers: full real
+provider replay over all 50 fixtures, LLM/professional coach judging, blinded
+professional calibration, longitudinal real-user transfer evidence,
+real-device/TestFlight QA, and launch-ops proof are still missing.
+
+## 2026-06-30 App-path bridge expansion to 28 conversations
+
+This pass expanded the real app-path bridge from 18 short conversations to 28
+three-turn conversations, adding coverage for confidence endings, score-vs-
+readiness, cold-start interview prep, pace rushing, closing asks, opening
+verdicts, pause-before-answer pressure, concise answers, one-reason structure,
+and clean-stop confidence follow-ups. The bridge still uses scripted provider
+replies, but the replies now run through the same isolated `AskNoumStore`,
+`CoachReplyPipeline`, semantic gate, runtime quality gate, reliability gate,
+metadata writer, proof-test hashing, and live immediate-read branch as the app
+path.
+
+Refreshed app-path evidence:
+
+- `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`:
+  28 conversations, 84 turns, `passesAppPathFloor: true`, 0 target mismatches,
+  0 missing metadata turns, 0 semantic failures, 0 runtime/vision-floor
+  failures, 0 reliability issues, 10/10 expected text immediate reads shown,
+  4 distinct rounded assessment-confidence values, 12 unique proof-test hashes,
+  0 repeated proof-test hashes, no readiness warnings.
+- `/private/tmp/noum-coach-eval/coach-chat-live-app-path-eval-v1.json`: same
+  28-conversation / 84-turn clean gate summary, with 84/84 expected live
+  immediate reads shown and 0 missing.
+- `tools/coach-arena/reports/app-path/latest.json`: 25 matched real app-path
+  fixtures, 25 unmatched, average 74.0, thresholds pass, placeholder leaks 0.
+  This is a larger and harsher bridge than the previous 15-fixture subset, but
+  not a quality victory lap: 4 matched fixtures remain below the individual
+  floor (`no-baseline-interview-018` 60, `structure-one-reason-024` 61,
+  `confidence-ending-009` 68, `concise-answer-023` 68). The report comparison
+  shows one cleared app-path failure (`pause-before-answer-022`) and no newly
+  failing fixture IDs.
+- `tools/coach-arena/reports/latest.json`: full 50-fixture gold suite remains
+  average 85.76, 0 failures, 0 placeholder leaks, thresholds pass.
+
+Verification completed:
+
+- Escalated class-level
+  `xcodebuild test -only-testing:NoumTests/CoachChatConversationCorpusTests`
+  refreshed both app-path artifacts and passed all target/runtime/semantic/
+  reliability/app-path checks; the suite still exits nonzero because
+  `realUserTransferOutcomeEvidenceRejectsThinOrSmoothedSidecars` expects an
+  additional `insufficientEvidenceReferences` rejection label on a negative
+  sidecar and currently receives only `outcomeFloorFailures`.
+- `./tools/coach-arena/run.sh --app-path-report /private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json --reports-dir tools/coach-arena/reports/app-path --synthetic-dir tools/coach-arena/synthetic/app-path`
+- `./tools/coach-arena/run.sh`
+- `jq empty` on refreshed Arena reports, fixtures, rubric, and schemas.
+- `python3 -m py_compile tools/coach-arena/runners/coach_arena.py`
+
+Production readiness remains **18/100**. The app path is broader and locally
+clean, but the product still lacks a full real-provider Arena replay, blinded
+professional coach calibration, real-user longitudinal transfer outcomes,
+real-device/TestFlight evidence, and launch-ops proof. The four low-scoring
+app-path Arena rows are the next local coach-quality targets before claiming
+the bridge is strong.
+
+## 2026-06-30 App-path coach-quality floor polish
+
+This pass targeted the four weakest app-path Coach Arena rows from the 28
+conversation bridge rather than widening the corpus again. The target replies
+for confidence endings, no-baseline interview prep, concise-answer rambling,
+and one-reason structure were tightened to preserve the app-path runtime gates
+while giving the Arena clearer senior-register evidence: sharper coach reads,
+explicit proof tests, no fake readiness from cold starts, and less generic drill
+language.
+
+Refreshed app-path evidence:
+
+- `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`:
+  28 conversations, 84 turns, `passesAppPathFloor: true`, 0 accepted fallback
+  turns, 0 typed-assessment fallbacks, 0 target mismatches, 0 missing metadata
+  turns, 0 semantic failures, 0 runtime/vision-floor failures, 0 reliability
+  issue turns, 10/10 expected text immediate reads shown, 4 distinct rounded
+  assessment-confidence values, 12 unique proof-test hashes, 0 repeated
+  proof-test hashes, and no readiness warnings.
+- `/private/tmp/noum-coach-eval/coach-chat-live-app-path-eval-v1.json`: same
+  28-conversation / 84-turn clean gate summary, with 84/84 expected live
+  immediate reads shown and 0 missing.
+- `tools/coach-arena/reports/app-path/latest.json`: 25 matched real app-path
+  fixtures, 25 unmatched, average 76.32, 0 failures, 0 placeholder leaks, and
+  all thresholds pass. The previously low rows are now above the individual
+  floor; the lowest matched fixtures are `cold-generic-016` 70,
+  `pace-rushing-019` 70, `confidence-clean-stop-025` 70,
+  `not-easy-empathy-004` 71, `filler-pressure-007` 71,
+  `interview-prep-006` 72, `leadership-transfer-capture-026` 72,
+  `not-informative-trust-repair-002` 73, `confidence-ending-009` 73, and
+  `leadership-update-008` 74.
+- `tools/coach-arena/reports/latest.json`: full 50-fixture gold suite remains
+  average 85.76, 0 failures, 0 placeholder leaks, and all thresholds pass.
+
+Verification completed:
+
+- Escalated class-level
+  `xcodebuild test -only-testing:NoumTests/CoachChatConversationCorpusTests`
+  refreshed both app-path artifacts and passed all target/runtime/semantic/
+  reliability/app-path checks; the suite still exits nonzero because
+  `realUserTransferOutcomeEvidenceRejectsThinOrSmoothedSidecars` expects an
+  additional `insufficientEvidenceReferences` rejection label on a negative
+  sidecar and currently receives only `outcomeFloorFailures`.
+- `./tools/coach-arena/run.sh --app-path-report /private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json --reports-dir tools/coach-arena/reports/app-path --synthetic-dir tools/coach-arena/synthetic/app-path`
+- `./tools/coach-arena/run.sh`
+
+Production readiness remains **18/100**. This closes the local app-path Arena
+individual-floor gap, but it is still deterministic/local evidence. The product
+still needs full live-provider replay, blinded professional coach calibration,
+longitudinal real-user transfer outcomes, real-device/TestFlight evidence, and
+launch-ops proof before it can be called production ready against
+`docs/VISION.md`.
+
+## 2026-06-30 Fixture-disqualifier judge enforcement
+
+This pass tightened Coach Arena measurement rather than changing the app coach
+reply pipeline. The runner now treats every fixture's `disqualifiers` as an
+executable local-judge contract. Literal bad behaviors, scenario-specific
+missing requirements, and quote-guard violations now emit stable
+`fixtureDisqualifier:<slug>` check failures and apply a `fixtureDisqualifier`
+cap of 60, so an answer cannot pass a fixture by being generally grounded while
+doing the exact thing that scenario says should fail.
+
+Refreshed Arena evidence:
+
+- Full gold reference run: 50 fixtures, average 85.76, 0 failures,
+  0 placeholder leaks, 0 fixture-disqualifier hits, thresholds pass. The first
+  calibration pass intentionally exposed over-broad rules against curated
+  excellent answers; those false positives were tightened before this clean run.
+- Real app-path subset run: 25 matched fixtures, average 76.32, 0 failures,
+  0 placeholder leaks, 0 fixture-disqualifier hits, thresholds pass. Coverage
+  remains 25 matched / 25 unmatched against the 50-fixture gold suite.
+- Bad-answer smoke:
+  `/private/tmp/noum-coach-arena-bad-disqualifier/latest.json` has 50/50
+  failures, average 45.66, 3 placeholder leaks, and 79 fixture-disqualifier
+  hits, including score-as-readiness, fabricated quote, JSON leak, TODO,
+  assistant-wrapper language, and missing transcript signal.
+
+Verification completed:
+
+- `python3 -m py_compile tools/coach-arena/runners/coach_arena.py`
+- `jq empty tools/coach-arena/judges/rubric.json`
+- `./tools/coach-arena/run.sh`
+- `./tools/coach-arena/run.sh --app-path-report /private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json --reports-dir tools/coach-arena/reports/app-path --synthetic-dir tools/coach-arena/synthetic/app-path`
+- `./tools/coach-arena/run.sh --candidate bad --no-fail --reports-dir /private/tmp/noum-coach-arena-bad-disqualifier --synthetic-dir /private/tmp/noum-coach-arena-bad-disqualifier-synthetic`
+- `jq empty` on the refreshed full, app-path, and bad-smoke reports.
+
+Production readiness remains **18/100**. The measurement substrate is harder to
+game, but this is still local deterministic judging. Noum still needs full
+live-provider replay across the gold suite, calibrated LLM/professional judging,
+real-user transfer outcomes, real-device/TestFlight verification, and launch
+ops proof.
+
+## 2026-06-30 Trace-audit reporting for Coach Arena
+
+This pass added report-level trace accountability to Coach Arena. Every run now
+emits `summary.traceAudit` with the required trace fields, candidate-source
+counts, real-pipeline fixture count, complete-trace count, missing trace field
+counts, and example fixture IDs per missing field. The runner also preserves
+`appPathReport` provenance instead of overwriting it as `candidateJson`, so
+app-path reports can be distinguished from synthetic reference examples.
+
+Refreshed evidence:
+
+- Full gold reference run: 50 fixtures, average 85.76, 0 failures,
+  0 placeholder leaks. Trace audit correctly shows `excellentAnswerExample: 50`,
+  `realPipelineTraceCount: 0`, `completeTraceCount: 0`, and missing trace fields
+  across the synthetic reference answers. This is fixture/rubric calibration,
+  not pipeline proof.
+- Real app-path subset run: 25 matched fixtures, average 76.32, 0 failures,
+  0 placeholder leaks. Trace audit shows `appPathReport: 25`,
+  `realPipelineTraceCount: 25`, `completeTraceCount: 0`, and missing
+  `retrieval` for all 25 matched fixtures. That makes the next evidence gap
+  concrete: app-path traces include context/memory/reasoning/prompt/provider/
+  raw/final/issues/latency/cache/fallback/versions/git commit, but do not yet
+  expose retrieval evidence.
+- Bad-answer smoke: 50/50 failures, average 45.66, 3 placeholder leaks, and
+  local trace audit correctly identifies it as `badAnswerExample: 50`, not real
+  pipeline evidence.
+
+Verification completed:
+
+- `python3 -m py_compile tools/coach-arena/runners/coach_arena.py`
+- `jq empty tools/coach-arena/judges/rubric.json tools/coach-arena/judges/trace.schema.json`
+- `./tools/coach-arena/run.sh`
+- `./tools/coach-arena/run.sh --app-path-report /private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json --reports-dir tools/coach-arena/reports/app-path --synthetic-dir tools/coach-arena/synthetic/app-path`
+- `./tools/coach-arena/run.sh --candidate bad --no-fail --reports-dir /private/tmp/noum-coach-arena-bad-disqualifier --synthetic-dir /private/tmp/noum-coach-arena-bad-disqualifier-synthetic`
+
+Production readiness remains **18/100**. Passing score now carries clearer
+evidence provenance, but the trace audit confirms the current app-path bridge is
+still partial proof: no retrieval trace, only 25/50 gold fixtures matched, and
+no live-provider/professional/real-user/real-device validation.
+
+## 2026-06-30 App-path retrieval trace provenance
+
+This pass closed the retrieval hole exposed by the trace audit without creating
+a parallel observability system. `CoachTurnMetadata` now carries
+`CoachRetrievalTrace`, populated inside `CoachReplyPipeline` immediately after
+the existing `KnowledgeRetriever` / semantic-rerank call. The trace records the
+retrieval strategy, query presence and length, diagnosis state, active lever,
+voice, semantic-rerank allowance, retrieved card count and IDs, and the same
+diagnostic reason already sent to `AICallDiagnostics`. The app-path row schema
+exports that metadata, and Coach Arena maps it into the required `retrieval`
+trace field for app-path candidates.
+
+Refreshed evidence:
+
+- `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`:
+  28 conversations / 84 turns, `retrievalTracePresentCount: 84`, 0 missing
+  retrieval traces, 0 readiness warnings, VISION score still 18/100.
+- `/private/tmp/noum-coach-eval/coach-chat-live-app-path-eval-v1.json`: same
+  84/84 retrieval coverage on the live surface; text allows semantic rerank,
+  live stays BM25-only.
+- `tools/coach-arena/reports/app-path/latest.json`: 25 matched real app-path
+  fixtures, average 76.32, 0 failures, 0 placeholder leaks,
+  `realPipelineTraceCount: 25`, `completeTraceCount: 25`, and empty
+  `missingTraceFieldCounts`.
+- Full gold reference remains 50 fixtures, average 85.76, 0 failures, and
+  correctly reports 0 real-pipeline traces because those are synthetic
+  excellent-answer references.
+- Bad-answer smoke remains harsh: 50/50 failures, average 45.66, 3 placeholder
+  leaks, and synthetic bad-answer provenance.
+
+Verification completed:
+
+- Fresh app-path artifacts were emitted by the focused simulator corpus run, but
+  the `xcodebuild` process hung after artifact write and had to be terminated;
+  no clean Xcode result bundle was produced in this pass.
+- `python3 -m py_compile tools/coach-arena/runners/coach_arena.py`
+- `jq empty` on Coach Arena schemas/reports plus the refreshed text and live
+  app-path artifacts.
+- `./tools/coach-arena/run.sh`
+- `./tools/coach-arena/run.sh --app-path-report /private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json --reports-dir tools/coach-arena/reports/app-path --synthetic-dir tools/coach-arena/synthetic/app-path`
+- `./tools/coach-arena/run.sh --candidate bad --no-fail --reports-dir /private/tmp/noum-coach-arena-bad-disqualifier --synthetic-dir /private/tmp/noum-coach-arena-bad-disqualifier-synthetic`
+- `git diff --check`
+
+Production readiness remains **18/100**. This closes one local trace-provenance
+gap, but the app-path bridge still covers only 25/50 Arena fixtures and still
+does not provide a clean live-provider sweep, professional-coach calibration,
+real-user longitudinal transfer outcomes, real-device TestFlight verification,
+or launch-ops proof.

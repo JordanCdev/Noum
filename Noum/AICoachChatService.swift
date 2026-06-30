@@ -587,10 +587,12 @@ enum CoachChatReplyQualityIssue: Equatable {
 enum CoachSemanticQualityIssue: String, Equatable {
     case missingDirectVerdict
     case missingMechanicsGoalDistinction
+    case missingCaseAnchor
     case missingEvidenceDisclosure
     case insufficientEvidenceReferences
     case missingRepairInsight
     case unsupportedClosenessClaim
+    case unsupportedTransferCausalityClaim
     case missingProofTest
     case missingIntentFit
 
@@ -600,6 +602,8 @@ enum CoachSemanticQualityIssue: String, Equatable {
             return "The draft does not answer the judgement question first. Rewrite with the typed direct verdict in the first sentence."
         case .missingMechanicsGoalDistinction:
             return "The draft blurs score/mechanics with true goal readiness. Separate the user's mechanics from full goal embodiment."
+        case .missingCaseAnchor:
+            return "The draft ignores the active case or intervention evidence in the typed assessment. Tie the read to the current case hypothesis, next coach move, or active intervention before prescribing."
         case .missingEvidenceDisclosure:
             return "The draft fails to name missing evidence. Say exactly what evidence is still needed before a stronger verdict is fair."
         case .insufficientEvidenceReferences:
@@ -608,6 +612,8 @@ enum CoachSemanticQualityIssue: String, Equatable {
             return "The draft acknowledges the trust repair but does not give a concrete coach read. Name the behavioral signal, evidence anchor, or actual read before prescribing the proof test."
         case .unsupportedClosenessClaim:
             return "The draft says the user is close or not far off without enough evidence. Remove the closeness claim or limit it to mechanics only."
+        case .unsupportedTransferCausalityClaim:
+            return "The draft treats user-reported real-world transfer as proof or causation. Reframe it as the user's self-report or room read, use association language only, and do not say a drill caused the outcome."
         case .missingProofTest:
             return "The draft does not end with one proof test. End with the typed next proof test, not generic advice."
         case .missingIntentFit:
@@ -1674,6 +1680,7 @@ actor AICoachChatService {
                     if let semanticIssue = Self.semanticQualityIssue(
                         in: display,
                         latestUserTurn: latestUserTurn,
+                        systemContext: system,
                         turnDepth: turnDepth,
                         assessment: assessment
                     ) {
@@ -1851,6 +1858,7 @@ actor AICoachChatService {
         guard semanticQualityIssue(
             in: normalized,
             latestUserTurn: latestUserTurn,
+            systemContext: systemContext,
             turnDepth: turnDepth,
             assessment: assessment
         ) == nil else {
@@ -1959,7 +1967,7 @@ actor AICoachChatService {
 
         if containsAny(lowerTurn, [
             "tts", "read them out", "read aloud", "**", "markdown",
-            "format", "formatting", "symbols", "stars"
+            "formatting", "symbols", "stars"
         ]) {
             clauses.append("TTS reading formatting symbols breaks trust")
         }
@@ -1968,6 +1976,24 @@ actor AICoachChatService {
             "less text", "less writing", "shorter"
         ]) {
             clauses.append("it felt robotic or too much like a report")
+        }
+        if containsAny(lowerTurn, [
+            "not informative", "not helpful", "not useful",
+            "missed the point", "doesn't answer", "does not answer"
+        ]) {
+            clauses.append("I answered around the useful read instead of giving it")
+        }
+        if containsAny(lowerTurn, [
+            "repeating yourself", "same thing again", "said that already",
+            "already said that"
+        ]) {
+            clauses.append("I repeated the same move instead of advancing the coaching")
+        }
+        if containsAny(lowerTurn, [
+            "it's not easy", "its not easy", "not that easy",
+            "easier said than done", "harder than that"
+        ]) {
+            clauses.append("I made the move sound easier than it feels under pressure")
         }
         if containsAny(lowerTurn, [
             "cold", "generic", "not human", "low eq", "not high eq",
@@ -1996,7 +2022,25 @@ actor AICoachChatService {
         if containsAny(lowerTurn, ["short", "less text", "less writing", "too much writing", "too long"]) {
             return "run one cleaner rep with the main point first, then stop."
         }
-        if containsAny(lowerTurn, ["tts", "read them out", "read aloud", "**", "markdown", "format"]) {
+        if containsAny(lowerTurn, [
+            "not informative", "not helpful", "not useful",
+            "missed the point", "doesn't answer", "does not answer"
+        ]) {
+            return "answer the actual read first, then run one narrow rep that tests it."
+        }
+        if containsAny(lowerTurn, [
+            "repeating yourself", "same thing again", "said that already",
+            "already said that"
+        ]) {
+            return "keep the current target but change the proof test so the next rep teaches us something new."
+        }
+        if containsAny(lowerTurn, [
+            "it's not easy", "its not easy", "not that easy",
+            "easier said than done", "harder than that"
+        ]) {
+            return "shrink the next rep to one sentence under pressure before adding the full answer back."
+        }
+        if containsAny(lowerTurn, ["tts", "read them out", "read aloud", "**", "markdown", "formatting"]) {
             return "run one rep by saying the recommendation first, giving one proof point, then stopping."
         }
         let proof = assessment.nextProofTest.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2026,7 +2070,15 @@ actor AICoachChatService {
             .replacingOccurrences(of: "\n", with: " ")
         guard !value.isEmpty else { return nil }
         let lower = value.lowercased()
-        for prefix in ["latest rep:", "pace estimate:", "case focus:", "case evidence:"] where lower.hasPrefix(prefix) {
+        for prefix in [
+            "latest rep:",
+            "pace estimate:",
+            "case summary:",
+            "case focus:",
+            "case evidence:",
+            "active intervention:",
+            "trust repair signal:"
+        ] where lower.hasPrefix(prefix) {
             let label = String(prefix.dropLast())
             let rest = String(value.dropFirst(prefix.count))
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2142,6 +2194,12 @@ actor AICoachChatService {
             || lower.contains("i am just")
             || lower.contains("i'm just") {
             return .defensiveProductLanguage
+        }
+
+        if turnAsksMemoryHandoff(latestUserTurn),
+           replyIsConsentBoundMemoryHandoff(lower),
+           !replyOverclaimsEvidence(lower) {
+            return nil
         }
 
         if replyUsesUnhelpfulRepDate(lower) {
@@ -2795,13 +2853,19 @@ actor AICoachChatService {
     nonisolated static func semanticQualityIssue(
         in text: String,
         latestUserTurn: String? = nil,
+        systemContext: String? = nil,
         turnDepth: CoachTurnDepth,
         assessment: CoachAssessment?
     ) -> CoachSemanticQualityIssue? {
-        guard let assessment else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let lower = trimmed.lowercased()
+
+        if replyMakesUnsupportedTransferCausalityClaim(lower, systemContext: systemContext) {
+            return .unsupportedTransferCausalityClaim
+        }
+
+        guard let assessment else { return nil }
 
         if replyMissesRequestedIntent(lower, latestUserTurn: latestUserTurn) {
             return .missingIntentFit
@@ -2818,6 +2882,10 @@ actor AICoachChatService {
             if assessment.evidenceReferenceCount >= 2,
                countEvidenceTouches(lower, assessment: assessment) < 2 {
                 return .insufficientEvidenceReferences
+            }
+            if assessmentRequiresCaseAnchor(assessment),
+               !replyTouchesCaseAnchor(lower, assessment: assessment) {
+                return .missingCaseAnchor
             }
             if !assessment.missingEvidence.isEmpty,
                assessment.confidence < 0.78,
@@ -2843,6 +2911,10 @@ actor AICoachChatService {
                !replyContainsTrustRepairRead(lower, assessment: assessment) {
                 return .missingRepairInsight
             }
+            if assessmentRequiresCaseAnchor(assessment),
+               !replyTouchesCaseAnchor(lower, assessment: assessment) {
+                return .missingCaseAnchor
+            }
             if !replyContainsProofTest(lower, assessment: assessment),
                !replyNamesMissingEvidence(lower) {
                 return .missingProofTest
@@ -2855,6 +2927,35 @@ actor AICoachChatService {
         }
 
         return nil
+    }
+
+    private nonisolated static func replyMakesUnsupportedTransferCausalityClaim(
+        _ lower: String,
+        systemContext: String?
+    ) -> Bool {
+        guard let systemContext else { return false }
+        let context = systemContext.lowercased()
+        guard context.contains("real-world transfer") else { return false }
+
+        let transferReference = containsAny(lower, [
+            "real-world", "real world", "transfer", "outcome", "audience",
+            "room", "interview", "presentation", "meeting", "leadership",
+            "update", "prep", "practice", "drill", "training"
+        ])
+        guard transferReference else { return false }
+
+        return containsAny(lower, [
+            "drill caused", "drill made", "training caused", "training made",
+            "prep caused", "prep made", "practice caused", "practice made",
+            "because of the drill", "because of your drill",
+            "because of that drill", "because you practiced",
+            "thanks to the drill", "thanks to your prep",
+            "proves the drill", "proved the drill", "proof that the drill",
+            "objective proof", "proof that training", "proves transfer",
+            "proved transfer", "guarantees transfer",
+            "audience response is proof", "room response is proof",
+            "outcome proves", "outcome proved", "this proves transfer"
+        ])
     }
 
     private nonisolated static func replyMissesRequestedIntent(
@@ -2914,9 +3015,12 @@ actor AICoachChatService {
         }
 
         if containsAny(latest, [
-            "what should you remember", "remember next time", "what do you remember"
+            "what should noum remember", "what should you remember",
+            "remember next time", "what do you remember"
         ]) {
-            return !containsAny(lower, ["remember", "next time", "i should", "i need to"])
+            return !containsAny(lower, [
+                "remember", "memory", "next time", "i should", "i need to"
+            ])
         }
 
         if containsAny(latest, [
@@ -3006,6 +3110,58 @@ actor AICoachChatService {
             count + (lower.contains(word) ? 1 : 0)
         }
         return hitCount >= min(2, testWords.count)
+    }
+
+    private nonisolated static func assessmentRequiresCaseAnchor(
+        _ assessment: CoachAssessment
+    ) -> Bool {
+        assessment.evidenceUsed.contains { evidence in
+            let lower = evidence.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return lower.hasPrefix("case summary:") || lower.hasPrefix("active intervention:")
+        }
+    }
+
+    private nonisolated static func replyTouchesCaseAnchor(
+        _ lower: String,
+        assessment: CoachAssessment
+    ) -> Bool {
+        let anchorTokens = assessment.evidenceUsed
+            .filter { evidence in
+                let lower = evidence.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                return lower.hasPrefix("case summary:") || lower.hasPrefix("active intervention:")
+            }
+            .flatMap(caseAnchorTokens)
+        guard !anchorTokens.isEmpty else { return true }
+        return anchorTokens.contains { lower.contains($0) }
+    }
+
+    private nonisolated static func caseAnchorTokens(from evidence: String) -> [String] {
+        let labelStopWords: Set<String> = [
+            "case", "summary", "active", "intervention", "hypothesis",
+            "focus", "evidence", "next", "move", "target", "followed",
+            "review", "status", "title", "reps", "rep", "latest",
+            "timed", "score", "pace", "filler", "fillers", "mechanics",
+            "goal", "readiness", "proof", "test", "pressure", "under",
+            "before", "after", "without", "within", "about", "because",
+            "clear", "recent", "where", "whether", "there", "their",
+            "this", "that", "your", "they", "than", "into", "with",
+            "from", "only", "more", "less", "still", "need",
+            "answer", "sentence", "record", "clean", "close", "ask",
+            "recommendation", "reason", "stop", "verdict", "decision"
+        ]
+        var seen = Set<String>()
+        var tokens: [String] = []
+        for raw in evidence.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }) {
+            let token = String(raw)
+            guard token.count >= 4,
+                  !labelStopWords.contains(token),
+                  !seen.contains(token) else {
+                continue
+            }
+            seen.insert(token)
+            tokens.append(token)
+        }
+        return tokens
     }
 
     private nonisolated static func countEvidenceTouches(
@@ -3305,6 +3461,32 @@ actor AICoachChatService {
         ])
     }
 
+    private nonisolated static func turnAsksMemoryHandoff(_ turn: String?) -> Bool {
+        guard let lower = turn?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() else {
+            return false
+        }
+        return TurnDepthClassifier.isMemoryHandoff(lower)
+    }
+
+    private nonisolated static func replyIsConsentBoundMemoryHandoff(_ lower: String) -> Bool {
+        let namesMemory = containsAny(lower, ["memory", "remember", "keep this"])
+        let keepsHypothetical = containsAny(lower, [
+            "testable hypothesis", "hypothesis only", "not a label",
+            "keep it if", "drop it if", "reject that hypothesis"
+        ])
+        let namesObservablePattern = containsAny(lower, [
+            "disagreement", "setup", "point arrives late", "verdict-first",
+            "observable read", "pressure reps", "sentence one"
+        ])
+        let hasRevisionPath = containsAny(lower, [
+            "drop it if", "reject", "doesn't fit", "does not fit",
+            "if verdict-first solves it", "if two pressure reps"
+        ])
+        return namesMemory && keepsHypothetical && namesObservablePattern && hasRevisionPath
+    }
+
     private nonisolated static func trustRepairLacksUserPracticeMove(
         _ lower: String,
         latestUserTurn: String?
@@ -3342,6 +3524,8 @@ actor AICoachChatService {
             "that read", "that felt", "the friction", "too generic", "too robotic",
             "right to call", "that should not", "that shouldn't", "should not happen",
             "shouldn't happen", "that was advice", "that was generic", "that was cold",
+            "not easy", "easier than it feels", "hard part",
+            "repeated the same", "same test", "changing the evidence",
             "markup read", "tts read", "read aloud", "overexplained",
             "formatting", "markdown", "symbols",
             "i'll be", "i will be", "i'll keep", "i will keep", "i'll change",
@@ -3361,9 +3545,20 @@ actor AICoachChatService {
                 "generic ai", "ai tips"
             ]
         } else if containsAny(focus, ["too much writing", "writing", "wordy"]) {
-            needles = ["too much writing", "too long", "shorter", "wordy", "overexplained", "dense"]
+            needles = [
+                "too much writing", "too long", "shorter", "wordy",
+                "overexplained", "dense", "get to the point",
+                "close is the leak"
+            ]
+        } else if containsAny(focus, ["repeated", "repeating", "same coaching"]) {
+            needles = ["repeated", "repeating", "same move", "same coaching", "same thing", "already said"]
+        } else if containsAny(focus, ["easier than", "not easy", "pressure"]) {
+            needles = ["not easy", "easier", "harder", "pressure", "feels under pressure", "too simple"]
         } else if containsAny(focus, ["actual question", "missed"]) {
-            needles = ["missed", "actual question", "didn't answer", "did not answer", "wrong question"]
+            needles = [
+                "missed", "actual question", "didn't answer", "did not answer",
+                "wrong question", "useful read", "answered around", "not informative"
+            ]
         } else if containsAny(focus, ["generic", "evidence"]) {
             needles = ["generic", "evidence", "generic advice", "not evidence", "template", "templated"]
         } else if containsAny(focus, ["polite pushback", "friction"]) {
@@ -3396,7 +3591,8 @@ actor AICoachChatService {
             "what i notice", "what i heard",
             "the useful read is", "the actual read is", "the real read is",
             "the coaching read is", "the signal i can use",
-            "one safe signal", "usable signal"
+            "one safe signal", "usable signal", "changing the evidence",
+            "same test", "the close is the leak"
         ])
     }
 
@@ -3446,11 +3642,11 @@ actor AICoachChatService {
 
         if containsAny(lowerTurn, [
             "tts", "read them out", "read aloud", "**", "markdown",
-            "format", "formatting", "symbols", "stars"
+            "formatting", "symbols", "stars"
         ]) {
             needles += [
                 "tts", "read aloud", "read out", "voice", "spoken",
-                "markdown", "format", "formatting", "symbol", "symbols",
+                "markdown", "formatting", "symbol", "symbols",
                 "stars", "asterisk"
             ]
         }
@@ -3465,6 +3661,36 @@ actor AICoachChatService {
                 "less writing", "less text", "shorter", "overexplained",
                 "over explained", "over-explained", "dense", "wordy",
                 "generic", "template", "templated"
+            ]
+        }
+
+        if containsAny(lowerTurn, [
+            "not informative", "not helpful", "not useful",
+            "missed the point", "doesn't answer", "does not answer"
+        ]) {
+            needles += [
+                "not informative", "not helpful", "missed", "actual question",
+                "didn't answer", "did not answer", "useful read", "answer"
+            ]
+        }
+
+        if containsAny(lowerTurn, [
+            "repeating yourself", "same thing again", "said that already",
+            "already said that"
+        ]) {
+            needles += [
+                "repeating", "repeated", "same move", "same thing",
+                "already said", "advance", "advancing"
+            ]
+        }
+
+        if containsAny(lowerTurn, [
+            "it's not easy", "its not easy", "not that easy",
+            "easier said than done", "harder than that"
+        ]) {
+            needles += [
+                "not easy", "easier", "harder", "pressure",
+                "too simple", "feels under pressure"
             ]
         }
 
@@ -3490,7 +3716,8 @@ actor AICoachChatService {
             "you said", "you asked", "i heard", "what i notice", "pattern",
             "case", "hypothesis", "target", "success measure", "not enough data",
             "baseline", "sentence", "first sentence", "sentence one",
-            "opener", "opening", "close", "closing", "decision",
+            "opener", "opening", "close", "closing", "final line",
+            "directness", "silent beat", "beat before", "decision",
             "recommendation", "verdict", "proof point", "proof",
             "reason", "reassurance", "example", "structure", "authority",
             "warmth", "setup", "point",
@@ -3546,8 +3773,14 @@ actor AICoachChatService {
             "this", "that", "those", "it", "so ", "why", "pattern",
             "short version", "shorter", "what test", "which test",
             "separates those", "does that", "do i", "should i",
+            "what if", "what should noum judge", "what should noum check",
+            "what should noum look for", "judge after", "check after",
+            "what do i repeat", "what should i repeat",
+            "what exactly do i repeat",
             "not my whole", "answered what i meant", "answer what i meant",
-            "what i meant", "stop saying", "give me the"
+            "what i meant", "stop saying", "give me the", "remember",
+            "what should noum remember", "what should you remember",
+            "what do you remember"
         ]) {
             return true
         }
@@ -3573,7 +3806,8 @@ actor AICoachChatService {
             "decision", "recommendation", "verdict", "proof",
             "reason", "reassurance", "pause", "filler", "warmth",
             "structure", "authority", "baseline", "example", "ask",
-            "point", "setup", "claim", "transcript"
+            "point", "setup", "claim", "transcript", "hypothesis",
+            "memory", "remember", "disagreement", "softened"
         ].filter { lower.contains($0) }
     }
 
@@ -4432,6 +4666,7 @@ actor AICoachChatService {
         if let semanticIssue = Self.semanticQualityIssue(
             in: display,
             latestUserTurn: messages.last(where: { $0.role == .user })?.text,
+            systemContext: system,
             turnDepth: turnDepth,
             assessment: assessment
         ) {
@@ -4688,10 +4923,16 @@ actor AICoachChatService {
         system: String
     ) -> String {
         let friction: String
-        if containsAny(lowerTurn, ["tts", "read them out", "read aloud", "**", "markdown", "format"]) {
+        if containsAny(lowerTurn, ["tts", "read them out", "read aloud", "**", "markdown", "formatting"]) {
             friction = "Fair push: TTS reading symbols breaks trust."
         } else if containsAny(lowerTurn, ["robotic", "report", "too much writing", "too long", "less text"]) {
             friction = "Fair push. That read too much like a report."
+        } else if containsAny(lowerTurn, ["repeating yourself", "same thing again", "said that already", "already said that"]) {
+            friction = "Fair push. I repeated the same move instead of advancing the coaching."
+        } else if containsAny(lowerTurn, ["it's not easy", "its not easy", "not that easy", "easier said than done", "harder than that"]) {
+            friction = "Fair push. I made that sound easier than it feels under pressure."
+        } else if containsAny(lowerTurn, ["not informative", "not helpful", "not useful", "missed the point", "doesn't answer", "does not answer"]) {
+            friction = "Fair push. I answered around the useful read instead of giving it."
         } else if containsAny(lowerTurn, ["cold", "generic", "not human", "low eq", "not high eq"]) {
             friction = "Fair push: that was advice, not coaching."
         } else {
@@ -4701,7 +4942,13 @@ actor AICoachChatService {
         let move: String
         if containsAny(lowerTurn, ["short", "less text", "too much writing", "too long"]) {
             move = "run one cleaner rep: main point first, then stop"
-        } else if containsAny(lowerTurn, ["tts", "read them out", "read aloud", "**", "markdown", "format"]) {
+        } else if containsAny(lowerTurn, ["repeating yourself", "same thing again", "said that already", "already said that"]) {
+            move = "keep the same target but change the proof test so the next rep teaches us something new"
+        } else if containsAny(lowerTurn, ["it's not easy", "its not easy", "not that easy", "easier said than done", "harder than that"]) {
+            move = "shrink the next rep to one sentence under pressure before adding the full answer back"
+        } else if containsAny(lowerTurn, ["not informative", "not helpful", "not useful", "missed the point", "doesn't answer", "does not answer"]) {
+            move = "answer the actual read first, then run one narrow rep that tests it"
+        } else if containsAny(lowerTurn, ["tts", "read them out", "read aloud", "**", "markdown", "formatting"]) {
             move = "say the recommendation first, give one proof point, then stop"
         } else if containsAny(lowerTurn, ["cold", "generic", "robotic", "not human", "low eq", "not high eq"]) {
             move = "say the decision first, then soften it with one human reassurance"

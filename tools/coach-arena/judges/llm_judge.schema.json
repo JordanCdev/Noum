@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Coach Arena LLM Judge Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "diagnosticIQ",
+    "eqAttunement",
+    "personalMemory",
+    "interventionQuality",
+    "dialogueFeel",
+    "overall",
+    "caps",
+    "failureReasons",
+    "suggestedFix"
+  ],
+  "properties": {
+    "diagnosticIQ": { "type": "integer", "minimum": 0, "maximum": 25 },
+    "eqAttunement": { "type": "integer", "minimum": 0, "maximum": 25 },
+    "personalMemory": { "type": "integer", "minimum": 0, "maximum": 20 },
+    "interventionQuality": { "type": "integer", "minimum": 0, "maximum": 15 },
+    "dialogueFeel": { "type": "integer", "minimum": 0, "maximum": 15 },
+    "overall": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "caps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "applied", "maxScore"],
+        "properties": {
+          "name": { "type": "string" },
+          "applied": { "type": "boolean" },
+          "maxScore": { "type": "integer", "minimum": 0, "maximum": 100 }
+        }
+      }
+    },
+    "failureReasons": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "suggestedFix": { "type": "string" }
+  }
+}

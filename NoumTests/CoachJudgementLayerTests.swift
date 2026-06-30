@@ -102,6 +102,15 @@ struct TurnDepthClassifierTests {
         ) == .quickMove)
     }
 
+    @Test func memoryHandoffQuestionsAreGroundedReads() {
+        #expect(TurnDepthClassifier.classify(
+            userText: "What should Noum remember?"
+        ) == .groundedRead)
+        #expect(TurnDepthClassifier.classify(
+            userText: "So what should you remember next time?"
+        ) == .groundedRead)
+    }
+
     @Test func repReadQuestionsAreGroundedRead() {
         #expect(TurnDepthClassifier.classify(
             userText: "What happened in that rep?"
@@ -111,6 +120,15 @@ struct TurnDepthClassifierTests {
     @Test func coachPushbackIsTrustRepair() {
         #expect(TurnDepthClassifier.classify(
             userText: "That's not informative at all. You missed the point."
+        ) == .trustRepair)
+        #expect(TurnDepthClassifier.classify(
+            userText: "It's not easy."
+        ) == .trustRepair)
+        #expect(TurnDepthClassifier.classify(
+            userText: "You're repeating yourself."
+        ) == .trustRepair)
+        #expect(TurnDepthClassifier.classify(
+            userText: "Too much writing. Get to the point."
         ) == .trustRepair)
     }
 
@@ -759,8 +777,73 @@ struct CoachReasoningPassTests {
         )
 
         let read = assessment.immediateCoachRead.lowercased()
-        #expect(read.contains("missing"))
-        #expect(read.contains("proof test"))
+        #expect(!read.contains("read:"))
+        #expect(!read.contains("signal:"))
+        #expect(read.contains("the signal i can use"))
+        #expect(read.contains("i still need"))
+        #expect(read.contains("try this next"))
+        #expect(read.contains("pressure"))
+    }
+
+    @Test func quickMoveImmediateReadNamesLeverSignalAndTest() {
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .quickMove,
+            userQuestion: "How do I slow down without sounding unsure?",
+            trajectory: Self.singleRepTrajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .live
+        )
+
+        let read = assessment.immediateCoachRead.lowercased()
+        #expect(read != assessment.nextProofTest.lowercased())
+        #expect(!read.contains("read:"))
+        #expect(!read.contains("signal:"))
+        #expect(!read.contains("test:"))
+        #expect(read.contains("pacing"))
+        #expect(read.contains("the signal i can use"))
+        #expect(read.contains("timed, 7/10"))
+        #expect(read.contains("try this next"))
+        #expect(read.contains("pause") || read.contains("beat"))
+    }
+
+    @Test func deepAssessmentCarriesCaseSummaryAndInterventionEvidence() {
+        var trajectory = Self.singleRepTrajectory
+        trajectory.evidenceCoverage = 0.64
+        trajectory.coachCaseSummary = CoachCaseSummary(
+            hypothesis: "The recommendation is clear but the close softens.",
+            focus: "clean close",
+            evidenceSummary: "Recent reps open better than they close.",
+            nextCoachMove: "review whether the close held under pressure"
+        )
+        trajectory.activeInterventionState = ActiveInterventionState(
+            title: "Clean close reps",
+            target: "End on the ask without an extra caveat.",
+            followedRepCount: 2,
+            reviewStatus: "review due"
+        )
+
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .deepAssessment,
+            userQuestion: "Where do I stand overall?",
+            trajectory: trajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text
+        )
+        let evidence = assessment.evidenceUsed.joined(separator: "\n").lowercased()
+        let prompt = CoachPromptBundle.contextBlock(
+            assessment: assessment,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text
+        ).lowercased()
+
+        #expect(evidence.contains("case summary:"))
+        #expect(evidence.contains("recommendation is clear"))
+        #expect(evidence.contains("review whether the close held under pressure"))
+        #expect(evidence.contains("active intervention:"))
+        #expect(evidence.contains("clean close reps"))
+        #expect(evidence.contains("followed reps: 2"))
+        #expect(prompt.contains("case summary:"))
+        #expect(prompt.contains("active intervention:"))
     }
 
     @Test func proofTestFollowsUserNamedPacingLever() {
@@ -852,6 +935,30 @@ struct CoachReasoningPassTests {
         #expect(!assessment.immediateCoachRead.lowercased().contains("the useful repair is"))
     }
 
+    @Test func trustRepairAssessmentNamesTerseFrictionBeforePrescribing() {
+        let repeated = CoachReasoningPass.assess(
+            turnDepth: .trustRepair,
+            userQuestion: "You're repeating yourself.",
+            trajectory: Self.singleRepTrajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text,
+            previousCoachReply: "Run the same 60-second proof test."
+        )
+        let hard = CoachReasoningPass.assess(
+            turnDepth: .trustRepair,
+            userQuestion: "It's not easy.",
+            trajectory: Self.singleRepTrajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text,
+            previousCoachReply: "Just pause before the close."
+        )
+
+        #expect(repeated.repairFocus == "I repeated the same coaching move instead of advancing the read")
+        #expect(repeated.evidenceUsed.first == "trust repair signal: I repeated the same coaching move instead of advancing the read")
+        #expect(hard.repairFocus == "I made the move sound easier than it feels under pressure")
+        #expect(hard.evidenceUsed.first == "trust repair signal: I made the move sound easier than it feels under pressure")
+    }
+
     @Test func promptBundleCarriesRepairFocusAsProviderConstraint() {
         let assessment = CoachReasoningPass.assess(
             turnDepth: .trustRepair,
@@ -900,6 +1007,25 @@ struct CoachReasoningPassTests {
         #expect(low.confidence == 0.20)
         #expect(higher.confidence > low.confidence + 0.30)
         #expect(higher.confidence <= 0.82)
+    }
+
+    @Test func memoryHandoffAssessmentStaysConsentBoundToConversationHypothesis() {
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .groundedRead,
+            userQuestion: "What should Noum remember?",
+            trajectory: Self.singleRepTrajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .executive),
+            surface: .text,
+            previousCoachReply: "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner."
+        )
+
+        #expect(assessment.directVerdict.contains("testable hypothesis only"))
+        #expect(assessment.directVerdict.contains("disagreement may be getting softened by setup"))
+        #expect(assessment.nextProofTest == "Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it.")
+        #expect(assessment.evidenceUsed.first == "conversation hypothesis: disagreement may be getting softened by setup")
+        #expect(assessment.immediateCoachRead.lowercased().contains("testable hypothesis only"))
+        #expect(assessment.immediateCoachRead.lowercased().contains("drop it if verdict-first solves it"))
+        #expect(!assessment.immediateCoachRead.lowercased().contains("no maybe"))
     }
 
     private static let singleRepTrajectory = UserTrajectorySnapshot(
@@ -992,6 +1118,42 @@ struct CoachSemanticQualityGateTests {
         #expect(issue == nil)
     }
 
+    @Test func transferCausalityFailsEvenWithoutTypedAssessment() {
+        let context = """
+        REAL-WORLD TRANSFER
+        - For presentation "Leadership update", the user reported it went well; the audience or counterpart seemed engaged. On their prep, they felt their prep carried into the moment.
+        - These are the user's reported outcome and read of the room, not objective evidence or proof that training caused the result.
+        """
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "That proves the 75-second close drill caused the room to engage. The audience response is objective proof that training transferred.",
+            latestUserTurn: "What should I capture now?",
+            systemContext: context,
+            turnDepth: .quickMove,
+            assessment: nil
+        )
+
+        #expect(issue == .unsupportedTransferCausalityClaim)
+    }
+
+    @Test func transferSelfReportLanguagePassesSemanticGate() {
+        let context = """
+        REAL-WORLD TRANSFER
+        - For presentation "Leadership update", the user reported it went well; the audience or counterpart seemed engaged. On their prep, they felt their prep carried into the moment.
+        - These are the user's reported outcome and read of the room, not objective evidence or proof that training caused the result.
+        """
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Capture it as your room read, not proof: people asked about timeline, so next prep should add one date before the final ask.",
+            latestUserTurn: "What should I capture now?",
+            systemContext: context,
+            turnDepth: .quickMove,
+            assessment: nil
+        )
+
+        #expect(issue == nil)
+    }
+
     @Test func unconfirmedPersonalPatternLabelFailsProfessionalGate() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "You are defensive because you fear disagreement. Run a 60-second rep with the disagreement first, then one reason.",
@@ -1015,6 +1177,36 @@ struct CoachSemanticQualityGateTests {
         #expect(issue == nil)
     }
 
+    @Test func memoryHandoffHypothesisClearsProfessionalAndSemanticGates() {
+        let reply = "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it."
+        let previousCoachReply = "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner."
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .groundedRead,
+            userQuestion: "What should Noum remember?",
+            trajectory: Self.memoryHandoffTrajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .executive),
+            surface: .text,
+            previousCoachReply: previousCoachReply
+        )
+
+        let qualityIssue = AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "What should Noum remember?",
+            systemContext: "RECENT (most-recent first)\n- Transcript: I disagree with the direction, but I understand the concern, and maybe we can keep exploring options before I say no.",
+            recentCoachReplies: [previousCoachReply],
+            turnDepth: .groundedRead
+        )
+        let semanticIssue = AICoachChatService.semanticQualityIssue(
+            in: reply,
+            latestUserTurn: "What should Noum remember?",
+            turnDepth: .groundedRead,
+            assessment: assessment
+        )
+
+        #expect(qualityIssue == nil)
+        #expect(semanticIssue == nil)
+    }
+
     @Test func observableStructureReadDoesNotTripPersonalPatternGate() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "From the transcript, the disagreement arrived after too much setup, so run the same answer once with the disagreement in sentence one.",
@@ -1025,6 +1217,31 @@ struct CoachSemanticQualityGateTests {
 
         #expect(issue == nil)
     }
+
+    private static let memoryHandoffTrajectory = UserTrajectorySnapshot(
+        generatedAt: Date(timeIntervalSince1970: 1_000),
+        sessionCount: 1,
+        ratedSessionCount: 1,
+        evidenceCoverage: 0.24,
+        recentSessionLines: [
+            "Timed: 6/10, 1 fillers, 63s"
+        ],
+        trendLines: [],
+        latestRepEvidencePack: LatestRepEvidencePack(
+            mode: "Timed",
+            score: 6,
+            fillerCount: 1,
+            durationSeconds: 63,
+            wordsPerMinute: 132,
+            transcriptWordCount: 16,
+            transcriptExcerpt: "I disagree with the direction, but I understand the concern before I say no",
+            evidenceLines: [
+                "latest rep: Timed, 6/10, 1 fillers, 63s"
+            ]
+        ),
+        coachCaseSummary: nil,
+        activeInterventionState: nil
+    )
 
     private static let quickAssessment = CoachAssessment(
         turnDepth: .quickMove,
@@ -1115,6 +1332,40 @@ struct CoachSemanticQualityGateAdversarialTests {
             assessment: Self.baseDeep
         )
         #expect(issue == .insufficientEvidenceReferences)
+    }
+
+    @Test func deepAssessmentWithCaseEvidenceFailsWhenReplyIgnoresCaseAnchor() {
+        // Passes verdict + mechanics/goal + ordinary evidence-count checks, but
+        // drops the current case hypothesis and active intervention.
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "You are closer mechanically than authoritatively overall. Your latest rep was 7/10 and the pace estimate was 145 WPM; goal readiness under pressure is unproven. Still need repeated reps. Proof test: record one verdict-first rep.",
+            turnDepth: .deepAssessment,
+            assessment: Self.caseAnchoredDeep
+        )
+
+        #expect(issue == .missingCaseAnchor)
+    }
+
+    @Test func deepAssessmentCaseAnchorIsNotSatisfiedByGenericCleanCloseLanguage() {
+        // The case evidence names a clean-close intervention, but a reply that
+        // only repeats generic proof-test words has not used the actual case.
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "You are closer mechanically than authoritatively overall. Your latest rep was 7/10 and the pace estimate was 145 WPM; goal readiness under pressure is unproven. Still need repeated reps. Proof test: record one clean-close answer with the final sentence as the ask.",
+            turnDepth: .deepAssessment,
+            assessment: Self.caseAnchoredDeep
+        )
+
+        #expect(issue == .missingCaseAnchor)
+    }
+
+    @Test func deepAssessmentWithCaseEvidencePassesWhenReplyUsesCaseAnchor() {
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "You are closer mechanically than authoritatively overall, but the current case read is still the clean close: the close softens after the recommendation. Your latest rep was 7/10 and the pace estimate was 145 WPM; goal readiness under pressure is unproven. Still need repeated reps. Proof test: record one verdict-first rep.",
+            turnDepth: .deepAssessment,
+            assessment: Self.caseAnchoredDeep
+        )
+
+        #expect(issue == nil)
     }
 
     @Test func unnamedMissingEvidenceFailsDisclosureWhenConfidenceThin() {
@@ -1332,6 +1583,48 @@ struct CoachSemanticQualityGateAdversarialTests {
         #expect(issue == nil)
     }
 
+    @Test func trustRepairWithCaseEvidenceFailsWhenRepairIgnoresCaseAnchor() {
+        var assessment = Self.caseAnchoredDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "I sounded cold instead of giving a human coach read"
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push — that sounded cold, not like a human coach read. The actual read is your latest rep was 7/10 with a 145 WPM pace. Proof test: record one verdict-first rep.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        #expect(issue == .missingCaseAnchor)
+    }
+
+    @Test func trustRepairCaseAnchorIsNotSatisfiedByGenericInterventionNameOnly() {
+        var assessment = Self.caseAnchoredDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "I sounded cold instead of giving a human coach read"
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push — that sounded cold, not like a human coach read. The actual read is the clean-close intervention needs one more answer ending on the ask. Proof test: record one verdict-first rep.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        #expect(issue == .missingCaseAnchor)
+    }
+
+    @Test func trustRepairWithCaseEvidencePassesWhenRepairUsesCaseAnchor() {
+        var assessment = Self.caseAnchoredDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "I sounded cold instead of giving a human coach read"
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push — that sounded cold, not like a human coach read. The actual read is the clean-close intervention is still live: your close softens after the recommendation. Proof test: record one verdict-first rep.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        #expect(issue == nil)
+    }
+
     // MARK: Quick-move gate
 
     @Test func quickMoveBlocksThinConfidenceClosenessClaim() {
@@ -1384,6 +1677,27 @@ struct CoachSemanticQualityGateAdversarialTests {
         evidenceUsed: [
             "latest rep: Timed, 7/10, 1 fillers, 60s",
             "pace estimate: 145 WPM"
+        ],
+        rubricScores: [],
+        missingEvidence: [
+            "Need repeated evidence across more than one clean rep before calling the user close overall.",
+            "Need pressure-mode evidence before treating the goal as ready for real stakes."
+        ],
+        nextProofTest: "Record a 75-second answer where sentence one gives the verdict, sentence two gives one reason, and the final sentence names the ask.",
+        responseMode: .expandable
+    )
+
+    private static let caseAnchoredDeep = CoachAssessment(
+        turnDepth: .deepAssessment,
+        surface: .text,
+        questionRestatement: "Where do I stand overall?",
+        directVerdict: "You are closer mechanically than you are to fully sounding authoritative.",
+        confidence: 0.62,
+        evidenceUsed: [
+            "latest rep: Timed, 7/10, 1 fillers, 60s",
+            "pace estimate: 145 WPM",
+            "case summary: hypothesis: The recommendation is clear but the close softens; focus: clean close; evidence: Recent reps open better than they close; next move: review whether the close held under pressure",
+            "active intervention: Clean close reps; target: End on the ask without an extra caveat.; followed reps: 2; review: review due"
         ],
         rubricScores: [],
         missingEvidence: [

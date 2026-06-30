@@ -1,0 +1,3888 @@
+{
+  "candidate": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
+  "comparison": {
+    "averageDelta": 0.0,
+    "candidateChanged": false,
+    "changedScoreCount": 0,
+    "clearedFailureFixtureIDs": [],
+    "failureCountDelta": 0,
+    "fixtureCountChanged": false,
+    "largestScoreChanges": [],
+    "newlyFailingFixtureIDs": [],
+    "passesChanged": false,
+    "placeholderLeaksDelta": 0,
+    "previousCandidate": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
+    "previousGeneratedAt": "2026-06-30T23:12:37+00:00",
+    "status": "compared",
+    "typeAverageDeltas": {
+      "deepAssessment": 0.0,
+      "groundedRead": 0.0,
+      "quickMove": 0.0,
+      "trustRepair": 0.0
+    }
+  },
+  "coverage": {
+    "ambiguousFixtureIDs": [],
+    "coverageFailures": [
+      "25 fixture(s) missing from app-path report",
+      "matched 25 of 50 requested fixtures"
+    ],
+    "coveragePasses": false,
+    "matchedFixtureCount": 25,
+    "matchedFixtureIDs": [
+      "authoritative-distance-001",
+      "not-informative-trust-repair-002",
+      "polite-however-pushback-003",
+      "not-easy-empathy-004",
+      "repeating-yourself-005",
+      "interview-prep-006",
+      "filler-pressure-007",
+      "leadership-update-008",
+      "confidence-ending-009",
+      "score-not-readiness-011",
+      "personal-pattern-consent-012",
+      "reject-hypothesis-013",
+      "remember-hypothesis-014",
+      "markdown-tts-015",
+      "cold-generic-016",
+      "too-much-writing-017",
+      "no-baseline-interview-018",
+      "pace-rushing-019",
+      "closing-ask-020",
+      "opening-verdict-021",
+      "pause-before-answer-022",
+      "concise-answer-023",
+      "structure-one-reason-024",
+      "confidence-clean-stop-025",
+      "leadership-transfer-capture-026"
+    ],
+    "requestedFixtureCount": 50,
+    "source": "appPathReport",
+    "sourceConversationCount": 28,
+    "sourcePassesAppPathFloor": true,
+    "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
+    "sourceSchemaVersion": "coach-chat-conversation-app-path-eval-v1",
+    "sourceSurface": "text",
+    "sourceTurnCount": 84,
+    "unmatchedFixtureCount": 25,
+    "unmatchedFixtureIDs": [
+      "examples-from-sessions-010",
+      "outcome-not-causation-027",
+      "upcoming-conflict-028",
+      "networking-intro-029",
+      "presentation-nerves-030",
+      "sales-pitch-031",
+      "board-update-032",
+      "overexplaining-033",
+      "fear-disagreement-034",
+      "lack-conviction-035",
+      "emotional-disconnection-036",
+      "evasive-polished-037",
+      "timidity-038",
+      "authority-under-pressure-039",
+      "semantic-filler-use-040",
+      "prompt-echo-041",
+      "no-transcript-fabrication-042",
+      "quote-guard-043",
+      "live-latency-short-044",
+      "barge-in-045",
+      "weekly-checkin-046",
+      "real-world-outcome-047",
+      "grammar-leak-048",
+      "placeholder-leak-049",
+      "assistant-wrapper-050"
+    ]
+  },
+  "generatedAt": "2026-06-30T23:16:53+00:00",
+  "results": [
+    {
+      "fixture": {
+        "badAnswerExample": "You are a 7/10, so you are pretty close. Keep practicing your confidence.",
+        "disqualifiers": [
+          "score as readiness",
+          "says close overall from one rep",
+          "no missing evidence",
+          "generic confidence tip"
+        ],
+        "emotionalSignal": "Wants a straight verdict and may over-read a numeric score.",
+        "evidence": [
+          "latest timed rep 7/10, 1 filler, 145 WPM",
+          "one clean normal rep",
+          "no pressure-mode proof yet"
+        ],
+        "excellentAnswerExample": "Closer mechanically, not proven authoritative yet. The useful evidence is 7/10 with 1 filler at 145 WPM; the missing evidence is whether that holds under pressure. Proof test: record 75 seconds with the verdict in sentence one, one reason, and a clean stop.",
+        "expectedCoachMove": "Give calibrated verdict, separate mechanics from goal readiness, name missing pressure evidence, prescribe one proof test.",
+        "goal": "Sound authoritative in high-stakes updates.",
+        "id": "authoritative-distance-001",
+        "memoryState": "Goal is authoritative; current case says mechanics are improving but pressure readiness is unproven.",
+        "priorChatTurns": [],
+        "turnType": "deepAssessment",
+        "userTurn": "How far off am I from sounding authoritative?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 25,
+        "dialogueFeel": 13,
+        "eqAttunement": 14,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 87,
+        "personalMemory": 20,
+        "rawOverall": 87,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.39
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "authoritative-distance-deep-assessment-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "authoritative-distance-deep-assessment",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "How far off am I from sounding authoritative?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 480,
+          "timeToFirstVisibleTokenMs": 148
+        },
+        "memory": {
+          "assessmentConfidence": 0.7,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "deepAssessment"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "claudeReasoning"
+        },
+        "rawReply": "You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: voice-authoritative, structure-land-the-close, filler-silent-reset +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 45,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "voice-authoritative",
+            "structure-land-the-close",
+            "filler-silent-reset",
+            "structure-signposting"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "I understand. Communication can be hard. Try practicing more.",
+        "disqualifiers": [
+          "defends app",
+          "apology wall",
+          "no concrete read",
+          "more generic advice"
+        ],
+        "emotionalSignal": "Frustration; trust repair required.",
+        "evidence": [
+          "previous reply was generic",
+          "latest rep has one usable structure signal"
+        ],
+        "excellentAnswerExample": "Fair. That was advice, not a read. The usable signal is that your point arrived after setup, so run the same answer once with the point in sentence one and stop after one reason.",
+        "expectedCoachMove": "Acknowledge miss, name the actual useful signal, give one changed move.",
+        "goal": "Get useful coaching, not generic advice.",
+        "id": "not-informative-trust-repair-002",
+        "memoryState": "User has pushed back on generic coaching before.",
+        "priorChatTurns": [
+          {
+            "role": "coach",
+            "text": "Try to be clearer and communicate with confidence."
+          }
+        ],
+        "turnType": "trustRepair",
+        "userTurn": "That's not informative at all."
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 11,
+        "dialogueFeel": 15,
+        "eqAttunement": 21,
+        "failureReasons": [],
+        "interventionQuality": 11,
+        "overall": 73,
+        "personalMemory": 15,
+        "rawOverall": 73,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.067
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Fair push: I missed the actual question and answered around the useful read. Your last rep shows warmth came before the recommendation, so next rep say the recommendation first, then one reassurance.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "not-informative-trust-repair-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "assistant-explainer-register",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "That's not informative at all."
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Fair push: I missed the actual question and answered around the useful read. Your last rep shows warmth came before the recommendation, so next rep say the recommendation first, then one reassurance.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 340,
+          "timeToFirstVisibleTokenMs": 138
+        },
+        "memory": {
+          "assessmentConfidence": 0.64,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "trustRepair"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Fair push: I missed the actual question and answered around the useful read. Your last rep shows warmth came before the recommendation, so next rep say the recommendation first, then one reassurance."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "claudeReasoning"
+        },
+        "rawReply": "Fair push: I missed the actual question and answered around the useful read. Your last rep shows warmth came before the recommendation, so next rep say the recommendation first, then one reassurance.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: rhetoric-parallel-structure, composure-sudden-death-one-line, composure-tactical-pause +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 30,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "rhetoric-parallel-structure",
+            "composure-sudden-death-one-line",
+            "composure-tactical-pause",
+            "conflict-name-it-then-steer"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Glad that helps. Next, run the same drill again.",
+        "disqualifiers": [
+          "treats polite opener as satisfaction",
+          "ignores however",
+          "prescribes same drill unchanged"
+        ],
+        "emotionalSignal": "Polite disagreement with hidden frustration.",
+        "evidence": [
+          "user says the prior answer missed intent",
+          "prior answer prescribed before clarifying the real ask"
+        ],
+        "excellentAnswerExample": "Fair push. I answered the drill, not the question underneath it: you are asking whether this pattern is actually you. Treat it as a hypothesis only, and test it once with a verdict-first answer before keeping it.",
+        "expectedCoachMove": "Name that the answer missed the real ask, infer the likely ask, then give one narrow answer.",
+        "goal": "Feel understood before being prescribed another drill.",
+        "id": "polite-however-pushback-003",
+        "memoryState": "Soft pushback should be treated as friction, not agreement.",
+        "priorChatTurns": [
+          {
+            "role": "coach",
+            "text": "Run another pressure rep and reduce fillers."
+          }
+        ],
+        "turnType": "trustRepair",
+        "userTurn": "Okay that's cool, however I still don't feel like that answers what I meant."
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 17,
+        "dialogueFeel": 13,
+        "eqAttunement": 22,
+        "failureReasons": [],
+        "interventionQuality": 11,
+        "overall": 76,
+        "personalMemory": 13,
+        "rawOverall": 76,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.135
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The actual read is warmth came before the recommendation, so the listener waits for the point. Next rep, say the recommendation first, then one reassurance.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "polite-however-arena-repair-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "assistant-explainer-register",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "Okay that's cool, however I still don't feel like that answers what I meant."
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The actual read is warmth came before the recommendation, so the listener waits for the point. Next rep, say the recommendation first, then one reassurance.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 292,
+          "timeToFirstVisibleTokenMs": 292
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The actual read is warmth came before the recommendation, so the listener waits for the point. Next rep, say the recommendation first, then one reassurance."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The actual read is warmth came before the recommendation, so the listener waits for the point. Next rep, say the recommendation first, then one reassurance.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: conflict-name-it-then-steer, interview-buy-thinking-time, conflict-non-defensive-repair +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 76,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "conflict-name-it-then-steer",
+            "interview-buy-thinking-time",
+            "conflict-non-defensive-repair",
+            "conflict-held-pause"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "You just need to keep practicing until it becomes easy.",
+        "disqualifiers": [
+          "minimizes difficulty",
+          "motivational platitude",
+          "no adjusted intervention"
+        ],
+        "emotionalSignal": "Discouragement; needs validation plus doable step.",
+        "evidence": [
+          "user reports difficulty",
+          "the prescribed move is emotionally loaded"
+        ],
+        "excellentAnswerExample": "No, it is not easy. The hard part is that sentence one carries the social risk, so shrink the rep: say only the disagreement and one calm reason, then stop before defending it.",
+        "expectedCoachMove": "Validate difficulty, name why it is hard, lower the next step without abandoning the target.",
+        "goal": "Practice disagreement without sounding defensive.",
+        "id": "not-easy-empathy-004",
+        "memoryState": "User tends to soften disagreement with setup.",
+        "priorChatTurns": [
+          {
+            "role": "coach",
+            "text": "Just say the recommendation first and stop overexplaining."
+          }
+        ],
+        "turnType": "trustRepair",
+        "userTurn": "It's not easy."
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 16,
+        "dialogueFeel": 13,
+        "eqAttunement": 21,
+        "failureReasons": [],
+        "interventionQuality": 11,
+        "overall": 71,
+        "personalMemory": 10,
+        "rawOverall": 71,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.086
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Fair push: I made that sound easier than it feels under pressure. The actual read is verdict-first structure gets harder under pressure, so shrink the next rep to one sentence before adding the full answer back.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "not-easy-empathy-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "filler-pressure-prescription",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "It's not easy."
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Fair push: I made that sound easier than it feels under pressure. The actual read is verdict-first structure gets harder under pressure, so shrink the next rep to one sentence before adding the full answer back.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 312,
+          "timeToFirstVisibleTokenMs": 123
+        },
+        "memory": {
+          "assessmentConfidence": 0.64,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "trustRepair"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Fair push: I made that sound easier than it feels under pressure. The actual read is verdict-first structure gets harder under pressure, so shrink the next rep to one sentence before adding the full answer back."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "claudeReasoning"
+        },
+        "rawReply": "Fair push: I made that sound easier than it feels under pressure. The actual read is verdict-first structure gets harder under pressure, so shrink the next rep to one sentence before adding the full answer back.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: rhetoric-antithesis, structure-rule-of-three, rhetoric-parallel-structure +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 14,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "rhetoric-antithesis",
+            "structure-rule-of-three",
+            "rhetoric-parallel-structure",
+            "pacing-chunk-and-pause"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Repetition is part of learning. Run another verdict-first rep.",
+        "disqualifiers": [
+          "repeats same proof test",
+          "defends repetition",
+          "no changed condition"
+        ],
+        "emotionalSignal": "Annoyance and loss of trust.",
+        "evidence": [
+          "same proof test appeared twice",
+          "user noticed repetition"
+        ],
+        "excellentAnswerExample": "Fair. I repeated the same test instead of changing the evidence. Keep verdict-first fixed this time, and change only the close: final sentence must ask for the decision, then stop.",
+        "expectedCoachMove": "Own repetition, change the test condition, explain the new discriminating signal.",
+        "goal": "Avoid repetitive coaching loops.",
+        "id": "repeating-yourself-005",
+        "memoryState": "Recent proof-test history contains verdict-first repetition.",
+        "priorChatTurns": [
+          {
+            "role": "coach",
+            "text": "Run a 60-second answer with verdict first."
+          },
+          {
+            "role": "coach",
+            "text": "Try another 60-second answer with verdict first."
+          }
+        ],
+        "turnType": "trustRepair",
+        "userTurn": "You're repeating yourself."
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 14,
+        "dialogueFeel": 15,
+        "eqAttunement": 21,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 80,
+        "personalMemory": 15,
+        "rawOverall": 80,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.303
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "repeating-yourself-trust-repair-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "filler-pressure-prescription",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "You're repeating yourself."
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 433,
+          "timeToFirstVisibleTokenMs": 151
+        },
+        "memory": {
+          "assessmentConfidence": 0.64,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "trustRepair"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "claudeReasoning"
+        },
+        "rawReply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: conflict-non-defensive-repair, interview-tell-me-about-yourself, rhetoric-anaphora +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 26,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "conflict-non-defensive-repair",
+            "interview-tell-me-about-yourself",
+            "rhetoric-anaphora",
+            "composure-name-the-nerves"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Tell me more about the job and I can help with interview tips.",
+        "disqualifiers": [
+          "cold-start fabrication",
+          "broad interview menu",
+          "no first rep"
+        ],
+        "emotionalSignal": "Urgent but underspecified.",
+        "evidence": [
+          "no baseline yet",
+          "interview is upcoming"
+        ],
+        "excellentAnswerExample": "No baseline yet, so start there. Record 60 seconds on 'Why should we hire you?' and check whether sentence one answers before you polish anything else.",
+        "expectedCoachMove": "Start with one diagnostic interview rep, not a menu of interview tips.",
+        "goal": "Prepare for an interview.",
+        "id": "interview-prep-006",
+        "memoryState": "Cold start; no rated sessions.",
+        "priorChatTurns": [],
+        "turnType": "quickMove",
+        "userTurn": "How do I get better before my interview?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 15,
+        "dialogueFeel": 15,
+        "eqAttunement": 13,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 72,
+        "personalMemory": 14,
+        "rawOverall": 72,
+        "similarity": {
+          "badAnswerExample": 0.045,
+          "excellentAnswerExample": 0.28
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "cold-start-interview-baseline-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "cold-start-interview-baseline",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "How do I get better before my interview?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 319,
+          "timeToFirstVisibleTokenMs": 319
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: interview-answer-first, interview-buy-thinking-time, interview-star-under-pressure +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 40,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "interview-answer-first",
+            "interview-buy-thinking-time",
+            "interview-star-under-pressure",
+            "structure-frame-the-open"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Stop saying um by being more confident.",
+        "disqualifiers": [
+          "shames fillers",
+          "semantic words treated as fillers",
+          "generic confidence"
+        ],
+        "emotionalSignal": "Wants tactical help.",
+        "evidence": [
+          "last pressure rep had 6 fillers",
+          "fillers cluster before the close"
+        ],
+        "excellentAnswerExample": "Your last pressure rep had 6 fillers, mostly before the close. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask.",
+        "expectedCoachMove": "Use filler evidence, prescribe silent beat replacement, avoid shame.",
+        "goal": "Reduce fillers when pressure rises.",
+        "id": "filler-pressure-007",
+        "memoryState": "Filler work should distinguish filler speech from semantic wording.",
+        "priorChatTurns": [],
+        "turnType": "quickMove",
+        "userTurn": "How do I stop saying um under pressure?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 13,
+        "dialogueFeel": 15,
+        "eqAttunement": 13,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 71,
+        "personalMemory": 15,
+        "rawOverall": 71,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.381
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and check whether fillers drop after that point.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "filler-pressure-prescription-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "filler-pressure-prescription",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "How do I stop saying um under pressure?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and check whether fillers drop after that point.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 276,
+          "timeToFirstVisibleTokenMs": 276
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "15225bc3a8f5d742",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and check whether fillers drop after that point."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and check whether fillers drop after that point.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: composure-sudden-death-one-line, composure-tactical-pause, interview-star-under-pressure +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 39,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "composure-sudden-death-one-line",
+            "composure-tactical-pause",
+            "interview-star-under-pressure",
+            "filler-pause-beats-filler"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Practice speaking confidently and know your audience.",
+        "disqualifiers": [
+          "generic leadership tips",
+          "no transfer target",
+          "no observable close"
+        ],
+        "emotionalSignal": "Time-limited preparation.",
+        "evidence": [
+          "recent timed rep had clean fillers but weak close",
+          "upcoming leadership moment"
+        ],
+        "excellentAnswerExample": "Practice the close, not the whole update. Record 75 seconds: headline, one implication, then final sentence as the decision or ask you need from the room.",
+        "expectedCoachMove": "Prescribe one leadership-update rep with final sentence as ask/decision.",
+        "goal": "Sound executive in leadership updates.",
+        "id": "leadership-update-008",
+        "memoryState": "Big moment is tomorrow; transfer matters.",
+        "priorChatTurns": [],
+        "turnType": "quickMove",
+        "userTurn": "I have a leadership update tomorrow. What should I practice?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 16,
+        "dialogueFeel": 15,
+        "eqAttunement": 13,
+        "failureReasons": [],
+        "interventionQuality": 11,
+        "overall": 74,
+        "personalMemory": 19,
+        "rawOverall": 74,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.217
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "leadership-transfer-setup-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "leadership-transfer-setup",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "I have a leadership update tomorrow, what should I practice?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 270,
+          "timeToFirstVisibleTokenMs": 270
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: leadership-summary-first-update, leadership-verdict-first, structure-thirty-second-update +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 60,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "leadership-summary-first-update",
+            "leadership-verdict-first",
+            "structure-thirty-second-update",
+            "leadership-gravity-fewer-words"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "You need to sound more confident at the end.",
+        "disqualifiers": [
+          "personality label",
+          "no transcript anchor",
+          "vague confidence advice"
+        ],
+        "emotionalSignal": "Self-critical but specific.",
+        "evidence": [
+          "last transcript ends with a softener after the recommendation",
+          "score 6/10"
+        ],
+        "excellentAnswerExample": "The confidence leak is the extra softener after the recommendation. Keep the recommendation, cut the final qualifier, and end on the ask so the close does not turn into a retreat.",
+        "expectedCoachMove": "Name softening after the recommendation, prescribe hard-stop close.",
+        "goal": "End answers with confidence.",
+        "id": "confidence-ending-009",
+        "memoryState": "Closing strength is current lever.",
+        "priorChatTurns": [],
+        "turnType": "groundedRead",
+        "userTurn": "Why does my ending sound less confident?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 12,
+        "dialogueFeel": 15,
+        "eqAttunement": 13,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 73,
+        "personalMemory": 18,
+        "rawOverall": 73,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.45
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "confidence-ending-softener-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "confidence-clean-stop",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "Why does my ending sound less confident?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 337,
+          "timeToFirstVisibleTokenMs": 337
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "15225bc3a8f5d742",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 92
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: leadership-gravity-fewer-words, composure-name-the-nerves, presentation-close-is-the-ask +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 40,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "leadership-gravity-fewer-words",
+            "composure-name-the-nerves",
+            "presentation-close-is-the-ask",
+            "rhetoric-parallel-structure"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Yes, 8/10 means you are ready.",
+        "disqualifiers": [
+          "score as readiness",
+          "over-reassurance",
+          "no pressure rehearsal"
+        ],
+        "emotionalSignal": "Looking for reassurance.",
+        "evidence": [
+          "8/10 normal timed rep",
+          "no board-pressure rehearsal",
+          "no audience outcome"
+        ],
+        "excellentAnswerExample": "8/10 says the mechanics are improving; it does not prove board readiness. You still need one pressure rehearsal: 90 seconds, headline first, one risk, one decision ask, then review only the final 15 seconds.",
+        "expectedCoachMove": "Separate score from readiness and prescribe rehearsal proof.",
+        "goal": "Board update readiness.",
+        "id": "score-not-readiness-011",
+        "memoryState": "Scores are mechanics, not real-stakes readiness.",
+        "priorChatTurns": [],
+        "turnType": "deepAssessment",
+        "userTurn": "I got 8/10. Am I ready for the board update?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 20,
+        "dialogueFeel": 13,
+        "eqAttunement": 13,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 77,
+        "personalMemory": 16,
+        "rawOverall": 77,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.171
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Not proven yet. The latest timed rep score is useful evidence, and the transcript has a recommendation plus a clear decision, but board readiness needs pressure evidence because the decision ask has to survive stakes. Missing: one board-style rehearsal. Proof test: record 75 seconds with headline, one metric, decision ask, clean stop.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "score-not-readiness-board-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "authoritative-distance-deep-assessment",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "I got 8/10. Am I ready for the board update?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Not proven yet. The latest timed rep score is useful evidence, and the transcript has a recommendation plus a clear decision, but board readiness needs pressure evidence because the decision ask has to survive stakes. Missing: one board-style rehearsal. Proof test: record 75 seconds with headline, one metric, decision ask, clean stop.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 374,
+          "timeToFirstVisibleTokenMs": 145
+        },
+        "memory": {
+          "assessmentConfidence": 0.7,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "deepAssessment"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Not proven yet. The latest timed rep score is useful evidence, and the transcript has a recommendation plus a clear decision, but board readiness needs pressure evidence because the decision ask has to survive stakes. Missing: one board-style rehearsal. Proof test: record 75 seconds with headline, one metric, decision ask, clean stop."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "claudeReasoning"
+        },
+        "rawReply": "Not proven yet. The latest timed rep score is useful evidence, and the transcript has a recommendation plus a clear decision, but board readiness needs pressure evidence because the decision ask has to survive stakes. Missing: one board-style rehearsal. Proof test: record 75 seconds with headline, one metric, decision ask, clean stop.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: leadership-summary-first-update, structure-thirty-second-update, structure-minto-pyramid +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 44,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "leadership-summary-first-update",
+            "structure-thirty-second-update",
+            "structure-minto-pyramid",
+            "composure-sudden-death-one-line"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "You are defensive because you fear disagreement.",
+        "disqualifiers": [
+          "labels the user",
+          "hidden motive",
+          "no consent boundary"
+        ],
+        "emotionalSignal": "Concerned about identity label.",
+        "evidence": [
+          "transcript softened disagreement with context before the point"
+        ],
+        "excellentAnswerExample": "I would treat defensiveness as a hypothesis, not a label. The observable signal is that the disagreement arrived after setup, so test sentence-one disagreement with one reason and see whether it fits.",
+        "expectedCoachMove": "Frame defensiveness as hypothesis, not label; ask fit; prescribe one test.",
+        "goal": "Disagree without sounding defensive.",
+        "id": "personal-pattern-consent-012",
+        "memoryState": "Personal-pattern reads must be hypotheses the user can reject.",
+        "priorChatTurns": [],
+        "turnType": "groundedRead",
+        "userTurn": "Do I sound defensive when I disagree?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 20,
+        "dialogueFeel": 13,
+        "eqAttunement": 14,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 77,
+        "personalMemory": 15,
+        "rawOverall": 77,
+        "similarity": {
+          "badAnswerExample": 0.043,
+          "excellentAnswerExample": 0.385
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "personal-pattern-consent-boundary-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "personal-pattern-hypothesis-confirmation",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "Do I sound defensive when I disagree?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 520,
+          "timeToFirstVisibleTokenMs": 520
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: conflict-non-defensive-repair, rhetoric-parallel-structure, pacing-target-band +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 37,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "conflict-non-defensive-repair",
+            "rhetoric-parallel-structure",
+            "pacing-target-band",
+            "composure-extended-exhale"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "It probably fits; defensiveness can be subtle.",
+        "disqualifiers": [
+          "argues with user",
+          "strengthens unconfirmed label",
+          "no drop condition"
+        ],
+        "emotionalSignal": "Boundary-setting.",
+        "evidence": [
+          "user questions the fit of a personal-pattern read"
+        ],
+        "excellentAnswerExample": "Then reject it. Keep only the observable read: the disagreement arrived after setup. Test disagreement-first once; if that solves it, we drop the defensiveness hypothesis.",
+        "expectedCoachMove": "Explicitly allow rejection and keep the observable read.",
+        "goal": "Keep coaching hypotheses revisable.",
+        "id": "reject-hypothesis-013",
+        "memoryState": "Hypothesis has not been confirmed.",
+        "priorChatTurns": [
+          {
+            "role": "coach",
+            "text": "Treat defensiveness as a hypothesis: disagreement may be softened by setup."
+          }
+        ],
+        "turnType": "groundedRead",
+        "userTurn": "What if that doesn't fit?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 17,
+        "dialogueFeel": 15,
+        "eqAttunement": 13,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 76,
+        "personalMemory": 16,
+        "rawOverall": 76,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.4
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "personal-pattern-consent-boundary-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "personal-pattern-hypothesis-confirmation",
+          "surface": "text",
+          "turnIndex": 1,
+          "userTurn": "What if that doesn't fit?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 403,
+          "timeToFirstVisibleTokenMs": 403
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "1c04eb647da82114",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: conflict-name-it-then-steer, structure-frame-the-open, networking-ask-before-assert +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 25,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "conflict-name-it-then-steer",
+            "structure-frame-the-open",
+            "networking-ask-before-assert",
+            "structure-thirty-second-update"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Remember that you get defensive when you disagree.",
+        "disqualifiers": [
+          "persists label as fact",
+          "no drop condition",
+          "generic memory"
+        ],
+        "emotionalSignal": "Asks what should be retained.",
+        "evidence": [
+          "conversation hypothesis: disagreement may be softened by setup"
+        ],
+        "excellentAnswerExample": "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it.",
+        "expectedCoachMove": "Store as testable hypothesis only with keep/drop criteria.",
+        "goal": "Persist useful memory without overclaiming.",
+        "id": "remember-hypothesis-014",
+        "memoryState": "Memory must be testable and removable.",
+        "priorChatTurns": [
+          {
+            "role": "coach",
+            "text": "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup."
+          }
+        ],
+        "turnType": "groundedRead",
+        "userTurn": "What should Noum remember?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 21,
+        "dialogueFeel": 15,
+        "eqAttunement": 20,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 87,
+        "personalMemory": 16,
+        "rawOverall": 87,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 1.0
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "personal-pattern-consent-boundary-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "personal-pattern-hypothesis-confirmation",
+          "surface": "text",
+          "turnIndex": 2,
+          "userTurn": "What should Noum remember?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 231,
+          "timeToFirstVisibleTokenMs": 231
+        },
+        "memory": {
+          "assessmentConfidence": 0.67,
+          "proofTestHash": "f0584b862687f448",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "groundedRead"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: networking-memorable-hook, rhetoric-antithesis, structure-rule-of-three +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 26,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "networking-memorable-hook",
+            "rhetoric-antithesis",
+            "structure-rule-of-three",
+            "conflict-name-it-then-steer"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "I apologize for the formatting issue. **Next Step:** continue practicing.",
+        "disqualifiers": [
+          "markdown markers",
+          "assistant apology wall",
+          "no coaching read"
+        ],
+        "emotionalSignal": "Irritated; low trust.",
+        "evidence": [
+          "prior reply leaked markdown scaffold",
+          "TTS read symbols"
+        ],
+        "excellentAnswerExample": "Fair push. The symbols and report shape broke the coaching voice. Plain version: your close softened after the recommendation, so say the recommendation first, hold one beat, then land the ask.",
+        "expectedCoachMove": "Own formatting failure in plain language, drop scaffold, give one useful read.",
+        "goal": "Coach should sound human in text and voice.",
+        "id": "markdown-tts-015",
+        "memoryState": "User has complained about robotic format.",
+        "priorChatTurns": [
+          {
+            "role": "coach",
+            "text": "**Read:** Your metrics suggest improvement. **Move:** Practice."
+          }
+        ],
+        "turnType": "trustRepair",
+        "userTurn": "The ** don't format and TTS reads them out. The responses feel robotic and cold."
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 12,
+        "dialogueFeel": 13,
+        "eqAttunement": 21,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 77,
+        "personalMemory": 16,
+        "rawOverall": 77,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.29
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. Your last rep had 4 fillers, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "markdown-tts-trust-repair-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "markdown-tts-trust-repair",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach."
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. Your last rep had 4 fillers, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 446,
+          "timeToFirstVisibleTokenMs": 153
+        },
+        "memory": {
+          "assessmentConfidence": 0.64,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "trustRepair"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. Your last rep had 4 fillers, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "claudeReasoning"
+        },
+        "rawReply": "Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. Your last rep had 4 fillers, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "No cards matched turn",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 110,
+          "queryPresent": true,
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "I am sorry you feel that way. Try being more specific.",
+        "disqualifiers": [
+          "generic apology",
+          "no evidence",
+          "same cold register"
+        ],
+        "emotionalSignal": "Disappointed; wants human coach presence.",
+        "evidence": [
+          "previous reply was generic",
+          "last rep shows warmth before recommendation"
+        ],
+        "excellentAnswerExample": "Fair. That was advice, not coaching. Your warmth is arriving before the recommendation, so put the recommendation first, then add one reassurance after it.",
+        "expectedCoachMove": "Repair register and give a specific read tied to user evidence.",
+        "goal": "Feel coached by a senior communication coach.",
+        "id": "cold-generic-016",
+        "memoryState": "User values warm but direct delivery.",
+        "priorChatTurns": [
+          {
+            "role": "coach",
+            "text": "Be clear, confident, and concise."
+          }
+        ],
+        "turnType": "trustRepair",
+        "userTurn": "This sounds cold and generic, like AI tips."
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 15,
+        "dialogueFeel": 15,
+        "eqAttunement": 16,
+        "failureReasons": [],
+        "interventionQuality": 11,
+        "overall": 70,
+        "personalMemory": 13,
+        "rawOverall": 70,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.5
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "assistant-explainer-register-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "assistant-explainer-register",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "This still sounds cold and overexplained, like generic AI tips."
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 426,
+          "timeToFirstVisibleTokenMs": 150
+        },
+        "memory": {
+          "assessmentConfidence": 0.64,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "trustRepair"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "claudeReasoning"
+        },
+        "rawReply": "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "No cards matched turn",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 63,
+          "queryPresent": true,
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Certainly. Here is a shorter but still comprehensive explanation of what you should consider.",
+        "disqualifiers": [
+          "long answer",
+          "meta explanation",
+          "no direct move"
+        ],
+        "emotionalSignal": "Impatient.",
+        "evidence": [
+          "user requests brevity"
+        ],
+        "excellentAnswerExample": "Fair. The close is the leak; make the final sentence the ask and stop.",
+        "expectedCoachMove": "Shorten before adding intelligence; one line read plus one move.",
+        "goal": "Short coach read.",
+        "id": "too-much-writing-017",
+        "memoryState": "Concise voice preferred.",
+        "priorChatTurns": [
+          {
+            "role": "coach",
+            "text": "Long explanation with three paragraphs and a broad plan."
+          }
+        ],
+        "turnType": "trustRepair",
+        "userTurn": "Too much writing. Get to the point."
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 16,
+        "dialogueFeel": 15,
+        "eqAttunement": 21,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 81,
+        "personalMemory": 14,
+        "rawOverall": 81,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.35
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Fair push: I used too much writing before the useful read. Your last rep gives enough signal: the close is the leak. Proof test: make the final sentence the ask and stop.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "too-much-writing-short-repair-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "critique-trust-repair",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "Too much writing. Get to the point."
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Fair push: I used too much writing before the useful read. Your last rep gives enough signal: the close is the leak. Proof test: make the final sentence the ask and stop.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 268,
+          "timeToFirstVisibleTokenMs": 82
+        },
+        "memory": {
+          "assessmentConfidence": 0.64,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "trustRepair"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Fair push: I used too much writing before the useful read. Your last rep gives enough signal: the close is the leak. Proof test: make the final sentence the ask and stop."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "claudeReasoning"
+        },
+        "rawReply": "Fair push: I used too much writing before the useful read. Your last rep gives enough signal: the close is the leak. Proof test: make the final sentence the ask and stop.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: progress-celebrate-the-behavior, pacing-target-band, structure-minto-pyramid +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 35,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "progress-celebrate-the-behavior",
+            "pacing-target-band",
+            "structure-minto-pyramid",
+            "leadership-gravity-fewer-words"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Based on your data, your interview weakness is confidence.",
+        "disqualifiers": [
+          "claims data exists",
+          "personality diagnosis",
+          "asks only clarifying questions"
+        ],
+        "emotionalSignal": "Urgent cold start.",
+        "evidence": [
+          "no rated sessions",
+          "interview context"
+        ],
+        "excellentAnswerExample": "No read yet, so make the first rep diagnostic. Answer one likely interview question for 60 seconds, then check whether sentence one gives the point.",
+        "expectedCoachMove": "No fake read; prescribe first baseline rep.",
+        "goal": "Interview prep with no baseline.",
+        "id": "no-baseline-interview-018",
+        "memoryState": "Cold-start honesty floor.",
+        "priorChatTurns": [],
+        "turnType": "quickMove",
+        "userTurn": "I have no sessions yet but need interview help."
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 18,
+        "dialogueFeel": 13,
+        "eqAttunement": 23,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 87,
+        "personalMemory": 18,
+        "rawOverall": 87,
+        "similarity": {
+          "badAnswerExample": 0.037,
+          "excellentAnswerExample": 0.321
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Your cold start is hard, so no fake read: there are no rated sessions. Use the first baseline rep as evidence: record a 60-second interview answer, answer first, give one proof, stop, then check whether sentence one gives the point.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "no-baseline-interview-help-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "cold-start-interview-baseline",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "I have no sessions yet but need interview help."
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Your cold start is hard, so no fake read: there are no rated sessions. Use the first baseline rep as evidence: record a 60-second interview answer, answer first, give one proof, stop, then check whether sentence one gives the point.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 341,
+          "timeToFirstVisibleTokenMs": 341
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Your cold start is hard, so no fake read: there are no rated sessions. Use the first baseline rep as evidence: record a 60-second interview answer, answer first, give one proof, stop, then check whether sentence one gives the point."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "Your cold start is hard, so no fake read: there are no rated sessions. Use the first baseline rep as evidence: record a 60-second interview answer, answer first, give one proof, stop, then check whether sentence one gives the point.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: interview-buy-thinking-time, interview-star-under-pressure, interview-answer-first +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 47,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "interview-buy-thinking-time",
+            "interview-star-under-pressure",
+            "interview-answer-first",
+            "progress-trend-vs-noise"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "You should slow down and be calmer.",
+        "disqualifiers": [
+          "no metric",
+          "generic slow down",
+          "no test"
+        ],
+        "emotionalSignal": "Concerned about speed.",
+        "evidence": [
+          "latest rep 181 WPM",
+          "fillers spike after sentence one"
+        ],
+        "excellentAnswerExample": "Yes, the useful signal is 181 WPM and fillers after sentence one. Test one silent beat after the verdict; if the next sentence stays clean, pacing is the lever.",
+        "expectedCoachMove": "Give pace read with one tactical pause test.",
+        "goal": "Sound calmer under pressure.",
+        "id": "pace-rushing-019",
+        "memoryState": "Controlled pacing is active lever.",
+        "priorChatTurns": [],
+        "turnType": "groundedRead",
+        "userTurn": "Am I rushing?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 14,
+        "dialogueFeel": 15,
+        "eqAttunement": 13,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 70,
+        "personalMemory": 13,
+        "rawOverall": 70,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.3
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Yes, locally: the latest rep is 181 WPM, and the fillers rise after sentence one, so test one silent beat after the first sentence, not a slower whole answer.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "pace-rushing-read-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "pace-control-next-rep",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "Am I rushing?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Yes, locally: the latest rep is 181 WPM, and the fillers rise after sentence one, so test one silent beat after the first sentence, not a slower whole answer.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 393,
+          "timeToFirstVisibleTokenMs": 393
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "93c07d25ebae00fe",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Yes, locally: the latest rep is 181 WPM, and the fillers rise after sentence one, so test one silent beat after the first sentence, not a slower whole answer."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "Yes, locally: the latest rep is 181 WPM, and the fillers rise after sentence one, so test one silent beat after the first sentence, not a slower whole answer.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: composure-tactical-pause, conflict-non-defensive-repair, pacing-held-beat-after-claim +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 13,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "composure-tactical-pause",
+            "conflict-non-defensive-repair",
+            "pacing-held-beat-after-claim",
+            "pacing-target-band"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Make your close more confident and summarize clearly.",
+        "disqualifiers": [
+          "summary close",
+          "broad plan",
+          "no hard stop"
+        ],
+        "emotionalSignal": "Specific improvement ask.",
+        "evidence": [
+          "final sentence recaps instead of asking for decision"
+        ],
+        "excellentAnswerExample": "Fix only the final sentence. Make it the decision you need, not a recap, then stop before adding a softener.",
+        "expectedCoachMove": "Prescribe final sentence as ask/decision and stop.",
+        "goal": "Land a cleaner close.",
+        "id": "closing-ask-020",
+        "memoryState": "Closing strength is declining.",
+        "priorChatTurns": [],
+        "turnType": "quickMove",
+        "userTurn": "What should I fix in the close?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 16,
+        "dialogueFeel": 15,
+        "eqAttunement": 13,
+        "failureReasons": [],
+        "interventionQuality": 11,
+        "overall": 74,
+        "personalMemory": 19,
+        "rawOverall": 74,
+        "similarity": {
+          "badAnswerExample": 0.056,
+          "excellentAnswerExample": 0.333
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Fix the final sentence: it recaps instead of asking for a decision, so make the last line the ask and stop before explaining it again.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "closing-ask-fix-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "closing-ask-proof-test",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "What should I fix in the close?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Fix the final sentence: it recaps instead of asking for a decision, so make the last line the ask and stop before explaining it again.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 273,
+          "timeToFirstVisibleTokenMs": 273
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "15225bc3a8f5d742",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Fix the final sentence: it recaps instead of asking for a decision, so make the last line the ask and stop before explaining it again."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "Fix the final sentence: it recaps instead of asking for a decision, so make the last line the ask and stop before explaining it again.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 92
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: presentation-close-is-the-ask, structure-land-the-close, conflict-name-it-then-steer +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 31,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "presentation-close-is-the-ask",
+            "structure-land-the-close",
+            "conflict-name-it-then-steer",
+            "structure-frame-the-open"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Start with a hook and be engaging.",
+        "disqualifiers": [
+          "generic hook advice",
+          "no verdict",
+          "too many options"
+        ],
+        "emotionalSignal": "Wants practical opener.",
+        "evidence": [
+          "transcript warms into context before point"
+        ],
+        "excellentAnswerExample": "Put the verdict in sentence one. Then give one reason; do not warm into the context first.",
+        "expectedCoachMove": "Make sentence one the verdict, one reason after.",
+        "goal": "Open with authority.",
+        "id": "opening-verdict-021",
+        "memoryState": "Verdict-first is current target.",
+        "priorChatTurns": [],
+        "turnType": "quickMove",
+        "userTurn": "How do I make the opener stronger?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 21,
+        "dialogueFeel": 15,
+        "eqAttunement": 13,
+        "failureReasons": [],
+        "interventionQuality": 11,
+        "overall": 80,
+        "personalMemory": 20,
+        "rawOverall": 80,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.375
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Make sentence one the verdict. Your transcript warms into context before the point, so lead with the recommendation, give one reason, then stop.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "opening-verdict-stronger-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "opening-verdict-next-rep",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "How do I make the opener stronger?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Make sentence one the verdict. Your transcript warms into context before the point, so lead with the recommendation, give one reason, then stop.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 461,
+          "timeToFirstVisibleTokenMs": 461
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Make sentence one the verdict. Your transcript warms into context before the point, so lead with the recommendation, give one reason, then stop."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "Make sentence one the verdict. Your transcript warms into context before the point, so lead with the recommendation, give one reason, then stop.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 92
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: structure-signposting, structure-land-the-close, presentation-handle-qa +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 34,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "structure-signposting",
+            "structure-land-the-close",
+            "presentation-handle-qa",
+            "leadership-gravity-fewer-words"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Just relax and be confident.",
+        "disqualifiers": [
+          "just relax",
+          "no pressure cue",
+          "no observable test"
+        ],
+        "emotionalSignal": "Anxiety.",
+        "evidence": [
+          "pause disappears before answer",
+          "pressure mode causes restart"
+        ],
+        "excellentAnswerExample": "That panic is the pressure cue. Do not rush to beat it; hold one silent beat, then say only sentence one. The test is whether the opener survives the pause.",
+        "expectedCoachMove": "Normalize pressure and prescribe one beat before sentence one.",
+        "goal": "Hold composure before answering.",
+        "id": "pause-before-answer-022",
+        "memoryState": "Pressure stability weak.",
+        "priorChatTurns": [],
+        "turnType": "quickMove",
+        "userTurn": "I panic before answering. What do I do?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 21,
+        "dialogueFeel": 15,
+        "eqAttunement": 13,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 78,
+        "personalMemory": 14,
+        "rawOverall": 78,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.45
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "That panic is the pressure cue because in pressure mode the pause disappears and the answer restarts. The signal to test is one silent beat before sentence one, then only the opener.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "pause-before-answer-pressure-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "pause-before-answer-drill",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "I panic before answering. What do I do?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "That panic is the pressure cue because in pressure mode the pause disappears and the answer restarts. The signal to test is one silent beat before sentence one, then only the opener.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 266,
+          "timeToFirstVisibleTokenMs": 266
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "That panic is the pressure cue because in pressure mode the pause disappears and the answer restarts. The signal to test is one silent beat before sentence one, then only the opener."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "That panic is the pressure cue because in pressure mode the pause disappears and the answer restarts. The signal to test is one silent beat before sentence one, then only the opener.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: composure-tactical-pause, presentation-handle-qa, networking-ask-before-assert +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 39,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "composure-tactical-pause",
+            "presentation-handle-qa",
+            "networking-ask-before-assert",
+            "structure-frame-the-open"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Organize your thoughts better and use a clear structure.",
+        "disqualifiers": [
+          "vague structure",
+          "long framework",
+          "no stop rule"
+        ],
+        "emotionalSignal": "Wants restraint.",
+        "evidence": [
+          "answer adds extra condition after recommendation"
+        ],
+        "excellentAnswerExample": "Use a two-sentence ceiling: recommendation first, one reason second, then stop. The extra condition is the ramble trigger.",
+        "expectedCoachMove": "One sentence recommendation, one reason, stop.",
+        "goal": "Become more concise.",
+        "id": "concise-answer-023",
+        "memoryState": "Concise voice selected.",
+        "priorChatTurns": [],
+        "turnType": "quickMove",
+        "userTurn": "How do I stop rambling?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 15,
+        "dialogueFeel": 13,
+        "eqAttunement": 13,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 76,
+        "personalMemory": 20,
+        "rawOverall": 76,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.5
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "concise-answer-rambling-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "concise-answer-next-rep",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "How do I stop rambling?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 268,
+          "timeToFirstVisibleTokenMs": 268
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "15225bc3a8f5d742",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 92
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: structure-signposting, structure-land-the-close, structure-prep +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 23,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "structure-signposting",
+            "structure-land-the-close",
+            "structure-prep",
+            "pacing-chunk-and-pause"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Add more supporting points to strengthen it.",
+        "disqualifiers": [
+          "more reasons",
+          "no implication",
+          "generic structure"
+        ],
+        "emotionalSignal": "Confused by technically correct answer.",
+        "evidence": [
+          "reason is not tied to implication or ask"
+        ],
+        "excellentAnswerExample": "Do not add another reason. Tie the one reason to what it makes possible, then return to the ask.",
+        "expectedCoachMove": "Connect reason to implication, not add more reasons.",
+        "goal": "Make reasons land.",
+        "id": "structure-one-reason-024",
+        "memoryState": "Salience gap is current hypothesis.",
+        "priorChatTurns": [],
+        "turnType": "quickMove",
+        "userTurn": "My answer has a claim and a reason, but it still feels weak."
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 19,
+        "dialogueFeel": 13,
+        "eqAttunement": 13,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 79,
+        "personalMemory": 19,
+        "rawOverall": 79,
+        "similarity": {
+          "badAnswerExample": 0.056,
+          "excellentAnswerExample": 0.053
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Your claim and reason are present; the salience hypothesis is direction because the reason is not tied to an implication or ask. Do not add more reasons. Use claim, one reason, implication, ask, then check whether the listener knows what to do next.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "structure-one-reason-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "structure-one-reason-proof",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "My answer has a claim and a reason, but it still feels weak."
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Your claim and reason are present; the salience hypothesis is direction because the reason is not tied to an implication or ask. Do not add more reasons. Use claim, one reason, implication, ask, then check whether the listener knows what to do next.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 482,
+          "timeToFirstVisibleTokenMs": 482
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Your claim and reason are present; the salience hypothesis is direction because the reason is not tied to an implication or ask. Do not add more reasons. Use claim, one reason, implication, ask, then check whether the listener knows what to do next."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "Your claim and reason are present; the salience hypothesis is direction because the reason is not tied to an implication or ask. Do not add more reasons. Use claim, one reason, implication, ask, then check whether the listener knows what to do next.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 92
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: structure-prep, structure-rule-of-three, voice-persuasive +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 60,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "structure-prep",
+            "structure-rule-of-three",
+            "voice-persuasive",
+            "social-invite-more"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "Believe in yourself more and use a confident tone.",
+        "disqualifiers": [
+          "confidence platitude",
+          "no hedge target",
+          "continues after ask"
+        ],
+        "emotionalSignal": "Wants confidence but needs behavior target.",
+        "evidence": [
+          "close keeps softening with maybe/just after the ask"
+        ],
+        "excellentAnswerExample": "Confidence is not the whole issue; the softener after the ask is. Say the ask once, cut maybe/just, and stop on the decision.",
+        "expectedCoachMove": "Cut softener after ask and stop.",
+        "goal": "End cleanly.",
+        "id": "confidence-clean-stop-025",
+        "memoryState": "Hedge control and clean close are active.",
+        "priorChatTurns": [],
+        "turnType": "quickMove",
+        "userTurn": "How do I sound more confident at the end?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 15,
+        "dialogueFeel": 15,
+        "eqAttunement": 14,
+        "failureReasons": [],
+        "interventionQuality": 11,
+        "overall": 70,
+        "personalMemory": 15,
+        "rawOverall": 70,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.438
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Cut the softener after the ask. The close keeps adding maybe or just after the decision, so make the ask and stop before the confidence leaks.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "confidence-clean-stop-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "confidence-clean-stop",
+          "surface": "text",
+          "turnIndex": 0,
+          "userTurn": "How do I sound more confident at the end?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Cut the softener after the ask. The close keeps adding maybe or just after the decision, so make the ask and stop before the confidence leaks.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 428,
+          "timeToFirstVisibleTokenMs": 428
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "696c3d72287b1578",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Cut the softener after the ask. The close keeps adding maybe or just after the decision, so make the ask and stop before the confidence leaks."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "Cut the softener after the ask. The close keeps adding maybe or just after the decision, so make the ask and stop before the confidence leaks.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 92
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: structure-signposting, social-invite-more, structure-land-the-close +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 41,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "structure-signposting",
+            "social-invite-more",
+            "structure-land-the-close",
+            "leadership-gravity-fewer-words"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    },
+    {
+      "fixture": {
+        "badAnswerExample": "See if the drill worked and whether people liked it.",
+        "disqualifiers": [
+          "causal proof claim",
+          "no audience read",
+          "no close check"
+        ],
+        "emotionalSignal": "Wants transfer check.",
+        "evidence": [
+          "upcoming leadership update",
+          "prep focused on close"
+        ],
+        "excellentAnswerExample": "Afterward, capture two things: did the final sentence ask for a decision, and what was your read of the room. Treat the room read as self-report, not proof the drill caused the outcome.",
+        "expectedCoachMove": "Capture final 10 seconds, audience response as self-report, and whether ask landed.",
+        "goal": "Transfer practice into leadership update.",
+        "id": "leadership-transfer-capture-026",
+        "memoryState": "Big Moment outcome should collect room read and self-report.",
+        "priorChatTurns": [
+          {
+            "role": "coach",
+            "text": "Practice the final sentence as the ask."
+          }
+        ],
+        "turnType": "quickMove",
+        "userTurn": "What should I check after the leadership update?"
+      },
+      "judge": {
+        "caps": [
+          {
+            "applied": false,
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
+          },
+          {
+            "applied": false,
+            "maxScore": 40,
+            "name": "fabricatesEvidence"
+          },
+          {
+            "applied": false,
+            "maxScore": 0,
+            "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          }
+        ],
+        "checkFailures": [],
+        "diagnosticIQ": 13,
+        "dialogueFeel": 13,
+        "eqAttunement": 14,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 72,
+        "personalMemory": 17,
+        "rawOverall": 72,
+        "similarity": {
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.129
+        },
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+      },
+      "reply": "Check only the final 10 seconds of the 75-second update, because that is where the update transfers into the room. If the last sentence asks for alignment or a decision, keep it; if it recaps, rewrite the close.",
+      "trace": {
+        "cache": {
+          "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
+        },
+        "candidateSource": "appPathReport",
+        "context": {
+          "conversationID": "leadership-transfer-setup-conversation",
+          "matchSource": "explicitAlias",
+          "sourceFixtureID": "leadership-transfer-setup",
+          "surface": "text",
+          "turnIndex": 2,
+          "userTurn": "What should I check after?"
+        },
+        "fallback": {
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
+        },
+        "finalReply": "Check only the final 10 seconds of the 75-second update, because that is where the update transfers into the room. If the last sentence asks for alignment or a decision, keep it; if it recaps, rewrite the close.",
+        "gitCommit": "5ee22759",
+        "issues": [],
+        "latency": {
+          "timeToCompleteReplyMs": 384,
+          "timeToFirstVisibleTokenMs": 384
+        },
+        "memory": {
+          "assessmentConfidence": 0.66,
+          "proofTestHash": "1c04eb647da82114",
+          "proofTestRecentlyRepeated": false,
+          "turnDepth": "quickMove"
+        },
+        "prompt": {
+          "source": "CoachReplyPipeline app-path test with mocked provider reply",
+          "targetCoachReply": "Check only the final 10 seconds of the 75-second update, because that is where the update transfers into the room. If the last sentence asks for alignment or a decision, keep it; if it recaps, rewrite the close."
+        },
+        "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
+          "tierRequested": "geminiFast"
+        },
+        "rawReply": "Check only the final 10 seconds of the 75-second update, because that is where the update transfers into the room. If the last sentence asks for alignment or a decision, keep it; if it recaps, rewrite the close.",
+        "reasoning": {
+          "qualityGateEvents": [
+            "passed"
+          ],
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 92
+        },
+        "retrieval": {
+          "activeLever": "confidence",
+          "diagnosticReason": "Retrieved 4 cards: pacing-held-beat-after-claim, composure-recover-no-apology, presentation-handle-qa +1",
+          "hasDiagnosis": true,
+          "queryCharacterCount": 26,
+          "queryPresent": true,
+          "retrievedCardCount": 4,
+          "retrievedCardIDs": [
+            "pacing-held-beat-after-claim",
+            "composure-recover-no-apology",
+            "presentation-handle-qa",
+            "networking-memorable-hook"
+          ],
+          "semanticRerankAllowed": true,
+          "strategy": "BM25 + semantic rerank",
+          "voice": "authoritative"
+        },
+        "versions": {
+          "fixtures": "gold-v1",
+          "rubric": "coach-arena-rubric-v1",
+          "runner": "coach-arena-v1"
+        }
+      }
+    }
+  ],
+  "schemaVersion": "coach-arena-report-v1",
+  "summary": {
+    "average": 76.32,
+    "coverageFailures": [
+      "25 fixture(s) missing from app-path report",
+      "matched 25 of 50 requested fixtures"
+    ],
+    "evidenceClaim": "localEvaluationOnly",
+    "failureCount": 0,
+    "fixtureCount": 25,
+    "passes": false,
+    "placeholderLeaks": 0,
+    "productionEvidenceFailures": [
+      "2 real-pipeline trace(s) returned no retrieved cards",
+      "25 fixture(s) missing from app-path report",
+      "matched 25 of 50 requested fixtures",
+      "proofTestHash reused across 17 real-pipeline fixtures"
+    ],
+    "productionEvidencePasses": false,
+    "scoreThresholdsPass": true,
+    "thresholdPasses": {
+      "deepAssessmentAverage": true,
+      "fixtureCoverage": false,
+      "goldSuiteAverage": true,
+      "placeholderLeaks": true,
+      "trustRepairAverage": true
+    },
+    "thresholds": {
+      "deepAssessmentAverage": 70,
+      "goldSuiteAverage": 70,
+      "placeholderLeaks": 0,
+      "trustRepairAverage": 65
+    },
+    "traceAudit": {
+      "candidateSourceCounts": {
+        "appPathReport": 25
+      },
+      "completeTraceCount": 25,
+      "completeTraceFixtureIDs": [
+        "authoritative-distance-001",
+        "not-informative-trust-repair-002",
+        "polite-however-pushback-003",
+        "not-easy-empathy-004",
+        "repeating-yourself-005",
+        "interview-prep-006",
+        "filler-pressure-007",
+        "leadership-update-008",
+        "confidence-ending-009",
+        "score-not-readiness-011",
+        "personal-pattern-consent-012",
+        "reject-hypothesis-013",
+        "remember-hypothesis-014",
+        "markdown-tts-015",
+        "cold-generic-016",
+        "too-much-writing-017",
+        "no-baseline-interview-018",
+        "pace-rushing-019",
+        "closing-ask-020",
+        "opening-verdict-021",
+        "pause-before-answer-022",
+        "concise-answer-023",
+        "structure-one-reason-024",
+        "confidence-clean-stop-025",
+        "leadership-transfer-capture-026"
+      ],
+      "missingTraceFieldCounts": {},
+      "missingTraceFieldExamples": {},
+      "missingTraceFixtureCount": 0,
+      "realPipelineTraceCount": 25,
+      "realPipelineTraceFixtureIDs": [
+        "authoritative-distance-001",
+        "not-informative-trust-repair-002",
+        "polite-however-pushback-003",
+        "not-easy-empathy-004",
+        "repeating-yourself-005",
+        "interview-prep-006",
+        "filler-pressure-007",
+        "leadership-update-008",
+        "confidence-ending-009",
+        "score-not-readiness-011",
+        "personal-pattern-consent-012",
+        "reject-hypothesis-013",
+        "remember-hypothesis-014",
+        "markdown-tts-015",
+        "cold-generic-016",
+        "too-much-writing-017",
+        "no-baseline-interview-018",
+        "pace-rushing-019",
+        "closing-ask-020",
+        "opening-verdict-021",
+        "pause-before-answer-022",
+        "concise-answer-023",
+        "structure-one-reason-024",
+        "confidence-clean-stop-025",
+        "leadership-transfer-capture-026"
+      ],
+      "requiredFields": [
+        "context",
+        "retrieval",
+        "memory",
+        "reasoning",
+        "prompt",
+        "provider",
+        "rawReply",
+        "finalReply",
+        "issues",
+        "latency",
+        "cache",
+        "fallback",
+        "versions",
+        "gitCommit"
+      ]
+    },
+    "traceQualityAudit": {
+      "assessmentConfidence": {
+        "distinctRoundedCount": 4,
+        "max": 0.7,
+        "min": 0.64,
+        "missingCount": 0,
+        "missingFixtureIDs": []
+      },
+      "eligibleTraceCount": 25,
+      "failures": [
+        "2 real-pipeline trace(s) returned no retrieved cards",
+        "proofTestHash reused across 17 real-pipeline fixtures"
+      ],
+      "latency": {
+        "missingFirstTokenCount": 0,
+        "missingFirstTokenFixtureIDs": [],
+        "slowCompletionCount": 0,
+        "slowCompletionFixtureIDs": [],
+        "slowFirstTokenCount": 0,
+        "slowFirstTokenFixtureIDs": []
+      },
+      "passes": false,
+      "proofTest": {
+        "maxHashReuse": 17,
+        "missingCount": 0,
+        "missingFixtureIDs": [],
+        "repeatedHashCount": 3,
+        "repeatedHashes": {
+          "15225bc3a8f5d742": [
+            "filler-pressure-007",
+            "confidence-ending-009",
+            "closing-ask-020",
+            "concise-answer-023"
+          ],
+          "1c04eb647da82114": [
+            "reject-hypothesis-013",
+            "leadership-transfer-capture-026"
+          ],
+          "696c3d72287b1578": [
+            "authoritative-distance-001",
+            "not-informative-trust-repair-002",
+            "polite-however-pushback-003",
+            "not-easy-empathy-004",
+            "repeating-yourself-005",
+            "interview-prep-006",
+            "leadership-update-008",
+            "score-not-readiness-011",
+            "personal-pattern-consent-012",
+            "markdown-tts-015"
+          ]
+        },
+        "uniqueHashCount": 5
+      },
+      "retrieval": {
+        "emptyRetrievedCardsCount": 2,
+        "emptyRetrievedCardsFixtureIDs": [
+          "markdown-tts-015",
+          "cold-generic-016"
+        ],
+        "missingTraceCount": 0,
+        "missingTraceFixtureIDs": []
+      }
+    },
+    "traceQualityFailures": [
+      "2 real-pipeline trace(s) returned no retrieved cards",
+      "proofTestHash reused across 17 real-pipeline fixtures"
+    ],
+    "traceQualityPasses": false,
+    "typeAverages": {
+      "deepAssessment": 82.0,
+      "groundedRead": 76.6,
+      "quickMove": 75.73,
+      "trustRepair": 75.43
+    },
+    "worstFixtures": [
+      {
+        "failureReasons": [],
+        "id": "cold-generic-016",
+        "overall": 70,
+        "turnType": "trustRepair"
+      },
+      {
+        "failureReasons": [],
+        "id": "pace-rushing-019",
+        "overall": 70,
+        "turnType": "groundedRead"
+      },
+      {
+        "failureReasons": [],
+        "id": "confidence-clean-stop-025",
+        "overall": 70,
+        "turnType": "quickMove"
+      },
+      {
+        "failureReasons": [],
+        "id": "not-easy-empathy-004",
+        "overall": 71,
+        "turnType": "trustRepair"
+      },
+      {
+        "failureReasons": [],
+        "id": "filler-pressure-007",
+        "overall": 71,
+        "turnType": "quickMove"
+      },
+      {
+        "failureReasons": [],
+        "id": "interview-prep-006",
+        "overall": 72,
+        "turnType": "quickMove"
+      },
+      {
+        "failureReasons": [],
+        "id": "leadership-transfer-capture-026",
+        "overall": 72,
+        "turnType": "quickMove"
+      },
+      {
+        "failureReasons": [],
+        "id": "not-informative-trust-repair-002",
+        "overall": 73,
+        "turnType": "trustRepair"
+      },
+      {
+        "failureReasons": [],
+        "id": "confidence-ending-009",
+        "overall": 73,
+        "turnType": "groundedRead"
+      },
+      {
+        "failureReasons": [],
+        "id": "leadership-update-008",
+        "overall": 74,
+        "turnType": "quickMove"
+      }
+    ]
+  }
+}

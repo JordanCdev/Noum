@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "coach-arena-rubric-v1",
+  "sourceOfTruth": "docs/VISION.md",
+  "dimensions": {
+    "diagnosticIQ": {
+      "weight": 25,
+      "description": "Names the real communication pattern, distinguishes mechanics from goal readiness, and avoids fake certainty."
+    },
+    "eqAttunement": {
+      "weight": 25,
+      "description": "Responds to the user's emotional signal before prescribing; repairs trust without product defensiveness."
+    },
+    "personalMemory": {
+      "weight": 20,
+      "description": "Uses goals, evidence, case memory, prior chat, or transfer context without fabricating or overclaiming."
+    },
+    "interventionQuality": {
+      "weight": 15,
+      "description": "Prescribes one observable, testable move with a reason and a success/failure check."
+    },
+    "dialogueFeel": {
+      "weight": 15,
+      "description": "Feels near-real-time: concise, direct, human, non-template, and easy to say aloud."
+    }
+  },
+  "caps": {
+    "placeholderOrBroken": 30,
+    "ignoresIntent": 50,
+    "fabricatesEvidence": 40,
+    "unsafe": 0,
+    "fixtureDisqualifier": 60
+  },
+  "thresholds": {
+    "goldSuiteAverage": 70,
+    "deepAssessmentAverage": 70,
+    "trustRepairAverage": 65,
+    "placeholderLeaks": 0
+  },
+  "checks": [
+    "metadata leaks",
+    "grammar leaks",
+    "repeated proof tests",
+    "placeholders",
+    "fake score=10",
+    "missing verdict",
+    "missing evidence",
+    "poor trust repair",
+    "score-as-readiness",
+    "low-EQ pushback replies",
+    "fabricated evidence",
+    "unsafe content"
+  ]
+}

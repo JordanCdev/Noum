@@ -344,6 +344,46 @@ still passes the reference, weak-draft, short/actionable, vision, and known-bad
 regressions. This is evaluator-integrity hardening for the research report's
 "polished but ungrounded" failure mode; it does not move the **18/100**
 production readiness score.
+Codex then moved one actual coach-behavior surface, not only the evaluator. The
+local `CoachAssessment.immediateCoachRead` now returns a compact natural coach
+sentence instead of letting quick moves collapse into a bare proof test or a
+heading-style mini report. That makes the first visible Ask Noum / Live Coach
+response name the lever and grounded signal before prescribing the rep, without
+visible `Read:` / `Signal:` / `Test:` scaffolding.
+The reliability fallback was tightened to match: because the improved local read
+can wrap a proof-test sentence, `CoachReliabilityGate` now rejects fallback
+candidates that contain the previous duplicate reply, not just exact duplicate
+strings. Targeted simulator tests passed for the new quick-move read, deep
+assessment read, trust-repair read, clean fallback, dirty fallback, and duplicate
+escape path. The full-conversation corpus checks also still pass: 10+ full
+three-turn transcripts are present, the JSON report round-trips deterministically,
+and the expert calibration packet still refuses to claim readiness. This supports
+the report's "human coach read before drill dispatch" critique, but it does not
+move the **18/100** production readiness score.
+Codex then closed the next architecture gap under that behavior: the deterministic
+judgement pass was already cache-keyed on `CoachCaseSummary` and
+`ActiveInterventionState`, but it barely surfaced them. `CoachReasoningPass` now
+keeps latest-rep evidence first, then carries one compact case-summary line
+(hypothesis, focus, evidence, next coach move) and one compact active-intervention
+line (title, target, followed reps, review status). Quick turns stay tight;
+deep/trust turns get a wider internal evidence budget, and `CoachPromptBundle`
+now gives those deeper turns enough provider-context budget for the case line to
+survive. `AICoachChatService` and `CoachAssessment` also understand the new
+`case summary` / `active intervention` prefixes, so fallback/local reads do not
+leak raw scaffolding. Targeted simulator tests passed for case/intervention
+evidence propagation, nearby proof-test/immediate-read/repair behavior, and the
+full-conversation corpus checks. This helps the coach sound like it is reading
+the user's ongoing case rather than only the latest rep, but it is still local
+deterministic grounding, so production readiness remains **18/100**.
+Codex then added the missing final-answer guard for that same failure mode:
+`AICoachChatService.semanticQualityIssue` now returns `.missingCaseAnchor` for
+deep/trust typed-judgement turns when the assessment carries case/intervention
+evidence but the reply only cites latest score/pace and never touches a
+meaningful case token. The matcher ignores generic labels, pressure, and rep
+words, and accepts actual case content like clean close, close softens, or
+caveat. Targeted simulator semantic-gate tests and the full-conversation corpus
+checks passed. This addresses the research-backed "context present but unused"
+gap, but production readiness remains **18/100**.
 The dump path can still be
 overridden with `NOUM_COACH_EVAL_DUMP_DIR`, `SIMCTL_CHILD_NOUM_COACH_EVAL_DUMP_DIR`,
 `-NOUM_COACH_EVAL_DUMP_DIR <path>`, or the matching `UserDefaults` launch
@@ -379,11 +419,11 @@ A pure, flag-guarded `CoachReliabilityGate` that runs on the **final** reply rig
 | `nearDuplicateReply` (model rephrased the same content — token-Jaccard ≥ 0.82) | SOFT | recorded only |
 | `floorConfidenceWithEvidence` (the "constant 0.20 with evidence present" smell) | SOFT | recorded only |
 | `noAttunementOnPushback` (trust-repair turn that doesn't acknowledge first) | HARD | block → truthful fallback |
-| `repeatedProofTest` | SOFT | recorded only |
+| `repeatedProofTest` | HARD | block -> deterministic fallback with a non-repeated proof-test read when available |
 
 **Fallback selection** prefers the deterministic on-device read the judgement pass *already* produced (`assessment.immediateCoachRead`) — clean by construction and evidence-grounded — and only falls to an honest depth-shaped static line if that read is itself dirty/empty/the-same-duplicate. This reuses an existing pattern rather than emitting a dead-end apology, and is strictly better than the report's static-string suggestion. The fallback is also checked to never re-emit the very duplicate it is escaping.
 
-**Why the remaining SOFT issues don't block:** replacing an otherwise-fine reply because it is merely similar to the last one, reuses a proof test, or floors confidence would *degrade* UX into a generic fallback. Those are recorded for evals/metadata (the report's "reliability cap" signal) but never blanket-replace a shipping reply. Trust-repair no-attunement is different: if the user pushes back and the coach opens by prescribing again, that is a trust defect, so it now blocks.
+**Why the remaining SOFT issues don't block:** replacing an otherwise-fine reply because it is merely similar to the last one or floors confidence would *degrade* UX into a generic fallback. Those are recorded for evals/metadata (the report's "reliability cap" signal) but never blanket-replace a shipping reply. Trust-repair no-attunement is different: if the user pushes back and the coach opens by prescribing again, that is a trust defect, so it now blocks. Repeated proof tests were later promoted to blocking because the deterministic judgement pass already has recent proof-test history and can usually recover with a non-repeated local read.
 
 **Near-duplicate detection** is the one piece that directly chases the user's literal "same response back" complaint *beyond* verbatim matching: the model often rephrases the same content rather than repeating it byte-for-byte. `nearDuplicateReply` flags a token-Jaccard overlap ≥ 0.82 with the previous coach turn (both ≥ 8 distinct tokens, to avoid short-reply noise). It is kept **soft/recorded-only** on purpose — a hard block here would risk replacing a legitimately-similar-but-fine reply, which has real UX cost on a premium product and can't be device-QA'd tonight; surfacing it for evals is pure upside with zero false-block risk. Promoting it to a soft-repair is a clean follow-up for Codex.
 
@@ -399,7 +439,7 @@ A pure, flag-guarded `CoachReliabilityGate` that runs on the **final** reply rig
 ## Verification
 
 - **Unit + golden tests:** `xcodebuild test -scheme Noum -only-testing:NoumTests/CoachReliabilityGateTests` on iPhone 17 simulator (Xcode 26.3) → **`** TEST SUCCEEDED **`, exit 0, 25 test cases passed, 0 failures.**
-  - Coverage: clean reply passes through untouched; each hard block (empty / placeholder / verbatim-duplicate / scaffold-leak / no-attunement trust repair) blocks and emits a fallback; each remaining soft smell is recorded but does NOT block; normalisation catches whitespace/case-shifted duplicates but not near-misses; fallback prefers a clean `immediateCoachRead`, falls to an honest depth-shaped static line when that read is dirty, and never re-emits the duplicate it is escaping; the report's **10 golden scenarios** each assert good→passes-clean and degenerate→blocks-with-a-clean-truthful-fallback.
+  - Coverage: clean reply passes through untouched; each hard block (empty / placeholder / verbatim-duplicate / scaffold-leak / no-attunement trust repair, with later passes adding thin trust repair, silent plan switch, and repeated proof tests) blocks and emits a fallback; remaining soft smells are recorded but do NOT block; normalisation catches whitespace/case-shifted duplicates but not near-misses; fallback prefers a clean `immediateCoachRead`, falls to an honest depth-shaped static line when that read is dirty, and never re-emits the duplicate it is escaping; the report's **10 golden scenarios** each assert good→passes-clean and degenerate→blocks-with-a-clean-truthful-fallback.
 - **Full app + test compile:** the whole `Noum` module and `NoumTests` target compiled with no new errors/warnings (gate wiring, metadata fields, flag, and harness emit all type-check end-to-end; `build-for-testing` exit 0).
 - **Full `NoumTests` unit suite regression run (~1900 tests):** completed; my direct-dependency suites — `UserTrajectoryCacheTests`, `CoachAssessmentCacheTests`, `CoachJudgementLayerTests` — all green. The run surfaced 8 failures, which I traced and ruled out as regressions:
   - `SuddenDeathHighScoreStoreTests.recordRunReturnsTrueOnStrictImprovement` and the 3 `AICoachChatReplyQualityGateTests` / vision / corpus gate tests are in code this change never touches.
@@ -425,7 +465,7 @@ A pure, flag-guarded `CoachReliabilityGate` that runs on the **final** reply rig
 1. **Run the updated live harness with provider keys** and confirm `reliabilityFallbackApplied=false` across the existing fixtures (they're good replies), and that a deliberately-broken fixture trips it.
 2. **Calibrate `floorConfidenceWithEvidence`** against real traffic — is floor-with-evidence actually a defect, or expected on thin histories? If a defect, the fix belongs in `evidenceCoverage`, not the gate.
 3. **Tune the attunement vocabulary** — `noAttunementOnPushback` is now blocking and intentionally lexical/cheap; a low-cost classifier (report's suggestion) could replace it if false-negatives or false-positives appear.
-4. **Consider promoting `repeatedProofTest` toward a soft-repair** rather than record-only, since proof-test repetition is a real "templated coach" smell.
+4. **Calibrate `repeatedProofTest` false positives with live traffic**, since it is now a hard runtime issue that falls back through the deterministic local read.
 
 ## Open risks
 
@@ -433,3 +473,338 @@ A pure, flag-guarded `CoachReliabilityGate` that runs on the **final** reply rig
 - Soft issues are recorded but not yet surfaced anywhere user/eval-facing beyond metadata + diagnostics.
 - Blocking trust-repair no-attunement is the correct premium-coach default, but its lexical detector still needs live-provider calibration before it can be treated as launch-grade evidence.
 - Device QA on the live chat + call surfaces still wanted to confirm the fallback renders well in context, though the substitution path is unit-proven.
+
+## 2026-06-30 long-form attunement update
+
+Codex then expanded the full end-to-end transcript evidence: the polite-pushback
+target is now part of the long-form corpus as
+`long-form-polite-pushback-attunement-conversation`, taking the local
+long-form set from 10 to 11 five-turn conversations. The corpus test now
+requires at least 10 full conversations and at least one soft-pushback
+long-form case, while report, expert-calibration packet, and manifest
+assertions follow the current corpus count instead of hardcoding exactly 10.
+
+Targeted simulator slices passed for the long-form corpus/report/manifest, the
+expert-calibration packet, and the live-harness long-form selector. The optional
+simulator artifact-dump path still did not materialize in this environment even
+with `SIMCTL_CHILD_NOUM_COACH_EVAL_DUMP_DIR`, so this pass does not claim an
+exported JSON artifact. This is better evaluator coverage for the research-doc
+"hear the friction before prescribing" gap, not production proof; readiness
+remains **18/100**.
+
+Codex then tightened the case-anchor semantic gate so active case/intervention
+evidence cannot be "used" by accidentally echoing generic proof-test words like
+clean, close, ask, recommendation, verdict, or sentence. Deep-assessment and
+trust-repair final answers with case evidence now need more specific case
+content, such as the close softening, the extra caveat, or the review state, to
+clear `.missingCaseAnchor`. New adversarial tests prove generic clean-close
+language still fails, while the existing positive case-anchor replies still
+pass. The 3-turn and 11-conversation long-form transcript corpus slices,
+report round-trips, expert-calibration packet, and local readiness manifest all
+passed afterward. This makes local context-use evidence harder to game, but it
+is not live-provider proof; readiness remains **18/100**.
+
+Codex then closed the paired negative-control gap left by that long-form
+attunement expansion: the 11th polite-pushback long-form conversation now has a
+no-attunement adversarial row, and the adversarial report/readiness manifest
+counts follow the current long-form adversarial corpus instead of hardcoding 10.
+The targeted simulator slice passed at
+`/tmp/noum-derived-data-adversarial-longform/Logs/Test/Test-Noum-2026.06.30_08-40-51-+0100.xcresult`.
+This makes evaluator evidence harder to inflate by adding positive transcripts
+without paired failure cases, but it is still local synthetic evidence; readiness
+remains **18/100**.
+
+Codex then added a floor-only `planContinuity` criterion to the multi-turn
+transcript evaluator. Positive transcripts still pass, but a conversation that
+silently switches intervention targets now fails the conversation floor. The
+long-form adversarial corpus now uses
+`long-form-authoritative-distance-deep-assessment-conversation-silent-plan-switch`
+as one of its 11 paired negative controls, broadening the adversarial set beyond
+stale state / repeated proof / intent mismatch / no-attunement. Parse and the
+targeted simulator slice passed at
+`/tmp/noum-derived-data-plan-continuity/Logs/Test/Test-Noum-2026.06.30_08-51-43-+0100.xcresult`.
+This targets self-coherence drift highlighted by current multi-turn agent
+research, but it is still local synthetic evidence; readiness remains
+**18/100**.
+
+Codex then promoted that same plan-continuity failure into the runtime final
+reliability gate. `CoachReliabilityGate` now hard-blocks
+`silentPlanSwitch` replies when a coach answer abruptly tells the user to ignore
+or replace the previous intervention target without explaining the revision.
+Reasoned revisions are still allowed when the answer names evidence or a clear
+rationale. Targeted reliability-gate and long-form corpus/report simulator
+slices passed at
+`/tmp/noum-derived-data-runtime-plan-switch/Logs/Test/Test-Noum-2026.06.30_09-00-40-+0100.xcresult`.
+This closes a live-path escape hatch for one self-coherence failure, but it is
+still lexical and local; readiness remains **18/100**.
+
+Codex then tightened trust repair another notch. `CoachReliabilityGate` now
+hard-blocks `thinTrustRepair`: a `.trustRepair` reply can no longer pass by
+starting with "Fair push" and immediately prescribing another drill. It must
+name the miss, the real question, or a straight corrected read before it
+prescribes again. The paired reliability corpus now has a thin-repair
+adversarial variant, positive target transcripts still clear the reliability
+gate, and the targeted simulator slice passed at
+`/tmp/noum-derived-data-thin-trust-repair/Logs/Test/Test-Noum-2026.06.30_09-12-02-+0100.xcresult`.
+This addresses one "polite but still cold" EQ failure mode, but it is still
+lexical and local; readiness remains **18/100**.
+
+Codex then promoted `repeatedProofTest` from a recorded smell to a hard runtime
+reliability issue. The gate still uses the existing repeated-proof metadata
+rather than a broad new text detector, and when it blocks it prefers the
+deterministic `CoachAssessment.immediateCoachRead`, which is built with recent
+proof-test history and can carry a different proof test. Fresh proof tests still
+pass. Parse and the targeted simulator slice passed at
+`/tmp/noum-derived-data-repeated-proof-block/Logs/Test/Test-Noum-2026.06.30_09-20-45-+0100.xcresult`.
+This closes one same-drill loop from the live path, but it is still local
+metadata and synthetic transcript evidence; readiness remains **18/100**.
+
+Codex then closed the next-turn repair regression gap. `CoachReliabilityGate`
+now hard-blocks `repairCarryoverBreak`: after a substantive trust repair, the
+following coach reply cannot drop back to generic reset advice such as
+"practice more" / "communicate clearly" / "let's reset". The detector is scoped
+to obvious repairs in the previous coach turn plus narrow generic-break markers
+in the current reply; specific carried-forward drills and explicit rejections
+of generic advice still pass. The paired reliability corpus now has
+`repairCarryoverBreakVariant(for:)`, and the long-form adversarial report
+includes
+`long-form-assistant-explainer-register-conversation-repair-carryover-break`.
+The positive long-form corpus is now 11 five-turn transcripts with 11 passing
+the production floor; the adversarial corpus is 11 paired negative controls with
+0 passing and reliability counts including `repairCarryoverBreak: 1`,
+`noAttunementOnPushback: 2`, `repeatedProofTest: 8`, and `silentPlanSwitch: 1`.
+Refreshed JSON artifacts landed in `/private/tmp/noum-coach-eval/` at Jun 30
+10:09-10:11 2026. Parse, `git diff --check`, the runtime carryover unit slice,
+the positive long-form slice, and the adversarial repair-carryover slice passed
+under `/tmp/noum-derived-data-repair-carryover`. This closes one live-path
+trust-repair carryover escape hatch, but it is still lexical/local/synthetic;
+readiness remains **18/100** against `docs/VISION.md`.
+
+Codex then cleared the remaining app-path blocker in the consent-bound personal
+pattern conversation. `TurnDepthClassifier` now treats "What should Noum
+remember?" as a memory handoff grounded read, `CoachReasoningPass` renders the
+typed fallback as a testable hypothesis rather than a label, and the gate allows
+conversation-local memory answers when they are explicitly keep/drop bounded.
+The refreshed text and live app-path artifacts now show 13 conversations / 39
+turns with 0 floor failures, 0 target mismatches, 0 semantic failures, 0
+fallback turns, 9 unique proof-test hashes, and no readiness warnings. Focused
+classifier / assessment / gate tests and the exact text+live app-path simulator
+slice passed under `/private/tmp/noum-derived-data-memory-handoff`.
+
+The active goal then changed to measurement-first, so Codex created
+`tools/coach-arena/`: 50 gold fixtures, rubric, JSON LLM judge schema/prompt,
+trace schema, deterministic local runner, optional replay-command /
+`COACH_ARENA_LLM_JUDGE_CMD` seams, reports, and a `run.sh` command. Gold
+reference run: 50 fixtures, average 85.68, deepAssessment 85.0, trustRepair
+85.22, placeholder leaks 0, thresholds pass. Bad-answer smoke run to
+`/private/tmp/noum-coach-arena-bad` fails as intended: average 45.6, 50/50
+failures, placeholder leaks 3. This is a measurement substrate, not production
+readiness; the next hard step is replaying real Chat with Noum pipeline outputs
+through all 50 fixtures and fixing only Arena-proven failures. Readiness remains
+**18/100** against `docs/VISION.md`.
+
+Codex then added a transcript-level `discourseMoveDiversity` floor to catch
+five-turn conversations that keep doing the same coaching move while varying
+wording. The paired adversarial corpus now includes
+`long-form-overclaim-hypothesis-boundary-conversation-same-discourse-move`,
+which fails `discourseMoveDiversity` while still passing the older
+non-repetition and proof-progression guards. Positive long-form rows remain
+11/11 passing, adversarial rows remain 0/11 passing, and refreshed artifacts
+landed in `/private/tmp/noum-coach-eval/`. The targeted simulator slice passed
+at
+`/tmp/noum-derived-data-discourse-diversity/Logs/Test/Test-Noum-2026.06.30_10-26-32-+0100.xcresult`.
+This uses current multi-turn discourse/EQ evaluation research, but it is still
+local synthetic evidence; readiness remains **18/100**.
+
+## 2026-06-30 Coach Arena app-path bridge
+
+Codex added `--app-path-report` to Coach Arena so the runner can score real
+deterministic `CoachReplyPipeline` outputs from the Swift app-path artifact,
+not only gold target answers. Coverage is explicit: the current bridge matches
+15 evidence-compatible Arena fixtures and excludes the same-user-turn
+quote-mismatch case until the source transcript carries the same verified
+quote. Terse trust-repair coverage was expanded for "That's not informative",
+"It's not easy", "You're repeating yourself", polite "however" pushback, and
+"Too much writing. Get to the point." The runtime classifier/fallbacks now name
+those repair focuses, and a `format`/`informative` substring bug was removed.
+
+Refreshed text and live app-path artifacts are clean across 18 conversations /
+54 turns: no fallback, no target mismatch, no semantic/reliability/vision-floor
+failures, no repeated proof-test hashes, no warnings. Coach Arena full gold:
+50 fixtures, average 85.76, trustRepair 85.67, 0 failures. Coach Arena app-path
+subset: 15 fixtures, average 77.27, trustRepair 77.57, 0 failures. Bad-answer
+smoke still fails as intended: average 45.66, 50/50 failures, placeholder leaks
+3. Production readiness remains **18/100** because this is still local
+deterministic replay, not full real-provider replay, professional calibration,
+real-user transfer evidence, real-device QA, or launch-ops proof.
+
+Codex then promoted that same discourse-loop failure into the runtime final
+reliability gate. `CoachReliabilityGate` now hard-blocks
+`repetitiveDiscourseMove` when the current reply plus the two most recent coach
+replies are all prescription-only moves. `CoachReplyPipeline` passes recent
+coach replies into the gate, so Ask Noum can now stop a varied-wording/same-drill
+loop before it reaches the UI. A first simulator probe found a false positive:
+the prescription marker `use` was matching the tail of `because`. The classifier
+now treats `use`/`say` as whole-word verbs and recognizes proof-handoff diagnosis
+language; a regression test covers that exact positive transcript shape.
+Refreshed artifacts in `/private/tmp/noum-coach-eval/` show positive long-form
+11/11 passing with empty issue buckets and adversarial long-form 0/11 passing
+with reliability counts including `repetitiveDiscourseMove: 3`. Parse,
+`git diff --check`, and the targeted simulator slice passed at
+`/tmp/noum-derived-data-runtime-discourse-loop-2/Logs/Test/Test-Noum-2026.06.30_10-41-14-+0100.xcresult`.
+This closes one live-path same-move coach failure, but the evidence is still
+lexical/local/synthetic; readiness remains **18/100** against `docs/VISION.md`.
+
+Codex then closed a transfer-honesty semantic gap. The production path already
+passes `BigMomentStore.shared.recentOutcomeReports(limit:)` into
+`CoachContextBuilder.userContext`, so `REAL-WORLD TRANSFER` was already
+reachable by Ask Noum. The missing piece was a named semantic failure when a
+coach reply turned user-reported transfer into causation. `AICoachChatService`
+now has `semantic:unsupportedTransferCausalityClaim`, gated on transfer context
+and explicit proof/causal language such as `drill caused`, `objective proof`,
+and `proves transfer`; safe "room read, not proof" language still passes. The
+leadership transfer fixture now carries two structured user-reported outcome
+reports, and the long-form adversarial corpus replaces the old leadership
+intent-mismatch row with
+`long-form-leadership-transfer-setup-conversation-transfer-causality`. Refreshed
+artifacts show positive long-form 11/11 passing with empty issue buckets and
+adversarial long-form 0/11 passing with two
+`semantic:unsupportedTransferCausalityClaim` labels on the new transfer
+negative control. Parse, `git diff --check`, and the focused simulator slice
+passed at
+`/tmp/noum-derived-data-transfer-causality/Logs/Test/Test-Noum-2026.06.30_11-08-16-+0100.xcresult`.
+This closes one "reported real-world outcome becomes causal proof" escape hatch,
+but the evidence is still lexical/local/synthetic; readiness remains
+**18/100** against `docs/VISION.md`.
+
+Codex then hardened the full app-path evaluation artifact against the
+flat-judgement-layer risk from the research notes. `CoachChatConversationAppPath`
+rows now expose `assessmentConfidence`, and the app-path summary tracks rounded
+confidence diversity, unique proof-test hashes, and repeated proof-test hashes
+within conversations. The first refreshed text app-path artifact caught the
+intended problem: only 2 rounded confidence values and a
+`flatAssessmentConfidence` warning. `CoachReasoningPass` now computes confidence
+from evidence coverage, mechanics, weakest rubric dimension, score spread,
+evidence breadth, and turn-depth caps while preserving the weak-evidence 0.20
+floor. The refreshed artifacts now show text app path at 3 distinct rounded
+confidence values and live app path at 4, both with 8 unique proof-test hashes
+and 0 repeated proof-test hashes within conversations. Parse checks, the exact
+app-path simulator slice, and the focused confidence regression passed under
+`/tmp/noum-derived-data-app-path-variety`. This closes one audit blind spot, but
+the app path still has the known `personal-pattern-consent-boundary-conversation`
+failure and the live path still has one semantic/content failure; readiness
+remains **18/100** against `docs/VISION.md`.
+
+Codex then closed the Coach Arena run-to-run comparison gap. The runner now
+loads the previous `latest.json` in the active report directory before writing
+the new report, then emits a `comparison` block in JSON and Markdown with
+previous generated time, previous candidate, candidate/fixture-count changes,
+average delta, failure-count delta, placeholder-leak delta, pass-state change,
+type-average deltas, newly failing fixtures, and cleared failures. The README
+documents this for both full gold and app-path subset runs. Refreshed full gold
+is unchanged but now compared: 50 fixtures, average 85.76, trustRepair 85.67,
+0 failures, 0 placeholder leaks, thresholds pass, all deltas 0. Refreshed
+app-path subset is also unchanged but compared: 15 matched fixtures, average
+77.27, trustRepair 77.57, 0 failures, 0 placeholder leaks, 35 unmatched
+fixtures, all deltas 0. The synthetic full and app-path transcript bundles each
+contain 10 scored conversation samples. Bad-answer smoke still fails as
+intended at average 45.66 with 50/50 failures and 3 placeholder leaks.
+Verification covered JSON parsing, both Arena runs, bad-candidate smoke, and
+`git diff --check`. This improves measurement accountability, but production
+readiness remains **18/100** because the core blockers are still full real
+provider replay over all 50 fixtures, LLM/professional coach judging, blinded
+professional calibration, longitudinal real-user transfer evidence,
+real-device/TestFlight QA, and launch-ops proof.
+
+Codex then expanded the real app-path bridge again, from 18 to 28 short
+three-turn conversations / 84 app-path turns. The new bridge conversations cover
+confidence endings, score-vs-readiness, no-baseline interview prep, pace,
+closing ask, opening verdict, pause-before-answer pressure, concise answers,
+one-reason structure, and clean-stop confidence. The refreshed text and live
+app-path artifacts are clean: 0 target mismatches, 0 missing metadata turns,
+0 semantic/runtime/vision-floor failures, 0 reliability issues, 0 repeated
+proof-test hashes, 12 unique proof-test hashes, 4 distinct rounded assessment
+confidence values, and no readiness warnings. The live artifact shows 84/84
+expected immediate reads.
+
+Coach Arena now matches 25 app-path fixtures instead of 15. The larger app-path
+subset still passes aggregate thresholds but is harsh in the useful way:
+average 74.0, 0 placeholder leaks, 25 unmatched fixtures, and 4 individual
+low-scoring rows (`no-baseline-interview-018` 60,
+`structure-one-reason-024` 61, `confidence-ending-009` 68,
+`concise-answer-023` 68). The comparison block shows
+`pause-before-answer-022` cleared and no newly failing fixture IDs. Full gold
+Arena remains unchanged at 50 fixtures, average 85.76, 0 failures, 0
+placeholder leaks. The class-level corpus simulator run now passes all local
+target/runtime/semantic/reliability/app-path checks; the only remaining failing
+test in that suite is the existing negative-control sidecar assertion
+`realUserTransferOutcomeEvidenceRejectsThinOrSmoothedSidecars`, which expects
+an additional `insufficientEvidenceReferences` rejection label and currently
+gets `outcomeFloorFailures`. Readiness remains **18/100**: this is broader
+local app-path proof, not live-provider, professional-calibration, real-user,
+real-device, or launch-ops evidence.
+
+Codex then polished the four weakest real app-path Coach Arena rows without
+widening the corpus again. The confidence-ending, no-baseline interview,
+concise-answer, and one-reason structure replies now preserve the runtime gates
+while giving clearer senior-register reads and proof tests. Refreshed text and
+live app-path artifacts remain clean at 28 conversations / 84 turns: no target
+mismatches, missing metadata, semantic failures, runtime or vision-floor
+failures, fallback turns, reliability issues, repeated proof hashes, or
+readiness warnings; the live artifact still shows 84/84 expected immediate
+reads. App-path Coach Arena now passes the individual fixture floor with
+25 matched fixtures, average 76.32, 0 failures, and 0 placeholder leaks. Full
+gold Arena remains 50 fixtures, average 85.76, 0 failures, and 0 placeholder
+leaks. The class-level corpus simulator run still exits nonzero only for the
+known negative-control sidecar assertion expecting an additional
+`insufficientEvidenceReferences` label. Production readiness remains **18/100**
+because live-provider, professional-calibration, real-user, real-device, and
+launch-ops evidence are still missing.
+
+Codex then tightened Coach Arena measurement by making each fixture's
+`disqualifiers` executable in the local judge. Scenario-specific violations now
+emit `fixtureDisqualifier:<slug>` check failures and apply a cap of 60, so a
+reply cannot pass by being generally grounded while violating the fixture's
+explicit fail condition. Full gold remains clean at 50 fixtures, average 85.76,
+0 failures, 0 placeholder leaks, and 0 disqualifier hits. The real app-path
+subset remains clean at 25 matched fixtures, average 76.32, 0 failures, and
+0 disqualifier hits. The bad-answer smoke now shows 50/50 failures, average
+45.66, 3 placeholder leaks, and 79 disqualifier hits. Verification covered
+Python compile, rubric JSON parse, full Arena, app-path Arena, bad-candidate
+smoke, and JSON parse on refreshed reports. Production readiness remains
+**18/100** because the stricter judge is still local/deterministic evidence,
+not live-provider, professional-calibration, real-user, real-device, or
+launch-ops proof.
+
+Codex then added trace accountability to Coach Arena reports. `summary.traceAudit`
+now records required trace fields, candidate source counts, real-pipeline trace
+count, complete trace count, and missing trace field counts/examples; app-path
+provenance is preserved as `appPathReport` instead of being overwritten as
+`candidateJson`. Full gold remains 50 fixtures, average 85.76, 0 failures, but
+the audit correctly marks it as 0 real-pipeline traces. Real app-path remains
+25 matched fixtures, average 76.32, 0 failures, and now shows 25 real-pipeline
+traces but 0 complete traces because `retrieval` is missing for every matched
+fixture. Bad-smoke remains 50/50 failures and is labelled as synthetic bad-answer
+evidence. Production readiness remains **18/100**: the reports are more honest,
+but the app-path bridge still lacks retrieval trace, full 50-fixture live replay,
+professional calibration, real-user outcomes, real-device proof, and launch ops.
+
+Codex then closed that retrieval-provenance gap on the app path. The shared
+`CoachReplyPipeline` now emits a `CoachRetrievalTrace` into
+`CoachTurnMetadata` immediately after the existing knowledge retrieval step:
+strategy, query presence/length, diagnosis state, active lever, voice,
+semantic-rerank allowance, retrieved card count/IDs, and diagnostic reason.
+Text app-path rows can prove semantic-rerank retrieval; live app-path rows prove
+the BM25-only budget path. The refreshed text and live app-path artifacts both
+show 28 conversations / 84 turns with `retrievalTracePresentCount: 84`, 0
+missing retrieval traces, and 0 readiness warnings. Coach Arena app-path now
+has 25 matched real app-path fixtures, average 76.32, 0 failures,
+`realPipelineTraceCount: 25`, `completeTraceCount: 25`, and empty
+`missingTraceFieldCounts`. Full gold remains 50 fixtures / 85.76 / 0 failures
+as reference-only evidence; bad-smoke remains 50/50 failures at 45.66 average.
+The focused simulator run wrote fresh artifacts but hung after export and had
+to be terminated, so there is no clean Xcode result bundle for this pass.
+Python compile, JSON parses, full Arena, app-path Arena, bad-smoke, and
+`git diff --check` pass. Production readiness remains **18/100**: this closes
+local trace provenance, not the live-provider, professional-calibration,
+real-user-transfer, real-device, full 50-fixture app-path, or launch-ops gaps.

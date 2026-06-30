@@ -164,6 +164,19 @@ struct CoachTurnProviderChoice: Equatable, Sendable {
     let model: String
 }
 
+struct CoachRetrievalTrace: Codable, Equatable {
+    var strategy: String
+    var queryPresent: Bool
+    var queryCharacterCount: Int
+    var hasDiagnosis: Bool
+    var activeLever: String?
+    var voice: String?
+    var semanticRerankAllowed: Bool
+    var retrievedCardCount: Int
+    var retrievedCardIDs: [String]
+    var diagnosticReason: String
+}
+
 /// Persisted per-turn observability for the Ask Noum coach thread.
 ///
 /// Optional fields keep old persisted rows decodable and let non-pipeline
@@ -181,6 +194,7 @@ struct CoachTurnMetadata: Codable, Equatable {
     var assessmentConfidence: Double?
     var proofTestHash: String?
     var proofTestRecentlyRepeated: Bool?
+    var retrievalTrace: CoachRetrievalTrace?
     var visionScore: Int?
     var visionCriticalMisses: [CoachVisionCriterion]?
     var visionPassesProductionFloor: Bool?
@@ -225,6 +239,7 @@ struct CoachTurnMetadata: Codable, Equatable {
         assessmentConfidence: Double? = nil,
         proofTestHash: String? = nil,
         proofTestRecentlyRepeated: Bool? = nil,
+        retrievalTrace: CoachRetrievalTrace? = nil,
         visionScore: Int? = nil,
         visionCriticalMisses: [CoachVisionCriterion]? = nil,
         visionPassesProductionFloor: Bool? = nil,
@@ -264,6 +279,7 @@ struct CoachTurnMetadata: Codable, Equatable {
         self.assessmentConfidence = assessmentConfidence
         self.proofTestHash = proofTestHash
         self.proofTestRecentlyRepeated = proofTestRecentlyRepeated
+        self.retrievalTrace = retrievalTrace
         self.visionScore = visionScore
         self.visionCriticalMisses = visionCriticalMisses
         self.visionPassesProductionFloor = visionPassesProductionFloor

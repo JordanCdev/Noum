@@ -26,7 +26,7 @@ enum CoachPromptBundle {
         }
         if !assessment.evidenceUsed.isEmpty {
             lines.append("- Evidence to use:")
-            for item in assessment.evidenceUsed.prefix(4) {
+            for item in assessment.evidenceUsed.prefix(evidenceContextLimit(for: assessment.turnDepth)) {
                 lines.append("  - \(item)")
             }
         }
@@ -45,6 +45,17 @@ enum CoachPromptBundle {
         lines.append("- Next proof test to end with: \(assessment.nextProofTest)")
         lines.append(contentsOf: instructionLines(for: assessment.turnDepth, surface: surface))
         return lines.joined(separator: "\n")
+    }
+
+    private static func evidenceContextLimit(for depth: CoachTurnDepth) -> Int {
+        switch depth {
+        case .quickMove:
+            return 2
+        case .groundedRead:
+            return 4
+        case .deepAssessment, .trustRepair:
+            return 6
+        }
     }
 
     static func instructionLines(

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Coach Arena Replay Trace",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "context": { "description": "CoachContextBuilder user/system context summary or redacted pointer." },
+    "retrieval": { "description": "Knowledge cards, rerank status, and retrieval scores." },
+    "memory": { "description": "Coach memory/case-file state used by the turn." },
+    "reasoning": { "description": "Typed CoachAssessment, turn depth, rubric, proof test, confidence, and evidence coverage." },
+    "prompt": { "description": "Prompt bundle or redacted provider prompt version." },
+    "provider": { "description": "Provider chain, selected provider/model, attempts, retries, refusals." },
+    "rawReply": { "type": ["string", "null"] },
+    "finalReply": { "type": ["string", "null"] },
+    "issues": { "description": "Quality, semantic, vision, reliability, and arena issues." },
+    "latency": { "description": "TTFT, first visible token, complete reply, and replay runner latency." },
+    "cache": { "description": "Trajectory/assessment cache hit and age metadata." },
+    "fallback": { "description": "Fallback path, typed fallback, safe repair, or holdback details." },
+    "versions": { "description": "App build, runner, fixture, rubric, model, and git versions." },
+    "gitCommit": { "type": ["string", "null"] }
+  }
+}
