@@ -8086,6 +8086,10 @@ struct PracticeSessionDraft {
     /// passing the accumulator's finalized output. Other draft
     /// builders (debug seeds, IM session synthesis) leave it nil.
     let vocalEnergyMetrics: VocalEnergyMetrics?
+    /// Positional read of where the rep's events fell. The
+    /// `SpeechRecognizerViewModel.saveCurrentSession` path opts in by passing
+    /// the derived summary; other draft builders leave it nil.
+    let repEventLocations: RepEventLocations?
 
     init(
         transcript: String,
@@ -8102,7 +8106,8 @@ struct PracticeSessionDraft {
         pitchMetrics: PitchMetrics? = nil,
         intentFocus: CoachingPriority? = nil,
         intentLabel: String? = nil,
-        vocalEnergyMetrics: VocalEnergyMetrics? = nil
+        vocalEnergyMetrics: VocalEnergyMetrics? = nil,
+        repEventLocations: RepEventLocations? = nil
     ) {
         self.transcript = transcript
         self.fillerWordCount = fillerWordCount
@@ -8119,6 +8124,7 @@ struct PracticeSessionDraft {
         self.intentFocus = intentFocus
         self.intentLabel = intentLabel
         self.vocalEnergyMetrics = vocalEnergyMetrics
+        self.repEventLocations = repEventLocations
     }
 }
 
@@ -8193,7 +8199,8 @@ final class PracticeSessionStore: ObservableObject {
             pitchMetrics: draft.pitchMetrics,
             intentFocus: draft.intentFocus,
             intentLabel: draft.intentLabel,
-            vocalEnergyMetrics: draft.vocalEnergyMetrics
+            vocalEnergyMetrics: draft.vocalEnergyMetrics,
+            repEventLocations: draft.repEventLocations
         )
         sessions.insert(session, at: 0)
         persist()

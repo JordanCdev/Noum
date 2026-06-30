@@ -1234,6 +1234,18 @@ enum CoachContextBuilder {
                 lines.append("- \(structural.readout). Composite \(String(format: "%.2f", structural.score))/1.0 from \(structural.contributingDimensions) dimensions.")
             }
 
+            // Positional read — WHERE the rep's events fell (longest pause /
+            // fastest stretch / filler cluster, by opening/middle/close third),
+            // derived offline from the captured per-word timings. Persisted on
+            // the session at finalize; nil when no credible positional signal,
+            // so the coach can locate a problem ("you rushed at the close")
+            // instead of only naming a whole-rep average.
+            if let positional = latest.repEventLocations {
+                lines.append("")
+                lines.append("POSITIONAL READ (most-recent rep)")
+                lines.append("- \(positional.readout)")
+            }
+
             // PROMPT RELEVANCE — the substance read (initiative #8 follow-on).
             // The same `PromptRelevanceRead` the 7-dimension Relevance rating,
             // the post-rep hero note, and the deep-analysis debrief consume,

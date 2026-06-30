@@ -683,6 +683,16 @@ class SpeechRecognizerViewModel: ObservableObject {
         // required) so we never persist a fabricated read on a 1-2s
         // session.
         let vocalEnergyMetrics = vocalEnergyAccumulator.finalize()
+        // Positional read of WHERE this rep's events fell, derived offline from
+        // the captured per-word timings (otherwise discarded after PauseMetrics)
+        // via the pure TranscriptTimeline. Nil when no credible positional
+        // signal, so we never persist a fabricated "you rushed at the close".
+        let repEventLocations = RepEventLocationsEngine.derive(
+            timeline: TranscriptTimeline(
+                words: sessionWordTimings,
+                fillerWords: FillerWordDetector.effectiveWordSet()
+            )
+        )
         _ = PracticeSessionFinalizer.finalize(
             store: sessionStore,
             draft: PracticeSessionDraft(
@@ -697,7 +707,8 @@ class SpeechRecognizerViewModel: ObservableObject {
                 isRated: pressureOn,
                 pauseMetrics: pauseMetrics,
                 pitchMetrics: pitchMetrics,
-                vocalEnergyMetrics: vocalEnergyMetrics
+                vocalEnergyMetrics: vocalEnergyMetrics,
+                repEventLocations: repEventLocations
             )
         )
         pastSessions = sessionStore.sessions
@@ -789,6 +800,12 @@ struct PracticeSession: Identifiable, Codable {
     /// Feeds the coach context block so the AI can comment on HOW the
     /// user sounded, not only what they said.
     var vocalEnergyMetrics: VocalEnergyMetrics? = nil
+    /// WHERE this rep's notable events fell (longest pause / fastest stretch /
+    /// filler cluster, by opening/middle/close third). Optional because older
+    /// persisted sessions decode without it and reps with no credible
+    /// positional signal derive nil. Feeds the coach context so the AI can give
+    /// a positional read, not only whole-rep averages.
+    var repEventLocations: RepEventLocations? = nil
     /// True only for version-controlled evaluation-corpus sessions. These
     /// sessions are test substrate and must never enter live user history,
     /// baselines, ratings, league surfaces, or backend sync.
@@ -824,6 +841,7 @@ struct PracticeSession: Identifiable, Codable {
         case intentFocus
         case intentLabel
         case vocalEnergyMetrics
+        case repEventLocations
         case isEvaluationFixture
         case fixtureID
     }
@@ -855,6 +873,7 @@ struct PracticeSession: Identifiable, Codable {
         intentFocus: CoachingPriority? = nil,
         intentLabel: String? = nil,
         vocalEnergyMetrics: VocalEnergyMetrics? = nil,
+        repEventLocations: RepEventLocations? = nil,
         isEvaluationFixture: Bool = false,
         fixtureID: String? = nil
     ) {
@@ -884,6 +903,7 @@ struct PracticeSession: Identifiable, Codable {
         self.intentFocus = intentFocus
         self.intentLabel = intentLabel
         self.vocalEnergyMetrics = vocalEnergyMetrics
+        self.repEventLocations = repEventLocations
         self.isEvaluationFixture = isEvaluationFixture
         self.fixtureID = fixtureID
     }
@@ -916,6 +936,7 @@ struct PracticeSession: Identifiable, Codable {
         intentFocus = try container.decodeIfPresent(CoachingPriority.self, forKey: .intentFocus)
         intentLabel = try container.decodeIfPresent(String.self, forKey: .intentLabel)
         vocalEnergyMetrics = try container.decodeIfPresent(VocalEnergyMetrics.self, forKey: .vocalEnergyMetrics)
+        repEventLocations = try container.decodeIfPresent(RepEventLocations.self, forKey: .repEventLocations)
         isEvaluationFixture = try container.decodeIfPresent(Bool.self, forKey: .isEvaluationFixture) ?? false
         fixtureID = try container.decodeIfPresent(String.self, forKey: .fixtureID)
     }
