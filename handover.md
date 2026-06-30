@@ -47,6 +47,49 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-30 (autonomous `noum2` run, later). **18th iteration. Shipped the
+positional-read RENDER — the one ship-now competitive-substance lever 17 priors
+named but always deferred. GREEN on iPhone 17 / iOS 26 sim, isolated
+DerivedData (6/6), no push. Commit `254a1f1f`. Full write-up:
+`docs/COACH_PARITY_EVAL_2026-06-30_noum2.md`. Score 7.5/10 held (→ ~7.7 once
+counted as shipped).**
+
+- **Shipped `Noum/RepTimelineCard.swift` (`254a1f1f`).** The VISIBLE companion to
+  `RepEventLocations`: the positional read ("you rushed at the close") was
+  computed + persisted + fed to the coach prompt (`CoachContextBuilder:1243`) but
+  never shown to the user. Renders the rep as three honest thirds
+  (opening/middle/close) — never finer than the model carries, NO fake per-word
+  scrubber. Markers reuse existing tokens (silence=`brandBlue`, pace=`caution`,
+  fillers=`textSecondary`); **zero new color or pace/pause thresholds**.
+  Motion-free → reduced-motion safe by construction; one-sentence VoiceOver label.
+  This is the first stone of Speeko/Yoodli's signature annotated-analytics
+  surface, in Noum's calm card language.
+- **Honesty invariant (load-bearing):** `RepTimelineCopy.summaryLine` reuses the
+  engine's own `readout` verbatim, so the visible card can NEVER assert a finding
+  the coach prompt didn't. Self-hides on a non-finding. `SummaryView` wires it
+  with the same `if let` self-hide pattern as the sibling cards. +6 tests
+  (`RepTimelineCardTests`) locking the engine→visible-text contract incl. an
+  end-to-end `TranscriptTimeline → derive → copy` case.
+- **Method:** 5-role panel (market · UX · end-user · veteran-coach · staff-eng/QA)
+  → adversarial verify-against-code → synthesis. The panel independently
+  re-verified every token/wire/invariant against the working tree.
+- **Collision discipline:** a concurrent session ran 3 xcodebuild test passes on
+  the coach-chat surface (`AICoachChatService`/`CoachReasoningPass`/
+  `CoachReliabilityGate` + tests, 535 uncommitted lines) THROUGHOUT this run.
+  Built in isolated DerivedData on a different sim; committed only the 2 new files
+  + the one disjoint `SummaryView` compose site via explicit pathspecs. Their
+  diff preserved byte-for-byte.
+- **Next collision-safe levers (after this render):** (1) per-zone marker
+  felt-QA + density polish [device]; (2) positional read → trend memory
+  ("rushed the close 4 of 5 reps") into `CoachContextBuilder`'s trend block;
+  (3) SummaryView empty-state honesty pass.
+- **10/10 answer, unchanged:** literal "with no doubt replaces a human coach"
+  stays REFUSED by design (`CoachParityReadiness.forming` trust moat). The 3
+  remaining gaps are human-gated: [hardware] phone reads words not breath/tension;
+  [external-calibration] proxy thresholds un-validated vs real coaches;
+  [longitudinal] no real-user outcome cohort. The one [closable-in-software] gap
+  — insight computed but invisible — is what THIS render closed.
+
 2026-06-30 (autonomous `noum-1` run). **17th iteration. Shipped TWO verified
 slices (GREEN on iPhone 17 Pro / iOS 26.3 / Xcode 26.3), no push. Full write-up:
 `docs/COACH_PARITY_EVAL_2026-06-30.md`. Score 7.5/10 (was 7.4).**
