@@ -64,7 +64,16 @@ enum TurnDepthClassifier {
             "robotic", "low eq", "not high eq",
             "try again", "you are just saying", "you're just saying",
             "that doesn't mean", "that does not mean",
-            "no where near", "nowhere near"
+            "no where near", "nowhere near",
+            // Unambiguous "you didn't answer my real ask" pushback. The bare
+            // "what i meant" / "actual question" / "real question" forms are
+            // deliberately excluded: they fire on benign self-clarification
+            // ("what I meant was…", "my real question is about pace"), which
+            // would misroute to trust repair and emit a phantom "you're right
+            // to push me" attunement opener. Intent mismatch on a non-pushback
+            // turn is already handled at reply level by the `missingIntentFit`
+            // semantic gate, not by faking an apology here.
+            "answered what i meant", "answer what i meant"
         ])
     }
 

@@ -592,6 +592,7 @@ enum CoachSemanticQualityIssue: String, Equatable {
     case missingRepairInsight
     case unsupportedClosenessClaim
     case missingProofTest
+    case missingIntentFit
 
     var repairInstruction: String {
         switch self {
@@ -609,6 +610,8 @@ enum CoachSemanticQualityIssue: String, Equatable {
             return "The draft says the user is close or not far off without enough evidence. Remove the closeness claim or limit it to mechanics only."
         case .missingProofTest:
             return "The draft does not end with one proof test. End with the typed next proof test, not generic advice."
+        case .missingIntentFit:
+            return "The draft answers a neighboring coaching task instead of the user's actual ask. Rewrite so the first sentence fits whether they asked for an example, a why, a check, a capture, a keep/change decision, or a threshold."
         }
     }
 }
@@ -1670,6 +1673,7 @@ actor AICoachChatService {
                     }
                     if let semanticIssue = Self.semanticQualityIssue(
                         in: display,
+                        latestUserTurn: latestUserTurn,
                         turnDepth: turnDepth,
                         assessment: assessment
                     ) {
@@ -1725,6 +1729,7 @@ actor AICoachChatService {
                         latestUserTurn: latestUserTurn,
                         quoteGuard: quoteGuard,
                         systemContext: system,
+                        recentCoachReplies: recentCoachReplies,
                         turnDepth: turnDepth,
                         assessment: assessment,
                         surface: surface
@@ -1845,6 +1850,7 @@ actor AICoachChatService {
         }
         guard semanticQualityIssue(
             in: normalized,
+            latestUserTurn: latestUserTurn,
             turnDepth: turnDepth,
             assessment: assessment
         ) == nil else {
@@ -1855,6 +1861,7 @@ actor AICoachChatService {
             latestUserTurn: latestUserTurn,
             quoteGuard: quoteGuard,
             systemContext: systemContext,
+            recentCoachReplies: recentCoachReplies,
             turnDepth: turnDepth,
             assessment: assessment,
             surface: surface
@@ -2247,6 +2254,7 @@ actor AICoachChatService {
             latestUserTurn: latestUserTurn,
             quoteGuard: quoteGuard,
             systemContext: systemContext,
+            recentCoachReplies: recentCoachReplies,
             turnDepth: turnDepth,
             assessment: nil,
             surface: surface
@@ -2258,7 +2266,12 @@ actor AICoachChatService {
 
         if replyShouldCiteRecentSession(systemContext),
            turnExpectsCoaching(latestUserTurn),
-           !replyCitesRecentSessionAnchor(lower) {
+           !replyCitesRecentSessionAnchor(lower),
+           !replyIsGroundedInConversationFollowUp(
+            lower,
+            latestUserTurn: latestUserTurn,
+            recentCoachReplies: recentCoachReplies
+           ) {
             return .unanchoredCoaching
         }
 
@@ -2478,6 +2491,7 @@ actor AICoachChatService {
         latestUserTurn: String? = nil,
         quoteGuard: CoachChatQuoteGuardContext? = nil,
         systemContext: String? = nil,
+        recentCoachReplies: [String] = [],
         turnDepth: CoachTurnDepth? = nil,
         assessment: CoachAssessment? = nil,
         surface: CoachReplySurface = .text
@@ -2583,7 +2597,12 @@ actor AICoachChatService {
 
         let personalization: Bool
         if replyShouldCiteRecentSession(systemContext) {
-            personalization = replyCitesRecentSessionAnchor(lower)
+            personalization = replyCitesRecentSessionAnchor(lower) ||
+                replyIsGroundedInConversationFollowUp(
+                    lower,
+                    latestUserTurn: latestUserTurn,
+                    recentCoachReplies: recentCoachReplies
+                )
         } else {
             personalization = containsAny(lower, [
                 "no baseline", "not enough data", "your message",
@@ -2596,7 +2615,8 @@ actor AICoachChatService {
             replyContainsProofTest(lower, assessment: $0)
         } ?? (hasSpecificPracticeMove && containsAny(lower, [
             "next rep", "record", "run one", "repeat", "tomorrow",
-            "interview", "meeting", "leadership", "pressure", "proof"
+            "interview", "meeting", "leadership", "pressure", "proof",
+            "replay", "listen for", "run the rep", "rewrite"
         ]))
         evaluate(.transferProof, weight: 8, passes: transferProof)
 
@@ -2641,6 +2661,7 @@ actor AICoachChatService {
         latestUserTurn: String? = nil,
         quoteGuard: CoachChatQuoteGuardContext? = nil,
         systemContext: String? = nil,
+        recentCoachReplies: [String] = [],
         turnDepth: CoachTurnDepth = .groundedRead,
         assessment: CoachAssessment? = nil,
         surface: CoachReplySurface = .text
@@ -2659,6 +2680,7 @@ actor AICoachChatService {
             latestUserTurn: latestUserTurn,
             quoteGuard: quoteGuard,
             systemContext: systemContext,
+            recentCoachReplies: recentCoachReplies,
             turnDepth: turnDepth,
             assessment: assessment,
             surface: surface
@@ -2772,6 +2794,7 @@ actor AICoachChatService {
 
     nonisolated static func semanticQualityIssue(
         in text: String,
+        latestUserTurn: String? = nil,
         turnDepth: CoachTurnDepth,
         assessment: CoachAssessment?
     ) -> CoachSemanticQualityIssue? {
@@ -2779,6 +2802,10 @@ actor AICoachChatService {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let lower = trimmed.lowercased()
+
+        if replyMissesRequestedIntent(lower, latestUserTurn: latestUserTurn) {
+            return .missingIntentFit
+        }
 
         switch turnDepth {
         case .deepAssessment:
@@ -2828,6 +2855,92 @@ actor AICoachChatService {
         }
 
         return nil
+    }
+
+    private nonisolated static func replyMissesRequestedIntent(
+        _ lower: String,
+        latestUserTurn: String?
+    ) -> Bool {
+        let latest = latestUserTurn?
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !latest.isEmpty else { return false }
+
+        if containsAny(latest, [
+            "give me an example", "give me examples", "example of me",
+            "examples of me", "doing this in sessions", "where did i do"
+        ]) {
+            return !containsAny(lower, [
+                "for example", "example", "you said", "in the ", "in your ",
+                "rep", "session", "when you", "last time"
+            ])
+        }
+
+        if containsAny(latest, [
+            "how do i know if it worked", "how would i know if it worked",
+            "did it work", "if it worked", "worked?"
+        ]) {
+            return !containsAny(lower, [
+                "check whether", "look for", "listen for", "compare",
+                "test", "if ", "whether", "worked", "lands"
+            ])
+        }
+
+        if containsAny(latest, [
+            "what test", "test separates", "what separates"
+        ]) {
+            let namesTest = containsAny(lower, ["test", "run", "compare", "separates"])
+            let namesOutcome = containsAny(lower, ["if ", "whether", "then", "compare"])
+            return !(namesTest && namesOutcome)
+        }
+
+        if containsAny(latest, [
+            "what should i capture", "what do i capture", "capture now",
+            "write down", "note now"
+        ]) {
+            return !containsAny(lower, ["capture", "write", "note", "record", "log", "save"])
+        }
+
+        if containsAny(latest, [
+            "do i change", "change the whole", "change my whole", "keep the answer"
+        ]) {
+            return !containsAny(lower, ["no", "yes", "keep", "change only", "do not", "don't"])
+        }
+
+        if containsAny(latest, [
+            "when would", "when should", "when do you call", "when would you call"
+        ]) {
+            return !containsAny(lower, ["when", "after", "only after", "until", "once"])
+        }
+
+        if containsAny(latest, [
+            "what should you remember", "remember next time", "what do you remember"
+        ]) {
+            return !containsAny(lower, ["remember", "next time", "i should", "i need to"])
+        }
+
+        if containsAny(latest, [
+            "what do i take into", "take into the", "bring into"
+        ]) {
+            return !containsAny(lower, ["take", "bring", "use", "remember", "carry"])
+        }
+
+        if latest.hasPrefix("why ") || containsAny(latest, [" why ", "why did", "why after"]) {
+            return !replyHasInsightBridge(lower)
+        }
+
+        if containsAny(latest, [
+            "what happened", "what went wrong", "what went well",
+            "what did you notice", "what do you notice"
+        ]) {
+            return !replyHasObservableAnchor(lower) ||
+                !containsAny(lower, [
+                    "happened", "read", "signal", "drift", "opening",
+                    "sentence", "verdict", "pause", "filler", "tone", "pace"
+                ])
+        }
+
+        return false
     }
 
     private nonisolated static func replyStartsWithJudgement(
@@ -3219,7 +3332,7 @@ actor AICoachChatService {
             "add a ", "end with", "end the", "end it", "stop there",
             "cut the hedge", "cut that hedge", "make the ask",
             "make your ask", "make the decision", "ask for",
-            "write one", "send one", "speak "
+            "write one", "send one", "speak ", "listen for", "rewrite"
         ])
     }
 
@@ -3376,7 +3489,11 @@ actor AICoachChatService {
             "filler", "pace", "pause", "score", "wpm", "word choice",
             "you said", "you asked", "i heard", "what i notice", "pattern",
             "case", "hypothesis", "target", "success measure", "not enough data",
-            "baseline",
+            "baseline", "sentence", "first sentence", "sentence one",
+            "opener", "opening", "close", "closing", "decision",
+            "recommendation", "verdict", "proof point", "proof",
+            "reason", "reassurance", "example", "structure", "authority",
+            "warmth", "setup", "point",
             "i don't have", "i do not have", "i can't see", "from what you wrote",
             "your message", "your words", "the friction", "the claim was there",
             "no reason followed", "bare claim", "the rep led", "formatting",
@@ -3392,12 +3509,72 @@ actor AICoachChatService {
 
     private nonisolated static func replyCitesRecentSessionAnchor(_ lower: String) -> Bool {
         if lower.rangeOfCharacter(from: .decimalDigits) != nil { return true }
+        if replyNamesPastRepAnchor(lower) { return true }
         return containsAny(lower, [
             "last rep", "recent rep", "latest rep", "last session",
             "recent session", "rated session", "your timed rep",
             "your rep", "the transcript", "your transcript",
             "last transcript", "latest transcript", "recent transcript"
         ])
+    }
+
+    private nonisolated static func replyNamesPastRepAnchor(_ lower: String) -> Bool {
+        guard lower.contains(" rep") else { return false }
+        return !containsAny(lower, [
+            "next rep", "one rep", "same rep", "this rep", "a rep",
+            "the rep again", "run the rep", "run a rep", "record a rep"
+        ])
+    }
+
+    private nonisolated static func replyIsGroundedInConversationFollowUp(
+        _ lower: String,
+        latestUserTurn: String?,
+        recentCoachReplies: [String]
+    ) -> Bool {
+        guard turnIsConversationLocalFollowUp(latestUserTurn) else {
+            return false
+        }
+        return replyHasObservableAnchor(lower) ||
+            replySharesPriorCoachAnchor(lower, recentCoachReplies: recentCoachReplies)
+    }
+
+    private nonisolated static func turnIsConversationLocalFollowUp(_ latestUserTurn: String?) -> Bool {
+        guard let latestUserTurn else { return false }
+        let lower = latestUserTurn.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !lower.isEmpty, lower.count <= 140 else { return false }
+        if containsAny(lower, [
+            "this", "that", "those", "it", "so ", "why", "pattern",
+            "short version", "shorter", "what test", "which test",
+            "separates those", "does that", "do i", "should i",
+            "not my whole", "answered what i meant", "answer what i meant",
+            "what i meant", "stop saying", "give me the"
+        ]) {
+            return true
+        }
+        return isCritiqueTurn(lower)
+    }
+
+    private nonisolated static func replySharesPriorCoachAnchor(
+        _ lower: String,
+        recentCoachReplies: [String]
+    ) -> Bool {
+        guard let previous = recentCoachReplies.first?.lowercased() else {
+            return false
+        }
+        let currentTerms = Set(coachAnchorTerms(in: lower))
+        guard !currentTerms.isEmpty else { return false }
+        let previousTerms = Set(coachAnchorTerms(in: previous))
+        return !currentTerms.intersection(previousTerms).isEmpty
+    }
+
+    private nonisolated static func coachAnchorTerms(in lower: String) -> [String] {
+        [
+            "sentence", "opener", "opening", "close", "closing",
+            "decision", "recommendation", "verdict", "proof",
+            "reason", "reassurance", "pause", "filler", "warmth",
+            "structure", "authority", "baseline", "example", "ask",
+            "point", "setup", "claim", "transcript"
+        ].filter { lower.contains($0) }
     }
 
     private nonisolated static func replyUsesUnhelpfulRepDate(_ lower: String) -> Bool {
@@ -3416,7 +3593,7 @@ actor AICoachChatService {
             "pause before", "one drill", "one rep", "review", "speak ",
             "end your", "state your", "state the", "make the", "make your", "lead with",
             "put the", "give one", "end the", "end it", "end with",
-            "stop there", "then stop"
+            "stop there", "then stop", "listen for", "rewrite"
         ])
     }
 
@@ -3466,7 +3643,8 @@ actor AICoachChatService {
             "arrived late", "showing up", "carried", "softened", "held",
             "light on", "not a summary", "not abandoning", "worth varying",
             "hypothesis", "moved alongside", "trended down alongside",
-            "the gap", "what broke", "what held"
+            "the gap", "what broke", "what held",
+            "if it names", "if it starts", "listen for sentence"
         ])
     }
 
@@ -4194,6 +4372,7 @@ actor AICoachChatService {
         }
         if let semanticIssue = Self.semanticQualityIssue(
             in: display,
+            latestUserTurn: messages.last(where: { $0.role == .user })?.text,
             turnDepth: turnDepth,
             assessment: assessment
         ) {

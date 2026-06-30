@@ -73,7 +73,8 @@ enum CoachReplyPipeline {
         coachService: AICoachChatService = .shared,
         judgementPassEnabled: Bool = CoachBrainFlags.judgementPassEnabled,
         realtimeCoachModeEnabled: Bool = CoachBrainFlags.realtimeCoachModeEnabled,
-        onProvisionalCoachReadVisible: (@MainActor (String) -> Void)? = nil
+        onProvisionalCoachReadVisible: (@MainActor (String) -> Void)? = nil,
+        onQualityGateEvent: (@MainActor (CoachTurnQualityGateEvent) -> Void)? = nil
     ) async -> ChatOutcome {
         let turnStartedAt = Date()
         let store = store ?? AskNoumStore.shared
@@ -109,6 +110,15 @@ enum CoachReplyPipeline {
         let previousCoachReply = latestUserIndex.flatMap { index in
             history[..<index].last { $0.role == .coach }?.text
         }
+        let recentCoachReplies = latestUserIndex.map { index in
+            Array(
+                history[..<index]
+                    .reversed()
+                    .filter { $0.role == .coach }
+                    .map(\.text)
+                    .prefix(4)
+            )
+        } ?? []
         let recentProofTests = Self.recentProofTests(
             beforeLatestUserIndex: latestUserIndex,
             in: history
@@ -373,6 +383,7 @@ enum CoachReplyPipeline {
             },
             onQualityGateEvent: { event in
                 qualityGateEvents.append(event)
+                onQualityGateEvent?(event)
             }
         )
         let completionAt = Date()
@@ -381,8 +392,11 @@ enum CoachReplyPipeline {
         // repair loops, catch a final reply that is empty, a verbatim repeat of
         // the previous coach turn, a placeholder stub, or a leaked scaffold, and
         // substitute a truthful coach-shaped fallback before it reaches the UI.
-        // Soft smells (floor-pinned confidence, missing attunement on pushback,
-        // repeated proof-test) are recorded in metadata but never replace an
+        // Missing attunement on trust repair is treated as a user-facing defect:
+        // if the user pushes back and the final answer opens by prescribing, the
+        // gate substitutes the deterministic repair read. Softer calibration
+        // smells (near-duplicate phrasing, floor-pinned confidence, repeated
+        // proof-test) are recorded in metadata but never replace an
         // otherwise-fine reply. Flag-guarded; off keeps the pre-gate behaviour.
         let reliabilityVerdict: CoachReliabilityVerdict
         if CoachBrainFlags.reliabilityGateEnabled, case .reply(let rawText) = outcome {
@@ -432,6 +446,7 @@ enum CoachReplyPipeline {
                     recentUserTurns: recentUserTurns
                 ),
                 systemContext: context,
+                recentCoachReplies: recentCoachReplies,
                 turnDepth: turnDepth,
                 assessment: assessment,
                 surface: surface
@@ -443,6 +458,7 @@ enum CoachReplyPipeline {
         }()
         let finalSemanticGateOutcome = Self.semanticGateOutcome(
             for: effectiveOutcome,
+            latestUserTurn: latestUserTurn,
             turnDepth: turnDepth,
             assessment: assessment
         )
@@ -551,6 +567,7 @@ enum CoachReplyPipeline {
 
     private static func semanticGateOutcome(
         for outcome: ChatOutcome,
+        latestUserTurn: String?,
         turnDepth: CoachTurnDepth,
         assessment: CoachAssessment?
     ) -> CoachTurnSemanticGateOutcome {
@@ -561,6 +578,7 @@ enum CoachReplyPipeline {
             guard !normalized.isEmpty else { return .notEvaluated }
             if let issue = AICoachChatService.semanticQualityIssue(
                 in: normalized,
+                latestUserTurn: latestUserTurn,
                 turnDepth: turnDepth,
                 assessment: assessment
             ) {
@@ -738,6 +756,23 @@ enum CoachReplyPipeline {
              .rejected(let gate),
              .failed(let gate):
             return gate
+        }
+    }
+
+    nonisolated static func qualityGateEventLogValue(
+        _ event: CoachTurnQualityGateEvent
+    ) -> String {
+        switch event {
+        case .passed:
+            return "passed"
+        case .repaired(let gate):
+            return "repaired:\(gate)"
+        case .fallback(let gate):
+            return "fallback:\(gate)"
+        case .rejected(let gate):
+            return "rejected:\(gate)"
+        case .failed(let gate):
+            return "failed:\(gate)"
         }
     }
 

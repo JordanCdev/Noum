@@ -19,7 +19,10 @@
 //
 //  Fixture selectors:
 //    NOUM_LIVE_AI_FIXTURES=latest-transcript
+//    NOUM_LIVE_AI_FIXTURES=readiness
 //    NOUM_LIVE_AI_FIXTURES=fixture-id,another-fixture-id
+//    NOUM_LIVE_AI_LONG_FORM=required
+//    NOUM_LIVE_AI_LONG_FORM=conversation-id,another-conversation-id
 //    -D NOUM_LIVE_AI_EVAL_SINGLE
 //    -D NOUM_LIVE_AI_EVAL_COLD_START
 //    -D NOUM_LIVE_AI_EVAL_TRUST_REPAIR
@@ -46,6 +49,25 @@ struct CoachLiveEvaluationTests {
         ])
 
         #expect(fixtures.map(\.id) == CoachChatEvaluationCorpus.latestManualEvalFixtureIDs)
+    }
+
+    @Test func readinessPresetSelectsLatestTranscriptAndRequiredLongFormConversations() {
+        let env = [
+            "NOUM_LIVE_AI_FIXTURES": "readiness"
+        ]
+
+        #expect(Self.selectedFixtures(env: env).map(\.id) == CoachChatEvaluationCorpus.latestManualEvalFixtureIDs)
+        #expect(Self.selectedLongFormConversations(env: env).map(\.id) == CoachChatConversationCorpus.longFormConversations.map(\.id))
+    }
+
+    @Test func longFormSelectorDefaultsEmptyUnlessExplicitlyRequested() {
+        #expect(Self.selectedLongFormConversations(env: [:]).isEmpty)
+        #expect(Self.selectedLongFormConversations(env: [
+            "NOUM_LIVE_AI_LONG_FORM": "required"
+        ]).map(\.id) == CoachChatConversationCorpus.longFormConversations.map(\.id))
+        #expect(Self.selectedLongFormConversations(env: [
+            "NOUM_LIVE_AI_LONG_FORM": CoachChatConversationCorpus.longFormConversations[0].id
+        ]).map(\.id) == [CoachChatConversationCorpus.longFormConversations[0].id])
     }
 
     @Test func runtimeProviderSelectorCanExerciseProductionChain() {
@@ -311,6 +333,9 @@ struct CoachLiveEvaluationTests {
 
         #expect(report.schemaVersion == Self.liveReportSchemaVersion)
         #expect(report.fixtureCount == 1)
+        #expect(report.longFormConversationCount == 0)
+        #expect(report.longFormConversationIDsPassingProductionFloor.isEmpty)
+        #expect(report.longFormConversationFailureIDs.isEmpty)
         #expect(report.passesProductionFloor)
         #expect(report.passesRunReadinessFloor)
         #expect(report.summary.rowCount == 1)
@@ -336,6 +361,7 @@ struct CoachLiveEvaluationTests {
         #expect(json.contains("\"assessmentResponseMode\":\"expandable\""))
         #expect(json.contains("\"immediateCoachReadExpected\":true"))
         #expect(json.contains("\"immediateCoachReadShown\":true"))
+        #expect(json.contains("\"longFormConversations\":[]"))
         #expect(json.contains("\"semanticGateIssue\":\"none\""))
         #expect(json.contains("\"softPushbackFlag\":true"))
         #expect(json.contains("\"replyWordCount\":6"))
@@ -424,6 +450,101 @@ struct CoachLiveEvaluationTests {
         #expect(report.summary.softPushbackCount == 1)
     }
 
+    @Test func liveEvaluationReportCarriesLongFormConversationCoverage() {
+        let latestRow = Self.sampleLiveReportRow(
+            fixtureID: "latest",
+            liveProductionFloor: true,
+            assessmentConfidence: 0.80,
+            assessmentProofTestHash: "latest-proof",
+            replyWordCount: 14,
+            providerRetryCount: 0,
+            providerRefusalCount: 0,
+            timeToFirstVisibleTokenMs: 180,
+            userPushbackWithinTwoTurns: false,
+            coldnessComplaintFlag: false,
+            softPushbackFlag: false
+        )
+        let passingConversation = CoachLiveLongFormConversationReportRow.make(
+            conversationID: "long-form-one",
+            sourceFixtureID: "one",
+            expectedTurnCount: 2,
+            rows: [
+                Self.sampleLiveReportRow(
+                    fixtureID: "long-form-one#turn-1",
+                    liveProductionFloor: true,
+                    assessmentConfidence: 0.72,
+                    assessmentProofTestHash: "lf-1",
+                    replyWordCount: 18,
+                    providerRetryCount: 0,
+                    providerRefusalCount: 0,
+                    timeToFirstVisibleTokenMs: 260,
+                    userPushbackWithinTwoTurns: false,
+                    coldnessComplaintFlag: false,
+                    softPushbackFlag: false
+                ),
+                Self.sampleLiveReportRow(
+                    fixtureID: "long-form-one#turn-2",
+                    liveProductionFloor: true,
+                    assessmentConfidence: 0.76,
+                    assessmentProofTestHash: "lf-2",
+                    replyWordCount: 20,
+                    providerRetryCount: 0,
+                    providerRefusalCount: 0,
+                    timeToFirstVisibleTokenMs: 280,
+                    userPushbackWithinTwoTurns: false,
+                    coldnessComplaintFlag: false,
+                    softPushbackFlag: false
+                )
+            ]
+        )
+        let failingConversation = CoachLiveLongFormConversationReportRow.make(
+            conversationID: "long-form-two",
+            sourceFixtureID: "two",
+            expectedTurnCount: 2,
+            rows: [
+                Self.sampleLiveReportRow(
+                    fixtureID: "long-form-two#turn-1",
+                    liveProductionFloor: true,
+                    assessmentConfidence: 0.70,
+                    assessmentProofTestHash: "lf-3",
+                    replyWordCount: 16,
+                    providerRetryCount: 0,
+                    providerRefusalCount: 0,
+                    timeToFirstVisibleTokenMs: 240,
+                    userPushbackWithinTwoTurns: false,
+                    coldnessComplaintFlag: false,
+                    softPushbackFlag: false
+                ),
+                Self.sampleLiveReportRow(
+                    fixtureID: "long-form-two#turn-2",
+                    liveProductionFloor: false,
+                    assessmentConfidence: 0.70,
+                    assessmentProofTestHash: "lf-4",
+                    replyWordCount: 16,
+                    providerRetryCount: 1,
+                    providerRefusalCount: 0,
+                    timeToFirstVisibleTokenMs: 320,
+                    userPushbackWithinTwoTurns: false,
+                    coldnessComplaintFlag: false,
+                    softPushbackFlag: false
+                )
+            ]
+        )
+
+        let report = CoachLiveEvaluationReport.make(
+            providerChain: ["Google Gemini (gemini-test)"],
+            rows: [latestRow],
+            longFormConversations: [passingConversation, failingConversation]
+        )
+
+        #expect(!report.passesProductionFloor)
+        #expect(!report.passesRunReadinessFloor)
+        #expect(report.longFormConversationCount == 2)
+        #expect(report.longFormConversationIDsPassingProductionFloor == ["long-form-one"])
+        #expect(report.longFormConversationFailureIDs == ["long-form-two"])
+        #expect(report.longFormConversations.map(\.observedTurnCount) == [2, 2])
+    }
+
     @Test func liveEvaluationReportWithoutRowsIsNotRunReady() {
         let report = CoachLiveEvaluationReport.make(
             providerChain: [],
@@ -485,6 +606,7 @@ struct CoachLiveEvaluationTests {
         }
 
         let fixtures = Self.selectedFixtures()
+        let longFormConversations = Self.selectedLongFormConversations()
         #expect(!fixtures.isEmpty)
 
         let diagnostics = CoachLiveDiagnosticRecorder()
@@ -513,10 +635,12 @@ struct CoachLiveEvaluationTests {
         emit("reportPath: \(resolvedOutputPath)")
         emit("jsonReportPath: \(resolvedJSONOutputPath)")
         emit("fixtures: \(fixtures.map { $0.id }.joined(separator: ","))")
+        emit("longFormConversations: \(longFormConversations.map { $0.id }.joined(separator: ","))")
         emit("providerChain: \(providerChainLabels.joined(separator: " -> "))")
         CoachAssessmentCache.shared.invalidate()
         var recentLiveProofTests: [String] = []
         var liveRows: [CoachLiveEvaluationReportRow] = []
+        var longFormRows: [CoachLiveLongFormConversationReportRow] = []
 
         for fixture in fixtures {
             let expertise = await KnowledgeRetriever.retrieveReranked(
@@ -865,6 +989,24 @@ struct CoachLiveEvaluationTests {
             }
         }
 
+        for conversation in longFormConversations {
+            let result = await Self.evaluateLiveLongFormConversation(
+                conversation,
+                service: service,
+                diagnostics: diagnostics,
+                diagnosticCursor: &diagnosticCursor,
+                emit: emit
+            )
+            longFormRows.append(result)
+            if !result.liveProductionFloor {
+                failed = true
+                #expect(
+                    result.liveProductionFloor,
+                    "\(conversation.id) failed the live long-form production floor"
+                )
+            }
+        }
+
         let reportText = report.reduce(into: "") { output, line in
             if !output.isEmpty {
                 output.append("\n")
@@ -882,7 +1024,8 @@ struct CoachLiveEvaluationTests {
         }
         let jsonReport = CoachLiveEvaluationReport.make(
             providerChain: providerChainLabels,
-            rows: liveRows
+            rows: liveRows,
+            longFormConversations: longFormRows
         )
         do {
             try jsonReport
@@ -909,6 +1052,10 @@ struct CoachLiveEvaluationTests {
     private struct CoachLiveEvaluationReport: Codable, Equatable {
         let schemaVersion: String
         let fixtureCount: Int
+        let longFormConversationCount: Int
+        let longFormConversationIDsPassingProductionFloor: [String]
+        let longFormConversationFailureIDs: [String]
+        let longFormConversations: [CoachLiveLongFormConversationReportRow]
         let providerChain: [String]
         let passesProductionFloor: Bool
         let passesRunReadinessFloor: Bool
@@ -917,13 +1064,26 @@ struct CoachLiveEvaluationTests {
 
         static func make(
             providerChain: [String],
-            rows: [CoachLiveEvaluationReportRow]
+            rows: [CoachLiveEvaluationReportRow],
+            longFormConversations: [CoachLiveLongFormConversationReportRow] = []
         ) -> CoachLiveEvaluationReport {
             let summary = CoachLiveEvaluationSummary.make(from: rows)
-            let passesProductionFloor = !rows.isEmpty && rows.allSatisfy(\.liveProductionFloor)
+            let passingLongFormIDs = longFormConversations
+                .filter(\.liveProductionFloor)
+                .map(\.conversationID)
+            let failingLongFormIDs = longFormConversations
+                .filter { !$0.liveProductionFloor }
+                .map(\.conversationID)
+            let passesProductionFloor = !rows.isEmpty &&
+                rows.allSatisfy(\.liveProductionFloor) &&
+                failingLongFormIDs.isEmpty
             return CoachLiveEvaluationReport(
                 schemaVersion: CoachLiveEvaluationTests.liveReportSchemaVersion,
                 fixtureCount: rows.count,
+                longFormConversationCount: longFormConversations.count,
+                longFormConversationIDsPassingProductionFloor: passingLongFormIDs,
+                longFormConversationFailureIDs: failingLongFormIDs,
+                longFormConversations: longFormConversations,
                 providerChain: providerChain,
                 passesProductionFloor: passesProductionFloor,
                 passesRunReadinessFloor: passesProductionFloor && summary.readinessWarnings.isEmpty,
@@ -937,6 +1097,39 @@ struct CoachLiveEvaluationTests {
             encoder.outputFormatting = [.sortedKeys]
             let data = try encoder.encode(self)
             return String(data: data, encoding: .utf8) ?? ""
+        }
+    }
+
+    private struct CoachLiveLongFormConversationReportRow: Codable, Equatable {
+        let conversationID: String
+        let sourceFixtureID: String
+        let expectedTurnCount: Int
+        let observedTurnCount: Int
+        let liveProductionFloor: Bool
+        let failure: String?
+        let rows: [CoachLiveEvaluationReportRow]
+
+        static func make(
+            conversationID: String,
+            sourceFixtureID: String,
+            expectedTurnCount: Int,
+            rows: [CoachLiveEvaluationReportRow],
+            failure: String? = nil
+        ) -> CoachLiveLongFormConversationReportRow {
+            let observedTurnCount = rows.count
+            let rowFailure = rows.first { !$0.liveProductionFloor }?.failure
+            let liveProductionFloor = failure == nil &&
+                observedTurnCount == expectedTurnCount &&
+                rows.allSatisfy(\.liveProductionFloor)
+            return CoachLiveLongFormConversationReportRow(
+                conversationID: conversationID,
+                sourceFixtureID: sourceFixtureID,
+                expectedTurnCount: expectedTurnCount,
+                observedTurnCount: observedTurnCount,
+                liveProductionFloor: liveProductionFloor,
+                failure: failure ?? rowFailure,
+                rows: rows
+            )
         }
     }
 
@@ -1376,6 +1569,414 @@ struct CoachLiveEvaluationTests {
         text.split { $0.isWhitespace || $0.isNewline }.count
     }
 
+    private static func evaluateLiveLongFormConversation(
+        _ conversation: CoachChatConversationFixture,
+        service: AICoachChatService,
+        diagnostics: CoachLiveDiagnosticRecorder,
+        diagnosticCursor: inout Int,
+        emit: (String) -> Void
+    ) async -> CoachLiveLongFormConversationReportRow {
+        guard let source = sourceFixture(for: conversation) else {
+            emit("")
+            emit("## \(conversation.id)")
+            emit("failure: missing source fixture \(conversation.sourceFixtureID)")
+            return CoachLiveLongFormConversationReportRow.make(
+                conversationID: conversation.id,
+                sourceFixtureID: conversation.sourceFixtureID,
+                expectedTurnCount: conversation.turns.count,
+                rows: [],
+                failure: "missing source fixture \(conversation.sourceFixtureID)"
+            )
+        }
+
+        emit("")
+        emit("## \(conversation.id)")
+        emit("")
+        emit("sourceFixtureID: \(conversation.sourceFixtureID)")
+        emit("turnCount: \(conversation.turns.count)")
+
+        var history = Self.initialHistory(for: source)
+        var recentProofTests: [String] = []
+        var rows: [CoachLiveEvaluationReportRow] = []
+
+        for (index, turn) in conversation.turns.enumerated() {
+            let previousCoachReply = history.last { $0.role == .coach }?.text
+            let fixture = CoachChatEvaluationFixture(
+                id: "\(conversation.id)#turn-\(index + 1)",
+                pillar: source.pillar,
+                expertBaseline: source.expertBaseline,
+                profile: source.profile,
+                sessions: source.sessions,
+                trends: source.trends,
+                latestUserTurn: turn.userTurn,
+                previousCoachReply: previousCoachReply,
+                expectedContextNeedles: source.expectedContextNeedles,
+                referenceReply: turn.coachReply,
+                knownBadReply: source.knownBadReply,
+                expectedBadIssue: source.expectedBadIssue
+            )
+            let requestHistory = history + [
+                CoachMessage(role: .user, text: turn.userTurn)
+            ]
+            let row = await Self.evaluateLiveTurn(
+                fixture: fixture,
+                history: requestHistory,
+                service: service,
+                diagnostics: diagnostics,
+                diagnosticCursor: &diagnosticCursor,
+                recentProofTests: &recentProofTests,
+                emit: emit
+            )
+            rows.append(row)
+            history.append(CoachMessage(role: .user, text: turn.userTurn))
+            guard let reply = row.reply,
+                  !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                break
+            }
+            history.append(CoachMessage(role: .coach, text: reply))
+        }
+
+        let result = CoachLiveLongFormConversationReportRow.make(
+            conversationID: conversation.id,
+            sourceFixtureID: conversation.sourceFixtureID,
+            expectedTurnCount: conversation.turns.count,
+            rows: rows
+        )
+        emit("liveLongFormProductionFloor: \(result.liveProductionFloor)")
+        if let failure = result.failure {
+            emit("longFormFailure: \(failure)")
+        }
+        return result
+    }
+
+    private static func evaluateLiveTurn(
+        fixture: CoachChatEvaluationFixture,
+        history: [CoachMessage],
+        service: AICoachChatService,
+        diagnostics: CoachLiveDiagnosticRecorder,
+        diagnosticCursor: inout Int,
+        recentProofTests: inout [String],
+        emit: (String) -> Void
+    ) async -> CoachLiveEvaluationReportRow {
+        let expertise = await KnowledgeRetriever.retrieveReranked(
+            query: fixture.latestUserTurn,
+            lever: fixture.trends.first?.skillArea,
+            voice: fixture.profile?.speakingStyleGoal,
+            hasDiagnosis: !fixture.sessions.isEmpty
+        )
+        let recentUserTurns = history
+            .filter { $0.role == .user }
+            .map(\.text)
+        var context = Self.liveContext(
+            for: fixture,
+            coachingExpertise: expertise,
+            recentUserTurns: recentUserTurns.isEmpty ? [fixture.latestUserTurn] : recentUserTurns
+        )
+        let system = CoachContextBuilder.systemPrompt(for: fixture.profile)
+        let judgement = Self.judgement(
+            for: fixture,
+            history: history,
+            surface: .text,
+            recentProofTests: recentProofTests
+        )
+        let proofTestRecentlyRepeated = Self.proofTestRecentlyRepeated(
+            judgement.assessment.nextProofTest,
+            in: recentProofTests
+        )
+        recentProofTests = Self.updatedRecentProofTests(
+            recentProofTests,
+            adding: judgement.assessment.nextProofTest
+        )
+        context += "\n" + CoachPromptBundle.contextBlock(
+            assessment: judgement.assessment,
+            rubric: judgement.rubric,
+            surface: .text
+        )
+        let recentTimed = fixture.sessions
+            .filter { $0.mode == .timed }
+            .max(by: { $0.date < $1.date })
+        let grounding = ChatGroundingContext(
+            recentTimedTranscript: recentTimed?.transcript,
+            verifiedProofQuotes: []
+        )
+        let requestedTier = CoachPromptBundle.preferredProviderTier(
+            for: judgement.turnDepth,
+            surface: .text
+        )
+        var providerChoice: CoachTurnProviderChoice?
+        var providerAttemptEvents: [CoachProviderAttemptEvent] = []
+        var firstStreamedVisibleAt: Date?
+        let turnStartedAt = Date()
+
+        let outcome = await service.reply(
+            history: history,
+            systemPrompt: system,
+            userContext: context,
+            grounding: grounding,
+            turnDepth: judgement.turnDepth,
+            assessment: judgement.assessment,
+            surface: .text,
+            preferredTier: requestedTier,
+            onStreamedPartialVisible: { _ in
+                if firstStreamedVisibleAt == nil {
+                    firstStreamedVisibleAt = Date()
+                }
+            },
+            onProviderChosen: { choice in
+                providerChoice = choice
+            },
+            onProviderAttemptEvent: { event in
+                providerAttemptEvents.append(event)
+            }
+        )
+        let turnCompletedAt = Date()
+        let records = diagnostics.records
+        let newRecords = Array(records.dropFirst(diagnosticCursor))
+        diagnosticCursor = records.count
+        let timeToCompleteReplyMs = Self.latencyMs(
+            from: turnStartedAt,
+            to: turnCompletedAt
+        )
+        let completedReplyVisible: Bool = {
+            if case .reply = outcome {
+                return true
+            }
+            return false
+        }()
+        let telemetry = Self.liveTelemetrySummary(
+            providerEvents: providerAttemptEvents,
+            diagnostics: newRecords,
+            turnStartedAt: turnStartedAt,
+            turnCompletedAt: turnCompletedAt,
+            firstStreamedVisibleAt: firstStreamedVisibleAt,
+            completedReplyVisible: completedReplyVisible
+        )
+        let trustSignals = Self.liveTrustSignals(
+            userTurn: fixture.latestUserTurn,
+            turnDepth: judgement.turnDepth,
+            history: history
+        )
+        let providerTierChosen = CoachReplyPipeline.providerTierChosen(
+            for: providerChoice,
+            requestedTier: requestedTier
+        )
+        let assessmentProofTestHash = CoachReplyPipeline.proofTestHash(
+            for: judgement.assessment.nextProofTest
+        )
+        let assessmentCacheAgeMs = Self.latencyMs(
+            from: judgement.assessmentGeneratedAt,
+            to: turnCompletedAt
+        )
+        let missingEvidence = judgement.assessment.missingEvidence
+        let brainIDs = expertise.map { $0.id }
+        let diagnosticRows = newRecords.map(CoachLiveDiagnosticReportRecord.make)
+        let immediateCoachReadExpected = Self.immediateCoachReadExpected(
+            turnDepth: judgement.turnDepth,
+            surface: .text,
+            responseMode: judgement.assessment.responseMode
+        )
+
+        emit("")
+        emit("### \(fixture.id)")
+        emit("userTurn: \(fixture.latestUserTurn)")
+        emit("turnDepth: \(judgement.turnDepth.rawValue)")
+        emit("providerTierRequested: \(requestedTier.rawValue)")
+        emit("providerTierChosen: \(providerTierChosen?.rawValue ?? "none")")
+        emit("providerChosen: \(providerChoice?.providerName ?? "none")")
+        emit("providerModel: \(providerChoice?.model ?? "none")")
+        emit("timeToFirstVisibleTokenMs: \(telemetry.timeToFirstVisibleTokenMs.map(String.init) ?? "unknown")")
+        emit("timeToCompleteReplyMs: \(timeToCompleteReplyMs)")
+        emit("assessmentConfidence: \(String(format: "%.2f", judgement.assessment.confidence))")
+        emit("assessmentProofTestHash: \(assessmentProofTestHash)")
+        emit("assessmentImmediateRead: \(judgement.assessment.immediateCoachRead)")
+        emit("immediateCoachReadExpected: \(immediateCoachReadExpected)")
+        emit("immediateCoachReadShown: false")
+        emit("proofTest: \(judgement.assessment.nextProofTest)")
+        emit("proofTestRecentlyRepeated: \(proofTestRecentlyRepeated)")
+
+        switch outcome {
+        case .reply(let raw):
+            let reply = CoachReplyTextSanitizer.coachReplyText(from: raw)
+            let replyWordCount = Self.wordCount(reply)
+            let quoteGuard = CoachChatQuoteGuardContext(
+                transcripts: [grounding.recentTimedTranscript],
+                latestUserTurn: fixture.latestUserTurn,
+                recentUserTurns: history.filter { $0.role == .user }.map(\.text)
+            )
+            let rubric = AICoachChatService.professionalCoachRubric(
+                reply: reply,
+                latestUserTurn: fixture.latestUserTurn
+            )
+            let issue = AICoachChatService.replyQualityIssue(
+                in: reply,
+                latestUserTurn: fixture.latestUserTurn,
+                quoteGuard: quoteGuard,
+                systemContext: context,
+                turnDepth: judgement.turnDepth,
+                surface: .text
+            )
+            let semanticIssue = AICoachChatService.semanticQualityIssue(
+                in: reply,
+                turnDepth: judgement.turnDepth,
+                assessment: judgement.assessment
+            )
+            let vision = AICoachChatService.coachVisionEvaluation(
+                reply: reply,
+                latestUserTurn: fixture.latestUserTurn,
+                quoteGuard: quoteGuard,
+                systemContext: context,
+                turnDepth: judgement.turnDepth,
+                assessment: judgement.assessment,
+                surface: .text
+            )
+            let reliability = CoachReliabilityGate.evaluate(
+                replyText: reply,
+                previousCoachReply: history.last { $0.role == .coach }?.text,
+                turnDepth: judgement.turnDepth,
+                assessment: judgement.assessment,
+                evidenceCoverage: judgement.trajectory.snapshot.evidenceCoverage,
+                proofTestRecentlyRepeated: proofTestRecentlyRepeated,
+                surface: .text
+            )
+            let liveProductionFloor = Self.liveProductionFloor(
+                qualityIssuePresent: issue != nil,
+                semanticIssuePresent: semanticIssue != nil,
+                rubricPasses: rubric.passesSeniorCoachFloor,
+                visionPasses: vision.passesProductionFloor,
+                reliabilityIssues: reliability.issues
+            )
+
+            emit("Noum: \(reply)")
+            emit("replyWordCount: \(replyWordCount)")
+            emit("rubric: score=\(rubric.score) misses=\(rubric.misses.map { $0.rawValue }.joined(separator: ","))")
+            emit("visionScore: \(vision.score) passesProductionFloor=\(vision.passesProductionFloor) missed=\(vision.missed.map { $0.rawValue }.joined(separator: ","))")
+            emit("qualityIssue: \(String(describing: issue))")
+            emit("semanticGateIssue: \(semanticIssue?.rawValue ?? "none")")
+            emit("reliabilityIssues: \(reliability.issues.isEmpty ? "none" : reliability.issues.map(\.rawValue).joined(separator: ","))")
+            emit("liveProductionFloor: \(liveProductionFloor)")
+
+            return CoachLiveEvaluationReportRow(
+                fixtureID: fixture.id,
+                userTurn: fixture.latestUserTurn,
+                turnDepth: judgement.turnDepth.rawValue,
+                surface: CoachReplySurface.text.rawValue,
+                providerTierRequested: requestedTier.rawValue,
+                providerTierChosen: providerTierChosen?.rawValue,
+                providerChosen: providerChoice?.providerName,
+                providerModel: providerChoice?.model,
+                providerAttemptCount: telemetry.providerAttemptCount,
+                providerRetryCount: telemetry.providerRetryCount,
+                providerRefusalCount: telemetry.providerRefusalCount,
+                timeToFirstVisibleTokenMs: telemetry.timeToFirstVisibleTokenMs,
+                timeToFirstVisibleTokenSource: telemetry.timeToFirstVisibleTokenSource.rawValue,
+                timeToCompleteReplyMs: timeToCompleteReplyMs,
+                trajectoryCacheHit: judgement.trajectory.cacheHit,
+                assessmentCacheHit: judgement.assessmentCacheHit,
+                assessmentCacheAgeMs: assessmentCacheAgeMs,
+                assessmentConfidence: judgement.assessment.confidence,
+                assessmentProofTestHash: assessmentProofTestHash,
+                assessmentVerdict: judgement.assessment.directVerdict,
+                assessmentImmediateRead: judgement.assessment.immediateCoachRead,
+                assessmentResponseMode: judgement.assessment.responseMode.rawValue,
+                immediateCoachReadExpected: immediateCoachReadExpected,
+                immediateCoachReadShown: false,
+                missingEvidence: missingEvidence,
+                proofTest: judgement.assessment.nextProofTest,
+                proofTestRecentlyRepeated: proofTestRecentlyRepeated,
+                userPushbackWithinTwoTurns: trustSignals.userPushbackWithinTwoTurns,
+                coldnessComplaintFlag: trustSignals.coldnessComplaintFlag,
+                softPushbackFlag: trustSignals.softPushbackFlag,
+                voiceBargeInOccurred: trustSignals.voiceBargeInOccurred,
+                brainIDs: brainIDs,
+                diagnostics: diagnosticRows,
+                reply: reply,
+                replyWordCount: replyWordCount,
+                rubricScore: rubric.score,
+                rubricMisses: rubric.misses.map(\.rawValue),
+                passesRubric: rubric.passesSeniorCoachFloor,
+                visionScore: vision.score,
+                visionPassesProductionFloor: vision.passesProductionFloor,
+                visionMisses: vision.missed.map(\.rawValue),
+                qualityIssue: issue.map { String(describing: $0) } ?? "none",
+                semanticGateIssue: semanticIssue?.rawValue ?? "none",
+                reliabilityFallbackApplied: reliability.blocked,
+                reliabilityIssues: reliability.issues.map(\.rawValue),
+                liveProductionFloor: liveProductionFloor,
+                failure: nil
+            )
+
+        case .failure(let failure):
+            emit("failure: \(failure)")
+            return CoachLiveEvaluationReportRow(
+                fixtureID: fixture.id,
+                userTurn: fixture.latestUserTurn,
+                turnDepth: judgement.turnDepth.rawValue,
+                surface: CoachReplySurface.text.rawValue,
+                providerTierRequested: requestedTier.rawValue,
+                providerTierChosen: providerTierChosen?.rawValue,
+                providerChosen: providerChoice?.providerName,
+                providerModel: providerChoice?.model,
+                providerAttemptCount: telemetry.providerAttemptCount,
+                providerRetryCount: telemetry.providerRetryCount,
+                providerRefusalCount: telemetry.providerRefusalCount,
+                timeToFirstVisibleTokenMs: telemetry.timeToFirstVisibleTokenMs,
+                timeToFirstVisibleTokenSource: telemetry.timeToFirstVisibleTokenSource.rawValue,
+                timeToCompleteReplyMs: timeToCompleteReplyMs,
+                trajectoryCacheHit: judgement.trajectory.cacheHit,
+                assessmentCacheHit: judgement.assessmentCacheHit,
+                assessmentCacheAgeMs: assessmentCacheAgeMs,
+                assessmentConfidence: judgement.assessment.confidence,
+                assessmentProofTestHash: assessmentProofTestHash,
+                assessmentVerdict: judgement.assessment.directVerdict,
+                assessmentImmediateRead: judgement.assessment.immediateCoachRead,
+                assessmentResponseMode: judgement.assessment.responseMode.rawValue,
+                immediateCoachReadExpected: immediateCoachReadExpected,
+                immediateCoachReadShown: false,
+                missingEvidence: missingEvidence,
+                proofTest: judgement.assessment.nextProofTest,
+                proofTestRecentlyRepeated: proofTestRecentlyRepeated,
+                userPushbackWithinTwoTurns: trustSignals.userPushbackWithinTwoTurns,
+                coldnessComplaintFlag: trustSignals.coldnessComplaintFlag,
+                softPushbackFlag: trustSignals.softPushbackFlag,
+                voiceBargeInOccurred: trustSignals.voiceBargeInOccurred,
+                brainIDs: brainIDs,
+                diagnostics: diagnosticRows,
+                reply: nil,
+                replyWordCount: nil,
+                rubricScore: nil,
+                rubricMisses: [],
+                passesRubric: nil,
+                visionScore: nil,
+                visionPassesProductionFloor: nil,
+                visionMisses: [],
+                qualityIssue: "none",
+                semanticGateIssue: "none",
+                reliabilityFallbackApplied: nil,
+                reliabilityIssues: [],
+                liveProductionFloor: false,
+                failure: String(describing: failure)
+            )
+        }
+    }
+
+    private static func sourceFixture(
+        for conversation: CoachChatConversationFixture
+    ) -> CoachChatEvaluationFixture? {
+        CoachChatEvaluationCorpus.fixtures.first {
+            $0.id == conversation.sourceFixtureID
+        }
+    }
+
+    private static func initialHistory(
+        for fixture: CoachChatEvaluationFixture
+    ) -> [CoachMessage] {
+        guard let previous = fixture.previousCoachReply,
+              !previous.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return []
+        }
+        return [CoachMessage(role: .coach, text: previous)]
+    }
+
     private static func selectedFixtures(
         env: [String: String] = ProcessInfo.processInfo.environment
     ) -> [CoachChatEvaluationFixture] {
@@ -1419,9 +2020,37 @@ struct CoachLiveEvaluationTests {
         }
 
         let preset = raw.lowercased()
-        if ["latest", "latest-transcript", "latest-manual-eval"].contains(preset) {
+        if ["latest", "latest-transcript", "latest-manual-eval", "readiness"].contains(preset) {
             return CoachChatEvaluationCorpus.latestManualEvalFixtureIDs
                 .compactMap { id in all.first { $0.id == id } }
+        }
+
+        let wanted = raw
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return wanted.compactMap { id in all.first { $0.id == id } }
+    }
+
+    private static func selectedLongFormConversations(
+        env: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [CoachChatConversationFixture] {
+        let all = CoachChatConversationCorpus.longFormConversations
+        let fixturePreset = env["NOUM_LIVE_AI_FIXTURES"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let raw = env["NOUM_LIVE_AI_LONG_FORM"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if fixturePreset == "readiness" {
+            return all
+        }
+        guard let raw, !raw.isEmpty else {
+            return []
+        }
+        let preset = raw.lowercased()
+        if ["1", "true", "yes", "all", "required", "long-form", "longform", "readiness"].contains(preset) {
+            return all
         }
 
         let wanted = raw
@@ -1529,7 +2158,8 @@ struct CoachLiveEvaluationTests {
 
     private static func liveContext(
         for fixture: CoachChatEvaluationFixture,
-        coachingExpertise: [CoachKnowledgeCard]
+        coachingExpertise: [CoachKnowledgeCard],
+        recentUserTurns: [String]? = nil
     ) -> String {
         CoachContextBuilder.userContext(
             profile: fixture.profile,
@@ -1542,7 +2172,7 @@ struct CoachLiveEvaluationTests {
             trends: fixture.trends,
             latestUserTurn: fixture.latestUserTurn,
             previousCoachReply: fixture.previousCoachReply,
-            recentUserTurns: [fixture.latestUserTurn],
+            recentUserTurns: recentUserTurns ?? [fixture.latestUserTurn],
             coachingExpertise: coachingExpertise
         )
     }

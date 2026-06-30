@@ -124,6 +124,26 @@ struct TurnDepthClassifierTests {
             recentTurns: history
         ) == .trustRepair)
     }
+
+    @Test func explicitDidNotAnswerWhatIMeantIsTrustRepair() {
+        // The unambiguous pushback form stays classified as trust repair.
+        #expect(TurnDepthClassifier.classify(
+            userText: "That didn't answer what I meant."
+        ) == .trustRepair)
+    }
+
+    @Test func benignSelfClarificationIsNotTrustRepair() {
+        // Regression: a bare "what I meant" self-clarification (and a bare
+        // "real question") is NOT pushback. Routing it to trust repair would
+        // emit a phantom "you're right to push me" attunement opener for a
+        // user who was simply restating their ask.
+        #expect(TurnDepthClassifier.classify(
+            userText: "What I meant was, I want to focus on my pacing."
+        ) != .trustRepair)
+        #expect(TurnDepthClassifier.classify(
+            userText: "My real question is whether my pacing improved."
+        ) != .trustRepair)
+    }
 }
 
 @Suite("CoachStreamingPartialGateTests")
@@ -781,6 +801,43 @@ struct CoachSemanticQualityGateTests {
 
         #expect(issue == .unsupportedClosenessClaim)
     }
+
+    @Test func exampleRequestFailsWhenReplySkipsExample() {
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "The move is verdict-first: answer first, give one reason, then stop.",
+            latestUserTurn: "Can you give me an example of me doing this in sessions?",
+            turnDepth: .quickMove,
+            assessment: Self.quickAssessment
+        )
+
+        #expect(issue == .missingIntentFit)
+    }
+
+    @Test func exampleRequestPassesWhenReplyGivesConcreteSessionExample() {
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "In your vendor rep, you said implementation risk was lower and the team already knew the workflow. That is the pattern: reasons before the picture, so add one concrete example after the first reason.",
+            latestUserTurn: "Can you give me an example of me doing this in sessions?",
+            turnDepth: .quickMove,
+            assessment: Self.quickAssessment
+        )
+
+        #expect(issue == nil)
+    }
+
+    private static let quickAssessment = CoachAssessment(
+        turnDepth: .quickMove,
+        surface: .text,
+        questionRestatement: "Can you give me an example of me doing this in sessions?",
+        directVerdict: "Use one concrete example from the latest session before prescribing the next rep.",
+        confidence: 0.68,
+        evidenceUsed: [
+            "vendor rep: reasons appeared before the concrete example"
+        ],
+        rubricScores: [],
+        missingEvidence: [],
+        nextProofTest: "Record a 45-second answer with one recommendation, one reason, and one concrete example.",
+        responseMode: .immediateOnly
+    )
 
     private static let deepAssessment = CoachAssessment(
         turnDepth: .deepAssessment,

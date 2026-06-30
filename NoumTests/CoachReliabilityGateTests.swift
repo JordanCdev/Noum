@@ -266,7 +266,7 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.issues.contains(.floorConfidenceWithEvidence))
     }
 
-    @Test func trustRepairWithoutAcknowledgementRecordsSoftIssue() {
+    @Test func trustRepairWithoutAcknowledgementBlocksWithFallback() {
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "Run a 60-second rep and put the verdict first, then stop.",
             previousCoachReply: "Earlier read.",
@@ -275,7 +275,9 @@ struct CoachReliabilityGateTests {
             evidenceCoverage: 0.5
         )
         #expect(verdict.issues.contains(.noAttunementOnPushback))
-        #expect(!verdict.blocked) // soft: a non-acknowledging-but-otherwise-fine reply still ships
+        #expect(verdict.blockingIssues.contains(.noAttunementOnPushback))
+        #expect(verdict.blocked)
+        #expect(verdict.fallbackText?.isEmpty == false)
     }
 
     @Test func trustRepairWithAcknowledgementDoesNotRecordSoftIssue() {
@@ -298,6 +300,9 @@ struct CoachReliabilityGateTests {
             evidenceCoverage: 0.5
         )
         #expect(verdict.issues.contains(.noAttunementOnPushback))
+        #expect(verdict.blockingIssues.contains(.noAttunementOnPushback))
+        #expect(verdict.blocked)
+        #expect(verdict.fallbackText?.isEmpty == false)
     }
 
     @Test func trustRepairLetMeRepairDoesCountAsAcknowledgement() {

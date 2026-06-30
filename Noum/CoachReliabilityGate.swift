@@ -18,14 +18,16 @@ import Foundation
 // one rep" is strictly better than a fake or duplicated answer.
 //
 // Design split — HARD vs SOFT:
-//   • HARD issues (empty / placeholder / duplicateReply / scaffoldLeak) are
-//     unambiguous user-facing defects. They BLOCK: the gate substitutes a truthful,
-//     coach-shaped fallback (preferring the deterministic on-device read the
-//     judgement pass already produced) and records that a fallback was applied.
-//   • SOFT issues (floorConfidenceWithEvidence / noAttunementOnPushback /
+//   • HARD issues (empty / placeholder / duplicateReply / scaffoldLeak /
+//     noAttunementOnPushback) are unambiguous user-facing defects. They BLOCK:
+//     the gate substitutes a truthful, coach-shaped fallback (preferring the
+//     deterministic on-device read the judgement pass already produced) and
+//     records that a fallback was applied.
+//   • SOFT issues (nearDuplicateReply / floorConfidenceWithEvidence /
 //     repeatedProofTest) are calibration smells the report flagged. They are
-//     RECORDED for evals + metadata but never blanket-replace an otherwise-fine
-//     reply, because doing so would degrade a good answer into a generic one.
+//     RECORDED for evals + metadata but never blanket-replace an
+//     otherwise-fine reply, because doing so would degrade a good answer into a
+//     generic one.
 //
 // Pure + flag-guarded (`CoachBrainFlags.reliabilityGateEnabled`, default on) so it
 // is fully unit-testable and instantly revertable without a new state owner.
@@ -49,7 +51,7 @@ enum CoachReliabilityIssue: String, Codable, Equatable, CaseIterable {
     /// evidence — the "constant 0.20" smell from the artefacts. Recorded only.
     case floorConfidenceWithEvidence
     /// A trust-repair turn whose opening does not acknowledge the user's push
-    /// before prescribing. Recorded only.
+    /// before prescribing.
     case noAttunementOnPushback
     /// The proof-test is the same one offered on a recent turn. Recorded only.
     case repeatedProofTest
@@ -58,9 +60,9 @@ enum CoachReliabilityIssue: String, Codable, Equatable, CaseIterable {
     /// truthful fallback substitution.
     var isBlocking: Bool {
         switch self {
-        case .empty, .placeholder, .duplicateReply, .scaffoldLeak:
+        case .empty, .placeholder, .duplicateReply, .scaffoldLeak, .noAttunementOnPushback:
             return true
-        case .nearDuplicateReply, .floorConfidenceWithEvidence, .noAttunementOnPushback, .repeatedProofTest:
+        case .nearDuplicateReply, .floorConfidenceWithEvidence, .repeatedProofTest:
             return false
         }
     }
@@ -218,7 +220,7 @@ enum CoachReliabilityGate {
             }
         }
 
-        // --- SOFT (recorded, never blanket-replace) ---
+        // --- RECORDED ISSUES ---
         if let assessment,
            assessment.confidence <= floorConfidence,
            assessment.evidenceReferenceCount > 0 {

@@ -238,69 +238,85 @@ struct CoachChatConversationScore: Codable, Equatable {
 struct CoachChatConversationEvaluationReport: Codable, Equatable {
     let schemaVersion: String
     let conversationCount: Int
+    let visionProductionReadiness: CoachVisionProductionReadinessAudit
+    let summary: CoachChatConversationEvaluationSummary
     let rows: [CoachChatConversationEvaluationReportRow]
 
     static func make(
-        from conversations: [CoachChatConversationFixture]
+        from conversations: [CoachChatConversationFixture],
+        schemaVersion: String = CoachChatConversationCorpus.reportSchemaVersion
     ) -> CoachChatConversationEvaluationReport {
-        CoachChatConversationEvaluationReport(
-            schemaVersion: CoachChatConversationCorpus.reportSchemaVersion,
+        let rows = conversations.map { conversation in
+            let score = CoachChatConversationCorpus.evaluate(conversation)
+            let reliabilityIssuesByTurn = CoachChatConversationCorpus
+                .reliabilityIssuesByTurn(in: conversation)
+            let runtimeIssuesByTurn = CoachChatConversationCorpus
+                .runtimeIssueLabelsByTurn(in: conversation)
+            let semanticIssuesByTurn = CoachChatConversationCorpus
+                .semanticIssueLabelsByTurn(in: conversation)
+            let turnDepths = CoachChatConversationCorpus.turnDepthsByTurn(in: conversation)
+            let trustRepairTurnIndices = CoachChatConversationCorpus
+                .trustRepairTurnIndices(in: conversation)
+            let coldnessComplaintTurnIndices = CoachChatConversationCorpus
+                .coldnessComplaintTurnIndices(in: conversation)
+            let softPushbackTurnIndices = CoachChatConversationCorpus
+                .softPushbackTurnIndices(in: conversation)
+            let passesRuntimeGate = runtimeIssuesByTurn.allSatisfy(\.isEmpty)
+            let passesSemanticGate = semanticIssuesByTurn.allSatisfy(\.isEmpty)
+            let passesReliabilityGate = reliabilityIssuesByTurn.allSatisfy(\.isEmpty)
+            return CoachChatConversationEvaluationReportRow(
+                conversationID: conversation.id,
+                sourceFixtureID: conversation.sourceFixtureID,
+                turns: conversation.turns,
+                score: score.score,
+                passesConversationFloor: score.passesConversationFloor,
+                passesRuntimeGate: passesRuntimeGate,
+                passesSemanticGate: passesSemanticGate,
+                passesReliabilityGate: passesReliabilityGate,
+                passesProductionFloor: score.passesConversationFloor &&
+                    passesRuntimeGate &&
+                    passesSemanticGate &&
+                    passesReliabilityGate,
+                turnVisionScores: score.turnVisionScores,
+                turnRuntimeIssues: runtimeIssuesByTurn,
+                runtimeIssues: runtimeIssuesByTurn.flatMap { $0 },
+                turnSemanticIssues: semanticIssuesByTurn,
+                semanticIssues: semanticIssuesByTurn.flatMap { $0 },
+                turnReliabilityIssues: reliabilityIssuesByTurn.map { issues in
+                    issues.map(\.rawValue)
+                },
+                reliabilityIssues: reliabilityIssuesByTurn
+                    .flatMap { $0 }
+                    .map(\.rawValue),
+                turnDepths: turnDepths.map(\.rawValue),
+                trustRepairTurnIndices: trustRepairTurnIndices,
+                userPushbackWithinTwoTurns: CoachChatConversationCorpus
+                    .userPushbackWithinTwoTurns(in: conversation),
+                coldnessComplaintFlag: !coldnessComplaintTurnIndices.isEmpty,
+                coldnessComplaintTurnIndices: coldnessComplaintTurnIndices,
+                softPushbackFlag: !softPushbackTurnIndices.isEmpty,
+                softPushbackTurnIndices: softPushbackTurnIndices,
+                lowestTurnVisionScore: score.lowestTurnVisionScore,
+                earned: score.earned.map(\.rawValue),
+                missed: score.missed.map(\.rawValue)
+            )
+        }
+        let localTargetShapeScore = CoachVisionProductionReadinessAudit
+            .localTargetShapeScore(rows: rows)
+        let readiness = CoachVisionProductionReadinessAudit.make(
+            localTargetShapeScore: localTargetShapeScore,
+            evidence: .currentLocalSubstrate(
+                conversationCount: conversations.count,
+                rowsPassingProductionFloor: rows.filter(\.passesProductionFloor).count
+            )
+        )
+        let summary = CoachChatConversationEvaluationSummary.make(rows: rows)
+        return CoachChatConversationEvaluationReport(
+            schemaVersion: schemaVersion,
             conversationCount: conversations.count,
-            rows: conversations.map { conversation in
-                let score = CoachChatConversationCorpus.evaluate(conversation)
-                let reliabilityIssuesByTurn = CoachChatConversationCorpus
-                    .reliabilityIssuesByTurn(in: conversation)
-                let runtimeIssuesByTurn = CoachChatConversationCorpus
-                    .runtimeIssueLabelsByTurn(in: conversation)
-                let semanticIssuesByTurn = CoachChatConversationCorpus
-                    .semanticIssueLabelsByTurn(in: conversation)
-                let turnDepths = CoachChatConversationCorpus.turnDepthsByTurn(in: conversation)
-                let trustRepairTurnIndices = CoachChatConversationCorpus
-                    .trustRepairTurnIndices(in: conversation)
-                let coldnessComplaintTurnIndices = CoachChatConversationCorpus
-                    .coldnessComplaintTurnIndices(in: conversation)
-                let softPushbackTurnIndices = CoachChatConversationCorpus
-                    .softPushbackTurnIndices(in: conversation)
-                let passesRuntimeGate = runtimeIssuesByTurn.allSatisfy(\.isEmpty)
-                let passesSemanticGate = semanticIssuesByTurn.allSatisfy(\.isEmpty)
-                let passesReliabilityGate = reliabilityIssuesByTurn.allSatisfy(\.isEmpty)
-                return CoachChatConversationEvaluationReportRow(
-                    conversationID: conversation.id,
-                    sourceFixtureID: conversation.sourceFixtureID,
-                    turns: conversation.turns,
-                    score: score.score,
-                    passesConversationFloor: score.passesConversationFloor,
-                    passesRuntimeGate: passesRuntimeGate,
-                    passesSemanticGate: passesSemanticGate,
-                    passesReliabilityGate: passesReliabilityGate,
-                    passesProductionFloor: score.passesConversationFloor &&
-                        passesRuntimeGate &&
-                        passesSemanticGate &&
-                        passesReliabilityGate,
-                    turnVisionScores: score.turnVisionScores,
-                    turnRuntimeIssues: runtimeIssuesByTurn,
-                    runtimeIssues: runtimeIssuesByTurn.flatMap { $0 },
-                    turnSemanticIssues: semanticIssuesByTurn,
-                    semanticIssues: semanticIssuesByTurn.flatMap { $0 },
-                    turnReliabilityIssues: reliabilityIssuesByTurn.map { issues in
-                        issues.map(\.rawValue)
-                    },
-                    reliabilityIssues: reliabilityIssuesByTurn
-                        .flatMap { $0 }
-                        .map(\.rawValue),
-                    turnDepths: turnDepths.map(\.rawValue),
-                    trustRepairTurnIndices: trustRepairTurnIndices,
-                    userPushbackWithinTwoTurns: CoachChatConversationCorpus
-                        .userPushbackWithinTwoTurns(in: conversation),
-                    coldnessComplaintFlag: !coldnessComplaintTurnIndices.isEmpty,
-                    coldnessComplaintTurnIndices: coldnessComplaintTurnIndices,
-                    softPushbackFlag: !softPushbackTurnIndices.isEmpty,
-                    softPushbackTurnIndices: softPushbackTurnIndices,
-                    lowestTurnVisionScore: score.lowestTurnVisionScore,
-                    earned: score.earned.map(\.rawValue),
-                    missed: score.missed.map(\.rawValue)
-                )
-            }
+            visionProductionReadiness: readiness,
+            summary: summary,
+            rows: rows
         )
     }
 
@@ -309,6 +325,44 @@ struct CoachChatConversationEvaluationReport: Codable, Equatable {
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(self)
         return String(data: data, encoding: .utf8) ?? ""
+    }
+}
+
+struct CoachChatConversationEvaluationSummary: Codable, Equatable {
+    let rowsPassingConversationFloor: Int
+    let rowsPassingRuntimeGate: Int
+    let rowsPassingSemanticGate: Int
+    let rowsPassingReliabilityGate: Int
+    let rowsPassingProductionFloor: Int
+    let productionFloorFailureConversationIDs: [String]
+    let runtimeIssueCounts: [String: Int]
+    let semanticIssueCounts: [String: Int]
+    let reliabilityIssueCounts: [String: Int]
+    let turnDepthCounts: [String: Int]
+
+    static func make(
+        rows: [CoachChatConversationEvaluationReportRow]
+    ) -> CoachChatConversationEvaluationSummary {
+        CoachChatConversationEvaluationSummary(
+            rowsPassingConversationFloor: rows.filter(\.passesConversationFloor).count,
+            rowsPassingRuntimeGate: rows.filter(\.passesRuntimeGate).count,
+            rowsPassingSemanticGate: rows.filter(\.passesSemanticGate).count,
+            rowsPassingReliabilityGate: rows.filter(\.passesReliabilityGate).count,
+            rowsPassingProductionFloor: rows.filter(\.passesProductionFloor).count,
+            productionFloorFailureConversationIDs: rows
+                .filter { !$0.passesProductionFloor }
+                .map(\.conversationID),
+            runtimeIssueCounts: counts(rows.flatMap(\.runtimeIssues)),
+            semanticIssueCounts: counts(rows.flatMap(\.semanticIssues)),
+            reliabilityIssueCounts: counts(rows.flatMap(\.reliabilityIssues)),
+            turnDepthCounts: counts(rows.flatMap(\.turnDepths))
+        )
+    }
+
+    private static func counts(_ values: [String]) -> [String: Int] {
+        values.reduce(into: [:]) { partial, value in
+            partial[value, default: 0] += 1
+        }
     }
 }
 
@@ -339,6 +393,1579 @@ struct CoachChatConversationEvaluationReportRow: Codable, Equatable {
     let lowestTurnVisionScore: Int
     let earned: [String]
     let missed: [String]
+}
+
+struct CoachChatConversationExpertCalibrationPacket: Codable, Equatable {
+    let schemaVersion: String
+    let rubricVersion: String
+    let humanGateStatus: CoachChatExpertBaselineStatus
+    let instructions: String
+    let responseSchema: String
+    let conversationCount: Int
+    let rows: [CoachChatConversationExpertCalibrationPacketRow]
+
+    static func make(
+        from conversations: [CoachChatConversationFixture]
+    ) -> CoachChatConversationExpertCalibrationPacket {
+        CoachChatConversationExpertCalibrationPacket(
+            schemaVersion: CoachChatConversationCorpus.expertCalibrationPacketSchemaVersion,
+            rubricVersion: "coach-parity-conversation-calibration-v1",
+            humanGateStatus: .pendingExpertReview,
+            instructions: [
+                "Blinded professional-coach review packet: compare Noum's full multi-turn coaching conversation against what an excellent human communication coach would do.",
+                "Use the supplied user turns, candidate coach replies, and Noum context only; do not assume the app is validated or production-ready.",
+                "Evaluate diagnosis, case formulation, intervention, adaptation, perception limits, transfer setup, trust repair, and evidence calibration across the whole conversation.",
+                "Prefer useful, attuned, evidence-led coaching over polished generic advice; mark thin evidence and overclaims explicitly.",
+                "This packet gathers human calibration evidence only. Do not treat a completed packet as production readiness without longitudinal user outcomes and real-device QA."
+            ].joined(separator: " "),
+            responseSchema: [
+                "Return one JSON object per conversation:",
+                "{\"conversationID\": string,",
+                "\"ratings\": {\"diagnosis\": 1-5, \"caseFormulation\": 1-5, \"intervention\": 1-5, \"adaptation\": 1-5, \"perceptionHonesty\": 1-5, \"transferSetup\": 1-5, \"trustRepair\": 1-5, \"overallUsefulness\": 1-5},",
+                "\"calibrationDecision\": \"expertBetter|noumBetter|roughTie|unsafeOrUnready\",",
+                "\"humanCoachReference\": [{\"turnIndex\": number, \"idealCoachMove\": string, \"evidenceUsed\": [string], \"uncertainty\": string}],",
+                "\"overclaimNotes\": [string], \"revisionNotes\": [string], \"wouldUseWithClient\": boolean}."
+            ].joined(separator: " "),
+            conversationCount: conversations.count,
+            rows: conversations.map { conversation in
+                let source = CoachChatEvaluationCorpus.fixtures.first {
+                    $0.id == conversation.sourceFixtureID
+                }
+                return CoachChatConversationExpertCalibrationPacketRow(
+                    conversationID: conversation.id,
+                    sourceFixtureID: conversation.sourceFixtureID,
+                    sourcePillar: source?.pillar.rawValue,
+                    expertBaselineStatus: source?.expertBaseline.status.rawValue ??
+                        CoachChatExpertBaselineStatus.pendingExpertReview.rawValue,
+                    coachContext: source.map(CoachChatEvaluationCorpus.renderedContext(for:)),
+                    turns: conversation.turns,
+                    turnDepths: CoachChatConversationCorpus
+                        .turnDepthsByTurn(in: conversation)
+                        .map(\.rawValue),
+                    trustRepairTurnIndices: CoachChatConversationCorpus
+                        .trustRepairTurnIndices(in: conversation),
+                    coldnessComplaintTurnIndices: CoachChatConversationCorpus
+                        .coldnessComplaintTurnIndices(in: conversation),
+                    softPushbackTurnIndices: CoachChatConversationCorpus
+                        .softPushbackTurnIndices(in: conversation)
+                )
+            }
+        )
+    }
+
+    func encodedSortedJSON() throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(self)
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+}
+
+struct CoachChatConversationExpertCalibrationPacketRow: Codable, Equatable {
+    let conversationID: String
+    let sourceFixtureID: String
+    let sourcePillar: String?
+    let expertBaselineStatus: String
+    let coachContext: String?
+    let turns: [CoachChatConversationTurn]
+    let turnDepths: [String]
+    let trustRepairTurnIndices: [Int]
+    let coldnessComplaintTurnIndices: [Int]
+    let softPushbackTurnIndices: [Int]
+}
+
+struct CoachProfessionalCalibrationEvidence: Codable, Equatable {
+    static let expectedSchemaVersion = "coach-chat-conversation-expert-calibration-results-v1"
+    static let expectedRubricVersion = "coach-parity-conversation-calibration-v1"
+    static let requiredConversationIDs = CoachChatConversationCorpus
+        .professionalCalibrationConversations
+        .map(\.id)
+
+    let schemaVersion: String
+    let sourcePacketSchemaVersion: String
+    let rubricVersion: String
+    let reviewerRole: String
+    let reviewCount: Int
+    let summary: Summary
+    let rows: [Row]
+
+    var rowsPassingCalibrationFloor: Int {
+        qualifiesForReadiness ? rows.filter(\.passesCalibrationFloor).count : 0
+    }
+
+    var qualifiesForReadiness: Bool {
+        rejectionReasons.isEmpty
+    }
+
+    var rejectionReasons: [String] {
+        var reasons: [String] = []
+        let passingRows = rows.filter(\.passesCalibrationFloor)
+        let uniqueConversationIDs = Set(rows.map(\.conversationID))
+        let uniqueReviewerIDs = Set(rows.map(\.reviewerID).filter {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        })
+        if schemaVersion != Self.expectedSchemaVersion {
+            reasons.append("schemaVersion=\(schemaVersion)")
+        }
+        if sourcePacketSchemaVersion != CoachChatConversationCorpus.expertCalibrationPacketSchemaVersion {
+            reasons.append("sourcePacketSchemaVersion=\(sourcePacketSchemaVersion)")
+        }
+        if rubricVersion != Self.expectedRubricVersion {
+            reasons.append("rubricVersion=\(rubricVersion)")
+        }
+        if reviewCount < 10 || rows.count < 10 {
+            reasons.append("fewerThanTenReviews")
+        }
+        if reviewCount < Self.requiredConversationIDs.count ||
+            rows.count < Self.requiredConversationIDs.count {
+            reasons.append("missingFullConversationCoverage")
+        }
+        if reviewCount != rows.count || summary.rowCount != rows.count {
+            reasons.append("rowCountMismatch")
+        }
+        if uniqueConversationIDs.count != rows.count {
+            reasons.append("duplicateConversationIDs")
+        }
+        let missingConversationIDs = Self.requiredConversationIDs.filter {
+            !uniqueConversationIDs.contains($0)
+        }
+        if !missingConversationIDs.isEmpty {
+            reasons.append("missingRequiredConversations=\(missingConversationIDs.joined(separator: ","))")
+        }
+        let unexpectedConversationIDs = uniqueConversationIDs
+            .filter { !Self.requiredConversationIDs.contains($0) }
+            .sorted()
+        if !unexpectedConversationIDs.isEmpty {
+            reasons.append("unexpectedConversationIDs=\(unexpectedConversationIDs.joined(separator: ","))")
+        }
+        if summary.reviewerCount != uniqueReviewerIDs.count ||
+            summary.reviewerCount < 1 ||
+            reviewerRole.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            rows.contains(where: { $0.reviewerID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            reasons.append("missingProfessionalReviewer")
+        }
+        if summary.completedReviewCount != rows.count {
+            reasons.append("incompleteReviews")
+        }
+        if summary.passingCalibrationCount != passingRows.count ||
+            summary.passingCalibrationCount < 10 {
+            reasons.append("insufficientPassingCalibrationRows")
+        }
+        if summary.wouldUseWithClientCount < 10 {
+            reasons.append("insufficientWouldUseWithClientRows")
+        }
+        if summary.unsafeOrUnreadyCount > 0 ||
+            rows.contains(where: { $0.calibrationDecision == "unsafeOrUnready" }) {
+            reasons.append("unsafeOrUnreadyRows")
+        }
+        if rows.contains(where: { !$0.passesCalibrationFloor }) {
+            reasons.append("rowCalibrationFloorFailures")
+        }
+        if passingRows.contains(where: { !$0.revisionNotes.isEmpty }) {
+            reasons.append("unresolvedRevisionNotes")
+        }
+        if summary.minimumOverallUsefulness < 4 ||
+            summary.averageOverallUsefulness < 4.0 {
+            reasons.append("overallUsefulnessBelowFloor")
+        }
+        if !summary.readinessWarnings.isEmpty {
+            reasons.append("readinessWarnings=\(summary.readinessWarnings.joined(separator: ","))")
+        }
+        return reasons
+    }
+
+    static func decode(from json: String) throws -> CoachProfessionalCalibrationEvidence {
+        let data = Data(json.utf8)
+        return try JSONDecoder().decode(CoachProfessionalCalibrationEvidence.self, from: data)
+    }
+
+    func encodedSortedJSON() throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(self)
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    struct Summary: Codable, Equatable {
+        let rowCount: Int
+        let reviewerCount: Int
+        let completedReviewCount: Int
+        let passingCalibrationCount: Int
+        let wouldUseWithClientCount: Int
+        let unsafeOrUnreadyCount: Int
+        let averageOverallUsefulness: Double
+        let minimumOverallUsefulness: Int
+        let readinessWarnings: [String]
+    }
+
+    struct Row: Codable, Equatable {
+        let conversationID: String
+        let reviewerID: String
+        let calibrationDecision: String
+        let wouldUseWithClient: Bool
+        let ratings: Ratings
+        let humanCoachReferenceCount: Int
+        let overclaimNotes: [String]
+        let revisionNotes: [String]
+
+        var passesCalibrationFloor: Bool {
+            (calibrationDecision == "roughTie" || calibrationDecision == "noumBetter") &&
+                wouldUseWithClient &&
+                ratings.minimum >= 4 &&
+                humanCoachReferenceCount > 0 &&
+                overclaimNotes.isEmpty
+        }
+    }
+
+    struct Ratings: Codable, Equatable {
+        let diagnosis: Int
+        let caseFormulation: Int
+        let intervention: Int
+        let adaptation: Int
+        let perceptionHonesty: Int
+        let transferSetup: Int
+        let trustRepair: Int
+        let overallUsefulness: Int
+
+        var minimum: Int {
+            [
+                diagnosis,
+                caseFormulation,
+                intervention,
+                adaptation,
+                perceptionHonesty,
+                transferSetup,
+                trustRepair,
+                overallUsefulness
+            ].min() ?? 0
+        }
+    }
+}
+
+struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
+    static let expectedSchemaVersion = "coach-real-user-transfer-outcomes-v1"
+    static let expectedProtocolVersion = "coach-transfer-outcome-ledger-v1"
+
+    let schemaVersion: String
+    let studyProtocolVersion: String
+    let cohortDescription: String
+    let outcomeCount: Int
+    let summary: Summary
+    let rows: [Row]
+
+    var rowsPassingOutcomeFloor: Int {
+        qualifiesForReadiness ? rows.filter(\.passesOutcomeFloor).count : 0
+    }
+
+    var qualifiesForReadiness: Bool {
+        rejectionReasons.isEmpty
+    }
+
+    var rejectionReasons: [String] {
+        var reasons: [String] = []
+        let passingRows = rows.filter(\.passesOutcomeFloor)
+        let uniqueOutcomeIDs = Set(rows.map(\.outcomeID))
+        let uniqueUserIDs = Set(rows.map(\.userIDHash))
+        let completedFollowUps = rows.filter(\.followUpCompleted).count
+        let realWorldMoments = rows.filter(\.realWorldMomentOccurred).count
+        let linkedInterventions = rows.filter { $0.linkedCoachInterventionCount > 0 }.count
+        let positiveTransfer = rows.filter(\.positiveTransferReported).count
+        let audienceEvidence = rows.filter(\.audienceResponseEvidenceCollected).count
+        let noRegression = rows.filter { $0.postMomentConfidence >= $0.preMomentConfidence }.count
+        let adverseOutcomes = rows.filter(\.adverseOutcomeReported).count
+        if schemaVersion != Self.expectedSchemaVersion {
+            reasons.append("schemaVersion=\(schemaVersion)")
+        }
+        if studyProtocolVersion != Self.expectedProtocolVersion {
+            reasons.append("studyProtocolVersion=\(studyProtocolVersion)")
+        }
+        if outcomeCount < 10 || rows.count < 10 {
+            reasons.append("fewerThanTenOutcomes")
+        }
+        if outcomeCount != rows.count || summary.rowCount != rows.count {
+            reasons.append("rowCountMismatch")
+        }
+        if uniqueOutcomeIDs.count != rows.count {
+            reasons.append("duplicateOutcomeIDs")
+        }
+        if summary.uniqueUserCount != uniqueUserIDs.count || summary.uniqueUserCount < 5 {
+            reasons.append("insufficientUniqueUsers")
+        }
+        if summary.completedFollowUpCount != completedFollowUps || completedFollowUps < 10 {
+            reasons.append("insufficientCompletedFollowUps")
+        }
+        if summary.realWorldMomentCount != realWorldMoments || realWorldMoments < 10 {
+            reasons.append("insufficientRealWorldMoments")
+        }
+        if summary.linkedInterventionOutcomeCount != linkedInterventions || linkedInterventions < 10 {
+            reasons.append("insufficientLinkedInterventions")
+        }
+        if summary.positiveTransferCount != positiveTransfer || positiveTransfer < 10 {
+            reasons.append("insufficientPositiveTransferOutcomes")
+        }
+        if summary.audienceResponseEvidenceCount != audienceEvidence || audienceEvidence < 10 {
+            reasons.append("insufficientAudienceResponseEvidence")
+        }
+        if summary.noRegressionOutcomeCount != noRegression || noRegression < 10 {
+            reasons.append("insufficientNoRegressionOutcomes")
+        }
+        if summary.adverseOutcomeCount != adverseOutcomes || adverseOutcomes > 0 {
+            reasons.append("adverseOutcomesReported")
+        }
+        if summary.minimumDaysSinceFirstSession < 7 || summary.studyDurationDays < 14 {
+            reasons.append("insufficientLongitudinalWindow")
+        }
+        if rows.contains(where: { !$0.causalityClaims.isEmpty }) {
+            reasons.append("causalityClaimsPresent")
+        }
+        if rows.contains(where: { !$0.passesOutcomeFloor }) ||
+            summary.passingOutcomeCount != passingRows.count ||
+            summary.passingOutcomeCount < 10 {
+            reasons.append("outcomeFloorFailures")
+        }
+        if !summary.readinessWarnings.isEmpty {
+            reasons.append("readinessWarnings=\(summary.readinessWarnings.joined(separator: ","))")
+        }
+        return reasons
+    }
+
+    static func decode(from json: String) throws -> CoachRealUserTransferOutcomeEvidence {
+        let data = Data(json.utf8)
+        return try JSONDecoder().decode(CoachRealUserTransferOutcomeEvidence.self, from: data)
+    }
+
+    func encodedSortedJSON() throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(self)
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    struct Summary: Codable, Equatable {
+        let rowCount: Int
+        let uniqueUserCount: Int
+        let completedFollowUpCount: Int
+        let realWorldMomentCount: Int
+        let linkedInterventionOutcomeCount: Int
+        let positiveTransferCount: Int
+        let audienceResponseEvidenceCount: Int
+        let noRegressionOutcomeCount: Int
+        let adverseOutcomeCount: Int
+        let passingOutcomeCount: Int
+        let minimumDaysSinceFirstSession: Int
+        let studyDurationDays: Int
+        let readinessWarnings: [String]
+    }
+
+    struct Row: Codable, Equatable {
+        let outcomeID: String
+        let userIDHash: String
+        let momentCategory: String
+        let realWorldMomentOccurred: Bool
+        let followUpCompleted: Bool
+        let linkedCoachInterventionCount: Int
+        let daysSinceFirstNoumSession: Int
+        let preMomentConfidence: Int
+        let postMomentConfidence: Int
+        let positiveTransferReported: Bool
+        let audienceResponseEvidenceCollected: Bool
+        let adverseOutcomeReported: Bool
+        let causalityClaims: [String]
+        let notes: [String]
+
+        var passesOutcomeFloor: Bool {
+            realWorldMomentOccurred &&
+                followUpCompleted &&
+                linkedCoachInterventionCount > 0 &&
+                daysSinceFirstNoumSession >= 7 &&
+                postMomentConfidence >= preMomentConfidence &&
+                positiveTransferReported &&
+                audienceResponseEvidenceCollected &&
+                !adverseOutcomeReported &&
+                causalityClaims.isEmpty
+        }
+    }
+}
+
+struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
+    static let expectedSchemaVersion = "coach-real-device-testflight-qa-v1"
+    static let requiredSurfaceKeys = [
+        "liveActivity",
+        "aiPromptLatency",
+        "soundscapeAudioSession",
+        "paywallPurchase"
+    ]
+
+    let schemaVersion: String
+    let testRunID: String
+    let appVersion: String
+    let buildNumber: String
+    let deviceModel: String
+    let osVersion: String
+    let testerRole: String
+    let summary: Summary
+    let rows: [Row]
+
+    var qualifiesForReadiness: Bool {
+        rejectionReasons.isEmpty
+    }
+
+    var rejectionReasons: [String] {
+        var reasons: [String] = []
+        let trimmedRunID = testRunID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBuild = buildNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDevice = deviceModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTesterRole = testerRole.trimmingCharacters(in: .whitespacesAndNewlines)
+        let uniqueSurfaceKeys = Set(rows.map(\.surfaceKey))
+        let requiredSurfaceKeys = Set(Self.requiredSurfaceKeys)
+        let passedRequiredRows = rows.filter {
+            requiredSurfaceKeys.contains($0.surfaceKey) && $0.passesSurfaceFloor
+        }
+        let realDeviceRequiredRows = rows.filter {
+            requiredSurfaceKeys.contains($0.surfaceKey) && $0.realDevice
+        }
+        let testFlightRequiredRows = rows.filter {
+            requiredSurfaceKeys.contains($0.surfaceKey) && $0.testFlightBuildInstalled
+        }
+        let blockingIssueCount = rows.reduce(0) { $0 + $1.blockingIssueCount }
+        if schemaVersion != Self.expectedSchemaVersion {
+            reasons.append("schemaVersion=\(schemaVersion)")
+        }
+        if trimmedRunID.isEmpty || trimmedBuild.isEmpty || trimmedDevice.isEmpty || trimmedTesterRole.isEmpty {
+            reasons.append("missingRunMetadata")
+        }
+        if summary.rowCount != rows.count {
+            reasons.append("rowCountMismatch")
+        }
+        if uniqueSurfaceKeys.count != rows.count {
+            reasons.append("duplicateSurfaceKeys")
+        }
+        let missingRequired = requiredSurfaceKeys.subtracting(uniqueSurfaceKeys)
+        if !missingRequired.isEmpty {
+            reasons.append("missingRequiredSurfaces=\(missingRequired.sorted().joined(separator: ","))")
+        }
+        if summary.requiredSurfaceCount != Self.requiredSurfaceKeys.count {
+            reasons.append("requiredSurfaceCountMismatch")
+        }
+        if summary.passedRequiredSurfaceCount != passedRequiredRows.count ||
+            passedRequiredRows.count < Self.requiredSurfaceKeys.count {
+            reasons.append("surfaceFloorFailures")
+        }
+        if summary.realDeviceSurfaceCount != realDeviceRequiredRows.count ||
+            realDeviceRequiredRows.count < Self.requiredSurfaceKeys.count {
+            reasons.append("notAllSurfacesOnRealDevice")
+        }
+        if summary.testFlightBuildSurfaceCount != testFlightRequiredRows.count ||
+            testFlightRequiredRows.count < Self.requiredSurfaceKeys.count {
+            reasons.append("notAllSurfacesOnTestFlightBuild")
+        }
+        if summary.blockingIssueCount != blockingIssueCount || blockingIssueCount > 0 {
+            reasons.append("blockingIssuesPresent")
+        }
+        if !summary.crashFree {
+            reasons.append("crashesObserved")
+        }
+        if rows.contains(where: { !$0.passesSurfaceFloor }) {
+            reasons.append("rowSurfaceFloorFailures")
+        }
+        if !summary.readinessWarnings.isEmpty {
+            reasons.append("readinessWarnings=\(summary.readinessWarnings.joined(separator: ","))")
+        }
+        return reasons
+    }
+
+    static func decode(from json: String) throws -> CoachRealDeviceTestFlightEvidence {
+        let data = Data(json.utf8)
+        return try JSONDecoder().decode(CoachRealDeviceTestFlightEvidence.self, from: data)
+    }
+
+    func encodedSortedJSON() throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(self)
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    struct Summary: Codable, Equatable {
+        let rowCount: Int
+        let requiredSurfaceCount: Int
+        let passedRequiredSurfaceCount: Int
+        let realDeviceSurfaceCount: Int
+        let testFlightBuildSurfaceCount: Int
+        let blockingIssueCount: Int
+        let crashFree: Bool
+        let readinessWarnings: [String]
+    }
+
+    struct Row: Codable, Equatable {
+        let surfaceKey: String
+        let passed: Bool
+        let realDevice: Bool
+        let testFlightBuildInstalled: Bool
+        let evidenceReference: String
+        let latencyMs: Int?
+        let blockingIssueCount: Int
+        let notes: [String]
+
+        var passesSurfaceFloor: Bool {
+            passed &&
+                realDevice &&
+                testFlightBuildInstalled &&
+                blockingIssueCount == 0 &&
+                !evidenceReference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+}
+
+struct CoachOperationalLaunchChecklistEvidence: Codable, Equatable {
+    static let expectedSchemaVersion = "coach-operational-launch-checklist-v1"
+    static let expectedChecklistVersion = "m14-launch-gate-v1"
+    static let requiredItemKeys = [
+        "firestoreRulesDeployed",
+        "privacyPolicyURLHosted",
+        "settingsPrivacyURLVerified",
+        "appStorePrivacyDisclosuresReviewed",
+        "testFlightBuildUploaded",
+        "releaseBlockingBugsTriaged"
+    ]
+
+    let schemaVersion: String
+    let checklistVersion: String
+    let releaseCandidateBuild: String
+    let completedByRole: String
+    let summary: Summary
+    let items: [Item]
+
+    var qualifiesForReadiness: Bool {
+        rejectionReasons.isEmpty
+    }
+
+    var rejectionReasons: [String] {
+        var reasons: [String] = []
+        let trimmedBuild = releaseCandidateBuild.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedRole = completedByRole.trimmingCharacters(in: .whitespacesAndNewlines)
+        let uniqueKeys = Set(items.map(\.key))
+        let requiredKeys = Set(Self.requiredItemKeys)
+        let completedRequiredItems = items.filter {
+            requiredKeys.contains($0.key) && $0.completed
+        }
+        let failedRequiredItems = items.filter {
+            requiredKeys.contains($0.key) && !$0.completed
+        }
+        if schemaVersion != Self.expectedSchemaVersion {
+            reasons.append("schemaVersion=\(schemaVersion)")
+        }
+        if checklistVersion != Self.expectedChecklistVersion {
+            reasons.append("checklistVersion=\(checklistVersion)")
+        }
+        if trimmedBuild.isEmpty || trimmedRole.isEmpty {
+            reasons.append("missingReleaseMetadata")
+        }
+        if summary.itemCount != items.count {
+            reasons.append("itemCountMismatch")
+        }
+        if uniqueKeys.count != items.count {
+            reasons.append("duplicateChecklistItems")
+        }
+        let missingRequired = requiredKeys.subtracting(uniqueKeys)
+        if !missingRequired.isEmpty {
+            reasons.append("missingRequiredItems=\(missingRequired.sorted().joined(separator: ","))")
+        }
+        if summary.completedRequiredItemCount != completedRequiredItems.count ||
+            completedRequiredItems.count < Self.requiredItemKeys.count {
+            reasons.append("incompleteRequiredItems")
+        }
+        if summary.failedRequiredItemCount != failedRequiredItems.count ||
+            !failedRequiredItems.isEmpty {
+            reasons.append("failedRequiredItems")
+        }
+        if completedRequiredItems.contains(where: {
+            $0.evidenceReference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) {
+            reasons.append("missingEvidenceReferences")
+        }
+        if !summary.readinessWarnings.isEmpty {
+            reasons.append("readinessWarnings=\(summary.readinessWarnings.joined(separator: ","))")
+        }
+        return reasons
+    }
+
+    static func decode(from json: String) throws -> CoachOperationalLaunchChecklistEvidence {
+        let data = Data(json.utf8)
+        return try JSONDecoder().decode(CoachOperationalLaunchChecklistEvidence.self, from: data)
+    }
+
+    func encodedSortedJSON() throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(self)
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    struct Summary: Codable, Equatable {
+        let itemCount: Int
+        let completedRequiredItemCount: Int
+        let failedRequiredItemCount: Int
+        let readinessWarnings: [String]
+    }
+
+    struct Item: Codable, Equatable {
+        let key: String
+        let completed: Bool
+        let evidenceReference: String
+        let completedAtISO8601: String?
+        let notes: [String]
+    }
+}
+
+struct CoachChatConversationAppPathReport: Codable, Equatable {
+    let schemaVersion: String
+    let surface: String
+    let conversationCount: Int
+    let turnCount: Int
+    let passesAppPathFloor: Bool
+    let visionProductionReadiness: CoachVisionProductionReadinessAudit
+    let summary: CoachChatConversationAppPathSummary
+    let rows: [CoachChatConversationAppPathReportRow]
+
+    static func make(
+        rows: [CoachChatConversationAppPathReportRow],
+        localTargetShapeScore: Int,
+        schemaVersion: String = CoachChatConversationCorpus.appPathReportSchemaVersion,
+        surface: CoachReplySurface = .text
+    ) -> CoachChatConversationAppPathReport {
+        let summary = CoachChatConversationAppPathSummary.make(from: rows)
+        let passesAppPathFloor = !rows.isEmpty &&
+            summary.readinessWarnings.isEmpty &&
+            rows.allSatisfy(\.passesAppPathFloor)
+        let readiness = CoachVisionProductionReadinessAudit.make(
+            localTargetShapeScore: localTargetShapeScore,
+            evidence: .currentLocalSubstrate(
+                conversationCount: rows.count,
+                rowsPassingProductionFloor: rows.filter(\.passesAppPathFloor).count
+            )
+        )
+        return CoachChatConversationAppPathReport(
+            schemaVersion: schemaVersion,
+            surface: surface.rawValue,
+            conversationCount: rows.count,
+            turnCount: rows.reduce(0) { $0 + $1.turnCount },
+            passesAppPathFloor: passesAppPathFloor,
+            visionProductionReadiness: readiness,
+            summary: summary,
+            rows: rows
+        )
+    }
+
+    func encodedSortedJSON() throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(self)
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+}
+
+struct CoachChatConversationAppPathSummary: Codable, Equatable {
+    let conversationCount: Int
+    let turnCount: Int
+    let appPathFloorFailureCount: Int
+    let failureConversationIDs: [String]
+    let targetReplyMismatchCount: Int
+    let missingMetadataTurnCount: Int
+    let semanticGateFailureTurnCount: Int
+    let qualityGateEventCounts: [String: Int]
+    let qualityGateFamilyCounts: [String: Int]
+    let nonCleanQualityGateEvents: [String]
+    let acceptedFallbackTurnCount: Int
+    let typedAssessmentFallbackTurnCount: Int
+    let qualityGateBlockingFailureTurnCount: Int
+    let visionFloorFailureTurnCount: Int
+    let reliabilityIssueTurnCount: Int
+    let immediateCoachReadExpectedCount: Int
+    let immediateCoachReadMissingCount: Int
+    let readinessWarnings: [String]
+
+    static func make(
+        from rows: [CoachChatConversationAppPathReportRow]
+    ) -> CoachChatConversationAppPathSummary {
+        let turns = rows.flatMap(\.turns)
+        let floorFailures = rows.filter { !$0.passesAppPathFloor }
+        let targetReplyMismatchCount = turns.filter { !$0.targetReplyMatched }.count
+        let missingMetadataTurnCount = turns.filter { !$0.metadataPresent }.count
+        let semanticGateFailureTurnCount = turns.filter { !$0.semanticGatePassed }.count
+        let qualityGateEventCounts = eventCounts(
+            turns.flatMap(\.qualityGateEvents)
+        )
+        let qualityGateFamilyCounts = eventCounts(
+            turns.flatMap(\.qualityGateEvents).map(qualityGateFamily)
+        )
+        let nonCleanQualityGateEvents = nonCleanEvents(
+            from: qualityGateEventCounts
+        )
+        let acceptedFallbackTurnCount = turns.filter(\.qualityGateAcceptedFallback).count
+        let typedAssessmentFallbackTurnCount = turns.filter(\.typedAssessmentFallbackApplied).count
+        let qualityGateBlockingFailureTurnCount = turns.filter(\.qualityGateBlockingFailure).count
+        let visionFloorFailureTurnCount = turns.filter { $0.visionPassesProductionFloor == false }.count
+        let reliabilityIssueTurnCount = turns.filter { !$0.reliabilityIssues.isEmpty }.count
+        let immediateExpected = turns.filter(\.immediateCoachReadExpected)
+        let immediateMissing = immediateExpected.filter { !$0.immediateCoachReadShown }
+        let warnings = readinessWarnings(
+            conversationCount: rows.count,
+            floorFailureCount: floorFailures.count,
+            targetReplyMismatchCount: targetReplyMismatchCount,
+            missingMetadataTurnCount: missingMetadataTurnCount,
+            semanticGateFailureTurnCount: semanticGateFailureTurnCount,
+            visionFloorFailureTurnCount: visionFloorFailureTurnCount,
+            reliabilityIssueTurnCount: reliabilityIssueTurnCount,
+            immediateCoachReadMissingCount: immediateMissing.count
+        )
+
+        return CoachChatConversationAppPathSummary(
+            conversationCount: rows.count,
+            turnCount: turns.count,
+            appPathFloorFailureCount: floorFailures.count,
+            failureConversationIDs: floorFailures.map(\.conversationID),
+            targetReplyMismatchCount: targetReplyMismatchCount,
+            missingMetadataTurnCount: missingMetadataTurnCount,
+            semanticGateFailureTurnCount: semanticGateFailureTurnCount,
+            qualityGateEventCounts: qualityGateEventCounts,
+            qualityGateFamilyCounts: qualityGateFamilyCounts,
+            nonCleanQualityGateEvents: nonCleanQualityGateEvents,
+            acceptedFallbackTurnCount: acceptedFallbackTurnCount,
+            typedAssessmentFallbackTurnCount: typedAssessmentFallbackTurnCount,
+            qualityGateBlockingFailureTurnCount: qualityGateBlockingFailureTurnCount,
+            visionFloorFailureTurnCount: visionFloorFailureTurnCount,
+            reliabilityIssueTurnCount: reliabilityIssueTurnCount,
+            immediateCoachReadExpectedCount: immediateExpected.count,
+            immediateCoachReadMissingCount: immediateMissing.count,
+            readinessWarnings: warnings
+        )
+    }
+
+    private static func eventCounts(_ events: [String]) -> [String: Int] {
+        events.reduce(into: [:]) { counts, event in
+            counts[event, default: 0] += 1
+        }
+    }
+
+    private static func qualityGateFamily(_ event: String) -> String {
+        guard event != "passed" else { return event }
+        let parts = event.split(separator: ":", maxSplits: 2).map(String.init)
+        guard parts.count >= 2 else { return event }
+        let state = parts[0]
+        let gate = parts[1]
+        if gate == "typedAssessment" || gate == "contentRejected" || gate == "providerRefused" {
+            return "\(state):\(gate)"
+        }
+        if gate == "safeReference", parts.count == 3 {
+            let nested = parts[2].split(separator: ":", maxSplits: 1).first.map(String.init)
+            return [state, gate, nested].compactMap { $0 }.joined(separator: ":")
+        }
+        return "\(state):\(gate)"
+    }
+
+    private static func nonCleanEvents(
+        from counts: [String: Int]
+    ) -> [String] {
+        counts.keys
+            .filter { event in
+                event.hasPrefix("rejected:") ||
+                    event.hasPrefix("failed:") ||
+                    event.hasPrefix("fallback:")
+            }
+            .sorted()
+    }
+
+    private static func readinessWarnings(
+        conversationCount: Int,
+        floorFailureCount: Int,
+        targetReplyMismatchCount: Int,
+        missingMetadataTurnCount: Int,
+        semanticGateFailureTurnCount: Int,
+        visionFloorFailureTurnCount: Int,
+        reliabilityIssueTurnCount: Int,
+        immediateCoachReadMissingCount: Int
+    ) -> [String] {
+        var warnings: [CoachChatConversationAppPathWarning] = []
+        if conversationCount < 10 {
+            warnings.append(.fewerThanTenConversations)
+        }
+        if floorFailureCount > 0 {
+            warnings.append(.appPathFloorFailures)
+        }
+        if targetReplyMismatchCount > 0 {
+            warnings.append(.targetReplyMismatch)
+        }
+        if missingMetadataTurnCount > 0 {
+            warnings.append(.missingTurnMetadata)
+        }
+        if semanticGateFailureTurnCount > 0 {
+            warnings.append(.semanticGateFailures)
+        }
+        if visionFloorFailureTurnCount > 0 {
+            warnings.append(.visionFloorFailures)
+        }
+        if reliabilityIssueTurnCount > 0 {
+            warnings.append(.reliabilityIssues)
+        }
+        if immediateCoachReadMissingCount > 0 {
+            warnings.append(.missingImmediateCoachRead)
+        }
+        return warnings.map(\.rawValue)
+    }
+}
+
+enum CoachChatConversationAppPathWarning: String, Codable, Equatable {
+    case fewerThanTenConversations
+    case appPathFloorFailures
+    case targetReplyMismatch
+    case missingTurnMetadata
+    case semanticGateFailures
+    case visionFloorFailures
+    case reliabilityIssues
+    case missingImmediateCoachRead
+}
+
+struct CoachChatConversationAppPathReportRow: Codable, Equatable {
+    let conversationID: String
+    let sourceFixtureID: String
+    let turnCount: Int
+    let coachTurnCount: Int
+    let targetRepliesMatched: Bool
+    let turnDepths: [String]
+    let proofTestHashes: [String]
+    let passesAppPathFloor: Bool
+    let turns: [CoachChatConversationAppPathTurnRow]
+
+    static func make(
+        conversationID: String,
+        sourceFixtureID: String,
+        turns: [CoachChatConversationAppPathTurnRow]
+    ) -> CoachChatConversationAppPathReportRow {
+        CoachChatConversationAppPathReportRow(
+            conversationID: conversationID,
+            sourceFixtureID: sourceFixtureID,
+            turnCount: turns.count,
+            coachTurnCount: turns.filter(\.outcomeSucceeded).count,
+            targetRepliesMatched: turns.allSatisfy(\.targetReplyMatched),
+            turnDepths: turns.compactMap(\.turnDepth),
+            proofTestHashes: turns.compactMap(\.proofTestHash),
+            passesAppPathFloor: !turns.isEmpty && turns.allSatisfy(\.passesAppPathFloor),
+            turns: turns
+        )
+    }
+}
+
+struct CoachChatConversationAppPathTurnRow: Codable, Equatable {
+    let turnIndex: Int
+    let userTurn: String
+    let targetCoachReply: String
+    let finalCoachReply: String?
+    let outcomeSucceeded: Bool
+    let targetReplyMatched: Bool
+    let metadataPresent: Bool
+    let turnDepth: String?
+    let providerTierRequested: String?
+    let providerTierChosen: String?
+    let providerName: String?
+    let providerModel: String?
+    let semanticGateOutcome: String?
+    let semanticGateIssue: String?
+    let semanticGatePassed: Bool
+    let qualityGateOutcome: String?
+    let qualityGateEvents: [String]
+    let qualityGateClean: Bool
+    let qualityGateAcceptedFallback: Bool
+    let typedAssessmentFallbackApplied: Bool
+    let qualityGateBlockingFailure: Bool
+    let reliabilityIssues: [String]
+    let visionScore: Int?
+    let visionPassesProductionFloor: Bool?
+    let immediateCoachReadExpected: Bool
+    let immediateCoachReadShown: Bool
+    let proofTestHash: String?
+    let proofTestRecentlyRepeated: Bool?
+    let timeToFirstVisibleTokenMs: Int?
+    let timeToCompleteReplyMs: Int?
+    let passesAppPathFloor: Bool
+}
+
+struct CoachLiveProviderSweepEvidence: Codable, Equatable {
+    static let expectedSchemaVersion = "coach-live-eval-v1"
+    static let requiredFixtureIDs = CoachChatEvaluationCorpus.latestManualEvalFixtureIDs
+    static let requiredLongFormConversationIDs = CoachChatConversationCorpus
+        .longFormConversations
+        .map(\.id)
+    static var requiredReadinessEvidenceCount: Int {
+        requiredFixtureIDs.count + requiredLongFormConversationIDs.count
+    }
+    static let requiredTurnDepths = [
+        CoachTurnDepth.quickMove.rawValue,
+        CoachTurnDepth.groundedRead.rawValue,
+        CoachTurnDepth.deepAssessment.rawValue,
+        CoachTurnDepth.trustRepair.rawValue
+    ]
+
+    let schemaVersion: String
+    let fixtureCount: Int
+    let longFormConversationCount: Int
+    let longFormConversationIDsPassingProductionFloor: [String]
+    let longFormConversationFailureIDs: [String]
+    let providerChain: [String]
+    let passesProductionFloor: Bool
+    let passesRunReadinessFloor: Bool
+    let summary: Summary
+    let rows: [Row]
+
+    var rowsPassingReadinessFloor: Int {
+        qualifiesForReadiness
+            ? rows.filter(\.liveProductionFloor).count + longFormConversationIDsPassingProductionFloor.count
+            : 0
+    }
+
+    var qualifiesForReadiness: Bool {
+        rejectionReasons.isEmpty
+    }
+
+    var rejectionReasons: [String] {
+        var reasons: [String] = []
+        if schemaVersion != Self.expectedSchemaVersion {
+            reasons.append("schemaVersion=\(schemaVersion)")
+        }
+        if fixtureCount < 10 || rows.count < 10 {
+            reasons.append("fewerThanTenRows")
+        }
+        if fixtureCount < Self.requiredFixtureIDs.count ||
+            rows.count < Self.requiredFixtureIDs.count {
+            reasons.append("missingLatestTranscriptCoverage")
+        }
+        if longFormConversationCount < Self.requiredLongFormConversationIDs.count ||
+            longFormConversationIDsPassingProductionFloor.count < Self.requiredLongFormConversationIDs.count {
+            reasons.append("missingLiveLongFormConversationCoverage")
+        }
+        if fixtureCount != rows.count || summary.rowCount != rows.count {
+            reasons.append("rowCountMismatch")
+        }
+        if longFormConversationCount != longFormConversationIDsPassingProductionFloor.count +
+            longFormConversationFailureIDs.count {
+            reasons.append("longFormConversationCountMismatch")
+        }
+        let fixtureIDs = rows.map(\.fixtureID)
+        let uniqueFixtureIDs = Set(fixtureIDs)
+        if uniqueFixtureIDs.count != fixtureIDs.count {
+            reasons.append("duplicateFixtureIDs")
+        }
+        let uniqueLongFormConversationIDs = Set(longFormConversationIDsPassingProductionFloor)
+        if uniqueLongFormConversationIDs.count != longFormConversationIDsPassingProductionFloor.count {
+            reasons.append("duplicateLongFormConversationIDs")
+        }
+        let missingFixtureIDs = Self.requiredFixtureIDs.filter {
+            !uniqueFixtureIDs.contains($0)
+        }
+        if !missingFixtureIDs.isEmpty {
+            reasons.append("missingRequiredFixtures=\(missingFixtureIDs.joined(separator: ","))")
+        }
+        let missingLongFormConversationIDs = Self.requiredLongFormConversationIDs.filter {
+            !uniqueLongFormConversationIDs.contains($0)
+        }
+        if !missingLongFormConversationIDs.isEmpty {
+            reasons.append(
+                "missingRequiredLongFormConversations=\(missingLongFormConversationIDs.joined(separator: ","))"
+            )
+        }
+        let unexpectedLongFormConversationIDs = uniqueLongFormConversationIDs
+            .filter { !Self.requiredLongFormConversationIDs.contains($0) }
+            .sorted()
+        if !unexpectedLongFormConversationIDs.isEmpty {
+            reasons.append(
+                "unexpectedLongFormConversationIDs=\(unexpectedLongFormConversationIDs.joined(separator: ","))"
+            )
+        }
+        let observedDepths = Set(rows.compactMap(\.turnDepth))
+        let missingDepths = Self.requiredTurnDepths.filter {
+            !observedDepths.contains($0)
+        }
+        if !missingDepths.isEmpty {
+            reasons.append("missingTurnDepthCoverage=\(missingDepths.joined(separator: ","))")
+        }
+        if providerChain.isEmpty ||
+            rows.contains(where: {
+                ($0.providerChosen ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    ($0.providerModel ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }) {
+            reasons.append("missingProviderEvidence")
+        }
+        if !passesProductionFloor {
+            reasons.append("passesProductionFloor=false")
+        }
+        if !passesRunReadinessFloor {
+            reasons.append("passesRunReadinessFloor=false")
+        }
+        if summary.productionFloorFailureCount > 0 || rows.contains(where: { !$0.liveProductionFloor }) {
+            reasons.append("productionFloorFailures")
+        }
+        if !longFormConversationFailureIDs.isEmpty {
+            reasons.append("longFormConversationFailures=\(longFormConversationFailureIDs.joined(separator: ","))")
+        }
+        if !summary.readinessWarnings.isEmpty {
+            reasons.append("readinessWarnings=\(summary.readinessWarnings.joined(separator: ","))")
+        }
+        if summary.immediateCoachReadMissingCount > 0 {
+            reasons.append("missingImmediateCoachRead")
+        }
+        if summary.assessmentConfidenceDistinctRoundedCount < 3 {
+            reasons.append("flatAssessmentConfidence")
+        }
+        if summary.uniqueProofTestHashCount < 3 ||
+            summary.repeatedProofTestHashCount > 0 {
+            reasons.append("weakProofTestVariety")
+        }
+        return reasons
+    }
+
+    static func decode(from json: String) throws -> CoachLiveProviderSweepEvidence {
+        let data = Data(json.utf8)
+        return try JSONDecoder().decode(CoachLiveProviderSweepEvidence.self, from: data)
+    }
+
+    func encodedSortedJSON() throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(self)
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    struct Summary: Codable, Equatable {
+        let rowCount: Int
+        let productionFloorFailureCount: Int
+        let readinessWarnings: [String]
+        let immediateCoachReadExpectedCount: Int
+        let immediateCoachReadMissingCount: Int
+        let assessmentConfidenceDistinctRoundedCount: Int
+        let uniqueProofTestHashCount: Int
+        let repeatedProofTestHashCount: Int
+        let maxProviderRetryCount: Int
+        let totalProviderRefusalCount: Int
+        let firstVisibleTokenMaxMs: Int?
+    }
+
+    struct Row: Codable, Equatable {
+        let fixtureID: String
+        let turnDepth: String?
+        let providerChosen: String?
+        let providerModel: String?
+        let timeToFirstVisibleTokenMs: Int?
+        let assessmentConfidence: Double?
+        let assessmentProofTestHash: String?
+        let immediateCoachReadExpected: Bool?
+        let immediateCoachReadShown: Bool?
+        let liveProductionFloor: Bool
+    }
+}
+
+struct CoachVisionProductionReadinessAudit: Codable, Equatable {
+    let score: Int
+    let maximumAllowedScore: Int
+    let localTargetShapeScore: Int
+    let claim: CoachVisionProductionReadinessClaim
+    let blockers: [CoachVisionProductionReadinessBlocker]
+    let summary: String
+
+    var productionReady: Bool {
+        score >= 85 && blockers.isEmpty && claim == .productionReadyEvidenceAvailable
+    }
+
+    static func make(
+        localTargetShapeScore: Int,
+        evidence: CoachVisionProductionReadinessEvidence
+    ) -> CoachVisionProductionReadinessAudit {
+        let blockers = blockers(for: evidence)
+        let rawScore = rawEvidenceScore(evidence)
+        let maximumAllowedScore = cap(for: blockers)
+        let score = min(rawScore, maximumAllowedScore)
+        let claim: CoachVisionProductionReadinessClaim = blockers.isEmpty
+            ? .productionReadyEvidenceAvailable
+            : .localEvaluationSubstrateOnly
+        return CoachVisionProductionReadinessAudit(
+            score: score,
+            maximumAllowedScore: maximumAllowedScore,
+            localTargetShapeScore: localTargetShapeScore,
+            claim: claim,
+            blockers: blockers,
+            summary: summary(
+                score: score,
+                localTargetShapeScore: localTargetShapeScore,
+                claim: claim,
+                blockers: blockers
+            )
+        )
+    }
+
+    static func localTargetShapeScore(
+        from report: CoachChatConversationEvaluationReport
+    ) -> Int {
+        localTargetShapeScore(rows: report.rows)
+    }
+
+    static func localTargetShapeScore(
+        rows: [CoachChatConversationEvaluationReportRow]
+    ) -> Int {
+        guard !rows.isEmpty else { return 0 }
+        let total = rows.reduce(0) { $0 + $1.score }
+        return Int((Double(total) / Double(rows.count)).rounded())
+    }
+
+    private static func rawEvidenceScore(
+        _ evidence: CoachVisionProductionReadinessEvidence
+    ) -> Int {
+        var score = 0
+        if evidence.localConversationCount >= 10 {
+            score += 8
+        }
+        if evidence.localRowsPassingProductionFloor >= 10 {
+            score += 2
+        }
+        if evidence.appPathImmediateReadVerified {
+            score += 4
+        }
+        if evidence.appPathProofTestProgressionVerified {
+            score += 4
+        }
+        if evidence.liveProviderRowsPassingFloor >= CoachLiveProviderSweepEvidence.requiredReadinessEvidenceCount {
+            score += 16
+        }
+        if evidence.professionalCoachCalibrationRows >= CoachProfessionalCalibrationEvidence.requiredConversationIDs.count {
+            score += 20
+        }
+        if evidence.realUserLongitudinalOutcomeCount >= 10 {
+            score += 26
+        }
+        if evidence.realDeviceTestFlightVerified {
+            score += 12
+        }
+        if evidence.operationalLaunchChecklistComplete {
+            score += 8
+        }
+        return score
+    }
+
+    private static func blockers(
+        for evidence: CoachVisionProductionReadinessEvidence
+    ) -> [CoachVisionProductionReadinessBlocker] {
+        var blockers: [CoachVisionProductionReadinessBlocker] = []
+        if evidence.liveProviderRowsPassingFloor < CoachLiveProviderSweepEvidence.requiredReadinessEvidenceCount {
+            blockers.append(.noLiveProviderTranscriptSweep)
+        }
+        if evidence.professionalCoachCalibrationRows < CoachProfessionalCalibrationEvidence.requiredConversationIDs.count {
+            blockers.append(.noProfessionalCoachCalibration)
+        }
+        if evidence.realUserLongitudinalOutcomeCount < 10 {
+            blockers.append(.noRealUserLongitudinalTransferOutcomes)
+        }
+        if !evidence.realDeviceTestFlightVerified {
+            blockers.append(.noRealDeviceTestFlightVerification)
+        }
+        if !evidence.operationalLaunchChecklistComplete {
+            blockers.append(.operationalLaunchChecklistIncomplete)
+        }
+        return blockers
+    }
+
+    private static func cap(
+        for blockers: [CoachVisionProductionReadinessBlocker]
+    ) -> Int {
+        if blockers.contains(.noLiveProviderTranscriptSweep) ||
+            blockers.contains(.noProfessionalCoachCalibration) ||
+            blockers.contains(.noRealUserLongitudinalTransferOutcomes) {
+            return 20
+        }
+        if blockers.contains(.noRealDeviceTestFlightVerification) {
+            return 45
+        }
+        if blockers.contains(.operationalLaunchChecklistIncomplete) {
+            return 60
+        }
+        return 100
+    }
+
+    private static func summary(
+        score: Int,
+        localTargetShapeScore: Int,
+        claim: CoachVisionProductionReadinessClaim,
+        blockers: [CoachVisionProductionReadinessBlocker]
+    ) -> String {
+        let blockerText = blockers.isEmpty
+            ? "no blocking evidence gaps"
+            : blockers.map(\.rawValue).joined(separator: ", ")
+        return "VISION production readiness \(score)/100; local target-shape \(localTargetShapeScore)/100; claim \(claim.rawValue); blockers: \(blockerText)."
+    }
+}
+
+struct CoachVisionProductionReadinessEvidence: Codable, Equatable {
+    let localConversationCount: Int
+    let localRowsPassingProductionFloor: Int
+    let localLongFormConversationCount: Int
+    let localLongFormRowsPassingConversationFloor: Int
+    let localAdversarialConversationCount: Int
+    let localAdversarialRowsRejectedByProductionFloor: Int
+    let appPathImmediateReadVerified: Bool
+    let appPathProofTestProgressionVerified: Bool
+    let liveProviderRowsPassingFloor: Int
+    let professionalCoachCalibrationRows: Int
+    let realUserLongitudinalOutcomeCount: Int
+    let realDeviceTestFlightVerified: Bool
+    let operationalLaunchChecklistComplete: Bool
+
+    static func currentLocalSubstrate(
+        conversationCount: Int,
+        rowsPassingProductionFloor: Int,
+        longFormConversationCount: Int = 0,
+        longFormRowsPassingConversationFloor: Int = 0,
+        adversarialConversationCount: Int = 0,
+        adversarialRowsRejectedByProductionFloor: Int = 0
+    ) -> CoachVisionProductionReadinessEvidence {
+        CoachVisionProductionReadinessEvidence(
+            localConversationCount: conversationCount,
+            localRowsPassingProductionFloor: rowsPassingProductionFloor,
+            localLongFormConversationCount: longFormConversationCount,
+            localLongFormRowsPassingConversationFloor: longFormRowsPassingConversationFloor,
+            localAdversarialConversationCount: adversarialConversationCount,
+            localAdversarialRowsRejectedByProductionFloor: adversarialRowsRejectedByProductionFloor,
+            appPathImmediateReadVerified: true,
+            appPathProofTestProgressionVerified: true,
+            liveProviderRowsPassingFloor: 0,
+            professionalCoachCalibrationRows: 0,
+            realUserLongitudinalOutcomeCount: 0,
+            realDeviceTestFlightVerified: false,
+            operationalLaunchChecklistComplete: false
+        )
+    }
+}
+
+struct CoachVisionProductionReadinessEvidenceManifest: Codable, Equatable {
+    static let schemaVersion = "coach-vision-production-readiness-evidence-manifest-v1"
+
+    let schemaVersion: String
+    let localTargetShapeScore: Int
+    let evidence: CoachVisionProductionReadinessEvidence
+    let audit: CoachVisionProductionReadinessAudit
+    let rows: [CoachVisionProductionReadinessEvidenceRow]
+
+    static func make(
+        conversationReport: CoachChatConversationEvaluationReport,
+        longFormConversationReport: CoachChatConversationEvaluationReport? = nil,
+        adversarialConversationReport: CoachChatConversationEvaluationReport? = nil,
+        expertPacket: CoachChatConversationExpertCalibrationPacket,
+        textAppPathReport: CoachChatConversationAppPathReport,
+        liveAppPathReport: CoachChatConversationAppPathReport,
+        liveProviderSweep: CoachLiveProviderSweepEvidence? = nil,
+        professionalCalibration: CoachProfessionalCalibrationEvidence? = nil,
+        realUserTransferOutcomes: CoachRealUserTransferOutcomeEvidence? = nil,
+        realDeviceTestFlight: CoachRealDeviceTestFlightEvidence? = nil,
+        operationalLaunchChecklist: CoachOperationalLaunchChecklistEvidence? = nil
+    ) -> CoachVisionProductionReadinessEvidenceManifest {
+        let localRowsPassing = conversationReport.rows
+            .filter(\.passesProductionFloor)
+            .count
+        let localLongFormRowsPassing = longFormConversationReport?.rows
+            .filter(\.passesConversationFloor)
+            .count ?? 0
+        let localAdversarialRowsRejected = adversarialConversationReport?.summary
+            .productionFloorFailureConversationIDs
+            .count ?? 0
+        let localTargetShapeScore = CoachVisionProductionReadinessAudit
+            .localTargetShapeScore(from: conversationReport)
+        let textAppPathVerified = textAppPathReport.surface == CoachReplySurface.text.rawValue &&
+            textAppPathReport.passesAppPathFloor &&
+            textAppPathReport.summary.readinessWarnings.isEmpty
+        let liveAppPathVerified = liveAppPathReport.surface == CoachReplySurface.live.rawValue &&
+            liveAppPathReport.passesAppPathFloor &&
+            liveAppPathReport.summary.immediateCoachReadExpectedCount >= 10 &&
+            liveAppPathReport.summary.immediateCoachReadMissingCount == 0 &&
+            liveAppPathReport.summary.readinessWarnings.isEmpty
+        let proofProgressionVerified = conversationReport.rows.allSatisfy { row in
+            !row.missed.contains(CoachChatConversationCriterion.proofTestProgression.rawValue)
+        }
+        let appPathImmediateReadVerified = textAppPathVerified && liveAppPathVerified
+        let appPathProofTestProgressionVerified = proofProgressionVerified &&
+            textAppPathVerified &&
+            liveAppPathVerified
+        let verifiedLiveProviderRowsPassingFloor = liveProviderSweep?
+            .rowsPassingReadinessFloor ?? 0
+        let verifiedProfessionalCoachCalibrationRows = professionalCalibration?
+            .rowsPassingCalibrationFloor ?? 0
+        let verifiedRealUserTransferOutcomeRows = realUserTransferOutcomes?
+            .rowsPassingOutcomeFloor ?? 0
+        let verifiedRealDeviceTestFlight = realDeviceTestFlight?
+            .qualifiesForReadiness == true
+        let verifiedOperationalLaunchChecklist = operationalLaunchChecklist?
+            .qualifiesForReadiness == true
+        let evidence = CoachVisionProductionReadinessEvidence(
+            localConversationCount: conversationReport.conversationCount,
+            localRowsPassingProductionFloor: localRowsPassing,
+            localLongFormConversationCount: longFormConversationReport?.conversationCount ?? 0,
+            localLongFormRowsPassingConversationFloor: localLongFormRowsPassing,
+            localAdversarialConversationCount: adversarialConversationReport?.conversationCount ?? 0,
+            localAdversarialRowsRejectedByProductionFloor: localAdversarialRowsRejected,
+            appPathImmediateReadVerified: appPathImmediateReadVerified,
+            appPathProofTestProgressionVerified: appPathProofTestProgressionVerified,
+            liveProviderRowsPassingFloor: verifiedLiveProviderRowsPassingFloor,
+            professionalCoachCalibrationRows: verifiedProfessionalCoachCalibrationRows,
+            realUserLongitudinalOutcomeCount: verifiedRealUserTransferOutcomeRows,
+            realDeviceTestFlightVerified: verifiedRealDeviceTestFlight,
+            operationalLaunchChecklistComplete: verifiedOperationalLaunchChecklist
+        )
+        let audit = CoachVisionProductionReadinessAudit.make(
+            localTargetShapeScore: localTargetShapeScore,
+            evidence: evidence
+        )
+        let rows = evidenceRows(
+            conversationReport: conversationReport,
+            longFormConversationReport: longFormConversationReport,
+            adversarialConversationReport: adversarialConversationReport,
+            expertPacket: expertPacket,
+            textAppPathReport: textAppPathReport,
+            liveAppPathReport: liveAppPathReport,
+            liveProviderSweep: liveProviderSweep,
+            professionalCalibration: professionalCalibration,
+            realUserTransferOutcomes: realUserTransferOutcomes,
+            realDeviceTestFlight: realDeviceTestFlight,
+            operationalLaunchChecklist: operationalLaunchChecklist,
+            evidence: evidence
+        )
+        return CoachVisionProductionReadinessEvidenceManifest(
+            schemaVersion: schemaVersion,
+            localTargetShapeScore: localTargetShapeScore,
+            evidence: evidence,
+            audit: audit,
+            rows: rows
+        )
+    }
+
+    func encodedSortedJSON() throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(self)
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    private static func evidenceRows(
+        conversationReport: CoachChatConversationEvaluationReport,
+        longFormConversationReport: CoachChatConversationEvaluationReport?,
+        adversarialConversationReport: CoachChatConversationEvaluationReport?,
+        expertPacket: CoachChatConversationExpertCalibrationPacket,
+        textAppPathReport: CoachChatConversationAppPathReport,
+        liveAppPathReport: CoachChatConversationAppPathReport,
+        liveProviderSweep: CoachLiveProviderSweepEvidence?,
+        professionalCalibration: CoachProfessionalCalibrationEvidence?,
+        realUserTransferOutcomes: CoachRealUserTransferOutcomeEvidence?,
+        realDeviceTestFlight: CoachRealDeviceTestFlightEvidence?,
+        operationalLaunchChecklist: CoachOperationalLaunchChecklistEvidence?,
+        evidence: CoachVisionProductionReadinessEvidence
+    ) -> [CoachVisionProductionReadinessEvidenceRow] {
+        let textAppPathEarned = textAppPathReport.surface == CoachReplySurface.text.rawValue &&
+            textAppPathReport.passesAppPathFloor &&
+            textAppPathReport.summary.readinessWarnings.isEmpty
+        let textAppPathTurnsPassing = textAppPathReport.rows
+            .flatMap(\.turns)
+            .filter(\.passesAppPathFloor)
+            .count
+        let liveImmediateReadEarned = liveAppPathReport.surface == CoachReplySurface.live.rawValue &&
+            liveAppPathReport.passesAppPathFloor &&
+            liveAppPathReport.summary.immediateCoachReadMissingCount == 0 &&
+            liveAppPathReport.summary.readinessWarnings.isEmpty
+        let adversarialNegativeControlEarned = evidence.localAdversarialConversationCount >= 10 &&
+            evidence.localAdversarialRowsRejectedByProductionFloor >= 10
+        let liveProviderEarned = evidence.liveProviderRowsPassingFloor >=
+            CoachLiveProviderSweepEvidence.requiredReadinessEvidenceCount &&
+            liveProviderSweep?.qualifiesForReadiness == true
+        let liveProviderSource = liveProviderSweep?.schemaVersion ??
+            CoachLiveProviderSweepEvidence.expectedSchemaVersion
+        let liveProviderNotes: String = {
+            guard let liveProviderSweep else {
+                return "Requires real provider replies through the live transcript harness; scripted app-path rows do not count."
+            }
+            if liveProviderSweep.qualifiesForReadiness {
+                return "\(liveProviderSweep.rows.count) latest-turn rows and \(liveProviderSweep.longFormConversationIDsPassingProductionFloor.count) long-form conversations passed the run readiness floor; providerChain=\(liveProviderSweep.providerChain.joined(separator: " -> "))"
+            }
+            return "Live-provider report rejected: \(liveProviderSweep.rejectionReasons.joined(separator: ","))"
+        }()
+        let professionalCalibrationEarned = evidence.professionalCoachCalibrationRows >=
+            CoachProfessionalCalibrationEvidence.requiredConversationIDs.count &&
+            professionalCalibration?.qualifiesForReadiness == true
+        let professionalCalibrationSource = professionalCalibration?.schemaVersion ??
+            CoachProfessionalCalibrationEvidence.expectedSchemaVersion
+        let professionalCalibrationNotes: String = {
+            guard let professionalCalibration else {
+                return "Packet status \(expertPacket.humanGateStatus.rawValue) for \(expertPacket.conversationCount) conversations; pending expert review does not count as calibration."
+            }
+            if professionalCalibration.qualifiesForReadiness {
+                return "\(professionalCalibration.rows.count) professional-coach calibration rows passed; reviewerRole=\(professionalCalibration.reviewerRole)"
+            }
+            return "Professional calibration results rejected: \(professionalCalibration.rejectionReasons.joined(separator: ","))"
+        }()
+        let realUserTransferEarned = evidence.realUserLongitudinalOutcomeCount >= 10 &&
+            realUserTransferOutcomes?.qualifiesForReadiness == true
+        let realUserTransferSource = realUserTransferOutcomes?.schemaVersion ??
+            CoachRealUserTransferOutcomeEvidence.expectedSchemaVersion
+        let realUserTransferNotes: String = {
+            guard let realUserTransferOutcomes else {
+                return "Requires longitudinal off-app outcome follow-ups tied to real user transfer moments."
+            }
+            if realUserTransferOutcomes.qualifiesForReadiness {
+                return "\(realUserTransferOutcomes.rows.count) real-user transfer outcomes passed; cohort=\(realUserTransferOutcomes.cohortDescription)"
+            }
+            return "Real-user transfer outcomes rejected: \(realUserTransferOutcomes.rejectionReasons.joined(separator: ","))"
+        }()
+        let realDeviceSource = realDeviceTestFlight?.schemaVersion ??
+            CoachRealDeviceTestFlightEvidence.expectedSchemaVersion
+        let realDeviceNotes: String = {
+            guard let realDeviceTestFlight else {
+                return "Simulator and local XCTest evidence do not cover real-device voice/live behavior."
+            }
+            if realDeviceTestFlight.qualifiesForReadiness {
+                return "Real-device TestFlight QA passed on \(realDeviceTestFlight.deviceModel) / \(realDeviceTestFlight.osVersion); build=\(realDeviceTestFlight.buildNumber)"
+            }
+            return "Real-device TestFlight QA rejected: \(realDeviceTestFlight.rejectionReasons.joined(separator: ","))"
+        }()
+        let operationalSource = operationalLaunchChecklist?.schemaVersion ??
+            CoachOperationalLaunchChecklistEvidence.expectedSchemaVersion
+        let operationalNotes: String = {
+            guard let operationalLaunchChecklist else {
+                return "Requires deployment/ops evidence, not code-only readiness."
+            }
+            if operationalLaunchChecklist.qualifiesForReadiness {
+                return "M14 launch checklist passed for build \(operationalLaunchChecklist.releaseCandidateBuild)."
+            }
+            return "M14 launch checklist rejected: \(operationalLaunchChecklist.rejectionReasons.joined(separator: ","))"
+        }()
+        return [
+            CoachVisionProductionReadinessEvidenceRow(
+                key: "localConversationCorpus",
+                status: evidence.localConversationCount >= 10 &&
+                    evidence.localRowsPassingProductionFloor >= 10 ? .earned : .missing,
+                observedCount: evidence.localRowsPassingProductionFloor,
+                requiredCount: 10,
+                source: conversationReport.schemaVersion,
+                blocker: nil,
+                notes: "\(conversationReport.conversationCount) conversations; \(evidence.localRowsPassingProductionFloor) rows pass the local production floor."
+            ),
+            CoachVisionProductionReadinessEvidenceRow(
+                key: "longFormConversationCorpus",
+                status: evidence.localLongFormConversationCount >= 10 &&
+                    evidence.localLongFormRowsPassingConversationFloor >= 10 ? .earned : .missing,
+                observedCount: evidence.localLongFormRowsPassingConversationFloor,
+                requiredCount: 10,
+                source: longFormConversationReport?.schemaVersion ??
+                    CoachChatConversationCorpus.longFormReportSchemaVersion,
+                blocker: nil,
+                notes: "\(evidence.localLongFormConversationCount) five-turn conversations; local substrate only, no production score lift."
+            ),
+            CoachVisionProductionReadinessEvidenceRow(
+                key: "adversarialNegativeControlCorpus",
+                status: adversarialNegativeControlEarned ? .earned : .missing,
+                observedCount: evidence.localAdversarialRowsRejectedByProductionFloor,
+                requiredCount: 10,
+                source: adversarialConversationReport?.schemaVersion ??
+                    CoachChatConversationCorpus.longFormAdversarialReportSchemaVersion,
+                blocker: nil,
+                notes: "\(evidence.localAdversarialConversationCount) paired failure conversations; all must fail the production floor so local evaluator blind spots stay visible."
+            ),
+            CoachVisionProductionReadinessEvidenceRow(
+                key: "textAppPathReplay",
+                status: textAppPathEarned ? .earned : .missing,
+                observedCount: textAppPathTurnsPassing,
+                requiredCount: textAppPathReport.summary.turnCount,
+                source: textAppPathReport.schemaVersion,
+                blocker: nil,
+                notes: "surface=\(textAppPathReport.surface); warnings=\(textAppPathReport.summary.readinessWarnings.joined(separator: ","))"
+            ),
+            CoachVisionProductionReadinessEvidenceRow(
+                key: "liveAppPathImmediateRead",
+                status: liveImmediateReadEarned ? .earned : .missing,
+                observedCount: liveAppPathReport.summary.immediateCoachReadExpectedCount -
+                    liveAppPathReport.summary.immediateCoachReadMissingCount,
+                requiredCount: liveAppPathReport.summary.immediateCoachReadExpectedCount,
+                source: liveAppPathReport.schemaVersion,
+                blocker: nil,
+                notes: "surface=\(liveAppPathReport.surface); expected immediate reads=\(liveAppPathReport.summary.immediateCoachReadExpectedCount)."
+            ),
+            CoachVisionProductionReadinessEvidenceRow(
+                key: "liveProviderTranscriptSweep",
+                status: liveProviderEarned ? .earned : .missing,
+                observedCount: evidence.liveProviderRowsPassingFloor,
+                requiredCount: CoachLiveProviderSweepEvidence.requiredReadinessEvidenceCount,
+                source: liveProviderSource,
+                blocker: liveProviderEarned ? nil : .noLiveProviderTranscriptSweep,
+                notes: liveProviderNotes
+            ),
+            CoachVisionProductionReadinessEvidenceRow(
+                key: "professionalCoachCalibration",
+                status: professionalCalibrationEarned ? .earned : .pending,
+                observedCount: evidence.professionalCoachCalibrationRows,
+                requiredCount: CoachProfessionalCalibrationEvidence.requiredConversationIDs.count,
+                source: professionalCalibrationSource,
+                blocker: professionalCalibrationEarned ? nil : .noProfessionalCoachCalibration,
+                notes: professionalCalibrationNotes
+            ),
+            CoachVisionProductionReadinessEvidenceRow(
+                key: "realUserLongitudinalTransferOutcomes",
+                status: realUserTransferEarned ? .earned : .missing,
+                observedCount: evidence.realUserLongitudinalOutcomeCount,
+                requiredCount: 10,
+                source: realUserTransferSource,
+                blocker: realUserTransferEarned ? nil : .noRealUserLongitudinalTransferOutcomes,
+                notes: realUserTransferNotes
+            ),
+            CoachVisionProductionReadinessEvidenceRow(
+                key: "realDeviceTestFlightVerification",
+                status: evidence.realDeviceTestFlightVerified ? .earned : .missing,
+                observedCount: evidence.realDeviceTestFlightVerified ? 1 : 0,
+                requiredCount: 1,
+                source: realDeviceSource,
+                blocker: evidence.realDeviceTestFlightVerified ? nil : .noRealDeviceTestFlightVerification,
+                notes: realDeviceNotes
+            ),
+            CoachVisionProductionReadinessEvidenceRow(
+                key: "operationalLaunchChecklist",
+                status: evidence.operationalLaunchChecklistComplete ? .earned : .missing,
+                observedCount: evidence.operationalLaunchChecklistComplete ? 1 : 0,
+                requiredCount: 1,
+                source: operationalSource,
+                blocker: evidence.operationalLaunchChecklistComplete ? nil : .operationalLaunchChecklistIncomplete,
+                notes: operationalNotes
+            )
+        ]
+    }
+}
+
+struct CoachVisionProductionReadinessEvidenceRow: Codable, Equatable {
+    let key: String
+    let status: CoachVisionProductionReadinessEvidenceStatus
+    let observedCount: Int
+    let requiredCount: Int
+    let source: String
+    let blocker: CoachVisionProductionReadinessBlocker?
+    let notes: String
+}
+
+enum CoachVisionProductionReadinessEvidenceStatus: String, Codable, Equatable {
+    case earned
+    case pending
+    case missing
+}
+
+enum CoachVisionProductionReadinessClaim: String, Codable, Equatable {
+    case localEvaluationSubstrateOnly
+    case productionReadyEvidenceAvailable
+}
+
+enum CoachVisionProductionReadinessBlocker: String, Codable, Equatable {
+    case noLiveProviderTranscriptSweep
+    case noProfessionalCoachCalibration
+    case noRealUserLongitudinalTransferOutcomes
+    case noRealDeviceTestFlightVerification
+    case operationalLaunchChecklistIncomplete
 }
 
 struct CoachChatExpertReviewPacket: Codable, Equatable {
