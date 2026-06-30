@@ -47,6 +47,51 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-06-30 (autonomous `noum-1` run). **17th iteration. Shipped TWO verified
+slices (GREEN on iPhone 17 Pro / iOS 26.3 / Xcode 26.3), no push. Full write-up:
+`docs/COACH_PARITY_EVAL_2026-06-30.md`. Score 7.5/10 (was 7.4).**
+
+- **Landed + corrected the stranded coach-chat reliability increment (`ec40e99b`).**
+  A prior session left ~5,100 lines uncommitted on the hot coach surface with a
+  *broken test build* (referenced `evaluateLiveLongFormConversation`, never
+  defined). Completed it honestly: kept all verifiable structural work
+  (`missingIntentFit` semantic gate — coach answering a neighboring ask instead
+  of the user's actual one; `noAttunementOnPushback` promoted to a HARD block;
+  near-dup plumbing; long-form eval-report schema + selectors + 3 keyless unit
+  tests) and **deferred the one live multi-turn driver** with an explicit marker
+  (needs provider keys; not runtime-verifiable unattended). **Also fixed a
+  false-attunement defect the diff introduced** — bare `"what i meant"` /
+  `"actual question"` / `"real question"` in `TurnDepthClassifier.isTrustRepair`
+  fired on benign self-clarification → phantom "you're right to push me" apology
+  (an overclaim violation). Removed the polysemous bare tokens, kept the
+  unambiguous "answer(ed) what i meant" forms; +2 regression tests.
+- **Shipped Lever A — positional rep-event coach read (`cc25567b`).** The one
+  ship-now / collision-safe / non-human-gated lever a fresh 6-role panel
+  surfaced + adversarially verified. New pure `RepEventLocationsEngine.derive`
+  reduces `TranscriptTimeline` (previously zero production callers) to a small
+  Codable summary of WHERE the rep's events fell (longest pause / fastest burst /
+  filler cluster, by opening/middle/close third), nil unless credible. Persisted
+  on `PracticeSession` mirroring `vocalEnergyMetrics` 1:1; surfaced in
+  `CoachContextBuilder`'s most-recent-rep block. +9 engine tests; regression
+  GREEN (56/0). The coach can now locate a problem ("you rushed at the close")
+  not just name a whole-rep average. This is also the data prerequisite for the
+  deferred annotated-transcript render.
+- **Method:** 6-role workflow panel (market · coach · UX · end-user · staff-eng ·
+  QA-honesty) → adversarial verification of each named lever against the code →
+  synthesis. 4 of 5 surviving levers were correctly deferred (render = felt-QA
+  gated; first-rep prompt-pin = default-OFF UX bet; `"what i meant"` gating
+  = done here) or rejected (reflection-above-score = premise invalid).
+- **Collision discipline:** a concurrent **Codex** session was actively editing
+  the coach-chat eval fixtures + `2am.md` mid-run. Staged only disjoint files via
+  explicit pathspecs; Codex's in-flight work untouched.
+- **10/10 answer, unchanged:** literal "with no doubt replaces a human coach"
+  stays REFUSED by design (`CoachParityReadiness.forming`). The 3 remaining gaps
+  are human-gated: perception depth (phone reads words, not breath/tension),
+  externally-calibrated scoring (still substring/threshold heuristics —
+  this run's own `"what i meant"` false positive exposed exactly this), and
+  longitudinal real-user outcome proof. Figma/Canva connectors live but not
+  auto-triggered (external writes; the deferred render is where Figma belongs).
+
 2026-06-29 (autonomous `noum2` run). **16th iteration. Tree was HOT — a
 concurrent `ultracode` session was actively editing the coach-chat surface
 (`AICoachChatService.swift` touched 13 min before this run + 2 judgement-layer
