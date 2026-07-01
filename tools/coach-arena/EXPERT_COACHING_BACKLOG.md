@@ -3,11 +3,13 @@
 > **RESUME HERE (fresh session):** The `/loop` self-improvement pass runs locally
 > and does NOT survive a context reset — re-run `/loop 50 keep assessing the app
 > and finding ways to improve against the VISION.md goals (expert level coaching)`
-> to continue. Item #1 (interventionQuality one-clean-move) is DONE as of iter 4
-> — verified with a controlled blind A/B, +4.93 IQ on bundling fixtures. Next task
-> = **backlog item #1 below (personalMemory "un-swappable fact" gap)**. Context:
-> memory files `coach_arena` + `session_lifecycle_evidence_floor`; commits
-> `f035a3c4`..`de02670e` on `ux-overhaul`.
+> to continue. iter 4 DONE: interventionQuality one-clean-move (rule 3), controlled
+> A/B +4.93. iter 5 REVERTED: the personalMemory rule-1 rewrite did NOT help in a
+> same-era dual-arm A/B (−0.83, controls −2, cold-start fabrication) — see
+> "Investigated" below. Next task = **Next item #1 (narrow synthesize-across-data
+> clause only, re-verified) or item #2 (delivery intelligence)**. Context: memory
+> files `coach_arena` + `session_lifecycle_evidence_floor`; commits
+> `f035a3c4`..`3f0edd01` on `ux-overhaul`.
 > **On measurement (read before trusting any number):** the full-suite re-judge is
 > a fresh LLM panel each run, and panels DRIFT in leniency run-to-run (iter 4's
 > panel graded ~3 pts/dim above iter 3's, uniformly, incl. dims a given change
@@ -70,17 +72,44 @@ newest-done first. Each item: the VISION hook, why it matters, and status.
   moves, not one clean test) and personalMemory 12.1/20 (decorative facts, not
   un-swappable reads).
 
+## Investigated — negative / reverted
+- **personalMemory "un-swappable fact" rewrite** (iter 5) — REVERTED, do not
+  re-attempt as-is. Rewrote intelligence-floor rule 1 to demand the cited fact be
+  load-bearing (delete-test), scan for the single most load-bearing fact, add
+  synthesize-not-restate, and a cold-start fabrication guard. Verified with a
+  **same-era dual-arm blind A/B** (regenerated BOTH old-prompt and new-prompt
+  replies for 17 fixtures, then one blind judge scored each on personalMemory —
+  isolates the rule from BOTH judge drift AND generation-era variance;
+  `reports/iter5-ab-personalmemory-NEGATIVE.json`): **memoryFailure old 14.17 ->
+  new 13.33 (−0.83, new preferred only 5/12); controls −2 (interview-prep −5:
+  the new rule made the model DROP useful facts); and the cold-start fixture NEW
+  FABRICATED a "trailing off" weakness with zero data** — the exact failure the
+  guard was meant to prevent. Two lessons: (1) the iter-3 baseline's low
+  personalMemory scores (its-not-easy 4, conv-transfer 5) were largely a specific
+  unlucky GENERATION DRAW — a fresh old-prompt draw of the same fixtures scores
+  ~14-16, so the "gap" was overstated by that one baseline; personalMemory is
+  dominated by generation variance more than prompt wording. (2) "cite the single
+  most load-bearing fact / one fact beats a stat dump" backfired by making the
+  model drop useful secondary facts on already-strong replies. The ONE promising
+  sub-idea that won in isolation (too-long +5, goal-change +6): "synthesize a read
+  ACROSS the data / don't restate verbatim / don't re-cite a fact an earlier turn
+  surfaced" — try THAT clause alone, appended to the original rule 1, and re-verify
+  before shipping. Do NOT re-add the load-bearing-scan or the cold-start guard.
+
 ## Next (priority order)
-1. **Close the personalMemory gap** — 2nd-weakest dim (12.1/20). Replies cite
-   facts that don't change the advice (decorative). Strengthen the "un-swappable"
-   contract: the cited fact must be load-bearing for the move — the advice would
-   be different without that user's data. Prompt + fixture-anchored. Verify with
-   the same controlled blind A/B on the memory-heavy fixtures, not the headline.
-2. **Delivery intelligence depth** — VISION roadmap #2. The coach senses fillers/
-   pace/pauses but not prosody contour, breathing, emphasis, vocal energy,
-   authority/tension. This is the biggest gap to "expert perception". Needs new
-   session evidence, conservative thresholds, user-visible "what can/can't be
-   inferred" copy. Large; stage it.
+1. **personalMemory — synthesize-across-data clause ONLY** (narrow retry of the
+   iter-5 revert). Append just the winning sub-idea to the ORIGINAL rule 1: "when
+   two or more data points exist, build a read across them (pattern/contrast/
+   trajectory/a connection the user hasn't drawn) rather than restating a stat
+   verbatim, and don't re-cite a fact an earlier turn already surfaced." Nothing
+   else — no load-bearing-scan, no cold-start guard. Verify with the same-era
+   dual-arm blind A/B before shipping; abandon if not clearly positive incl.
+   controls + no new fabrications.
+2. **Delivery intelligence depth** — VISION roadmap #5 (Perception). The coach
+   senses fillers/pace/pauses but not prosody contour, breathing, emphasis, vocal
+   energy, authority/tension. This is the biggest gap to "expert perception".
+   Needs new session evidence, conservative thresholds, user-visible "what
+   can/can't be inferred" copy. Large; stage it.
 3. **Evidence-scaled confidence, end to end.** VISION: weak evidence → tentative
    language; repeated evidence → stronger intervention; never fake certainty from
    small n. Audit + this session found several thin-evidence over-claims (the
