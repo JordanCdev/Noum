@@ -11,10 +11,17 @@
 > old prompt prescribe fine) with an over-reassurance downside (exhausted −2,
 > panic-blank −3), though it DID fix the one real deferral (its-not-easy 4→13), kept
 > warmth flat, and lifted the emotional/neutral controls (+2.67/+1). **Verdict: promising
-> but not shippable on a subagent-borderline result. NEXT high-value step = LIVE-verify
-> a refined version (drop the over-reassurance nudge; keep "still land one concrete
-> testable move, never substitute a question for it") — needs Jordan's key again.**
-> Artifact `reports/iter12-ab-prescribe-defer.json`.
+> but not shippable on a subagent-borderline result.**
+> **iter 13 SHIPPED the refined version** (dropped the over-reassurance clause that
+> duplicated rule 3's "rest counts"; kept "a vulnerable/discouraged turn still ends on
+> one concrete, TESTABLE move, not a caring/clarifying question standing in for it").
+> Subagent dual-arm A/B: deferral IQ +2.14 (vs iter-12's +0.71), the 2 real deferrals
+> this draw fixed hard (its-not-easy 4→13, feel-like-fraud 6→13), 0 new deferrals, the
+> iter-12 IQ regressions GONE (exhausted/panic-blank flat), emotional controls +0.67 IQ
+> / +1.33 EQ (warmer). Watch-item: exhausted EQ −4 on one draw (led with a metric on a
+> "sit with it" turn — isolated, IQ held). Compiles + 24/24 harness tests. Artifacts
+> `reports/iter12-ab-prescribe-defer.json`, `reports/iter13-ab-refined-antidefer.json`.
+> **Subagent-verified (like rule 3); OPTIONAL live re-verify when a key is available.**
 
 > **LOOP STATUS after iters 4-11 (2026-07-01): the app is MATURE; headless
 > high-value work is largely extracted.** Every backlog "gap" investigated turned
