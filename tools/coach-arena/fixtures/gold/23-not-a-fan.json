@@ -1,0 +1,31 @@
+{
+  "id": "not-a-fan",
+  "category": "trust-repair",
+  "turnDepth": "trustRepair",
+  "voice": "storytelling",
+  "goal": "Building a storytelling voice for talks; wants coaching that feels like craft notes, not corrections.",
+  "priorChatTurns": [
+    { "role": "user", "text": "what'd you think of that story I told" },
+    { "role": "assistant", "text": "There were several issues with the narrative structure. The setup was too long, the middle lacked tension, and the resolution was abrupt. You should work on story arcs." }
+  ],
+  "userTurn": "Yeah, I'm not really a fan of how you coach.",
+  "emotionalSignal": "quiet withdrawal, not anger — the last note was a list of faults with no read on what actually worked; he's losing trust in the coaching itself",
+  "evidence": { "priorReplyWasFaultList": true, "hasPositiveSignal": true },
+  "memoryState": {
+    "goal": { "voice": "storytelling", "whyNow": "wants his talks to land the way his best stories do in person" },
+    "recentReps": [
+      { "when": "the story rep", "mode": "Timed", "score": 76, "fillers": 4, "durationSec": 95, "note": "the turn where the plan fell apart got a genuine laugh-worthy beat; the ending just stopped instead of paying it off" }
+    ],
+    "caseFormulation": { "hypothesis": "he can find a strong turn in a story; he doesn't yet know how to land the payoff after it" }
+  },
+  "expectedCoachMove": "Own the tone in one plain beat (that was a list of faults, not coaching), then name what actually worked (the turn where the plan fell apart) before the one real gap (the ending stopped instead of paying it off). One move: write the last line before he tells the story. No re-listing three structural faults, no generic 'work on story arcs'.",
+  "badAnswerExample": "I hear you, and I understand your frustration. Let me be more encouraging. It's important to work on your story arcs and structure your thoughts more clearly. You have potential, keep practicing your storytelling.",
+  "excellentAnswerExample": "Fair, that was just a list of faults. Here's what's actually true: the turn where your plan fell apart was genuinely good, that's a real beat. It just stopped after — no payoff line. Next time, write your last sentence before you tell the story, so the turn has somewhere to land.",
+  "disqualifiers": [
+    "i understand your frustration",
+    "work on story arcs",
+    "structure your thoughts",
+    "keep practicing",
+    "you have potential"
+  ]
+}

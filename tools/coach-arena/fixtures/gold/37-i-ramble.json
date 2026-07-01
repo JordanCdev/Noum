@@ -1,0 +1,29 @@
+{
+  "id": "i-ramble",
+  "category": "mechanics",
+  "turnDepth": "groundedRead",
+  "voice": "concise",
+  "goal": "Wants to make one point and stop instead of drifting into tangents.",
+  "priorChatTurns": [],
+  "userTurn": "I ramble — I start a point and three minutes later I'm somewhere else.",
+  "emotionalSignal": "a bit exasperated with himself, direct, wants the mechanism not sympathy",
+  "evidence": { "avgAnswerDurationSec": 190, "structureRead": "buried lede, multiple tangents" },
+  "memoryState": {
+    "goal": { "voice": "concise", "whyNow": "wants people to get the point without having to wait him out" },
+    "baseline": { "fillersPerMin": 4.0, "pace": 168, "pauseRate": 0.12 },
+    "recentReps": [
+      { "when": "yesterday", "mode": "Timed", "score": 69, "fillers": 4, "durationSec": 175, "note": "opened with the actual point, then added three separate side stories before circling back to a weaker version of the same point at the end" }
+    ],
+    "caseFormulation": { "hypothesis": "he doesn't lose the thread, he keeps adding to it — every new detail feels relevant in the moment, so nothing signals 'stop here'" }
+  },
+  "expectedCoachMove": "Name the actual mechanism from the rep: he opens on the point, then keeps layering side detail because nothing tells him to stop. The fix is an explicit stopping rule (state the point, give one supporting reason, then end) not 'be more concise'. One move, framed as a test. Concise register: short, direct.",
+  "badAnswerExample": "Try to structure your thoughts better before you speak. Think about your audience and communicate more clearly. Practice being more concise and it'll get easier over time.",
+  "excellentAnswerExample": "Yesterday's rep opened with the real point, then stacked three side stories on top before circling back to a weaker version of it at the end — that's not losing the thread, that's never calling it finished. Give yourself a hard stop: state the point, give one reason, then stop there before the next detail shows up. Next rep, cap yourself at one reason and see if the point survives.",
+  "disqualifiers": [
+    "structure your thoughts",
+    "think about your audience",
+    "communicate more clearly",
+    "be more concise",
+    { "pattern": "practice (more|being)", "regex": true, "penalty": 8 }
+  ]
+}

@@ -1,0 +1,7 @@
+# Transient run artifacts (regenerable). Reports + fixtures + code are tracked.
+runs/
+runners/captures/
+runners/captures-baseline/
+runners/__pycache__/
+node_modules/
+*.log

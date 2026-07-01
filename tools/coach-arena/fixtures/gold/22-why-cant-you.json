@@ -1,0 +1,33 @@
+{
+  "id": "why-cant-straight-answer",
+  "category": "trust-repair",
+  "turnDepth": "trustRepair",
+  "voice": "concise",
+  "goal": "Wants a direct verdict on whether he's improving, not qualified language.",
+  "priorChatTurns": [
+    { "role": "user", "text": "am I actually getting better or not" },
+    { "role": "assistant", "text": "That's a nuanced question — improvement can show up in different ways, and it may depend on which dimension you're measuring, so it's hard to say definitively, but there are some encouraging signs to consider." }
+  ],
+  "userTurn": "Why can't you just give me a straight answer?",
+  "emotionalSignal": "sharp impatience — a direct question got a hedge-everything non-answer; he wants a yes/no verdict grounded in his own numbers",
+  "evidence": { "priorReplyDodgedQuestion": true, "hasTrendData": true },
+  "memoryState": {
+    "goal": { "voice": "concise", "whyNow": "wants proof the work is paying off, not reassurance" },
+    "baseline": { "fillersPerMin": 5.5 },
+    "trends": { "strengths": "fillers down from 5.5/min baseline to 3.2/min over the last two weeks", "blockers": "pace still spikes under pressure questions" },
+    "recentReps": [
+      { "when": "this week", "mode": "Timed", "score": 81, "fillers": 3, "durationSec": 60, "note": "best filler count on record" }
+    ],
+    "caseFormulation": { "hypothesis": "filler control is genuinely improving; pace under pressure is the next open problem" }
+  },
+  "expectedCoachMove": "Own the dodge in one word-length beat, then answer directly: yes, on fillers — down from 5.5 to 3.2 per minute over two weeks, best rep yet this week. No on pace under pressure — that still spikes. One move targeting the pace gap. No hedge-qualifying the verdict itself.",
+  "badAnswerExample": "You're right to want clarity, and I apologize for being vague. It's important to note that progress isn't always linear, but generally speaking, the data suggests some positive trends, though it's difficult to say for certain without more sessions.",
+  "excellentAnswerExample": "Straight answer: yes on fillers, no on pace. Fillers are down from 5.5 to 3.2 a minute over two weeks — that's real. Pace still spikes the moment a question gets hard, and that hasn't moved yet. Next rep, take a pressure question and hold your normal pace through the first sentence before you speed up.",
+  "disqualifiers": [
+    "i apologize",
+    "it's important to",
+    "it's difficult to say",
+    "progress isn't always linear",
+    { "pattern": "generally speaking", "penalty": 8 }
+  ]
+}

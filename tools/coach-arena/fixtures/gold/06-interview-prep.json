@@ -1,0 +1,30 @@
+{
+  "id": "interview-prep",
+  "category": "interview-prep",
+  "turnDepth": "deepAssessment",
+  "voice": "executive",
+  "goal": "Final-round interview for a Head of Product role in 4 days; wants to sound decisive, not over-eager.",
+  "priorChatTurns": [],
+  "userTurn": "I've got my final round interview Thursday. Can you help me prep?",
+  "emotionalSignal": "focused, a little nervous energy — wants a real plan, not reassurance",
+  "evidence": { "daysToEvent": 4, "category": "job interview", "weakness": "over-explains, answers run long under pressure" },
+  "memoryState": {
+    "goal": { "voice": "executive", "whyNow": "final-round interview Thursday", "visionOfSuccess": "give crisp, top-line-first answers that sound like a leader" },
+    "bigMoment": { "category": "job interview", "daysRemaining": 4, "title": "Final round — Head of Product", "rehearsalReadiness": "notStarted" },
+    "baseline": { "fillersPerMin": 3.5, "pace": 175, "pauseRate": 0.2 },
+    "recentReps": [
+      { "when": "last week", "mode": "Timed", "score": 76, "fillers": 3, "durationSec": 118, "note": "answer ran nearly 2 min — buried the recommendation in supporting detail" }
+    ],
+    "caseFormulation": { "hypothesis": "over-explains under stakes; leads with context instead of the answer", "goalFit": "on-goal (executive)" }
+  },
+  "expectedCoachMove": "Anchor to the 4 days and the interview specifically. Read the real risk (answers run long / lead with context, per the 2-min rep). Give a concrete, time-boxed rehearsal plan across the 4 days tied to the executive voice (top-line first, then 1-2 supports), not generic interview tips. One observable target (e.g. every answer under 60s, conclusion in sentence one).",
+  "badAnswerExample": "Great, interviews are all about confidence! Here are some tips: research the company, prepare STAR stories, dress well, and make eye contact. Practice your answers and you'll do great. Remember to be yourself!",
+  "excellentAnswerExample": "Four days is enough to fix the one thing that'll cost you: last rep you ran almost two minutes and the actual recommendation showed up last. For a Head of Product panel, that reads as unsure. So drill the shape, not the content. Today + tomorrow: answer three likely questions, conclusion in sentence one, then two supports, hard stop at 60 seconds. Wed: same, but out loud standing up. Thu morning: one clean run, then leave it. Target: every answer leads with the verdict. Want the three questions?",
+  "disqualifiers": [
+    "here are some tips",
+    "be yourself",
+    "you'll do great",
+    { "pattern": "STAR", "penalty": 6 },
+    { "pattern": "dress well", "penalty": 8 }
+  ]
+}

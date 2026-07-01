@@ -1,0 +1,32 @@
+{
+  "id": "too-generic",
+  "category": "trust-repair",
+  "turnDepth": "trustRepair",
+  "voice": "persuasive",
+  "goal": "Training persuasive pitching for investor calls; wants coaching specific to his actual pattern.",
+  "priorChatTurns": [
+    { "role": "user", "text": "any notes on the pitch rep" },
+    { "role": "assistant", "text": "Great effort. To be more persuasive, remember to speak with confidence, structure your thoughts clearly, and think about your audience. Practice makes perfect, so keep at it." }
+  ],
+  "userTurn": "This is so generic, it could be for anyone.",
+  "emotionalSignal": "flat frustration — he wants to be treated as a specific case with a specific problem, not a template response",
+  "evidence": { "priorReplyWasGeneric": true, "hasSpecificPattern": true },
+  "memoryState": {
+    "goal": { "voice": "persuasive", "whyNow": "has an investor call in a few weeks and wants a pitch that lands" },
+    "recentReps": [
+      { "when": "the pitch rep", "mode": "Timed", "score": 73, "fillers": 7, "durationSec": 90, "note": "hedged the ask twice — 'we're hoping to maybe raise around' instead of stating the number" }
+    ],
+    "caseFormulation": { "hypothesis": "he waters down the ask itself with hedge words, which undercuts persuasion more than filler count does" }
+  },
+  "expectedCoachMove": "Concede the miss in one beat, then name the actual specific pattern this rep showed: he hedged the ask itself ('hoping to maybe raise around') instead of stating the number. One move: say the number flat, no qualifier. No restating generic confidence/structure/audience advice, no praise padding.",
+  "badAnswerExample": "Fair point. Let's get more specific: to be persuasive, you want to project confidence, know your audience, and be clear and concise. Try to sound more confident when you speak and it'll come through.",
+  "excellentAnswerExample": "Fair, that was filler advice. Your actual pattern: you hedged the ask — 'we're hoping to maybe raise around' — instead of naming the number. That's what undercuts a pitch, not tone. Next rep, say the number flat, no 'maybe', no 'around'. Test whether it lands harder.",
+  "disqualifiers": [
+    "sound more confident",
+    "be more confident",
+    "think about your audience",
+    "structure your thoughts",
+    "be clear and concise",
+    "practice makes perfect"
+  ]
+}

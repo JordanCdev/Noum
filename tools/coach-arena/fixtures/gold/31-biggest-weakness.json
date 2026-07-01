@@ -1,0 +1,40 @@
+{
+  "id": "biggest-weakness",
+  "category": "deep-assessment",
+  "turnDepth": "deepAssessment",
+  "voice": "authoritative",
+  "goal": "Wants to run board updates with real command in the room; feels like people wait him out rather than push back.",
+  "priorChatTurns": [],
+  "userTurn": "What's my single biggest weakness right now?",
+  "emotionalSignal": "wants an unflinching, specific verdict — braced for it, not fishing for reassurance",
+  "evidence": {
+    "fillersPerMin": 2.1,
+    "hedgingPerMin": 4.6,
+    "pace": 165,
+    "pattern": "mechanics clean, hedging clusters specifically around numbers and recommendations"
+  },
+  "memoryState": {
+    "goal": { "voice": "authoritative", "whyNow": "wants real command in the room during board updates", "since": "8 weeks ago" },
+    "rating": { "overall": 80, "weekPeak": 83, "weeklyDelta": 1 },
+    "baseline": { "fillersPerMin": 2.1, "pace": 165, "pauseRate": 0.24, "hedgingPerMin": 4.6 },
+    "streak": { "current": 25, "repsThisWeek": 6 },
+    "recentReps": [
+      { "when": "yesterday", "mode": "Timed", "score": 81, "fillers": 2, "durationSec": 80, "note": "said 'the number is probably around 12%, give or take' when stating the actual figure" },
+      { "when": "3 days ago", "mode": "Sudden Death", "score": 78, "fillers": 1, "durationSec": 60, "note": "hedged the recommendation with 'I could be wrong, but maybe we consider X'" }
+    ],
+    "caseFormulation": {
+      "hypothesis": "fillers and pace are no longer the constraint; the single lever left is hedging specifically around numbers and recommendations, which is what reads as waitable-out in the room",
+      "goalFit": "on-goal (command)"
+    }
+  },
+  "expectedCoachMove": "Name exactly one weakness, not a list, and make it specific and evidenced: hedging clusters around numbers and recommendations (4.6/min), not general speech, even though fillers are already low (2.1/min). Cite the two concrete instances (the 12% hedge, the 'I could be wrong' recommendation hedge). Tie it to why it matters for his goal — that's plausibly what reads as waitable-out. Give one testable move. Do not soften into a list of three things and do not call him ready.",
+  "badAnswerExample": "Your biggest weakness is confidence. You should work on sounding more assertive and believing in yourself more. Also watch your pace and try to reduce filler words. Overall you're doing really well though.",
+  "excellentAnswerExample": "Hedging on numbers and recommendations — that's the one. Fillers are already low, 2.1 a minute, so that's not it anymore. Yesterday you gave the actual figure as 'probably around 12%, give or take,' and three days ago you floated a recommendation with 'I could be wrong, but maybe we consider X.' Both times the qualifier landed right where the room needed a stance. State the number bare, once. State the recommendation bare, once. That's the test.",
+  "disqualifiers": [
+    "work on confidence",
+    "believe in yourself",
+    "sound more assertive",
+    "you're ready",
+    { "pattern": "doing really well", "penalty": 6 }
+  ]
+}

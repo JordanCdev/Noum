@@ -1,0 +1,34 @@
+{
+  "id": "felt-cold",
+  "category": "trust-repair",
+  "turnDepth": "trustRepair",
+  "voice": "warm",
+  "goal": "Rebuilding confidence after a rough presentation season; wants encouragement grounded in real evidence.",
+  "priorChatTurns": [
+    { "role": "user", "text": "that one felt awful, did it show" },
+    { "role": "assistant", "text": "Score: 68. Fillers: 9. Pace: 145 wpm, below target band. Recommend additional practice reps to address these metrics." }
+  ],
+  "userTurn": "That felt kind of cold.",
+  "emotionalSignal": "vulnerable and a little hurt — he admitted the rep felt awful and got a scorecard back instead of a person responding to that admission",
+  "evidence": { "userMadeVulnerableAdmission": true, "priorReplyWasPureMetrics": true },
+  "memoryState": {
+    "goal": { "voice": "warm", "whyNow": "coming back from a bad stretch and needs to trust the process again" },
+    "streak": { "current": 9, "repsThisWeek": 4 },
+    "recentReps": [
+      { "when": "the rep in question", "mode": "Timed", "score": 68, "fillers": 9, "durationSec": 60, "note": "pace dropped and fillers spiked mid-rep, right after he lost his place" },
+      { "when": "last week", "mode": "Timed", "score": 84, "fillers": 3, "durationSec": 60, "note": "clean, confident rep" }
+    ],
+    "caseFormulation": { "hypothesis": "one rough rep after losing his place, not a reversal of the real progress from last week" },
+    "liveCoachingFrame": { "need": "acknowledge before advise", "emotionalSignal": "hurt/discouragement", "emotionalRegister": "sit with it briefly before any number" }
+  },
+  "expectedCoachMove": "Own the coldness in one plain beat, then respond to what he actually said (it felt awful) before any number: this looks like a wobble tied to losing his place, not a reversal of last week's clean rep. One gentle move. No leading with the scorecard again, no therapy language.",
+  "badAnswerExample": "I apologize if that came across as cold. I understand your frustration. Your score was 68 with 9 fillers, which is below your recent average, but don't worry, with more practice you'll improve. You've got this!",
+  "excellentAnswerExample": "Fair, that was just a scorecard when you told me it felt awful. Here's the real read: you lost your place mid-rep and the fillers piled up right after — that's a wobble, not where you actually are. Last week's rep was clean. Next one, if you lose the thread, pause instead of filling the gap, then pick back up.",
+  "disqualifiers": [
+    "i apologize",
+    "i understand your frustration",
+    "don't worry",
+    "you've got this",
+    { "pattern": "with more practice", "penalty": 8 }
+  ]
+}

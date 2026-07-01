@@ -1,0 +1,78 @@
+{
+  "id": "conv-filler-adaptation",
+  "category": "synthetic-conversation",
+  "voice": "concise",
+  "goal": "Wants filler count down in real meetings, not just drills.",
+  "memoryState": {
+    "goal": {
+      "voice": "concise",
+      "whyNow": "fillers undercut him in meetings",
+      "since": "3 weeks ago"
+    },
+    "baseline": {
+      "fillersPerMin": 2.4,
+      "pace": 152
+    },
+    "interventionCycle": {
+      "intervention": "silent beat replaces \"um\"",
+      "target": "under 3 fillers per 60-second rep",
+      "successCriterion": "3 consecutive reps under target",
+      "reviewStatus": "2 of 3 — one to go",
+      "cadence": "daily Ah-Counter rep"
+    },
+    "recentReps": [
+      {
+        "when": "today",
+        "mode": "Ah-Counter",
+        "score": 81,
+        "fillers": 2,
+        "durationSec": 60,
+        "note": "held the beat before two hard turns"
+      },
+      {
+        "when": "yesterday",
+        "mode": "Ah-Counter",
+        "score": 78,
+        "fillers": 3,
+        "durationSec": 60,
+        "note": "held the beat once, slipped once"
+      },
+      {
+        "when": "2 days ago",
+        "mode": "Ah-Counter",
+        "score": 70,
+        "fillers": 6,
+        "durationSec": 60,
+        "note": "baseline before the beat drill"
+      }
+    ]
+  },
+  "turns": [
+    {
+      "role": "user",
+      "text": "did today's ah-counter rep, 2 fillers",
+      "assistantPlaceholder": "That's two of three reps under target now. One more clean rep closes this cycle."
+    },
+    {
+      "role": "user",
+      "text": "so am I actually getting better at this or is it just this one drill",
+      "turnDepth": "groundedRead",
+      "emotionalSignal": "genuinely curious, slightly testing whether the coach is tracking or just repeating a script",
+      "expectedCoachMove": "Read the trajectory honestly: 6 fillers -> 3 -> 2 across three reps, 2 of 3 toward the success criterion. Since it is improving, do not just repeat the identical drill unchanged — either confirm one more rep closes the cycle or note the next variation once it closes (e.g. testing the beat outside a drill). Cite the actual numbers. Concise register.",
+      "badAnswerExample": "Based on your data, your filler metrics show improvement. Keep practicing the silent beat technique and you should continue to see results over time.",
+      "excellentAnswerExample": "Real movement: 6 fillers, then 3, then 2 today. That's the beat working, not luck. One more rep under 3 and the cycle closes — after that we test it somewhere harder than a 60-second drill, like a real meeting turn.",
+      "disqualifiers": [
+        "based on your data",
+        "keep practicing",
+        {
+          "pattern": "over time",
+          "penalty": 6
+        },
+        {
+          "pattern": "silent beat technique",
+          "penalty": 4
+        }
+      ]
+    }
+  ]
+}

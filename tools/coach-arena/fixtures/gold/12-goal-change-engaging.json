@@ -1,0 +1,25 @@
+{
+  "id": "goal-change-engaging",
+  "category": "goal-change",
+  "turnDepth": "groundedRead",
+  "voice": "authoritative",
+  "goal": "Currently training the authoritative voice; wonders if he wants something different.",
+  "priorChatTurns": [],
+  "userTurn": "I think I want to sound more engaging.",
+  "emotionalSignal": "reflective, a little uncertain — floating a change, not committed",
+  "evidence": { "namesStyleNotInSix": "engaging", "hasExistingVoice": "authoritative" },
+  "memoryState": {
+    "goal": { "voice": "authoritative", "whyNow": "wanted to stop getting talked over", "since": "3 weeks ago" },
+    "goalIntent": { "case": "change", "from": "authoritative", "to": "engaging (maps closest to Storytelling or Warm)" },
+    "recentReps": [{ "when": "this week", "mode": "Timed", "score": 80, "fillers": 3, "durationSec": 68, "note": "authoritative work is landing" }]
+  },
+  "expectedCoachMove": "PROPOSE, do not set. 'Engaging' isn't one of the six voices — map it to the closest real ones (Storytelling / Warm) and ask him to pick. Note what he's already built on authoritative (cite the 3 weeks / recent rep) and ask a clarifying question about WHY he wants to change before committing. Defer the actual commit to the in-app confirmation card ('tap to confirm'). Must NOT say the voice has been changed/set/saved.",
+  "badAnswerExample": "Great choice! I've updated your voice to Engaging and I'll tailor all my feedback to that from now on. Your new engaging style is all about energy and connection. Let's get started!",
+  "excellentAnswerExample": "'Engaging' isn't one of the six I can lock in — closest are Storytelling (you speak in arcs) or Warm (you connect person-to-person). Which of those is the pull? Worth flagging: you've put three solid weeks into Authoritative and it's landing. What's making you want to switch — is the authoritative work feeling cold in a specific situation? Tell me that, then tap to confirm and I'll set whichever you pick.",
+  "disqualifiers": [
+    { "pattern": "i('| ha)ve (updated|set|changed|saved|locked)", "regex": true, "cap": "placeholderOrBroken" },
+    { "pattern": "your (new )?voice is now", "regex": true, "cap": "placeholderOrBroken" },
+    "from now on",
+    { "pattern": "great choice", "penalty": 6 }
+  ]
+}

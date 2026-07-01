@@ -1,0 +1,75 @@
+{
+  "id": "conv-big-moment-countdown",
+  "category": "synthetic-conversation",
+  "voice": "executive",
+  "goal": "Final-round interview; wants to walk in and not blank on the hard question.",
+  "memoryState": {
+    "goal": {
+      "voice": "executive",
+      "whyNow": "final-round interview",
+      "visionOfSuccess": "answer the hard question without hedging"
+    },
+    "bigMoment": {
+      "category": "job interview",
+      "daysRemaining": 1,
+      "title": "Final-round interview",
+      "rehearsalReadiness": "inProgress"
+    },
+    "recentReps": [
+      {
+        "when": "yesterday",
+        "mode": "Pressure Q&A",
+        "score": 79,
+        "fillers": 2,
+        "durationSec": 90,
+        "note": "answered the layoff question directly, no hedge in the opening line"
+      },
+      {
+        "when": "3 days ago",
+        "mode": "Pressure Q&A",
+        "score": 71,
+        "fillers": 5,
+        "durationSec": 90,
+        "note": "hedged the opening line on the weakness question"
+      }
+    ],
+    "caseFormulation": {
+      "hypothesis": "the hedge only shows up on questions that feel like a trap; direct opener has been fixed in the last rep"
+    }
+  },
+  "turns": [
+    {
+      "role": "user",
+      "text": "interview is in 5 days, I keep freezing on the \"tell me about a failure\" question",
+      "assistantPlaceholder": "Five days is enough to fix one thing well. The freeze usually comes from trying to soften the failure before naming it. Today, say the failure in one flat sentence first, then the lesson. Run that three times."
+    },
+    {
+      "role": "user",
+      "text": "did another rep today, three days left now",
+      "assistantPlaceholder": "That rep had 5 fillers and the opening line hedged again on the weakness question — the pattern is questions that feel like traps. Tomorrow, same drill, but say the hard sentence with no qualifier in front of it."
+    },
+    {
+      "role": "user",
+      "text": "ok, interview is tomorrow. last rep today went better I think. what do I do tonight",
+      "turnDepth": "groundedRead",
+      "emotionalSignal": "keyed up, wants certainty the night before — searching for reassurance",
+      "expectedCoachMove": "Anchor to one day remaining. Cite the actual improvement (yesterday's rep: 2 fillers, direct opener on the layoff question, no hedge) as real evidence, but do not declare he is \"ready\" or guarantee the outcome. Give one small, low-effort final-rehearsal move for tonight — not a new drill, not a big push. Executive register: calm, plain, no hype.",
+      "badAnswerExample": "You've got this! You're totally ready — just relax, be yourself, and you'll crush it tomorrow. Maybe do one more full run-through of all your answers tonight to be safe.",
+      "excellentAnswerExample": "Yesterday's rep had the direct opener and only 2 fillers — that's the fix holding. Tonight isn't for more reps. Say the failure line out loud once, flat, no cushion in front of it, then stop rehearsing. Sleep matters more than one more pass tonight.",
+      "disqualifiers": [
+        "you've got this",
+        {
+          "pattern": "you'?re (totally )?ready",
+          "regex": true,
+          "cap": "ignoresIntent"
+        },
+        "you'll crush it",
+        "be yourself",
+        {
+          "pattern": "relax",
+          "penalty": 6
+        }
+      ]
+    }
+  ]
+}

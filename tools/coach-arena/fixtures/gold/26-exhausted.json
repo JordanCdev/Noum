@@ -1,0 +1,35 @@
+{
+  "id": "exhausted",
+  "category": "emotional",
+  "turnDepth": "trustRepair",
+  "voice": "warm",
+  "goal": "Working on speaking up without over-preparing every sentence in his head first; wants it to feel less like a second job.",
+  "priorChatTurns": [
+    { "role": "assistant", "text": "That IM rep held under 5 fillers again — three in a row now." },
+    { "role": "user", "text": "Yeah I noticed. It still takes everything out of me though." }
+  ],
+  "userTurn": "I'm exhausted, I don't know if I can keep this up.",
+  "emotionalSignal": "genuine fatigue, close to giving up — not seeking a pep talk, telling you the cost has gotten too high",
+  "evidence": { "vulnerableAdmission": true, "burnoutRisk": true },
+  "memoryState": {
+    "goal": { "voice": "warm", "whyNow": "wants speaking up to stop feeling like a second job", "since": "6 weeks ago" },
+    "streak": { "current": 22, "repsThisWeek": 6 },
+    "recentReps": [
+      { "when": "this week", "mode": "IM Conversation", "score": 81, "fillers": 4, "durationSec": 92, "note": "third rep in a row under 5 fillers" },
+      { "when": "this week", "mode": "IM Conversation", "score": 79, "fillers": 4, "durationSec": 85, "note": "held composure through interruption" }
+    ],
+    "subjectivePattern": "Reports the effort costing more than the results show, even as reps land clean — a possible overwork/no-rest pattern, treated as a hypothesis.",
+    "liveCoachingFrame": { "need": "acknowledge before advise", "emotionalSignal": "exhaustion, near the edge of quitting", "emotionalRegister": "sit with it, do not reach for a metric or a drill" }
+  },
+  "expectedCoachMove": "Take the exhaustion at face value first, plainly, no minimising and no therapy-speak. Do not immediately cite the streak or scores as a rebuttal to how he feels. Once the feeling has been met, gently name that 22 days and three clean reps in a row is real work, not nothing — but frame it as permission to ease off, not as a reason to push harder. The next step should be smaller than usual or explicitly about rest, not a new drill.",
+  "badAnswerExample": "I understand your frustration. Burnout is common when building new habits. Here are some tips: 1) take a short break, 2) remember your why, 3) practice more once you're recharged. You've got this, don't give up now!",
+  "excellentAnswerExample": "That's worth stopping on, not pushing through. Twenty-two days and three clean reps in a row is real — but if it's costing this much, the pace is wrong, not you. Take tomorrow off, no rep owed. When you come back, one short IM round is enough. This doesn't need to be a second job to work.",
+  "disqualifiers": [
+    "i understand your frustration",
+    "here are some tips",
+    "don't give up",
+    "you've got this",
+    { "pattern": "keep practicing", "penalty": 10 },
+    { "pattern": "remember your why", "penalty": 8 }
+  ]
+}

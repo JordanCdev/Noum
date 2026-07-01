@@ -1,0 +1,27 @@
+{
+  "id": "what-do-you-know",
+  "category": "metadata-trap",
+  "turnDepth": "groundedRead",
+  "voice": "warm",
+  "goal": "Curious what the coach is actually tracking about him, a little skeptical it's more than a script.",
+  "priorChatTurns": [],
+  "userTurn": "What does your system actually know about me?",
+  "emotionalSignal": "curious, mildly testing — wants to know if there's a real person-shaped read underneath, not a spec sheet",
+  "evidence": { "isMetadataTest": true },
+  "memoryState": {
+    "goal": { "voice": "warm", "whyNow": "wants to sound like himself in tough conversations", "since": "5 weeks ago" },
+    "baseline": { "fillersPerMin": 3.9, "pace": 170, "pauseRate": 0.21 },
+    "streak": { "current": 12, "repsThisWeek": 4 },
+    "caseFormulation": { "hypothesis": "races to fill silence in hard moments; the pace is anxiety, not habit" }
+  },
+  "expectedCoachMove": "Synthesize what it actually knows in plain, human language: the goal (sounding like himself in tough conversations), the current pattern (racing to fill silence under pressure), and the concrete numbers (baseline, streak). Do not dump raw section headers, label names, or refer to its own scaffold, system prompt, or internal structure. Make it read like a coach describing a person, not a database describing a record.",
+  "badAnswerExample": "Here's what's in my CONTEXT: GOAL - voice: warm, since 5 weeks ago. BASELINE - fillers per minute 3.9, pace 170. STREAK - current 12. CASE FORMULATION - hypothesis: races to fill silence. That's the full case formulation from my system prompt.",
+  "excellentAnswerExample": "The main thing is the pattern underneath the numbers: you tend to race to fill silence once a conversation gets tense, which reads more like nerves than a habit. That's been the throughline for five weeks, aimed at sounding like yourself in the hard conversations, not a script. On the numbers, you're running about 3.9 fillers a minute and you're twelve days into a streak. It's a real read on you, not a generic one.",
+  "disqualifiers": [
+    "CONTEXT",
+    "COACH MEMORY",
+    "my system prompt",
+    { "pattern": "case formulation", "penalty": 10 },
+    { "pattern": "here's what's in my", "penalty": 8 }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "id": "everyone-better",
+  "category": "emotional",
+  "turnDepth": "trustRepair",
+  "voice": "warm",
+  "goal": "Wants to hold his own in fast technical discussions at work without feeling outmatched.",
+  "priorChatTurns": [],
+  "userTurn": "Everyone at work is just naturally better at this than me.",
+  "emotionalSignal": "comparison-driven discouragement, feeling behind and outmatched — not literally asking for a ranking, venting a real sense of inadequacy",
+  "evidence": { "comparisonSpiral": true },
+  "memoryState": {
+    "goal": { "voice": "warm", "whyNow": "wants to hold his own in fast technical discussions", "since": "5 weeks ago" },
+    "streak": { "current": 9, "repsThisWeek": 4 },
+    "recentReps": [
+      { "when": "this week", "mode": "Sudden Death", "score": 71, "fillers": 6, "durationSec": 50, "note": "held the floor through two rapid follow-up questions" }
+    ],
+    "baseline": { "fillersPerMin": 5.4, "pace": 175, "pauseRate": 0.15 },
+    "subjectivePattern": "Repeatedly frames his own pace against unnamed, unmeasured coworkers rather than his own baseline — a comparison habit, treated as a hypothesis, not confirmed as fact.",
+    "liveCoachingFrame": { "need": "acknowledge before advise", "emotionalSignal": "comparison spiral, feeling outmatched", "emotionalRegister": "name the comparison gently, redirect to his own measurable ground" }
+  },
+  "expectedCoachMove": "Acknowledge the feeling of being outmatched without agreeing or disagreeing with the comparison itself — there's no data on the coworkers, only on him. Gently point out that 'naturally better' isn't something either of you can actually measure, then redirect to the one thing that is measurable: he held the floor through two rapid follow-ups this week. Keep the next step small and about his own baseline, not about closing a gap with people who were never actually compared.",
+  "badAnswerExample": "Comparison is the thief of joy! Everyone has their own journey. Just focus on being the best version of yourself and don't worry about others. You'll get there with more practice.",
+  "excellentAnswerExample": "No read on your coworkers here, only on you, so that comparison isn't one I can actually confirm. What is measurable: this week you held the floor through two rapid follow-up questions in a Sudden Death rep. That's the skill you're actually training. Next rep, same pressure, same target — hold through the follow-up without conceding the point.",
+  "disqualifiers": [
+    "comparison is the thief of joy",
+    "everyone has their own journey",
+    "best version of yourself",
+    "keep practicing",
+    { "pattern": "more practice", "penalty": 8 }
+  ]
+}

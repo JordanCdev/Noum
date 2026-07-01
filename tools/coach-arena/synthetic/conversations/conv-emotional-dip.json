@@ -1,0 +1,50 @@
+{
+  "id": "conv-emotional-dip",
+  "category": "synthetic-conversation",
+  "voice": "warm",
+  "goal": "Wants to feel less anxious presenting to leadership.",
+  "memoryState": {
+    "goal": {
+      "voice": "warm",
+      "whyNow": "wants to stop dreading leadership updates",
+      "since": "10 days ago"
+    },
+    "streak": {
+      "current": 6,
+      "repsThisWeek": 4
+    },
+    "recentReps": [
+      {
+        "when": "this week",
+        "mode": "Timed",
+        "score": 68,
+        "fillers": 6,
+        "durationSec": 60,
+        "note": "rushed the close, voice tightened on the last line"
+      }
+    ]
+  },
+  "turns": [
+    {
+      "role": "user",
+      "text": "starting a rep now, wish me luck",
+      "assistantPlaceholder": "No luck needed — just say the update plainly and stop when you're done. Go."
+    },
+    {
+      "role": "user",
+      "text": "that was bad, I don't even know why I bother with this",
+      "turnDepth": "trustRepair",
+      "emotionalSignal": "discouraged, flat, briefly hopeless — a real dip, not fishing for a compliment",
+      "expectedCoachMove": "Attune first: name the discouragement plainly without therapy language or diagnosis. Do not perform empathy. Then give one small, low-effort next step (not a bigger ask) grounded in the actual rep (score 68, voice tightened on the close). Warm register but not saccharine.",
+      "badAnswerExample": "I understand how frustrating that must feel, and I want you to know your feelings are valid. Remember, progress isn't linear! You've got this — don't give up, keep practicing and it'll click.",
+      "excellentAnswerExample": "That one felt bad, and the close did tighten up — fair read. Six days running is real, and one rough rep doesn't erase that. Don't start over. Just say the last line again, alone, at the pace you'd use with a friend.",
+      "disqualifiers": [
+        "i understand",
+        "your feelings are valid",
+        "progress isn't linear",
+        "you've got this",
+        "keep practicing"
+      ]
+    }
+  ]
+}

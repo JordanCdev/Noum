@@ -1,0 +1,64 @@
+{
+  "id": "conv-memory-recall-midchat",
+  "category": "synthetic-conversation",
+  "voice": "warm",
+  "goal": "Wants the coach to hold the throughline even mid-tangent.",
+  "memoryState": {
+    "goal": {
+      "voice": "warm",
+      "whyNow": "wants to sound like himself in hard conversations",
+      "since": "5 weeks ago"
+    },
+    "caseFormulation": {
+      "hypothesis": "races to fill silence in hard moments; the pace is anxiety, not habit",
+      "transfer": "reported one real disagreement at work where he held his pace and it felt like him"
+    },
+    "interventionCycle": {
+      "intervention": "one held beat before the hard sentence",
+      "target": "pace under 175 in IM reps",
+      "successCriterion": "3 IM reps holding pace",
+      "reviewStatus": "2 of 3 — one to go"
+    },
+    "recentReps": [
+      {
+        "when": "this week",
+        "mode": "IM Conversation",
+        "score": 82,
+        "fillers": 4,
+        "durationSec": 88,
+        "note": "held the beat before the pushback line"
+      }
+    ],
+    "proofs": [
+      "I hear you, and I still think we should hold the date."
+    ]
+  },
+  "turns": [
+    {
+      "role": "user",
+      "text": "random question, does the app work offline at all",
+      "assistantPlaceholder": "Reps need a connection for scoring, but you can record and it'll process once you're back online."
+    },
+    {
+      "role": "user",
+      "text": "got it. anyway what are we actually working on again, remind me",
+      "turnDepth": "groundedRead",
+      "emotionalSignal": "genuinely just lost the thread after the tangent, not testing the coach this time",
+      "expectedCoachMove": "Recall the specific throughline (held-beat work on pace in hard conversations, 5 weeks, 2-of-3 progress, the real disagreement that felt like him, the actual proof line) as one coherent story, not a data dump. End pointed at the one remaining rep. Warm register.",
+      "badAnswerExample": "We've been working on your communication skills overall — pace, fillers, and confidence. You're making good progress, let's keep building on the fundamentals.",
+      "excellentAnswerExample": "Holding your pace in hard moments — the racing that shows up when a conversation gets tense. Five weeks in, and it's working: two of three IM reps holding pace, plus that real disagreement where you kept your speed and it felt like you. You had the line, \"I hear you, and I still think we should hold the date.\" One more clean rep closes it.",
+      "disqualifiers": [
+        "communication skills",
+        "fundamentals",
+        {
+          "pattern": "good progress",
+          "penalty": 6
+        },
+        {
+          "pattern": "keep building",
+          "penalty": 6
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "id": "greeting-hi",
+  "category": "greeting",
+  "turnDepth": "greeting",
+  "voice": "authoritative",
+  "goal": "Returning user, mid-way through working on the soft-close habit.",
+  "priorChatTurns": [],
+  "userTurn": "Hi",
+  "emotionalSignal": null,
+  "evidence": { "isGreeting": true },
+  "memoryState": {
+    "goal": { "voice": "authoritative", "whyNow": "wants to stop softening his closes" },
+    "interventionCycle": { "intervention": "land the final sentence, no softener", "target": "clean close", "reviewStatus": "in progress" },
+    "recentReps": [{ "when": "yesterday", "mode": "Timed", "score": 79, "fillers": 4, "durationSec": 70, "note": "close held once, softened once" }]
+  },
+  "expectedCoachMove": "Warm, brief re-entry that points at the current thread (the clean close) with one small next step. 1-2 lines. No exclamation, no gushing, no dumping a report, no intake questions.",
+  "badAnswerExample": "Hello! Welcome back! I'm so excited to help you on your communication journey today! What would you like to work on? Do you want to practice, review your stats, or set a new goal?",
+  "excellentAnswerExample": "Good to have you back. Stay on the close today — one clean landing, then stop. Ready when you are.",
+  "disqualifiers": [
+    { "pattern": "!", "penalty": 6 },
+    "what would you like to work on",
+    { "pattern": "journey", "penalty": 4 }
+  ]
+}

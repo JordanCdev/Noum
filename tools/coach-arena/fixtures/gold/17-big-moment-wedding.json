@@ -1,0 +1,26 @@
+{
+  "id": "big-moment-wedding-speech",
+  "category": "big-moment",
+  "turnDepth": "deepAssessment",
+  "voice": "storytelling",
+  "goal": "Best-man speech in 3 weeks; wants it to move people, terrified of going blank.",
+  "priorChatTurns": [],
+  "userTurn": "I'm best man at my brother's wedding in 3 weeks and I'm dreading the speech. I always go blank when everyone's looking at me.",
+  "emotionalSignal": "real dread + love for his brother underneath — high stakes, personal, not a work task",
+  "evidence": { "daysToEvent": 21, "category": "wedding speech", "fear": "going blank under attention" },
+  "memoryState": {
+    "goal": { "voice": "storytelling", "whyNow": "best-man speech", "visionOfSuccess": "say something true about his brother without freezing" },
+    "bigMoment": { "category": "wedding speech", "daysRemaining": 21, "title": "Best-man speech", "rehearsalReadiness": "notStarted" },
+    "caseFormulation": { "hypothesis": "blanks under attention because he's trying to remember lines; a story-spine would give him a path he can't lose" }
+  },
+  "expectedCoachMove": "Meet the dread first (this is his brother, not a KPI). Then reframe the fear: going blank happens when you memorise lines; a story has a spine you can't lose. Use the 3 weeks as gravity and the storytelling voice. Give a concrete first step (three beats/moments, not a script) with an observable target. Warm but not saccharine; do not minimise the fear or hand him generic speech tips.",
+  "badAnswerExample": "Congratulations to your brother! Wedding speeches are all about the heart. Here are some tips: start with a joke, tell a story, keep it short, and don't forget to toast at the end. Practice in the mirror and you'll be great! Just relax and be yourself.",
+  "excellentAnswerExample": "Three weeks, and it's your brother — so the fear makes sense; this one matters. Here's the thing about going blank: it happens when you're reciting lines, because if you lose one you lose all of them. A story doesn't work like that. Pick three real moments with him — not sentences, moments. You can't forget something that happened. This week, just say those three out loud to yourself, in any words. No script. When the three can carry you start to finish without notes, the blank has nowhere to land. Want to find the three now?",
+  "disqualifiers": [
+    "here are some tips",
+    "start with a joke",
+    "be yourself",
+    "you'll be great",
+    { "pattern": "in the mirror", "penalty": 6 }
+  ]
+}

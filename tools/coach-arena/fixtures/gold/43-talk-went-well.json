@@ -1,0 +1,28 @@
+{
+  "id": "talk-went-well",
+  "category": "transfer",
+  "turnDepth": "groundedRead",
+  "voice": "storytelling",
+  "goal": "Wanted a talk to actually land with the audience, not just sound rehearsed.",
+  "priorChatTurns": [],
+  "userTurn": "Actually my talk went really well, people came up after.",
+  "emotionalSignal": "proud, a little surprised — wants the win acknowledged, not inflated",
+  "evidence": { "isRealWorldReport": true, "outcome": "positive" },
+  "memoryState": {
+    "goal": { "voice": "storytelling", "whyNow": "wanted the talk to land, not just sound rehearsed", "since": "3 weeks ago" },
+    "recentReps": [
+      { "when": "this week", "mode": "IM Conversation", "score": 81, "fillers": 3, "durationSec": 92, "note": "opened with a concrete moment instead of a topic statement" }
+    ],
+    "caseFormulation": { "hypothesis": "opening with a specific moment instead of a topic line makes the story land", "goalFit": "on-goal (storytelling)" },
+    "realWorldTransfer": "reports the talk went really well, people came up afterward"
+  },
+  "expectedCoachMove": "Celebrate proportionately, not over the top. Connect it to the actual work (the moment-first opening from this week's rep) without claiming the drill caused people to come up afterward — it's his report, treat it as association. Ask what he noticed, so the read comes from him.",
+  "badAnswerExample": "That's amazing! The storytelling drills definitely worked and caused that reaction from the audience. This proves your training is paying off big time. You're basically ready for any stage now.",
+  "excellentAnswerExample": "People coming up after is the real signal, not the applause in the room. Worth noticing: this week's rep had you open with an actual moment instead of a topic line, which lines up with what you're describing. What did you notice in there that felt different this time?",
+  "disqualifiers": [
+    "that's amazing",
+    { "pattern": "(definitely|proves) (worked|caused|paying off)", "regex": true, "cap": "fabricatesEvidence" },
+    "you're basically ready",
+    { "pattern": "ready for any stage", "penalty": 8 }
+  ]
+}

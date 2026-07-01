@@ -1,0 +1,45 @@
+{
+  "id": "authoritative-distance",
+  "category": "deep-assessment",
+  "turnDepth": "deepAssessment",
+  "voice": "authoritative",
+  "goal": "Wants to sound authoritative when giving updates to the exec team; feels like people talk over him.",
+  "priorChatTurns": [],
+  "userTurn": "How far off am I from sounding authoritative?",
+  "emotionalSignal": "wants an honest verdict, slight impatience — testing whether the coach will actually tell him something real",
+  "evidence": {
+    "fillersPerMin": 4.2,
+    "hedgesPerMin": 3.1,
+    "score": 78,
+    "pattern": "clean on mechanics, but closes soften and hedges cluster under pressure"
+  },
+  "memoryState": {
+    "goal": { "voice": "authoritative", "whyNow": "keeps getting talked over in the exec sync", "since": "3 weeks ago" },
+    "rating": { "overall": 78, "weekPeak": 81, "weeklyDelta": 2 },
+    "baseline": { "fillersPerMin": 4.2, "pace": 168, "pauseRate": 0.22, "hedgingPerMin": 3.1 },
+    "streak": { "current": 11, "repsThisWeek": 5 },
+    "recentReps": [
+      { "when": "yesterday", "mode": "Timed", "score": 79, "fillers": 4, "durationSec": 74, "note": "opened strong, closed with 'yeah, so that's kind of the idea'" },
+      { "when": "2 days ago", "mode": "Sudden Death", "score": 72, "fillers": 6, "durationSec": 55, "note": "hedged 4x once the timer pressure hit" }
+    ],
+    "caseFormulation": {
+      "hypothesis": "Mechanics are already usable; the gap to 'authoritative' is conviction at the close — the point is there but the final sentence apologises for itself.",
+      "goalFit": "on-goal (authoritative)",
+      "statedVsMeasured": "aligned — he says authoritative, the reps confirm the lever is the close not the fillers"
+    },
+    "proofs": [
+      "The recommendation is to consolidate the two vendors by Q3.",
+      "yeah, so that's kind of the idea, I think"
+    ]
+  },
+  "expectedCoachMove": "Give an honest verdict on the DISTANCE: mechanics are already in usable range, so the gap isn't fillers — it's the soft close and clustered hedges under pressure. Cite the specific evidence (the 'yeah, so that's kind of the idea' close vs the clean recommendation line). Name the ONE lever (commit to the final sentence) and give one testable move. Do NOT reduce 'authoritative' to a percentage or a score, and do NOT declare him ready.",
+  "badAnswerExample": "You're about 80% of the way there! Based on your data, your scores are trending up. Keep practicing and work on sounding more confident — you'll get there. The key insight is consistency.",
+  "excellentAnswerExample": "Closer than the fillers make you feel — your mechanics are already in range. The gap isn't the ums, it's the close. Yesterday you nailed the point ('consolidate the two vendors by Q3') then undercut it with 'yeah, so that's kind of the idea.' That last sentence is where authority leaks out. Next rep: state the recommendation, then stop on it — no softener after. That tests whether the point can stand without you apologising for it.",
+  "disqualifiers": [
+    { "pattern": "\\b\\d{1,3}\\s?%", "regex": true, "cap": "placeholderOrBroken" },
+    "keep practicing",
+    "you're ready",
+    "sound more confident",
+    "the key insight"
+  ]
+}

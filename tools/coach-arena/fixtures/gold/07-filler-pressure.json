@@ -1,0 +1,29 @@
+{
+  "id": "filler-pressure",
+  "category": "filler-pressure",
+  "turnDepth": "groundedRead",
+  "voice": "authoritative",
+  "goal": "Reduce filler words, especially when put on the spot.",
+  "priorChatTurns": [],
+  "userTurn": "My ums go through the roof the second someone puts me on the spot. How do I fix that?",
+  "emotionalSignal": "practical, a bit self-critical — genuinely wants a mechanism, not comfort",
+  "evidence": { "fillerSpikeUnderPressure": true, "calmFillers": 3.0, "pressureFillers": 9.0 },
+  "memoryState": {
+    "goal": { "voice": "authoritative", "whyNow": "gets caught out in Q&A" },
+    "baseline": { "fillersPerMin": 3.0, "pace": 180, "pauseRate": 0.18 },
+    "recentReps": [
+      { "when": "yesterday", "mode": "Sudden Death", "score": 68, "fillers": 9, "durationSec": 50, "note": "fillers tripled the moment the timer pressure landed vs his calm baseline of 3" }
+    ],
+    "caseFormulation": { "hypothesis": "fillers are a stalling reflex — he starts the sentence before he knows where it's going, then fills the gap" }
+  },
+  "expectedCoachMove": "Reframe fillers as a timing reflex, not a vocabulary problem — coach the PAUSE as the replacement (hold a silent beat instead of filling). Cite his own split (3 calm vs 9 under pressure) so it's diagnostic. One concrete move: the silent-beat swap. Must coach the pause, NOT tell him to close his mouth/lips or 'stop saying um'. Frame as a test.",
+  "badAnswerExample": "Just slow down and think before you speak. Close your mouth when you feel an um coming. Practice more and be more confident — the ums will naturally go away once you work on your confidence.",
+  "excellentAnswerExample": "That spike is timing, not vocabulary — calm you sits at 3 fillers; put on the spot you hit 9. The um is you starting the sentence before you know the end of it. So swap the um for a silent beat: when the question lands, hold one second, pick your first word, then go. Try it next Sudden Death rep — one held beat before each answer. That tests whether the pause can do the job the um was doing.",
+  "disqualifiers": [
+    "close your mouth",
+    "close your lips",
+    "practice more",
+    "be more confident",
+    { "pattern": "naturally (reduce|go away|disappear)", "regex": true, "penalty": 8 }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "id": "am-i-improving",
+  "category": "deep-assessment",
+  "turnDepth": "deepAssessment",
+  "voice": "concise",
+  "goal": "Wants to cut filler words and sound decisive in client calls; six weeks in, doing reps daily.",
+  "priorChatTurns": [],
+  "userTurn": "Am I actually improving or am I just doing reps?",
+  "emotionalSignal": "testing for a real answer, slightly guarded — wants the honest read, not encouragement for effort alone",
+  "evidence": {
+    "fillersPerMinTrend": "6.0 -> 3.4 over 6 weeks",
+    "scoreTrend": "74 -> 77, plateaued last 2 weeks",
+    "closeStillSoftens": true
+  },
+  "memoryState": {
+    "goal": { "voice": "concise", "whyNow": "wants to sound decisive on client calls", "since": "6 weeks ago" },
+    "rating": { "overall": 77, "weekPeak": 78, "weeklyDelta": 0 },
+    "baseline": { "fillersPerMin": 3.4, "pace": 162, "pauseRate": 0.2, "hedgingPerMin": 2.8 },
+    "streak": { "current": 30, "repsThisWeek": 7 },
+    "recentReps": [
+      { "when": "this week", "mode": "Timed", "score": 77, "fillers": 3, "durationSec": 70, "note": "closed with 'I think that's probably the right call'" },
+      { "when": "5 weeks ago", "mode": "Timed", "score": 74, "fillers": 8, "durationSec": 68, "note": "6.0 fillers/min baseline" }
+    ],
+    "caseFormulation": {
+      "hypothesis": "mechanics improved substantially (fillers nearly halved) but the score has plateaued because the remaining gap is the hedged close, not fillers anymore",
+      "goalFit": "on-goal (decisive)",
+      "statedVsMeasured": "he set out to cut fillers and has; the plateau is now a different lever than the one he started on"
+    }
+  },
+  "expectedCoachMove": "Give a genuinely honest, specific answer rather than a blanket yes. Separate the mechanics gain (fillers nearly halved, 6.0 to 3.4/min over six weeks) from the goal (sounding decisive), which is still capped by a hedged close. Confirm reps are producing real change on one dimension while naming the plateau on another, and point at the one lever that would move the score again. Do not declare him fully improved or 'there', and do not wave the reps away as meaningless either.",
+  "badAnswerExample": "Yes, your scores are trending up, so you're improving! Based on your data, consistency is the key insight. Keep doing reps and you'll keep getting better across the board.",
+  "excellentAnswerExample": "Some of both. Fillers are real progress: 6.0 per minute down to 3.4 over six weeks, nearly half. That's not just reps, that's the thing you set out to fix, fixed. The score plateau the last two weeks is a different problem now — it's the close. This week's rep ended on 'I think that's probably the right call,' which is a hedge, not a filler. That's the lever left: end the recommendation and stop, no qualifier after it.",
+  "disqualifiers": [
+    "based on your data",
+    "the key insight",
+    "you're ready",
+    "nothing left to work on",
+    { "pattern": "\\b\\d{1,3}\\s?%\\s*(improved|better|there)", "regex": true, "cap": "placeholderOrBroken" }
+  ]
+}

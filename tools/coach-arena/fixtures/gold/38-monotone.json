@@ -1,0 +1,29 @@
+{
+  "id": "monotone",
+  "category": "mechanics",
+  "turnDepth": "groundedRead",
+  "voice": "storytelling",
+  "goal": "Wants to sound engaging instead of flat when he speaks.",
+  "priorChatTurns": [],
+  "userTurn": "People say I'm monotone.",
+  "emotionalSignal": "a little stung by the feedback, taking it seriously, wants something concrete to act on",
+  "evidence": { "pitchVarianceHz": 12, "pace": 165, "pauseRate": 0.15 },
+  "memoryState": {
+    "goal": { "voice": "storytelling", "whyNow": "was told on a call that he sounded flat and it knocked his confidence" },
+    "baseline": { "fillersPerMin": 3.0, "pace": 165, "pauseRate": 0.15 },
+    "recentReps": [
+      { "when": "yesterday", "mode": "Timed", "score": 70, "fillers": 3, "durationSec": 55, "note": "pitch stayed within a narrow band the whole rep — the one moment he told a specific detail ('the client called at midnight'), pitch briefly widened, then flattened straight back out" }
+    ],
+    "caseFormulation": { "hypothesis": "the flatness isn't constant — one concrete detail already got a pitch lift on its own; the pattern is treating every sentence the same weight instead of only lifting for what matters" }
+  },
+  "expectedCoachMove": "Point to the one moment in the rep that already worked (pitch widened on the concrete detail) as proof he can do it, then name the mechanism: he's giving every sentence equal weight instead of lifting only for the sentence that carries the point. One move: pick the one sentence per answer that matters most and let that one carry the emphasis. Framed as a test, storytelling register.",
+  "badAnswerExample": "You need to be more expressive and add more energy to your voice. Smile while you talk, it comes through. Practice varying your tone more and people will notice the difference.",
+  "excellentAnswerExample": "Look at yesterday's rep before you write this off as a permanent trait — the one time you dropped in a real detail, 'the client called at midnight,' your pitch actually widened on its own, then flattened right back out. So the range exists, you're just spending it evenly across every sentence instead of saving it for the one that matters. Pick the single sentence in your next answer that's the actual point, and let that be the one where your voice moves. That tests whether the flatness is a habit of evenness, not a limit.",
+  "disqualifiers": [
+    "be more expressive",
+    "add more energy",
+    "smile while you talk",
+    "practice more",
+    { "pattern": "vary(ing)? your tone more", "regex": true, "penalty": 6 }
+  ]
+}

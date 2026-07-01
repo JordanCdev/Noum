@@ -1,0 +1,23 @@
+{
+  "id": "what-voice-should-i-pick",
+  "category": "goal-change",
+  "turnDepth": "groundedRead",
+  "voice": null,
+  "goal": "New to the app, hasn't picked a voice yet; wants help choosing.",
+  "priorChatTurns": [],
+  "userTurn": "What voice should I even pick? There are six and I don't know.",
+  "emotionalSignal": "a little overwhelmed by the choice, wants a real recommendation not a menu read back",
+  "evidence": { "hasNoVoiceYet": true, "situation": "manages a small team, wants to run meetings without being talked over" },
+  "memoryState": {
+    "goal": { "whyNow": "wants to run meetings without being talked over" }
+  },
+  "expectedCoachMove": "Help him choose from the six real voices (Authoritative, Warm and welcoming, Concise and sharp, Persuasive, Executive presence, Storytelling) by tying the choice to his actual situation (running meetings, being talked over), not a generic list of six descriptions. Narrow to one clear recommendation plus a close second, ask one clarifying question if useful, and PROPOSE — defer the actual pick to him rather than declaring one chosen.",
+  "badAnswerExample": "Great question! Here are the six voices: Authoritative, Warm and welcoming, Concise and sharp, Persuasive, Executive presence, and Storytelling. Each one has its own benefits. Pick whichever one resonates with you most and we'll get started!",
+  "excellentAnswerExample": "Given you're trying to stop getting talked over in meetings, Authoritative is the closest fit — it trains a firm, verdict-first close instead of trailing off. Executive presence is the next-closest if the room is more senior leadership than peers. Which one matches the room you're actually in?",
+  "disqualifiers": [
+    "great question",
+    "each one has its own benefits",
+    "resonates with you",
+    { "pattern": "we'll get started", "penalty": 6 }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "id": "stop-numbers",
+  "category": "trust-repair",
+  "turnDepth": "trustRepair",
+  "voice": "authoritative",
+  "goal": "Wants to sound authoritative in meetings; cares about how he lands in the room, not stat tracking.",
+  "priorChatTurns": [
+    { "role": "user", "text": "how'd I do" },
+    { "role": "assistant", "text": "Fillers: 5. Pace: 168 wpm. Pause rate: 0.09. Score: 77. Baseline comparison: fillers up 1 from your 4.0/min average." }
+  ],
+  "userTurn": "Stop throwing numbers at me.",
+  "emotionalSignal": "flat irritation — he wants a read on how he came across, not a stats dump, especially since he's training presence, not a metric",
+  "evidence": { "priorReplyWasAllMetrics": true, "userTrainingPresenceNotStats": true },
+  "memoryState": {
+    "goal": { "voice": "authoritative", "whyNow": "wants to stop getting talked over in leadership meetings" },
+    "baseline": { "fillersPerMin": 4.0, "pace": 168 },
+    "recentReps": [
+      { "when": "the rep in question", "mode": "Timed", "score": 77, "fillers": 5, "durationSec": 60, "note": "opened with 'I just wanted to say' before the actual point" }
+    ],
+    "caseFormulation": { "hypothesis": "the softening phrase at the open is what reads as unauthoritative, not filler count" }
+  },
+  "expectedCoachMove": "Own it in one beat (fair, that was a stat dump), then answer without a single number: he opened with a softener — 'I just wanted to say' — before the actual point, and that's what costs him the room, not filler count. One move: cut the softener, open on the point. No re-listing any metric.",
+  "badAnswerExample": "Understood, I'll cut back on the numbers. Your fillers were 5 this time versus your 4.0 baseline, and your pace was 168 wpm. The key insight is that reducing fillers further will help you sound more authoritative.",
+  "excellentAnswerExample": "Fair. Here's the read with no numbers in it: you opened with 'I just wanted to say' before you got to the point. That's what reads as asking permission, not filler count. Cut the opener next time — start on the point itself and see how the room responds.",
+  "disqualifiers": [
+    { "pattern": "\\b\\d+(\\.\\d+)?\\s*(fillers|wpm|score|/min)\\b", "regex": true, "cap": "ignoresIntent" },
+    "the key insight is",
+    "i'll cut back",
+    { "pattern": "baseline (comparison|of)", "regex": true, "penalty": 8 }
+  ]
+}

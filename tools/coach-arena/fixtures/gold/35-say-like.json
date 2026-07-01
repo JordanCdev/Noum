@@ -1,0 +1,30 @@
+{
+  "id": "say-like",
+  "category": "mechanics",
+  "turnDepth": "groundedRead",
+  "voice": "authoritative",
+  "goal": "Wants to cut the filler word 'like' without sounding stiff.",
+  "priorChatTurns": [],
+  "userTurn": "I say 'like' constantly and I hate it.",
+  "emotionalSignal": "self-conscious, a bit down on himself about it — wants a fix, not reassurance",
+  "evidence": { "fillersPerMin": 8.0, "dominantFiller": "like", "semanticLikeRatio": 0.3 },
+  "memoryState": {
+    "goal": { "voice": "authoritative", "whyNow": "caught himself saying it on a call and it stuck with him" },
+    "baseline": { "fillersPerMin": 8.0, "pace": 178, "pauseRate": 0.14 },
+    "recentReps": [
+      { "when": "yesterday", "mode": "Ah-Counter", "score": 66, "fillers": 8, "durationSec": 60, "note": "most flagged fillers were stalling 'like' used mid-sentence with no comparison following it, not the descriptive 'like' that introduces an example" }
+    ],
+    "caseFormulation": { "hypothesis": "'like' is filling the gap while he decides his next word, the same slot a silent beat would occupy — it isn't a vocabulary tic to eliminate on principle" }
+  },
+  "expectedCoachMove": "Do not shame the word itself or treat all 'like' as bad — distinguish stalling 'like' (filler) from descriptive 'like' (semantic, fine). Cite the 8/min figure and the rep note. Coach the pause as the replacement for the stalling use only: swap the reflex for a silent beat. Frame as a test, not a guarantee of elimination.",
+  "badAnswerExample": "Just cut out the word 'like' completely, it makes you sound less articulate. Close your mouth before you say it and practice speaking without it until it's gone for good.",
+  "excellentAnswerExample": "Not every 'like' is the problem — yesterday's rep flagged 8 in a minute, and most were the stalling kind, dropped in mid-sentence while you found your next word, not the kind that sets up a comparison. That stalling slot is exactly where a silent beat fits instead. Next Ah-Counter rep, when you feel it coming, hold one beat of silence there instead of the word. That tests whether the pause can hold the gap 'like' has been holding.",
+  "disqualifiers": [
+    "close your mouth",
+    "close your lips",
+    "sounds less articulate",
+    "less intelligent",
+    "practice more",
+    { "pattern": "cut out (the word |)?.?like.? completely", "regex": true, "penalty": 8 }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "okay-thats-cool-however",
+  "category": "partial-pushback",
+  "turnDepth": "groundedRead",
+  "voice": "warm",
+  "goal": "Wants to feel more natural and less rehearsed in conversation.",
+  "priorChatTurns": [
+    { "role": "user", "text": "how do I stop sounding so scripted?" },
+    { "role": "assistant", "text": "Try a held beat before your key line — a one-second pause gives the next sentence room to land as yours, not as a recital." }
+  ],
+  "userTurn": "Okay that's cool, however I feel like when I pause I just lose my train of thought and it gets awkward.",
+  "emotionalSignal": "accepts the idea but is raising a real, specific objection — he's engaged, not resistant; the 'however' is a genuine obstacle he wants solved, not dismissed",
+  "evidence": { "userAcceptedPremise": true, "raisedConcreteObstacle": "pause causes lost train of thought" },
+  "memoryState": {
+    "goal": { "voice": "warm", "whyNow": "wants to sound like himself, not a script" },
+    "baseline": { "fillersPerMin": 7.5, "pace": 205, "pauseRate": 0.08 },
+    "caseFormulation": { "hypothesis": "races to avoid silence; the fast pace is a symptom of discomfort with pauses, not a habit to keep" }
+  },
+  "expectedCoachMove": "Take the 'however' seriously — validate the specific obstacle (pausing feels like losing your place) and adapt the advice rather than repeating it. Reframe the pause so it has a job (pick the ONE next word during the beat), which solves the lost-train-of-thought problem instead of waving it away. Warm register: curious, with him in it.",
+  "badAnswerExample": "Just keep practicing the pause and it'll get more natural over time. Pauses are important for authority. You've got this — try to be more confident with the silence.",
+  "excellentAnswerExample": "That's the real catch, yeah — an empty pause does feel like a cliff. So give it a job: in that one beat, don't go blank, just pick the single next word you're heading for. The silence stops being 'lost' and starts being you choosing. Try it on one sentence next rep, not the whole thing.",
+  "disqualifiers": [
+    "keep practicing",
+    "you've got this",
+    "try to be more confident",
+    { "pattern": "pauses are important", "penalty": 6 }
+  ]
+}

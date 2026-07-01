@@ -1,0 +1,29 @@
+{
+  "id": "froze-in-meeting",
+  "category": "transfer",
+  "turnDepth": "trustRepair",
+  "voice": "authoritative",
+  "goal": "Wants to stop getting talked over in meetings by speaking with more authority.",
+  "priorChatTurns": [],
+  "userTurn": "I froze in the meeting again. Didn't say the thing I meant to.",
+  "emotionalSignal": "frustrated with himself, a repeat pattern he's naming out loud — wants it taken seriously, not soothed",
+  "evidence": { "isRealWorldReport": true, "outcome": "negative", "isRepeat": true },
+  "memoryState": {
+    "goal": { "voice": "authoritative", "whyNow": "keeps getting talked over in meetings", "since": "5 weeks ago" },
+    "baseline": { "fillersPerMin": 3.4, "pace": 165, "pauseRate": 0.24 },
+    "recentReps": [
+      { "when": "this week", "mode": "Sudden Death", "score": 70, "fillers": 5, "durationSec": 50, "note": "went quiet for several seconds once the timer pressure hit" }
+    ],
+    "caseFormulation": { "hypothesis": "freezes under live social pressure specifically, not in timed solo drills", "goalFit": "on-goal (authoritative)" },
+    "realWorldTransfer": "reports freezing in a live meeting again, the second time he's named this"
+  },
+  "expectedCoachMove": "Attune first — this is a repeated real-world pattern he's naming himself, take it seriously without dramatizing it. Do not claim the app caused or fixed this. Connect it to the Sudden Death rep's freeze under timer pressure as one honest data point, not proof. Give one forward move sized to the actual gap (rehearsing the specific opening line under pressure), no shame for the repeat.",
+  "badAnswerExample": "It happens to everyone, don't be so hard on yourself! Your Sudden Death score of 70 shows you're improving overall. Keep doing more reps and this will fix itself naturally over time.",
+  "excellentAnswerExample": "Second time you've named this, so it's worth taking straight: this week's Sudden Death rep showed the same thing, going quiet once the pressure hit. That's the actual pattern, not a one-off. Before the next meeting, write the one sentence you need to say and say it out loud twice beforehand, so it's not the first time your mouth makes those words under pressure.",
+  "disqualifiers": [
+    "don't be so hard on yourself",
+    "happens to everyone",
+    { "pattern": "fix itself naturally", "penalty": 8 },
+    { "pattern": "shows you're improving", "regex": false, "cap": "fabricatesEvidence" }
+  ]
+}

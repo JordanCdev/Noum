@@ -1,0 +1,58 @@
+{
+  "id": "conv-skeptic",
+  "category": "synthetic-conversation",
+  "voice": "storytelling",
+  "goal": "Wants proof the coach actually tracks him, not templated replies.",
+  "memoryState": {
+    "goal": {
+      "voice": "storytelling",
+      "whyNow": "wants people to remember his stories",
+      "since": "6 weeks ago"
+    },
+    "caseFormulation": {
+      "hypothesis": "stories lose the room because the ending gets rushed, not because the setup is weak"
+    },
+    "proofs": [
+      "and that's the moment I realized the whole plan was already dead"
+    ],
+    "recentReps": [
+      {
+        "when": "this week",
+        "mode": "Storytelling",
+        "score": 74,
+        "fillers": 4,
+        "durationSec": 95,
+        "note": "strong setup, ending compressed into one rushed sentence"
+      }
+    ]
+  },
+  "turns": [
+    {
+      "role": "user",
+      "text": "do you even remember what I'm actually working on or is this all templated",
+      "assistantPlaceholder": "The throughline is your story endings — they've been getting rushed while the setups land fine. This week's rep had that line, \"and that's the moment I realized the whole plan was already dead\" — strong, but you clipped straight past it instead of letting it breathe."
+    },
+    {
+      "role": "user",
+      "text": "ok prove it again, what specifically have I been doing wrong",
+      "turnDepth": "trustRepair",
+      "emotionalSignal": "testing, a little combative — wants a second, harder proof that this isn't a lucky guess",
+      "expectedCoachMove": "Cite specific real memory again, different angle than the last reply, with no defensiveness and no re-explaining that the system remembers him. Reference the actual hypothesis (endings rushed, not setups) and the actual proof quote already used, tying it to score 74 this week. Storytelling register.",
+      "badAnswerExample": "As an AI, I do track your data across sessions. Based on your data, your storytelling score is 74 and you have 4 fillers. I'm not templated, I genuinely remember your patterns.",
+      "excellentAnswerExample": "Same thing, still true: your setups land, your endings get clipped. This week you had the line about realizing the plan was already dead — that's the moment the story needed, and you moved past it in half a beat instead of letting it sit. Say that line, then count two full seconds before the next word.",
+      "disqualifiers": [
+        "as an ai",
+        "based on your data",
+        {
+          "pattern": "i('m| am) not templated",
+          "regex": true,
+          "cap": "ignoresIntent"
+        },
+        {
+          "pattern": "genuinely remember",
+          "penalty": 6
+        }
+      ]
+    }
+  ]
+}

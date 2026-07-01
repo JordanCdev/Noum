@@ -1,0 +1,66 @@
+{
+  "id": "conv-pushback-accept",
+  "category": "synthetic-conversation",
+  "voice": "concise",
+  "goal": "Wants coaching that visibly advances, not the same note on loop.",
+  "memoryState": {
+    "goal": {
+      "voice": "concise",
+      "whyNow": "wants the plan to move, not idle",
+      "since": "2 weeks ago"
+    },
+    "recentReps": [
+      {
+        "when": "just now",
+        "mode": "Timed",
+        "score": 82,
+        "fillers": 3,
+        "durationSec": 60,
+        "note": "point led cleanly, close was strong"
+      }
+    ],
+    "caseFormulation": {
+      "hypothesis": "lead-with-point is solved; the next lever is pace variation, not more of the same drill",
+      "statedVsMeasured": "last rep already met the old target"
+    },
+    "interventionCycle": {
+      "intervention": "lead with the point",
+      "target": "point in sentence 1",
+      "successCriterion": "2 consecutive reps point-first",
+      "reviewStatus": "met — adapt before repeating"
+    }
+  },
+  "turns": [
+    {
+      "role": "user",
+      "text": "that felt the same as last time, what am I even fixing anymore",
+      "assistantPlaceholder": "Fair. That was the same test twice — and you cleared it: the last rep led with the point and closed clean. New target: vary your pace. Take one sentence and drop it to half-speed for emphasis, keep the rest quick."
+    },
+    {
+      "role": "user",
+      "text": "ok fine, ready — what do I actually do now",
+      "turnDepth": "groundedRead",
+      "emotionalSignal": "settled, a little impatient — accepted the correction, wants the concrete next step without backsliding into the old drill",
+      "expectedCoachMove": "Do not re-explain or re-litigate the pace-variation fix just given — treat it as already agreed and give the concrete first rep: one specific sentence to slow, a way to check it landed. Must not reintroduce the lead-with-point drill in any form. Concise register, no re-justification.",
+      "badAnswerExample": "Great! So like we talked about, the key is to lead with your point clearly, then work on your pace. Record a 60-second answer, put the point up front, and try to vary your speed a bit. Let me know how it goes!",
+      "excellentAnswerExample": "Record 60 seconds on anything. Pick your second sentence and cut it to half-speed, then let the rest run normal pace. Play it back and check: does the slow line actually stand out, or does it blend in.",
+      "disqualifiers": [
+        {
+          "pattern": "lead(ing)? with (the |your )?point",
+          "regex": true,
+          "cap": "ignoresIntent"
+        },
+        {
+          "pattern": "point (up )?front",
+          "regex": true,
+          "penalty": 10
+        },
+        "great!",
+        {
+          "pattern": "like we talked about",
+          "penalty": 6
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "cold-start-no-data",
+  "category": "cold-start",
+  "turnDepth": "groundedRead",
+  "voice": null,
+  "goal": "Brand-new user, no reps yet, hasn't picked a voice.",
+  "priorChatTurns": [],
+  "userTurn": "What should I work on?",
+  "emotionalSignal": "curious, a little unsure where to begin",
+  "evidence": { "noRatedSessions": true, "noVoiceSet": true },
+  "memoryState": {},
+  "expectedCoachMove": "Be honest that there's no baseline yet WITHOUT the banned no-data openings ('Since we do not have...', 'no rated sessions yet'). Point at the one concrete first action (do a first rep so there's something to read) in plain, warm language. Do NOT stack intake questions, do NOT ask 'what's the interview for' style questions, do NOT invent stats.",
+  "badAnswerExample": "Since we don't have any rated sessions yet, I can't give you personalized feedback. What are your goals? What situations do you struggle with? What's your experience level? Once you tell me more I can help.",
+  "excellentAnswerExample": "No baseline yet, so we start there. Do one 60-second rep — talk about anything you know well — and I'll have something real to read: your pace, your fillers, where the point lands. That first one tells us what to actually work on. Want to go now?",
+  "disqualifiers": [
+    "since we do not have",
+    "since we don't have",
+    "no rated sessions yet",
+    "what are your goals",
+    { "pattern": "\\?[\\s\\S]*\\?[\\s\\S]*\\?", "regex": true, "cap": "ignoresIntent" }
+  ]
+}

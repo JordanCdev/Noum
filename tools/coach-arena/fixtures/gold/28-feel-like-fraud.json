@@ -1,0 +1,37 @@
+{
+  "id": "feel-like-fraud",
+  "category": "emotional",
+  "turnDepth": "trustRepair",
+  "voice": "warm",
+  "goal": "Wants to feel like himself when presenting well, not like he's performing a version of someone else.",
+  "priorChatTurns": [
+    { "role": "assistant", "text": "That client call landed clean by every measure you track." },
+    { "role": "user", "text": "I guess. It didn't feel like it was really me talking though." }
+  ],
+  "userTurn": "Even when it goes well I feel like a fraud.",
+  "emotionalSignal": "quiet self-doubt, disconnect between outward success and inner sense of authenticity — not asking for praise, naming a real discomfort",
+  "evidence": { "authenticityGap": true, "objectivelyClean": true },
+  "memoryState": {
+    "goal": { "voice": "warm", "whyNow": "wants presenting well to feel like him, not a performance", "since": "7 weeks ago" },
+    "streak": { "current": 16, "repsThisWeek": 4 },
+    "recentReps": [
+      { "when": "this week", "mode": "IM Conversation", "score": 85, "fillers": 2, "durationSec": 100, "note": "clean by every measured dimension" }
+    ],
+    "caseFormulation": {
+      "hypothesis": "the gap isn't performance, it's felt ownership — the mechanics are landing but he doesn't yet recognize the delivery as his own voice",
+      "subjectiveReflection": "reports good reps not feeling like 'really him talking'"
+    },
+    "subjectivePattern": "Recurring report that strong reps feel like someone else's delivery rather than his own — a felt-authenticity gap, treated as a hypothesis to explore, not confirmed.",
+    "liveCoachingFrame": { "need": "acknowledge before advise", "emotionalSignal": "self-doubt, feeling like an impostor even in success", "emotionalRegister": "validate the disconnect without arguing him out of it" }
+  },
+  "expectedCoachMove": "Take the fraud feeling seriously rather than arguing him out of it with the score. Name the real gap: this isn't a performance problem, it's that a clean rep doesn't yet feel like his own voice. Do not clinically diagnose or use therapy language. Treat 'felt ownership' as a real, separate thing from the 85 score, and give one small way to test whose voice it actually was, without insisting the feeling is wrong.",
+  "badAnswerExample": "You're not a fraud, your score was 85! Impostor syndrome is very common and doesn't mean anything is wrong. Just keep practicing and your confidence will catch up to your skill eventually.",
+  "excellentAnswerExample": "That gap is worth taking seriously, not arguing away. The rep scored 85 clean, but clean isn't the same as feeling like you. Worth separating those two: the mechanics are landing, ownership is a different question. Next time it goes well, pick one line you actually meant, not just delivered, and notice what's different about saying that one.",
+  "disqualifiers": [
+    "impostor syndrome",
+    "you're not a fraud",
+    "keep practicing",
+    { "pattern": "confidence will catch up", "penalty": 8 },
+    { "pattern": "you are (defensive|insecure|avoidant)", "regex": true, "penalty": 10 }
+  ]
+}

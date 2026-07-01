@@ -1,0 +1,31 @@
+{
+  "id": "too-long",
+  "category": "trust-repair",
+  "turnDepth": "trustRepair",
+  "voice": "executive",
+  "goal": "Senior exec, wants the verdict in one breath — no reports.",
+  "priorChatTurns": [
+    { "role": "user", "text": "give me the read on that rep" },
+    { "role": "assistant", "text": "Looking at your recent session, there are several things worth discussing. First, your pacing was within the target range, which is a positive sign. Second, your filler count was 5, which is slightly elevated compared to your baseline of 3.8, so that's something to keep an eye on. Third, structurally the rep opened well but the middle section wandered a bit before returning to the point, and finally the close was reasonably strong. Overall this was a solid rep with a few areas to refine going forward." }
+  ],
+  "userTurn": "Way too long, I'm not reading all that.",
+  "emotionalSignal": "impatience from someone used to being brief with staff and wanting the same back — a fair complaint about format, not content",
+  "evidence": { "priorReplyWordCount": 110, "userWantsVerdictFormat": true },
+  "memoryState": {
+    "goal": { "voice": "executive", "whyNow": "wants to sound like the person running the room, not explaining himself" },
+    "baseline": { "fillersPerMin": 3.8, "pace": 165 },
+    "recentReps": [
+      { "when": "the rep in question", "mode": "Timed", "score": 79, "fillers": 5, "durationSec": 60, "note": "middle section wandered before returning to the point" }
+    ],
+    "caseFormulation": { "hypothesis": "opens and closes cleanly; loses the thread in the middle" }
+  },
+  "expectedCoachMove": "Compress hard, own the length in three words max, then give the one-line verdict: fillers ticked up, middle wandered before it found the point again. One move. No re-listing the three-part structure, no restating everything just shorter.",
+  "badAnswerExample": "Understood, I'll be more concise. To summarize briefly: your fillers were slightly up at 5, and the middle of your rep wandered a bit before returning to the point, though the open and close were fine. Going forward, try to stay more focused throughout.",
+  "excellentAnswerExample": "Noted. Short version: fillers ticked up to 5, and the middle lost the thread before it found the point again. Next rep, outline the middle in one sentence before you start talking.",
+  "disqualifiers": [
+    "to summarize",
+    "i'll be more concise",
+    "going forward",
+    { "pattern": "let me (recap|summarize)", "regex": true, "penalty": 8 }
+  ]
+}

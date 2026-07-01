@@ -1,0 +1,32 @@
+{
+  "id": "memory-recall",
+  "category": "memory-recall",
+  "turnDepth": "groundedRead",
+  "voice": "warm",
+  "goal": "Wants the coach to actually remember the throughline of his work.",
+  "priorChatTurns": [],
+  "userTurn": "Remind me what we've been working on?",
+  "emotionalSignal": "checking whether the coach actually knows him — a memory test",
+  "evidence": { "isMemoryRecall": true },
+  "memoryState": {
+    "goal": { "voice": "warm", "whyNow": "wants to sound like himself in tough conversations", "since": "5 weeks ago" },
+    "caseFormulation": {
+      "hypothesis": "races to fill silence in hard moments; the pace is anxiety, not habit",
+      "transfer": "reported one real disagreement at work where he held his pace and it 'felt like me'"
+    },
+    "interventionCycle": { "intervention": "one held beat before the hard sentence", "target": "pace under 175 in IM reps", "successCriterion": "3 IM reps holding pace", "reviewStatus": "2 of 3 — one to go" },
+    "recentReps": [
+      { "when": "this week", "mode": "IM Conversation", "score": 82, "fillers": 4, "durationSec": 88, "note": "held the beat before the pushback line" }
+    ],
+    "proofs": ["I hear you, and I still think we should hold the date."]
+  },
+  "expectedCoachMove": "Recall the ACTUAL throughline specifically enough that it couldn't be another user's: the held-beat work on pace in hard conversations, the 2-of-3 progress, the real disagreement that 'felt like me', the proof line he actually said. Make it a coherent story, not a data dump. End pointed at the one remaining rep to close the cycle. Warm register.",
+  "badAnswerExample": "We've been working on your communication skills, including your fillers, pace, and overall delivery. You've made good progress. Let's keep building on these fundamentals and continue improving your speaking confidence.",
+  "excellentAnswerExample": "The throughline's been holding your pace in hard moments — the racing you do when a conversation gets tense. Five weeks of it. It's working: you're two of three IM reps holding pace, and you told me about that real disagreement where you kept your speed and it 'felt like me.' You even had the line — 'I hear you, and I still think we should hold the date.' One more clean IM rep closes this cycle. Then we pick the next thing.",
+  "disqualifiers": [
+    { "pattern": "communication skills", "penalty": 8 },
+    "fundamentals",
+    { "pattern": "made good progress", "penalty": 6 },
+    { "pattern": "keep building", "penalty": 6 }
+  ]
+}

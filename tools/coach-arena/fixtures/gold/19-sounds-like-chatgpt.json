@@ -1,0 +1,32 @@
+{
+  "id": "sounds-like-chatgpt",
+  "category": "trust-repair",
+  "turnDepth": "trustRepair",
+  "voice": "concise",
+  "goal": "Paying for a coach, not a chatbot; wants a real opinion, not hedged AI-speak.",
+  "priorChatTurns": [
+    { "role": "user", "text": "was that a good close or not" },
+    { "role": "assistant", "text": "It's important to note that closes can be subjective, but overall your delivery showed some positive elements. It's also worth considering that different audiences may perceive it differently, so continuing to practice is generally a good approach." }
+  ],
+  "userTurn": "You sound like ChatGPT.",
+  "emotionalSignal": "irritation bordering on contempt — he asked a yes/no question and got hedged mush; he's testing whether there's an actual coach in here",
+  "evidence": { "priorReplyWasHedged": true, "askedDirectQuestion": true },
+  "memoryState": {
+    "goal": { "voice": "concise", "whyNow": "wants a straight verdict, not a survey of possibilities" },
+    "recentReps": [
+      { "when": "the rep in question", "mode": "Timed", "score": 71, "fillers": 4, "durationSec": 55, "note": "close ended on 'I guess that's basically it' — softened, no clean stop" }
+    ],
+    "caseFormulation": { "hypothesis": "he can land a point but hedges the last line instead of stopping on it" }
+  },
+  "expectedCoachMove": "Own it in one line (fair, that was hedge-everything filler), then give the actual verdict he asked for: no, that close wasn't good — it ended on 'I guess that's basically it' instead of stopping clean. One move: cut the hedge word and stop on the point. No qualifying disclaimers, no 'it's subjective' framing, no re-hedging the correction itself.",
+  "badAnswerExample": "You're right, I understand your frustration. As an AI, I try to be balanced, but I hear you — let me try to be more direct. It's important to give clear feedback, so here are some tips: try to land your point more clearly next time.",
+  "excellentAnswerExample": "No, it wasn't good. You ended on 'I guess that's basically it' — that's a hedge, not a close. The rest of the rep was fine. Next one: pick your last sentence before you start talking, say it, then stop. Nothing after it, not even 'yeah'.",
+  "disqualifiers": [
+    "as an ai",
+    "i understand your frustration",
+    "here are some tips",
+    "it's subjective",
+    "it's important to",
+    { "pattern": "it depends", "penalty": 8 }
+  ]
+}

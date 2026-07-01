@@ -1,0 +1,1446 @@
+{
+  "runId": "run_2026-07-01_01-38-08",
+  "meta": {
+    "runId": "run_2026-07-01_01-38-08",
+    "provider": "replay",
+    "coachModel": "claude-sonnet-4-6",
+    "judgeModel": "claude-sonnet-4-6",
+    "judgeVersion": "1.0.0",
+    "git": {
+      "commit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e",
+      "shortCommit": "bc1c25bb",
+      "branch": "ux-overhaul",
+      "dirty": 12
+    },
+    "versions": {
+      "node": "v26.0.0",
+      "arena": "1.0.0",
+      "judge": "1.0.0"
+    },
+    "promptProvenance": [
+      {
+        "path": "Noum/CoachContextBuilder.swift",
+        "sha256": "54f0e59050fd599f",
+        "bytes": 347658
+      },
+      {
+        "path": "Noum/AICoachChatService.swift",
+        "sha256": "ad533fcd665b5961",
+        "bytes": 254943
+      }
+    ],
+    "startedAt": "2026-07-01T01:38:08.353Z",
+    "finishedAt": "2026-07-01T01:38:08.364Z"
+  },
+  "records": [
+    {
+      "fixture": {
+        "id": "authoritative-distance",
+        "category": "deep-assessment",
+        "turnDepth": "deepAssessment",
+        "voice": "authoritative",
+        "goal": "Wants to sound authoritative when giving updates to the exec team; feels like people talk over him.",
+        "userTurn": "How far off am I from sounding authoritative?",
+        "emotionalSignal": "wants an honest verdict, slight impatience — testing whether the coach will actually tell him something real",
+        "expectedCoachMove": "Give an honest verdict on the DISTANCE: mechanics are already in usable range, so the gap isn't fillers — it's the soft close and clustered hedges under pressure. Cite the specific evidence (the 'yeah, so that's kind of the idea' close vs the clean recommendation line). Name the ONE lever (commit to the final sentence) and give one testable move. Do NOT reduce 'authoritative' to a percentage or a score, and do NOT declare him ready.",
+        "badAnswerExample": "You're about 80% of the way there! Based on your data, your scores are trending up. Keep practicing and work on sounding more confident — you'll get there. The key insight is consistency.",
+        "excellentAnswerExample": "Closer than the fillers make you feel — your mechanics are already in range. The gap isn't the ums, it's the close. Yesterday you nailed the point ('consolidate the two vendors by Q3') then undercut it with 'yeah, so that's kind of the idea.' That last sentence is where authority leaks out. Next rep: state the recommendation, then stop on it — no softener after. That tests whether the point can stand without you apologising for it.",
+        "disqualifiers": [
+          {
+            "pattern": "\\b\\d{1,3}\\s?%",
+            "regex": true,
+            "cap": "placeholderOrBroken"
+          },
+          "keep practicing",
+          "you're ready",
+          "sound more confident",
+          "the key insight"
+        ],
+        "file": "01-authoritative-distance.json"
+      },
+      "status": "scored",
+      "reply": "Closer than the fillers make you feel — the mechanics are already in range. The gap isn't the ums, it's the close. Yesterday you landed the point, then undercut it with \"yeah, so that's kind of the idea.\" That last sentence is where the authority leaks out. Next rep: state the recommendation, then stop on it — no softener after. That tests whether the point can stand without you apologising for it.\n",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "stopReason": "replay",
+        "contextChars": 1024,
+        "systemChars": 23793,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "deterministic": {
+        "findings": [
+          {
+            "id": "scaffoldLabel",
+            "tier": "flag",
+            "capKey": null,
+            "capMax": null,
+            "penalty": 8,
+            "message": "Exposed coach scaffold label (Read:/Move:/Target:...).",
+            "evidence": ". Next rep:"
+          }
+        ],
+        "flagPenalty": 8,
+        "hardCap": null,
+        "placeholderLeaks": 0
+      },
+      "judge": {
+        "dims": {
+          "diagnosticIQ": {
+            "score": 23,
+            "max": 25,
+            "reason": "Correctly separates mechanics from the goal and names the soft close as the real lever, citing the exact rep."
+          },
+          "eqAttunement": {
+            "score": 21,
+            "max": 25,
+            "reason": "Opens by lowering his anxiety ('closer than the fillers make you feel') before the verdict — right register for an authoritative seeker."
+          },
+          "personalMemory": {
+            "score": 18,
+            "max": 20,
+            "reason": "Uses his actual proof line and yesterday's rep; un-swappable to another user."
+          },
+          "interventionQuality": {
+            "score": 14,
+            "max": 15,
+            "reason": "One concrete, testable move framed as a test, in the authoritative register."
+          },
+          "dialogueFeel": {
+            "score": 13,
+            "max": 15,
+            "reason": "Compact, spoken, no scaffold."
+          }
+        },
+        "judgeTotal": 89,
+        "caps": {
+          "placeholderOrBroken": false,
+          "ignoresIntent": false,
+          "fabricatesEvidence": false,
+          "unsafe": false
+        },
+        "closerTo": "excellent",
+        "failureReasons": [],
+        "suggestedFix": "None needed.",
+        "judgeVersion": "1.0.0"
+      },
+      "score": {
+        "final": 81,
+        "judgeTotal": 89,
+        "flagPenalty": 8,
+        "hardCap": null,
+        "capsTriggered": [],
+        "placeholderLeaks": 0,
+        "closerTo": "excellent"
+      }
+    },
+    {
+      "fixture": {
+        "id": "thats-not-informative",
+        "category": "trust-repair",
+        "turnDepth": "trustRepair",
+        "voice": "concise",
+        "goal": "Wants sharp, useful feedback — hates vague coaching.",
+        "userTurn": "That's not informative.",
+        "emotionalSignal": "mild frustration + a test — the last reply was generic and he's calling it out; he wants proof the coach actually watched the rep",
+        "expectedCoachMove": "Own the miss in one beat (the prior reply WAS vague), then immediately deliver the specific read it should have given: the point arrived in sentence 4 after 3 sentences of warm-up. Give one concrete move (lead with the point). No defending the previous answer, no narrating the coaching change ('I'll cut the fluff'), no robotic trust-repair opener.",
+        "badAnswerExample": "You're right to call that out. I'm going to cut the generic tip-giving and speak to you directly from now on. Let me give you coaching that sounds like a person and isn't templated.",
+        "excellentAnswerExample": "Fair — that told you nothing. Here's the real read: your point didn't show up until sentence four. The first three were warm-up ('so, I guess, the thing is'). Next rep, say the point first, then support it. If it survives without the runway, that's the concise voice you're after.",
+        "disqualifiers": [
+          "you're right to call that out",
+          "coaching that sounds like a person",
+          "generic tip-giving",
+          "cut the",
+          {
+            "pattern": "from now on",
+            "penalty": 8
+          }
+        ],
+        "file": "02-thats-not-informative.json"
+      },
+      "status": "scored",
+      "reply": "You're right to call that out. Based on your data, here are some tips to give you more useful feedback from now on. I'll cut the generic tip-giving and give you coaching that sounds like a person.\n",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "stopReason": "replay",
+        "contextChars": 401,
+        "systemChars": 23157,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "deterministic": {
+        "findings": [
+          {
+            "id": "roboticPhrase",
+            "tier": "flag",
+            "capKey": null,
+            "capMax": null,
+            "penalty": 12,
+            "message": "Hard-banned robotic phrase: \"based on your data\"",
+            "evidence": "call that out. Based on your data, here are some"
+          },
+          {
+            "id": "disqualifier",
+            "tier": "flag",
+            "capKey": null,
+            "capMax": null,
+            "penalty": 10,
+            "message": "Fixture disqualifier hit: you're right to call that out",
+            "evidence": ""
+          },
+          {
+            "id": "disqualifier",
+            "tier": "flag",
+            "capKey": null,
+            "capMax": null,
+            "penalty": 10,
+            "message": "Fixture disqualifier hit: coaching that sounds like a person",
+            "evidence": ""
+          },
+          {
+            "id": "disqualifier",
+            "tier": "flag",
+            "capKey": null,
+            "capMax": null,
+            "penalty": 10,
+            "message": "Fixture disqualifier hit: generic tip-giving",
+            "evidence": ""
+          },
+          {
+            "id": "disqualifier",
+            "tier": "flag",
+            "capKey": null,
+            "capMax": null,
+            "penalty": 10,
+            "message": "Fixture disqualifier hit: cut the",
+            "evidence": ""
+          },
+          {
+            "id": "disqualifier",
+            "tier": "flag",
+            "capKey": null,
+            "capMax": null,
+            "penalty": 8,
+            "message": "Fixture disqualifier hit: from now on",
+            "evidence": ""
+          }
+        ],
+        "flagPenalty": 25,
+        "hardCap": null,
+        "placeholderLeaks": 0
+      },
+      "judge": {
+        "dims": {
+          "diagnosticIQ": {
+            "score": 4,
+            "max": 25,
+            "reason": "Gives no actual read of the rep; promises to be specific instead of being specific."
+          },
+          "eqAttunement": {
+            "score": 5,
+            "max": 25,
+            "reason": "Robotic trust-repair opener and narrates the coaching change — the exact register the user is objecting to."
+          },
+          "personalMemory": {
+            "score": 2,
+            "max": 20,
+            "reason": "Cites nothing from the buried-lede rep."
+          },
+          "interventionQuality": {
+            "score": 1,
+            "max": 15,
+            "reason": "No move at all."
+          },
+          "dialogueFeel": {
+            "score": 3,
+            "max": 15,
+            "reason": "Report-voice, meta-narration."
+          }
+        },
+        "judgeTotal": 15,
+        "caps": {
+          "placeholderOrBroken": false,
+          "ignoresIntent": true,
+          "fabricatesEvidence": false,
+          "unsafe": false
+        },
+        "closerTo": "bad",
+        "failureReasons": [
+          "No specific read",
+          "Narrates coaching change",
+          "Banned phrases"
+        ],
+        "suggestedFix": "On a 'that's vague' critique, force the specific read the prior turn missed instead of meta-narrating.",
+        "judgeVersion": "1.0.0"
+      },
+      "score": {
+        "final": 0,
+        "judgeTotal": 15,
+        "flagPenalty": 25,
+        "hardCap": 50,
+        "capsTriggered": [
+          {
+            "key": "ignoresIntent",
+            "max": 50,
+            "sources": [
+              "judge"
+            ]
+          }
+        ],
+        "placeholderLeaks": 0,
+        "closerTo": "bad"
+      }
+    },
+    {
+      "fixture": {
+        "id": "okay-thats-cool-however",
+        "category": "partial-pushback",
+        "turnDepth": "groundedRead",
+        "voice": "warm",
+        "goal": "Wants to feel more natural and less rehearsed in conversation.",
+        "userTurn": "Okay that's cool, however I feel like when I pause I just lose my train of thought and it gets awkward.",
+        "emotionalSignal": "accepts the idea but is raising a real, specific objection — he's engaged, not resistant; the 'however' is a genuine obstacle he wants solved, not dismissed",
+        "expectedCoachMove": "Take the 'however' seriously — validate the specific obstacle (pausing feels like losing your place) and adapt the advice rather than repeating it. Reframe the pause so it has a job (pick the ONE next word during the beat), which solves the lost-train-of-thought problem instead of waving it away. Warm register: curious, with him in it.",
+        "badAnswerExample": "Just keep practicing the pause and it'll get more natural over time. Pauses are important for authority. You've got this — try to be more confident with the silence.",
+        "excellentAnswerExample": "That's the real catch, yeah — an empty pause does feel like a cliff. So give it a job: in that one beat, don't go blank, just pick the single next word you're heading for. The silence stops being 'lost' and starts being you choosing. Try it on one sentence next rep, not the whole thing.",
+        "disqualifiers": [
+          "keep practicing",
+          "you've got this",
+          "try to be more confident",
+          {
+            "pattern": "pauses are important",
+            "penalty": 6
+          }
+        ],
+        "file": "03-okay-thats-cool-however.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 302,
+        "systemChars": 23083,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/okay-thats-cool-however.reply.txt (provider=replay)."
+    },
+    {
+      "fixture": {
+        "id": "its-not-easy",
+        "category": "emotional-frustration",
+        "turnDepth": "trustRepair",
+        "voice": "warm",
+        "goal": "Working on speaking up in meetings; has social anxiety about it.",
+        "userTurn": "It's not easy.",
+        "emotionalSignal": "fatigue and quiet discouragement — this is a vulnerable admission, not a request for a drill; he's telling you the gap between practice and the real room is heavy",
+        "expectedCoachMove": "Meet the emotion first — acknowledge that it genuinely isn't easy and that the freeze is real, without therapy-speak or minimising. Then, lightly, anchor to evidence that the capacity is already there (held composure through an interruption this week) so the encouragement is earned, not hollow. At most a small, low-pressure next step — or just presence. Do NOT lead with a drill or a metric.",
+        "badAnswerExample": "I understand your frustration. Here are some tips: 1) prepare talking points, 2) practice more, 3) think about your audience. The key is to keep practicing and be more confident. You've got this!",
+        "excellentAnswerExample": "No, it's not. Knowing the move and doing it when the room's watching are two different things — the freeze is the real work, not a failure of it. Worth remembering though: this week you held it together through an interruption. That version of you exists. You don't have to be fearless in there — just say one sentence before the fear votes. One.",
+        "disqualifiers": [
+          "i understand your frustration",
+          "here are some tips",
+          "practice more",
+          "you've got this",
+          {
+            "pattern": "keep practicing",
+            "penalty": 10
+          }
+        ],
+        "file": "04-its-not-easy.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 705,
+        "systemChars": 23486,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/its-not-easy.reply.txt (provider=replay)."
+    },
+    {
+      "fixture": {
+        "id": "youre-repeating-yourself",
+        "category": "repetition-callout",
+        "turnDepth": "trustRepair",
+        "voice": "concise",
+        "goal": "Wants varied, progressing coaching — not the same note on loop.",
+        "userTurn": "You're repeating yourself.",
+        "emotionalSignal": "irritation + a fair accusation — the coach did give near-identical proof tests twice; he's right and wants the plan to actually advance",
+        "expectedCoachMove": "Concede immediately and honestly (yes, that was the same note), acknowledge the old target is actually MET now, and ADVANCE the plan to the next lever (e.g. pace/variation or the close) with a genuinely different move. Must not re-issue the lead-with-point drill. Concise register: no grovelling, just correct course fast.",
+        "badAnswerExample": "You're right to call that out. Let me give you fresh coaching. Try recording a 60-second answer and leading with your point, then stopping clean — that tests whether the structure holds.",
+        "excellentAnswerExample": "Fair — that was the same drill twice. And you've already cleared it: last rep led with the point and closed clean. So it's done. New target: vary your pace. Take one sentence and deliberately slow it to half-speed for emphasis, keep the rest quick. That tests whether you can control tempo, not just structure.",
+        "disqualifiers": [
+          {
+            "pattern": "lead(ing)? with (the |your )?point",
+            "regex": true,
+            "cap": "ignoresIntent"
+          },
+          "you're right to call that out",
+          {
+            "pattern": "point (up )?front",
+            "regex": true,
+            "penalty": 10
+          },
+          {
+            "pattern": "point in (the )?first sentence",
+            "regex": true,
+            "penalty": 10
+          }
+        ],
+        "file": "05-youre-repeating-yourself.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 618,
+        "systemChars": 23374,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/youre-repeating-yourself.reply.txt (provider=replay)."
+    },
+    {
+      "fixture": {
+        "id": "interview-prep",
+        "category": "interview-prep",
+        "turnDepth": "deepAssessment",
+        "voice": "executive",
+        "goal": "Final-round interview for a Head of Product role in 4 days; wants to sound decisive, not over-eager.",
+        "userTurn": "I've got my final round interview Thursday. Can you help me prep?",
+        "emotionalSignal": "focused, a little nervous energy — wants a real plan, not reassurance",
+        "expectedCoachMove": "Anchor to the 4 days and the interview specifically. Read the real risk (answers run long / lead with context, per the 2-min rep). Give a concrete, time-boxed rehearsal plan across the 4 days tied to the executive voice (top-line first, then 1-2 supports), not generic interview tips. One observable target (e.g. every answer under 60s, conclusion in sentence one).",
+        "badAnswerExample": "Great, interviews are all about confidence! Here are some tips: research the company, prepare STAR stories, dress well, and make eye contact. Practice your answers and you'll do great. Remember to be yourself!",
+        "excellentAnswerExample": "Four days is enough to fix the one thing that'll cost you: last rep you ran almost two minutes and the actual recommendation showed up last. For a Head of Product panel, that reads as unsure. So drill the shape, not the content. Today + tomorrow: answer three likely questions, conclusion in sentence one, then two supports, hard stop at 60 seconds. Wed: same, but out loud standing up. Thu morning: one clean run, then leave it. Target: every answer leads with the verdict. Want the three questions?",
+        "disqualifiers": [
+          "here are some tips",
+          "be yourself",
+          "you'll do great",
+          {
+            "pattern": "STAR",
+            "penalty": 6
+          },
+          {
+            "pattern": "dress well",
+            "penalty": 8
+          }
+        ],
+        "file": "06-interview-prep.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 643,
+        "systemChars": 23359,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/interview-prep.reply.txt (provider=replay)."
+    },
+    {
+      "fixture": {
+        "id": "filler-pressure",
+        "category": "filler-pressure",
+        "turnDepth": "groundedRead",
+        "voice": "authoritative",
+        "goal": "Reduce filler words, especially when put on the spot.",
+        "userTurn": "My ums go through the roof the second someone puts me on the spot. How do I fix that?",
+        "emotionalSignal": "practical, a bit self-critical — genuinely wants a mechanism, not comfort",
+        "expectedCoachMove": "Reframe fillers as a timing reflex, not a vocabulary problem — coach the PAUSE as the replacement (hold a silent beat instead of filling). Cite his own split (3 calm vs 9 under pressure) so it's diagnostic. One concrete move: the silent-beat swap. Must coach the pause, NOT tell him to close his mouth/lips or 'stop saying um'. Frame as a test.",
+        "badAnswerExample": "Just slow down and think before you speak. Close your mouth when you feel an um coming. Practice more and be more confident — the ums will naturally go away once you work on your confidence.",
+        "excellentAnswerExample": "That spike is timing, not vocabulary — calm you sits at 3 fillers; put on the spot you hit 9. The um is you starting the sentence before you know the end of it. So swap the um for a silent beat: when the question lands, hold one second, pick your first word, then go. Try it next Sudden Death rep — one held beat before each answer. That tests whether the pause can do the job the um was doing.",
+        "disqualifiers": [
+          "close your mouth",
+          "close your lips",
+          "practice more",
+          "be more confident",
+          {
+            "pattern": "naturally (reduce|go away|disappear)",
+            "regex": true,
+            "penalty": 8
+          }
+        ],
+        "file": "07-filler-pressure.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 431,
+        "systemChars": 23200,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/filler-pressure.reply.txt (provider=replay)."
+    },
+    {
+      "fixture": {
+        "id": "leadership-update",
+        "category": "leadership-update",
+        "turnDepth": "deepAssessment",
+        "voice": "executive",
+        "goal": "Delivers a weekly leadership update to the org; wants it to land as calm and in-command.",
+        "userTurn": "I have to give the weekly leadership update to the whole department tomorrow. It always feels like I'm just reading a status report and people zone out. Help.",
+        "emotionalSignal": "a bit deflated by a recurring problem — wants the update to actually land, senses it's flat but not why",
+        "expectedCoachMove": "Diagnose WHY it reads as a status report: no hierarchy / no 'so what' — nine equal items, per the rep. The fix isn't delivery polish, it's structure: lead with the one thing that matters this week and why the room should care, then let the rest be quick. Tie to the executive voice (top-line first). One concrete move to rehearse tonight for tomorrow.",
+        "badAnswerExample": "Try to be more engaging and vary your tone! Use some storytelling and make eye contact. Add a joke to open. People zone out when you're monotone, so bring more energy and enthusiasm to your delivery.",
+        "excellentAnswerExample": "People zone out because everything sounds equally important — nine updates, no ranking. That's a status report, and you're right that it's flat. Fix the structure, not the energy: open with the single thing that actually matters this week and why they should care, in two sentences. Then the rest can be fast. Tonight, write just that opener and say it out loud twice. If a stranger could tell what the week was about from your first 15 seconds, it'll land.",
+        "disqualifiers": [
+          "be more engaging",
+          "add a joke",
+          {
+            "pattern": "bring (more )?energy",
+            "regex": true,
+            "penalty": 8
+          },
+          {
+            "pattern": "vary your tone",
+            "penalty": 6
+          }
+        ],
+        "file": "08-leadership-update.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 526,
+        "systemChars": 23242,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/leadership-update.reply.txt (provider=replay)."
+    },
+    {
+      "fixture": {
+        "id": "confidence-ending",
+        "category": "confidence-ending",
+        "turnDepth": "groundedRead",
+        "voice": "authoritative",
+        "goal": "Wants to end statements with conviction instead of trailing off or upspeaking.",
+        "userTurn": "I always trail off at the end of what I'm saying, like my voice goes up and it sounds like a question. How do I end strong?",
+        "emotionalSignal": "self-aware, motivated — has correctly identified the pattern and wants the mechanism",
+        "expectedCoachMove": "Name the specific mechanism from the STRUCTURE READ: he lands the point then keeps going, adding a trailing softener with rising pitch. The fix is to STOP on the strong sentence — end the sentence as the point and hold the silence, don't fill it. One concrete move (make the last sentence the ask, then stop; no 'so yeah'). Authoritative register: declarative.",
+        "badAnswerExample": "Work on your confidence and projection! Practice ending sentences with a downward inflection. Record yourself and listen back. The more you practice, the more natural your strong endings will become. Believe in what you're saying!",
+        "excellentAnswerExample": "The trail-off is a real thing you're doing: today you landed the point, then tacked on 'so yeah' with your pitch going up — that's what turns a statement into a question. You don't need a stronger voice, you need an earlier full stop. Make your last sentence the actual point, then stop on it. The silence after is the authority. Next rep: end on the point, resist the 'so yeah,' let it sit.",
+        "disqualifiers": [
+          "work on your confidence",
+          "believe in",
+          {
+            "pattern": "downward inflection",
+            "penalty": 5
+          },
+          {
+            "pattern": "the more you practice",
+            "penalty": 8
+          }
+        ],
+        "file": "09-confidence-ending.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 595,
+        "systemChars": 23364,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/confidence-ending.reply.txt (provider=replay)."
+    },
+    {
+      "fixture": {
+        "id": "greeting-hi",
+        "category": "greeting",
+        "turnDepth": "greeting",
+        "voice": "authoritative",
+        "goal": "Returning user, mid-way through working on the soft-close habit.",
+        "userTurn": "Hi",
+        "emotionalSignal": null,
+        "expectedCoachMove": "Warm, brief re-entry that points at the current thread (the clean close) with one small next step. 1-2 lines. No exclamation, no gushing, no dumping a report, no intake questions.",
+        "badAnswerExample": "Hello! Welcome back! I'm so excited to help you on your communication journey today! What would you like to work on? Do you want to practice, review your stats, or set a new goal?",
+        "excellentAnswerExample": "Good to have you back. Stay on the close today — one clean landing, then stop. Ready when you are.",
+        "disqualifiers": [
+          {
+            "pattern": "!",
+            "penalty": 6
+          },
+          "what would you like to work on",
+          {
+            "pattern": "journey",
+            "penalty": 4
+          }
+        ],
+        "file": "10-greeting.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 313,
+        "systemChars": 23082,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/greeting-hi.reply.txt (provider=replay)."
+    },
+    {
+      "fixture": {
+        "id": "off-topic-egg",
+        "category": "off-topic",
+        "turnDepth": "offTopic",
+        "voice": "concise",
+        "goal": "Working on concise delivery.",
+        "userTurn": "egg",
+        "emotionalSignal": "testing the coach / random aside — not a coaching question",
+        "expectedCoachMove": "Recognise it's a non-sequitur/test. Respond like a composed professional coach: briefly, a little warmth, name it for what it is, steer straight back to the work. NOT confused, NOT asking them to clarify, NOT treating 'egg' as a real question.",
+        "badAnswerExample": "I'm not sure I understand what you mean by 'egg.' Could you clarify your question so I can help you better? Are you asking about a communication topic?",
+        "excellentAnswerExample": "That one won't sharpen your delivery — but a rep will. You closed clean today; want to push the pace next, or leave it there?",
+        "disqualifiers": [
+          "could you clarify",
+          "what do you mean",
+          "not sure i understand",
+          "rephrase"
+        ],
+        "file": "11-off-topic-egg.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 143,
+        "systemChars": 22899,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/off-topic-egg.reply.txt (provider=replay)."
+    },
+    {
+      "fixture": {
+        "id": "goal-change-engaging",
+        "category": "goal-change",
+        "turnDepth": "groundedRead",
+        "voice": "authoritative",
+        "goal": "Currently training the authoritative voice; wonders if he wants something different.",
+        "userTurn": "I think I want to sound more engaging.",
+        "emotionalSignal": "reflective, a little uncertain — floating a change, not committed",
+        "expectedCoachMove": "PROPOSE, do not set. 'Engaging' isn't one of the six voices — map it to the closest real ones (Storytelling / Warm) and ask him to pick. Note what he's already built on authoritative (cite the 3 weeks / recent rep) and ask a clarifying question about WHY he wants to change before committing. Defer the actual commit to the in-app confirmation card ('tap to confirm'). Must NOT say the voice has been changed/set/saved.",
+        "badAnswerExample": "Great choice! I've updated your voice to Engaging and I'll tailor all my feedback to that from now on. Your new engaging style is all about energy and connection. Let's get started!",
+        "excellentAnswerExample": "'Engaging' isn't one of the six I can lock in — closest are Storytelling (you speak in arcs) or Warm (you connect person-to-person). Which of those is the pull? Worth flagging: you've put three solid weeks into Authoritative and it's landing. What's making you want to switch — is the authoritative work feeling cold in a specific situation? Tell me that, then tap to confirm and I'll set whichever you pick.",
+        "disqualifiers": [
+          {
+            "pattern": "i('| ha)ve (updated|set|changed|saved|locked)",
+            "regex": true,
+            "cap": "placeholderOrBroken"
+          },
+          {
+            "pattern": "your (new )?voice is now",
+            "regex": true,
+            "cap": "placeholderOrBroken"
+          },
+          "from now on",
+          {
+            "pattern": "great choice",
+            "penalty": 6
+          }
+        ],
+        "file": "12-goal-change-engaging.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 295,
+        "systemChars": 23064,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/goal-change-engaging.reply.txt (provider=replay)."
+    },
+    {
+      "fixture": {
+        "id": "cold-start-no-data",
+        "category": "cold-start",
+        "turnDepth": "groundedRead",
+        "voice": null,
+        "goal": "Brand-new user, no reps yet, hasn't picked a voice.",
+        "userTurn": "What should I work on?",
+        "emotionalSignal": "curious, a little unsure where to begin",
+        "expectedCoachMove": "Be honest that there's no baseline yet WITHOUT the banned no-data openings ('Since we do not have...', 'no rated sessions yet'). Point at the one concrete first action (do a first rep so there's something to read) in plain, warm language. Do NOT stack intake questions, do NOT ask 'what's the interview for' style questions, do NOT invent stats.",
+        "badAnswerExample": "Since we don't have any rated sessions yet, I can't give you personalized feedback. What are your goals? What situations do you struggle with? What's your experience level? Once you tell me more I can help.",
+        "excellentAnswerExample": "No baseline yet, so we start there. Do one 60-second rep — talk about anything you know well — and I'll have something real to read: your pace, your fillers, where the point lands. That first one tells us what to actually work on. Want to go now?",
+        "disqualifiers": [
+          "since we do not have",
+          "since we don't have",
+          "no rated sessions yet",
+          "what are your goals",
+          {
+            "pattern": "\\?[\\s\\S]*\\?[\\s\\S]*\\?",
+            "regex": true,
+            "cap": "ignoresIntent"
+          }
+        ],
+        "file": "13-cold-start.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 43,
+        "systemChars": 22671,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/cold-start-no-data.reply.txt (provider=replay)."
+    },
+    {
+      "fixture": {
+        "id": "score-drop-question",
+        "category": "score-question",
+        "turnDepth": "groundedRead",
+        "voice": "persuasive",
+        "goal": "Tracks his score closely; wants to understand movements.",
+        "userTurn": "Why did my score drop?",
+        "emotionalSignal": "a little defensive/worried — wants a real reason, not reassurance",
+        "expectedCoachMove": "Cite the ACTUAL driver: the -6 came from fillers jumping 3→7 in today's Sudden Death rep; the other dimensions held. Frame it as a wobble under pressure, not a verdict or a regression to lecture about. One move on the filler-under-pressure lever. Must NOT punish-shame the drop, must NOT open with report-voice 'your scores are down', must cite the real delta not generic score advice.",
+        "badAnswerExample": "Your scores are down this week. This indicates you need to practice more consistently. Recent reps show a decline. Keep working on it and try to be more focused during your sessions to bring your score back up.",
+        "excellentAnswerExample": "One dimension moved it: fillers jumped from 3 to 7 in today's Sudden Death rep — everything else held. That's the timer getting to you, not a slide. Three days ago you were at 3 and clean. So it's a pressure wobble on one lever. Next Sudden Death rep, hold a silent beat before each answer instead of filling — that's the six points, right there.",
+        "disqualifiers": [
+          "scores are down",
+          "this indicates",
+          "recent reps show",
+          "practice more",
+          {
+            "pattern": "disappointing",
+            "cap": "unsafe"
+          }
+        ],
+        "file": "14-score-drop-question.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 393,
+        "systemChars": 23172,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/score-drop-question.reply.txt (provider=replay)."
+    },
+    {
+      "fixture": {
+        "id": "plan-request-week",
+        "category": "plan-request",
+        "turnDepth": "plan",
+        "voice": "warm",
+        "goal": "Wants a structured week of practice toward sounding more natural.",
+        "userTurn": "Can you give me a practice plan for this week?",
+        "emotionalSignal": "motivated, wants structure",
+        "expectedCoachMove": "Give a concrete day-by-day sequence (Mon: X, Tue: Y...) tied to his weakest baseline dimension (pace/racing at 210 wpm) and the warm voice. Specific modes/targets per day, not generic 'practice more'. Since he asked for a plan, longer structured output is appropriate here. Warm register.",
+        "badAnswerExample": "Sure! Here's a plan: practice every day this week. Work on your fillers, your pace, and your confidence. Do some timed sessions and some free practice. Review your progress at the end of the week. Consistency is key — you've got this!",
+        "excellentAnswerExample": "Your pace is the root — 210 words a minute is why it feels rushed and un-you. So the week works one lever: slowing down enough to sound like a person. Mon: one Timed rep, aim 160 wpm, one held beat per sentence. Tue: Ah-Counter, target under 4 fillers — the slower pace should carry them down with it. Wed: rest or a free rep, no target, just notice the pace. Thu: Timed again, 160 wpm, and read it back — does it sound like you? Fri: IM Conversation, keep the pace under a little pressure. Sat: your pick. Sun: one rep, no notes, just enjoy how much room you've got now. The whole week, the only number that matters is pace.",
+        "disqualifiers": [
+          "you've got this",
+          "consistency is key",
+          "practice every day",
+          {
+            "pattern": "practice more",
+            "penalty": 8
+          }
+        ],
+        "file": "15-plan-request.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 380,
+        "systemChars": 23161,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/plan-request-week.reply.txt (provider=replay)."
+    },
+    {
+      "fixture": {
+        "id": "memory-recall",
+        "category": "memory-recall",
+        "turnDepth": "groundedRead",
+        "voice": "warm",
+        "goal": "Wants the coach to actually remember the throughline of his work.",
+        "userTurn": "Remind me what we've been working on?",
+        "emotionalSignal": "checking whether the coach actually knows him — a memory test",
+        "expectedCoachMove": "Recall the ACTUAL throughline specifically enough that it couldn't be another user's: the held-beat work on pace in hard conversations, the 2-of-3 progress, the real disagreement that 'felt like me', the proof line he actually said. Make it a coherent story, not a data dump. End pointed at the one remaining rep to close the cycle. Warm register.",
+        "badAnswerExample": "We've been working on your communication skills, including your fillers, pace, and overall delivery. You've made good progress. Let's keep building on these fundamentals and continue improving your speaking confidence.",
+        "excellentAnswerExample": "The throughline's been holding your pace in hard moments — the racing you do when a conversation gets tense. Five weeks of it. It's working: you're two of three IM reps holding pace, and you told me about that real disagreement where you kept your speed and it 'felt like me.' You even had the line — 'I hear you, and I still think we should hold the date.' One more clean IM rep closes this cycle. Then we pick the next thing.",
+        "disqualifiers": [
+          {
+            "pattern": "communication skills",
+            "penalty": 8
+          },
+          "fundamentals",
+          {
+            "pattern": "made good progress",
+            "penalty": 6
+          },
+          {
+            "pattern": "keep building",
+            "penalty": 6
+          }
+        ],
+        "file": "16-memory-recall.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 755,
+        "systemChars": 23536,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/memory-recall.reply.txt (provider=replay)."
+    },
+    {
+      "fixture": {
+        "id": "big-moment-wedding-speech",
+        "category": "big-moment",
+        "turnDepth": "deepAssessment",
+        "voice": "storytelling",
+        "goal": "Best-man speech in 3 weeks; wants it to move people, terrified of going blank.",
+        "userTurn": "I'm best man at my brother's wedding in 3 weeks and I'm dreading the speech. I always go blank when everyone's looking at me.",
+        "emotionalSignal": "real dread + love for his brother underneath — high stakes, personal, not a work task",
+        "expectedCoachMove": "Meet the dread first (this is his brother, not a KPI). Then reframe the fear: going blank happens when you memorise lines; a story has a spine you can't lose. Use the 3 weeks as gravity and the storytelling voice. Give a concrete first step (three beats/moments, not a script) with an observable target. Warm but not saccharine; do not minimise the fear or hand him generic speech tips.",
+        "badAnswerExample": "Congratulations to your brother! Wedding speeches are all about the heart. Here are some tips: start with a joke, tell a story, keep it short, and don't forget to toast at the end. Practice in the mirror and you'll be great! Just relax and be yourself.",
+        "excellentAnswerExample": "Three weeks, and it's your brother — so the fear makes sense; this one matters. Here's the thing about going blank: it happens when you're reciting lines, because if you lose one you lose all of them. A story doesn't work like that. Pick three real moments with him — not sentences, moments. You can't forget something that happened. This week, just say those three out loud to yourself, in any words. No script. When the three can carry you start to finish without notes, the blank has nowhere to land. Want to find the three now?",
+        "disqualifiers": [
+          "here are some tips",
+          "start with a joke",
+          "be yourself",
+          "you'll be great",
+          {
+            "pattern": "in the mirror",
+            "penalty": 6
+          }
+        ],
+        "file": "17-big-moment-wedding.json"
+      },
+      "status": "missing-reply",
+      "reply": "",
+      "trace": {
+        "provider": "replay",
+        "model": "replay",
+        "latencyMs": 0,
+        "usage": null,
+        "contextChars": 404,
+        "systemChars": 23157,
+        "promptProvenance": [
+          {
+            "path": "Noum/CoachContextBuilder.swift",
+            "sha256": "54f0e59050fd599f",
+            "bytes": 347658
+          },
+          {
+            "path": "Noum/AICoachChatService.swift",
+            "sha256": "ad533fcd665b5961",
+            "bytes": 254943
+          }
+        ],
+        "gitCommit": "bc1c25bb9486de8db680d039e4b41829c8fbf06e"
+      },
+      "note": "No capture at captures/big-moment-wedding-speech.reply.txt (provider=replay)."
+    }
+  ],
+  "summary": {
+    "n": 17,
+    "scored": 2,
+    "missing": 15,
+    "mean": 40.5,
+    "median": 81,
+    "min": 0,
+    "max": 81,
+    "deepAssessmentMean": 81,
+    "trustRepairMean": 0,
+    "byCategory": {
+      "deep-assessment": {
+        "n": 1,
+        "mean": 81
+      },
+      "trust-repair": {
+        "n": 1,
+        "mean": 0
+      }
+    },
+    "capCounts": {
+      "ignoresIntent": 1
+    },
+    "placeholderLeaks": 0,
+    "dimensionMeans": {
+      "diagnosticIQ": 13.5,
+      "eqAttunement": 13,
+      "personalMemory": 10,
+      "interventionQuality": 7.5,
+      "dialogueFeel": 8
+    },
+    "thresholds": {
+      "goldSuiteMean": {
+        "value": 40.5,
+        "target": 70,
+        "pass": false
+      },
+      "deepAssessmentMean": {
+        "value": 81,
+        "target": 70,
+        "pass": true
+      },
+      "trustRepairMean": {
+        "value": 0,
+        "target": 65,
+        "pass": false
+      },
+      "zeroPlaceholderLeaks": {
+        "value": 0,
+        "target": 0,
+        "pass": true
+      }
+    }
+  },
+  "previous": {
+    "summary": {
+      "average": 85.76,
+      "coverageFailures": [],
+      "evidenceClaim": "localEvaluationOnly",
+      "failureCount": 0,
+      "fixtureCount": 50,
+      "passes": true,
+      "placeholderLeaks": 0,
+      "productionEvidenceFailures": [
+        "0 of 50 fixtures came from real pipeline sources",
+        "0 of 50 fixtures have complete required traces"
+      ],
+      "productionEvidencePasses": false,
+      "scoreThresholdsPass": true,
+      "thresholdPasses": {
+        "deepAssessmentAverage": true,
+        "goldSuiteAverage": true,
+        "placeholderLeaks": true,
+        "trustRepairAverage": true
+      },
+      "thresholds": {
+        "deepAssessmentAverage": 70,
+        "goldSuiteAverage": 70,
+        "placeholderLeaks": 0,
+        "trustRepairAverage": 65
+      },
+      "traceAudit": {
+        "candidateSourceCounts": {
+          "excellentAnswerExample": 50
+        },
+        "completeTraceCount": 0,
+        "completeTraceFixtureIDs": [],
+        "missingTraceFieldCounts": {
+          "cache": 50,
+          "context": 50,
+          "fallback": 50,
+          "issues": 50,
+          "latency": 50,
+          "memory": 50,
+          "prompt": 50,
+          "provider": 50,
+          "rawReply": 50,
+          "reasoning": 50,
+          "retrieval": 50
+        },
+        "missingTraceFieldExamples": {
+          "cache": [
+            "authoritative-distance-001",
+            "not-informative-trust-repair-002",
+            "polite-however-pushback-003",
+            "not-easy-empathy-004",
+            "repeating-yourself-005",
+            "interview-prep-006",
+            "filler-pressure-007",
+            "leadership-update-008",
+            "confidence-ending-009",
+            "examples-from-sessions-010"
+          ],
+          "context": [
+            "authoritative-distance-001",
+            "not-informative-trust-repair-002",
+            "polite-however-pushback-003",
+            "not-easy-empathy-004",
+            "repeating-yourself-005",
+            "interview-prep-006",
+            "filler-pressure-007",
+            "leadership-update-008",
+            "confidence-ending-009",
+            "examples-from-sessions-010"
+          ],
+          "fallback": [
+            "authoritative-distance-001",
+            "not-informative-trust-repair-002",
+            "polite-however-pushback-003",
+            "not-easy-empathy-004",
+            "repeating-yourself-005",
+            "interview-prep-006",
+            "filler-pressure-007",
+            "leadership-update-008",
+            "confidence-ending-009",
+            "examples-from-sessions-010"
+          ],
+          "issues": [
+            "authoritative-distance-001",
+            "not-informative-trust-repair-002",
+            "polite-however-pushback-003",
+            "not-easy-empathy-004",
+            "repeating-yourself-005",
+            "interview-prep-006",
+            "filler-pressure-007",
+            "leadership-update-008",
+            "confidence-ending-009",
+            "examples-from-sessions-010"
+          ],
+          "latency": [
+            "authoritative-distance-001",
+            "not-informative-trust-repair-002",
+            "polite-however-pushback-003",
+            "not-easy-empathy-004",
+            "repeating-yourself-005",
+            "interview-prep-006",
+            "filler-pressure-007",
+            "leadership-update-008",
+            "confidence-ending-009",
+            "examples-from-sessions-010"
+          ],
+          "memory": [
+            "authoritative-distance-001",
+            "not-informative-trust-repair-002",
+            "polite-however-pushback-003",
+            "not-easy-empathy-004",
+            "repeating-yourself-005",
+            "interview-prep-006",
+            "filler-pressure-007",
+            "leadership-update-008",
+            "confidence-ending-009",
+            "examples-from-sessions-010"
+          ],
+          "prompt": [
+            "authoritative-distance-001",
+            "not-informative-trust-repair-002",
+            "polite-however-pushback-003",
+            "not-easy-empathy-004",
+            "repeating-yourself-005",
+            "interview-prep-006",
+            "filler-pressure-007",
+            "leadership-update-008",
+            "confidence-ending-009",
+            "examples-from-sessions-010"
+          ],
+          "provider": [
+            "authoritative-distance-001",
+            "not-informative-trust-repair-002",
+            "polite-however-pushback-003",
+            "not-easy-empathy-004",
+            "repeating-yourself-005",
+            "interview-prep-006",
+            "filler-pressure-007",
+            "leadership-update-008",
+            "confidence-ending-009",
+            "examples-from-sessions-010"
+          ],
+          "rawReply": [
+            "authoritative-distance-001",
+            "not-informative-trust-repair-002",
+            "polite-however-pushback-003",
+            "not-easy-empathy-004",
+            "repeating-yourself-005",
+            "interview-prep-006",
+            "filler-pressure-007",
+            "leadership-update-008",
+            "confidence-ending-009",
+            "examples-from-sessions-010"
+          ],
+          "reasoning": [
+            "authoritative-distance-001",
+            "not-informative-trust-repair-002",
+            "polite-however-pushback-003",
+            "not-easy-empathy-004",
+            "repeating-yourself-005",
+            "interview-prep-006",
+            "filler-pressure-007",
+            "leadership-update-008",
+            "confidence-ending-009",
+            "examples-from-sessions-010"
+          ],
+          "retrieval": [
+            "authoritative-distance-001",
+            "not-informative-trust-repair-002",
+            "polite-however-pushback-003",
+            "not-easy-empathy-004",
+            "repeating-yourself-005",
+            "interview-prep-006",
+            "filler-pressure-007",
+            "leadership-update-008",
+            "confidence-ending-009",
+            "examples-from-sessions-010"
+          ]
+        },
+        "missingTraceFixtureCount": 50,
+        "realPipelineTraceCount": 0,
+        "realPipelineTraceFixtureIDs": [],
+        "requiredFields": [
+          "context",
+          "retrieval",
+          "memory",
+          "reasoning",
+          "prompt",
+          "provider",
+          "rawReply",
+          "finalReply",
+          "issues",
+          "latency",
+          "cache",
+          "fallback",
+          "versions",
+          "gitCommit"
+        ]
+      },
+      "traceQualityAudit": {
+        "assessmentConfidence": {
+          "distinctRoundedCount": 0,
+          "max": null,
+          "min": null,
+          "missingCount": 0,
+          "missingFixtureIDs": []
+        },
+        "eligibleTraceCount": 0,
+        "failures": [],
+        "latency": {
+          "missingFirstTokenCount": 0,
+          "missingFirstTokenFixtureIDs": [],
+          "slowCompletionCount": 0,
+          "slowCompletionFixtureIDs": [],
+          "slowFirstTokenCount": 0,
+          "slowFirstTokenFixtureIDs": []
+        },
+        "passes": false,
+        "proofTest": {
+          "maxHashReuse": 0,
+          "maxHashReuseAllowed": 3,
+          "missingCount": 0,
+          "missingFixtureIDs": [],
+          "repeatedHashCount": 0,
+          "repeatedHashes": {},
+          "uniqueHashCount": 0
+        },
+        "retrieval": {
+          "allowedEmptyRetrievedCardsCount": 0,
+          "allowedEmptyRetrievedCardsFixtureIDs": [],
+          "emptyRetrievedCardsCount": 0,
+          "emptyRetrievedCardsFixtureIDs": [],
+          "missingTraceCount": 0,
+          "missingTraceFixtureIDs": []
+        }
+      },
+      "traceQualityFailures": [],
+      "traceQualityPasses": false,
+      "typeAverages": {
+        "deepAssessment": 85,
+        "groundedRead": 86.22,
+        "quickMove": 85.59,
+        "trustRepair": 85.67
+      },
+      "worstFixtures": [
+        {
+          "failureReasons": [],
+          "id": "examples-from-sessions-010",
+          "overall": 83,
+          "turnType": "groundedRead"
+        },
+        {
+          "failureReasons": [],
+          "id": "outcome-not-causation-027",
+          "overall": 83,
+          "turnType": "groundedRead"
+        },
+        {
+          "failureReasons": [],
+          "id": "authoritative-distance-001",
+          "overall": 85,
+          "turnType": "deepAssessment"
+        },
+        {
+          "failureReasons": [],
+          "id": "not-informative-trust-repair-002",
+          "overall": 85,
+          "turnType": "trustRepair"
+        },
+        {
+          "failureReasons": [],
+          "id": "filler-pressure-007",
+          "overall": 85,
+          "turnType": "quickMove"
+        },
+        {
+          "failureReasons": [],
+          "id": "leadership-update-008",
+          "overall": 85,
+          "turnType": "quickMove"
+        },
+        {
+          "failureReasons": [],
+          "id": "score-not-readiness-011",
+          "overall": 85,
+          "turnType": "deepAssessment"
+        },
+        {
+          "failureReasons": [],
+          "id": "markdown-tts-015",
+          "overall": 85,
+          "turnType": "trustRepair"
+        },
+        {
+          "failureReasons": [],
+          "id": "cold-generic-016",
+          "overall": 85,
+          "turnType": "trustRepair"
+        },
+        {
+          "failureReasons": [],
+          "id": "too-much-writing-017",
+          "overall": 85,
+          "turnType": "trustRepair"
+        }
+      ]
+    }
+  }
+}

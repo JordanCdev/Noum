@@ -1,0 +1,29 @@
+{
+  "id": "confidence-ending",
+  "category": "confidence-ending",
+  "turnDepth": "groundedRead",
+  "voice": "authoritative",
+  "goal": "Wants to end statements with conviction instead of trailing off or upspeaking.",
+  "priorChatTurns": [],
+  "userTurn": "I always trail off at the end of what I'm saying, like my voice goes up and it sounds like a question. How do I end strong?",
+  "emotionalSignal": "self-aware, motivated — has correctly identified the pattern and wants the mechanism",
+  "evidence": { "pattern": "upspeak / trailing close", "structureRead": "trailed off" },
+  "memoryState": {
+    "goal": { "voice": "authoritative", "whyNow": "endings sound uncertain" },
+    "baseline": { "fillersPerMin": 3.8, "pace": 172, "pauseRate": 0.2 },
+    "recentReps": [
+      { "when": "today", "mode": "Timed", "score": 75, "fillers": 4, "durationSec": 65, "note": "point was strong, then ended on 'so yeah...' with rising pitch" }
+    ],
+    "structureRead": "The most-recent rep's close trailed off — ended on 'so yeah' with a rising pitch rather than landing the final sentence as the point.",
+    "caseFormulation": { "hypothesis": "keeps talking past the point — adds a trailing softener ('so yeah', 'anyway') instead of stopping on the strong sentence" }
+  },
+  "expectedCoachMove": "Name the specific mechanism from the STRUCTURE READ: he lands the point then keeps going, adding a trailing softener with rising pitch. The fix is to STOP on the strong sentence — end the sentence as the point and hold the silence, don't fill it. One concrete move (make the last sentence the ask, then stop; no 'so yeah'). Authoritative register: declarative.",
+  "badAnswerExample": "Work on your confidence and projection! Practice ending sentences with a downward inflection. Record yourself and listen back. The more you practice, the more natural your strong endings will become. Believe in what you're saying!",
+  "excellentAnswerExample": "The trail-off is a real thing you're doing: today you landed the point, then tacked on 'so yeah' with your pitch going up — that's what turns a statement into a question. You don't need a stronger voice, you need an earlier full stop. Make your last sentence the actual point, then stop on it. The silence after is the authority. Next rep: end on the point, resist the 'so yeah,' let it sit.",
+  "disqualifiers": [
+    "work on your confidence",
+    "believe in",
+    { "pattern": "downward inflection", "penalty": 5 },
+    { "pattern": "the more you practice", "penalty": 8 }
+  ]
+}

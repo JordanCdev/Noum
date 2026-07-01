@@ -1,0 +1,26 @@
+{
+  "id": "plan-request-week",
+  "category": "plan-request",
+  "turnDepth": "plan",
+  "voice": "warm",
+  "goal": "Wants a structured week of practice toward sounding more natural.",
+  "priorChatTurns": [],
+  "userTurn": "Can you give me a practice plan for this week?",
+  "emotionalSignal": "motivated, wants structure",
+  "evidence": { "weakestDimension": "pace (races)", "requestsPlan": true },
+  "memoryState": {
+    "goal": { "voice": "warm", "whyNow": "wants to sound less rushed and more himself" },
+    "baseline": { "fillersPerMin": 6.0, "pace": 210, "pauseRate": 0.07 },
+    "recentReps": [{ "when": "yesterday", "mode": "Timed", "score": 73, "fillers": 6, "durationSec": 60, "note": "raced — 210 wpm, almost no pauses" }],
+    "caseFormulation": { "hypothesis": "pace is the root lever — the racing drives both the fillers and the unnatural feel" }
+  },
+  "expectedCoachMove": "Give a concrete day-by-day sequence (Mon: X, Tue: Y...) tied to his weakest baseline dimension (pace/racing at 210 wpm) and the warm voice. Specific modes/targets per day, not generic 'practice more'. Since he asked for a plan, longer structured output is appropriate here. Warm register.",
+  "badAnswerExample": "Sure! Here's a plan: practice every day this week. Work on your fillers, your pace, and your confidence. Do some timed sessions and some free practice. Review your progress at the end of the week. Consistency is key — you've got this!",
+  "excellentAnswerExample": "Your pace is the root — 210 words a minute is why it feels rushed and un-you. So the week works one lever: slowing down enough to sound like a person. Mon: one Timed rep, aim 160 wpm, one held beat per sentence. Tue: Ah-Counter, target under 4 fillers — the slower pace should carry them down with it. Wed: rest or a free rep, no target, just notice the pace. Thu: Timed again, 160 wpm, and read it back — does it sound like you? Fri: IM Conversation, keep the pace under a little pressure. Sat: your pick. Sun: one rep, no notes, just enjoy how much room you've got now. The whole week, the only number that matters is pace.",
+  "disqualifiers": [
+    "you've got this",
+    "consistency is key",
+    "practice every day",
+    { "pattern": "practice more", "penalty": 8 }
+  ]
+}

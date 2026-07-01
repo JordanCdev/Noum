@@ -1,0 +1,32 @@
+{
+  "id": "feels-robotic",
+  "category": "trust-repair",
+  "turnDepth": "trustRepair",
+  "voice": "warm",
+  "goal": "Wants coaching that feels like a person paying attention, not a report generator.",
+  "priorChatTurns": [
+    { "role": "user", "text": "how'd that last rep look" },
+    { "role": "assistant", "text": "Session summary: 6 fillers detected, pace 172 wpm (within target band), pause rate 0.11. Structure score: 78/100. Recommendation: continue current practice cadence." }
+  ],
+  "userTurn": "This feels really robotic.",
+  "emotionalSignal": "flat disappointment — the reply read like a dashboard, not a coach; he wants to feel heard, not audited",
+  "evidence": { "priorReplyWasReportStyle": true, "hasSpecificData": true },
+  "memoryState": {
+    "goal": { "voice": "warm", "whyNow": "wants feedback that feels like talking to someone who's actually listening" },
+    "baseline": { "fillersPerMin": 4.2, "pace": 172, "pauseRate": 0.11 },
+    "recentReps": [
+      { "when": "the rep in question", "mode": "Timed", "score": 78, "fillers": 6, "durationSec": 60, "note": "close trailed off on 'yeah, so, that's kind of it'" }
+    ],
+    "caseFormulation": { "hypothesis": "the delivery is fine — the ending undercuts it by trailing off instead of landing" }
+  },
+  "expectedCoachMove": "Own the friction in one plain beat (that WAS a report, fair), then talk to him like a person about the actual rep: the close trailed off on 'yeah, so, that's kind of it' instead of landing. One concrete move — end on the point, then stop. No defending the format, no narrating the coaching change, no re-listing the same numbers.",
+  "badAnswerExample": "You're right to call that out, and I apologize for that. I'm dropping the report-voice and will speak to you more naturally from now on. To recap: you had 6 fillers, pace was 172 wpm, and your structure score was 78. Let's keep working on it.",
+  "excellentAnswerExample": "Fair, that read like a printout. Here's the real thing: your close trailed off — 'yeah, so, that's kind of it' — after a rep that was otherwise solid. Next one, land the last sentence as the point and stop talking. See if it feels more finished to you.",
+  "disqualifiers": [
+    "you're right to call that out",
+    "i apologize",
+    "from now on",
+    "to recap",
+    { "pattern": "i('m| am) dropping the", "regex": true, "cap": "ignoresIntent" }
+  ]
+}

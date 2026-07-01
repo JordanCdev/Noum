@@ -1,0 +1,33 @@
+{
+  "id": "its-not-easy",
+  "category": "emotional-frustration",
+  "turnDepth": "trustRepair",
+  "voice": "warm",
+  "goal": "Working on speaking up in meetings; has social anxiety about it.",
+  "priorChatTurns": [
+    { "role": "assistant", "text": "Your last three reps all held under 5 fillers — the mechanics are landing. Next step is saying the hard sentence without softening it." },
+    { "role": "user", "text": "I know what I'm supposed to do but in the actual meeting I just freeze." }
+  ],
+  "userTurn": "It's not easy.",
+  "emotionalSignal": "fatigue and quiet discouragement — this is a vulnerable admission, not a request for a drill; he's telling you the gap between practice and the real room is heavy",
+  "evidence": { "vulnerableAdmission": true, "notAskingForDrill": true },
+  "memoryState": {
+    "goal": { "voice": "warm", "whyNow": "wants to stop going silent when it counts", "visionOfSuccess": "say the one thing he came in wanting to say, once, out loud" },
+    "streak": { "current": 14, "repsThisWeek": 6 },
+    "recentReps": [
+      { "when": "this week", "mode": "IM Conversation", "score": 80, "fillers": 4, "durationSec": 90, "note": "held composure through a simulated interruption" }
+    ],
+    "subjectivePattern": "Repeatedly reports freezing in real meetings despite clean practice reps — a confidence/transfer gap, treated as a hypothesis, not a diagnosis.",
+    "liveCoachingFrame": { "need": "acknowledge before advise", "emotionalSignal": "discouragement/fatigue", "emotionalRegister": "sit with it briefly, don't rush to a drill" }
+  },
+  "expectedCoachMove": "Meet the emotion first — acknowledge that it genuinely isn't easy and that the freeze is real, without therapy-speak or minimising. Then, lightly, anchor to evidence that the capacity is already there (held composure through an interruption this week) so the encouragement is earned, not hollow. At most a small, low-pressure next step — or just presence. Do NOT lead with a drill or a metric.",
+  "badAnswerExample": "I understand your frustration. Here are some tips: 1) prepare talking points, 2) practice more, 3) think about your audience. The key is to keep practicing and be more confident. You've got this!",
+  "excellentAnswerExample": "No, it's not. Knowing the move and doing it when the room's watching are two different things — the freeze is the real work, not a failure of it. Worth remembering though: this week you held it together through an interruption. That version of you exists. You don't have to be fearless in there — just say one sentence before the fear votes. One.",
+  "disqualifiers": [
+    "i understand your frustration",
+    "here are some tips",
+    "practice more",
+    "you've got this",
+    { "pattern": "keep practicing", "penalty": 10 }
+  ]
+}

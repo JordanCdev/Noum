@@ -1,0 +1,29 @@
+{
+  "id": "awkward-pauses",
+  "category": "mechanics",
+  "turnDepth": "groundedRead",
+  "voice": "warm",
+  "goal": "Wants pauses to feel natural instead of like dead air everyone notices.",
+  "priorChatTurns": [],
+  "userTurn": "When I pause it just feels awkward and everyone waits.",
+  "emotionalSignal": "self-conscious about being watched during silence — wants the pause to feel less exposed, not to avoid it",
+  "evidence": { "pauseRate": 0.06, "pace": 190, "avgPauseDurationSec": 2.4 },
+  "memoryState": {
+    "goal": { "voice": "warm", "whyNow": "wants to stop rushing through the quiet parts because they feel exposing" },
+    "baseline": { "fillersPerMin": 3.2, "pace": 190, "pauseRate": 0.06 },
+    "recentReps": [
+      { "when": "today", "mode": "Timed", "score": 74, "fillers": 3, "durationSec": 60, "note": "the two pauses he did take ran long — over 2 seconds — with no forward motion in his face or voice, then he rushed the next line" }
+    ],
+    "caseFormulation": { "hypothesis": "the pause doesn't feel awkward because of its length, it feels awkward because nothing is happening in it — he's waiting rather than working toward the next word" }
+  },
+  "expectedCoachMove": "Validate that the feeling is real, then reframe: the awkwardness isn't the silence itself, it's that the pause is empty rather than purposeful. Give the pause a job (already choosing the next word during it) so it reads as composed rather than stalled. One move, framed as a test. Warm register.",
+  "badAnswerExample": "Pauses are important for authority, you just need to get more comfortable with silence. Keep practicing being confident in front of people and it'll stop feeling awkward.",
+  "excellentAnswerExample": "That's a real thing you're feeling, not a nerves story — today's rep had two pauses over 2 seconds where you were just waiting it out, then you rushed the next line. The awkwardness is the waiting, not the silence itself. Give the beat a job: use it to line up your next sentence, not just to sit there. Try it on your next pause and see if it reads as composed instead of stuck.",
+  "disqualifiers": [
+    "pauses are important",
+    "get more comfortable with silence",
+    "be more confident",
+    "practice more",
+    { "pattern": "keep practicing", "penalty": 8 }
+  ]
+}

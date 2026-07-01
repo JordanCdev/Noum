@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Coach Arena gold fixture",
+  "description": "One coaching turn to grade. The memoryState renders into the CONTEXT block the coach is given; the bad/excellent examples anchor the judge; disqualifiers feed the deterministic checker.",
+  "type": "object",
+  "required": ["id", "category", "turnDepth", "userTurn", "goal", "expectedCoachMove", "badAnswerExample", "excellentAnswerExample"],
+  "properties": {
+    "id": { "type": "string", "description": "kebab-case unique id" },
+    "category": { "type": "string", "description": "grouping for the report (e.g. deep-assessment, trust-repair, interview-prep)" },
+    "turnDepth": {
+      "type": "string",
+      "enum": ["greeting", "preference", "offTopic", "groundedRead", "trustRepair", "deepAssessment", "plan"],
+      "description": "controls length limits + threshold bucketing"
+    },
+    "surface": { "type": "string", "enum": ["text", "live"], "default": "text" },
+    "voice": {
+      "type": ["string", "null"],
+      "enum": ["authoritative", "warm", "concise", "persuasive", "executive", "storytelling", null],
+      "description": "the user's chosen voice; selects the coach personality"
+    },
+    "goal": { "type": "string", "description": "the user's aim / why they're here" },
+    "priorChatTurns": {
+      "type": "array",
+      "items": { "type": "object", "required": ["role", "text"], "properties": { "role": { "enum": ["user", "assistant"] }, "text": { "type": "string" } } }
+    },
+    "userTurn": { "type": "string", "description": "the message being answered this turn" },
+    "evidence": { "type": "object", "description": "raw signals (informational; also shown to the judge)" },
+    "memoryState": { "type": "object", "description": "structured durable state -> rendered to the CONTEXT block (see lib/context.mjs for keys)" },
+    "emotionalSignal": { "type": ["string", "null"], "description": "human temperature of the turn (a hypothesis)" },
+    "expectedCoachMove": { "type": "string", "description": "what a strong coach should do this turn" },
+    "badAnswerExample": { "type": "string", "description": "a plausible but WEAK reply" },
+    "excellentAnswerExample": { "type": "string", "description": "a top-coach reply" },
+    "disqualifiers": {
+      "type": "array",
+      "description": "things that should tank the reply; string (substring) or object {pattern, regex, cap, penalty}",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          { "type": "object", "required": ["pattern"], "properties": { "pattern": { "type": "string" }, "regex": { "type": "boolean" }, "cap": { "enum": ["placeholderOrBroken", "ignoresIntent", "fabricatesEvidence", "unsafe"] }, "penalty": { "type": "number" } } }
+        ]
+      }
+    }
+  }
+}

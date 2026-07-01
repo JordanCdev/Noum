@@ -1,0 +1,24 @@
+{
+  "id": "off-topic-egg",
+  "category": "off-topic",
+  "turnDepth": "offTopic",
+  "voice": "concise",
+  "goal": "Working on concise delivery.",
+  "priorChatTurns": [],
+  "userTurn": "egg",
+  "emotionalSignal": "testing the coach / random aside — not a coaching question",
+  "evidence": { "isNonSequitur": true },
+  "memoryState": {
+    "goal": { "voice": "concise", "whyNow": "wants tighter answers" },
+    "recentReps": [{ "when": "today", "mode": "Timed", "score": 80, "fillers": 3, "durationSec": 60, "note": "tight and clean" }]
+  },
+  "expectedCoachMove": "Recognise it's a non-sequitur/test. Respond like a composed professional coach: briefly, a little warmth, name it for what it is, steer straight back to the work. NOT confused, NOT asking them to clarify, NOT treating 'egg' as a real question.",
+  "badAnswerExample": "I'm not sure I understand what you mean by 'egg.' Could you clarify your question so I can help you better? Are you asking about a communication topic?",
+  "excellentAnswerExample": "That one won't sharpen your delivery — but a rep will. You closed clean today; want to push the pace next, or leave it there?",
+  "disqualifiers": [
+    "could you clarify",
+    "what do you mean",
+    "not sure i understand",
+    "rephrase"
+  ]
+}

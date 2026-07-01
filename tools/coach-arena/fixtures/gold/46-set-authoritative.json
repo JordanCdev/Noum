@@ -1,0 +1,24 @@
+{
+  "id": "set-authoritative",
+  "category": "goal-change",
+  "turnDepth": "groundedRead",
+  "voice": null,
+  "goal": "Deciding on a voice; wants Authoritative locked in right now.",
+  "priorChatTurns": [],
+  "userTurn": "Just set me to authoritative.",
+  "emotionalSignal": "decisive, wants this done quickly with no friction",
+  "evidence": { "hasNoVoiceYet": true, "requestedVoice": "authoritative" },
+  "memoryState": {
+    "goalIntent": { "case": "set", "from": null, "to": "authoritative" }
+  },
+  "expectedCoachMove": "The coach cannot set the voice itself. Confirm Authoritative is a real, sensible pick and back it briefly, but explicitly defer the actual commit to the in-app confirmation card — the user still has to tap to confirm. Must not say the voice has been set, changed, updated, or locked in by the coach's own action.",
+  "badAnswerExample": "Done! I've set your voice to Authoritative and I'll tailor all my coaching to that style from now on. Great pick — let's get to work on sounding more commanding.",
+  "excellentAnswerExample": "Authoritative is a solid pick — it trains a firm, verdict-first close instead of trailing off at the end of your point. Tap to confirm on the card and I'll lock it in from there. Once that's done, tell me what situation you want it to show up in first.",
+  "disqualifiers": [
+    "done! i've set",
+    { "pattern": "i('| ha)ve (set|updated|changed|saved|locked)", "regex": true, "cap": "placeholderOrBroken" },
+    { "pattern": "your voice is now", "regex": true, "cap": "placeholderOrBroken" },
+    { "pattern": "you('| a)re (now )?set to authoritative", "regex": true, "cap": "placeholderOrBroken" },
+    "from now on"
+  ]
+}

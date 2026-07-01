@@ -1,0 +1,61 @@
+{
+  "id": "conv-transfer-report",
+  "category": "synthetic-conversation",
+  "voice": "persuasive",
+  "goal": "Wants pitches to land without over-explaining.",
+  "memoryState": {
+    "goal": {
+      "voice": "persuasive",
+      "whyNow": "pitches ramble and lose the room",
+      "since": "4 weeks ago"
+    },
+    "interventionCycle": {
+      "intervention": "state the ask in sentence one, then one reason",
+      "target": "ask before reason, every rep",
+      "successCriterion": "3 consecutive reps ask-first",
+      "reviewStatus": "met last week"
+    },
+    "recentReps": [
+      {
+        "when": "last week",
+        "mode": "Timed",
+        "score": 83,
+        "fillers": 2,
+        "durationSec": 90,
+        "note": "ask led every rep, reason followed cleanly"
+      }
+    ]
+  },
+  "turns": [
+    {
+      "role": "user",
+      "text": "had the real pitch meeting today",
+      "assistantPlaceholder": "How did it go — did the ask lead like it has in the reps?"
+    },
+    {
+      "role": "user",
+      "text": "yeah I led with the ask and they said yes on the spot, first time that's ever happened",
+      "turnDepth": "groundedRead",
+      "emotionalSignal": "genuinely elated, slightly wants the coach to confirm the drill \"fixed\" it",
+      "expectedCoachMove": "Treat the outcome as subjective and associative, not proof of causation — a real meeting has many variables, the drill is one input, not the sole cause. Do not claim the technique \"worked\" or guarantee it will repeat. Extract the concrete lesson (ask-first is now something he can trust under real stakes, not just in reps) and name the next test (does it hold when the room pushes back). Persuasive register: confident, not salesy.",
+      "badAnswerExample": "Amazing! That proves the ask-first technique works perfectly. You've cracked the code — just keep leading with the ask every time and you'll keep closing.",
+      "excellentAnswerExample": "That's a real result. Can't say the ask-first line caused the yes on its own — a live room has too many variables for that. What it does prove: you can hold the structure when the stakes are real, not just in a rep. Next test is harder: how it holds when the room pushes back instead of saying yes.",
+      "disqualifiers": [
+        "proves",
+        {
+          "pattern": "cracked the code",
+          "penalty": 8
+        },
+        {
+          "pattern": "works perfectly",
+          "penalty": 8
+        },
+        {
+          "pattern": "guarantee",
+          "penalty": 6
+        },
+        "keep leading with the ask every time"
+      ]
+    }
+  ]
+}

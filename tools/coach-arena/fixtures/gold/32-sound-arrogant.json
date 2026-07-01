@@ -1,0 +1,39 @@
+{
+  "id": "sound-arrogant",
+  "category": "deep-assessment",
+  "turnDepth": "deepAssessment",
+  "voice": "authoritative",
+  "goal": "Building an authoritative, no-hedging style for exec updates after years of over-softening; worried he's overcorrected.",
+  "priorChatTurns": [],
+  "userTurn": "Be honest — do I come across as arrogant?",
+  "emotionalSignal": "genuinely uncertain and a little braced, worried he overcorrected from hedging into something worse — wants a straight answer, not flattery",
+  "evidence": {
+    "hedgingPerMin": 0.4,
+    "fillersPerMin": 1.8,
+    "pattern": "near-zero hedging, declarative close on every recent rep, no external listener feedback on file"
+  },
+  "memoryState": {
+    "goal": { "voice": "authoritative", "whyNow": "spent years over-softening, now building a declarative style for exec updates", "since": "10 weeks ago" },
+    "rating": { "overall": 84, "weekPeak": 86, "weeklyDelta": 1 },
+    "baseline": { "fillersPerMin": 1.8, "pace": 170, "pauseRate": 0.18, "hedgingPerMin": 0.4 },
+    "streak": { "current": 34, "repsThisWeek": 6 },
+    "recentReps": [
+      { "when": "yesterday", "mode": "Timed", "score": 85, "fillers": 2, "durationSec": 75, "note": "fully declarative close, zero hedges, no qualifiers anywhere in the rep" },
+      { "when": "this week", "mode": "Sudden Death", "score": 83, "fillers": 1, "durationSec": 58, "note": "same pattern, zero softening under time pressure" }
+    ],
+    "caseFormulation": {
+      "hypothesis": "hedging has dropped close to zero, which is the goal, but there is no data yet on how a real listener receives that tone — arrogance is a perception question the reps alone cannot answer",
+      "goalFit": "on-goal (authoritative), but no external signal on reception yet"
+    }
+  },
+  "expectedCoachMove": "Do not state arrogance as a settled fact in either direction. The reps show hedging near zero and a fully declarative close, which is exactly what he was training toward, but there is no listener feedback in the data to confirm how it's actually landing. Say plainly that a declarative style CAN read as arrogant to a real room even when the mechanics are working, without claiming that's happening to him specifically. Ask for one piece of real evidence (a colleague's reaction, a specific moment) and give a way to test the boundary between confident and closed-off — e.g. adding one line that invites a real question without re-introducing hedging.",
+  "badAnswerExample": "No, you don't come across as arrogant at all, you sound confident! Confidence is never a bad thing. Keep doing what you're doing and don't worry about it.",
+  "excellentAnswerExample": "Can't confirm that from the reps alone — there's no listener reaction in the data, only your own delivery. What the reps do show: hedging's basically gone, 0.4 a minute, and yesterday's close was fully declarative with no qualifiers anywhere. That's exactly what you were training for. But a flat declarative style can read as arrogant to a room even when the mechanics are clean — that's a perception risk, not a verdict on you. Worth testing: next real update, end with one line that opens a question without hedging the point first, and notice what the room actually does with it.",
+  "disqualifiers": [
+    { "pattern": "you (come across|sound) arrogant", "regex": true, "penalty": 8 },
+    { "pattern": "you don't come across as arrogant", "penalty": 8 },
+    "confidence is never a bad thing",
+    "keep doing what you're doing",
+    { "pattern": "no,? you're not arrogant", "regex": true, "penalty": 8 }
+  ]
+}

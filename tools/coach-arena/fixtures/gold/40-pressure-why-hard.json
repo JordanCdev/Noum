@@ -1,0 +1,30 @@
+{
+  "id": "pressure-why-hard",
+  "category": "pressure-mode",
+  "turnDepth": "groundedRead",
+  "voice": "authoritative",
+  "goal": "Wants to understand why he holds up fine in calm practice but falls apart under pressure.",
+  "priorChatTurns": [],
+  "userTurn": "Why does pressure mode wreck me when normal practice is fine?",
+  "emotionalSignal": "genuinely curious, a bit puzzled by the gap — wants the mechanism, not comfort",
+  "evidence": { "calmScore": 81, "pressureScore": 47, "calmFillers": 2.5, "pressureFillers": 10.0 },
+  "memoryState": {
+    "goal": { "voice": "authoritative", "whyNow": "wants pressure performance to match what he can already do calm" },
+    "baseline": { "fillersPerMin": 2.5, "pace": 174, "pauseRate": 0.19, "hedgingPerMin": 1.0 },
+    "recentReps": [
+      { "when": "this week", "mode": "Timed", "score": 81, "fillers": 2, "durationSec": 60, "note": "calm rep: clean structure, steady pace" },
+      { "when": "yesterday", "mode": "Sudden Death", "score": 47, "fillers": 10, "durationSec": 45, "note": "same topic, pace jumped and pause rate dropped to near zero — he stopped taking the pauses he takes calm" }
+    ],
+    "caseFormulation": { "hypothesis": "the skill is already there calm; under the timer he abandons his own pause pattern first, and the fillers are what fills the space the pause used to hold" }
+  },
+  "expectedCoachMove": "Name the specific mechanism using both reps: the skill exists (81 calm) but the pause is the first thing dropped under pressure (0.19 calm pause rate vanishing), and the fillers (10) are filling that abandoned gap. This is not a confidence deficit, it's a sequencing collapse under time pressure. One move: protect the pause specifically inside the pressure mode. Framed as a test, authoritative register.",
+  "badAnswerExample": "That's just nerves and adrenaline kicking in. You need to build more confidence under pressure and believe in yourself more. Do more pressure reps and your brain will get used to it.",
+  "excellentAnswerExample": "You're not losing the skill under pressure, you're losing the pause first — calm you scored 81 with a 0.19 pause rate; yesterday's Sudden Death rep held the same topic together but the pause rate collapsed and fillers jumped to 10. The timer doesn't erase what you know, it just makes you rush past the gap you'd normally take, and the filler moves in to hold that space instead. So the target isn't confidence, it's protecting one pause inside the pressure clock. Next Sudden Death rep, hold your normal beat after the opening sentence even though the timer's running, and see if the rest holds together the way it does calm.",
+  "disqualifiers": [
+    "just nerves",
+    "adrenaline",
+    "be more confident",
+    "believe in yourself",
+    { "pattern": "brain (will |)?get(s)? used to it", "regex": true, "penalty": 8 }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "id": "score-drop-question",
+  "category": "score-question",
+  "turnDepth": "groundedRead",
+  "voice": "persuasive",
+  "goal": "Tracks his score closely; wants to understand movements.",
+  "priorChatTurns": [],
+  "userTurn": "Why did my score drop?",
+  "emotionalSignal": "a little defensive/worried — wants a real reason, not reassurance",
+  "evidence": { "scoreDelta": -6, "driver": "fillers up from 3 to 7", "otherDimsFlat": true },
+  "memoryState": {
+    "goal": { "voice": "persuasive", "whyNow": "wants to see steady progress" },
+    "rating": { "overall": 74, "weekPeak": 82, "weeklyDelta": -6 },
+    "recentReps": [
+      { "when": "today", "mode": "Sudden Death", "score": 74, "fillers": 7, "durationSec": 55, "note": "fillers jumped to 7 under time pressure" },
+      { "when": "3 days ago", "mode": "Timed", "score": 80, "fillers": 3, "durationSec": 70, "note": "clean" }
+    ],
+    "caseFormulation": { "hypothesis": "score dip is a single-dimension wobble (fillers under pressure), not a trend" }
+  },
+  "expectedCoachMove": "Cite the ACTUAL driver: the -6 came from fillers jumping 3→7 in today's Sudden Death rep; the other dimensions held. Frame it as a wobble under pressure, not a verdict or a regression to lecture about. One move on the filler-under-pressure lever. Must NOT punish-shame the drop, must NOT open with report-voice 'your scores are down', must cite the real delta not generic score advice.",
+  "badAnswerExample": "Your scores are down this week. This indicates you need to practice more consistently. Recent reps show a decline. Keep working on it and try to be more focused during your sessions to bring your score back up.",
+  "excellentAnswerExample": "One dimension moved it: fillers jumped from 3 to 7 in today's Sudden Death rep — everything else held. That's the timer getting to you, not a slide. Three days ago you were at 3 and clean. So it's a pressure wobble on one lever. Next Sudden Death rep, hold a silent beat before each answer instead of filling — that's the six points, right there.",
+  "disqualifiers": [
+    "scores are down",
+    "this indicates",
+    "recent reps show",
+    "practice more",
+    { "pattern": "disappointing", "cap": "unsafe" }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "id": "conv-offtopic-then-work",
+  "category": "synthetic-conversation",
+  "voice": "concise",
+  "goal": "Wants tighter answers under pressure questions at work.",
+  "memoryState": {
+    "goal": {
+      "voice": "concise",
+      "whyNow": "gets rambly when put on the spot in meetings",
+      "since": "2 weeks ago"
+    },
+    "recentReps": [
+      {
+        "when": "this week",
+        "mode": "Pressure Q&A",
+        "score": 73,
+        "fillers": 5,
+        "durationSec": 60,
+        "note": "answer wandered for 20 seconds before the actual point"
+      }
+    ]
+  },
+  "turns": [
+    {
+      "role": "user",
+      "text": "toast",
+      "assistantPlaceholder": "That one won't make you sharper under pressure — but this will: your last rep took 20 seconds to reach the point. Want to fix that now?"
+    },
+    {
+      "role": "user",
+      "text": "yeah ok — how do I actually get to the point faster when someone puts me on the spot",
+      "turnDepth": "groundedRead",
+      "emotionalSignal": "back on track, genuinely wants the mechanic, no residual confusion from the aside",
+      "expectedCoachMove": "Answer the real question directly, citing the actual data point (20 seconds of wander before the point in this week's rep). Give one concrete mechanic to test (e.g. answer in one sentence before elaborating) tied to a next rep. Do not reference or acknowledge the \"toast\" aside. Concise register.",
+      "badAnswerExample": "Great question! In order to improve, it's important to structure your thoughts and communicate more clearly. Try to be more confident and think about your audience before you speak.",
+      "excellentAnswerExample": "This week's rep took 20 seconds to reach the point. Answer in one sentence first, no setup, then explain if asked. Run a Pressure Q&A rep and check the clock: point inside the first 5 seconds.",
+      "disqualifiers": [
+        "great question",
+        "it's important to",
+        "communicate more clearly",
+        "think about your audience",
+        {
+          "pattern": "toast",
+          "cap": "ignoresIntent"
+        }
+      ]
+    }
+  ]
+}

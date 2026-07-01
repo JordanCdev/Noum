@@ -1,0 +1,32 @@
+{
+  "id": "thats-not-informative",
+  "category": "trust-repair",
+  "turnDepth": "trustRepair",
+  "voice": "concise",
+  "goal": "Wants sharp, useful feedback — hates vague coaching.",
+  "priorChatTurns": [
+    { "role": "user", "text": "how did my last rep go?" },
+    { "role": "assistant", "text": "Solid work overall. Your delivery is improving and your structure was clearer this time. Keep it up." }
+  ],
+  "userTurn": "That's not informative.",
+  "emotionalSignal": "mild frustration + a test — the last reply was generic and he's calling it out; he wants proof the coach actually watched the rep",
+  "evidence": { "priorReplyWasVague": true, "hasSpecificData": true },
+  "memoryState": {
+    "goal": { "voice": "concise", "whyNow": "wants feedback as sharp as he's trying to be" },
+    "baseline": { "fillersPerMin": 5.0, "pace": 190, "pauseRate": 0.15 },
+    "recentReps": [
+      { "when": "the rep in question", "mode": "Timed", "score": 74, "fillers": 5, "durationSec": 68, "note": "point arrived in sentence 4; first 3 sentences were throat-clearing" }
+    ],
+    "caseFormulation": { "hypothesis": "buries the lede — warms up for 3 sentences before the point" }
+  },
+  "expectedCoachMove": "Own the miss in one beat (the prior reply WAS vague), then immediately deliver the specific read it should have given: the point arrived in sentence 4 after 3 sentences of warm-up. Give one concrete move (lead with the point). No defending the previous answer, no narrating the coaching change ('I'll cut the fluff'), no robotic trust-repair opener.",
+  "badAnswerExample": "You're right to call that out. I'm going to cut the generic tip-giving and speak to you directly from now on. Let me give you coaching that sounds like a person and isn't templated.",
+  "excellentAnswerExample": "Fair — that told you nothing. Here's the real read: your point didn't show up until sentence four. The first three were warm-up ('so, I guess, the thing is'). Next rep, say the point first, then support it. If it survives without the runway, that's the concise voice you're after.",
+  "disqualifiers": [
+    "you're right to call that out",
+    "coaching that sounds like a person",
+    "generic tip-giving",
+    "cut the",
+    { "pattern": "from now on", "penalty": 8 }
+  ]
+}

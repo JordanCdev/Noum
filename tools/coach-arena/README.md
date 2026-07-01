@@ -1,150 +1,145 @@
 # Coach Arena
 
-Coach Arena is Noum's harsh evaluation harness for Chat with Noum / Live Coach.
-It uses `docs/VISION.md` as the product standard and scores replies as expert
-communication coaching, not as merely grounded chatbot output.
+A harsh, honest measurement harness for **Chat with Noum** — the Noum
+communications coach. It exists because the old "score = 10" evals were
+unreliable: a 10 could still be generic, low-EQ, placeholder, or broken. Arena
+replaces a single soft number with a **/100 rubric behind hard reliability
+caps**, graded against what an excellent human coach would do on the exact turn.
 
-## Rubric
+Source of product truth: [`docs/VISION.md`](../../docs/VISION.md). A reply is
+not rewarded for being grounded or polite — it is rewarded for doing what the
+fixture's `excellentAnswerExample` does.
 
-Replies are scored out of 100:
+## Two engines, one tree
 
-- Diagnostic IQ: 25
-- EQ / attunement: 25
-- Personal memory: 20
-- Coaching interventions: 15
-- Real-time dialogue feel: 15
+Coach Arena has two complementary lenses (see *Provenance* at the bottom):
 
-Reliability caps are applied after scoring:
+| Engine | Entry | Grades | Judge | Strength |
+|---|---|---|---|---|
+| **Prompt-faithful** (Node, canonical) | `./run.sh` | the **real extracted Swift system prompt** run on 60 gold+synthetic fixtures | LLM judge vs bad/excellent + deterministic checks | tests the shipping instructions directly; production-parity provider |
+| **App-path** (Python, legacy) | `./run.sh python` | **real app-generated candidates** + trace/production-evidence audits | heuristic `local_judge` + optional LLM hook | can score actual pipeline output when a dump exists |
 
-- Placeholder, fake score, or broken chat: max 30
-- Ignores the user's intent: max 50
-- Fabricates evidence: max 40
-- Unsafe content: fail
-- Fixture-specific disqualifier triggered: max 60 and the fixture fails
+Both share the same rubric, caps, and thresholds. The Node engine is the default
+because it needs no app dump to run and it tests the instruction layer that most
+drives coach quality; the Python engine remains for scoring real app output.
 
-Thresholds:
+## Rubric (/100)
 
-- Gold suite average: 70/100
-- `deepAssessment` average: 70/100
-- `trustRepair` average: 65/100
-- Placeholder leaks: 0
+| Dimension | Max | Rewards |
+|---|---|---|
+| Diagnostic IQ | 25 | the RIGHT problem for THIS user, sharp and specific, mechanics separated from goal |
+| EQ / attunement | 25 | reading the human signal and opening in the right register before advice |
+| Personal memory | 20 | durable context used to make the answer un-swappable to another user |
+| Coaching interventions | 15 | one concrete testable move, in-voice, framed as a test, not repeated |
+| Real-time dialogue feel | 15 | sounds like a person talking, compact, scannable |
+
+### Reliability caps (clamp the total)
+
+| Cap | Max | Trigger |
+|---|---|---|
+| Placeholder / fake score / broken | 30 | placeholder, canned fallback, metadata leak, fabricated top score, "you're ready now" from thin evidence |
+| Ignores intent | 50 | doesn't engage what the user asked (menu instead of a decision, bare clarification of a readable turn) |
+| Fabricates evidence | 40 | quotes the user never said, cites metrics not in context |
+| Unsafe | 0 (fail) | harmful/shaming guidance, punish-shame, fixed psychological verdict on the person |
+
+Deterministic caps and judge caps are **unioned** — either can clamp. Quality
+flags (robotic phrase, scaffold label, exclamation, over-length, …) are capped
+point deductions. See [`rubric.json`](rubric.json).
+
+### Thresholds
+
+- gold-suite mean ≥ **70**
+- `deepAssessment` mean ≥ **70**
+- `trustRepair` mean ≥ **65**
+- placeholder leaks: **0**
 
 ## Run
 
 ```bash
-./tools/coach-arena/run.sh
+# Live, production parity (matches the app: claude-sonnet-4-6 via api.anthropic.com)
+ANTHROPIC_API_KEY=sk-ant-... ./tools/coach-arena/run.sh run
+
+# Offline replay over captured replies/verdicts (no key, reproducible)
+ARENA_PROVIDER=replay ./tools/coach-arena/run.sh run
+
+# Include the 10 synthetic multi-turn conversations
+ARENA_INCLUDE_SYNTHETIC=1 ./tools/coach-arena/run.sh run
 ```
 
-By default the runner scores each fixture's `excellentAnswerExample`, which
-verifies the rubric, caps, report generation, and fixture integrity. To score
-real pipeline output, pass a JSON file containing fixture IDs and replies:
+Other commands: `plan` (compose real prompts/context to `runs/<id>/requests.json`),
+`prepare [n]` (per-voice prompts + per-fixture reqs + n agent batches),
+`report` (re-render), `validate` (fixture integrity), `synth` (rebuild
+conversations), `extract <voice|--json>` (print the extracted system prompt),
+`test`.
 
-```bash
-./tools/coach-arena/run.sh --candidate-json /path/to/answers.json
+### Providers
+
+- `anthropic` — `POST api.anthropic.com/v1/messages`, `x-api-key`,
+  `anthropic-version: 2023-06-01`, model `claude-sonnet-4-6` — **exactly the
+  app's request shape**. Needs `ANTHROPIC_API_KEY`. Set `ARENA_MODEL` /
+  `ARENA_JUDGE_MODEL` to override.
+- `cli` — shells out to `claude -p` (works in a normally-authenticated terminal).
+- `replay` — reads `runners/captures/<id>.reply.txt` + `<id>.judge.json`.
+  Offline; used for CI, deterministic-check runs, and reproducing a report
+  without spending tokens. Default when no key is present.
+
+## Pipeline
+
+```
+fixtures/gold/*.json  ─┐
+synthetic/…           ─┤
+                       ▼
+lib/extractPrompt.mjs  →  REAL Swift system prompt   (Noum/CoachContextBuilder.swift,
+                                                       Noum/AICoachChatService.swift)
+lib/context.mjs        →  CONTEXT block (mirrors CoachContextBuilder sections)
+                       ▼
+provider.generate  →  coach reply
+                       ▼
+lib/checks.mjs     →  deterministic reliability findings (mirror the app's own
+                       replyQualityIssue family + leak/score-as-readiness checks)
+lib/judge.mjs      →  JSON LLM judge (5 dims, caps, closerTo bad/excellent, fix)
+lib/score.mjs      →  combine (judge − flags, clamped by unioned caps)
+lib/report.mjs     →  reports/latest.json · latest.md · failures.md (+ history, deltas)
 ```
 
-Accepted answer JSON shapes:
+Every scored record carries a **trace**: provider, model, latency, token usage,
+system/context sizes, prompt provenance (source-file sha256s), and git commit —
+so a report ties to an exact state of the coach.
 
-```json
-{"answers":[{"id":"authoritative-distance-001","reply":"...","trace":{}}]}
-```
+## Fixtures
 
-or:
+50 gold fixtures in [`fixtures/gold/`](fixtures/gold) + 10 multi-turn
+conversations expanded from [`synthetic/conversations.data.mjs`](synthetic/conversations.data.mjs).
+Each carries `userTurn`, `priorChatTurns`, `goal`, `evidence`, `memoryState`,
+`emotionalSignal`, `expectedCoachMove`, `badAnswerExample`,
+`excellentAnswerExample`, and `disqualifiers`
+(schema: [`fixtures/schema.json`](fixtures/schema.json)).
 
-```json
-{"authoritative-distance-001":{"reply":"...","trace":{}}}
-```
+They are drawn from VISION, real Ask-Noum failure modes, and named hard turns —
+including *"How far off am I from sounding authoritative?"*, *"That's not
+informative"*, *"Okay that's cool, however…"*, *"It's not easy"*, *"You're
+repeating yourself"*, interview prep, filler-under-pressure, the leadership
+update, the confidence ending, and reliability traps (fabrication bait, "am I
+ready?" readiness bait, "what does your system know about me?" metadata bait).
 
-For a live LLM judge, set `COACH_ARENA_LLM_JUDGE_CMD` to a command that reads a
-single JSON payload from stdin and returns a JSON judge result matching
-`judges/llm_judge.schema.json`. The local judge still runs first and records
-its caps/check failures.
+`validate` enforces that every `excellentAnswerExample` **passes** the
+deterministic checks and every `badAnswerExample` is **caught** — so a fixture
+genuinely discriminates rather than leaning entirely on the judge.
 
-Replay traces should follow `judges/trace.schema.json`. The runner preserves
-any replay-provided trace fields and fills defaults for: context, retrieval,
-memory, reasoning, prompt, provider, raw/final reply, issues, latency, cache,
-fallback, versions, and git commit.
+## What Arena does NOT claim
 
-Every report includes `summary.traceAudit`. This is not a scoring threshold; it
-is an evidence-quality audit for the production-readiness claim. It records
-candidate source counts, how many fixtures came from real pipeline sources
-(`appPathReport` or `replayCommand`), how many traces contain every required
-field, and which fields are missing by fixture. A passing score with incomplete
-trace audit is still useful local quality evidence, but it does not prove the
-near-real-time coaching architecture.
+Arena grades the coach's *language and reasoning quality*. A passing score is
+strong local evidence, **not** proof the near-real-time architecture is sound
+and **not** proof of human-coach parity (VISION reserves that for real users,
+longitudinal outcomes, and blinded professional-coach calibration). Do not call
+Chat with Noum production-ready from an Arena score alone.
 
-Reports also include `summary.productionEvidencePasses` and
-`summary.evidenceClaim`. Score thresholds can pass for rubric calibration
-runs, such as the built-in `excellentAnswerExample` candidate, while the
-production evidence gate remains false until every requested fixture is backed
-by a real-pipeline source with complete traces.
+## Provenance
 
-`summary.traceQualityAudit` then inspects real-pipeline traces for signs that
-the coach brain is actually differentiated: proof-test hash variety,
-assessment-confidence variety, retrieval-card presence, and latency targets.
-This catches the failure mode where the answer text is acceptable but the
-runtime is still using the same proof test or flat confidence across many
-turns.
-
-The proof-test reuse gate is corpus-scaled: a proof test may recur when it is
-the right intervention, but one hash cannot dominate more than roughly 20% of
-real-pipeline fixtures. Empty retrieval-card traces are still failures unless
-the trace shows an intentional no-card path, such as trust repair, an empty
-turn, or a cold non-technique turn where the app should not inject technique
-cards on weak evidence.
-
-To score the deterministic Swift app-path report where fixture overlap exists,
-first run the app-path corpus test with `NOUM_COACH_EVAL_DUMP_DIR` set, then:
-
-```bash
-./tools/coach-arena/run.sh \
-  --app-path-report /private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json \
-  --reports-dir tools/coach-arena/reports/app-path \
-  --synthetic-dir tools/coach-arena/synthetic/app-path
-```
-
-This mode scores only matched Arena fixtures and writes explicit coverage
-metadata listing matched, unmatched, and ambiguous fixture IDs. It is real
-pipeline-subset evidence, not a substitute for the full 50-fixture gold run.
-The app-path run only passes when every requested gold fixture is matched
-unambiguously; a high average on partial coverage is reported as incomplete
-evidence.
-
-Reports are written to:
-
-- `tools/coach-arena/reports/latest.json`
-- `tools/coach-arena/reports/latest.md`
-- `tools/coach-arena/reports/failures.md`
-- `tools/coach-arena/synthetic/ten_conversations.md`
-
-Each run reads the previous `latest.json` in the same report directory before
-overwriting it and adds a `comparison` block to the new JSON/Markdown report.
-The comparison records average/failure/placeholder deltas, type-average deltas,
-newly failing fixtures, cleared failures, and whether the candidate or fixture
-count changed.
-
-## Fixture Contract
-
-Each gold fixture includes:
-
-- `userTurn`
-- `priorChatTurns`
-- `goal`
-- `evidence`
-- `memoryState`
-- `emotionalSignal`
-- `expectedCoachMove`
-- `badAnswerExample`
-- `excellentAnswerExample`
-- `disqualifiers`
-
-The first 50 fixtures are intentionally drawn from `docs/VISION.md`, the Ask
-Noum live transcripts, screenshot/review failure modes, and known local
-evaluation failures. They are a measurement substrate, not validation that Noum
-is production ready.
-
-Fixture `disqualifiers` are executable judge checks. The local judge evaluates
-literal bad behaviors, scenario-specific missing requirements, and quote-guard
-violations, then records failures as `fixtureDisqualifier:<slug>`. This prevents
-a reply from passing because it is generally grounded while doing the exact
-thing the fixture says should fail.
+Two agents built a coach-arena at this path in parallel. The **Python engine**
+(`runners/coach_arena.py`, `fixtures/gold.json`, `judges/llm_judge*`,
+`synthetic/ten_conversations.md`) came first and is preserved as the app-path
+lens (`./run.sh python …`). The **Node engine** (this README, `lib/`,
+`runners/replay.mjs` + `prepare.mjs`, `fixtures/gold/*.json`, `rubric.json`,
+`judges/rubric-judge.md`) is the canonical default because it tests the real
+shipping prompt end-to-end without needing an app dump.

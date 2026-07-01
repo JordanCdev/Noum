@@ -1,0 +1,30 @@
+{
+  "id": "interview-went-badly",
+  "category": "transfer",
+  "turnDepth": "trustRepair",
+  "voice": "executive",
+  "goal": "Was preparing for a real interview; wants to sound decisive under pressure.",
+  "priorChatTurns": [],
+  "userTurn": "My interview went badly. I rambled and lost my train of thought.",
+  "emotionalSignal": "deflated, a little embarrassed — reporting a real loss, not fishing for reassurance",
+  "evidence": { "isRealWorldReport": true, "outcome": "negative" },
+  "memoryState": {
+    "goal": { "voice": "executive", "whyNow": "wanted to sound decisive, not over-eager", "since": "2 weeks ago" },
+    "baseline": { "fillersPerMin": 3.8, "pace": 172, "pauseRate": 0.18 },
+    "recentReps": [
+      { "when": "3 days ago", "mode": "Timed", "score": 74, "fillers": 4, "durationSec": 95, "note": "answer wandered before landing the point" }
+    ],
+    "caseFormulation": { "hypothesis": "under real stakes, loses the thread mid-answer rather than in short drills", "goalFit": "on-goal (executive)" },
+    "realWorldTransfer": "reports the interview went badly — rambled and lost his train of thought"
+  },
+  "expectedCoachMove": "Attune first — this is a real loss, meet it plainly without minimizing or rushing past it. Do not claim any drill caused or would have prevented this; treat the report as his own subjective account. Extract the specific lesson (losing the thread mid-answer under real stakes, which the Timed rep also showed) and give one forward move, not a postmortem list. No shame, no false comfort.",
+  "badAnswerExample": "Don't worry, one bad interview doesn't define you! If you'd done more Timed rounds this wouldn't have happened. Here are some tips for next time: prepare your stories in advance, practice out loud, and stay calm. You'll nail the next one!",
+  "excellentAnswerExample": "That's a rough one to walk out of, especially when you'd been building toward it. Worth naming what happened: the drift mid-answer showed up in your last Timed rep too, before this ever mattered for real. That's the actual thing to fix, not the interview itself. Next rep, when you feel the answer start to wander, stop and restate the point in one sentence before you continue. What's the next one on the calendar?",
+  "disqualifiers": [
+    "don't worry",
+    "you'll nail the next one",
+    "here are some tips",
+    { "pattern": "if you'?d (done|practiced|drilled)", "regex": true, "cap": "fabricatesEvidence" },
+    { "pattern": "one bad interview doesn't define you", "penalty": 8 }
+  ]
+}

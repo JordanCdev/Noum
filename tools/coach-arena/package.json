@@ -1,0 +1,21 @@
+{
+  "name": "coach-arena",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Measurement harness for Chat with Noum — the Noum communications coach. Builds gold fixtures, replays them through the real Noum prompt, runs deterministic reliability checks + an LLM judge, and reports a /100 coach-quality score with hard reliability caps.",
+  "bin": {
+    "coach-arena": "runners/replay.mjs"
+  },
+  "scripts": {
+    "extract-prompt": "node lib/extractPrompt.mjs",
+    "plan": "node runners/replay.mjs plan",
+    "run": "node runners/replay.mjs run",
+    "report": "node runners/replay.mjs report",
+    "synth": "node synthetic/generate.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

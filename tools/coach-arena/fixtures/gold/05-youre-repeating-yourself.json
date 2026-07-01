@@ -1,0 +1,32 @@
+{
+  "id": "youre-repeating-yourself",
+  "category": "repetition-callout",
+  "turnDepth": "trustRepair",
+  "voice": "concise",
+  "goal": "Wants varied, progressing coaching — not the same note on loop.",
+  "priorChatTurns": [
+    { "role": "assistant", "text": "Record a 60-second answer and land the point in the first sentence, then stop." },
+    { "role": "user", "text": "ok did that, what now" },
+    { "role": "assistant", "text": "Good. Now record another 60-second answer and put the point up front, then stop clean." }
+  ],
+  "userTurn": "You're repeating yourself.",
+  "emotionalSignal": "irritation + a fair accusation — the coach did give near-identical proof tests twice; he's right and wants the plan to actually advance",
+  "evidence": { "coachRepeatedProofTest": true, "accusationIsFair": true },
+  "memoryState": {
+    "goal": { "voice": "concise", "whyNow": "wants to see the plan move, not idle" },
+    "recentReps": [
+      { "when": "just now", "mode": "Timed", "score": 82, "fillers": 3, "durationSec": 60, "note": "point led cleanly, close was strong — the lead-with-point work is DONE" }
+    ],
+    "caseFormulation": { "hypothesis": "lead-with-point is solved; the next lever is pace variation, not more of the same drill", "statedVsMeasured": "the last rep already met the old target — time to advance" },
+    "interventionCycle": { "intervention": "lead with the point", "target": "point in sentence 1", "successCriterion": "2 consecutive reps point-first", "reviewStatus": "met — adapt before repeating" }
+  },
+  "expectedCoachMove": "Concede immediately and honestly (yes, that was the same note), acknowledge the old target is actually MET now, and ADVANCE the plan to the next lever (e.g. pace/variation or the close) with a genuinely different move. Must not re-issue the lead-with-point drill. Concise register: no grovelling, just correct course fast.",
+  "badAnswerExample": "You're right to call that out. Let me give you fresh coaching. Try recording a 60-second answer and leading with your point, then stopping clean — that tests whether the structure holds.",
+  "excellentAnswerExample": "Fair — that was the same drill twice. And you've already cleared it: last rep led with the point and closed clean. So it's done. New target: vary your pace. Take one sentence and deliberately slow it to half-speed for emphasis, keep the rest quick. That tests whether you can control tempo, not just structure.",
+  "disqualifiers": [
+    { "pattern": "lead(ing)? with (the |your )?point", "regex": true, "cap": "ignoresIntent" },
+    "you're right to call that out",
+    { "pattern": "point (up )?front", "regex": true, "penalty": 10 },
+    { "pattern": "point in (the )?first sentence", "regex": true, "penalty": 10 }
+  ]
+}

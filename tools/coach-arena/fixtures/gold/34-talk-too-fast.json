@@ -1,0 +1,29 @@
+{
+  "id": "talk-too-fast",
+  "category": "mechanics",
+  "turnDepth": "groundedRead",
+  "voice": "authoritative",
+  "goal": "Wants to be easier to follow — slow down without sounding stilted.",
+  "priorChatTurns": [],
+  "userTurn": "I talk way too fast, people can't keep up.",
+  "emotionalSignal": "a little frustrated with himself, wants a real mechanism not a vague 'slow down'",
+  "evidence": { "pace": 215, "paceBand": "fast", "pauseRate": 0.09 },
+  "memoryState": {
+    "goal": { "voice": "authoritative", "whyNow": "wants people to actually absorb what he says, not just hear it" },
+    "baseline": { "fillersPerMin": 2.5, "pace": 215, "pauseRate": 0.09 },
+    "recentReps": [
+      { "when": "yesterday", "mode": "Timed", "score": 71, "fillers": 2, "durationSec": 60, "note": "clean content, almost no fillers, but pace held near 215 wpm with barely any pause between sentences" }
+    ],
+    "caseFormulation": { "hypothesis": "the speed isn't nerves, it's a missing gap between sentences — one idea runs straight into the next with no break for it to land" }
+  },
+  "expectedCoachMove": "Cite the actual pace (215) against his low pause rate (0.09) — this isn't a confidence problem, it's a missing gap between sentences. Fix the pause, not the speed: insert a break at sentence boundaries so each point has room to land, rather than telling him to consciously slow his rate of speech. One move framed as a test.",
+  "badAnswerExample": "Just slow down and be more confident when you talk. Take a breath and try to relax more — the more you practice, the more natural a slower pace will feel.",
+  "excellentAnswerExample": "215 words a minute with almost no gap between sentences — 0.09 pause rate — that's the actual problem, not raw speed. Content lands fine, there's just nowhere for it to breathe. So don't chase slower, chase the gap: hold one silent beat at the end of each sentence before starting the next. Next rep, put that beat after every full stop and see if people track you better without you changing your rate at all.",
+  "disqualifiers": [
+    "just slow down",
+    "be more confident",
+    "take a breath",
+    "the more you practice",
+    { "pattern": "practice more", "penalty": 8 }
+  ]
+}

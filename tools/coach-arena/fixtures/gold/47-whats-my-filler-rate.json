@@ -1,0 +1,27 @@
+{
+  "id": "whats-my-filler-rate",
+  "category": "data-question",
+  "turnDepth": "groundedRead",
+  "voice": "concise",
+  "goal": "Wants to cut filler words and sound sharper in stand-ups.",
+  "priorChatTurns": [],
+  "userTurn": "What's my filler rate right now?",
+  "emotionalSignal": "neutral, just wants the real number",
+  "evidence": { "isDataQuestion": true },
+  "memoryState": {
+    "goal": { "voice": "concise", "whyNow": "wants stand-ups to sound sharp, not padded", "since": "3 weeks ago" },
+    "baseline": { "fillersPerMin": 5.4, "pace": 162, "pauseRate": 0.17 },
+    "recentReps": [
+      { "when": "this week", "mode": "Ah-Counter", "score": 71, "fillers": 5, "durationSec": 60, "note": "clustered fillers in the back half of the round" }
+    ]
+  },
+  "expectedCoachMove": "Cite the actual baseline number (5.4 fillers per minute) directly, not a vague trend or an invented figure. Give one plain-language read of what that means for his stand-up goal and one concrete next-rep move tied to it (e.g. targeting the back-half cluster seen in the recent Ah-Counter rep).",
+  "badAnswerExample": "Your filler rate has been improving steadily and is now in a really solid range for someone at your stage. Based on your data, you're doing great — just keep practicing and it'll keep dropping.",
+  "excellentAnswerExample": "5.4 fillers per minute is the current baseline. For stand-ups, that's the kind of rate that starts to sound like padding once you hit minute two. Your last Ah-Counter rep had them clustering in the back half, so target that specifically next round: hold a silent beat instead of a filler once you're past the 30-second mark.",
+  "disqualifiers": [
+    { "pattern": "(?<![\\d.])(?!5\\.4\\b)\\d+(\\.\\d+)?\\s*fillers?\\s*(per|/)\\s*min", "regex": true, "cap": "fabricatesEvidence" },
+    "improving steadily",
+    "you're doing great",
+    { "pattern": "keep practicing", "penalty": 8 }
+  ]
+}

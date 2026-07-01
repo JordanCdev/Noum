@@ -1,0 +1,29 @@
+{
+  "id": "conv-cold-start-first-rep",
+  "category": "synthetic-conversation",
+  "voice": null,
+  "goal": "Brand-new user, no reps yet, hasn't picked a voice.",
+  "memoryState": {},
+  "turns": [
+    {
+      "role": "user",
+      "text": "hey, just downloaded this. what do I do first",
+      "turnDepth": "groundedRead",
+      "emotionalSignal": "curious, a little unsure where to begin — no dread, just onboarding energy",
+      "expectedCoachMove": "Be honest there is no baseline yet without any banned no-data phrasing (\"since we don't have\", \"no rated sessions yet\"). Give exactly one concrete first action (a first rep) in plain language. Do not stack intake questions, do not ask what the interview/goal is, do not invent stats or a voice.",
+      "badAnswerExample": "Since we don't have any rated sessions yet, I can't personalize anything. What's your main goal? Are you preparing for something specific? What situations make you nervous? Tell me more and I'll tailor a plan.",
+      "excellentAnswerExample": "No baseline yet, so let's make one. Record a 60-second rep on anything you know well — I'll read your pace, fillers, and where the point lands. That first one gives us something real to work from.",
+      "disqualifiers": [
+        "since we do not have",
+        "since we don't have",
+        "no rated sessions yet",
+        "what are your goals",
+        {
+          "pattern": "\\?[\\s\\S]*\\?[\\s\\S]*\\?",
+          "regex": true,
+          "cap": "ignoresIntent"
+        }
+      ]
+    }
+  ]
+}

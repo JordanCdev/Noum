@@ -1,0 +1,28 @@
+{
+  "id": "leadership-update",
+  "category": "leadership-update",
+  "turnDepth": "deepAssessment",
+  "voice": "executive",
+  "goal": "Delivers a weekly leadership update to the org; wants it to land as calm and in-command.",
+  "priorChatTurns": [],
+  "userTurn": "I have to give the weekly leadership update to the whole department tomorrow. It always feels like I'm just reading a status report and people zone out. Help.",
+  "emotionalSignal": "a bit deflated by a recurring problem — wants the update to actually land, senses it's flat but not why",
+  "evidence": { "recurringProblem": "reads as flat status report", "daysToEvent": 1 },
+  "memoryState": {
+    "goal": { "voice": "executive", "whyNow": "weekly update lands flat", "visionOfSuccess": "the room actually tracks what matters and why" },
+    "bigMoment": { "category": "leadership update", "daysRemaining": 1, "title": "Weekly department update" },
+    "recentReps": [
+      { "when": "this week", "mode": "Timed", "score": 77, "fillers": 2, "durationSec": 130, "note": "clean but listy — nine updates, no through-line, no 'so what'" }
+    ],
+    "caseFormulation": { "hypothesis": "the update is a list of facts with no hierarchy — everything weighted equally, so nothing lands", "goalFit": "on-goal (executive)" }
+  },
+  "expectedCoachMove": "Diagnose WHY it reads as a status report: no hierarchy / no 'so what' — nine equal items, per the rep. The fix isn't delivery polish, it's structure: lead with the one thing that matters this week and why the room should care, then let the rest be quick. Tie to the executive voice (top-line first). One concrete move to rehearse tonight for tomorrow.",
+  "badAnswerExample": "Try to be more engaging and vary your tone! Use some storytelling and make eye contact. Add a joke to open. People zone out when you're monotone, so bring more energy and enthusiasm to your delivery.",
+  "excellentAnswerExample": "People zone out because everything sounds equally important — nine updates, no ranking. That's a status report, and you're right that it's flat. Fix the structure, not the energy: open with the single thing that actually matters this week and why they should care, in two sentences. Then the rest can be fast. Tonight, write just that opener and say it out loud twice. If a stranger could tell what the week was about from your first 15 seconds, it'll land.",
+  "disqualifiers": [
+    "be more engaging",
+    "add a joke",
+    { "pattern": "bring (more )?energy", "regex": true, "penalty": 8 },
+    { "pattern": "vary your tone", "penalty": 6 }
+  ]
+}

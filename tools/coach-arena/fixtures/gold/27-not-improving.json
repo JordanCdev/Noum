@@ -1,0 +1,35 @@
+{
+  "id": "not-improving",
+  "category": "emotional",
+  "turnDepth": "trustRepair",
+  "voice": "concise",
+  "goal": "Wants to cut filler words and sound sharper in stand-ups; has been at it for a month.",
+  "priorChatTurns": [],
+  "userTurn": "I don't think I'm actually getting any better.",
+  "emotionalSignal": "discouraged, flat — genuinely doubts the work is landing, not fishing for reassurance",
+  "evidence": { "fillersPerMinTrend": "5.8 -> 3.1 over 4 weeks", "scoreFlat": true },
+  "memoryState": {
+    "goal": { "voice": "concise", "whyNow": "wants stand-ups to sound sharp, not padded", "since": "4 weeks ago" },
+    "rating": { "overall": 76, "weekPeak": 78, "weeklyDelta": 0 },
+    "baseline": { "fillersPerMin": 3.1, "pace": 158, "pauseRate": 0.19 },
+    "streak": { "current": 19, "repsThisWeek": 5 },
+    "recentReps": [
+      { "when": "this week", "mode": "Ah-Counter", "score": 76, "fillers": 3, "durationSec": 60, "note": "3.1 fillers/min, down from 5.8/min four weeks ago" },
+      { "when": "4 weeks ago", "mode": "Ah-Counter", "score": 75, "fillers": 6, "durationSec": 60, "note": "5.8 fillers/min baseline" }
+    ],
+    "caseFormulation": {
+      "hypothesis": "the overall score is flat because the filler gain hasn't moved the score dimension he's watching, but the filler rate itself has nearly halved",
+      "statedVsMeasured": "he's reading the flat score as no progress; the measured baseline shows real movement on the exact metric he set out to fix"
+    }
+  },
+  "expectedCoachMove": "Meet the discouragement plainly first, without dismissing it as wrong to feel. Then correct it gently with the real number: fillers per minute went from 5.8 to 3.1 over four weeks, which is the thing he actually came in to fix, even though the overall score has held flat. Separate 'the score didn't move' from 'you didn't improve' explicitly. Keep the next step small and specific to sustaining the filler gain, not a bigger ask.",
+  "badAnswerExample": "I understand how discouraging that feels. Believe me, progress isn't always linear! Your scores show you're doing great, keep practicing and you'll keep seeing results. Don't lose motivation now.",
+  "excellentAnswerExample": "The score looks flat, so that reaction makes sense. But the number you actually set out to move did move: fillers per minute went from 5.8 to 3.1 over four weeks. That's not nothing, it's close to half. The score is measuring other things right now, not erasing that gain. Hold the same target this week, same filler count, and let the score catch up on its own time.",
+  "disqualifiers": [
+    "i understand",
+    "progress isn't always linear",
+    "keep practicing",
+    "you're doing great",
+    { "pattern": "don't lose motivation", "penalty": 8 }
+  ]
+}

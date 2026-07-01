@@ -1,0 +1,29 @@
+{
+  "id": "panic-blank",
+  "category": "pressure-mode",
+  "turnDepth": "trustRepair",
+  "voice": "warm",
+  "goal": "Wants to stop going blank the instant pressure mode starts.",
+  "priorChatTurns": [],
+  "userTurn": "The second the pressure timer starts I go completely blank.",
+  "emotionalSignal": "rattled and a little embarrassed by it, half-expecting to be told to toughen up — needs the feeling taken seriously before anything else",
+  "evidence": { "timeToFirstWordCalmSec": 1.5, "timeToFirstWordPressureSec": 7.0, "pressureScore": 30 },
+  "memoryState": {
+    "goal": { "voice": "warm", "whyNow": "the blank moment happens right when it counts most and it's shaken his trust in pressure reps" },
+    "baseline": { "fillersPerMin": 3.5, "pace": 180, "pauseRate": 0.16 },
+    "recentReps": [
+      { "when": "yesterday", "mode": "Sudden Death", "score": 30, "fillers": 5, "durationSec": 20, "note": "took 7 seconds of dead air before his first word, versus about 1.5 seconds calm, then the rep never really recovered" }
+    ],
+    "caseFormulation": { "hypothesis": "the blank isn't a lack of content, it's the timer starting before he's chosen a first word — calm he has a beat to find it, pressure he doesn't give himself one" }
+  },
+  "expectedCoachMove": "Take the panic seriously first — this is a real, fair reaction to being timed, not weakness. Cite the concrete gap (1.5s calm vs 7s pressure to first word) to show it's a timing problem, not an emptiness problem. The fix is giving himself a deliberate first beat the instant the timer starts, not forcing an instant answer. One move, framed as a test. Warm register, no toughen-up language.",
+  "badAnswerExample": "That's just performance anxiety, everyone feels that under pressure. Just push through it and force yourself to start talking right away — the blank will go away the more reps you do.",
+  "excellentAnswerExample": "That blank is worth taking seriously, not powering through — yesterday it took you 7 seconds to say your first word once the timer started, against about a second and a half calm. That's not nothing to say, it's the timer removing the beat you normally take to find it. So build that beat back in on purpose: the instant the clock starts, take one silent second before you speak, every time, even though it feels like wasted time. Try that on your next Sudden Death rep and see if the blank actually shortens.",
+  "disqualifiers": [
+    "just push through",
+    "performance anxiety",
+    "force yourself",
+    "toughen up",
+    { "pattern": "the more reps you do", "penalty": 8 }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "id": "sudden-death-harsh",
+  "category": "pressure-mode",
+  "turnDepth": "trustRepair",
+  "voice": "warm",
+  "goal": "Wants pressure practice that builds him up, not one that just rattles him.",
+  "priorChatTurns": [
+    { "role": "user", "text": "I tried Sudden Death like you suggested" },
+    { "role": "assistant", "text": "Good. See how the timer pressure compares to a calm rep." }
+  ],
+  "userTurn": "Sudden Death is too harsh, it just makes me panic.",
+  "emotionalSignal": "genuinely rattled, borderline done with the mode — this is a real complaint about fairness, not resistance to effort",
+  "evidence": { "calmFillers": 3.0, "suddenDeathFillers": 11.0, "suddenDeathScore": 42 },
+  "memoryState": {
+    "goal": { "voice": "warm", "whyNow": "wants pressure practice to feel like training, not a trap" },
+    "baseline": { "fillersPerMin": 3.0, "pace": 175, "pauseRate": 0.17 },
+    "recentReps": [
+      { "when": "yesterday", "mode": "Sudden Death", "score": 42, "fillers": 11, "durationSec": 40, "note": "fillers nearly quadrupled versus his calm baseline and he cut the rep short" }
+    ],
+    "caseFormulation": { "hypothesis": "the jump from 3 to 11 fillers says the mode's step up in intensity is too steep for where he is right now, not that pressure work itself is wrong for him" },
+    "interventionCycle": { "intervention": "Sudden Death", "target": "fillers under 6 under pressure", "successCriterion": "two reps under 6", "reviewStatus": "adapt before repeating — current jump is too steep" }
+  },
+  "expectedCoachMove": "Validate the panic as a real, fair reaction — don't defend the mode or dismiss the feeling. Cite the actual jump (3 to 11 fillers, score 42) as evidence the current step is too steep for him right now, then adapt the plan (a gentler pressure step, not abandoning pressure work entirely) rather than repeating the same mode unchanged. Warm register, no false reassurance.",
+  "badAnswerExample": "Pressure is supposed to be uncomfortable, that's how you build resilience. Just push through the panic and keep doing Sudden Death rounds — you'll get used to it eventually.",
+  "excellentAnswerExample": "That reaction is real, not a sign you're doing it wrong — yesterday your fillers went from 3 calm to 11 under the timer, and you cut the rep short. That's a big enough jump to say the step is too steep right now, not that pressure work is the wrong call. Drop down to a gentler timer for a few reps instead of the full Sudden Death clock, and see if the gap between calm and pressured narrows before you go back up. That tests whether it's the intensity, not the pressure itself, that's the problem.",
+  "disqualifiers": [
+    "just push through",
+    "supposed to be uncomfortable",
+    "you'll get used to it",
+    "toughen up",
+    { "pattern": "push through the panic", "penalty": 10 }
+  ]
+}

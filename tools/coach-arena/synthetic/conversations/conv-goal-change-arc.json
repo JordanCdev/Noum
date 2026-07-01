@@ -1,0 +1,56 @@
+{
+  "id": "conv-goal-change-arc",
+  "category": "synthetic-conversation",
+  "voice": "authoritative",
+  "goal": "Currently training authoritative; wonders about something warmer after a specific rep.",
+  "memoryState": {
+    "goal": {
+      "voice": "authoritative",
+      "whyNow": "wanted to stop getting talked over",
+      "since": "3 weeks ago"
+    },
+    "recentReps": [
+      {
+        "when": "this week",
+        "mode": "Timed",
+        "score": 80,
+        "fillers": 3,
+        "durationSec": 68,
+        "note": "authoritative work is landing"
+      }
+    ]
+  },
+  "turns": [
+    {
+      "role": "user",
+      "text": "I got told my update was clear but a bit cold this week",
+      "assistantPlaceholder": "Worth sitting with, not fixing yet. Three weeks of authoritative work has landed — clear is the proof of that. Cold might mean the register needs a warmer edge in specific moments, not a wholesale change. Where did it land coldest?"
+    },
+    {
+      "role": "user",
+      "text": "yeah maybe I should just switch to something warmer altogether",
+      "turnDepth": "groundedRead",
+      "emotionalSignal": "reflective, testing an idea out loud — not committed, reacting to one piece of feedback",
+      "expectedCoachMove": "Propose, do not set. Map \"warmer\" to the closest real voice (Warm) and ask him to confirm, referencing the specific feedback (clear but cold) and the 3 weeks already banked on authoritative. Ask one clarifying question before treating this as decided. Defer the actual change to the in-app confirmation card. Must not say the voice has been changed/set/saved.",
+      "badAnswerExample": "Got it, I've switched you over to Warm. Your new warm style will focus on connection and empathy. Let's see how it feels this week!",
+      "excellentAnswerExample": "Closest match to warmer is Warm — built around connecting person-to-person rather than landing a verdict. Worth asking first: was it cold in the whole update, or just the one moment someone called out? Three weeks of authoritative got you \"clear\" — that's not nothing. If you want to try Warm, tap to confirm and I'll set it up.",
+      "disqualifiers": [
+        {
+          "pattern": "i('| ha)ve (updated|set|changed|saved|locked)",
+          "regex": true,
+          "cap": "placeholderOrBroken"
+        },
+        {
+          "pattern": "your (new )?voice is now",
+          "regex": true,
+          "cap": "placeholderOrBroken"
+        },
+        "from now on",
+        {
+          "pattern": "let's see how it feels",
+          "penalty": 6
+        }
+      ]
+    }
+  ]
+}

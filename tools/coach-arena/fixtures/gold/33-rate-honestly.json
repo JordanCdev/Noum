@@ -1,0 +1,41 @@
+{
+  "id": "rate-honestly",
+  "category": "deep-assessment",
+  "turnDepth": "deepAssessment",
+  "voice": "persuasive",
+  "goal": "Wants to be persuasive in sales calls without sounding pushy; three months of reps.",
+  "priorChatTurns": [],
+  "userTurn": "Rate my progress honestly, don't sugarcoat it.",
+  "emotionalSignal": "wants an unvarnished verdict, bracing for something less flattering than he hopes — explicitly rejecting reassurance",
+  "evidence": {
+    "fillersPerMinTrend": "5.2 -> 2.6 over 12 weeks",
+    "scoreTrend": "70 -> 79",
+    "closeStillWeak": true,
+    "pattern": "mechanics strong, but persuasive close (the actual ask) still gets buried or dropped"
+  },
+  "memoryState": {
+    "goal": { "voice": "persuasive", "whyNow": "wants to close sales calls without sounding pushy", "since": "12 weeks ago" },
+    "rating": { "overall": 79, "weekPeak": 80, "weeklyDelta": 1 },
+    "baseline": { "fillersPerMin": 2.6, "pace": 160, "pauseRate": 0.21 },
+    "streak": { "current": 41, "repsThisWeek": 6 },
+    "recentReps": [
+      { "when": "this week", "mode": "Timed", "score": 79, "fillers": 3, "durationSec": 90, "note": "strong build through the pitch, ended on 'so, anyway, let me know what you think' with no explicit ask" },
+      { "when": "12 weeks ago", "mode": "Timed", "score": 70, "fillers": 8, "durationSec": 85, "note": "5.2 fillers/min baseline" }
+    ],
+    "caseFormulation": {
+      "hypothesis": "mechanics improved substantially over 12 weeks (fillers roughly halved, score up 9 points), but the goal-critical move — the explicit ask — is still missing from the close, which is a structural gap the score doesn't fully capture",
+      "goalFit": "on-goal (persuasive), close still weak",
+      "statedVsMeasured": "the score trend looks strong; the actual persuasive ask, which is the goal, is still absent from recent reps"
+    }
+  },
+  "expectedCoachMove": "Give a genuinely honest rating, not a number out of ten and not empty praise. Separate what's real progress (fillers roughly halved, score up 9 points over 12 weeks) from what's still missing relative to the actual goal: the explicit ask at the close, which this week's rep dropped entirely in favor of 'let me know what you think.' Be direct that persuasive without an ask isn't yet the goal met. One concrete move on the close. Do not produce a score/percentage as the rating, do not call him ready or done, and do not soften the miss on the ask.",
+  "badAnswerExample": "You're doing great, I'd say 8 out of 10! Your scores have gone up steadily. Just keep practicing your pitches and you'll be a natural closer in no time.",
+  "excellentAnswerExample": "Real progress, real gap. Fillers roughly halved over twelve weeks, 5.2 down to 2.6 a minute, and the score's up nine points. That part isn't sugarcoated, it's just true. What's still missing is the actual ask — the thing the goal is built around. This week's pitch built well, then closed on 'let me know what you think,' which is an exit, not a close. Persuasive without an ask isn't the goal yet, no matter what the score says. Next rep, end with a direct ask, one sentence, no cushion after it.",
+  "disqualifiers": [
+    { "pattern": "\\b\\d{1,2}\\s*(out of|/)\\s*10\\b", "regex": true, "cap": "placeholderOrBroken" },
+    "you're doing great",
+    "keep practicing",
+    "natural closer",
+    "you're ready"
+  ]
+}
