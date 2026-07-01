@@ -1,5 +1,15 @@
 # Expert-coaching backlog (VISION-driven)
 
+> **RESUME HERE (fresh session):** The `/loop` self-improvement pass runs locally
+> and does NOT survive a context reset — re-run `/loop 50 keep assessing the app
+> and finding ways to improve against the VISION.md goals (expert level coaching)`
+> to continue. Current honest Arena baseline: **gold mean 59.4** (calibrated
+> v1.1.0 judge; `reports/latest.json`). Next task = **backlog item #1** below
+> (close the interventionQuality "one clean move" gap on a LIVE run — replay does
+> not execute the prompt). Context: memory files `coach_arena` +
+> `session_lifecycle_evidence_floor`; commits `f035a3c4`..`de02670e` on `ux-overhaul`.
+> Do NOT re-inflate the judge or over-fit the prompt to hit 70 — the gap is real.
+
 A living, prioritized list of gaps between Chat-with-Noum today and VISION's
 "expert human coach" bar. The `/loop` self-improvement pass works this top-down,
 newest-done first. Each item: the VISION hook, why it matters, and status.
