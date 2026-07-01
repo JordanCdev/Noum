@@ -12,11 +12,19 @@ newest-done first. Each item: the VISION hook, why it matters, and status.
   foundation — you can't drive toward expert coaching with a lenient ruler.
   (VISION: "believable progress", coach-parity #7 Validation.) `lib/score.mjs`.
 
+- **Judge calibration / anti-leniency** (iter 2). The judge rated 56/60
+  "excellent" (40/60 scored 80+). Added a "hold the line" section to
+  `judges/rubric-judge.md`: explicit score BANDS (top ≥85% is rare; competent
+  55–70% is where most land) + 6 concrete deductions (generic-but-true diagnosis,
+  decorative memory, bundled move, register mismatch, report-voice, self-answered
+  question). **Verified:** re-graded 8 borderline "excellent" fixtures → mean
+  dim-sum 79.9→70.9 (−9), 4/8 re-classified to "between". Judge bumped to v1.1.0.
+  (VISION: coach-parity #7 Validation; believable progress.)
+
 ## Next (priority order)
-1. **Judge calibration / anti-leniency.** The judge still marks most replies
-   "excellent". Add per-band anchoring examples to `judges/rubric-judge.md` and a
-   self-consistency check (grade a held-out reply twice; flag drift). Without
-   calibration the score is a soft same-model self-grade. (Audit finding.)
+1. **Recalibrate the full baseline.** Re-judge all 60 fixtures with the v1.1.0
+   rubric to publish an honest calibrated report (the current committed baseline
+   still uses the lenient v1.0.0 verdicts on 52/60 fixtures). One full judge pass.
 2. **Delivery intelligence depth** — VISION roadmap #2. The coach senses fillers/
    pace/pauses but not prosody contour, breathing, emphasis, vocal energy,
    authority/tension. This is the biggest gap to "expert perception". Needs new

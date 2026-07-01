@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const JUDGE_SYSTEM = readFileSync(join(__dirname, '..', 'judges', 'rubric-judge.md'), 'utf8');
-export const JUDGE_VERSION = '1.0.0';
+export const JUDGE_VERSION = '1.1.0'; // v1.1.0: calibration bands + concrete deductions + closerTo weight
 
 const DIM_MAX = {
   diagnosticIQ: 25,

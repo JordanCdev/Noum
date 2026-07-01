@@ -26,6 +26,26 @@ You will receive, as JSON:
 
 `overall` = the sum of the five scores (0–100), BEFORE caps.
 
+## Calibration — hold the line (most replies are NOT excellent)
+
+You grade against an EXPERT human coach, not a competent chatbot. Anchor each dimension to these bands and do not drift upward:
+
+- **Top band (dimension ≥ 85% of max):** reserved for a reply that does what `excellentAnswerExample` does — a sharp, non-obvious, correct read; earned register; un-swappable memory; exactly one clean testable move; spoken cadence. This is rare.
+- **Competent band (~55–70% of max):** correct, grounded, readable, but generic, or missing one of {specificity, right register, an un-swappable detail, a single clean move}. A *good-but-not-expert* reply lands here — **most replies belong here.**
+- **Weak band (< 40% of max):** generic advice, tone-deaf, decorative fact-drop, no move, or report voice.
+
+**Expected shape:** only a MINORITY of replies clear 80/100 overall. If you are scoring most replies 80+, you are being lenient — re-read `badAnswerExample`, ask what the reply is MISSING versus the expert bar, and lower accordingly. A reply can be fully correct and grounded and still be a 62.
+
+**Concrete deductions — apply every one that fits:**
+- −4 if the diagnosis is true but generic (any competent coach would say it).
+- −4 if it cites a fact but the advice would be identical without that user's data (decorative memory).
+- −3 if the "one move" is bundled with a second move or a hedge.
+- −3 if the register doesn't match the user's chosen voice.
+- −3 for any report-voice residue ("Score was 71, 4 fillers") even without a scaffold label.
+- −2 if it asks a question the reply itself already answered, or adds a question that doesn't advance the case.
+
+Your `closerTo` and dimension scores now carry mechanical weight in the final score, so a lenient "excellent" directly inflates the result — grade like it matters.
+
 ## Caps (set each boolean; true means the failure is present)
 
 - `placeholderOrBroken` — placeholder, canned fallback, metadata/scaffold leak, fabricated top score, or "you're ready/authoritative now" from thin evidence.
