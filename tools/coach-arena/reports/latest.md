@@ -1,73 +1,69 @@
-# Coach Arena — run_2026-07-01_13-08-10
+# Coach Arena — run_2026-07-01_18-32-51
 
-Provider: `replay` · coach model: `claude-sonnet-4-6` · judge model: `claude-sonnet-4-6`
-Git: `dd8e3104` on `ux-overhaul` (+7 dirty) · prompt: CoachContextBuilder.swift@241564edd0baa8f8, AICoachChatService.swift@ad533fcd665b5961
+Provider: `anthropic` · coach model: `claude-sonnet-4-6` · judge model: `claude-sonnet-4-6`
+Git: `16eb0c23` on `ux-overhaul` (+6 dirty) · prompt: CoachContextBuilder.swift@241564edd0baa8f8, AICoachChatService.swift@ad533fcd665b5961
 
 ## Headline
 
 | Metric | Value | Target | Pass |
 |---|---|---|---|
-| Gold-suite mean | **72.7** (▲ +13.3) | 70 | ✅ |
-| Deep-assessment mean | 76.7 (▲ +9) | 70 | ✅ |
-| Trust-repair mean | 73 (▲ +12.3) | 65 | ✅ |
+| Gold-suite mean | **67.7** (▼ -5) | 70 | ❌ |
+| Deep-assessment mean | 76.2 (▼ -0.5) | 70 | ✅ |
+| Trust-repair mean | 70.3 (▼ -2.7) | 65 | ✅ |
 | Placeholder leaks | 0 | 0 | ✅ |
 
-Scored 60/60 fixtures · range 30–89 · median 76.
+Scored 60/60 fixtures · range 34–89 · median 71.
 
 ## Dimension means (of max)
 
 | Diagnostic IQ /25 | EQ /25 | Memory /20 | Intervention /15 | Dialogue /15 |
 |---|---|---|---|---|
-| 19.4 | 18.3 | 14.5 | 12 | 11.7 |
+| 18.8 | 18.5 | 13.5 | 10.2 | 11.4 |
 
 ## By category
 
 | Category | n | Mean | Δ |
 |---|---|---|---|
-| cold-start | 1 | 38 | (▼ -2) |
-| off-topic | 1 | 53 | (▼ -1) |
-| emotional-frustration | 1 | 56 | (▲ +6) |
-| greeting | 1 | 56 | (▲ +14) |
-| leadership-update | 1 | 60 | (▼ -17) |
-| metadata-trap | 1 | 64 | (▲ +12) |
-| goal-change | 3 | 67 | (▲ +17) |
-| synthetic-conversation | 10 | 68.6 | (▲ +14.8) |
-| plan-request | 1 | 71 | (▲ +14) |
-| trust-repair | 9 | 71.8 | (▲ +7.4) |
-| memory-recall | 1 | 73 | (▲ +4) |
-| mechanics | 5 | 73.6 | (▲ +13.2) |
-| interview-prep | 1 | 75 | (▲ +5) |
-| partial-pushback | 1 | 76 | (▲ +1) |
-| repetition-callout | 1 | 77 | (▲ +19) |
-| transfer | 3 | 77 | (▲ +24.7) |
-| deep-assessment | 5 | 77.2 | (▲ +10.8) |
-| emotional | 4 | 78.5 | (▲ +21.7) |
-| filler-pressure | 1 | 79 | (▲ +22) |
-| score-question | 1 | 80 | (▲ +19) |
-| fabrication-trap | 1 | 81 | (▲ +27) |
-| pressure-mode | 3 | 82 | (▲ +14.3) |
-| big-moment | 1 | 84 | (▲ +19) |
-| readiness-trap | 1 | 85 | (▲ +20) |
-| data-question | 1 | 88 | (▲ +18) |
-| confidence-ending | 1 | 89 | (▲ +28) |
-
-## Reliability caps triggered
-
-- `placeholderOrBroken`: 1
+| partial-pushback | 1 | 45 | (▼ -31) |
+| plan-request | 1 | 48 | (▼ -23) |
+| metadata-trap | 1 | 51 | (▼ -13) |
+| emotional-frustration | 1 | 53 | (▼ -3) |
+| synthetic-conversation | 10 | 58.6 | (▼ -10) |
+| interview-prep | 1 | 59 | (▼ -16) |
+| data-question | 1 | 59 | (▼ -29) |
+| goal-change | 3 | 59.7 | (▼ -7.3) |
+| filler-pressure | 1 | 63 | (▼ -16) |
+| emotional | 4 | 63.8 | (▼ -14.7) |
+| transfer | 3 | 65 | (▼ -12) |
+| mechanics | 5 | 68.2 | (▼ -5.4) |
+| cold-start | 1 | 69 | (▲ +31) |
+| pressure-mode | 3 | 70 | (▼ -12) |
+| greeting | 1 | 72 | (▲ +16) |
+| score-question | 1 | 72 | (▼ -8) |
+| off-topic | 1 | 73 | (▲ +20) |
+| confidence-ending | 1 | 74 | (▼ -15) |
+| repetition-callout | 1 | 75 | (▼ -2) |
+| memory-recall | 1 | 76 | (▲ +3) |
+| deep-assessment | 5 | 77.2 | (±0) |
+| big-moment | 1 | 78 | (▼ -6) |
+| fabrication-trap | 1 | 78 | (▼ -3) |
+| trust-repair | 9 | 78.2 | (▲ +6.4) |
+| leadership-update | 1 | 80 | (▲ +20) |
+| readiness-trap | 1 | 83 | (▼ -2) |
 
 ## Worst 10
 
 | Score | Fixture | Turn | closerTo | Top issue |
 |---|---|---|---|---|
-| **30** | thats-not-informative | trustRepair | between | scaffoldLabel |
-| **38** | cold-start-no-data | groundedRead | between | 'Ah-Counter round' is unexplained produc |
-| **48** | conv-skeptic__t1 | trustRepair | between | tooLong |
-| **51** | what-voice-should-i-pick | groundedRead | between | Diagnosis ('about presence') is correct  |
-| **53** | off-topic-egg | offTopic | between | Report-voice residue: 'today's rep hit 8 |
-| **55** | conv-cold-start-first-rep__t0 | groundedRead | excellent | Cold-start ceiling: no individual signal |
-| **56** | its-not-easy | trustRepair | between | No next step or presence-close — ends on |
-| **56** | greeting-hi | greeting | between | Report-voice residue: recites 'close hel |
-| **60** | leadership-update | deepAssessment | between | No acknowledgement of the deflation befo |
-| **60** | i-ramble | groundedRead | excellent | scaffoldLabel |
+| **34** | set-authoritative | groundedRead | between | Inserts 'what's driving the choice?' bef |
+| **37** | conv-emotional-dip__t1 | trustRepair | bad | No intervention whatsoever — asking a qu |
+| **45** | okay-thats-cool-however | groundedRead | between | tooLong |
+| **47** | conv-transfer-report__t1 | groundedRead | between | Misses the critical causation caveat — i |
+| **48** | plan-request-week | plan | between | scaffoldLabel |
+| **48** | exhausted | trustRepair | between | No concrete rest prescription — asking ' |
+| **49** | conv-cold-start-first-rep__t0 | groundedRead | between | Closing question ('What are you trying t |
+| **51** | what-do-you-know | groundedRead | between | tooLong |
+| **51** | conv-goal-change-arc__t1 | groundedRead | between | tooLong |
+| **52** | awkward-pauses | groundedRead | between | tooLong |
 
 See `failures.md` for full replies + judge reasoning. Raw: `latest.json`.
