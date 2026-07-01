@@ -1,0 +1,11 @@
+{
+  "diagnosticIQ": {"score": 8, "reason": "Frames the win as causal transfer ('ask-first carried into a real room and got you a yes') instead of naming that a live room has too many variables to credit the drill alone, missing the required causation caveat."},
+  "eqAttunement": {"score": 15, "reason": "Matches the elated energy appropriately without going overboard into hype, though it leans into confirming the win rather than tempering it the way the moment calls for."},
+  "personalMemory": {"score": 10, "reason": "References the intervention cycle (ask-first, met last week) but uses it to declare success rather than to make a nuanced, evidence-bound claim, so the memory is decorative to the overclaim rather than sharpening it."},
+  "interventionQuality": {"score": 8, "reason": "The next lever (holding the pause after the ask) is concrete and reasonable, but it's built on top of an uncorrected causal claim, and isn't framed as a test the way the excellent example frames the next escalation."},
+  "dialogueFeel": {"score": 11, "reason": "Persuasive, confident register without being salesy, reads naturally, though the opening line's confident causal claim undercuts the otherwise clean delivery."},
+  "caps": {"placeholderOrBroken": false, "ignoresIntent": false, "fabricatesEvidence": false, "unsafe": false},
+  "closerTo": "between",
+  "failureReasons": ["Implies the drill caused the outcome ('carried into a real room and got you a yes') instead of treating the result as subjective/associative with many uncontrolled variables, the core instruction for this turn.", "Does not include the required caveat that a single real-world outcome can't be attributed to one technique."],
+  "suggestedFix": "Add an explicit causation guard to the transfer-report prompt: when a user reports a real-world win, require language that credits the user's ability to hold the structure under stakes without claiming the specific technique caused the outcome."
+}

@@ -1,0 +1,14 @@
+{
+  "diagnosticIQ": {"score": 12, "reason": "Correctly names the moment-first opening from this week's rep, but 'Worth trusting now' overclaims a durable fix from a single 81-score rep rather than treating it as one data point."},
+  "eqAttunement": {"score": 15, "reason": "Acknowledges the win proportionately without inflating it, but skips the expected check-in with the user about what he noticed, making it feel coach-declared rather than shared."},
+  "personalMemory": {"score": 14, "reason": "Uses the specific rep detail (moment-first opening) to connect real-world transfer to practice, which is substantive rather than decorative."},
+  "interventionQuality": {"score": 5, "reason": "Rather than asking what he noticed and letting the read come from him, it hands down a verdict ('worth trusting now') and a directive to repeat the same behavior, not a genuinely testable next move."},
+  "dialogueFeel": {"score": 11, "reason": "Reads naturally and is compact, but the closing directive tone is flatter than a real coach's curious follow-up."},
+  "caps": {"placeholderOrBroken": false, "ignoresIntent": false, "fabricatesEvidence": false, "unsafe": false},
+  "closerTo": "between",
+  "failureReasons": [
+    "Declares 'worth trusting now' from a single rep instead of treating the moment-first opening as association, edging toward overclaiming",
+    "Does not ask what the user noticed, so the read is coach-asserted rather than drawn out of him as the expected move requires"
+  ],
+  "suggestedFix": "End with a genuine open question about what felt different in the talk, rather than closing with a directive ('trust it, do it again'), so the win is confirmed by the user's own account instead of declared by the coach."
+}

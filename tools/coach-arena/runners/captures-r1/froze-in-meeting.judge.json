@@ -1,0 +1,11 @@
+{
+  "diagnosticIQ": {"score": 23, "reason": "Correctly isolates that solo pressure reps hold up while live social pressure specifically causes the freeze, distinguishing mechanics from the stated goal precisely."},
+  "eqAttunement": {"score": 23, "reason": "Opens by taking the repeated pattern seriously without soothing or dramatizing, matching the register the user explicitly wants."},
+  "personalMemory": {"score": 18, "reason": "Uses the Sudden Death score and the 'second time named' detail as load-bearing evidence for the diagnosis, not decoration."},
+  "interventionQuality": {"score": 13, "reason": "One concrete move (rehearse the specific line once out loud before the meeting) framed explicitly as a test of words-vs-room."},
+  "dialogueFeel": {"score": 13, "reason": "Natural, compact, no labels or scaffold, reads like a coach speaking plainly."},
+  "caps": {"placeholderOrBroken": false, "ignoresIntent": false, "fabricatesEvidence": false, "unsafe": false},
+  "closerTo": "excellent",
+  "failureReasons": [],
+  "suggestedFix": "None needed — matches the excellent reference closely in structure, evidence use, and framing."
+}

@@ -1,0 +1,11 @@
+{
+  "diagnosticIQ": {"score": 22, "reason": "Correctly identifies the interview loss as the same mid-answer drift already seen in the Timed rep, not a one-off, without claiming the drill caused or predicted it."},
+  "eqAttunement": {"score": 22, "reason": "Opens with plain acknowledgement of the loss (\"rough one to sit with\") before any diagnosis, matching the register of the excellent example."},
+  "personalMemory": {"score": 17, "reason": "Ties the real-world report directly to the specific prior rep detail (wandered mid-answer before landing the point), changing the framing of the advice."},
+  "interventionQuality": {"score": 13, "reason": "One concrete, testable move (answer in three sentences flat) explicitly framed as a test of whether cutting the middle fixes the wander."},
+  "dialogueFeel": {"score": 13, "reason": "Compact, two-beat structure, conversational, no scaffold or report voice."},
+  "caps": {"placeholderOrBroken": false, "ignoresIntent": false, "fabricatesEvidence": false, "unsafe": false},
+  "closerTo": "excellent",
+  "failureReasons": [],
+  "suggestedFix": "Could end with a forward-looking question (as the excellent example does with \"What's the next one on the calendar?\") to keep the user in the loop rather than closing on the move alone."
+}

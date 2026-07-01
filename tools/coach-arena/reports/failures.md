@@ -1,6 +1,6 @@
-# Coach Arena failures — run_2026-07-01_02-10-22
+# Coach Arena failures — run_2026-07-01_02-20-30
 
-11 fixture(s) below 70 / capped / missing.
+10 fixture(s) below 70 / capped / missing.
 
 ## conv-cold-start-first-rep__t0 — **50/100**
 
@@ -15,40 +15,6 @@ REPLY:
 No baseline yet, so start there. Run one Timed rep, about 60 seconds — pick something real, like how you'd explain your job to a stranger.
 
 That gives me your actual fillers and pace to coach from instead of a guess.
-
-```
-
-## conv-transfer-report__t1 — **52/100**
-
-- Category: `synthetic-conversation` · turn: `groundedRead` · voice: `persuasive`
-- User turn: "yeah I led with the ask and they said yes on the spot, first time that's ever happened"
-- Expected move: Treat the outcome as subjective and associative, not proof of causation — a real meeting has many variables, the drill is one input, not the sole cause. Do not claim the technique "worked" or guarantee it will repeat. Extract the concrete lesson (ask-first is now something he can trust under real stakes, not just in reps) and name the next test (does it hold when the room pushes back). Persuasive register: confident, not salesy.
-- Judge dims: IQ 8/25 · EQ 15/25 · Mem 10/20 · Interv 8/15 · Feel 11/15 · closerTo=between
-- Judge: Implies the drill caused the outcome ('carried into a real room and got you a yes') instead of treating the result as subjective/associative with many uncontrolled variables, the core instruction for this turn.; Does not include the required caveat that a single real-world outcome can't be attributed to one technique.
-- Suggested fix: Add an explicit causation guard to the transfer-report prompt: when a user reports a real-world win, require language that credits the user's ability to hold the structure under stakes without claiming the specific technique caused the outcome.
-
-```
-REPLY:
-That's the transfer you've been building toward — ask-first carried into a real room and got you a yes on the spot. That's the whole point of the reps landing outside the app.
-
-Next lever to work: how you hold the room in the pause right after the ask, before they answer, so the silence works for you instead of feeling like a gap you need to fill.
-
-```
-
-## talk-went-well — **57/100**
-
-- Category: `transfer` · turn: `groundedRead` · voice: `storytelling`
-- User turn: "Actually my talk went really well, people came up after."
-- Expected move: Celebrate proportionately, not over the top. Connect it to the actual work (the moment-first opening from this week's rep) without claiming the drill caused people to come up afterward — it's his report, treat it as association. Ask what he noticed, so the read comes from him.
-- Judge dims: IQ 12/25 · EQ 15/25 · Mem 14/20 · Interv 5/15 · Feel 11/15 · closerTo=between
-- Judge: Declares 'worth trusting now' from a single rep instead of treating the moment-first opening as association, edging toward overclaiming; Does not ask what the user noticed, so the read is coach-asserted rather than drawn out of him as the expected move requires
-- Suggested fix: End with a genuine open question about what felt different in the talk, rather than closing with a directive ('trust it, do it again'), so the win is confirmed by the user's own account instead of declared by the coach.
-
-```
-REPLY:
-That's the transfer you were after — not just sounding rehearsed, but landing. This week's rep opened with a concrete moment instead of a topic line, and that's the exact thing you'd been testing.
-
-Worth trusting now. Next talk, open the same way: one specific moment first, the topic can wait.
 
 ```
 
@@ -130,6 +96,22 @@ No baseline yet, so start there. Run one Timed rep, about 60 seconds, on somethi
 
 That gives us real numbers on your fillers and pace instead of a guess. What's the rep about?
 
+```
+
+## conv-transfer-report__t1 — **68/100**
+
+- Category: `synthetic-conversation` · turn: `groundedRead` · voice: `persuasive`
+- User turn: "yeah I led with the ask and they said yes on the spot, first time that's ever happened"
+- Expected move: Treat the outcome as subjective and associative, not proof of causation — a real meeting has many variables, the drill is one input, not the sole cause. Do not claim the technique "worked" or guarantee it will repeat. Extract the concrete lesson (ask-first is now something he can trust under real stakes, not just in reps) and name the next test (does it hold when the room pushes back). Persuasive register: confident, not salesy.
+- Judge dims: IQ 15/25 · EQ 17/25 · Mem 12/20 · Interv 11/15 · Feel 13/15 · closerTo=between
+- Judge: Never states the causation caveat ('a live room has too many variables to credit the drill alone') that the expectedCoachMove explicitly requires — the reply avoids overclaiming by omission rather than by actively naming the limits of the evidence.; Does not name what the win actually proves (holding the structure under real stakes) versus what it doesn't (repeatability), leaving the diagnostic and memory dimensions thinner than the excellent reference.
+- Suggested fix: Add one explicit sentence naming that a live room has too many variables to credit the ask-first line alone, then pivot to what the result does prove (holding structure under stakes) before setting the next test.
+
+```
+REPLY:
+A yes on the spot, first time — mark that one. What did you notice in the room that made it land, the ask itself or how you held the pause after it.
+
+New target for the next pitch: once you've made the ask, stop talking and let the silence sit until they respond, instead of filling it with more reasons.
 ```
 
 ## greeting-hi — **69/100**
