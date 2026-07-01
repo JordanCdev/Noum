@@ -7,9 +7,12 @@
 > A/B +4.93. iters 5 AND 6 REVERTED: personalMemory is NOT movable via rule-1
 > prompt wording — two same-era dual-arm A/Bs both net-negative, and old-arm scores
 > swing ±5/fixture between draws (generation variance dwarfs the effect). Approach
-> CLOSED. Next task = **Next item #2 (delivery intelligence)**, or Next #1 only if
-> the personalMemory gap is re-confirmed real via a fresh dual-arm baseline (it may
-> not be — avg is ~13-14/20). Context: memory files `coach_arena` +
+> CLOSED. iter 7 (assessment): evidence-scaled confidence is ALREADY implemented
+> (Investigated) — the prompt/context layer is MATURE, so prompt-rule tweaking is
+> now low-leverage. Next task = **Next item #1 (real-pipeline eval / gate
+> over-rejection audit)** — the real leverage the Arena can't see; needs a dump dir
+> or live key, but the gate audit sub-task is doable without them. Then #2 (delivery
+> intelligence, the one new-capability gap). Context: memory files `coach_arena` +
 > `session_lifecycle_evidence_floor`; commits
 > `f035a3c4`..`3f0edd01` on `ux-overhaul`.
 > **On measurement (read before trusting any number):** the full-suite re-judge is
@@ -112,37 +115,56 @@ newest-done first. Each item: the VISION hook, why it matters, and status.
   rule-1 prompt wording; stop trying. Any real lever is structural (the CONTEXT
   block) — see Next #1.
 
+- **Evidence-scaled confidence** (iter 7, assessment) — ALREADY IMPLEMENTED, not an
+  open gap. Read the code: `CoachContextBuilder.coachMemoryLines` emits a COACH
+  MEMORY "Evidence depth: <label> across <N> rep signal(s); <guidance>" line;
+  `evidenceGuidance(for:)` scales tone per tier (insufficient → "treat this as a
+  hypothesis, not a verdict"; tentative → "soften claims and ask one clarifying
+  question"; moderate → "name patterns carefully"; established/stable → "name
+  repeated patterns directly"); `derivedConfidenceLabel` + `BaselineConfidence.from(
+  sessionCount:)` compute confidence from n; and the RATING section confidence-GATES
+  stats (only quotes a metric when its `.confidence != .insufficient`). This is
+  VISION's weak-evidence→tentative invariant, end to end, and the arena surfaces it
+  (`lib/context.mjs` "Evidence depth"). No change made. Adding more prompt text here
+  would be redundant (and iters 5-6 showed redundant prompt text doesn't move a
+  dimension). If future thin-evidence over-claims appear, fix the specific
+  computation that under-labels confidence, not the prompt wording.
+
 ## Next (priority order)
-1. **personalMemory via STRUCTURAL context (not prompt wording)** — iters 5 AND 6
-   both proved prompt-wording is a dead end here (see "Investigated"): the dual-arm
-   A/B old-arm score swings ±5 per fixture between draws, so generation variance
-   dwarfs any rule-1 effect. If personalMemory is worth moving at all, the lever is
-   WHAT the model sees, not how rule 1 phrases it: pre-synthesize the durable facts
-   in the CONTEXT block itself (renderContext / CoachContextBuilder) — surface the
-   single most decision-relevant fact, a computed trend/contrast, and suppress
-   already-surfaced facts — so the model receives a load-bearing read rather than a
-   raw stat list. Bigger change, touches context-building logic; verify the same
-   dual-arm way. NOTE: may not be worth it — avg personalMemory is already ~13-14/20
-   on fresh draws; the low baseline was an unlucky draw, so confirm the gap is real
-   (fresh dual-arm baseline) before investing.
+> **iter 7 re-prioritization (read this):** the prompt/context LAYER IS MATURE.
+> iters 4-7 established that the remaining prompt/context "gaps" are largely already
+> built or not prompt-movable — interventionQuality (fixed, iter 4), personalMemory
+> (not prompt-movable, iters 5-6), evidence-scaled confidence (already implemented,
+> see Investigated). Further prompt-rule tweaking is low-leverage. The real leverage
+> is now (a) the PIPELINE the Arena can't see, and (b) genuinely new capability.
+> Levers below re-ordered accordingly.
+
+1. **Real-pipeline eval — the actual highest-leverage lever.** The Arena grades the
+   prompt on a clean Claude call; it CANNOT see the gate/fallback/retrieval that
+   memory repeatedly flags as where real user-facing quality degrades (`chat_quality_gate`:
+   gate rejections surface to users as "offline"; `coach_reliability_gate`;
+   single-provider fragility on `gemini-3.5-flash`). Wire the Python app-path engine
+   (`./run.sh python`) over real app-dumped candidates (`NOUM_COACH_EVAL_DUMP_DIR`),
+   or a live `--live` run, to measure what users ACTUALLY get. Prereq (may block a
+   headless tick): either a populated dump dir (run the app through eval scenarios
+   once) or a live API key. First concrete sub-task even without those: AUDIT the
+   gate for over-rejection — does `replyQualityIssue` / the quality gate reject
+   replies the Arena would score 70+? A false-reject there silently downgrades every
+   affected user to a fallback, a direct hit to "believable coaching".
 2. **Delivery intelligence depth** — VISION roadmap #5 (Perception). The coach
    senses fillers/pace/pauses but not prosody contour, breathing, emphasis, vocal
-   energy, authority/tension. This is the biggest gap to "expert perception".
-   Needs new session evidence, conservative thresholds, user-visible "what
+   energy, authority/tension. The one genuinely-new CAPABILITY gap (not a prompt
+   tweak). Needs new session evidence, conservative thresholds, user-visible "what
    can/can't be inferred" copy. Large; stage it.
-3. **Evidence-scaled confidence, end to end.** VISION: weak evidence → tentative
-   language; repeated evidence → stronger intervention; never fake certainty from
-   small n. Audit + this session found several thin-evidence over-claims (the
-   aborted-rep read, the transfer-causation slip). Add a single evidence-depth
-   read the coach context carries and the prompt scales tone to.
-4. **Real-pipeline eval.** The Arena grades the prompt on Claude, self-graded.
-   Wire the Python app-path engine (or a live `--live` run on the production
-   `gemini-3.5-flash` path) so we measure the coach users actually get, incl. the
-   gate/fallback/retrieval the prompt-faithful engine can't see. (Audit HIGH.)
-5. **Adaptation across attempts** — coach-parity #4. Extend the tone-drill
+3. **personalMemory via STRUCTURAL context** — DEPRIORITIZED (may not be a real
+   gap). iters 5-6 proved prompt-wording can't move it; avg is already ~13-14/20 on
+   fresh draws (the low baseline was an unlucky draw). Only pursue if a fresh
+   dual-arm baseline re-confirms the gap; then the lever is pre-synthesizing durable
+   facts in the CONTEXT block (renderContext), not rule 1.
+4. **Adaptation across attempts** — coach-parity #4. Extend the tone-drill
    reinforce/vary/replace pattern to the other skill areas (pace, close,
    structure) with an explained rationale each time.
-6. **Transfer outcome loop** — coach-parity #6. Post-event outcome + audience-read
+5. **Transfer outcome loop** — coach-parity #6. Post-event outcome + audience-read
    capture that becomes durable coach context, not just a one-off report.
 
 ## Guardrails for the loop
