@@ -31,7 +31,7 @@ import Foundation
 
 /// One recurring-position read across the recent rep window: the event type,
 /// the zone it keeps landing in, and how strong the evidence is.
-struct RepEventTrend: Codable, Equatable {
+struct RepEventTrend: Codable, Equatable, Hashable {
 
     /// Which positional event recurred. Names only the three the per-rep
     /// `RepEventLocations` engine can honestly locate — nothing finer.

@@ -1077,6 +1077,15 @@ struct SummaryView: View {
                         if let eventLocations = sessionStore.sessions.first?.repEventLocations {
                             RepTimelineCard(locations: eventLocations)
                         }
+                        // Recurring-position trend — the LONGITUDINAL companion
+                        // to the per-rep positional card above. Self-hides
+                        // (engine returns []) until a position has recurred
+                        // across the recent window past the honesty floors, so
+                        // it names a habit only when one has genuinely earned it.
+                        let positionalTrends = RepEventTrendEngine.compute(sessions: sessionStore.sessions)
+                        if !positionalTrends.isEmpty {
+                            RepEventTrendCard(trends: positionalTrends)
+                        }
                         WordChoiceCard(metrics: WordChoiceMetrics.compute(transcript: transcriptText))
                         GrammarPolishCard(session: sessionStore.sessions.first)
                         // M25: FillerBreakdownCard dropped — its top-6 chips
