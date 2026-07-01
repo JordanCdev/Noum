@@ -47,6 +47,45 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-07-01 (autonomous `noum2` run). **20th iteration. Shipped ONE verified
+honesty lever — base-rate prevalence on the recurring-position trend. GREEN on
+iPhone 17 / iOS 26 (isolated `DerivedData/Noum-iter20`), no push. Commit
+`aa6abce7`. Full write-up: `docs/COACH_PARITY_EVAL_2026-07-01_iter20.md`.
+Surface-panel mean 8.2/10 (global coach-parity number unchanged this run —
+see below).**
+
+- **Lever `aa6abce7` — weight the recurring-position trend by BASE RATE
+  (`RepEventTrend.windowRepCount`).** Iteration 19's trend named only the reps
+  that CARRIED the event ("in 4 of your last 5 reps with a rushed stretch"), so a
+  narrow-but-consistent position — especially at the 3-of-3 floor — could read as
+  something the user does on EVERY rep (the small-sample overclaim CLAUDE.md
+  bans). Adds `windowRepCount` (readable reps in the ≤6 window; invariant
+  `repsWithSignal <= windowRepCount` holds by `compactMap`-subset construction)
+  and names that base rate — "…5 of 6 reps overall" — in **all three surfaces**
+  (coach readout, visual card subline, AND VoiceOver readout), but **only when
+  the event did not carry every readable rep** (100% tail suppressed, never a
+  redundant "N of N"). Pure, zero new persistence. +3 tests; `RepEventTrend`
+  engine + copy suites `TEST SUCCEEDED`.
+- **Panel folded three follow-ups into the same commit** (decision:
+  ship-with-notes, no blockers): the load-bearing one was a **VoiceOver
+  honesty-parity gap** — an anti-overclaim change was about to leave blind users
+  with the un-hedged overclaiming line — plus `.fixedSize` on the subline for
+  Dynamic Type and a copy tighten ("That event surfaced" → "It showed up"; drop
+  repeated "your last").
+- **Ranked #1 next lever is BLOCKED here: no `ANTHROPIC_API_KEY`.** The iteration-
+  19 panel's top gap ("prove the recurring line actually SURFACES in a live coach
+  reply, not just that it's wired") needs a live model. This autonomous
+  environment has no Anthropic API key, so the `coach-arena` behavior assertion
+  cannot be run/verified — it is **environment-gated, not design-gated**. Took the
+  top *software-closable-here* lever (#2, base rate) instead. This is the genuine
+  limitation to flag: the highest-value remaining software lever needs a key.
+- **The 10/10 ceiling is unchanged and unchanged by design.** "Replaces a human
+  coach" stays REFUSED via the `.forming` trust-moat cap. Distance from this
+  surface's 8.2 to 10 is external: [environment] behavior-proof needs a key ·
+  [external-calibration] the ≤6-rep window/floors are honest guesses ·
+  [hardware] no breath/tension/body perception · [longitudinal] no real-user
+  outcome proof. None are defects in iteration 20.
+
 2026-07-01 (autonomous `noum-1` run). **19th iteration. Shipped TWO verified
 levers — the positional-read TREND engine AND its user-facing render, the second
 in direct response to the eval panel's unanimous top gap. GREEN on iPhone 17 /
