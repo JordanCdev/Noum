@@ -21,10 +21,26 @@ newest-done first. Each item: the VISION hook, why it matters, and status.
   dim-sum 79.9→70.9 (−9), 4/8 re-classified to "between". Judge bumped to v1.1.0.
   (VISION: coach-parity #7 Validation; believable progress.)
 
+- **Recalibrate the full baseline** (iter 3). Re-judged all 60 with v1.1.0.
+  **Honest baseline: gold mean 79.8 → 59.4** (median 60, range 38–79, buckets
+  30s:2 40s:9 50s:18 60s:18 70s:13 80s:0), closerTo "excellent" 56/60 → 15/60.
+  All thresholds now FAIL (59.4<70, deep 67.7<70, trust 60.7<65) — and that's
+  correct: against an expert bar the coach is competent-not-expert, which VISION
+  says it is. The number finally means something. **This does NOT mean re-inflate
+  the judge or over-fit the prompt to close the gap** — the gap is real coaching
+  work. Weakest dims point the way: interventionQuality 9.8/15 (bundled/hedged
+  moves, not one clean test) and personalMemory 12.1/20 (decorative facts, not
+  un-swappable reads).
+
 ## Next (priority order)
-1. **Recalibrate the full baseline.** Re-judge all 60 fixtures with the v1.1.0
-   rubric to publish an honest calibrated report (the current committed baseline
-   still uses the lenient v1.0.0 verdicts on 52/60 fixtures). One full judge pass.
+1. **Close the interventionQuality gap** — the #1 expert lever the calibrated
+   run exposes. The coach bundles two moves / hedges instead of prescribing ONE
+   clean testable move. Tighten the system-prompt intelligence-floor rule 3 (one
+   move, no second move, no hedge) and re-measure on a live run. Verify the mean
+   moves on interventionQuality specifically, not just overall.
+2. **Close the personalMemory gap** — replies cite facts that don't change the
+   advice (decorative). Strengthen the "un-swappable" contract: the cited fact
+   must be load-bearing for the move. Prompt + fixture-anchored.
 2. **Delivery intelligence depth** — VISION roadmap #2. The coach senses fillers/
    pace/pauses but not prosody contour, breathing, emphasis, vocal energy,
    authority/tension. This is the biggest gap to "expert perception". Needs new
