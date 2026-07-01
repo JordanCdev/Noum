@@ -654,6 +654,120 @@ struct CoachReliabilityGateTests {
         #expect(live.count <= text.count)
     }
 
+    // MARK: - Canned fallback never repeats across turns
+
+    @Test func staticFallbackVariantsAreDistinctHonestAndLiveShorter() {
+        for depth in CoachTurnDepth.allCases {
+            let textVariants = CoachReliabilityGate.staticFallbackVariants(turnDepth: depth, surface: .text)
+            let liveVariants = CoachReliabilityGate.staticFallbackVariants(turnDepth: depth, surface: .live)
+            #expect(textVariants.count >= 2, "need >=2 text variants to rotate for \(depth)")
+            #expect(liveVariants.count >= 2, "need >=2 live variants to rotate for \(depth)")
+            // Distinct within a surface so rotation actually changes the wording.
+            #expect(Set(textVariants.map(CoachReliabilityGate.normalize)).count == textVariants.count)
+            for (i, v) in textVariants.enumerated() {
+                #expect(!v.isEmpty)
+                let lowered = v.lowercased()
+                for banned in ["amazing", "nailed", "crushed", "you're ready", "guaranteed"] {
+                    #expect(!lowered.contains(banned), "text variant \(i) for \(depth) contains \(banned)")
+                }
+            }
+            // The canonical (first) live line stays no longer than the text one.
+            #expect(liveVariants[0].count <= textVariants[0].count)
+        }
+    }
+
+    @Test func staticFallbackTwoArgIsTheFirstVariant() {
+        // Back-compat: the zero-context helper is variant 0, so existing callers
+        // and prior tests keep their exact contract.
+        for depth in CoachTurnDepth.allCases {
+            for surface in [CoachReplySurface.text, .live] {
+                #expect(
+                    CoachReliabilityGate.staticFallback(turnDepth: depth, surface: surface) ==
+                    CoachReliabilityGate.staticFallbackVariants(turnDepth: depth, surface: surface)[0]
+                )
+            }
+        }
+    }
+
+    @Test func selectStaticFallbackAvoidsRecentlyShownVariant() {
+        let variants = CoachReliabilityGate.staticFallbackVariants(turnDepth: .quickMove, surface: .text)
+        // The user just saw variant 0 — the gate must not hand it straight back.
+        let picked = CoachReliabilityGate.selectStaticFallback(
+            turnDepth: .quickMove,
+            surface: .text,
+            previousCoachReply: variants[0],
+            recentCoachReplies: [variants[0]]
+        )
+        #expect(picked != variants[0])
+        #expect(variants.contains(picked))
+    }
+
+    @Test func selectStaticFallbackWithNoHistoryReturnsCanonicalVariant() {
+        let picked = CoachReliabilityGate.selectStaticFallback(
+            turnDepth: .deepAssessment,
+            surface: .text,
+            previousCoachReply: nil,
+            recentCoachReplies: []
+        )
+        #expect(picked == CoachReliabilityGate.staticFallback(turnDepth: .deepAssessment, surface: .text))
+    }
+
+    @Test func isCleanCandidateRejectsNearDuplicateOfRecentReply() {
+        let recent = "your close trails off so the ask never lands with conviction in the room"
+        let nearDupe = "your close trails off so the ask never lands with conviction in the busy room"
+        #expect(!CoachReliabilityGate.isCleanCandidate(nearDupe, previousCoachReply: nil, recentCoachReplies: [recent]))
+        // A genuinely different candidate stays clean against the same recent set.
+        #expect(CoachReliabilityGate.isCleanCandidate(
+            "Lead with the verdict in sentence one, then prove it with a single concrete example.",
+            previousCoachReply: nil,
+            recentCoachReplies: [recent]
+        ))
+    }
+
+    @Test func gateFallbackDoesNotRepeatCannedLineShownRecently() {
+        // The reply is empty (forces a block) and the assessment read is dirty
+        // (its proof test leaks a placeholder → static path). The exact canned
+        // line was already shown a turn ago, so the substituted fallback must be
+        // a different honest variant — never the same canned line twice.
+        let cannedText = CoachReliabilityGate.staticFallback(turnDepth: .quickMove, surface: .text)
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "",
+            previousCoachReply: cannedText,
+            recentCoachReplies: [cannedText],
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(proofTest: "placeholder reply"),
+            evidenceCoverage: 0.5
+        )
+        #expect(verdict.blocked)
+        #expect(!(verdict.fallbackText ?? "").isEmpty)
+        #expect(verdict.fallbackText != cannedText)
+        #expect(
+            CoachReliabilityGate.normalize(verdict.fallbackText ?? "") !=
+            CoachReliabilityGate.normalize(cannedText)
+        )
+    }
+
+    @Test func gateFallbackSkipsAssessmentReadThatEchoesARecentTurn() {
+        // The assessment's on-device read is otherwise clean, but it near-matches
+        // a coach turn from two turns ago → the gate must fall through to a static
+        // variant instead of re-serving the same read.
+        let read = Self.quickMoveAssessment().immediateCoachRead
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "",
+            previousCoachReply: "Some unrelated earlier coaching line about your opener.",
+            recentCoachReplies: [read],
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(verdict.blocked)
+        #expect(!(verdict.fallbackText ?? "").isEmpty)
+        #expect(
+            CoachReliabilityGate.normalize(verdict.fallbackText ?? "") !=
+            CoachReliabilityGate.normalize(read)
+        )
+    }
+
     @Test func gateDisabledFlagIsRespectedByCaller() {
         // The gate itself is always pure; the disable switch lives on the flag.
         // This pins the default so a regression that flips it off is visible.

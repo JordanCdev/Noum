@@ -471,7 +471,8 @@ enum CoachReplyPipeline {
             assessment: assessment,
             turnDepth: turnDepth,
             surface: surface,
-            previousCoachReply: previousCoachReply
+            previousCoachReply: previousCoachReply,
+            recentCoachReplies: recentCoachReplies
         )
         if contentRejectedFallback != nil {
             qualityGateEvents.append(.fallback("deterministicAssessmentAfterContentRejected"))
@@ -683,7 +684,8 @@ enum CoachReplyPipeline {
         assessment: CoachAssessment?,
         turnDepth: CoachTurnDepth,
         surface: CoachReplySurface,
-        previousCoachReply: String?
+        previousCoachReply: String?,
+        recentCoachReplies: [String] = []
     ) -> String? {
         guard case .failure(.contentRejected) = outcome,
               let assessment else {
@@ -693,11 +695,13 @@ enum CoachReplyPipeline {
             turnDepth: turnDepth,
             assessment: assessment,
             surface: surface,
-            previousCoachReply: previousCoachReply
+            previousCoachReply: previousCoachReply,
+            recentCoachReplies: recentCoachReplies
         )
         return CoachReliabilityGate.isCleanCandidate(
             fallback,
-            previousCoachReply: previousCoachReply
+            previousCoachReply: previousCoachReply,
+            recentCoachReplies: recentCoachReplies
         ) ? fallback : nil
     }
 

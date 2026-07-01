@@ -265,6 +265,42 @@ export function runChecks(reply, fixture, opts = {}) {
     }
   }
 
+  // -- repeated canned coaching template (RALPH #4) -------------------------
+  // The "run one 60-second rep, verdict first, clean stop" family is fine once,
+  // but re-serving the same template move the coach already used a turn or two
+  // ago is the "canned / it repeats itself" failure users notice instantly.
+  // High-precision: fires only when the CURRENT reply carries >=2 canned stems
+  // AND >=2 of them also appeared in a recent reply (whole-template recurrence),
+  // so coaching the same lever across turns in fresh words is never flagged.
+  if (recentReplies.length) {
+    const CANNED = ['60-second rep', '60 second rep', 'sixty-second rep', 'verdict first', 'verdict-first', 'clean stop', 'one focused rep', 'under a timer', 'run one rep'];
+    const inCurrent = CANNED.filter((s) => lower.includes(s));
+    if (inCurrent.length >= 2) {
+      const priorLower = recentReplies.map(stripQuotesAndPunct).join('\n');
+      const recurred = inCurrent.filter((s) => priorLower.includes(s));
+      if (recurred.length >= 2) {
+        pushFinding(findings, flag('cannedTemplateRepeat', 8, `Re-serves the same canned coaching template used recently (${recurred.join(' / ')}).`, ''));
+      }
+    }
+  }
+
+  // -- deferral instead of a move on a decision-ready turn (RALPH #6/#8) -----
+  // deepAssessment/quickMove turns ask for a read or a move. Ending on a
+  // question with no concrete move of any kind hands the decision back — the
+  // "asked a question instead of prescribing" failure the worst live fixtures
+  // cluster on. trustRepair is handled by the shipping reliability gate; plan,
+  // greeting, off-topic and emotional turns are exempt (they legitimately probe
+  // and sometimes should offer permission-to-pause rather than a drill). A broad
+  // move-verb set keeps false positives near zero (a real prescription passes).
+  const MOVE_VERB = /\b(put|lead|make|start|end|replace|add|cut|name|drop|keep|stop|use|ask|hold|protect|open|close|record|run|try|say|land|repeat|target|deliver|practice|drill|rewrite|review|slow|shorten|tighten|answer|pause|breathe|listen)\b/;
+  if ((fixture.turnDepth === 'deepAssessment' || fixture.turnDepth === 'quickMove')
+      && (fixture.emotionalSignal == null || fixture.emotionalSignal === '' || fixture.emotionalSignal === 'none')
+      && questionCount >= 1
+      && !MOVE_VERB.test(lower)
+      && !CLARIFY.test(lower)) {
+    pushFinding(findings, flag('deferInsteadOfMove', 6, `A ${fixture.turnDepth} turn ends on a question with no concrete move — hands the decision back instead of prescribing.`, ''));
+  }
+
   // -- fabricated attributed quote ------------------------------------------
   // Only flag when a >2-word quoted span is attributed to the user AND not in
   // the allowed corpus. Conservative: coaching example phrases in quotes are

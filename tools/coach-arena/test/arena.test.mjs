@@ -119,6 +119,38 @@ test('checks: repeated proof test flags', () => {
   assert.ok(r.findings.some((f) => f.id === 'repeatedProofTest'));
 });
 
+test('checks: canned coaching template repeated across turns flags (RALPH #4)', () => {
+  const recent = ['Run one 60-second rep — verdict first, one reason, clean stop — then I will point to the fix.'];
+  // Current reply re-serves the same 60-second-rep + verdict-first + clean-stop template.
+  const r = runChecks('Let us keep it concrete: one 60-second rep, verdict first, clean stop, and I will name the change.', baseFx(), { recentReplies: recent });
+  assert.ok(r.findings.some((f) => f.id === 'cannedTemplateRepeat'), 'whole-template recurrence should flag');
+});
+
+test('checks: coaching the same lever in fresh words does NOT flag as canned', () => {
+  // Same focus (the close), genuinely different move — must not trip cannedTemplateRepeat.
+  const recent = ['Run one 60-second rep — verdict first, one reason, clean stop.'];
+  const r = runChecks('Your ending trails into "yeah, so". Land the ask itself and leave the silence there.', baseFx(), { recentReplies: recent });
+  assert.ok(!r.findings.some((f) => f.id === 'cannedTemplateRepeat'));
+});
+
+test('checks: deferral with a question and no move on a decision turn flags (RALPH #6/#8)', () => {
+  const fx = baseFx({ turnDepth: 'deepAssessment', userTurn: 'How far off am I from sounding authoritative?' });
+  const r = runChecks('What are you trying to sound like in the room? And who is the audience?', fx, {});
+  assert.ok(r.findings.some((f) => f.id === 'deferInsteadOfMove'), 'pure question-back on a deepAssessment turn should flag');
+});
+
+test('checks: a real prescription on a decision turn does NOT flag deferInsteadOfMove', () => {
+  const fx = baseFx({ turnDepth: 'deepAssessment', userTurn: 'How far off am I?' });
+  const r = runChecks('Honest read: closer mechanically than under pressure. Run one stakes rep and hold the open. Want to try it?', fx, {});
+  assert.ok(!r.findings.some((f) => f.id === 'deferInsteadOfMove'));
+});
+
+test('checks: emotional decision turn is exempt from deferInsteadOfMove', () => {
+  const fx = baseFx({ turnDepth: 'deepAssessment', emotionalSignal: 'exhausted', userTurn: 'I am exhausted.' });
+  const r = runChecks('That sounds heavy. What would actually feel manageable right now?', fx, {});
+  assert.ok(!r.findings.some((f) => f.id === 'deferInsteadOfMove'), 'exhausted turns may probe gently without a drill');
+});
+
 test('checks: fixture disqualifier substring + regex + cap', () => {
   const fx = baseFx({ disqualifiers: ['forbidden phrase', { pattern: '\\bset to authoritative\\b', regex: true, cap: 'placeholderOrBroken' }] });
   const r1 = runChecks('this contains a forbidden phrase here', fx, {});

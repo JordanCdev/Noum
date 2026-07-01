@@ -403,7 +403,8 @@ enum CoachReliabilityGate {
                 turnDepth: turnDepth,
                 assessment: assessment,
                 surface: surface,
-                previousCoachReply: previousCoachReply
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies
             )
             : nil
 
@@ -424,20 +425,39 @@ enum CoachReliabilityGate {
         turnDepth: CoachTurnDepth,
         assessment: CoachAssessment?,
         surface: CoachReplySurface,
-        previousCoachReply: String?
+        previousCoachReply: String?,
+        recentCoachReplies: [String] = []
     ) -> String {
         if let assessment {
             let read = assessment.immediateCoachRead.trimmingCharacters(in: .whitespacesAndNewlines)
-            if isCleanCandidate(read, previousCoachReply: previousCoachReply) {
+            if isCleanCandidate(
+                read,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies
+            ) {
                 return read
             }
         }
-        return staticFallback(turnDepth: turnDepth, surface: surface)
+        return selectStaticFallback(
+            turnDepth: turnDepth,
+            surface: surface,
+            previousCoachReply: previousCoachReply,
+            recentCoachReplies: recentCoachReplies
+        )
     }
 
     /// True when a candidate fallback string is safe to render: non-empty, free
-    /// of placeholder/scaffold leaks, and not the same duplicate we are escaping.
-    static func isCleanCandidate(_ candidate: String, previousCoachReply: String?) -> Bool {
+    /// of placeholder/scaffold leaks, and not a verbatim or near-duplicate of the
+    /// immediately previous coach turn OR any recent coach turn. The recent-turn
+    /// arm is what stops the gate from re-handing the user a canned line (e.g.
+    /// "run one 60-second rep, verdict first") it saw a turn or two ago — the
+    /// "the coach keeps giving me the same fallback" failure that a single
+    /// previous-turn check misses.
+    static func isCleanCandidate(
+        _ candidate: String,
+        previousCoachReply: String?,
+        recentCoachReplies: [String] = []
+    ) -> Bool {
         let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         let lowered = normalize(trimmed)
@@ -453,24 +473,93 @@ enum CoachReliabilityGate {
                 return false
             }
         }
+        for recent in recentCoachReplies {
+            let recentTrimmed = recent.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !recentTrimmed.isEmpty else { continue }
+            let recentLowered = normalize(recentTrimmed)
+            guard recentLowered.count >= 20 else { continue }
+            if recentLowered == lowered ||
+                lowered.contains(recentLowered) ||
+                recentLowered.contains(lowered) ||
+                isNearDuplicate(lowered, recentLowered) {
+                return false
+            }
+        }
         return true
     }
 
+    /// The canonical (first) honest static line for a depth/surface. Kept as the
+    /// zero-context default; `selectStaticFallback` rotates through the variants
+    /// to avoid repeating one the user just saw.
     static func staticFallback(turnDepth: CoachTurnDepth, surface: CoachReplySurface) -> String {
+        staticFallbackVariants(turnDepth: turnDepth, surface: surface)[0]
+    }
+
+    /// Two honest, depth-shaped static lines per surface. They say the same true
+    /// thing — "I don't have a clean read yet, give me one rep" — in genuinely
+    /// different words so the gate can pick one the user has not just seen. Live
+    /// variants stay shorter than their text counterparts.
+    static func staticFallbackVariants(
+        turnDepth: CoachTurnDepth,
+        surface: CoachReplySurface
+    ) -> [String] {
         switch turnDepth {
         case .trustRepair:
             return surface == .live
-                ? "You're right to push me. I don't have a clean read yet — give me one 60-second rep on that exact moment and I'll name the biggest gap."
-                : "You're right to push me on that. I don't have a clean enough read to answer it well yet. Give me one 60-second rep on that exact scenario and I'll name the single biggest gap."
+                ? [
+                    "You're right to push me. I don't have a clean read yet — give me one 60-second rep on that exact moment and I'll name the biggest gap.",
+                    "Fair. I don't have enough to answer that well yet — talk me through that one moment and I'll name the single thing to fix."
+                ]
+                : [
+                    "You're right to push me on that. I don't have a clean enough read to answer it well yet. Give me one 60-second rep on that exact scenario and I'll name the single biggest gap.",
+                    "Fair — I owe you a real answer, not another drill, and I don't have enough proof yet to give you one. Walk me through that exact moment once and I'll tell you the single thing to change."
+                ]
         case .deepAssessment:
             return surface == .live
-                ? "I won't fake your distance to goal. One focused rep under pressure and I'll give you a straight read."
-                : "I won't fake a verdict on how far off you are — I don't have enough proof yet. Run one rep under pressure and I'll give you a straight, honest read on the gap."
+                ? [
+                    "I won't fake your distance to goal. One focused rep under pressure and I'll give you a straight read.",
+                    "I won't guess your gap without proof. One pressured rep and I'll read it straight for you."
+                ]
+                : [
+                    "I won't fake a verdict on how far off you are — I don't have enough proof yet. Run one rep under pressure and I'll give you a straight, honest read on the gap.",
+                    "I'm not going to guess at your distance to the goal without evidence. Give me one rep under real pressure and I'll tell you exactly where the gap is."
+                ]
         case .quickMove, .groundedRead:
             return surface == .live
-                ? "Let's keep it concrete: one 60-second rep, verdict first, and I'll give you the one change that matters."
-                : "Let's keep this concrete. Run one 60-second rep — verdict first, one reason, clean stop — and I'll give you the single change that matters most."
+                ? [
+                    "Let's keep it concrete: one 60-second rep, verdict first, and I'll give you the one change that matters.",
+                    "One short rep — decision up front, clean stop — then I'll name the single fix."
+                ]
+                : [
+                    "Let's keep this concrete. Run one 60-second rep — verdict first, one reason, clean stop — and I'll give you the single change that matters most.",
+                    "Here's the honest move: one short rep with the decision up front and a clean ending, then I'll point you to the one thing worth fixing."
+                ]
         }
+    }
+
+    /// Pick the first static variant the user has not just seen (not equal to,
+    /// contained in, or a near-duplicate of the previous or any recent coach
+    /// turn). If every variant collides — a rare pathological loop — the last
+    /// variant is returned so the user at least never gets a verbatim repeat of
+    /// the immediately previous line.
+    static func selectStaticFallback(
+        turnDepth: CoachTurnDepth,
+        surface: CoachReplySurface,
+        previousCoachReply: String?,
+        recentCoachReplies: [String]
+    ) -> String {
+        let variants = staticFallbackVariants(turnDepth: turnDepth, surface: surface)
+        let seen = (([previousCoachReply].compactMap { $0 }) + recentCoachReplies)
+            .map { normalize($0) }
+            .filter { $0.count >= 20 }
+        guard !seen.isEmpty else { return variants[0] }
+        func collides(_ variant: String) -> Bool {
+            let v = normalize(variant)
+            return seen.contains { s in
+                s == v || v.contains(s) || s.contains(v) || isNearDuplicate(v, s)
+            }
+        }
+        return variants.first { !collides($0) } ?? variants.last ?? variants[0]
     }
 
     // MARK: Helpers
