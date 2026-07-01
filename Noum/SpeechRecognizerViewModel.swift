@@ -142,6 +142,9 @@ class SpeechRecognizerViewModel: ObservableObject {
     /// session (empty / too short / non-recording mode), which is exactly the
     /// case that used to corrupt the PREVIOUS real rep's score.
     private var lastSavedSessionID: UUID?
+    /// Correlation id grouping this rep's flow-observability events (rep start ->
+    /// stop -> save/abort -> finalize) so an incident is reconstructable.
+    private var currentRepCorrelationID = UUID()
     private var finalTranscript: String = ""
     private var partialTranscript: String = ""
     private var currentSessionMode: PracticeMode = .ahCounter
@@ -334,6 +337,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
         sessionStart = Date()
         lastSavedSessionID = nil
+        currentRepCorrelationID = UUID()
         sessionUpdateCount = 0
         totalLatencyMs = 0
         confidenceValues = []
@@ -675,6 +679,14 @@ class SpeechRecognizerViewModel: ObservableObject {
         lastSessionDuration = duration
         let trimmed = transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, duration >= 1 else {
+            FlowLog.log(
+                correlationId: currentRepCorrelationID,
+                flow: .practiceRep,
+                stage: "rep.aborted",
+                outcome: .skipped,
+                reason: "empty or under 1s — not saved, not scored, no progress",
+                numerics: ["durationMs": Int(duration * 1000), "words": trimmed.split(separator: " ").count]
+            )
             sessionStart = nil
             lastSavedSessionID = nil
             return
@@ -728,6 +740,17 @@ class SpeechRecognizerViewModel: ObservableObject {
             )
         )
         lastSavedSessionID = finalizedSession.id
+        FlowLog.log(
+            correlationId: finalizedSession.id,
+            flow: .practiceRep,
+            stage: "rep.saved",
+            reason: "\(currentSessionMode.rawValue) rep persisted",
+            numerics: [
+                "words": trimmed.split(separator: " ").count,
+                "durationMs": Int(duration * 1000),
+                "fillers": fillerWordCount,
+            ]
+        )
         pastSessions = sessionStore.sessions
         sessionStart = nil
     }

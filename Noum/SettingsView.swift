@@ -43,6 +43,7 @@ struct SettingsView: View {
     /// `consumeIfAllowed` and on active-account `deleteAllData`.
     @StateObject private var rateLimiter = AIRateLimiter.shared
     @StateObject private var aiCallDiagnostics = AICallDiagnosticsStore.shared
+    @StateObject private var flowEvents = FlowEventLog.shared
 
     // M15 Phase 4 — escape hatch for the signal-gated home. Mirrors the
     // AppStorage key read by ContentView; flipping this on shows every
@@ -280,6 +281,7 @@ struct SettingsView: View {
                     section(label: "Home reveal") { advancedHomeCard }
                     section(label: "Developer tools") { transcriptionProviderCard }
                     section(label: "AI calls") { aiCallDiagnosticsCard }
+                    section(label: "Flow log") { flowEventsCard }
                     section(label: "Diagnostics") { recommendationDiagnosticsCard }
                     section(label: "Seed data") { developerSeedCard }
                 }
@@ -1276,6 +1278,64 @@ struct SettingsView: View {
         withAnimation(reduceMotion ? nil : .standardSpring) {
             supportToast = "AI call log copied to clipboard"
         }
+    }
+
+    private func copyFlowEvents() {
+        let payload = flowEvents.export()
+        #if canImport(UIKit)
+        UIPasteboard.general.string = payload
+        #elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
+        #endif
+        withAnimation(reduceMotion ? nil : .standardSpring) {
+            supportToast = "Flow events copied to clipboard"
+        }
+    }
+
+    @ViewBuilder
+    private var flowEventsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                compactStat(title: "Flow events", value: "\(flowEvents.events.count)")
+                Spacer()
+                compactStat(title: "Flows", value: "\(flowEvents.recentFlows().count)")
+            }
+            Text("Correlation-grouped events for reconstructing what happened in a rep or chat turn. Reasons + counts only — no transcript text.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if flowEvents.events.isEmpty {
+                Text("No flow events yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(flowEvents.events.prefix(4)) { event in
+                    HStack(spacing: 8) {
+                        Text(event.flow.title)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(event.stage)
+                            .font(.caption.monospaced())
+                        Spacer()
+                        Text(event.outcome.title)
+                            .font(.caption2)
+                            .foregroundStyle(event.outcome == .success ? .green : .orange)
+                    }
+                }
+            }
+            HStack {
+                Button { copyFlowEvents() } label: {
+                    Label("Copy flow log", systemImage: "doc.on.doc")
+                        .font(.caption.weight(.semibold))
+                }
+                Spacer()
+                Button(role: .destructive) { flowEvents.reset() } label: {
+                    Label("Clear", systemImage: "trash")
+                        .font(.caption)
+                }
+            }
+        }
+        .accessibilityIdentifier("settings.flowEvents.card")
     }
 
     // MARK: - Microphone Permission

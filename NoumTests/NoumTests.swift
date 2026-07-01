@@ -15570,6 +15570,62 @@ struct CoachContextBuilderChipParserTests {
 // gates that decide whether eloquence/AI/pace bullets land.
 
 @MainActor
+struct FlowEventLogTests {
+    private func freshLog(max: Int = 200) -> FlowEventLog {
+        FlowEventLog(
+            defaults: UserDefaults(suiteName: "flowtest.\(UUID().uuidString)")!,
+            storageKey: "flowEvents.test",
+            maxRecords: max
+        )
+    }
+
+    @Test func ringBufferCapsAtMaxNewestFirst() {
+        let log = freshLog(max: 3)
+        let cid = UUID()
+        for i in 0..<6 {
+            log.log(FlowEvent.make(correlationId: cid, flow: .practiceRep, stage: "stage\(i)"))
+        }
+        #expect(log.events.count == 3)
+        #expect(log.events.first?.stage == "stage5")
+    }
+
+    @Test func groupsEventsByCorrelationIdChronologically() {
+        let log = freshLog()
+        let rep = UUID()
+        log.log(FlowEvent.make(createdAt: Date(timeIntervalSince1970: 1), correlationId: rep, flow: .practiceRep, stage: "rep.saved"))
+        log.log(FlowEvent.make(createdAt: Date(timeIntervalSince1970: 2), correlationId: UUID(), flow: .chatTurn, stage: "chat.finalShown"))
+        log.log(FlowEvent.make(createdAt: Date(timeIntervalSince1970: 3), correlationId: rep, flow: .practiceRep, stage: "finalize.applied"))
+        let group = log.events(correlationId: rep)
+        #expect(group.map(\.stage) == ["rep.saved", "finalize.applied"])
+    }
+
+    @Test func stageAndReasonBoundedAndNumericsCapped() {
+        let event = FlowEvent.make(
+            correlationId: UUID(),
+            flow: .practiceRep,
+            stage: String(repeating: "x", count: 100),
+            reason: String(repeating: "y", count: 400),
+            numerics: Dictionary(uniqueKeysWithValues: (0..<30).map { ("k\($0)", $0) })
+        )
+        #expect(event.stage.count == 48)
+        #expect(event.reason.count == 256)
+        #expect(event.numerics.count <= 12)
+    }
+
+    @Test func exportShowsStagesAndNumericsNoTranscript() {
+        let log = freshLog()
+        log.log(FlowEvent.make(
+            correlationId: UUID(), flow: .practiceRep, stage: "rep.aborted",
+            outcome: .skipped, reason: "empty or under 1s", numerics: ["durationMs": 0]
+        ))
+        let out = log.export()
+        #expect(out.contains("rep.aborted"))
+        #expect(out.contains("durationMs=0"))
+        #expect(out.contains("Practice rep"))
+    }
+}
+
+@MainActor
 struct AbortedRepGuardTests {
     private func timedRep(score: Int) -> PracticeSession {
         PracticeSession(

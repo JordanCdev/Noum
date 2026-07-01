@@ -409,6 +409,13 @@ enum CoachReplyPipeline {
                 ) {
                     if firstVisibleAt == nil {
                         firstVisibleAt = streamedVisibleAt
+                        FlowLog.log(
+                            correlationId: coachID,
+                            flow: .chatTurn,
+                            stage: "chat.draftShown",
+                            reason: "streamed provider partials made visible (pre-gate)",
+                            numerics: ["ttftMs": streamedTTFT]
+                        )
                     }
                 }
             },
@@ -473,6 +480,20 @@ enum CoachReplyPipeline {
         let effectiveOutcome: ChatOutcome = reliabilityVerdict.fallbackText.map { .reply($0) } ??
             contentRejectedFallback.map { .reply($0) } ??
             outcome
+        // Observability: record whether the reply the user finally sees is the
+        // streamed one or a gate substitution — this is what makes the
+        // "rich draft quietly replaced by a shorter final" incident legible.
+        let draftWasReplaced = reliabilityVerdict.fallbackText != nil || contentRejectedFallback != nil
+        FlowLog.log(
+            correlationId: coachID,
+            flow: .chatTurn,
+            stage: draftWasReplaced ? "chat.finalSubstituted" : "chat.finalCommitted",
+            outcome: draftWasReplaced ? .fallback : .success,
+            reason: draftWasReplaced
+                ? "a downstream gate replaced the streamed reply the user already saw"
+                : "streamed reply committed unchanged",
+            numerics: ["blocked": reliabilityVerdict.blocked ? 1 : 0]
+        )
         if reliabilityVerdict.blocked {
             AICallDiagnostics.record(
                 surface: "Coach reliability gate",

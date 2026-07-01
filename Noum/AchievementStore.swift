@@ -227,7 +227,10 @@ final class AchievementStore: ObservableObject {
             symbolName: scoreSymbols[0],
             track: .scores,
             evaluate: { sessions, _ in
-                let count = sessions.filter { ($0.score ?? 0) >= 8 }.count
+                // wordCount floor mirrors the clarity track: an aborted/too-short
+                // rep (evaluator floors it to 1 anyway) can never count toward a
+                // score achievement even if a stray high score reaches history.
+                let count = sessions.filter { ($0.score ?? 0) >= 8 && $0.wordCount >= 3 }.count
                 return (min(count, 1), 1)
             }
         ))
@@ -240,7 +243,7 @@ final class AchievementStore: ObservableObject {
             symbolName: scoreSymbols[1],
             track: .scores,
             evaluate: { sessions, _ in
-                let count = sessions.filter { ($0.score ?? 0) >= 8 }.count
+                let count = sessions.filter { ($0.score ?? 0) >= 8 && $0.wordCount >= 3 }.count
                 return (min(count, 5), 5)
             }
         ))

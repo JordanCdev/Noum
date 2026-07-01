@@ -78,6 +78,14 @@ enum SessionFinalizer {
         // own score-floor boundary (PracticeEvaluator, wordCount/duration < 3)
         // so no rep that already scored normally is affected.
         if transcriptWordCount < 3 || effectiveDuration < 3 {
+            FlowLog.log(
+                correlationId: latestSessionID ?? UUID(),
+                flow: .practiceRep,
+                stage: "finalize.skipped",
+                outcome: .skipped,
+                reason: "below evidence floor — no XP, achievements, trend, path, or coach note",
+                numerics: ["words": transcriptWordCount, "durationMs": Int(effectiveDuration * 1000), "score": scoreValue]
+            )
             let level = ProfileManager.levelTitle(forXP: profile.xp)
             return SessionFinalizationResult(
                 previousXP: previousXP,
@@ -411,6 +419,19 @@ enum SessionFinalizer {
         // running the analyser twice would be wasteful and could (in
         // theory) drift if the engine grew side effects.
         let eloquenceFindings = preliminaryEloquenceFindings
+
+        FlowLog.log(
+            correlationId: latestSessionID ?? UUID(),
+            flow: .practiceRep,
+            stage: "finalize.applied",
+            reason: newUnlocks.isEmpty ? "progress applied" : "progress applied + \(newUnlocks.count) achievement(s) unlocked",
+            numerics: [
+                "score": scoreValue,
+                "xpEarned": max(0, newXP - previousXP),
+                "unlocks": newUnlocks.count,
+                "words": transcriptWordCount,
+            ]
+        )
 
         return SessionFinalizationResult(
             previousXP: previousXP,
