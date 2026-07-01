@@ -103,8 +103,12 @@ struct RepEventTrendEngineTests {
         #expect(trend.zone == .close)
         #expect(trend.dominantCount == 4)
         #expect(trend.repsWithSignal == 5)
+        // Every readable rep carried the event (5 of 5) → base rate is 100%, so
+        // windowRepCount == repsWithSignal and the readout omits the base-rate tail.
+        #expect(trend.windowRepCount == 5)
         #expect(trend.readout.contains("4 of your last 5"))
         #expect(trend.readout.contains("close"))
+        #expect(!trend.readout.contains("overall"))
     }
 
     @Test("3-of-3 in one zone is the smallest nameable pattern")
@@ -121,8 +125,8 @@ struct RepEventTrendEngineTests {
 
     @Test("Reps that didn't carry the event are excluded from the denominator")
     func cleanRepsExcludedFromDenominator() throws {
-        // 3 rushed-close reps + 5 reps that never rushed. The "5 clean" reps
-        // must NOT dilute the read to 3-of-8; the denominator is reps-with-event.
+        // 3 rushed-close reps + 3 reps that never rushed. The clean reps must
+        // NOT dilute the read to 3-of-6; the pattern denominator is reps-with-event.
         let locations = [
             rushed(.close), rushed(.close), rushed(.close),
             empty(), empty(), empty()
@@ -130,6 +134,11 @@ struct RepEventTrendEngineTests {
         let trend = try #require(RepEventTrendEngine.trend(for: .rushedBurst, in: locations))
         #expect(trend.repsWithSignal == 3)
         #expect(trend.dominantCount == 3)
+        // ...but the clean reps DO count toward the base rate: the event only
+        // surfaced in 3 of the 6 readable reps, and the readout says so, so a
+        // 3-of-3 pattern can't read as pervasive.
+        #expect(trend.windowRepCount == 6)
+        #expect(trend.readout.contains("3 of your last 6 reps overall"))
     }
 
     // MARK: 6 — deterministic tie-break

@@ -96,6 +96,7 @@ struct RepEventTrendCard: View {
                 Text(RepEventTrendCopy.evidenceSubline(for: trend))
                     .font(Typography.captionSmall)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.vertical, Spacing.sm)
@@ -141,7 +142,9 @@ enum RepEventTrendCopy {
 
     /// The earned-denominator evidence line. Names the count AND the base it is
     /// out of ("reps that had a rushed stretch"), so the read never implies a
-    /// prevalence it hasn't measured.
+    /// prevalence it hasn't measured. When the event only surfaced in SOME of
+    /// the readable reps, a base-rate tail names how often it showed up at all,
+    /// so a narrow-but-consistent position can't read as pervasive.
     static func evidenceSubline(for trend: RepEventTrend) -> String {
         let base: String
         switch trend.kind {
@@ -149,13 +152,19 @@ enum RepEventTrendCopy {
         case .longestPause:  base = "with a notable pause"
         case .fillerCluster: base = "with a filler cluster"
         }
-        return "In \(trend.dominantCount) of your last \(trend.repsWithSignal) reps \(base)."
+        let core = "In \(trend.dominantCount) of your last \(trend.repsWithSignal) reps \(base)"
+        // Tail drops the repeated "your last" to keep one 11pt line scannable.
+        guard trend.repsWithSignal < trend.windowRepCount else { return core + "." }
+        return core + " — \(trend.repsWithSignal) of \(trend.windowRepCount) reps overall."
     }
 
     /// The rep-set hedge, shown once at the foot of the card.
     static let hedgeFooter = "A pattern in your recent reps — a place to aim next, not a fixed trait."
 
-    /// One coherent VoiceOver sentence covering every rendered trend.
+    /// One coherent VoiceOver sentence covering every rendered trend. Carries
+    /// the SAME base-rate clarifier the visual subline does, so a screen-reader
+    /// user gets the identical anti-overclaim honesty — never the un-hedged,
+    /// more-pervasive-sounding line.
     static func accessibilityReadout(for trends: [RepEventTrend]) -> String {
         let clauses = trends.map { trend -> String in
             let kindPhrase: String
@@ -164,7 +173,9 @@ enum RepEventTrendCopy {
             case .longestPause:  kindPhrase = "longest silence"
             case .fillerCluster: kindPhrase = "fillers"
             }
-            return "\(kindPhrase) in the \(trend.zone.label) in \(trend.dominantCount) of \(trend.repsWithSignal) reps"
+            let core = "\(kindPhrase) in the \(trend.zone.label) in \(trend.dominantCount) of \(trend.repsWithSignal) reps"
+            guard trend.repsWithSignal < trend.windowRepCount else { return core }
+            return core + ", \(trend.repsWithSignal) of \(trend.windowRepCount) overall"
         }
         return "Recurring pattern. " + clauses.joined(separator: ", ") + ". A pattern in recent reps, not a fixed trait."
     }
@@ -172,19 +183,19 @@ enum RepEventTrendCopy {
 
 #if DEBUG
 @available(iOS 17.0, *)
-#Preview("Trend — rushed close") {
+#Preview("Trend — rushed close (every rep)") {
     RepEventTrendCard(trends: [
-        RepEventTrend(kind: .rushedBurst, zone: .close, dominantCount: 4, repsWithSignal: 5)
+        RepEventTrend(kind: .rushedBurst, zone: .close, dominantCount: 4, repsWithSignal: 5, windowRepCount: 5)
     ])
     .padding()
     .background(AppColor.screenBackground)
 }
 
 @available(iOS 17.0, *)
-#Preview("Trend — two patterns") {
+#Preview("Trend — two patterns (with base rate)") {
     RepEventTrendCard(trends: [
-        RepEventTrend(kind: .rushedBurst, zone: .close, dominantCount: 4, repsWithSignal: 5),
-        RepEventTrend(kind: .longestPause, zone: .opening, dominantCount: 3, repsWithSignal: 3)
+        RepEventTrend(kind: .rushedBurst, zone: .close, dominantCount: 4, repsWithSignal: 5, windowRepCount: 6),
+        RepEventTrend(kind: .longestPause, zone: .opening, dominantCount: 3, repsWithSignal: 3, windowRepCount: 6)
     ])
     .padding()
     .background(AppColor.screenBackground)

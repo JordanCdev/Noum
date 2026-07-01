@@ -20,8 +20,10 @@ import Foundation
 @Suite("RepEventTrendCopyTests")
 struct RepEventTrendCopyTests {
 
-    private func trend(_ kind: RepEventTrend.EventKind, _ zone: RepEventLocations.Zone, _ dom: Int, _ total: Int) -> RepEventTrend {
-        RepEventTrend(kind: kind, zone: zone, dominantCount: dom, repsWithSignal: total)
+    private func trend(_ kind: RepEventTrend.EventKind, _ zone: RepEventLocations.Zone, _ dom: Int, _ total: Int, window: Int? = nil) -> RepEventTrend {
+        // Default window == signal → the event carried every readable rep, so
+        // the base-rate tail is suppressed and the clean subline is asserted.
+        RepEventTrend(kind: kind, zone: zone, dominantCount: dom, repsWithSignal: total, windowRepCount: window ?? total)
     }
 
     // 1 — earned denominator, never "all reps"
@@ -31,6 +33,24 @@ struct RepEventTrendCopyTests {
         #expect(line == "In 4 of your last 5 reps with a rushed stretch.")
         // Names the base ("with a rushed stretch") so it can't imply prevalence.
         #expect(line.contains("with a rushed stretch"))
+    }
+
+    // 1b — base-rate tail weights prevalence when the event was NOT in every rep
+    @Test("Subline names the base rate when the event only surfaced in some reps")
+    func evidenceNamesBaseRateWhenSparse() {
+        // 5 of 6 readable reps rushed; 4 of those in the close. The tail must
+        // name the 5-of-6 base rate so the read can't imply a rush on every rep.
+        let line = RepEventTrendCopy.evidenceSubline(for: trend(.rushedBurst, .close, 4, 5, window: 6))
+        #expect(line == "In 4 of your last 5 reps with a rushed stretch — 5 of 6 reps overall.")
+        #expect(line.contains("5 of 6 reps overall"))
+    }
+
+    @Test("Base-rate tail is suppressed when the event carried every readable rep")
+    func evidenceOmitsBaseRateWhenUniversal() {
+        // repsWithSignal == windowRepCount → base rate is 100%, tail redundant.
+        let line = RepEventTrendCopy.evidenceSubline(for: trend(.longestPause, .opening, 3, 4, window: 4))
+        #expect(!line.contains("overall"))
+        #expect(line.hasSuffix("with a notable pause."))
     }
 
     @Test("Each kind's subline names its own event base")
@@ -65,6 +85,17 @@ struct RepEventTrendCopyTests {
         #expect(a11y.contains("Recurring pattern"))
         #expect(a11y.lowercased().contains("not a fixed trait"))
         #expect(a11y.contains("close"))
+    }
+
+    @Test("A11y readout carries the SAME base rate the visual subline does")
+    func a11yCarriesBaseRateWhenSparse() {
+        // Sparse case (5 of 6) → VoiceOver must NOT get the un-hedged line the
+        // sighted user no longer sees; it carries the base-rate clarifier too.
+        let sparse = RepEventTrendCopy.accessibilityReadout(for: [trend(.rushedBurst, .close, 4, 5, window: 6)])
+        #expect(sparse.contains("5 of 6 overall"))
+        // Universal case (3 of 3) → no redundant base-rate tail, same as visual.
+        let universal = RepEventTrendCopy.accessibilityReadout(for: [trend(.longestPause, .opening, 3, 3)])
+        #expect(!universal.contains("overall"))
     }
 
     @Test("A11y readout covers every rendered trend")

@@ -46,21 +46,37 @@ struct RepEventTrend: Codable, Equatable, Hashable {
     let zone: RepEventLocations.Zone
     /// How many of the recent reps-with-this-event had it in `zone`.
     let dominantCount: Int
-    /// How many recent reps carried this event type at all (the denominator).
+    /// How many recent reps carried this event type at all (the denominator
+    /// the pattern is measured against).
     let repsWithSignal: Int
+    /// How many recent reps we could read positionally at all — the BASE RATE
+    /// denominator. `repsWithSignal <= windowRepCount` always. Lets the readout
+    /// weight prevalence: an event that keeps landing in one zone but only
+    /// surfaces in a few of the readable reps is a narrower claim than one that
+    /// surfaces in every rep. Without it, "in 3 of your last 3 reps with a
+    /// rushed stretch" reads as pervasive even when only 3 of 6 reps rushed at
+    /// all (CLAUDE.md: avoid fake certainty from small samples).
+    let windowRepCount: Int
 
     /// Coach-voice readout naming the recurring position, framed as a rep-set
     /// hypothesis. Used by `CoachContextBuilder`'s POSITIONAL TREND section.
     var readout: String {
         let where_ = "the \(zone.label)"
         let evidence = "in \(dominantCount) of your last \(repsWithSignal) reps"
+        // Weight prevalence honestly: when the event only surfaced in SOME of
+        // the readable reps, name that base rate so a narrow-but-consistent
+        // position can't read as something the user does on every rep. Omitted
+        // when the event carried every readable rep (base rate is already 100%).
+        let prevalence = repsWithSignal < windowRepCount
+            ? " It showed up in \(repsWithSignal) of your last \(windowRepCount) reps overall."
+            : ""
         switch kind {
         case .rushedBurst:
-            return "You've rushed \(where_) \(evidence) that had a fast stretch — the fastest stretch keeps landing there. A recurring position, not a fixed trait."
+            return "You've rushed \(where_) \(evidence) that had a fast stretch — the fastest stretch keeps landing there.\(prevalence) A recurring position, not a fixed trait."
         case .longestPause:
-            return "Your longest silence has fallen in \(where_) \(evidence) that had a notable pause — a recurring position, not a fixed trait."
+            return "Your longest silence has fallen in \(where_) \(evidence) that had a notable pause.\(prevalence) A recurring position, not a fixed trait."
         case .fillerCluster:
-            return "Fillers have clustered in \(where_) \(evidence) that had a filler cluster — a recurring position, not a fixed trait."
+            return "Fillers have clustered in \(where_) \(evidence) that had a filler cluster.\(prevalence) A recurring position, not a fixed trait."
         }
     }
 }
@@ -151,7 +167,11 @@ enum RepEventTrendEngine {
             kind: kind,
             zone: dominantZone,
             dominantCount: dominantCount,
-            repsWithSignal: zones.count
+            repsWithSignal: zones.count,
+            // Base rate: every rep we could read positionally in the window, not
+            // just the ones that carried this event. `zones` is a compactMap
+            // subset of `locations`, so repsWithSignal <= windowRepCount holds.
+            windowRepCount: locations.count
         )
     }
 }
