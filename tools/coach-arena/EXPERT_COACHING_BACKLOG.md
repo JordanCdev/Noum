@@ -223,11 +223,16 @@ newest-done first. Each item: the VISION hook, why it matters, and status.
    when ALL providers content-reject), the reply is TURN-BLIND — same "your last rep
    gives one usable signal: 7/10, 1 filler, 50s" regardless of the question. Rare, but
    a generic non-answer when it fires. Make the fallback at least address the turn type.
-3. **Delivery intelligence depth** — VISION roadmap #5 (Perception). The coach
-   senses fillers/pace/pauses but not prosody contour, breathing, emphasis, vocal
-   energy, authority/tension. The one genuinely-new CAPABILITY gap (not a prompt
-   tweak). Needs new session evidence, conservative thresholds, user-visible "what
-   can/can't be inferred" copy. Large; stage it.
+3. **Delivery intelligence depth** — VISION roadmap #5 (Perception). INVESTIGATED
+   iter 11 (`reports/iter11-delivery-intelligence-audit.md`): substantially BUILT and
+   wired to the coach — VocalEnergyMetrics, paceVariance, pitch variation, pause
+   quality, ComposureReadEngine (authority/tension), ConfidenceMarkerEngine (timid vs
+   humble-but-clear), PROMPT RELEVANCE (evasive/buried lede), judgment-layer
+   (polished-but-not-believed). Conservatism already correct (sample floors,
+   ≥2-channel). Genuine remainders (breathing, per-word emphasis) are low-ROI/hard
+   from ASR. NOT a headless build lever. What WOULD add value: validate the reads
+   against human perception on labeled real recordings — same blocker as #1 (needs a
+   dataset / production run).
 4. **personalMemory via STRUCTURAL context** — DEPRIORITIZED (may not be a real
    gap). iters 5-6 proved prompt-wording can't move it; avg is already ~13-14/20 on
    fresh draws (the low baseline was an unlucky draw). Only pursue if a fresh
