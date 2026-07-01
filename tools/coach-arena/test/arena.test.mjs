@@ -125,6 +125,28 @@ test('score: flags deduct but cannot zero a great capless answer', () => {
   assert.equal(s.final, 78);
 });
 
+test('score: closerTo=bad caps a grounded reply as a failure', () => {
+  const det = { caps: [], flags: [], flagPenalty: 0, placeholderLeaks: 0 };
+  const judge = { judgeTotal: 82, caps: {}, closerTo: 'bad' };
+  const s = combineScore(det, judge);
+  assert.equal(s.final, 45, 'a bad-resembling reply is capped however high its dims');
+  assert.equal(s.closerToCap, 45);
+});
+
+test('score: closerTo=between deducts a modest amount', () => {
+  const det = { caps: [], flags: [], flagPenalty: 0, placeholderLeaks: 0 };
+  const judge = { judgeTotal: 84, caps: {}, closerTo: 'between' };
+  const s = combineScore(det, judge);
+  assert.equal(s.final, 78);
+});
+
+test('score: closerTo=excellent is unchanged', () => {
+  const det = { caps: [], flags: [], flagPenalty: 0, placeholderLeaks: 0 };
+  const judge = { judgeTotal: 88, caps: {}, closerTo: 'excellent' };
+  const s = combineScore(det, judge);
+  assert.equal(s.final, 88);
+});
+
 test('judge: parses, clamps out-of-range scores, tolerates fences', () => {
   const text = '```json\n{"diagnosticIQ":{"score":40,"reason":"a"},"eqAttunement":{"score":20},"personalMemory":{"score":18},"interventionQuality":{"score":14},"dialogueFeel":{"score":13},"caps":{"placeholderOrBroken":false,"ignoresIntent":false,"fabricatesEvidence":false,"unsafe":false},"closerTo":"excellent","failureReasons":[],"suggestedFix":"none"}\n```';
   const j = parseJudge(text);

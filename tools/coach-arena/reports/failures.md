@@ -1,6 +1,6 @@
-# Coach Arena failures — run_2026-07-01_02-20-30
+# Coach Arena failures — run_2026-07-01_12-15-00
 
-10 fixture(s) below 70 / capped / missing.
+11 fixture(s) below 70 / capped / missing.
 
 ## conv-cold-start-first-rep__t0 — **50/100**
 
@@ -33,6 +33,23 @@ REPLY:
 
 ```
 
+## its-not-easy — **60/100**
+
+- Category: `emotional-frustration` · turn: `trustRepair` · voice: `warm`
+- User turn: "It's not easy."
+- Expected move: Meet the emotion first — acknowledge that it genuinely isn't easy and that the freeze is real, without therapy-speak or minimising. Then, lightly, anchor to evidence that the capacity is already there (held composure through an interruption this week) so the encouragement is earned, not hollow. At most a small, low-pressure next step — or just presence. Do NOT lead with a drill or a metric.
+- Judge dims: IQ 15/25 · EQ 20/25 · Mem 8/20 · Interv 10/15 · Feel 13/15 · closerTo=between
+- Judge: Omits the specific evidence (this week's held composure through an interruption) that the excellent answer uses to make the encouragement earned, not just asserted
+- Suggested fix: Require the coach to cite the most recent proof point when reassuring a discouraged user, so encouragement is anchored in evidence rather than a general claim about capacity.
+
+```
+REPLY:
+No, it isn't. Knowing the move and doing it under real pressure are two different things, and the gap between them is exactly where you are right now.
+
+That freeze isn't a contradiction of your reps — it's the actual thing we're trying to close. Next time you feel it coming in a real conversation, you don't need the whole sentence ready, just the first four words. Say those, and the rest tends to follow.
+
+```
+
 ## set-authoritative — **60/100**
 
 - Category: `goal-change` · turn: `groundedRead` · voice: `none`
@@ -44,6 +61,39 @@ REPLY:
 ```
 REPLY:
 Authoritative it is. Tap the card to confirm and I'll lock it in — from there we train toward a voice that holds the room: fewer hedges, a clear stop after the point.
+
+```
+
+## conv-transfer-report__t1 — **62/100**
+
+- Category: `synthetic-conversation` · turn: `groundedRead` · voice: `persuasive`
+- User turn: "yeah I led with the ask and they said yes on the spot, first time that's ever happened"
+- Expected move: Treat the outcome as subjective and associative, not proof of causation — a real meeting has many variables, the drill is one input, not the sole cause. Do not claim the technique "worked" or guarantee it will repeat. Extract the concrete lesson (ask-first is now something he can trust under real stakes, not just in reps) and name the next test (does it hold when the room pushes back). Persuasive register: confident, not salesy.
+- Judge dims: IQ 15/25 · EQ 17/25 · Mem 12/20 · Interv 11/15 · Feel 13/15 · closerTo=between
+- Judge: Never states the causation caveat ('a live room has too many variables to credit the drill alone') that the expectedCoachMove explicitly requires — the reply avoids overclaiming by omission rather than by actively naming the limits of the evidence.; Does not name what the win actually proves (holding the structure under real stakes) versus what it doesn't (repeatability), leaving the diagnostic and memory dimensions thinner than the excellent reference.
+- Suggested fix: Add one explicit sentence naming that a live room has too many variables to credit the ask-first line alone, then pivot to what the result does prove (holding structure under stakes) before setting the next test.
+
+```
+REPLY:
+A yes on the spot, first time — mark that one. What did you notice in the room that made it land, the ask itself or how you held the pause after it.
+
+New target for the next pitch: once you've made the ask, stop talking and let the silence sit until they respond, instead of filling it with more reasons.
+```
+
+## talk-too-fast — **63/100**
+
+- Category: `mechanics` · turn: `groundedRead` · voice: `authoritative`
+- User turn: "I talk way too fast, people can't keep up."
+- Expected move: Cite the actual pace (215) against his low pause rate (0.09) — this isn't a confidence problem, it's a missing gap between sentences. Fix the pause, not the speed: insert a break at sentence boundaries so each point has room to land, rather than telling him to consciously slow his rate of speech. One move framed as a test.
+- Judge dims: IQ 16/25 · EQ 18/25 · Mem 15/20 · Interv 8/15 · Feel 12/15 · closerTo=between
+- Judge: Reintroduces a pace target (180wpm) after correctly diagnosing that the gap, not the rate, is the problem — undermines the single clean intervention the case formulation calls for.
+- Suggested fix: Instruct the coach to commit to exactly one variable under test per turn — once pace is ruled out as the lever, do not reintroduce a pace number in the prescribed move.
+
+```
+REPLY:
+Yesterday's rep backs that up — 215 wpm with barely any pause between sentences, despite clean content and almost no fillers. That's not nerves, it's a missing gap: one idea runs straight into the next before it lands.
+
+Test this: hold a silent beat after every sentence, not just at the end. Target dropping pace toward 180 while you do it — that tests whether the gap, not the words, is what people are missing.
 
 ```
 
@@ -64,23 +114,6 @@ Sounding like yourself in the hard conversations — five weeks on it now. The r
 The current test is holding one beat before the hard sentence, and you're two reps into three needed. It's already showing up for real — that line you held at work, "I hear you, and I still think we should hold the date," is exactly the shape we're after. One more IM rep holding pace and this one's proven out.
 ```
 
-## its-not-easy — **66/100**
-
-- Category: `emotional-frustration` · turn: `trustRepair` · voice: `warm`
-- User turn: "It's not easy."
-- Expected move: Meet the emotion first — acknowledge that it genuinely isn't easy and that the freeze is real, without therapy-speak or minimising. Then, lightly, anchor to evidence that the capacity is already there (held composure through an interruption this week) so the encouragement is earned, not hollow. At most a small, low-pressure next step — or just presence. Do NOT lead with a drill or a metric.
-- Judge dims: IQ 15/25 · EQ 20/25 · Mem 8/20 · Interv 10/15 · Feel 13/15 · closerTo=between
-- Judge: Omits the specific evidence (this week's held composure through an interruption) that the excellent answer uses to make the encouragement earned, not just asserted
-- Suggested fix: Require the coach to cite the most recent proof point when reassuring a discouraged user, so encouragement is anchored in evidence rather than a general claim about capacity.
-
-```
-REPLY:
-No, it isn't. Knowing the move and doing it under real pressure are two different things, and the gap between them is exactly where you are right now.
-
-That freeze isn't a contradiction of your reps — it's the actual thing we're trying to close. Next time you feel it coming in a real conversation, you don't need the whole sentence ready, just the first four words. Say those, and the rest tends to follow.
-
-```
-
 ## cold-start-no-data — **66/100**
 
 - Category: `cold-start` · turn: `groundedRead` · voice: `none`
@@ -98,20 +131,23 @@ That gives us real numbers on your fillers and pace instead of a guess. What's t
 
 ```
 
-## conv-transfer-report__t1 — **68/100**
+## awkward-pauses — **68/100**
 
-- Category: `synthetic-conversation` · turn: `groundedRead` · voice: `persuasive`
-- User turn: "yeah I led with the ask and they said yes on the spot, first time that's ever happened"
-- Expected move: Treat the outcome as subjective and associative, not proof of causation — a real meeting has many variables, the drill is one input, not the sole cause. Do not claim the technique "worked" or guarantee it will repeat. Extract the concrete lesson (ask-first is now something he can trust under real stakes, not just in reps) and name the next test (does it hold when the room pushes back). Persuasive register: confident, not salesy.
-- Judge dims: IQ 15/25 · EQ 17/25 · Mem 12/20 · Interv 11/15 · Feel 13/15 · closerTo=between
-- Judge: Never states the causation caveat ('a live room has too many variables to credit the drill alone') that the expectedCoachMove explicitly requires — the reply avoids overclaiming by omission rather than by actively naming the limits of the evidence.; Does not name what the win actually proves (holding the structure under real stakes) versus what it doesn't (repeatability), leaving the diagnostic and memory dimensions thinner than the excellent reference.
-- Suggested fix: Add one explicit sentence naming that a live room has too many variables to credit the ask-first line alone, then pivot to what the result does prove (holding structure under stakes) before setting the next test.
+- Category: `mechanics` · turn: `groundedRead` · voice: `warm`
+- User turn: "When I pause it just feels awkward and everyone waits."
+- Expected move: Validate that the feeling is real, then reframe: the awkwardness isn't the silence itself, it's that the pause is empty rather than purposeful. Give the pause a job (already choosing the next word during it) so it reads as composed rather than stalled. One move, framed as a test. Warm register.
+- Judge dims: IQ 22/25 · EQ 20/25 · Mem 16/20 · Interv 11/15 · Feel 11/15 · closerTo=between
+- Deterministic: tooLong
+- Judge: Over length per deterministicFindings (94w/3L vs 90w/5L limit for a groundedRead turn), diluting the single-test crispness with an added counting instruction.
+- Suggested fix: Cut the final counting-instruction paragraph; end on the single 'land on your next word' test to stay within length and keep one clean testable move.
 
 ```
 REPLY:
-A yes on the spot, first time — mark that one. What did you notice in the room that made it land, the ask itself or how you held the pause after it.
+Today's rep had two pauses over 2 seconds with nothing moving in your face or voice, then you rushed the next line to get past it. That's likely the actual source — the length isn't the problem, the empty waiting is.
 
-New target for the next pitch: once you've made the ask, stop talking and let the silence sit until they respond, instead of filling it with more reasons.
+Test this: next pause, use the second to physically land on your next word before you say it, instead of stopping and hoping one arrives. A pause with somewhere to go reads differently than one that's just stalling.
+
+Run a Timed rep and count how many pauses you spend "arriving" versus just waiting.
 ```
 
 ## greeting-hi — **69/100**
@@ -125,23 +161,6 @@ New target for the next pitch: once you've made the ask, stop talking and let th
 ```
 REPLY:
 Good to have you back. Stay on the current target: land the close, no softener — you held it once and softened once yesterday, so run another rep at it.
-
-```
-
-## talk-too-fast — **69/100**
-
-- Category: `mechanics` · turn: `groundedRead` · voice: `authoritative`
-- User turn: "I talk way too fast, people can't keep up."
-- Expected move: Cite the actual pace (215) against his low pause rate (0.09) — this isn't a confidence problem, it's a missing gap between sentences. Fix the pause, not the speed: insert a break at sentence boundaries so each point has room to land, rather than telling him to consciously slow his rate of speech. One move framed as a test.
-- Judge dims: IQ 16/25 · EQ 18/25 · Mem 15/20 · Interv 8/15 · Feel 12/15 · closerTo=between
-- Judge: Reintroduces a pace target (180wpm) after correctly diagnosing that the gap, not the rate, is the problem — undermines the single clean intervention the case formulation calls for.
-- Suggested fix: Instruct the coach to commit to exactly one variable under test per turn — once pace is ruled out as the lever, do not reintroduce a pace number in the prescribed move.
-
-```
-REPLY:
-Yesterday's rep backs that up — 215 wpm with barely any pause between sentences, despite clean content and almost no fillers. That's not nerves, it's a missing gap: one idea runs straight into the next before it lands.
-
-Test this: hold a silent beat after every sentence, not just at the end. Target dropping pace toward 180 while you do it — that tests whether the gap, not the words, is what people are missing.
 
 ```
 
