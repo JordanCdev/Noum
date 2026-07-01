@@ -4,11 +4,13 @@
 > and does NOT survive a context reset — re-run `/loop 50 keep assessing the app
 > and finding ways to improve against the VISION.md goals (expert level coaching)`
 > to continue. iter 4 DONE: interventionQuality one-clean-move (rule 3), controlled
-> A/B +4.93. iter 5 REVERTED: the personalMemory rule-1 rewrite did NOT help in a
-> same-era dual-arm A/B (−0.83, controls −2, cold-start fabrication) — see
-> "Investigated" below. Next task = **Next item #1 (narrow synthesize-across-data
-> clause only, re-verified) or item #2 (delivery intelligence)**. Context: memory
-> files `coach_arena` + `session_lifecycle_evidence_floor`; commits
+> A/B +4.93. iters 5 AND 6 REVERTED: personalMemory is NOT movable via rule-1
+> prompt wording — two same-era dual-arm A/Bs both net-negative, and old-arm scores
+> swing ±5/fixture between draws (generation variance dwarfs the effect). Approach
+> CLOSED. Next task = **Next item #2 (delivery intelligence)**, or Next #1 only if
+> the personalMemory gap is re-confirmed real via a fresh dual-arm baseline (it may
+> not be — avg is ~13-14/20). Context: memory files `coach_arena` +
+> `session_lifecycle_evidence_floor`; commits
 > `f035a3c4`..`3f0edd01` on `ux-overhaul`.
 > **On measurement (read before trusting any number):** the full-suite re-judge is
 > a fresh LLM panel each run, and panels DRIFT in leniency run-to-run (iter 4's
@@ -95,16 +97,34 @@ newest-done first. Each item: the VISION hook, why it matters, and status.
   ACROSS the data / don't restate verbatim / don't re-cite a fact an earlier turn
   surfaced" — try THAT clause alone, appended to the original rule 1, and re-verify
   before shipping. Do NOT re-add the load-bearing-scan or the cold-start guard.
+  [Tried in iter 6 — also failed; see below.]
+
+- **personalMemory synthesize-clause-only** (iter 6) — REVERTED. Took ONLY the
+  iter-5 winner (append a "when two or more data points genuinely connect, read
+  them together, never force it, don't re-cite stale facts" sentence to the
+  original rule 1). Same-era dual-arm A/B (`reports/iter6-ab-personalmemory-NEGATIVE.json`):
+  memoryFailure old 13.08 -> new 12.5 (−0.58, preferred 4/12), controls −0.33,
+  and it STILL induced a fabrication (`too-long`: claimed "pace held", a metric the
+  rep does not measure, while dropping the real fillers delta). DECISIVE cross-iter
+  finding: the OLD-arm score swings ±5 per fixture between the iter-5 and iter-6
+  draws (conv-transfer old 16->11, too-long old 10->15) — generation variance
+  dwarfs any rule-1 wording effect. CONCLUSION: personalMemory is NOT movable via
+  rule-1 prompt wording; stop trying. Any real lever is structural (the CONTEXT
+  block) — see Next #1.
 
 ## Next (priority order)
-1. **personalMemory — synthesize-across-data clause ONLY** (narrow retry of the
-   iter-5 revert). Append just the winning sub-idea to the ORIGINAL rule 1: "when
-   two or more data points exist, build a read across them (pattern/contrast/
-   trajectory/a connection the user hasn't drawn) rather than restating a stat
-   verbatim, and don't re-cite a fact an earlier turn already surfaced." Nothing
-   else — no load-bearing-scan, no cold-start guard. Verify with the same-era
-   dual-arm blind A/B before shipping; abandon if not clearly positive incl.
-   controls + no new fabrications.
+1. **personalMemory via STRUCTURAL context (not prompt wording)** — iters 5 AND 6
+   both proved prompt-wording is a dead end here (see "Investigated"): the dual-arm
+   A/B old-arm score swings ±5 per fixture between draws, so generation variance
+   dwarfs any rule-1 effect. If personalMemory is worth moving at all, the lever is
+   WHAT the model sees, not how rule 1 phrases it: pre-synthesize the durable facts
+   in the CONTEXT block itself (renderContext / CoachContextBuilder) — surface the
+   single most decision-relevant fact, a computed trend/contrast, and suppress
+   already-surfaced facts — so the model receives a load-bearing read rather than a
+   raw stat list. Bigger change, touches context-building logic; verify the same
+   dual-arm way. NOTE: may not be worth it — avg personalMemory is already ~13-14/20
+   on fresh draws; the low baseline was an unlucky draw, so confirm the gap is real
+   (fresh dual-arm baseline) before investing.
 2. **Delivery intelligence depth** — VISION roadmap #5 (Perception). The coach
    senses fillers/pace/pauses but not prosody contour, breathing, emphasis, vocal
    energy, authority/tension. This is the biggest gap to "expert perception".
