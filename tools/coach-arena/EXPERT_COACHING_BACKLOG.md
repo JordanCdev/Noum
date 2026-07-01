@@ -9,10 +9,12 @@
 > swing ±5/fixture between draws (generation variance dwarfs the effect). Approach
 > CLOSED. iter 7 (assessment): evidence-scaled confidence is ALREADY implemented
 > (Investigated) — the prompt/context layer is MATURE, so prompt-rule tweaking is
-> now low-leverage. Next task = **Next item #1 (real-pipeline eval / gate
-> over-rejection audit)** — the real leverage the Arena can't see; needs a dump dir
-> or live key, but the gate audit sub-task is doable without them. Then #2 (delivery
-> intelligence, the one new-capability gap). Context: memory files `coach_arena` +
+> now low-leverage. iter 8 (audit): the chat quality GATE is well-calibrated — it
+> correctly rejects long/"Next rep:"-labelled replies the ARENA is lenient about
+> (`reports/iter8-gate-audit.md`); no gate bug. Next task = **Next item #1 (align the
+> Arena length/label penalty with the gate so Arena-high predicts ships-clean)** — a
+> small in-harness change. Then #2 (real-pipeline eval, needs a dump dir or live key)
+> and #3 (delivery intelligence). Context: memory files `coach_arena` +
 > `session_lifecycle_evidence_floor`; commits
 > `f035a3c4`..`3f0edd01` on `ux-overhaul`.
 > **On measurement (read before trusting any number):** the full-suite re-judge is
@@ -130,6 +132,22 @@ newest-done first. Each item: the VISION hook, why it matters, and status.
   dimension). If future thin-evidence over-claims appear, fix the specific
   computation that under-labels confidence, not the prompt wording.
 
+- **Chat quality-gate over-rejection** (iter 8, audit) — NOT a gate bug; the gate is
+  well-calibrated. Swept 15 Arena-high replies (75-89) through the live gate rules
+  (`replyQualityIssue`/`semanticQualityIssue`/`visionQualityIssue`) via a temporary
+  `@testable` test. 12 trips on 9/15 replies, but on inspection almost all are the
+  gate CORRECTLY enforcing the app contract the Arena is lenient about:
+  `scaffoldLabel` (3) = replies using "Next rep:" / "Straight verdict:", labels the
+  prompt EXPLICITLY bans; `tooLong` (6) = `monotone` genuinely 106 words, the rest
+  exceed the DELIBERATE, test-locked 4-sentence/420-char groundedRead caps
+  (`rejectsOverlongTextModeReply`, `shortnessTurnDoesNotAccidentallyExpand` lock
+  them). Full write-up: `reports/iter8-gate-audit.md`. Removed the sweep test (wrong
+  premise: "Arena-high ⇒ should pass the gate" is false). **Real finding: the ARENA
+  under-penalizes length/labels vs the shipping gate** — so "Arena-high" over-predicts
+  ship quality. Improvement is on the MEASUREMENT side (Next #1 below). One product
+  question flagged for Jordan: the gate's 4-SENTENCE cap is stricter than the prompt's
+  4-LINE/75-word contract, so a 47-word/5-sentence reply gets repaired — deliberate?
+
 ## Next (priority order)
 > **iter 7 re-prioritization (read this):** the prompt/context LAYER IS MATURE.
 > iters 4-7 established that the remaining prompt/context "gaps" are largely already
@@ -139,32 +157,38 @@ newest-done first. Each item: the VISION hook, why it matters, and status.
 > is now (a) the PIPELINE the Arena can't see, and (b) genuinely new capability.
 > Levers below re-ordered accordingly.
 
-1. **Real-pipeline eval — the actual highest-leverage lever.** The Arena grades the
-   prompt on a clean Claude call; it CANNOT see the gate/fallback/retrieval that
-   memory repeatedly flags as where real user-facing quality degrades (`chat_quality_gate`:
-   gate rejections surface to users as "offline"; `coach_reliability_gate`;
-   single-provider fragility on `gemini-3.5-flash`). Wire the Python app-path engine
-   (`./run.sh python`) over real app-dumped candidates (`NOUM_COACH_EVAL_DUMP_DIR`),
-   or a live `--live` run, to measure what users ACTUALLY get. Prereq (may block a
-   headless tick): either a populated dump dir (run the app through eval scenarios
-   once) or a live API key. First concrete sub-task even without those: AUDIT the
-   gate for over-rejection — does `replyQualityIssue` / the quality gate reject
-   replies the Arena would score 70+? A false-reject there silently downgrades every
-   affected user to a fallback, a direct hit to "believable coaching".
-2. **Delivery intelligence depth** — VISION roadmap #5 (Perception). The coach
+1. **Align the Arena length/label penalty with the shipping gate** (from the iter-8
+   gate audit). The gate is fine; the ARENA is lenient on length/labels, so an
+   Arena-high reply can still trip the gate and get repaired. Make the Arena's
+   deterministic checks + dialogueFeel rubric penalize what the gate rejects: replies
+   over the groundedRead length contract, and "Next rep:" / "Straight verdict:" /
+   other banned labels (the prompt bans them; the Arena currently shrugs). Then
+   "Arena-high" predicts "ships clean". Verify: re-grade a few label/long fixtures,
+   confirm the deterministic scaffold-label check fires on "Next rep:". Small, purely
+   in the harness (`lib/checks.mjs` + `judges/rubric-judge.md`).
+   [Gate over-rejection sub-task DONE in iter 8 — gate is well-calibrated, see
+   Investigated + `reports/iter8-gate-audit.md`.]
+2. **Real-pipeline eval.** The Arena grades the prompt on a clean Claude call; it
+   CANNOT see the gate/fallback/retrieval where memory says real quality degrades
+   (`chat_quality_gate`; `coach_reliability_gate`; single-provider fragility on
+   `gemini-3.5-flash`). Wire the Python app-path engine (`./run.sh python`) over real
+   app-dumped candidates (`NOUM_COACH_EVAL_DUMP_DIR`) or a live `--live` run. Prereq
+   (blocks a headless tick): a populated dump dir (run the app through eval scenarios
+   once) or a live API key.
+3. **Delivery intelligence depth** — VISION roadmap #5 (Perception). The coach
    senses fillers/pace/pauses but not prosody contour, breathing, emphasis, vocal
    energy, authority/tension. The one genuinely-new CAPABILITY gap (not a prompt
    tweak). Needs new session evidence, conservative thresholds, user-visible "what
    can/can't be inferred" copy. Large; stage it.
-3. **personalMemory via STRUCTURAL context** — DEPRIORITIZED (may not be a real
+4. **personalMemory via STRUCTURAL context** — DEPRIORITIZED (may not be a real
    gap). iters 5-6 proved prompt-wording can't move it; avg is already ~13-14/20 on
    fresh draws (the low baseline was an unlucky draw). Only pursue if a fresh
    dual-arm baseline re-confirms the gap; then the lever is pre-synthesizing durable
    facts in the CONTEXT block (renderContext), not rule 1.
-4. **Adaptation across attempts** — coach-parity #4. Extend the tone-drill
+5. **Adaptation across attempts** — coach-parity #4. Extend the tone-drill
    reinforce/vary/replace pattern to the other skill areas (pace, close,
    structure) with an explained rationale each time.
-5. **Transfer outcome loop** — coach-parity #6. Post-event outcome + audience-read
+6. **Transfer outcome loop** — coach-parity #6. Post-event outcome + audience-read
    capture that becomes durable coach context, not just a one-off report.
 
 ## Guardrails for the loop
