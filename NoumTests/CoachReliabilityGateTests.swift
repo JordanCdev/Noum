@@ -654,6 +654,67 @@ struct CoachReliabilityGateTests {
         #expect(live.count <= text.count)
     }
 
+    // MARK: - Greeting never gets a drill (the "Hi -> Pressure Drill" bug)
+
+    /// The exact reply from the reported screenshot: a "Hi" answered with the
+    /// deterministic `immediateCoachRead` drill because no live model replied.
+    private static let screenshotDrillReply =
+        "The opening is the next lever: put the verdict in sentence one, then prove it once. The signal I can use is Pressure Drill, 2/10, 1 fillers, 52s. Try this next: Open the next rep with the decision before any context."
+
+    @Test func greetingAnsweredWithADrillBlocksAndGreetsBack() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: Self.screenshotDrillReply,
+            previousCoachReply: "Run one 45-second answer: verdict in sentence one, one reason, then end on the exact ask and stop.",
+            latestUserTurn: "Hi",
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.4
+        )
+        #expect(verdict.issues.contains(.greetingWithDrill))
+        #expect(verdict.blockingIssues.contains(.greetingWithDrill))
+        #expect(verdict.blocked)
+        // The substitute must be the warm greeting, NOT the drill / assessment read.
+        #expect(verdict.fallbackText == CoachReliabilityGate.greetingFallback(surface: .text))
+        let fb = (verdict.fallbackText ?? "").lowercased()
+        #expect(!CoachReliabilityGate.replyDrillsInsteadOfGreeting(fb), "greeting fallback must not itself be a drill")
+    }
+
+    @Test func greetingAnsweredWarmlyDoesNotBlock() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Hey — good to see you. Want to jump back into the opener work, or is something else on your mind?",
+            previousCoachReply: nil,
+            latestUserTurn: "hey noum",
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.4
+        )
+        #expect(!verdict.issues.contains(.greetingWithDrill))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func realCoachingTurnIsNeverTreatedAsAGreeting() {
+        // A genuine coaching ask must still get its normal read, never the
+        // greeting fallback — the drill markers here are legitimate.
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: Self.screenshotDrillReply,
+            previousCoachReply: nil,
+            latestUserTurn: "what should I work on next?",
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.4
+        )
+        #expect(!verdict.issues.contains(.greetingWithDrill))
+    }
+
+    @Test func isGreetingOrSmallTalkDiscriminates() {
+        for g in ["Hi", "hey", "Hello", "hey Noum", "yo", "how's it going?", "what's up", "thanks!", "good morning", "I'm back"] {
+            #expect(TurnDepthClassifier.isGreetingOrSmallTalk(g), "\(g) should be a greeting")
+        }
+        for c in ["what should I do next?", "how do I stop rambling", "help me prep for my interview", "read my last rep", "thanks, what should I do next?", "how far off am I from authoritative?"] {
+            #expect(!TurnDepthClassifier.isGreetingOrSmallTalk(c), "\(c) should NOT be a greeting")
+        }
+    }
+
     // MARK: - Canned fallback never repeats across turns
 
     @Test func staticFallbackVariantsAreDistinctHonestAndLiveShorter() {

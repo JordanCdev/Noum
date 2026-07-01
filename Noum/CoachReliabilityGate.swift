@@ -70,6 +70,11 @@ enum CoachReliabilityIssue: String, Codable, Equatable, CaseIterable {
     case repetitiveDiscourseMove
     /// The proof-test is the same one offered on a recent turn.
     case repeatedProofTest
+    /// The user's turn was a bare greeting / social pleasantry ("hi") but the
+    /// reply is a diagnostic coaching drill — the deterministic/fallback path
+    /// answering "hello" with a Pressure-Drill read because no live model
+    /// replied. A coach greets back; it does not drill a hello.
+    case greetingWithDrill
 
     /// Issues that are unambiguous user-facing defects and therefore trigger the
     /// truthful fallback substitution.
@@ -78,7 +83,8 @@ enum CoachReliabilityIssue: String, Codable, Equatable, CaseIterable {
         case .empty, .placeholder, .duplicateReply, .scaffoldLeak,
                 .noAttunementOnPushback, .thinTrustRepair,
                 .repairCarryoverBreak, .silentPlanSwitch,
-                .repetitiveDiscourseMove, .repeatedProofTest:
+                .repetitiveDiscourseMove, .repeatedProofTest,
+                .greetingWithDrill:
             return true
         case .nearDuplicateReply, .floorConfidenceWithEvidence:
             return false
@@ -396,19 +402,62 @@ enum CoachReliabilityGate {
         if proofTestRecentlyRepeated {
             issues.append(.repeatedProofTest)
         }
+        // A bare greeting/social turn that gets a diagnostic drill (the fallback
+        // path answering "hi" with a Pressure-Drill read) is a user-facing defect
+        // the prompt+model path would never produce. Detect it here so the gate
+        // greets back instead.
+        if let latestUserTurn,
+           !trimmed.isEmpty,
+           TurnDepthClassifier.isGreetingOrSmallTalk(latestUserTurn),
+           replyDrillsInsteadOfGreeting(lowered) {
+            issues.append(.greetingWithDrill)
+        }
 
-        let blocking = issues.contains { $0.isBlocking }
-        let fallback = blocking
-            ? truthfulFallback(
+        // A greeting mismatch must be answered with a warm hello, NOT the
+        // deterministic coaching read (which is itself the drill we are
+        // escaping), so it takes priority over the generic truthful fallback.
+        let fallback: String?
+        if issues.contains(.greetingWithDrill) {
+            fallback = greetingFallback(surface: surface)
+        } else if issues.contains(where: { $0.isBlocking }) {
+            fallback = truthfulFallback(
                 turnDepth: turnDepth,
                 assessment: assessment,
                 surface: surface,
                 previousCoachReply: previousCoachReply,
                 recentCoachReplies: recentCoachReplies
             )
-            : nil
+        } else {
+            fallback = nil
+        }
 
         return CoachReliabilityVerdict(issues: issues, fallbackText: fallback)
+    }
+
+    /// Markers that only appear when a reply is a diagnostic coaching read /
+    /// drill rather than a human greeting: the `immediateCoachRead` template
+    /// stems, prescription verbs, drill/metric language, and mode names.
+    static let greetingDrillMarkers: [String] = [
+        "try this next", "the signal i can use", "next lever", "proof test",
+        "run one", "run a", "60-second", "45-second", "next rep", "one rep",
+        "put the verdict", "the opening is", "the ending is", "the close is",
+        "verdict first", "fillers", "wpm", "/10", "under a timer",
+        "pressure drill", "ah-counter", "hedge", "clean stop", "sentence one"
+    ]
+
+    /// True when a reply reads as a coaching drill/diagnostic instead of a warm,
+    /// brief greeting.
+    static func replyDrillsInsteadOfGreeting(_ lowered: String) -> Bool {
+        containsAny(lowered, greetingDrillMarkers)
+    }
+
+    /// A warm, brief greeting to render when the turn was a hello but the reply
+    /// tried to drill. Invites the user back into the work without prescribing —
+    /// on a greeting, an open question IS the right move, unlike a coaching turn.
+    static func greetingFallback(surface: CoachReplySurface) -> String {
+        surface == .live
+            ? "Hey — good to see you. Want to keep going, or is something else on your mind?"
+            : "Hey — good to see you back. Want to pick up where we left off, or is there something specific on your mind?"
     }
 
     // MARK: Fallback
@@ -426,8 +475,16 @@ enum CoachReliabilityGate {
         assessment: CoachAssessment?,
         surface: CoachReplySurface,
         previousCoachReply: String?,
-        recentCoachReplies: [String] = []
+        recentCoachReplies: [String] = [],
+        latestUserTurn: String? = nil
     ) -> String {
+        // A greeting/social turn must never be answered with the deterministic
+        // coaching read (which IS a drill). Short-circuit before immediateCoachRead
+        // so both the gate path and the content-rejected fallback path greet back.
+        if let latestUserTurn,
+           TurnDepthClassifier.isGreetingOrSmallTalk(latestUserTurn) {
+            return greetingFallback(surface: surface)
+        }
         if let assessment {
             let read = assessment.immediateCoachRead.trimmingCharacters(in: .whitespacesAndNewlines)
             if isCleanCandidate(

@@ -20,13 +20,18 @@ import GoogleSignIn
 #if canImport(UIKit)
 /// Minimal UIKit app delegate whose only job is to configure Firebase inside
 /// `didFinishLaunchingWithOptions`. That callback runs BEFORE a SwiftUI `App`
-/// struct's stored properties initialize and before FirebaseCore's launch-time
-/// configuration check — which is what actually silences the I-COR000003
-/// "default Firebase app has not yet been configured" warning AND the
-/// AppDelegate-swizzler "does not conform to UIApplicationDelegate" warning
-/// (now there IS a conforming delegate). The real work lives in
+/// struct's stored properties initialize, so Firebase is set up before any
+/// `@StateObject` singleton can touch Auth/Firestore. The real work lives in
 /// `FirebaseBootstrap.configure()`, which no-ops once Firebase is set up, so
 /// the belt-and-suspenders call below stays safe.
+///
+/// NOTE: FirebaseCore's I-COR000003 "not yet configured" and the GoogleUtilities
+/// I-SWZ001014 "does not conform to UIApplicationDelegate" lines are emitted by
+/// Firebase's Objective-C load-time swizzler, which runs before ANY Swift (this
+/// delegate included), so an explicit delegate alone cannot suppress them. They
+/// are silenced by `FirebaseAppDelegateProxyEnabled = NO` in Info.plist — safe
+/// here because the app uses no Firebase Messaging / Dynamic Links (the only
+/// products that need the swizzled AppDelegate callbacks).
 final class NoumAppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,

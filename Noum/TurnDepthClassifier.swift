@@ -57,6 +57,45 @@ enum TurnDepthClassifier {
         return .quickMove
     }
 
+    /// A bare greeting or social pleasantry ("hi", "hey Noum", "how's it going",
+    /// "thanks") — NOT a coaching question. These must get a warm, brief human
+    /// hello, never a diagnostic drill. Deliberately tight (<=5 words, exact
+    /// openers or short social phrases) so a real coaching turn that merely opens
+    /// with "hey, what should I..." is never swallowed. Used by the reliability
+    /// gate to catch the fallback path handing "hi" a Pressure-Drill read when no
+    /// live model answered.
+    static func isGreetingOrSmallTalk(_ userText: String) -> Bool {
+        let lower = normalized(userText)
+        guard !lower.isEmpty, wordCount(lower) <= 5 else { return false }
+        let stripped = lower.trimmingCharacters(in: CharacterSet(charactersIn: " .!?,'\""))
+        let exact: Set<String> = [
+            "hi", "hey", "hello", "yo", "hiya", "heya", "sup", "howdy",
+            "hey there", "hi there", "hello there", "hey noum", "hi noum",
+            "hello noum", "morning", "good morning", "good afternoon",
+            "good evening", "evening", "gm", "hey again", "hi again",
+            "im back", "i'm back", "back again"
+        ]
+        if exact.contains(stripped) { return true }
+        // Short social pleasantries: greeting-y intent, no coaching content.
+        if containsAny(stripped, [
+            "how are you", "how's it going", "hows it going", "how are things",
+            "how you doing", "how's things", "what's up", "whats up",
+            "good to be back", "nice to meet", "thanks", "thank you", "cheers"
+        ]) {
+            // Guard: a coaching ask riding on a pleasantry ("thanks, what should
+            // I do next?") still routes normally. Match ask PHRASES, not the bare
+            // word "what" (which would wrongly reject the greeting "what's up").
+            if containsAny(stripped, [
+                "what should", "what do i", "what next", "how do i",
+                "help me", "fix my", "improve my", "should i", "work on"
+            ]) {
+                return false
+            }
+            return true
+        }
+        return false
+    }
+
     static func isTrustRepair(_ lower: String) -> Bool {
         containsAny(lower, [
             "that wasn't helpful", "that wasnt helpful",
