@@ -15681,6 +15681,24 @@ struct AbortedRepGuardTests {
         store.replaceFromRemote([])
     }
 
+    @Test func rawPartialStreamToUIIsOffByDefault() {
+        // The multi-version-chat fix: raw un-vetted provider tokens are NOT
+        // streamed to the visible row by default (so a good draft can't be
+        // shown then replaced by a worse gated final). Opt-in restores it.
+        #expect(CoachBrainFlags.boolFlag(
+            key: CoachBrainFlags.streamRawPartialsToUIKey,
+            defaultValue: false,
+            env: [:],
+            configValue: { _ in nil }
+        ) == false)
+        #expect(CoachBrainFlags.boolFlag(
+            key: CoachBrainFlags.streamRawPartialsToUIKey,
+            defaultValue: false,
+            env: [CoachBrainFlags.streamRawPartialsToUIKey: "1"],
+            configValue: { _ in nil }
+        ) == true)
+    }
+
     @Test func annotateWithoutIdentityStillWorksForBackCompat() {
         // Callers that don't know the session id (nil) keep the original
         // annotate-latest behavior — the guard is opt-in.

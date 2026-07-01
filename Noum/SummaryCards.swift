@@ -17,6 +17,11 @@ struct HeroScoreCard: View {
     let effectiveDuration: TimeInterval
     let durationAssessment: DurationAssessment
     let celebrationVisible: Bool
+    /// When true the rep was below the evidence floor (accidental instant-stop,
+    /// too short to read). The ring shows no number and stays empty — a "1/10"
+    /// on a rep the user never really gave is a lie. Opt-in, default false so
+    /// every existing call site renders the normal score ring unchanged.
+    var belowEvidenceFloor: Bool = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Verdict reveal — the ring draws 0 → score/10 and the number rolls up
@@ -91,19 +96,30 @@ struct HeroScoreCard: View {
                     .frame(width: 120, height: 120)
 
                 Circle()
-                    .trim(from: 0, to: ringFill)
+                    .trim(from: 0, to: belowEvidenceFloor ? 0 : ringFill)
                     .stroke(.white, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                     .frame(width: 120, height: 120)
                     .rotationEffect(.degrees(-90))
 
-                VStack(spacing: 2) {
-                    Text("\(revealedScore)")
-                        .font(Typography.figtreeNumeric(size: 44, weight: .bold, relativeTo: .largeTitle))
-                        .foregroundStyle(.white)
-                        .contentTransition(.numericText(value: Double(revealedScore)))
-                    Text("/10")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.7))
+                if belowEvidenceFloor {
+                    VStack(spacing: 2) {
+                        Text("—")
+                            .font(Typography.figtreeNumeric(size: 44, weight: .bold, relativeTo: .largeTitle))
+                            .foregroundStyle(.white)
+                        Text("too short")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                } else {
+                    VStack(spacing: 2) {
+                        Text("\(revealedScore)")
+                            .font(Typography.figtreeNumeric(size: 44, weight: .bold, relativeTo: .largeTitle))
+                            .foregroundStyle(.white)
+                            .contentTransition(.numericText(value: Double(revealedScore)))
+                        Text("/10")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
                 }
             }
             .scaleEffect(!reduceMotion && celebrationVisible ? 1.06 : 1.0)
@@ -111,7 +127,7 @@ struct HeroScoreCard: View {
             // VoiceOver always reads the final score — never an animated
             // intermediate frame.
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Score \(scoreValue) out of 10")
+            .accessibilityLabel(belowEvidenceFloor ? "Too short to score" : "Score \(scoreValue) out of 10")
             .onAppear(perform: revealScore)
             // Settle-beat hygiene: if the user leaves before the ring
             // settles, the pending haptic+thump must not fire over the

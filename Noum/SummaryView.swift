@@ -724,6 +724,7 @@ struct SummaryView: View {
                                     effectiveDuration: effectiveDuration,
                                     durationAssessment: durationAssessment,
                                     celebrationVisible: celebrationVisible,
+                                    belowEvidenceFloor: isMinimalEffort,
                                     toneDrillResolvedRibbon: heroToneDrillResolvedRibbon
                                 )
                                 .cardEntrance(0)

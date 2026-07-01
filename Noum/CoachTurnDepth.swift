@@ -12,6 +12,7 @@ enum CoachBrainFlags {
     static let semanticGateDryRunEnabledKey = "NOUM_COACH_SEMANTIC_GATE_DRY_RUN"
     static let providerStreamingEnabledKey = "NOUM_COACH_PROVIDER_STREAMING_ENABLED"
     static let reliabilityGateEnabledKey = "NOUM_COACH_RELIABILITY_GATE_ENABLED"
+    static let streamRawPartialsToUIKey = "NOUM_COACH_STREAM_RAW_PARTIALS_TO_UI"
 
     /// Master switch for the deterministic assessment pass. Default on; a
     /// config value of false keeps the chat pipeline on its pre-judgement
@@ -52,6 +53,22 @@ enum CoachBrainFlags {
         boolFlag(
             key: providerStreamingEnabledKey,
             defaultValue: true
+        )
+    }
+
+    /// Whether raw, un-vetted provider tokens are streamed into the VISIBLE
+    /// coach row as they arrive. Default OFF, which matches
+    /// `providerStreamingEnabled`'s own documented intent ("the UI still shows
+    /// only the local typed coach read until the completed provider draft passes
+    /// the existing quality gates"). Off closes the "multi-version reply" defect:
+    /// a rich streamed draft can no longer be shown and then quietly replaced by
+    /// a shorter gate-substituted final. The streaming transport still runs for
+    /// latency; only the mid-stream UI overwrite is withheld. On restores the
+    /// prior show-raw-partials behaviour for A/B.
+    static var streamRawPartialsToUI: Bool {
+        boolFlag(
+            key: streamRawPartialsToUIKey,
+            defaultValue: false
         )
     }
 

@@ -382,6 +382,12 @@ enum CoachReplyPipeline {
             surface: surface,
             preferredTier: preferredTier,
             onStreamedPartialVisible: { partialText in
+                // Withhold raw un-vetted provider tokens from the visible row
+                // unless explicitly opted in. Default off means the user sees
+                // the local deterministic read while the model verbalises, then
+                // the committed (gate-approved) final — never a rich draft that
+                // is silently downgraded to a shorter substituted final.
+                guard CoachBrainFlags.streamRawPartialsToUI else { return }
                 let streamedVisibleAt = Date()
                 let streamedTTFT = Self.latencyMs(from: turnStartedAt, to: firstVisibleAt ?? streamedVisibleAt)
                 let streamedMetadata = CoachTurnMetadata(
