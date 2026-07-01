@@ -1,5 +1,22 @@
 # Expert-coaching backlog (VISION-driven)
 
+> **LOOP STATUS after iters 4-11 (2026-07-01): the app is MATURE; headless
+> high-value work is largely extracted.** Every backlog "gap" investigated turned
+> out already-built or not prompt-movable: interventionQuality (fixed iter 4),
+> personalMemory (not prompt-movable, iters 5-6), evidence-scaled confidence (already
+> implemented, iter 7), the chat gate (well-calibrated, iter 8), the typed fallback
+> (already turn-aware via `deterministicIntentOverrideReply`, iter 11), and delivery-
+> intelligence/perception — VISION #5, the supposed "biggest gap" — is substantially
+> BUILT and wired to the coach (`VocalEnergyMetrics`, `paceVariance`, pitch variation,
+> `ComposureReadEngine`, `ConfidenceMarkerRead`; CoachContextBuilder "M26 vocal energy
+> tail"). Net loop output: 2 real ships (rule-3 one-move `3f0edd01`; Arena↔gate length
+> alignment `bb88583f`) + verified findings that PREVENTED shipping non-improvements
+> and chasing a phantom pipeline bug. The one remaining HIGH-value lever is a
+> production-faithful real-pipeline eval, which is BLOCKED headless — needs a
+> production API key or a candidate dump from a real app run (Jordan). Absent that,
+> remaining work is marginal (risks fake progress) or a large multi-tick feature
+> (extend the already-substantial perception stack toward VISION #5's full bar).
+
 > **RESUME HERE (fresh session):** The `/loop` self-improvement pass runs locally
 > and does NOT survive a context reset — re-run `/loop 50 keep assessing the app
 > and finding ways to improve against the VISION.md goals (expert level coaching)`
