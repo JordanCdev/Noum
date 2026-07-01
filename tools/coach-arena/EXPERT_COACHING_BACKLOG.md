@@ -22,6 +22,12 @@
 > "sit with it" turn — isolated, IQ held). Compiles + 24/24 harness tests. Artifacts
 > `reports/iter12-ab-prescribe-defer.json`, `reports/iter13-ab-refined-antidefer.json`.
 > **Subagent-verified (like rule 3); OPTIONAL live re-verify when a key is available.**
+> **iter 14: the next live-worst fixture (set-authoritative, IQ 34, a voice-set adding
+> an unsolicited clarifying question) is DRAW-VARIANCE — 0/3 fresh draws reproduce it;
+> rule 16 already handles it. No fix.** Systematic prompt levers now largely exhausted;
+> before "fixing" any worst fixture run a cheap 3-draw consistency check first. Real
+> next step = a live re-baseline (needs key) to confirm iter-13 and surface any NEW
+> consistent pattern.
 
 > **LOOP STATUS after iters 4-11 (2026-07-01): the app is MATURE; headless
 > high-value work is largely extracted.** Every backlog "gap" investigated turned
