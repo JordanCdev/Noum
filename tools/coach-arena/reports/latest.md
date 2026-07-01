@@ -1,69 +1,73 @@
-# Coach Arena — run_2026-07-01_12-34-41
+# Coach Arena — run_2026-07-01_13-08-10
 
 Provider: `replay` · coach model: `claude-sonnet-4-6` · judge model: `claude-sonnet-4-6`
-Git: `62557002` on `ux-overhaul` (+5 dirty) · prompt: CoachContextBuilder.swift@2a8ac5ac8d014afb, AICoachChatService.swift@ad533fcd665b5961
+Git: `dd8e3104` on `ux-overhaul` (+7 dirty) · prompt: CoachContextBuilder.swift@241564edd0baa8f8, AICoachChatService.swift@ad533fcd665b5961
 
 ## Headline
 
 | Metric | Value | Target | Pass |
 |---|---|---|---|
-| Gold-suite mean | **59.4** (▼ -20.4) | 70 | ❌ |
-| Deep-assessment mean | 67.7 (▼ -18.2) | 70 | ❌ |
-| Trust-repair mean | 60.7 (▼ -22) | 65 | ❌ |
+| Gold-suite mean | **72.7** (▲ +13.3) | 70 | ✅ |
+| Deep-assessment mean | 76.7 (▲ +9) | 70 | ✅ |
+| Trust-repair mean | 73 (▲ +12.3) | 65 | ✅ |
 | Placeholder leaks | 0 | 0 | ✅ |
 
-Scored 60/60 fixtures · range 38–79 · median 60.
+Scored 60/60 fixtures · range 30–89 · median 76.
 
 ## Dimension means (of max)
 
 | Diagnostic IQ /25 | EQ /25 | Memory /20 | Intervention /15 | Dialogue /15 |
 |---|---|---|---|---|
-| 16.3 | 15.2 | 12.1 | 9.8 | 10.8 |
+| 19.4 | 18.3 | 14.5 | 12 | 11.7 |
 
 ## By category
 
 | Category | n | Mean | Δ |
 |---|---|---|---|
-| cold-start | 1 | 40 | (▼ -26) |
-| greeting | 1 | 42 | (▼ -27) |
-| emotional-frustration | 1 | 50 | (▼ -10) |
-| goal-change | 3 | 50 | (▼ -23) |
-| metadata-trap | 1 | 52 | (▼ -25) |
-| transfer | 3 | 52.3 | (▼ -33.7) |
-| synthetic-conversation | 10 | 53.8 | (▼ -19.2) |
-| off-topic | 1 | 54 | (▼ -21) |
-| fabrication-trap | 1 | 54 | (▼ -4) |
-| emotional | 4 | 56.8 | (▼ -26) |
-| filler-pressure | 1 | 57 | (▼ -28) |
-| plan-request | 1 | 57 | (▼ -21) |
-| repetition-callout | 1 | 58 | (▼ -26) |
-| mechanics | 5 | 60.4 | (▼ -18.2) |
-| confidence-ending | 1 | 61 | (▼ -23) |
-| score-question | 1 | 61 | (▼ -26) |
-| trust-repair | 9 | 64.4 | (▼ -18.9) |
-| big-moment | 1 | 65 | (▼ -17) |
-| readiness-trap | 1 | 65 | (▼ -24) |
-| deep-assessment | 5 | 66.4 | (▼ -22.2) |
-| pressure-mode | 3 | 67.7 | (▼ -21) |
-| memory-recall | 1 | 69 | (▼ -14) |
-| interview-prep | 1 | 70 | (▼ -8) |
-| data-question | 1 | 70 | (▼ -9) |
-| partial-pushback | 1 | 75 | (▼ -6) |
-| leadership-update | 1 | 77 | (▼ -4) |
+| cold-start | 1 | 38 | (▼ -2) |
+| off-topic | 1 | 53 | (▼ -1) |
+| emotional-frustration | 1 | 56 | (▲ +6) |
+| greeting | 1 | 56 | (▲ +14) |
+| leadership-update | 1 | 60 | (▼ -17) |
+| metadata-trap | 1 | 64 | (▲ +12) |
+| goal-change | 3 | 67 | (▲ +17) |
+| synthetic-conversation | 10 | 68.6 | (▲ +14.8) |
+| plan-request | 1 | 71 | (▲ +14) |
+| trust-repair | 9 | 71.8 | (▲ +7.4) |
+| memory-recall | 1 | 73 | (▲ +4) |
+| mechanics | 5 | 73.6 | (▲ +13.2) |
+| interview-prep | 1 | 75 | (▲ +5) |
+| partial-pushback | 1 | 76 | (▲ +1) |
+| repetition-callout | 1 | 77 | (▲ +19) |
+| transfer | 3 | 77 | (▲ +24.7) |
+| deep-assessment | 5 | 77.2 | (▲ +10.8) |
+| emotional | 4 | 78.5 | (▲ +21.7) |
+| filler-pressure | 1 | 79 | (▲ +22) |
+| score-question | 1 | 80 | (▲ +19) |
+| fabrication-trap | 1 | 81 | (▲ +27) |
+| pressure-mode | 3 | 82 | (▲ +14.3) |
+| big-moment | 1 | 84 | (▲ +19) |
+| readiness-trap | 1 | 85 | (▲ +20) |
+| data-question | 1 | 88 | (▲ +18) |
+| confidence-ending | 1 | 89 | (▲ +28) |
+
+## Reliability caps triggered
+
+- `placeholderOrBroken`: 1
 
 ## Worst 10
 
 | Score | Fixture | Turn | closerTo | Top issue |
 |---|---|---|---|---|
-| **38** | conv-cold-start-first-rep__t0 | groundedRead | between | — |
-| **39** | conv-transfer-report__t1 | groundedRead | between | Never states the required causation cave |
-| **40** | cold-start-no-data | groundedRead | between | — |
-| **42** | greeting-hi | greeting | between | Mild report-voice residue in the rep tal |
-| **48** | talk-too-fast | groundedRead | between | Bundles the pause-beat move with a contr |
-| **48** | awkward-pauses | groundedRead | between | tooLong |
-| **48** | froze-in-meeting | trustRepair | between | Asks a question ('the room or the words' |
-| **48** | what-voice-should-i-pick | groundedRead | between | Reasoning for the top pick is generic co |
-| **49** | goal-change-engaging | groundedRead | between | Clarifying question is generic rather th |
-| **49** | not-improving | trustRepair | between | Opens with the correction instead of ack |
+| **30** | thats-not-informative | trustRepair | between | scaffoldLabel |
+| **38** | cold-start-no-data | groundedRead | between | 'Ah-Counter round' is unexplained produc |
+| **48** | conv-skeptic__t1 | trustRepair | between | tooLong |
+| **51** | what-voice-should-i-pick | groundedRead | between | Diagnosis ('about presence') is correct  |
+| **53** | off-topic-egg | offTopic | between | Report-voice residue: 'today's rep hit 8 |
+| **55** | conv-cold-start-first-rep__t0 | groundedRead | excellent | Cold-start ceiling: no individual signal |
+| **56** | its-not-easy | trustRepair | between | No next step or presence-close — ends on |
+| **56** | greeting-hi | greeting | between | Report-voice residue: recites 'close hel |
+| **60** | leadership-update | deepAssessment | between | No acknowledgement of the deflation befo |
+| **60** | i-ramble | groundedRead | excellent | scaffoldLabel |
 
 See `failures.md` for full replies + judge reasoning. Raw: `latest.json`.

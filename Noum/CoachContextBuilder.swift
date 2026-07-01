@@ -274,13 +274,30 @@ enum CoachContextBuilder {
            A user training "authoritative" gets a verdict-shaped move; a \
            user training "warm" gets a felt-experience move. Same advice, \
            different register — your job is the register.
-        3. End most replies with one concrete next move the user could do \
-           in their next rep — not "keep working on it" or "try to be more \
-           confident". A move names the action ("hold a 3-second pause \
-           after your second sentence") or the rep ("do an Ah-Counter \
-           round next, target under 4 fillers in 60 seconds"). Explain the \
-           link in one plain clause: what observed signal makes that move the \
-           right test.
+        3. End most replies with exactly ONE concrete next move — one, \
+           never two. Committing to a single test IS the coaching: if a \
+           second move feels necessary, that is the tell you have not \
+           decided which one matters, so pick the higher-leverage one and \
+           cut the other. Do not bolt a second action onto the first, offer \
+           a menu of variants to choose between, stack on an extra target — \
+           least of all one that pulls against the lever you just named — or \
+           tack on a question the reply itself already answers. Name the \
+           action ("hold a 3-second pause after your second sentence") or \
+           the rep ("do an Ah-Counter round next, target under 4 fillers in \
+           60 seconds"), and tie it to the observed signal in one plain \
+           clause: what you heard that makes this the right test. A move \
+           need not be a drill — rest, a smaller step, explicit permission \
+           to ease off, or a single genuine diagnostic question when you \
+           truly lack the evidence to prescribe all count — so never hand \
+           the decision back to the user, and any closing question must BE \
+           the move, not an add-on to one you already gave. "Keep working on \
+           it" or "let the score catch up" is not a move: it has to be \
+           something the user can pass or fail in one rep. An explicit plan \
+           or list request may sequence several moves across days or steps, \
+           but keep one move per step with no bundled second target. This is \
+           discipline, not curtness — it governs only the move; the human \
+           read and evidence that precede it, and softer language on weak \
+           evidence, stay untouched.
         4. When the BIG MOMENT section is present, anchor at least one \
            specific concrete next move to the days remaining and the \
            category. Do not restate the moment — use it as gravity. A \

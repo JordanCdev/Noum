@@ -3,18 +3,46 @@
 > **RESUME HERE (fresh session):** The `/loop` self-improvement pass runs locally
 > and does NOT survive a context reset — re-run `/loop 50 keep assessing the app
 > and finding ways to improve against the VISION.md goals (expert level coaching)`
-> to continue. Current honest Arena baseline: **gold mean 59.4** (calibrated
-> v1.1.0 judge; `reports/latest.json`). Next task = **backlog item #1** below
-> (close the interventionQuality "one clean move" gap on a LIVE run — replay does
-> not execute the prompt). Context: memory files `coach_arena` +
-> `session_lifecycle_evidence_floor`; commits `f035a3c4`..`de02670e` on `ux-overhaul`.
-> Do NOT re-inflate the judge or over-fit the prompt to hit 70 — the gap is real.
+> to continue. Item #1 (interventionQuality one-clean-move) is DONE as of iter 4
+> — verified with a controlled blind A/B, +4.93 IQ on bundling fixtures. Next task
+> = **backlog item #1 below (personalMemory "un-swappable fact" gap)**. Context:
+> memory files `coach_arena` + `session_lifecycle_evidence_floor`; commits
+> `f035a3c4`..`de02670e` on `ux-overhaul`.
+> **On measurement (read before trusting any number):** the full-suite re-judge is
+> a fresh LLM panel each run, and panels DRIFT in leniency run-to-run (iter 4's
+> panel graded ~3 pts/dim above iter 3's, uniformly, incl. dims a given change
+> can't touch). So a raw `latest.json` mean vs the prior run CONFOUNDS the change
+> with judge drift. To claim a real effect, isolate it with a single-panel blind
+> A/B of old-vs-new replies (see `reports/iter4-ab-blind.json` for the pattern),
+> not the headline delta. Do NOT re-inflate the judge or over-fit the prompt to
+> hit 70 — the gap is real.
 
 A living, prioritized list of gaps between Chat-with-Noum today and VISION's
 "expert human coach" bar. The `/loop` self-improvement pass works this top-down,
 newest-done first. Each item: the VISION hook, why it matters, and status.
 
 ## Done
+- **Close the interventionQuality gap — exactly one clean move** (iter 4). The
+  calibrated run's weakest dim was interventionQuality (9.8/15): the coach
+  reliably included a move but BUNDLED extras onto it — a second move, a
+  two-variant menu, an extra/contradicting target (worst: "hold a silent beat"
+  *and* "drop pace to 180", which undoes its own diagnosis), or a self-answering
+  question. Rewrote intelligence-floor rule 3 (`Noum/CoachContextBuilder.swift`)
+  to enforce EXACTLY ONE move and ban all four shapes, keeping the reason clause,
+  the rest/smaller-step carve-out, and the plan-request exemption; stripped the
+  verbatim-eval example phrases to avoid over-fit. Design pressure-tested by a
+  3-lens adversarial panel. **Verified with a controlled single-panel blind A/B
+  (independent judge, old vs new reply per fixture, masked + order-shuffled):
+  interventionQuality 7.57 → 12.5 on the 14 bundling/soft-move fixtures (+4.93),
+  new reply preferred 12/14; the old set was bimodal (0-move punts *or* 2-move
+  bundles), the new set is almost all exactly-1** (`reports/iter4-ab-blind.json`).
+  The full 60-fixture re-judge read 72.7 overall, but that panel drifted ~3
+  pts/dim leniently across the board (incl. Diagnostic IQ / EQ, which a
+  move-rule can't move), so 72.7 is NOT banked as "gap closed" — the defensible
+  result is the controlled IQ lift. Node 22/22, Swift compiles. Residual next
+  levers surfaced: scaffold-label slips (`thats-not-informative`, `i-ramble`),
+  cold-start jargon + ceiling, greeting report-voice residue.
+
 - **Sharpen the measurement — give `closerTo` mechanical weight** (iter 1). The
   Arena judge rated 56/60 replies "excellent"; its holistic bad/between/excellent
   comparison had zero effect on the score, so grounded-but-generic answers scored
@@ -43,14 +71,11 @@ newest-done first. Each item: the VISION hook, why it matters, and status.
   un-swappable reads).
 
 ## Next (priority order)
-1. **Close the interventionQuality gap** — the #1 expert lever the calibrated
-   run exposes. The coach bundles two moves / hedges instead of prescribing ONE
-   clean testable move. Tighten the system-prompt intelligence-floor rule 3 (one
-   move, no second move, no hedge) and re-measure on a live run. Verify the mean
-   moves on interventionQuality specifically, not just overall.
-2. **Close the personalMemory gap** — replies cite facts that don't change the
-   advice (decorative). Strengthen the "un-swappable" contract: the cited fact
-   must be load-bearing for the move. Prompt + fixture-anchored.
+1. **Close the personalMemory gap** — 2nd-weakest dim (12.1/20). Replies cite
+   facts that don't change the advice (decorative). Strengthen the "un-swappable"
+   contract: the cited fact must be load-bearing for the move — the advice would
+   be different without that user's data. Prompt + fixture-anchored. Verify with
+   the same controlled blind A/B on the memory-heavy fixtures, not the headline.
 2. **Delivery intelligence depth** — VISION roadmap #2. The coach senses fillers/
    pace/pauses but not prosody contour, breathing, emphasis, vocal energy,
    authority/tension. This is the biggest gap to "expert perception". Needs new
