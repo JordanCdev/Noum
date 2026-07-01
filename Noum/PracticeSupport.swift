@@ -6510,7 +6510,15 @@ enum PracticeEvaluator {
         default:
             baseHeadline = "Good warmup"
         }
-        let headline = isLowConfidence ? "Based on what we could hear" : baseHeadline
+        // An aborted / too-short rep must not carry a falsely-positive headline
+        // ("Good warmup" on a 0s rep). Name it honestly; the summary suppresses
+        // the read/win/fix and skips progress for this case.
+        let headline: String
+        if wordCount < 3 || duration < 3 {
+            headline = "Too short to score"
+        } else {
+            headline = isLowConfidence ? "Based on what we could hear" : baseHeadline
+        }
 
         let feedback: String
         if wordCount < 3 || duration < 3 {

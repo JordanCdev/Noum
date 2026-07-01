@@ -5882,6 +5882,24 @@ struct ScoreCalibrationTests {
                 "80 WPM + 2 fillers + 30s Medium scored \(evaluation.score); old bug returned 8")
     }
 
+    @Test func abortedRepHeadlineIsHonestNotGoodWarmup() {
+        // A 0-word / 0s rep must name itself, not read "Good warmup".
+        let aborted = PracticeEvaluator.evaluateTimedPractice(
+            transcript: "", fillerCount: 0, duration: 0,
+            difficulty: .medium, recentSessions: [], profile: nil
+        )
+        #expect(aborted.headline == "Too short to score")
+        #expect(aborted.score == 1)
+
+        // A real rep keeps its normal headline.
+        let real = PracticeEvaluator.evaluateTimedPractice(
+            transcript: Array(repeating: "word", count: 60).joined(separator: " "),
+            fillerCount: 1, duration: 40,
+            difficulty: .medium, recentSessions: [], profile: nil
+        )
+        #expect(real.headline != "Too short to score")
+    }
+
     /// Filler penalty must accelerate past 4 fillers — old cap of 3.0
     /// meant 10 fillers looked the same as 4. New cap is 5.5 with
     /// non-linear ramp.
