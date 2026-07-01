@@ -13,9 +13,13 @@
 > correctly rejects long/"Next rep:"-labelled replies the ARENA is lenient about
 > (`reports/iter8-gate-audit.md`); no gate bug. iter 9 DONE: aligned the Arena length
 > limits with the gate's real `replyLengthLimits` (`lib/checks.mjs`) so tooLong now
-> predicts the gate; 24/24 tests. Next task = **Next item #1 (real-pipeline eval —
-> needs a dump dir or live API key; may block a headless tick)**, else #2 (delivery
-> intelligence, the one new-capability gap). Context: memory files `coach_arena` +
+> predicts the gate; 24/24 tests. iter 10 (mined the existing app-path report): the
+> real-pipeline "degradation" is a HARNESS ARTIFACT (gpt-4o-mini + typed-fallback
+> candidates; the LLM `rawReply` layer is actually good) — a trustworthy run needs a
+> production provider + a key (`reports/iter10-realpipeline-finding.md`). Next task =
+> **#1 real-pipeline eval is BLOCKED headless (needs key/dump) → next tick does #3
+> (delivery intelligence, the one new-capability gap) or #2 (turn-aware fallback)**.
+> Context: memory files `coach_arena` +
 > `session_lifecycle_evidence_floor`; commits
 > `f035a3c4`..`3f0edd01` on `ux-overhaul`.
 > **On measurement (read before trusting any number):** the full-suite re-judge is
@@ -164,6 +168,21 @@ newest-done first. Each item: the VISION hook, why it matters, and status.
   left as-is: a banned label triggers the gate's REPAIR (not reject), so −8 is a
   reasonable "repair cost" signal.
 
+- **Real-pipeline degradation hypothesis** (iter 10) — NOT confirmed; the existing
+  data is a harness artifact. Mined `reports/app-path/latest.json` (sibling's Python
+  engine over real app candidates): avg 68.5, fails, groundedRead weakest, dominant
+  failure "does not match expected coach move". BUT the traces show 18/50 candidates
+  are the generic TYPED FALLBACK (17 identical openings) and the provider is gpt-4o-mini
+  (31×), not production gemini. Crucially the typed-fallback fixtures' `rawReply` (the
+  actual LLM draft) is GOOD and on-target (gives the example, builds the intro), while
+  `finalReply` is the generic template with `issues: []`. Production Swift applies the
+  typed fallback ONLY on `sawContentRejection`, so a good-rawReply + empty-issues +
+  fallback can't be the production path — it's the eval capturing the typed read. So
+  this report UNDER-states real quality and shows NO production bug; the LLM layer is
+  fine. A trustworthy real-pipeline number needs production provider + final-reply
+  capture + a key (Next #1). Write-up: `reports/iter10-realpipeline-finding.md`. Real
+  edge-case surfaced: the typed fallback is turn-blind (Next #2).
+
 ## Next (priority order)
 > **iter 7 re-prioritization (read this):** the prompt/context LAYER IS MATURE.
 > iters 4-7 established that the remaining prompt/context "gaps" are largely already
@@ -173,27 +192,34 @@ newest-done first. Each item: the VISION hook, why it matters, and status.
 > is now (a) the PIPELINE the Arena can't see, and (b) genuinely new capability.
 > Levers below re-ordered accordingly.
 
-1. **Real-pipeline eval.** The Arena grades the prompt on a clean Claude call; it
-   CANNOT see the gate/fallback/retrieval where memory says real quality degrades
-   (`chat_quality_gate`; `coach_reliability_gate`; single-provider fragility on
-   `gemini-3.5-flash`). Wire the Python app-path engine (`./run.sh python`) over real
-   app-dumped candidates (`NOUM_COACH_EVAL_DUMP_DIR`) or a live `--live` run. Prereq
-   (blocks a headless tick): a populated dump dir (run the app through eval scenarios
-   once) or a live API key.
-2. **Delivery intelligence depth** — VISION roadmap #5 (Perception). The coach
+1. **Real-pipeline eval — needs a PRODUCTION-FAITHFUL re-run** (iter 10 mined the
+   existing app-path report; see Investigated). The existing `reports/app-path/latest.json`
+   is NOT trustworthy: it used gpt-4o-mini (not production gemini) and ~36% of graded
+   candidates are the generic TYPED FALLBACK, not the LLM reply — whose `rawReply` was
+   actually good/on-target. So it under-states quality and does NOT show a production
+   bug. A trustworthy run needs: (a) production provider (`gemini-3.5-flash`), (b) grade
+   the FINAL LLM reply not the typed fallback, (c) a dump dir or live key. It is the
+   SIBLING's Python engine — coordinate, don't unilaterally rewrite it. Blocks a
+   headless tick until a key/dump exists.
+2. **Turn-aware fallback** (from iter 10) — LOW priority, product call for Jordan. When
+   the pipeline falls back to `deterministicAssessmentFallbackReply` (production: only
+   when ALL providers content-reject), the reply is TURN-BLIND — same "your last rep
+   gives one usable signal: 7/10, 1 filler, 50s" regardless of the question. Rare, but
+   a generic non-answer when it fires. Make the fallback at least address the turn type.
+3. **Delivery intelligence depth** — VISION roadmap #5 (Perception). The coach
    senses fillers/pace/pauses but not prosody contour, breathing, emphasis, vocal
    energy, authority/tension. The one genuinely-new CAPABILITY gap (not a prompt
    tweak). Needs new session evidence, conservative thresholds, user-visible "what
    can/can't be inferred" copy. Large; stage it.
-3. **personalMemory via STRUCTURAL context** — DEPRIORITIZED (may not be a real
+4. **personalMemory via STRUCTURAL context** — DEPRIORITIZED (may not be a real
    gap). iters 5-6 proved prompt-wording can't move it; avg is already ~13-14/20 on
    fresh draws (the low baseline was an unlucky draw). Only pursue if a fresh
    dual-arm baseline re-confirms the gap; then the lever is pre-synthesizing durable
    facts in the CONTEXT block (renderContext), not rule 1.
-4. **Adaptation across attempts** — coach-parity #4. Extend the tone-drill
+5. **Adaptation across attempts** — coach-parity #4. Extend the tone-drill
    reinforce/vary/replace pattern to the other skill areas (pace, close,
    structure) with an explained rationale each time.
-5. **Transfer outcome loop** — coach-parity #6. Post-event outcome + audience-read
+6. **Transfer outcome loop** — coach-parity #6. Post-event outcome + audience-read
    capture that becomes durable coach context, not just a one-off report.
 
 ## Guardrails for the loop
