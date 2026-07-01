@@ -283,11 +283,22 @@ export function runChecks(reply, fixture, opts = {}) {
     /\b(\d+)\s*-?\s*day streak\b/gi,
   ];
   const nums = corpusNumbers(corpus);
+  const numVals = [...nums].map(Number).filter((v) => Number.isFinite(v));
+  // Honest rounding of a context value is NOT fabrication: "168 wpm" for a
+  // context 168.4, or "6.0" for a context 6, must pass.
+  const numberSupported = (nStr) => {
+    if (nums.has(nStr)) return true;
+    const n = Number(nStr);
+    if (!Number.isFinite(n)) return false;
+    return numVals.some(
+      (c) => Math.round(c) === n || Math.floor(c) === n || Math.trunc(c) === n || Math.abs(c - n) < 0.5,
+    );
+  };
   for (const re of metricClaims) {
     let mm;
     while ((mm = re.exec(raw))) {
       const n = mm[1];
-      if (!nums.has(n)) {
+      if (!numberSupported(n)) {
         pushFinding(findings, cap('fabricatedMetric', 'fabricatesEvidence', `Asserts a user metric (${mm[0].trim()}) whose number is not in context.`, mm[0].trim()));
         break;
       }

@@ -68,6 +68,22 @@ test('checks: fabricated attributed quote caps fabricatesEvidence', () => {
   assert.equal(r.hardCap, 40);
 });
 
+test('checks: honest rounding of a context metric is NOT fabrication', () => {
+  const fx = baseFx({ userTurn: 'how did i do', memoryState: { baseline: { pace: 168.4, fillersPerMin: 6 } } });
+  const ctx = renderContext(fx);
+  const r = runChecks('Your pace was 168 words per minute — clean and steady.', fx, { contextBlock: ctx });
+  assert.ok(!r.findings.some((f) => f.id === 'fabricatedMetric'), 'a rounded context metric must not be flagged');
+  assert.notEqual(r.hardCap, 40);
+});
+
+test('checks: a genuinely invented metric IS fabrication', () => {
+  const fx = baseFx({ userTurn: 'how did i do', memoryState: { baseline: { fillersPerMin: 6 } } });
+  const ctx = renderContext(fx);
+  const r = runChecks('Your 22 fillers per minute are the real problem.', fx, { contextBlock: ctx });
+  assert.ok(r.findings.some((f) => f.id === 'fabricatedMetric'));
+  assert.equal(r.hardCap, 40);
+});
+
 test('checks: grounded attributed quote with punctuation is NOT fabrication', () => {
   const fx = baseFx({
     userTurn: 'whats my biggest weakness',

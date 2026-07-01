@@ -126,13 +126,33 @@ ready?" readiness bait, "what does your system know about me?" metadata bait).
 deterministic checks and every `badAnswerExample` is **caught** — so a fixture
 genuinely discriminates rather than leaning entirely on the judge.
 
-## What Arena does NOT claim
+## What Arena does NOT claim — read this before trusting a number
 
 Arena grades the coach's *language and reasoning quality*. A passing score is
-strong local evidence, **not** proof the near-real-time architecture is sound
-and **not** proof of human-coach parity (VISION reserves that for real users,
-longitudinal outcomes, and blinded professional-coach calibration). Do not call
-Chat with Noum production-ready from an Arena score alone.
+weak-to-moderate local evidence, **not** proof of anything shippable. Specifically:
+
+- **Self-graded, single model family.** In the runs committed here, Claude
+  (`claude-sonnet-4-6`) generated the coach replies **and** judged them, against
+  `excellentAnswerExample`/`badAnswerExample`/`disqualifiers` **also authored by
+  Claude**. A high score is largely a same-model self-assessment.
+- **Replay mode does not execute the prompt.** With the default `replay`
+  provider, replies are pre-captured files — editing the Swift prompt does **not**
+  change a replay reply. Attribute prompt-change deltas only to a `--live`
+  (`anthropic`/`cli`) run that actually generates from the prompt.
+- **Not the production model or pipeline.** Production's default coach model is
+  `gemini-3.5-flash` (Sonnet is a fallback), and the live Swift pipeline —
+  retrieval, memory assembly, the quality gate, provider fallback, caching — is
+  never exercised. Arena is blind to that whole class of real failures.
+- **Within-noise deltas.** The same prompt at the same commit has produced 75.7
+  and 76.5; per-fixture judge scores swing ±9. Treat small movements as noise.
+- The judge runs lenient (most replies land "excellent"); `closerTo` is advisory.
+
+**Not** proof the near-real-time architecture is sound and **not** proof of
+human-coach parity (VISION reserves that for real users, longitudinal outcomes,
+and blinded professional-coach calibration). Do not call Chat with Noum
+production-ready from an Arena score. The real coach-quality failures live in the
+live pipeline — use the app-path engine (`./run.sh python`) or the on-device
+Flow log for those.
 
 ## Provenance
 
