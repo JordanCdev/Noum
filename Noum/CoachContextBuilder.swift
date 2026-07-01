@@ -1352,6 +1352,26 @@ enum CoachContextBuilder {
             }
         }
 
+        // POSITIONAL TREND — the longitudinal companion to the POSITIONAL READ
+        // (most-recent rep) above. Where that names WHERE this rep's events
+        // fell, this names when the SAME position keeps failing across the
+        // recent window ("you've rushed the close in 4 of your last 5 reps"),
+        // so the coach can call a recurring habit, not just one slip. Pure
+        // function over the already-persisted per-rep `repEventLocations` — no
+        // new persistence. Honest by construction: a position is named only
+        // when a super-majority of the reps that carried that event put it in
+        // one zone (3-of-3 floor), and the copy is a rep-set hypothesis, never
+        // a trait. Empty when nothing has earned the floor, so the section
+        // omits rather than padding.
+        let positionalTrends = RepEventTrendEngine.compute(sessions: sessions)
+        if !positionalTrends.isEmpty {
+            lines.append("")
+            lines.append("POSITIONAL TREND (recurring event position across recent reps)")
+            for trend in positionalTrends {
+                lines.append("- \(trend.readout)")
+            }
+        }
+
         // LAST REP NOTE — the coach's own short read of the most-recent
         // rep, persisted by `PostRepCoachNoteStore` after each session
         // finalizes. Lets the chat coach build on its own earlier read
