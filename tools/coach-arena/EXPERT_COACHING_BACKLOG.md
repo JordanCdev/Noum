@@ -1,5 +1,21 @@
 # Expert-coaching backlog (VISION-driven)
 
+> **FIRST LIVE BASELINE (2026-07-01, key supplied): gold mean 67.7** (claude-sonnet-4-6,
+> real API, both coach+judge; `reports/LIVE-BASELINE.md`). This is the trustworthy
+> anchor (brackets the subagent runs iter-3 59.4 / iter-4 72.7). Weakest live dims:
+> personalMemory 67%, interventionQuality 68%. Top live-confirmed lever = the coach
+> asking a deferring question instead of prescribing on emotional/tired turns.
+> **iter 12 attacked it (attunement rule-1 "acknowledgement never REPLACES the move")
+> — REVERTED:** subagent dual-arm A/B was only borderline (target group IQ +0.71, 4/7
+> preferred old; the deferral was mostly a specific-draw artifact — fresh draws of the
+> old prompt prescribe fine) with an over-reassurance downside (exhausted −2,
+> panic-blank −3), though it DID fix the one real deferral (its-not-easy 4→13), kept
+> warmth flat, and lifted the emotional/neutral controls (+2.67/+1). **Verdict: promising
+> but not shippable on a subagent-borderline result. NEXT high-value step = LIVE-verify
+> a refined version (drop the over-reassurance nudge; keep "still land one concrete
+> testable move, never substitute a question for it") — needs Jordan's key again.**
+> Artifact `reports/iter12-ab-prescribe-defer.json`.
+
 > **LOOP STATUS after iters 4-11 (2026-07-01): the app is MATURE; headless
 > high-value work is largely extracted.** Every backlog "gap" investigated turned
 > out already-built or not prompt-movable: interventionQuality (fixed iter 4),
