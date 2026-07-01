@@ -47,6 +47,52 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-07-01 (autonomous `noum-1` run). **19th iteration. Shipped TWO verified
+levers — the positional-read TREND engine AND its user-facing render, the second
+in direct response to the eval panel's unanimous top gap. GREEN on iPhone 17 /
+iOS 26 (isolated DerivedData), no push. Commits `26906c49` + `57b93a2b`. Full
+write-up: `docs/COACH_PARITY_EVAL_2026-07-01.md`. Mean panel score 7.5/10.**
+
+- **Lever A `26906c49` — positional read → trend memory (`RepEventTrendEngine`).**
+  The per-rep positional read ("you rushed at the close") reached the coach for
+  the most-recent rep ONLY. This adds the longitudinal companion: a pure engine
+  aggregating the already-persisted `repEventLocations` across the recent window
+  into a recurring-position read ("rushed the close in 4 of your last 5 reps"),
+  so the coach names a HABIT not a slip. Mirrors `DerivedReadsTrendEngine` — pure
+  function, zero new persistence, honest floors (3-occurrence + 0.6
+  super-majority; **denominator = reps that CARRIED the event**, so a clean rep
+  is never counted as evidence), rep-set hypothesis never a trait, self-hiding.
+  Wired into `CoachContextBuilder`'s new POSITIONAL TREND section (its only
+  consumer). +11 tests (`RepEventTrendEngineTests`).
+- **Lever B `57b93a2b` — render the trend (`RepEventTrendCard`).** The panel's
+  UNANIMOUS #1 gap: the trend was computed but INVISIBLE — the exact competitive
+  deficit vs Speeko/Yoodli (they ship a screenshot-able analytics surface;
+  Noum's stronger recurring-habit read was latent in the prompt). A
+  self-suppressing `SummaryView` card beside `RepTimelineCard`. Honest by
+  construction: renders only earned trends; the subline names the **earned
+  denominator** ("in 4 of your last 5 reps with a rushed stretch") so a low base
+  rate can't read as universal (closes the one overclaim Lever A opened). Reuses
+  RepTimelineCard's exact tokens (zero new); motion-free → reduced-motion safe by
+  construction; one-sentence VoiceOver. Pure `RepEventTrendCopy` keeps the card
+  render-only. +8 copy tests.
+- **Method + honesty:** 5-role panel (market · UX · end-user · veteran-coach ·
+  staff/QA) read the working tree directly, adversarially confirmed Lever A is a
+  REAL wire (not stub), unanimously. Two dings caught + handled: (1) first commit
+  said "+13 tests" but suite ships **11** → amended the commit before shipping B;
+  (2) Lever A verified as a context WIRE not a coach BEHAVIOR → logged as the new
+  top next-lever (coach-arena assertion that the model actually speaks the line).
+- **Collision discipline:** concurrent Coach Arena session had just touched
+  `CoachContextBuilder` (commits `b9e0d004`/`e0018d70`, ~40 min prior). Staged
+  only my files via explicit pathspecs; built in isolated `DerivedData/Noum-eval-verify`.
+- **Next collision-safe levers:** (1) prove coach BEHAVIOR via coach-arena
+  assertion [now top, since B closed visibility]; (2) thread raw base-rate into
+  the readout; (3) SummaryView empty-state honesty pass.
+- **10/10 answer, unchanged:** literal "with no doubt replaces a human coach"
+  stays REFUSED by design (`.forming` trust moat). The 3 human-gated gaps
+  unchanged (hardware perception / external calibration / longitudinal outcome).
+  The one [closable-in-software] gap on the ledger — insight computed but
+  invisible — is what Lever B closed this run.
+
 2026-06-30 (autonomous `noum2` run, later). **18th iteration. Shipped the
 positional-read RENDER — the one ship-now competitive-substance lever 17 priors
 named but always deferred. GREEN on iPhone 17 / iOS 26 sim, isolated
