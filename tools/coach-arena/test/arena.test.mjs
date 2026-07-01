@@ -151,6 +151,27 @@ test('checks: emotional decision turn is exempt from deferInsteadOfMove', () => 
   assert.ok(!r.findings.some((f) => f.id === 'deferInsteadOfMove'), 'exhausted turns may probe gently without a drill');
 });
 
+test('checks: move + trailing "what is the setting" hand-back flags (rule 40)', () => {
+  // The cold-start-no-data live failure: gives the rep, then asks the banned setup question.
+  const r = runChecks('No baseline yet, so start there. Record one rep on any work topic and I will tell you exactly what to target. What is the setting you are preparing for?', baseFx(), {});
+  assert.ok(r.findings.some((f) => f.id === 'trailingSetupQuestion'), 'move + trailing setup question should flag');
+});
+
+test('checks: a warm "want the three questions?" offer does NOT flag (gold interview-prep)', () => {
+  const r = runChecks('Drill the shape, not the content. Answer three likely questions with the conclusion in sentence one, hard stop at 60 seconds. Want the three questions?', baseFx({ turnDepth: 'deepAssessment' }), {});
+  assert.ok(!r.findings.some((f) => f.id === 'trailingSetupQuestion'), 'a warm offer to continue is not a setup hand-back');
+});
+
+test('checks: a gentle emotional close with no prior drill does NOT flag trailingSetupQuestion', () => {
+  const r = runChecks('That is real, and it makes sense. You do not have to decide anything right now. What would feel like enough before the next one?', baseFx({ emotionalSignal: 'exhausted' }), {});
+  assert.ok(!r.findings.some((f) => f.id === 'trailingSetupQuestion'), 'gentle emotional question is the move, not a setup hand-back');
+});
+
+test('checks: a move that ENDS on the move (no trailing question) does NOT flag', () => {
+  const r = runChecks('Your point arrived late. Put the recommendation in sentence one, then prove it once and stop.', baseFx(), {});
+  assert.ok(!r.findings.some((f) => f.id === 'trailingSetupQuestion'));
+});
+
 test('checks: fixture disqualifier substring + regex + cap', () => {
   const fx = baseFx({ disqualifiers: ['forbidden phrase', { pattern: '\\bset to authoritative\\b', regex: true, cap: 'placeholderOrBroken' }] });
   const r1 = runChecks('this contains a forbidden phrase here', fx, {});

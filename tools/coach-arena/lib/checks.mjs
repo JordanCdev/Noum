@@ -301,6 +301,25 @@ export function runChecks(reply, fixture, opts = {}) {
     pushFinding(findings, flag('deferInsteadOfMove', 6, `A ${fixture.turnDepth} turn ends on a question with no concrete move — hands the decision back instead of prescribing.`, ''));
   }
 
+  // -- trailing setup question after a real move (prompt rule 40/57) ---------
+  // Rule 40 bans the cold-start trailing setup question ("What's the setting?"),
+  // and rule 57 says "any closing question must BE the move, not an add-on".
+  // Narrowly targets the banned pattern: the reply ALREADY gives a concrete move
+  // (an earlier move-verb) AND its LAST sentence is a question that asks the user
+  // to SUPPLY situational context the coach should have inferred (setting /
+  // audience / purpose / topic). A warm offer to continue ("Want the three
+  // questions?") and a gentle emotional reflection ("What would feel like enough
+  // rest?") are NOT flagged — only the "you tell me your context" hand-back is.
+  {
+    const sents = raw.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
+    const last = (sents[sents.length - 1] || '').toLowerCase();
+    const earlier = sents.slice(0, -1).join(' ').toLowerCase();
+    const SETUP_Q = /\b(what'?s|what is|what are|who'?s|who is|which)\b.{0,40}\b(setting|context|situation|audience|room|preparing|prepping|goal|trying to|topic|scenario|event|meeting|role|for)\b[^?]*\?\s*$/;
+    if (sents.length >= 2 && /\?\s*$/.test(last) && MOVE_VERB.test(earlier) && SETUP_Q.test(last)) {
+      pushFinding(findings, flag('trailingSetupQuestion', 6, 'Gives a move, then asks the user to supply situational context the coach should infer (rule 40 bans the cold-start setup question; rule 57: a closing question must BE the move, not an add-on).', firstMatch(raw, /[^.?!]*\?\s*$/)));
+    }
+  }
+
   // -- fabricated attributed quote ------------------------------------------
   // Only flag when a >2-word quoted span is attributed to the user AND not in
   // the allowed corpus. Conservative: coaching example phrases in quotes are
