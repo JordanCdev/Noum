@@ -11,10 +11,11 @@
 > (Investigated) — the prompt/context layer is MATURE, so prompt-rule tweaking is
 > now low-leverage. iter 8 (audit): the chat quality GATE is well-calibrated — it
 > correctly rejects long/"Next rep:"-labelled replies the ARENA is lenient about
-> (`reports/iter8-gate-audit.md`); no gate bug. Next task = **Next item #1 (align the
-> Arena length/label penalty with the gate so Arena-high predicts ships-clean)** — a
-> small in-harness change. Then #2 (real-pipeline eval, needs a dump dir or live key)
-> and #3 (delivery intelligence). Context: memory files `coach_arena` +
+> (`reports/iter8-gate-audit.md`); no gate bug. iter 9 DONE: aligned the Arena length
+> limits with the gate's real `replyLengthLimits` (`lib/checks.mjs`) so tooLong now
+> predicts the gate; 24/24 tests. Next task = **Next item #1 (real-pipeline eval —
+> needs a dump dir or live API key; may block a headless tick)**, else #2 (delivery
+> intelligence, the one new-capability gap). Context: memory files `coach_arena` +
 > `session_lifecycle_evidence_floor`; commits
 > `f035a3c4`..`3f0edd01` on `ux-overhaul`.
 > **On measurement (read before trusting any number):** the full-suite re-judge is
@@ -144,9 +145,24 @@ newest-done first. Each item: the VISION hook, why it matters, and status.
   them). Full write-up: `reports/iter8-gate-audit.md`. Removed the sweep test (wrong
   premise: "Arena-high ⇒ should pass the gate" is false). **Real finding: the ARENA
   under-penalizes length/labels vs the shipping gate** — so "Arena-high" over-predicts
-  ship quality. Improvement is on the MEASUREMENT side (Next #1 below). One product
+  ship quality. Improvement is on the MEASUREMENT side (done iter 9). One product
   question flagged for Jordan: the gate's 4-SENTENCE cap is stricter than the prompt's
   4-LINE/75-word contract, so a 47-word/5-sentence reply gets repaired — deliberate?
+
+- **Align the Arena length limits with the shipping gate** (iter 9) — DONE. Correction
+  to the iter-8 note: the Arena does NOT "shrug" at labels — its scaffoldLabel check
+  already fires on "Next rep:" (−8; confirmed on the 3 label replies). The real gap was
+  purely the LENGTH limits: `lib/checks.mjs` `LENGTH_LIMITS` was a loose approximation
+  (groundedRead 7 sentences / 640 chars) while the shipping gate is 4 / 420, so 4 of the
+  6 gate-`tooLong` replies passed the Arena with flagPenalty 0. Set `LENGTH_LIMITS` to
+  the gate's actual `replyLengthLimits` (text, non-expanded): groundedRead
+  {85w,4s,420c,5L}, trustRepair {170w,7s,900c,8L}, deepAssessment {260w,10s,1400c,10L}.
+  Fixes BOTH directions — groundedRead tightened (now flags the gate's 6 tooLong replies,
+  was 0) AND trustRepair loosened on words (was 110, gate allows 170). Verified: Arena
+  `tooLong` now matches the gate on all 6 known replies; panic-blank (trustRepair 111w)
+  correctly passes; 24/24 harness tests incl. 2 new alignment guards. Label penalty (−8)
+  left as-is: a banned label triggers the gate's REPAIR (not reject), so −8 is a
+  reasonable "repair cost" signal.
 
 ## Next (priority order)
 > **iter 7 re-prioritization (read this):** the prompt/context LAYER IS MATURE.
@@ -157,38 +173,27 @@ newest-done first. Each item: the VISION hook, why it matters, and status.
 > is now (a) the PIPELINE the Arena can't see, and (b) genuinely new capability.
 > Levers below re-ordered accordingly.
 
-1. **Align the Arena length/label penalty with the shipping gate** (from the iter-8
-   gate audit). The gate is fine; the ARENA is lenient on length/labels, so an
-   Arena-high reply can still trip the gate and get repaired. Make the Arena's
-   deterministic checks + dialogueFeel rubric penalize what the gate rejects: replies
-   over the groundedRead length contract, and "Next rep:" / "Straight verdict:" /
-   other banned labels (the prompt bans them; the Arena currently shrugs). Then
-   "Arena-high" predicts "ships clean". Verify: re-grade a few label/long fixtures,
-   confirm the deterministic scaffold-label check fires on "Next rep:". Small, purely
-   in the harness (`lib/checks.mjs` + `judges/rubric-judge.md`).
-   [Gate over-rejection sub-task DONE in iter 8 — gate is well-calibrated, see
-   Investigated + `reports/iter8-gate-audit.md`.]
-2. **Real-pipeline eval.** The Arena grades the prompt on a clean Claude call; it
+1. **Real-pipeline eval.** The Arena grades the prompt on a clean Claude call; it
    CANNOT see the gate/fallback/retrieval where memory says real quality degrades
    (`chat_quality_gate`; `coach_reliability_gate`; single-provider fragility on
    `gemini-3.5-flash`). Wire the Python app-path engine (`./run.sh python`) over real
    app-dumped candidates (`NOUM_COACH_EVAL_DUMP_DIR`) or a live `--live` run. Prereq
    (blocks a headless tick): a populated dump dir (run the app through eval scenarios
    once) or a live API key.
-3. **Delivery intelligence depth** — VISION roadmap #5 (Perception). The coach
+2. **Delivery intelligence depth** — VISION roadmap #5 (Perception). The coach
    senses fillers/pace/pauses but not prosody contour, breathing, emphasis, vocal
    energy, authority/tension. The one genuinely-new CAPABILITY gap (not a prompt
    tweak). Needs new session evidence, conservative thresholds, user-visible "what
    can/can't be inferred" copy. Large; stage it.
-4. **personalMemory via STRUCTURAL context** — DEPRIORITIZED (may not be a real
+3. **personalMemory via STRUCTURAL context** — DEPRIORITIZED (may not be a real
    gap). iters 5-6 proved prompt-wording can't move it; avg is already ~13-14/20 on
    fresh draws (the low baseline was an unlucky draw). Only pursue if a fresh
    dual-arm baseline re-confirms the gap; then the lever is pre-synthesizing durable
    facts in the CONTEXT block (renderContext), not rule 1.
-5. **Adaptation across attempts** — coach-parity #4. Extend the tone-drill
+4. **Adaptation across attempts** — coach-parity #4. Extend the tone-drill
    reinforce/vary/replace pattern to the other skill areas (pace, close,
    structure) with an explained rationale each time.
-6. **Transfer outcome loop** — coach-parity #6. Post-event outcome + audience-read
+5. **Transfer outcome loop** — coach-parity #6. Post-event outcome + audience-read
    capture that becomes durable coach context, not just a one-off report.
 
 ## Guardrails for the loop

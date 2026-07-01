@@ -30,6 +30,24 @@ test('checks: clean strong reply has no findings', () => {
   assert.equal(r.findings.length, 0);
 });
 
+test('checks: length limits match the shipping gate (groundedRead tightened)', () => {
+  // A 5-sentence groundedRead reply is within word/char bounds but exceeds the
+  // gate's 4-sentence groundedRead cap — the Arena must flag tooLong so an
+  // Arena-high score predicts the reply ships without a gate repair.
+  const fiveSentences = 'Your open landed. The middle drifted. The close softened. Pace stayed steady. Next rep, hold the point through sentence two.';
+  const r = runChecks(fiveSentences, baseFx(), { contextBlock: '' });
+  assert.ok(r.findings.some((f) => f.id === 'tooLong'), '5-sentence groundedRead should trip tooLong (gate cap is 4)');
+});
+
+test('checks: length limits match the shipping gate (trustRepair loosened)', () => {
+  // A ~145-word trust-repair reply is over the OLD Arena 110-word cap but well
+  // within the gate's 170-word trustRepair limit — it must NOT flag tooLong,
+  // or the Arena would penalise replies that ship fine.
+  const reply = "That freeze is a real thing to sit with, and it makes sense it shook your confidence in pressure work after the week you have had. Here is what the reps actually show, though: your last three calm sessions held two fillers or fewer and the point led every time, so the mechanics are genuinely there when the timer is not running. The gap is narrow and specific, not a sign you cannot do this. What happened under the timer is the clock started before you had picked your first word, and everything scrambled from there. So the next rep is small on purpose: run one sixty-second round with no elimination clock, and each time the rush hits, hold one silent beat before you speak instead of filling it.";
+  const r = runChecks(reply, baseFx({ turnDepth: 'trustRepair' }), { contextBlock: '' });
+  assert.ok(!r.findings.some((f) => f.id === 'tooLong'), '145-word trustRepair should pass (gate allows 170)');
+});
+
 test('checks: robotic phrase flags', () => {
   const r = runChecks('Based on your data, keep practicing.', baseFx(), {});
   assert.ok(r.findings.some((f) => f.id === 'roboticPhrase'));

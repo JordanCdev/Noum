@@ -78,15 +78,21 @@ export function actionFingerprints(text) {
   return actionWordSets(text).map((set) => [...set].sort().join(' '));
 }
 
-// --- length limits by turn depth (approximates Swift replyLengthLimits) ------
-
+// --- length limits by turn depth --------------------------------------------
+// MATCHES the shipping gate's `AICoachChatService.replyLengthLimits` (text
+// surface, non-expanded) so a reply that trips the Arena's tooLong is one the
+// gate would also flag+repair — i.e. "Arena-high" predicts "ships clean".
+// Gate returns (chars, sentences, words, lines); transcribed here as
+// {words, lines, sentences, chars}. groundedRead uses the NON-expanded default
+// (the common case); the gate's rarer expanded path (150w/7s) is not modelled,
+// so a genuinely expansion-requested groundedRead turn may over-flag by a hair.
 const LENGTH_LIMITS = {
   greeting: { words: 45, lines: 3, sentences: 4, chars: 320 },
   preference: { words: 45, lines: 3, sentences: 4, chars: 320 },
   offTopic: { words: 55, lines: 3, sentences: 4, chars: 360 },
-  groundedRead: { words: 90, lines: 5, sentences: 7, chars: 640 },
-  trustRepair: { words: 110, lines: 6, sentences: 8, chars: 760 },
-  deepAssessment: { words: 170, lines: 11, sentences: 13, chars: 1200 },
+  groundedRead: { words: 85, lines: 5, sentences: 4, chars: 420 },
+  trustRepair: { words: 170, lines: 8, sentences: 7, chars: 900 },
+  deepAssessment: { words: 260, lines: 10, sentences: 10, chars: 1400 },
   plan: { words: 240, lines: 18, sentences: 22, chars: 1700 },
 };
 function limitsFor(fixture) {
