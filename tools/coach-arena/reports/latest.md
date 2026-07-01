@@ -1,6 +1,6 @@
 # Coach Arena Latest Report
 
-- Generated: `2026-06-30T23:16:47+00:00`
+- Generated: `2026-07-01T00:06:27+00:00`
 - Candidate: `excellent`
 - Fixtures: `50`
 - Average: `85.76/100`
@@ -36,14 +36,16 @@
 - Passes: `False`
 - Unique proof-test hashes: `0`
 - Max proof-test hash reuse: `0`
+- Max proof-test hash reuse allowed: `3`
 - Distinct rounded confidence values: `0`
 - Empty retrieval-card traces: `0`
+- Allowed empty retrieval-card traces: `0`
 - Slow first-token traces: `0`
 
 ## Previous Run
 
 - Status: `compared`
-- Previous generated: `2026-06-30T23:12:28+00:00`
+- Previous generated: `2026-06-30T23:34:49+00:00`
 - Previous candidate: `excellent`
 - Candidate changed: `False`
 - Fixture count changed: `False`

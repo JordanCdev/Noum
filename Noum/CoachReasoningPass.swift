@@ -30,6 +30,10 @@ enum CoachReasoningPass {
             turnDepth: turnDepth,
             isMemoryHandoff: isMemoryHandoff
         )
+        let preferredProofTest = preferredProofTest(
+            for: userQuestion,
+            turnDepth: turnDepth
+        )
         let focusLabel = preferredDimensionID.flatMap { id in
             rubric.rubric.dimensions.first { $0.id == id }?.label
         }
@@ -61,6 +65,7 @@ enum CoachReasoningPass {
                 rubric: rubric.rubric,
                 surface: surface,
                 preferredDimensionID: preferredDimensionID,
+                preferredProofTest: preferredProofTest,
                 recentProofTests: recentProofTests
             )
 
@@ -368,6 +373,7 @@ enum CoachReasoningPass {
         rubric: GoalRubric,
         surface: CoachReplySurface,
         preferredDimensionID: String?,
+        preferredProofTest: String?,
         recentProofTests: [String]
     ) -> String {
         let sortedIDs = scores.sorted {
@@ -381,6 +387,11 @@ enum CoachReasoningPass {
             orderedIDs = sortedIDs
         }
         let recentKeys = Set(recentProofTests.map(proofTestKey).filter { !$0.isEmpty })
+        if let preferredProofTest,
+           !preferredProofTest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           !recentKeys.contains(proofTestKey(preferredProofTest)) {
+            return surface == .live ? liveVersion(of: preferredProofTest) : preferredProofTest
+        }
         for id in orderedIDs {
             guard let dimension = rubric.dimensions.first(where: { $0.id == id }) else { continue }
             for candidate in proofTestCandidates(for: dimension, surface: surface) where !recentKeys.contains(proofTestKey(candidate)) {
@@ -452,7 +463,7 @@ enum CoachReasoningPass {
             return "Do one 60-second answer: verdict first, one reason, clean stop."
         }
         if test.lowercased().contains("60-90") {
-            return "Repeat it under a 60-second timer and keep the verdict first."
+            return "Repeat it under a 60-second pressure timer and keep the verdict first."
         }
         return test
     }
@@ -577,6 +588,24 @@ enum CoachReasoningPass {
         return "the prior answer did not earn trust before prescribing"
     }
 
+    private static func preferredProofTest(
+        for userQuestion: String,
+        turnDepth: CoachTurnDepth
+    ) -> String? {
+        guard turnDepth == .trustRepair else { return nil }
+        let lower = userQuestion.lowercased()
+        if containsAny(lower, ["markdown", "tts", "format", "**"]) {
+            return "Repair the same answer in plain speech: no markdown, one specific read, one move."
+        }
+        if containsAny(lower, ["generic", "generic ai", "ai tips", "ai wrapper", "assistant wrapper"]) {
+            return "Use one user-specific signal first, then prescribe exactly one coach move."
+        }
+        if containsAny(lower, ["cold", "robotic", "not human", "low eq", "not high eq"]) {
+            return "Rewrite the read with one human acknowledgement and one user-specific signal."
+        }
+        return nil
+    }
+
     private static func preferredProofDimensionID(
         for userQuestion: String,
         scores: [RubricScore],
@@ -587,22 +616,77 @@ enum CoachReasoningPass {
             return nil
         }
         let lower = userQuestion.lowercased()
+        if turnDepth == .trustRepair {
+            if containsAny(lower, ["it's not easy", "its not easy", "not that easy", "harder than that", "easier said"]) {
+                return "pressure_stability"
+            }
+            if containsAny(lower, ["repeating yourself", "same thing again", "said that already", "already said that"]) {
+                return "clean_close"
+            }
+            if containsAny(lower, ["too much writing", "too long", "get to the point", "not informative", "not helpful", "missed the point", "answered what"]) {
+                return "verdict_first"
+            }
+            if containsAny(lower, ["robotic", "cold", "generic", "ai tips", "ai wrapper", "tts", "markdown", "format"]) {
+                return "controlled_pacing"
+            }
+            return "verdict_first"
+        }
+        if turnDepth == .deepAssessment,
+           containsAny(lower, [
+            "how far", "ready", "readiness", "overall", "stand overall",
+            "authoritative", "authority", "board", "executive"
+           ]) {
+            return "pressure_stability"
+        }
         if containsAny(lower, ["slow", "pace", "rushing", "too fast", "unsure", "pause", "breath"]) {
             return "controlled_pacing"
         }
-        if containsAny(lower, ["ending", "close", "closing", "ask", "stop", "land"]) {
+        if containsAny(lower, [
+            "presentation", "flat", "energy", "emphasis", "nerves",
+            "nervous", "confidence", "confident", "quickly", "quick",
+            "panic", "what next", "one move", "coach this"
+        ]) {
+            return "controlled_pacing"
+        }
+        if containsAny(lower, [
+            "ending", "close", "closing", "ask", "stop", "land",
+            "leadership", "update tomorrow", "board", "executive",
+            "overexplain", "over-explain"
+        ]) {
             return "clean_close"
         }
-        if containsAny(lower, ["opening", "start", "first sentence", "verdict", "point first", "lead with", "headline"]) {
+        if containsAny(lower, ["quote what", "give me an example", "example of me"]) {
+            return "salience"
+        }
+        if containsAny(lower, [
+            "opening", "start", "first sentence", "verdict", "point first",
+            "lead with", "headline", "opener", "interview", "conversation tonight", "difficult conversation",
+            "disagree", "disagreement", "defensive", "evasive", "direct",
+            "actually say", "quote", "said that", "real question"
+        ]) {
             return "verdict_first"
         }
-        if containsAny(lower, ["filler", "fillers", "um", "uh", "ah", "hedge", "maybe", "probably", "kind of", "sort of"]) {
+        if containsAny(lower, [
+            "filler", "fillers", "um", "uh", "ah", "hedge", "maybe",
+            "probably", "kind of", "sort of", "conviction", "convincing",
+            "semantic", "comparison", "prompt made me repeat", "prompt echo",
+            "timid", "timidity"
+        ]) {
             return "hedge_control"
         }
-        if containsAny(lower, ["pressure", "stakes", "timer", "under fire", "interrupt", "real room"]) {
+        if containsAny(lower, [
+            "pressure", "stakes", "timer", "under fire", "interrupt",
+            "real room", "room seemed", "did the drill cause", "cause that",
+            "caused", "outcome", "landed better", "this week felt harder"
+        ]) {
             return "pressure_stability"
         }
-        if containsAny(lower, ["depth", "example", "memorable", "stick", "story", "salience", "boring"]) {
+        if containsAny(lower, [
+            "depth", "example", "memorable", "stick", "story", "salience",
+            "boring", "networking", "introducing myself", "intro", "sales",
+            "pitch", "customer", "loses people", "not like me", "my phrase",
+            "claim", "reason", "weak"
+        ]) {
             return "salience"
         }
 

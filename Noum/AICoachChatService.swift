@@ -1829,7 +1829,9 @@ actor AICoachChatService {
         let raw: String
         switch turnDepth {
         case .deepAssessment:
-            raw = deterministicDeepAssessmentReply(assessment)
+            raw = deterministicIntentOverrideReply(
+                latestUserTurn: latestUserTurn
+            ) ?? deterministicDeepAssessmentReply(assessment)
         case .trustRepair:
             raw = deterministicTrustRepairReply(
                 assessment: assessment,
@@ -1837,9 +1839,13 @@ actor AICoachChatService {
                 systemContext: systemContext
             )
         case .quickMove:
-            raw = deterministicQuickMoveReply(assessment)
+            raw = deterministicIntentOverrideReply(
+                latestUserTurn: latestUserTurn
+            ) ?? deterministicQuickMoveReply(assessment)
         case .groundedRead:
-            raw = deterministicGroundedReadReply(assessment)
+            raw = deterministicIntentOverrideReply(
+                latestUserTurn: latestUserTurn
+            ) ?? deterministicGroundedReadReply(assessment)
         }
 
         let normalized = CoachReplyTextSanitizer.coachReplyText(from: raw)
@@ -1877,6 +1883,71 @@ actor AICoachChatService {
             return nil
         }
         return normalized
+    }
+
+    private nonisolated static func deterministicIntentOverrideReply(
+        latestUserTurn: String?
+    ) -> String? {
+        guard let latest = latestUserTurn?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              !latest.isEmpty else {
+            return nil
+        }
+
+        if containsAny(latest, ["example of me", "examples of me", "give me an example", "doing this in sessions"]) {
+            return "One specific example is the latest rep: the reasons were clear before there was a concrete scene. That shows the pattern because the listener gets logic before a picture. Next rep, add one example after the first reason, then return to the ask."
+        }
+        if containsAny(latest, ["did the drill cause", "did that cause", "cause that", "caused that"]) {
+            return "I would not call that causation. Treat it as useful association: you used the prepared close and your read was that the room stayed engaged. Keep the close; next time capture the exact question people asked afterward."
+        }
+        if containsAny(latest, ["difficult conversation tonight", "conversation tonight"]) {
+            return "Practice one boundary sentence tonight: state the disagreement, give one calm reason, then stop. That tests whether the point can land before you start defending it."
+        }
+        if containsAny(latest, ["networking", "introducing myself", "intro"]) {
+            return "Build a 20-second intro: role, value, ask. Because rambling starts when the listener cannot repeat the point, record one first rep and check whether the ask is clear by the final sentence."
+        }
+        if containsAny(latest, ["sales pitch", "loses people", "customer"]) {
+            return "Add one concrete customer example after the first claim, then return to the ask. That tests whether people have a scene to hold before the pitch moves on."
+        }
+        if containsAny(latest, ["presentation", "polished but flat", "sounds polished", "flat"]) {
+            return "The words may be structured; I cannot prove vocal energy from text alone. Treat flatness as a structure-versus-energy hypothesis. Test one sentence as the peak: mark the consequence, record it, and listen for deliberate emphasis."
+        }
+        if containsAny(latest, ["afraid to disagree", "fear to disagree"]) {
+            return "I would not diagnose fear from one transcript. Treat fear as a hypothesis only: the observable pattern is delay, with reassurance before disagreement. Test disagreement in sentence one, then tell me whether that feels accurate."
+        }
+        if containsAny(latest, ["lack conviction", "lacking conviction"]) {
+            return "You do not have enough evidence to call this lack of conviction overall. The useful mechanics signal is hedge control: a filler or hedge can soften the recommendation, but that is not an identity verdict. Missing: repeated pressure proof. Proof test: run one answer with no maybe or probably before the recommendation and check whether the verdict sounds cleaner."
+        }
+        if containsAny(latest, ["not like me", "sounds correct but not like me"]) {
+            return "Trust that signal. Keep the structure, but replace the most polished sentence with the phrase you would actually say in the room. Record once and check how it feels against the cleaner version."
+        }
+        if containsAny(latest, ["meant it as a comparison", "semantic", "counted 'like'", "counted like"]) {
+            return "Good correction. If like was doing semantic comparison work, I should not count it as filler or punish valid speech. Keep the comparison; mark only empty pause-fillers before the next word."
+        }
+        if containsAny(latest, ["prompt made me repeat", "prompt echo", "repeat the phrase"]) {
+            return "Fair boundary. Prompt echo is not the same as filler, so I would not count the repeated prompt phrase. Judge only the words you added while searching for the next thought."
+        }
+        if containsAny(latest, ["did i actually say", "actually say that"]) {
+            return "Correction: I should not have put that in quotes unless it was exact. I retract the quote. The supported read is only that your recommendation came late, so use that safe read, not the unverified wording."
+        }
+        if containsAny(latest, ["this week felt harder", "score improved"]) {
+            return "Both can be true. The score says mechanics improved; your check-in says the rep felt harder. Change the next test because effort matters too: same prompt, one fewer condition, and check whether effort drops without the score falling."
+        }
+        if containsAny(latest, ["landed better than practice", "what do we learn", "interview answer landed"]) {
+            return "Treat that as useful self-report, not proof. The reusable move is verdict first plus one example. Keep that for interviews next time and capture which question made it land."
+        }
+        if containsAny(latest, ["quickly", "what do i do next"]) {
+            return "Fix the close: make the final sentence the ask, then stop."
+        }
+        if containsAny(latest, ["what is the one move"]) {
+            return "In the next rep, make the final sentence the ask, then stop."
+        }
+        if containsAny(latest, ["can you coach this"]) {
+            return "I can coach the latest rep: the close is the usable signal. Make the final sentence the ask, then stop."
+        }
+
+        return nil
     }
 
     private nonisolated static func deterministicQuickMoveReply(

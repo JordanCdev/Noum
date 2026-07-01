@@ -9,6 +9,7 @@
 
 import Foundation
 import Testing
+import XCTest
 @testable import Noum
 
 struct CoachChatAppPathConversationScript {
@@ -5272,6 +5273,58 @@ struct CoachChatConversationCorpusTests {
             ))
         }
         return rows
+    }
+
+    @MainActor
+    static func dumpTextAppPathReportForXCTestBridge() async throws {
+        try await dumpAppPathReportForXCTestBridge(
+            surface: .text,
+            schemaVersion: CoachChatConversationCorpus.appPathReportSchemaVersion,
+            fileName: "coach-chat-conversation-app-path-eval-v1.json"
+        )
+    }
+
+    @MainActor
+    static func dumpLiveAppPathReportForXCTestBridge() async throws {
+        try await dumpAppPathReportForXCTestBridge(
+            surface: .live,
+            schemaVersion: CoachChatConversationCorpus.liveAppPathReportSchemaVersion,
+            fileName: "coach-chat-live-app-path-eval-v1.json"
+        )
+    }
+
+    @MainActor
+    private static func dumpAppPathReportForXCTestBridge(
+        surface: CoachReplySurface,
+        schemaVersion: String,
+        fileName: String
+    ) async throws {
+        let rows = await Self.scriptedConversationAppPathRows(surface: surface)
+        let targetReport = CoachChatConversationEvaluationReport.make(
+            from: CoachChatConversationCorpus.appPathConversations
+        )
+        let report = CoachChatConversationAppPathReport.make(
+            rows: rows,
+            localTargetShapeScore: targetReport.visionProductionReadiness.localTargetShapeScore,
+            schemaVersion: schemaVersion,
+            surface: surface
+        )
+        try Self.dumpEvaluationArtifactIfRequested(
+            report.encodedSortedJSON(),
+            fileName: fileName
+        )
+    }
+}
+
+@MainActor
+final class CoachChatConversationArtifactDumpXCTest: XCTestCase {
+
+    func testDumpTextAppPathReport() async throws {
+        try await CoachChatConversationCorpusTests.dumpTextAppPathReportForXCTestBridge()
+    }
+
+    func testDumpLiveAppPathReport() async throws {
+        try await CoachChatConversationCorpusTests.dumpLiveAppPathReportForXCTestBridge()
     }
 }
 

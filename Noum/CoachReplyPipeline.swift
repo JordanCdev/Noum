@@ -453,7 +453,26 @@ enum CoachReplyPipeline {
         } else {
             reliabilityVerdict = .clean
         }
-        let effectiveOutcome: ChatOutcome = reliabilityVerdict.fallbackText.map { .reply($0) } ?? outcome
+        let contentRejectedFallback = Self.contentRejectedFallbackText(
+            for: outcome,
+            assessment: assessment,
+            turnDepth: turnDepth,
+            surface: surface,
+            previousCoachReply: previousCoachReply
+        )
+        if contentRejectedFallback != nil {
+            qualityGateEvents.append(.fallback("deterministicAssessmentAfterContentRejected"))
+            AICallDiagnostics.record(
+                surface: "Coach content rejection fallback",
+                providerName: "CoachReplyPipeline",
+                model: "CoachReliabilityGate",
+                outcome: .fallback,
+                reason: "turnDepth=\(turnDepth.rawValue) surface=\(surface.rawValue)"
+            )
+        }
+        let effectiveOutcome: ChatOutcome = reliabilityVerdict.fallbackText.map { .reply($0) } ??
+            contentRejectedFallback.map { .reply($0) } ??
+            outcome
         if reliabilityVerdict.blocked {
             AICallDiagnostics.record(
                 surface: "Coach reliability gate",
@@ -630,6 +649,29 @@ enum CoachReplyPipeline {
         case .failure:
             return .notEvaluated
         }
+    }
+
+    nonisolated static func contentRejectedFallbackText(
+        for outcome: ChatOutcome,
+        assessment: CoachAssessment?,
+        turnDepth: CoachTurnDepth,
+        surface: CoachReplySurface,
+        previousCoachReply: String?
+    ) -> String? {
+        guard case .failure(.contentRejected) = outcome,
+              let assessment else {
+            return nil
+        }
+        let fallback = CoachReliabilityGate.truthfulFallback(
+            turnDepth: turnDepth,
+            assessment: assessment,
+            surface: surface,
+            previousCoachReply: previousCoachReply
+        )
+        return CoachReliabilityGate.isCleanCandidate(
+            fallback,
+            previousCoachReply: previousCoachReply
+        ) ? fallback : nil
     }
 
     nonisolated static func qualityGateOutcome(

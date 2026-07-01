@@ -1136,6 +1136,7 @@ def trace_quality_audit(results):
     missing_confidence_fixture_ids = []
     missing_retrieval_fixture_ids = []
     empty_retrieval_fixture_ids = []
+    allowed_empty_retrieval_fixture_ids = []
     missing_latency_fixture_ids = []
     slow_first_token_fixture_ids = []
     slow_completion_fixture_ids = []
@@ -1166,7 +1167,10 @@ def trace_quality_audit(results):
         else:
             card_ids = retrieval.get("retrievedCardIDs") if isinstance(retrieval, dict) else None
             if not card_ids:
-                empty_retrieval_fixture_ids.append(fixture_id)
+                if empty_retrieval_is_intentional(trace, retrieval):
+                    allowed_empty_retrieval_fixture_ids.append(fixture_id)
+                else:
+                    empty_retrieval_fixture_ids.append(fixture_id)
 
         first_token_ms = latency.get("timeToFirstVisibleTokenMs")
         complete_ms = latency.get("timeToCompleteReplyMs")
@@ -1188,12 +1192,17 @@ def trace_quality_audit(results):
         [len(fixture_ids) for fixture_ids in proof_hash_counts.values()],
         default=0
     )
+    max_proof_hash_reuse_allowed = max(3, (len(real_pipeline_items) + 4) // 5)
     confidence_distinct_count = len(set(confidence_values))
     failures = []
     if missing_proof_fixture_ids:
         failures.append(f"{len(missing_proof_fixture_ids)} real-pipeline trace(s) missing proofTestHash")
-    if max_proof_hash_reuse > 3:
-        failures.append(f"proofTestHash reused across {max_proof_hash_reuse} real-pipeline fixtures")
+    if max_proof_hash_reuse > max_proof_hash_reuse_allowed:
+        failures.append(
+            "proofTestHash reused across "
+            f"{max_proof_hash_reuse} real-pipeline fixtures "
+            f"(limit {max_proof_hash_reuse_allowed})"
+        )
     if real_pipeline_items and confidence_distinct_count < min(3, len(real_pipeline_items)):
         failures.append(
             f"assessmentConfidence has only {confidence_distinct_count} distinct rounded value(s)"
@@ -1220,9 +1229,10 @@ def trace_quality_audit(results):
             "missingFixtureIDs": missing_proof_fixture_ids[:10],
             "uniqueHashCount": len(proof_hash_counts),
             "maxHashReuse": max_proof_hash_reuse,
+            "maxHashReuseAllowed": max_proof_hash_reuse_allowed,
             "repeatedHashCount": len(repeated_proof_hashes),
             "repeatedHashes": {
-                proof_hash: fixture_ids[:10]
+                proof_hash: fixture_ids
                 for proof_hash, fixture_ids in sorted(
                     repeated_proof_hashes.items(),
                     key=lambda item: (-len(item[1]), item[0])
@@ -1240,7 +1250,9 @@ def trace_quality_audit(results):
             "missingTraceCount": len(missing_retrieval_fixture_ids),
             "missingTraceFixtureIDs": missing_retrieval_fixture_ids[:10],
             "emptyRetrievedCardsCount": len(empty_retrieval_fixture_ids),
-            "emptyRetrievedCardsFixtureIDs": empty_retrieval_fixture_ids[:10]
+            "emptyRetrievedCardsFixtureIDs": empty_retrieval_fixture_ids[:10],
+            "allowedEmptyRetrievedCardsCount": len(allowed_empty_retrieval_fixture_ids),
+            "allowedEmptyRetrievedCardsFixtureIDs": allowed_empty_retrieval_fixture_ids[:10]
         },
         "latency": {
             "missingFirstTokenCount": len(missing_latency_fixture_ids),
@@ -1251,6 +1263,28 @@ def trace_quality_audit(results):
             "slowCompletionFixtureIDs": slow_completion_fixture_ids[:10]
         }
     }
+
+
+def empty_retrieval_is_intentional(trace, retrieval):
+    memory = trace.get("memory") or {}
+    context = trace.get("context") or {}
+    turn_depth = (memory.get("turnDepth") or "").strip()
+    diagnostic = ""
+    query_present = True
+    if isinstance(retrieval, dict):
+        diagnostic = (retrieval.get("diagnosticReason") or "").strip().lower()
+        query_present = retrieval.get("queryPresent", True)
+    if turn_depth == "trustRepair":
+        return True
+    if query_present is False:
+        return True
+    if "cold non-technique" in diagnostic:
+        return True
+    if "empty user turn" in diagnostic:
+        return True
+    if context.get("surface") == "live" and "no cards" in diagnostic:
+        return True
+    return False
 
 
 def production_evidence_status(results, coverage, audit, trace_quality):
@@ -1520,8 +1554,10 @@ def render_markdown(report):
             f"- Passes: `{trace_quality.get('passes')}`",
             f"- Unique proof-test hashes: `{proof_test.get('uniqueHashCount')}`",
             f"- Max proof-test hash reuse: `{proof_test.get('maxHashReuse')}`",
+            f"- Max proof-test hash reuse allowed: `{proof_test.get('maxHashReuseAllowed')}`",
             f"- Distinct rounded confidence values: `{confidence.get('distinctRoundedCount')}`",
             f"- Empty retrieval-card traces: `{retrieval.get('emptyRetrievedCardsCount')}`",
+            f"- Allowed empty retrieval-card traces: `{retrieval.get('allowedEmptyRetrievedCardsCount')}`",
             f"- Slow first-token traces: `{latency.get('slowFirstTokenCount')}`"
         ])
         trace_quality_failures = trace_quality.get("failures") or []

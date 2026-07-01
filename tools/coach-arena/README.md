@@ -86,6 +86,13 @@ This catches the failure mode where the answer text is acceptable but the
 runtime is still using the same proof test or flat confidence across many
 turns.
 
+The proof-test reuse gate is corpus-scaled: a proof test may recur when it is
+the right intervention, but one hash cannot dominate more than roughly 20% of
+real-pipeline fixtures. Empty retrieval-card traces are still failures unless
+the trace shows an intentional no-card path, such as trust repair, an empty
+turn, or a cold non-technique turn where the app should not inject technique
+cards on weak evidence.
+
 To score the deterministic Swift app-path report where fixture overlap exists,
 first run the app-path corpus test with `NOUM_COACH_EVAL_DUMP_DIR` set, then:
 

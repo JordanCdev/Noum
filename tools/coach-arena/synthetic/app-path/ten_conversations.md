@@ -120,15 +120,15 @@ Noum: The confidence leak is the extra softener after the recommendation. Your c
 
 Arena score: 73/100
 
-## score-not-readiness-011
+## examples-from-sessions-010
 
-Goal: Board update readiness.
+Goal: Understand own pattern with proof.
 
 Prior chat:
-- none
+- coach: You tend to give reasons before the picture.
 
-User: I got 8/10. Am I ready for the board update?
+User: Can you give me an example of me doing this in sessions?
 
-Noum: Not proven yet. The latest timed rep score is useful evidence, and the transcript has a recommendation plus a clear decision, but board readiness needs pressure evidence because the decision ask has to survive stakes. Missing: one board-style rehearsal. Proof test: record 75 seconds with headline, one metric, decision ask, clean stop.
+Noum: Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so make the recommendation memorable with one short phrase the listener could repeat afterward.
 
-Arena score: 77/100
+Arena score: 50/100
