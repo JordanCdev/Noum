@@ -70,6 +70,35 @@ enum SessionFinalizer {
 
         let previousXP = profile.xp
 
+        // Evidence floor: a rep too short to read (accidental instant-stop,
+        // empty transcript) must not manufacture progress. Below the floor we
+        // award no XP, unlock no achievements, record no skill-trend snapshot,
+        // advance no path, and generate no coach note — the summary shows a
+        // neutral "too short" state instead. Threshold matches the evaluator's
+        // own score-floor boundary (PracticeEvaluator, wordCount/duration < 3)
+        // so no rep that already scored normally is affected.
+        if transcriptWordCount < 3 || effectiveDuration < 3 {
+            let level = ProfileManager.levelTitle(forXP: profile.xp)
+            return SessionFinalizationResult(
+                previousXP: previousXP,
+                newXP: previousXP,
+                previousLevel: level,
+                newLevel: level,
+                isLevelUp: false,
+                achievementDeltas: [],
+                newUnlocks: [],
+                milestone: nil,
+                isPersonalBest: false,
+                showProgressionScreen: false,
+                nextAction: nil,
+                baselineComparisons: [:],
+                pressureLevel: pressureLevel,
+                coachNote: nil,
+                eloquenceFindings: [],
+                eloquenceBonusXP: 0
+            )
+        }
+
         // Streak ownership: anything the USER reads (streak milestones,
         // achievement progress) uses the freeze-aware displayed streak from
         // StreakFreezeManager — the single displayed-streak owner — so the

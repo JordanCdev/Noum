@@ -136,6 +136,12 @@ class SpeechRecognizerViewModel: ObservableObject {
     /// reset whenever a new session starts.
     private var pitchAnalyzer: PitchAnalyzer?
     private var sessionStart: Date?
+    /// Identity of the session THIS rep actually persisted, so the delayed
+    /// `annotateLatestSession` writes back to the rep it measured — never
+    /// blindly to `sessions[0]`. Nil when the current rep produced no usable
+    /// session (empty / too short / non-recording mode), which is exactly the
+    /// case that used to corrupt the PREVIOUS real rep's score.
+    private var lastSavedSessionID: UUID?
     private var finalTranscript: String = ""
     private var partialTranscript: String = ""
     private var currentSessionMode: PracticeMode = .ahCounter
@@ -267,6 +273,12 @@ class SpeechRecognizerViewModel: ObservableObject {
         prompt: String? = nil,
         theme: PromptTheme? = nil
     ) {
+        // Only annotate the session THIS rep actually persisted. If the rep
+        // produced no usable session (empty / too short), `lastSavedSessionID`
+        // is nil and we annotate NOTHING — writing to `sessions[0]` here would
+        // silently overwrite the user's PREVIOUS real rep with this aborted
+        // rep's score/headline (the data-corruption bug this guard closes).
+        guard let sessionID = lastSavedSessionID else { return }
         sessionStore.annotateLatest(
             PracticeSessionAnnotation(
                 score: score,
@@ -277,7 +289,8 @@ class SpeechRecognizerViewModel: ObservableObject {
                 prompt: prompt,
                 theme: theme
             ),
-            expectedMode: currentSessionMode
+            expectedMode: currentSessionMode,
+            expectedSessionID: sessionID
         )
         pastSessions = sessionStore.sessions
         if let latest = sessionStore.sessions.first {
@@ -320,6 +333,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             sessionPrompt = promptBeforeReset
         }
         sessionStart = Date()
+        lastSavedSessionID = nil
         sessionUpdateCount = 0
         totalLatencyMs = 0
         confidenceValues = []
@@ -662,10 +676,12 @@ class SpeechRecognizerViewModel: ObservableObject {
         let trimmed = transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, duration >= 1 else {
             sessionStart = nil
+            lastSavedSessionID = nil
             return
         }
         guard shouldRecordPracticeSession, currentSessionMode != .imConversation else {
             sessionStart = nil
+            lastSavedSessionID = nil
             pastSessions = sessionStore.sessions
             return
         }
@@ -693,7 +709,7 @@ class SpeechRecognizerViewModel: ObservableObject {
                 fillerWords: FillerWordDetector.effectiveWordSet()
             )
         )
-        _ = PracticeSessionFinalizer.finalize(
+        let finalizedSession = PracticeSessionFinalizer.finalize(
             store: sessionStore,
             draft: PracticeSessionDraft(
                 transcript: transcribedText,
@@ -711,6 +727,7 @@ class SpeechRecognizerViewModel: ObservableObject {
                 repEventLocations: repEventLocations
             )
         )
+        lastSavedSessionID = finalizedSession.id
         pastSessions = sessionStore.sessions
         sessionStart = nil
     }

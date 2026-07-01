@@ -8209,10 +8209,19 @@ final class PracticeSessionStore: ObservableObject {
         return session
     }
 
-    func annotateLatest(_ annotation: PracticeSessionAnnotation, expectedMode: PracticeMode) {
+    func annotateLatest(
+        _ annotation: PracticeSessionAnnotation,
+        expectedMode: PracticeMode,
+        expectedSessionID: UUID? = nil
+    ) {
         guard !sessions.isEmpty else { return }
         var latest = sessions[0]
         guard latest.mode == expectedMode else { return }
+        // Identity guard: when the caller knows which session it measured,
+        // refuse to annotate a different one at index 0. Prevents an aborted
+        // rep (whose own append was skipped) from clobbering the previous
+        // real rep that now sits at sessions[0].
+        if let expectedSessionID, latest.id != expectedSessionID { return }
         latest.score = annotation.score
         latest.xpEarned = annotation.xpEarned
         latest.headline = annotation.headline

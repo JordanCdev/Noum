@@ -56,16 +56,23 @@ struct PostRepVerdictContent: Equatable {
         deliveryReadLine: String? = nil
     ) -> PostRepVerdictContent {
         PostRepVerdictContent(
-            readText: readText(note: note, coachNote: coachNote),
+            readText: readText(note: note, coachNote: coachNote, isMinimalEffort: isMinimalEffort),
             provenanceLabel: note?.isAIBacked == false ? "RULE-BASED" : nil,
             thinEvidenceCopy: isMinimalEffort ? "Early read: one longer rep will sharpen the diagnosis." : nil,
             deliveryReadLine: isMinimalEffort ? nil : deliveryReadLine,
-            win: win(proof: proof, bullets: winBullets),
-            fix: fix(coachNote: coachNote, bullets: fixBullets)
+            win: isMinimalEffort ? nil : win(proof: proof, bullets: winBullets),
+            fix: isMinimalEffort ? nil : fix(coachNote: coachNote, bullets: fixBullets)
         )
     }
 
-    private static func readText(note: PostRepCoachNote?, coachNote: CoachNote) -> String {
+    private static func readText(note: PostRepCoachNote?, coachNote: CoachNote, isMinimalEffort: Bool) -> String {
+        // A rep too short to read gets an honest "no usable rep" line, never
+        // the confident momentum/leverage read — the coach must not claim
+        // "clean delivery, your opening is the biggest opportunity" from a
+        // rep that never happened.
+        if isMinimalEffort {
+            return "That rep was too short to read. Give me one full answer — 30 seconds or so — and I'll have something real to work with."
+        }
         if let noteText = note?.noteText.trimmingCharacters(in: .whitespacesAndNewlines),
            !noteText.isEmpty {
             return noteText

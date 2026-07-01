@@ -15569,6 +15569,58 @@ struct CoachContextBuilderChipParserTests {
 // the 3-bullet cap, dedup against the leverage line, and the headroom
 // gates that decide whether eloquence/AI/pace bullets land.
 
+@MainActor
+struct AbortedRepGuardTests {
+    private func timedRep(score: Int) -> PracticeSession {
+        PracticeSession(
+            transcript: "here is a real answer that develops a clear point over time",
+            fillerWordCount: 1,
+            duration: 60,
+            date: Date(),
+            mode: .timed,
+            score: score,
+            prompt: "Describe a decision you made recently."
+        )
+    }
+
+    @Test func abortedRepDoesNotOverwritePreviousRealRepScore() {
+        // The data-corruption bug: an accidental instant-stop rep (whose own
+        // append was skipped) used to annotate sessions[0] — the PREVIOUS real
+        // rep — dropping its score to 1. The identity guard must refuse to
+        // annotate a session whose id doesn't match the one measured.
+        let store = PracticeSessionStore.shared
+        let prior = timedRep(score: 8)
+        store.replaceFromRemote([prior])
+
+        let abortedAnnotation = PracticeSessionAnnotation(
+            score: 1, xpEarned: 0, headline: "Good warmup", insights: [], coachSummary: nil
+        )
+        // Aborted rep carries a DIFFERENT session id than sessions[0].
+        store.annotateLatest(abortedAnnotation, expectedMode: .timed, expectedSessionID: UUID())
+        #expect(store.sessions.first?.score == 8,
+                "an aborted rep must not overwrite the previous real rep's score")
+
+        // Positive control: annotating the actual session id still works.
+        store.annotateLatest(abortedAnnotation, expectedMode: .timed, expectedSessionID: prior.id)
+        #expect(store.sessions.first?.score == 1)
+
+        store.replaceFromRemote([])
+    }
+
+    @Test func annotateWithoutIdentityStillWorksForBackCompat() {
+        // Callers that don't know the session id (nil) keep the original
+        // annotate-latest behavior — the guard is opt-in.
+        let store = PracticeSessionStore.shared
+        store.replaceFromRemote([timedRep(score: 5)])
+        store.annotateLatest(
+            PracticeSessionAnnotation(score: 9, xpEarned: 0, headline: "Sharp.", insights: [], coachSummary: nil),
+            expectedMode: .timed
+        )
+        #expect(store.sessions.first?.score == 9)
+        store.replaceFromRemote([])
+    }
+}
+
 struct PostRepVerdictContentTests {
 
     private func coachNote(
@@ -15621,6 +15673,67 @@ struct PostRepVerdictContentTests {
         // The proof cleared the transcript-verify guard, so the quote is
         // earned provenance — the UI may show the "Your words" affordance.
         #expect(content.win?.quoteIsVerified == true)
+    }
+
+    @Test func minimalEffortRepSuppressesConfidentReadWinAndFix() {
+        // An accidental instant-stop (a rep too short to read) must NOT produce
+        // a confident read, a win, or a "Next move" fix. The coach cannot claim
+        // "clean delivery, your opening is the biggest opportunity" from a rep
+        // that never happened — that is exactly the over-claim the user saw on
+        // a 0s rep. readText falls back to an honest "too short" line.
+        let winBullet = WhatYouDidWellCard.Bullet(
+            id: "opening",
+            icon: "checkmark.circle.fill",
+            iconTint: AppColor.positive,
+            headline: "Opening felt solid.",
+            evidence: .text("Confident first sentence.")
+        )
+
+        let content = PostRepVerdictContent.make(
+            note: nil,
+            coachNote: coachNote(
+                momentum: "Zero filler words, clean delivery.",
+                leverage: "Your opening is the biggest opportunity.",
+                nextStep: "Open with the decision before any context."
+            ),
+            winBullets: [winBullet],
+            fixBullets: [],
+            proof: nil,
+            isMinimalEffort: true
+        )
+
+        #expect(content.win == nil, "no win on a too-short rep")
+        #expect(content.fix == nil, "no Next-move fix on a too-short rep")
+        #expect(content.readText.lowercased().contains("too short"),
+                "read must name the rep as too short")
+        #expect(!content.readText.contains("clean delivery"),
+                "read must not echo the confident momentum line")
+        #expect(!content.readText.contains("biggest opportunity"),
+                "read must not echo the confident leverage line")
+        #expect(content.thinEvidenceCopy != nil, "thin-evidence note still shows")
+    }
+
+    @Test func normalRepStillProducesReadWinAndFix() {
+        // Regression guard: the minimal-effort gate must NOT suppress a real
+        // rep's read/win/fix.
+        let winBullet = WhatYouDidWellCard.Bullet(
+            id: "opening",
+            icon: "checkmark.circle.fill",
+            iconTint: AppColor.positive,
+            headline: "Opening felt solid.",
+            evidence: .text("Confident first sentence.")
+        )
+        let content = PostRepVerdictContent.make(
+            note: nil,
+            coachNote: coachNote(),
+            winBullets: [winBullet],
+            fixBullets: [],
+            proof: nil,
+            isMinimalEffort: false
+        )
+        #expect(content.win != nil)
+        #expect(content.fix != nil)
+        #expect(!content.readText.lowercased().contains("too short"))
     }
 
     @Test func eloquenceSnippetQuoteIsMarkedAsTheUsersOwnWords() {
@@ -15761,7 +15874,13 @@ struct PostRepVerdictContentTests {
         ]))
     }
 
-    @Test func minimalEffortKeepsReadButSuppressesWinAndFix() {
+    @Test func minimalEffortReplacesReadWithHonestTooShortLine() {
+        // On a too-short rep the read must NOT parrot the coach note's
+        // momentum/leverage — that channel can be confidently wrong ("clean
+        // delivery, your opening is the biggest opportunity" on a 0s rep, which
+        // is exactly what the user saw). It falls back to an honest "too short"
+        // line, and win/fix stay suppressed. Contract deliberately tightened
+        // from the old "keep the coach-note read" behavior.
         let content = PostRepVerdictContent.make(
             note: nil,
             coachNote: coachNote(momentum: "Brief rep.", leverage: "Not enough signal yet.", nextStep: ""),
@@ -15771,7 +15890,8 @@ struct PostRepVerdictContentTests {
             isMinimalEffort: true
         )
 
-        #expect(content.readText == "Brief rep. Not enough signal yet.")
+        #expect(content.readText.lowercased().contains("too short"))
+        #expect(content.readText != "Brief rep. Not enough signal yet.")
         #expect(content.thinEvidenceCopy == "Early read: one longer rep will sharpen the diagnosis.")
         #expect(content.win == nil)
         #expect(content.fix == nil)
