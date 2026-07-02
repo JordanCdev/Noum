@@ -47,6 +47,46 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-07-02 (autonomous `noum-1` run). **21st iteration. Shipped the one
+purely-software honesty lever the iter-20 ledger carried that was closable
+WITHOUT an API key (its ranked #3): an honest empty-state on the `SummaryView`
+"More from this rep" disclosure. GREEN on iPhone 17 / iOS 26 (isolated
+`DerivedData/Noum-iter21`), no push. Commit `SUMMARY-EMPTYSTATE` (pending). Full
+write-up: `docs/COACH_PARITY_EVAL_2026-07-02_iter21.md`.**
+
+- **The gap:** every speech-quality card in the disclosure self-hides on weak
+  signal (correct restraint), so a short FIRST rep opens "More from this rep" to a
+  hollow disclosure — reads like a bug and silently drops the small-sample-honesty
+  coaching moment. Verified real against the code (both `WordChoiceCard` and
+  `GrammarPolishCard` genuinely return `EmptyView` on a short rep).
+- **The lever:** pure `SummaryAnalyticsEmptyState.message(...)` (mirrors the
+  `RepEventTrendCopy` / `RepTimelineCopy` pattern — zero new tokens/persistence/
+  store) + a render-only block in `SummaryView` using shipped tokens, `.fixedSize`
+  for Dynamic Type, combined VoiceOver label. Two per-render computes hoisted so
+  nothing recomputes.
+- **Load-bearing honesty guard (beyond the panel):** renders ONLY when
+  `repCount < patternFloor (3)`. A mature user (rep 50) with one quiet rep is NOT
+  told "patterns are still building" — that's a small-sample lie in the other
+  direction. Silence stays the honest default past the floor. Mirrors
+  `RepEventTrendEngine`'s occurrence floor. Locked by test.
+- **Method:** 5-role workflow panel (market · UX · cold end-user · veteran coach ·
+  staff-eng/QA) read the working tree with "no clean lever" as an explicitly-valid
+  answer; all 5 converged on this lever, an adversarial verifier failed to refute
+  it (ship-with-notes), then I re-verified every file:line and added the mature-rep
+  guard. +6 tests (`SummaryAnalyticsEmptyStateTests`, verified 6/6 via xcresult —
+  first run's `-only-testing` selector matched 0 because the tests were free `@Test`
+  funcs, not a `@Suite struct`; fixed and re-verified).
+- **Collision discipline:** staged only my 3 files by pathspec; the tree's
+  uncommitted `Localizable.xcstrings` + `ten_conversations.md` + `.screenshots/`
+  (31h+ old, not mine) left byte-for-byte untouched.
+- **10/10 answer, unchanged by design.** "Replaces a human coach" stays REFUSED
+  (`.forming` cap). With this run the iter-20 ledger's one [closable-in-software,
+  no-key] item is closed; every remaining ranked lever is environment-gated (#1
+  behavior-proof needs an `ANTHROPIC_API_KEY`, absent here) or external-data-gated
+  (window calibration / hardware perception / longitudinal outcome). **The honest
+  headline for Jordan: the headless prompt/UX loop is at its verified ceiling —
+  the next real move needs the API key.**
+
 2026-07-01 (autonomous `noum2` run). **20th iteration. Shipped ONE verified
 honesty lever — base-rate prevalence on the recurring-position trend. GREEN on
 iPhone 17 / iOS 26 (isolated `DerivedData/Noum-iter20`), no push. Commit

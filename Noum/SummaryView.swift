@@ -1087,8 +1087,48 @@ struct SummaryView: View {
                         if !positionalTrends.isEmpty {
                             RepEventTrendCard(trends: positionalTrends)
                         }
-                        WordChoiceCard(metrics: WordChoiceMetrics.compute(transcript: transcriptText))
+                        let wordChoiceMetrics = WordChoiceMetrics.compute(transcript: transcriptText)
+                        WordChoiceCard(metrics: wordChoiceMetrics)
                         GrammarPolishCard(session: sessionStore.sessions.first)
+
+                        // Honest empty-state — when the rep produced no
+                        // readable speech-quality analytics AND the user is
+                        // early enough that a recurring-position read can't
+                        // have formed, name the restraint out loud instead of
+                        // leaving "More from this rep" hollow (reads like a
+                        // bug). Self-hides the instant any card gains signal;
+                        // stays silent for a mature user's quiet rep so it
+                        // never nags or overclaims (`SummaryAnalyticsEmptyState`).
+                        if let analyticsEmptyState = SummaryAnalyticsEmptyState.message(
+                            isIMSummary: isIMSummary,
+                            repCount: sessionStore.sessions.count,
+                            signals: SummaryAnalyticsEmptyState.Signals(
+                                hasEloquence: !eloquenceFindings.isEmpty,
+                                hasPause: sessionStore.sessions.first?.pauseMetrics != nil,
+                                hasPitch: sessionStore.sessions.first?.pitchMetrics != nil,
+                                hasPositional: sessionStore.sessions.first?.repEventLocations != nil,
+                                hasTrend: !positionalTrends.isEmpty,
+                                hasWordChoice: wordChoiceMetrics.contentWordCount >= WordChoiceMetrics.minContentWords
+                            )
+                        ) {
+                            HStack(alignment: .top, spacing: Spacing.sm) {
+                                Image(systemName: "hourglass")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityHidden(true)
+                                Text(analyticsEmptyState)
+                                    .font(Typography.body)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(Spacing.lg)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel(analyticsEmptyState)
+                            .accessibilityIdentifier("summary.analyticsEmptyState")
+                        }
                         // M25: FillerBreakdownCard dropped — its top-6 chips
                         // duplicated the top-3 chips WhatToImproveCard already
                         // surfaces in its filler bullet, and the "fillers tend
