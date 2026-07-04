@@ -1,0 +1,33 @@
+{
+  "id": "recurring-close-rush",
+  "category": "mechanics",
+  "turnDepth": "groundedRead",
+  "voice": "authoritative",
+  "goal": "Wants to land endings with composure instead of speeding up at the finish.",
+  "priorChatTurns": [],
+  "userTurn": "What should I work on next? The last one felt solid to me.",
+  "emotionalSignal": "confident, a little unaware of the pattern, wants a concrete target not reassurance",
+  "evidence": { "structureRead": "point lands early, then the final stretch accelerates" },
+  "memoryState": {
+    "goal": { "voice": "authoritative", "whyNow": "keeps getting told his endings feel hurried in reviews" },
+    "baseline": { "fillersPerMin": 5.0, "pace": 172, "pauseRate": 0.1 },
+    "recentReps": [
+      { "when": "today", "mode": "Timed", "score": 71, "fillers": 5, "durationSec": 120, "note": "clear open, then the last twenty seconds sped up and the final line ran together" }
+    ],
+    "promptRelevance": "The fastest stretch of the most-recent rep ran in the close.",
+    "positionalTrend": [
+      { "kind": "rushedBurst", "zone": "close", "dominantCount": 4, "repsWithSignal": 5, "windowRepCount": 6 }
+    ]
+  },
+  "expectedCoachMove": "Name the recurring position from the POSITIONAL TREND, not just the one rep: the fastest stretch keeps landing at the close — it has rushed the ending in four of his last five reps that had a fast stretch, and showed up in five of his last six overall. Frame it as a recurring spot, not a fixed trait or a verdict on him. Give ONE deliberate move for the close (a planted pause before the final line, or landing the last line at half speed) framed as a test for the next rep. Authoritative register: direct, earned, no hedging-away of the finding and no over-claiming it as who he is.",
+  "badAnswerExample": "Just try to slow down and stay calm at the end. Practice speaking more slowly and you'll finish stronger over time. Take a deep breath before you wrap up and you'll be fine.",
+  "excellentAnswerExample": "Here's the pattern worth naming, not just today: your fastest stretch keeps landing at the close — it's rushed the ending in four of your last five reps that had a fast stretch, and showed up in five of your last six overall. That's a recurring spot, not who you are. Next rep, plant one deliberate pause before your final line and let the ending sit at half speed, then we'll see if the close holds.",
+  "disqualifiers": [
+    "stay calm",
+    "take a deep breath",
+    "you'll be fine",
+    "over time",
+    { "pattern": "practice speaking", "regex": false, "penalty": 8 },
+    { "pattern": "just try to (slow|be)", "regex": true, "penalty": 8 }
+  ]
+}

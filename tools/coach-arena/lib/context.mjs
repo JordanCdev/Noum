@@ -26,6 +26,41 @@ const VOICE_LABEL = {
   storytelling: 'Storytelling',
 };
 
+// POSITIONAL TREND readout — a faithful JS port of Swift's
+// `RepEventTrend.readout` (Noum/RepEventTrend.swift). The arena is production
+// parity, so the harness must compose the EXACT coach-facing sentence the app
+// emits from the same typed fields (kind / zone / dominantCount / repsWithSignal
+// / windowRepCount) — including the prevalence-suppression rule (omit the base
+// rate when the event carried every readable rep, so a 100% tail never reads as
+// a redundant "N of N"). A fixture may instead pass a pre-composed string, which
+// is used verbatim (mirrors the promptRelevance/structureRead string sections).
+const POSITIONAL_TREND_ZONES = new Set(['opening', 'middle', 'close']);
+const POSITIONAL_TREND_KINDS = new Set(['rushedBurst', 'longestPause', 'fillerCluster']);
+
+function positionalTrendReadout(trend) {
+  if (typeof trend === 'string') return trend.trim() || null;
+  if (!trend || typeof trend !== 'object') return null;
+  const { kind, zone, dominantCount, repsWithSignal, windowRepCount } = trend;
+  if (!POSITIONAL_TREND_KINDS.has(kind) || !POSITIONAL_TREND_ZONES.has(zone)) return null;
+  if (![dominantCount, repsWithSignal, windowRepCount].every((n) => Number.isInteger(n) && n > 0)) return null;
+
+  const where = `the ${zone}`;
+  const evidence = `in ${dominantCount} of your last ${repsWithSignal} reps`;
+  const prevalence = repsWithSignal < windowRepCount
+    ? ` It showed up in ${repsWithSignal} of your last ${windowRepCount} reps overall.`
+    : '';
+  switch (kind) {
+    case 'rushedBurst':
+      return `You've rushed ${where} ${evidence} that had a fast stretch — the fastest stretch keeps landing there.${prevalence} A recurring position, not a fixed trait.`;
+    case 'longestPause':
+      return `Your longest silence has fallen in ${where} ${evidence} that had a notable pause.${prevalence} A recurring position, not a fixed trait.`;
+    case 'fillerCluster':
+      return `Fillers have clustered in ${where} ${evidence} that had a filler cluster.${prevalence} A recurring position, not a fixed trait.`;
+    default:
+      return null;
+  }
+}
+
 export function renderContext(fixture) {
   const m = fixture.memoryState || {};
   const blocks = [];
@@ -171,6 +206,17 @@ export function renderContext(fixture) {
   if (m.toneDrillSolved) blocks.push(section('TONE-DRILL SOLVED', [m.toneDrillSolved]));
   if (m.promptRelevance) blocks.push(section('PROMPT RELEVANCE (positional read of the most-recent rep)', [m.promptRelevance]));
   if (m.structureRead) blocks.push(section('STRUCTURE READ (most-recent rep close)', [m.structureRead]));
+
+  // POSITIONAL TREND — the longitudinal companion to PROMPT RELEVANCE's
+  // most-recent-rep read. Mirrors `CoachContextBuilder`'s POSITIONAL TREND block
+  // (Noum/CoachContextBuilder.swift) so the harness feeds the coach the
+  // recurring-position line iters 19-20 shipped. Omitted when absent (same
+  // "never invent a section" contract as every block above).
+  if (m.positionalTrend) {
+    const trends = Array.isArray(m.positionalTrend) ? m.positionalTrend : [m.positionalTrend];
+    const readouts = trends.map(positionalTrendReadout).filter(Boolean);
+    if (readouts.length) blocks.push(section('POSITIONAL TREND (recurring event position across recent reps)', readouts));
+  }
 
   if (m.coachingExpertise && m.coachingExpertise.length) {
     blocks.push(

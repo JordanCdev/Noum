@@ -237,3 +237,38 @@ test('context: renders section headers the prompt references', () => {
   assert.ok(ctx.includes('BASELINE'));
   assert.ok(ctx.includes('VERIFIED PROOFS'));
 });
+
+// POSITIONAL TREND — the recurring-position read iters 19-20 shipped to the app
+// but the harness never rendered, so the loop could not judge the coach speaking
+// its own #1 named behavior. These lock the render + Swift-parity wording so the
+// harness composes the EXACT sentence CoachContextBuilder emits.
+test('context: POSITIONAL TREND renders and mirrors Swift RepEventTrend.readout (with prevalence)', () => {
+  const fx = baseFx({ memoryState: { positionalTrend: [{ kind: 'rushedBurst', zone: 'close', dominantCount: 4, repsWithSignal: 5, windowRepCount: 6 }] } });
+  const ctx = renderContext(fx);
+  assert.ok(ctx.includes('POSITIONAL TREND (recurring event position across recent reps)'), 'header present');
+  // Byte-for-byte the Swift readout (RepEventTrend.swift:74-75) at this shape.
+  assert.ok(ctx.includes("You've rushed the close in 4 of your last 5 reps that had a fast stretch — the fastest stretch keeps landing there. It showed up in 5 of your last 6 reps overall. A recurring position, not a fixed trait."), 'composed line + base-rate prevalence matches Swift');
+});
+
+test('context: POSITIONAL TREND suppresses the base-rate tail when the event carried every readable rep', () => {
+  const fx = baseFx({ memoryState: { positionalTrend: [{ kind: 'longestPause', zone: 'opening', dominantCount: 3, repsWithSignal: 5, windowRepCount: 5 }] } });
+  const ctx = renderContext(fx);
+  // repsWithSignal === windowRepCount → no "It showed up in N of your last N reps overall." (mirrors Swift's `repsWithSignal < windowRepCount` guard).
+  assert.ok(ctx.includes('Your longest silence has fallen in the opening in 3 of your last 5 reps that had a notable pause. A recurring position, not a fixed trait.'));
+  assert.ok(!ctx.includes('reps overall'), 'no redundant N-of-N base rate when prevalence is 100%');
+});
+
+test('context: POSITIONAL TREND is omitted entirely when absent (never invents a section)', () => {
+  const ctx = renderContext(baseFx());
+  assert.ok(!ctx.includes('POSITIONAL TREND'), 'no section without data');
+});
+
+test('context: POSITIONAL TREND drops malformed trends but keeps valid ones', () => {
+  const fx = baseFx({ memoryState: { positionalTrend: [
+    { kind: 'bogusKind', zone: 'close', dominantCount: 4, repsWithSignal: 5, windowRepCount: 6 },
+    { kind: 'fillerCluster', zone: 'middle', dominantCount: 3, repsWithSignal: 4, windowRepCount: 6 },
+  ] } });
+  const ctx = renderContext(fx);
+  assert.ok(ctx.includes('Fillers have clustered in the middle in 3 of your last 4 reps'), 'valid trend renders');
+  assert.ok(!ctx.includes('bogusKind'), 'malformed trend dropped, not leaked');
+});
