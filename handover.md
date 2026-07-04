@@ -47,6 +47,46 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-07-04 (autonomous `noum2` run). **22nd iteration — reframed the ceiling and
+shipped the keyless lever it was hiding. GREEN (`node --test` 37/0, validateFixtures
+51/0), no push. Commit `a96152ac`. Full write-up:
+`docs/COACH_PARITY_EVAL_2026-07-04_iter22.md`.**
+
+- **The reframe (5-role competitive re-benchmark vs Speeko/Orai/Yoodli/Duolingo):**
+  "the software loop is at its ceiling" is TRUE only for the interior coaching-
+  HONESTY prompt axis. Four other axes are NOT at their ceiling and DON'T need the
+  key: harness parity, coaching substance (content diagnosis), visual presentation,
+  first-run trust. **The key unblocks behaviour PROOF, not the next move.**
+- **Shipped `a96152ac` — harness POSITIONAL TREND parity.** `tools/coach-arena/lib/
+  context.mjs` rendered `PROMPT RELEVANCE` + generic `TRENDS` but had NO recurring-
+  position section mirroring Swift's `RepEventTrendEngine` → `CoachContextBuilder`.
+  So every arena run fed the model everything EXCEPT the recurring-position line
+  iters 19-20 shipped, then reported that behaviour un-verifiable — it was
+  un-verifiable because the harness never presented it. Faithful JS port of
+  `RepEventTrend.readout` (incl. the base-rate prevalence-suppression rule), exact
+  header, read→trend order, self-hiding. +4 keyless context-presence tests (byte-
+  for-byte Swift parity) + new gold fixture `51-recurring-close-rush.json`. This is
+  the prerequisite that makes the eventual key measure something real.
+- **Review artifacts (NOT app code):** the genuinely-new axis 21 iterations never
+  touched is VISUAL presentation. `docs/SPEC_rep_report_surface.md` + an on-brand
+  rendered mockup (Artifact, real tokens) for a cohesive **Rep Report** surface
+  composing existing signals. Draft-don't-ship: the "compose into one screen"
+  hierarchy call is Jordan's to make; on sign-off it goes Figma → self-hiding
+  `RepReportView`. Nice tie-in: the centrepiece is the recurring-position read this
+  same run made testable in the harness.
+- **Connectors verified live:** Figma (Jordan's team, authenticated) + Canva
+  (authenticated, no brand kit). Canva = marketing collateral, wrong tool for a
+  product surface; Figma is right.
+- **Collision discipline:** entirely in `tools/coach-arena/` (JS) + `docs/` — the
+  ~10 concurrent Swift-editing agents don't touch it. Staged only my files by
+  pathspec; pre-existing uncommitted `Localizable.xcstrings`/`ten_conversations.md`/
+  `.screenshots/` left byte-for-byte untouched.
+- **10/10 answer, unchanged by design.** "Replaces a human coach" stays REFUSED
+  (`.forming` trust-moat cap). Ranked next levers: (2) deterministic content/
+  structure diagnosis engine [Swift, keyless]; (3) the Rep Report surface [Jordan's
+  review]; (4) pre-rep framing bridge [onboarding, ship-now]; (5) Jordan-only:
+  supply `ANTHROPIC_API_KEY` for the behaviour A/B, flip+QA `AutoGuidedFirstRep`.
+
 2026-07-02 (autonomous `noum-1` run). **21st iteration. Shipped the one
 purely-software honesty lever the iter-20 ledger carried that was closable
 WITHOUT an API key (its ranked #3): an honest empty-state on the `SummaryView`
