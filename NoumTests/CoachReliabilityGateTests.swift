@@ -654,6 +654,112 @@ struct CoachReliabilityGateTests {
         #expect(live.count <= text.count)
     }
 
+    // MARK: - Fallback-path audit (grades what ships when NO live model answers)
+
+    /// The RALPH benchmark turns + greetings, swept through the REAL deterministic
+    /// path (TurnDepthClassifier -> truthfulFallback). This is the path the Arena's
+    /// prompt+model runs never exercise — exactly where the "Hi -> Pressure Drill"
+    /// bug lived unseen while reports read ~70/100. Every fallback the pipeline can
+    /// ship must be: non-empty, clean (no placeholder/scaffold), a warm hello on a
+    /// greeting (never a drill), attuned on trust repair, and never a verbatim
+    /// repeat of the fallback the user just saw.
+    private static let fallbackAuditTurns: [String] = [
+        "Hi", "hey noum", "what's up",
+        "How far off am I from sounding authoritative?",
+        "That's not informative.",
+        "Okay that's cool, however I lose my train of thought.",
+        "It's not that easy.",
+        "You're repeating yourself.",
+        "Why did that answer land badly?",
+        "I'm exhausted.",
+        "I've got my final round interview tomorrow.",
+        "I have to give the leadership update tomorrow.",
+        "What do you know about me?"
+    ]
+
+    /// A depth-faithful assessment like the reasoning pass would build: trust
+    /// repair carries a repairFocus so its immediateCoachRead opens by
+    /// acknowledging, other depths carry the drill-shaped read.
+    private static func fallbackAuditAssessment(for depth: CoachTurnDepth) -> CoachAssessment {
+        CoachAssessment(
+            turnDepth: depth,
+            surface: .text,
+            questionRestatement: "audit",
+            directVerdict: depth == .trustRepair
+                ? "The repair is to name the miss first, then answer with one useful move."
+                : "The opening is the next lever: put the verdict in sentence one.",
+            confidence: 0.45,
+            evidenceUsed: ["latest rep: Timed, 7/10, 1 filler, 58s"],
+            rubricScores: [],
+            missingEvidence: [],
+            nextProofTest: "Run one 60-second rep with the verdict first, then one reason, then stop.",
+            responseMode: .immediateOnly,
+            toneMode: depth == .trustRepair ? .repair : .prescribe,
+            repairFocus: depth == .trustRepair ? "I missed the actual question before prescribing" : nil
+        )
+    }
+
+    @Test func fallbackPathAuditEveryBenchmarkTurnShipsACleanCoachReply() {
+        for turn in Self.fallbackAuditTurns {
+            let depth = TurnDepthClassifier.classify(userText: turn)
+            let assessment = Self.fallbackAuditAssessment(for: depth)
+            let fallback = CoachReliabilityGate.truthfulFallback(
+                turnDepth: depth,
+                assessment: assessment,
+                surface: .text,
+                previousCoachReply: nil,
+                recentCoachReplies: [],
+                latestUserTurn: turn
+            )
+            #expect(!fallback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "\(turn): empty fallback")
+            #expect(
+                CoachReliabilityGate.isCleanCandidate(fallback, previousCoachReply: nil),
+                "\(turn): fallback leaks placeholder/scaffold"
+            )
+            let lowered = CoachReliabilityGate.normalize(fallback)
+            if TurnDepthClassifier.isGreetingOrSmallTalk(turn) {
+                #expect(
+                    !CoachReliabilityGate.replyDrillsInsteadOfGreeting(lowered),
+                    "\(turn): greeting got a drill fallback: \(fallback)"
+                )
+            } else if depth == .trustRepair {
+                #expect(
+                    CoachReliabilityGate.openingAcknowledges(fallback),
+                    "\(turn): trust-repair fallback does not acknowledge: \(fallback)"
+                )
+            }
+        }
+    }
+
+    @Test func fallbackPathAuditConsecutiveFallbacksNeverRepeatVerbatim() {
+        for turn in Self.fallbackAuditTurns where !TurnDepthClassifier.isGreetingOrSmallTalk(turn) {
+            let depth = TurnDepthClassifier.classify(userText: turn)
+            let assessment = Self.fallbackAuditAssessment(for: depth)
+            let first = CoachReliabilityGate.truthfulFallback(
+                turnDepth: depth,
+                assessment: assessment,
+                surface: .text,
+                previousCoachReply: nil,
+                recentCoachReplies: [],
+                latestUserTurn: turn
+            )
+            // Same turn again with the first fallback as the previous coach reply —
+            // the "it keeps sending the same canned line" loop must not reproduce.
+            let second = CoachReliabilityGate.truthfulFallback(
+                turnDepth: depth,
+                assessment: assessment,
+                surface: .text,
+                previousCoachReply: first,
+                recentCoachReplies: [first],
+                latestUserTurn: turn
+            )
+            #expect(
+                CoachReliabilityGate.normalize(first) != CoachReliabilityGate.normalize(second),
+                "\(turn): back-to-back fallbacks are verbatim-identical"
+            )
+        }
+    }
+
     // MARK: - Greeting never gets a drill (the "Hi -> Pressure Drill" bug)
 
     /// The exact reply from the reported screenshot: a "Hi" answered with the
