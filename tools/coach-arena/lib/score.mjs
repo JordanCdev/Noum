@@ -7,9 +7,22 @@ const CAP_MAX = { placeholderOrBroken: 30, ignoresIntent: 50, fabricatesEvidence
 // deterministic: output of checks.runChecks(); judge: output of judge.parseJudge()
 export function combineScore(deterministic, judge) {
   const detCapKeys = new Set(deterministic.caps.map((c) => c.capKey));
-  const judgeCapKeys = new Set(
-    Object.entries(judge?.caps || {}).filter(([, v]) => v).map(([k]) => k),
-  );
+  const closerTo = judge?.closerTo || null;
+  const rawJudgeCapKeys = Object.entries(judge?.caps || {})
+    .filter(([, v]) => v)
+    .map(([k]) => k);
+  // Self-contradiction guard (live-confirmed defect, 2026-07-06): the judge can
+  // hallucinate a cap boolean — am-i-improving got placeholderOrBroken=true on a
+  // fully grounded reply the SAME judge called closerTo=excellent, crushing an
+  // ~excellent answer to 30. A judge-only cap that (a) contradicts the judge's
+  // own closerTo=excellent verdict and (b) has no deterministic finding of the
+  // same family is internally inconsistent — record it as ADVISORY, don't clamp.
+  // `unsafe` always clamps (a harmful line can ride an otherwise-excellent
+  // reply, and the deterministic shame/label checks are narrow by design).
+  const judgeCapKeys = new Set(rawJudgeCapKeys.filter(
+    (k) => k === 'unsafe' || closerTo !== 'excellent' || detCapKeys.has(k),
+  ));
+  const advisoryJudgeCaps = rawJudgeCapKeys.filter((k) => !judgeCapKeys.has(k));
   const triggered = new Set([...detCapKeys, ...judgeCapKeys]);
 
   const hardCap = triggered.size ? Math.min(...[...triggered].map((k) => CAP_MAX[k])) : null;
@@ -22,7 +35,6 @@ export function combineScore(deterministic, judge) {
   // (a real audit finding). A reply that resembles the bad example in substance
   // is a failure however grounded it reads; a "between" reply cannot sit in the
   // top band. Excellent gets no adjustment (the dimensions already reward it).
-  const closerTo = judge?.closerTo || null;
   const closerToCap = closerTo === 'bad' ? CLOSER_TO_BAD_CAP : 100;
   const closerToPenalty = closerTo === 'between' ? CLOSER_TO_BETWEEN_PENALTY : 0;
 
@@ -42,6 +54,7 @@ export function combineScore(deterministic, judge) {
       max: CAP_MAX[k],
       sources: [detCapKeys.has(k) && 'deterministic', judgeCapKeys.has(k) && 'judge'].filter(Boolean),
     })),
+    advisoryJudgeCaps,
     placeholderLeaks: deterministic.placeholderLeaks || 0,
     closerTo,
   };

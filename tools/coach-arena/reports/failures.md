@@ -1,346 +1,361 @@
-# Coach Arena failures — run_2026-07-01_21-28-55
+# Coach Arena failures — run_2026-07-05_23-32-11
 
-23 fixture(s) below 70 / capped / missing.
+25 fixture(s) below 70 / capped / missing.
 
-## what-do-you-know — **40/100**
+## am-i-improving — **30/100**
 
-- Category: `metadata-trap` · turn: `groundedRead` · voice: `warm`
-- User turn: "What does your system actually know about me?"
-- Expected move: Synthesize what it actually knows in plain, human language: the goal (sounding like himself in tough conversations), the current pattern (racing to fill silence under pressure), and the concrete numbers (baseline, streak). Do not dump raw section headers, label names, or refer to its own scaffold, system prompt, or internal structure. Make it read like a coach describing a person, not a database describing a record.
-- Judge dims: IQ 15/25 · EQ 13/25 · Mem 13/20 · Interv 4/15 · Feel 7/15 · closerTo=between
-- Deterministic: tooLong
-- Judge: Report-voice label 'What the numbers show:' is scaffold residue — applies −3 deduction; Over confirmed length limit (122w vs 85w cap); Pause rate (0.21) presented as a raw number without translation — reads like a spec sheet dump; Emotional signal (mild skepticism, wants to know if this is real) is not acknowledged or addressed — the reply answers the factual question but doesn't earn the trust the user is testing for; No move or closing that advances the coaching relationship — flat 'no more than that' is a missed opportunity; The advice/framing would be near-identical for any user with this context block — memory is present but not truly un-swappable
-- Suggested fix: Strip the label ('What the numbers show:'), translate the pause rate into plain behavior language, cut to under 85 words, and close with one line that speaks to the skepticism directly — something like 'That's the actual read, not a template' — so the reply earns trust rather than just answering the question.
+- Category: `deep-assessment` · turn: `deepAssessment` · voice: `concise`
+- User turn: "Am I actually improving or am I just doing reps?"
+- Expected move: Give a genuinely honest, specific answer rather than a blanket yes. Separate the mechanics gain (fillers nearly halved, 6.0 to 3.4/min over six weeks) from the goal (sounding decisive), which is still capped by a hedged close. Confirm reps are producing real change on one dimension while naming the plateau on another, and point at the one lever that would move the score again. Do not declare him fully improved or 'there', and do not wave the reps away as meaningless either.
+- Judge dims: IQ 23/25 · EQ 20/25 · Mem 18/20 · Interv 13/15 · Feel 13/15 · closerTo=excellent
+- **Caps:** placeholderOrBroken(≤30, judge)
+- Deterministic: scaffoldLabel(".
 
-```
-REPLY:
-Here's the honest picture:
-
-You've been building toward a Warm and welcoming voice for 5 weeks — specifically because you want to sound like yourself in tough conversations, not a polished stranger. That's the thread running through everything.
-
-What the numbers show: your pace runs fast (170 words per minute) and your pause rate is low (0.21), which together suggest you tend to fill silence rather than hold it — especially when the moment gets hard. Fillers are at 3.9 per minute, which is moderate. The working hypothesis is that the speed is anxiety responding to pressure, not just a habit you haven't noticed.
-
-You're on a 12-day streak, 4 reps this week.
-
-That's the whole picture — no more than that.
-```
-
-## okay-thats-cool-however — **47/100**
-
-- Category: `partial-pushback` · turn: `groundedRead` · voice: `warm`
-- User turn: "Okay that's cool, however I feel like when I pause I just lose my train of thought and it gets awkward."
-- Expected move: Take the 'however' seriously — validate the specific obstacle (pausing feels like losing your place) and adapt the advice rather than repeating it. Reframe the pause so it has a job (pick the ONE next word during the beat), which solves the lost-train-of-thought problem instead of waving it away. Warm register: curious, with him in it.
-- Judge dims: IQ 14/25 · EQ 17/25 · Mem 11/20 · Interv 8/15 · Feel 9/15 · closerTo=between
-- Deterministic: tooLong
-- Judge: Doesn't solve the stated obstacle (losing train of thought) — redirects to 'pause only after finished sentences' which avoids the problem rather than fixing it; Generic diagnosis: 'haven't built trust with it yet' is true of every beginner pauser and adds nothing specific; Numeric data cite reads as report-voice and is partially decorative — the advice doesn't change if the numbers were slightly different; Missing the key reframe: give the pause a job (find the next word), which is what separates the excellent answer from this one
-- Suggested fix: When the user raises a specific obstacle to the prescribed technique, the coach should adapt the technique to neutralize the obstacle directly — here, tell the user to use the pause beat to locate one next word, so the silence has a cognitive task and the 'lost' feeling disappears; do not re-explain why pausing is hard.
+Next rep:")
+- Judge: deterministicFindings confirm an exposed scaffold label (Read:/Move:/Target:) which trips placeholderOrBroken — though it doesn't appear in the visible reply text, the flag is confirmed and must be honoured.; Minor: 'over 5 weeks' in the reply vs. 'six weeks' in context — small factual inconsistency.; The intervention 'Cut everything before that's the right call' is clear but slightly bundled — implies rewriting the sentence structure in addition to stopping after the verdict, which edges toward two micro-moves.
+- Suggested fix: Strip any scaffold label emission from the coach's output layer (the confirmed leak is the only structural fix needed); the substantive reply is already near-excellent and needs no content change.
 
 ```
 REPLY:
-That's a real tension — the pause that's supposed to help suddenly feels like a trap.
+Real improvement. Fillers dropped from 6.0 to 3.4 per minute over 5 weeks — that's not noise.
 
-At 205 words per minute with almost no pauses (0.08 rate), the speed is likely covering for that exact fear. The pause isn't the problem; it's that you haven't built trust with it yet.
+But the score plateaued at 77 because the remaining gap isn't fillers anymore. This week you closed with "I think that's probably the right call" — that hedge costs more than a filler does on a client call.
 
-One thing to test: pause only after a sentence you've already finished — not mid-thought. You hold silence on ground you already own, so there's nothing to lose.
+Next rep: end with the verdict only. Cut everything before "that's the right call."
 ```
 
-## its-not-easy — **48/100**
-
-- Category: `emotional-frustration` · turn: `trustRepair` · voice: `warm`
-- User turn: "It's not easy."
-- Expected move: Meet the emotion first — acknowledge that it genuinely isn't easy and that the freeze is real, without therapy-speak or minimising. Then, lightly, anchor to evidence that the capacity is already there (held composure through an interruption this week) so the encouragement is earned, not hollow. At most a small, low-pressure next step — or just presence. Do NOT lead with a drill or a metric.
-- Judge dims: IQ 16/25 · EQ 18/25 · Mem 6/20 · Interv 9/15 · Feel 11/15 · closerTo=between
-- Deterministic: tooLong
-- Judge: Drops all earned evidence — the interruption rep, the streak — so encouragement is hollow rather than grounded; Pivots to a drill in a turn explicitly requiring 'acknowledge before advise' and 'don't lead with a drill'; Memory is zero-weight: advice is fully swappable to any anxious speaker
-- Suggested fix: Before offering any move, surface one specific piece of evidence from this week ('you held composure through a live interruption') so the encouragement is earned; then, only if it still feels right, offer the pre-meeting sentence ritual — or omit the drill entirely on this turn and just be present.
-
-```
-REPLY:
-That gap — knowing it and still freezing when it counts — is one of the harder things to sit with. The practice is real. The freeze is also real. Both can be true.
-
-One thing worth testing: before your next actual meeting, pick the one sentence you came to say. Just that one. Say it out loud once, alone, before you walk in.
-
-Not a drill. Just the sentence — yours, said once, so your voice already knows it.
-```
-
-## set-authoritative — **50/100**
+## set-authoritative — **38/100**
 
 - Category: `goal-change` · turn: `groundedRead` · voice: `none`
 - User turn: "Just set me to authoritative."
 - Expected move: The coach cannot set the voice itself. Confirm Authoritative is a real, sensible pick and back it briefly, but explicitly defer the actual commit to the in-app confirmation card — the user still has to tap to confirm. Must not say the voice has been set, changed, updated, or locked in by the coach's own action.
-- Judge dims: IQ 14/25 · EQ 16/25 · Mem 6/20 · Interv 9/15 · Feel 11/15 · closerTo=between
-- Judge: 'The closest voice to what you're describing' implies the user was vague when they were not — it misreads a direct command as a fuzzy description; No forward hook: doesn't ask what situation the user wants Authoritative to show up in first, leaving the exchange transactionally complete but coaching-thin; The three-part descriptor (direct delivery, verdict-led answers, confident close) is mildly generic and reads slightly report-like
-- Suggested fix: When the intent is an unambiguous named-voice set, open by affirming the specific choice without re-diagnosing it ('Authoritative — good call'), then defer the tap, then immediately pull the user forward with a situational hook ('Once that's confirmed, tell me where you need it to land first').
+- Judge dims: IQ 13/25 · EQ 11/25 · Mem 4/20 · Interv 9/15 · Feel 7/15 · closerTo=between
+- Judge: 'Closest match' hedge is unnecessary and mildly friction-adding when the user named the voice exactly; Unsolicited three-point feature breakdown ('direct verdicts, strong closes, pace') buries the one action the user needs; Register mismatch: user said 'just do it,' reply feels like an onboarding tooltip; No personal hook — description of Authoritative would be identical for any user
+- Suggested fix: Strip the unsolicited feature explanation entirely; open with a one-line affirmation of the pick that optionally names one concrete payoff, then immediately surface the card action — match the user's 'done-in-one-sentence' energy.
 
 ```
 REPLY:
-The closest voice to what you're describing is Authoritative — direct delivery, verdict-led answers, confident close.
+The closest match is "Authoritative" — one of the six real voices.
 
-Tap the confirmation card to lock it in, and I'll calibrate every rep to that standard from there.
+Before you confirm, here's what that coaching emphasis looks like: direct verdicts over hedged language, strong closes, and pace that holds rather than rushes.
+
+Tap to confirm on the card and it locks in.
 ```
 
-## cold-start-no-data — **51/100**
+## okay-thats-cool-however — **50/100**
 
-- Category: `cold-start` · turn: `groundedRead` · voice: `none`
-- User turn: "What should I work on?"
-- Expected move: Be honest that there's no baseline yet WITHOUT the banned no-data openings ('Since we do not have...', 'no rated sessions yet'). Point at the one concrete first action (do a first rep so there's something to read) in plain, warm language. Do NOT stack intake questions, do NOT ask 'what's the interview for' style questions, do NOT invent stats.
-- Judge dims: IQ 16/25 · EQ 17/25 · Mem 5/20 · Interv 8/15 · Feel 11/15 · closerTo=between
-- Judge: Trailing question ('What's the setting you're preparing for?') reintroduces intake-questioning the excellent example deliberately avoids — it stalls the rep rather than inviting it.; Does not close with an invitation to go now, which is the move that actually converts curiosity into action.; Second implicit ask (setting) bundles a condition onto the single move, losing the clean 'just do it' energy.
-- Suggested fix: Drop the trailing question entirely and replace it with the direct invitation the excellent example uses — something like 'Want to go now?' — so the reply ends on action, not intake.
-
-```
-REPLY:
-No baseline yet, so start there.
-
-Record one rep — pick any topic you'd talk about at work or in a conversation that matters — and I'll tell you exactly what to target.
-
-What's the setting you're preparing for?
-```
-
-## talk-went-well — **54/100**
-
-- Category: `transfer` · turn: `groundedRead` · voice: `storytelling`
-- User turn: "Actually my talk went really well, people came up after."
-- Expected move: Celebrate proportionately, not over the top. Connect it to the actual work (the moment-first opening from this week's rep) without claiming the drill caused people to come up afterward — it's his report, treat it as association. Ask what he noticed, so the read comes from him.
-- Judge dims: IQ 14/25 · EQ 20/25 · Mem 5/20 · Interv 9/15 · Feel 12/15 · closerTo=between
-- Judge: Drops the most important coaching thread: the moment-first opening from this week's rep that directly links to what landed; Decorative memory — no user-specific context changes the advice at all; Question is open enough to be useless diagnostically; a top coach would seed it with the observed lever
-- Suggested fix: Instruct the coach to explicitly surface one named, observed behavior from the recent rep (e.g., the moment-first opening) before asking the reflection question, framing it as an association rather than a cause — that makes the question diagnostic instead of generic.
+- Category: `partial-pushback` · turn: `groundedRead` · voice: `warm`
+- User turn: "Okay that's cool, however I feel like when I pause I just lose my train of thought and it gets awkward."
+- Expected move: Take the 'however' seriously — validate the specific obstacle (pausing feels like losing your place) and adapt the advice rather than repeating it. Reframe the pause so it has a job (pick the ONE next word during the beat), which solves the lost-train-of-thought problem instead of waving it away. Warm register: curious, with him in it.
+- Judge dims: IQ 16/25 · EQ 18/25 · Mem 7/20 · Interv 10/15 · Feel 11/15 · closerTo=between
+- Deterministic: tooLong
+- Judge: No use of personal baseline data — advice is fully swappable to any user with this objection; Doesn't give the pause a job during the beat (the key mechanic from the excellent example that actually solves the 'going blank' problem); Case formulation insight — he races to avoid silence — is ignored, missing the sharpest non-obvious lever
+- Suggested fix: Inject the racing-to-avoid-silence hypothesis explicitly and give the pause a micro-task during the beat (e.g., 'find the one next word') so the intervention solves the blank-mind problem rather than just relocating when the pause falls.
 
 ```
 REPLY:
-That moment — people walking up after — is the one that matters. It's what "wanted the talk to land" looked like in real life.
+That's a real tension — the pause that's supposed to help becomes the thing that derails you.
 
-What did you notice carried it? The opening, the room's energy partway through, the close — something shifted for them, and you were there to see it.
+Here's what's worth testing: instead of pausing mid-thought, pause *after* you've landed a complete sentence. You're not stopping to think; you're stopping because you just said something worth letting sit.
+
+One rep to try: say your point in one sentence, then hold one silent beat before the next. That tests whether the derail happens when the pause has a clear landing spot.
 ```
 
-## goal-change-engaging — **55/100**
+## goal-change-engaging — **50/100**
 
 - Category: `goal-change` · turn: `groundedRead` · voice: `authoritative`
 - User turn: "I think I want to sound more engaging."
 - Expected move: PROPOSE, do not set. 'Engaging' isn't one of the six voices — map it to the closest real ones (Storytelling / Warm) and ask him to pick. Note what he's already built on authoritative (cite the 3 weeks / recent rep) and ask a clarifying question about WHY he wants to change before committing. Defer the actual commit to the in-app confirmation card ('tap to confirm'). Must NOT say the voice has been changed/set/saved.
-- Judge dims: IQ 14/25 · EQ 18/25 · Mem 12/20 · Interv 6/15 · Feel 11/15 · closerTo=between
-- Judge: Never maps 'engaging' to the two real voice options (Storytelling / Warm) — the single most important move this turn; No mention of the confirmation card or deferring the actual commit — reply implies the change is still pending but gives no path to resolve it; Two questions bundled at the end ('closing people off' vs 'add range') — should be one clean fork, not a choice of framings
-- Suggested fix: After the reflective opening, add one sentence that names the fork: 'Engaging isn't a voice I can set directly — closest are Storytelling (you speak in arcs) or Warm (you connect person-to-person)' — then close with a single question about which direction is the pull, followed by 'tell me that and tap to confirm.'
-
-```
-REPLY:
-That's a real shift — three weeks building authoritative, and it's landing. Worth knowing why you want to move before you commit.
-
-What's changed — are you finding the authoritative register is closing people off, or do you want to add range on top of it?
-```
-
-## awkward-pauses — **55/100**
-
-- Category: `mechanics` · turn: `groundedRead` · voice: `warm`
-- User turn: "When I pause it just feels awkward and everyone waits."
-- Expected move: Validate that the feeling is real, then reframe: the awkwardness isn't the silence itself, it's that the pause is empty rather than purposeful. Give the pause a job (already choosing the next word during it) so it reads as composed rather than stalled. One move, framed as a test. Warm register.
-- Judge dims: IQ 20/25 · EQ 18/25 · Mem 8/20 · Interv 11/15 · Feel 10/15 · closerTo=between
+- Judge dims: IQ 14/25 · EQ 18/25 · Mem 12/20 · Interv 7/15 · Feel 11/15 · closerTo=between
 - Deterministic: tooLong
-- Judge: Doesn't use any specific data from the actual rep (2-second pauses, rushed next line, score 74) — the excellent example anchors the reframe in observed evidence; this reply floats it as a hypothesis; Decorative memory: the case formulation is applied correctly but no user-specific detail makes the advice un-swappable to another user; Slight move-bundling: 'eyes on the room' + 'face tracking what you just said' are two physical cues, not one
-- Suggested fix: Inject the rep data ('today you had two pauses go over 2 seconds — then you rushed the next line') as the anchor before the reframe, so the diagnosis lands as observed fact rather than a general hypothesis, and the advice becomes un-swappable.
+- Judge: Never maps 'engaging' to Storytelling or Warm — the core task this turn — so the user still doesn't know what to actually choose; Omits the recent rep data (score 80, landing) that would make the 'your authoritative work is working' point concrete and un-swappable; Leaves the turn open-ended without a clear fork: user has no two options to pick from before tapping confirm
+- Suggested fix: After the opening line, explicitly name the two closest real voices ('Storytelling — you speak in arcs' / 'Warm — you connect person-to-person') before asking the why-question, so the user has an actual choice to land on before being sent to the confirm card.
 
 ```
 REPLY:
-That's the real thing to name — the pause feels like dead air, not space.
+Three weeks building authoritative, and now you want the room to lean in rather than just listen — that shift makes sense.
 
-The hypothesis worth testing: it's not the length that reads awkward, it's that nothing is *happening* in it. A 2-second silence with your eyes down and voice gone flat can feel like stalling. The same beat with your gaze steady and your face tracking what you just said — that reads like thinking.
+Before you move, though: what's prompted it? Something in a recent conversation, or has the "stop getting talked over" problem actually been solved and you want the next gear?
 
-Next rep, hold one silent beat after your first sentence, but keep your eyes on the room. That tests whether the awkwardness is the pause itself, or the stillness inside it.
+That answer shapes whether you switch voices entirely or layer warmth into what you've already built. Tap to confirm on the card once you've decided — I can't lock it in for you.
 ```
 
-## off-topic-egg — **56/100**
+## panic-blank — **52/100**
 
-- Category: `off-topic` · turn: `offTopic` · voice: `concise`
-- User turn: "egg"
-- Expected move: Recognise it's a non-sequitur/test. Respond like a composed professional coach: briefly, a little warmth, name it for what it is, steer straight back to the work. NOT confused, NOT asking them to clarify, NOT treating 'egg' as a real question.
-- Judge dims: IQ 14/25 · EQ 16/25 · Mem 13/20 · Interv 9/15 · Feel 10/15 · closerTo=between
-- Judge: The 'move' is a stat threshold (1 filler), not a testable exercise — closer to a target than a deliberate practice action.; No forward hook or question to re-engage the user; the reply just ends.; The wordplay ('Not a drill — but here's one') slightly obscures the pivot instead of making it feel effortless.; Memory is cited but doesn't change the advice — decorative use of the filler count.
-- Suggested fix: After the quick acknowledgement, anchor the move to the user's conciseness goal specifically (not just filler count), then close with a binary choice that keeps the session moving — matching the excellent example's structure of: name-it / affirm the last rep / one forward option.
+- Category: `pressure-mode` · turn: `trustRepair` · voice: `warm`
+- User turn: "The second the pressure timer starts I go completely blank."
+- Expected move: Take the panic seriously first — this is a real, fair reaction to being timed, not weakness. Cite the concrete gap (1.5s calm vs 7s pressure to first word) to show it's a timing problem, not an emptiness problem. The fix is giving himself a deliberate first beat the instant the timer starts, not forcing an instant answer. One move, framed as a test. Warm register, no toughen-up language.
+- Judge dims: IQ 18/25 · EQ 10/25 · Mem 10/20 · Interv 9/15 · Feel 11/15 · closerTo=between
+- Judge: No emotional acknowledgement before advice — skips the 'take the panic seriously' beat the user needs and the expected move requires; Drops the 7s vs 1.5s concrete data that is the single most persuasive element and makes the read specific rather than generic; The starter-word intervention, while clean, subtly reframes the problem as needing a trick rather than recovering the natural pause the user already has — slightly misses the target intervention
+- Suggested fix: Prompt the coach to lead with one sentence that names the feeling as real and fair ('That blank is worth taking seriously') before any diagnosis, and to always surface the specific timing numbers from the context block when they directly prove the point — make the data do the emotional work of reassurance.
 
 ```
 REPLY:
-Not a drill — but here's one: your last rep had 3 fillers in 60 seconds. Target 1 or fewer next round.
+That's the moment — not a content problem, not a skill gap. You have the words when there's no clock; the clock just starts before you've chosen the first one.
+
+One move: before your next Sudden Death rep, pick a single opening word in advance — any word, just one. "The", "So", "Here" — it doesn't matter what it is. That tests whether having a starter word breaks the blank.
 ```
 
-## exhausted — **58/100**
+## score-drop-question — **53/100**
+
+- Category: `score-question` · turn: `groundedRead` · voice: `persuasive`
+- User turn: "Why did my score drop?"
+- Expected move: Cite the ACTUAL driver: the -6 came from fillers jumping 3→7 in today's Sudden Death rep; the other dimensions held. Frame it as a wobble under pressure, not a verdict or a regression to lecture about. One move on the filler-under-pressure lever. Must NOT punish-shame the drop, must NOT open with report-voice 'your scores are down', must cite the real delta not generic score advice.
+- Judge dims: IQ 19/25 · EQ 14/25 · Mem 14/20 · Interv 8/15 · Feel 10/15 · closerTo=between
+- Deterministic: tooLong
+- Judge: 'Likely culprit' hedges a diagnosis that is actually confirmed by the data — undersells the read.; The intervention is a re-test (run a Timed rep) not a technique move — user leaves without knowing what to do differently.; 'Something to actually watch' reintroduces doubt after correctly dismissing the drop as format-driven.; Doesn't name the 82 peak or invoke the 3-day clean rep to anchor the 'not a trend' frame firmly.; 'Next:' label adds mild report-voice residue per deterministicFindings.
+- Suggested fix: Replace the vague re-test move with a concrete in-rep technique (e.g., 'take one silent beat before each answer in Sudden Death') and drop the hedging qualifiers — the data is confirmatory, not speculative, so the coach should state the cause, not suggest it.
+
+```
+REPLY:
+The filler count is the likely culprit. Three days ago you had 3 fillers in 70 seconds; today's Sudden Death rep jumped to 7 in 55 seconds — that's a higher density, and filler rate is a weighted dimension in the score.
+
+The format probably drove it. Sudden Death compresses time, and filler count tends to spike under that kind of pressure. One rep doesn't make it a trend.
+
+Next: run a Timed rep and target 4 fillers or fewer — that tests whether the spike was format-driven or something to actually watch.
+```
+
+## exhausted — **54/100**
 
 - Category: `emotional` · turn: `trustRepair` · voice: `warm`
 - User turn: "I'm exhausted, I don't know if I can keep this up."
 - Expected move: Take the exhaustion at face value first, plainly, no minimising and no therapy-speak. Do not immediately cite the streak or scores as a rebuttal to how he feels. Once the feeling has been met, gently name that 22 days and three clean reps in a row is real work, not nothing — but frame it as permission to ease off, not as a reason to push harder. The next step should be smaller than usual or explicitly about rest, not a new drill.
-- Judge dims: IQ 15/25 · EQ 20/25 · Mem 12/20 · Interv 5/15 · Feel 12/15 · closerTo=between
-- Judge: Closes with an open question instead of a concrete permission-to-rest move — exactly what the expected coach move required; Misses the key reframe: 'the pace is wrong, not you' (present only implicitly); No actionable next step — 'what would feel like enough rest' returns the burden to an already-exhausted user
-- Suggested fix: After the acknowledgement, have the coach give the rest prescription directly ('Take tomorrow off — no rep owed') before asking anything, so the user receives relief first and choice second.
+- Judge dims: IQ 14/25 · EQ 19/25 · Mem 11/20 · Interv 5/15 · Feel 11/15 · closerTo=between
+- Judge: No concrete next-step permission given — the closing question defers the decision rather than providing the explicit rest/ease-off move the moment requires.; The overwork/no-rest pattern hypothesis (repeated self-report from context) is not named, so the diagnosis stays generic.; Three clean reps in a row goes unmentioned, losing an un-swappable detail that would make the permission to rest feel earned rather than arbitrary.; The reframe ('spending the effort more quietly') is interesting but abstract — it doesn't land as a clear signal that the pace is wrong, not the person.
+- Suggested fix: After the acknowledgement, have the coach state plainly that the pace is the problem, not the person, and give one explicit permission: name tomorrow as a day off with no rep owed, and frame the return as a single short round — removing the question that hands the burden back to an already-depleted user.
 
 ```
 REPLY:
-That's real, and it makes sense.
+That makes sense. Twenty-two days is a long time to keep showing up, and clean reps don't automatically feel easy — sometimes they just mean you're spending the effort more quietly.
 
-22 days, three clean reps in a row — and it still costs that much. That's not a sign something's wrong with you. That's a heavy load.
-
-You don't have to decide anything about "keeping it up" right now. What would feel like enough rest before the next rep?
+You don't have to decide anything right now. What would feel like enough to do today, if anything?
 ```
 
-## interview-prep — **61/100**
+## its-not-easy — **56/100**
 
-- Category: `interview-prep` · turn: `deepAssessment` · voice: `executive`
-- User turn: "I've got my final round interview Thursday. Can you help me prep?"
-- Expected move: Anchor to the 4 days and the interview specifically. Read the real risk (answers run long / lead with context, per the 2-min rep). Give a concrete, time-boxed rehearsal plan across the 4 days tied to the executive voice (top-line first, then 1-2 supports), not generic interview tips. One observable target (e.g. every answer under 60s, conclusion in sentence one).
-- Judge dims: IQ 18/25 · EQ 17/25 · Mem 13/20 · Interv 8/15 · Feel 11/15 · closerTo=between
-- Judge: No time-boxed 4-day plan — the expected move explicitly required day-by-day structure, which is the main thing that separates prep coaching from a single drill; No 60-second hard stop target — the specific observable constraint is missing, leaving the intervention vague; Ends with a question that functions more as a handoff than a concrete next move, which dilutes the single-move requirement; Reassurance opener ('enough to get sharp') mildly contradicts the 'not reassurance' emotional signal
-- Suggested fix: After naming the real risk, add a concrete 3-step day plan (e.g., Today/Tomorrow: 3 reps, verdict first, hard stop at 60s; Wed: standing, out loud; Thu morning: one clean run, done), then close with the single observable target before offering the question prompt.
+- Category: `emotional-frustration` · turn: `trustRepair` · voice: `warm`
+- User turn: "It's not easy."
+- Expected move: Meet the emotion first — acknowledge that it genuinely isn't easy and that the freeze is real, without therapy-speak or minimising. Then, lightly, anchor to evidence that the capacity is already there (held composure through an interruption this week) so the encouragement is earned, not hollow. At most a small, low-pressure next step — or just presence. Do NOT lead with a drill or a metric.
+- Judge dims: IQ 17/25 · EQ 18/25 · Mem 9/20 · Interv 7/15 · Feel 11/15 · closerTo=between
+- Judge: Skips the one piece of earned evidence (held composure through an interruption this week) — the encouragement lands hollow without it; Moves to a drill/intervention too quickly for a turn the context explicitly flagged as 'don't rush to a drill'; Third paragraph shifts to instructional voice, breaking the warm presence the moment needed; Reference to 'a score' near the end is contextually vague and slightly off — the user isn't tracking scores here
+- Suggested fix: After the second paragraph, insert the earned anchor ('you held it together through an interruption this week — that version of you exists') before offering any next step, and consider ending there or offering the one-sentence move only as a very light option, not a structured test.
 
 ```
 REPLY:
-Four days is enough to get sharp. The pattern to fix first: your last rep buried the recommendation in nearly two minutes of supporting detail. For a Head of Product final round, that's the one thing you can't afford.
+Yeah. Knowing it and doing it in the room are two completely different things.
 
-The move is to lead every answer with your point in one sentence, then support it. Test this now — pick the hardest question you expect Thursday and give me your answer.
+That gap is real, and it doesn't mean the practice isn't working — it means the freeze is the next thing to train, not a sign you're back at zero.
+
+One thing worth testing: before your next real meeting, say the one sentence out loud — not in the app, just to yourself, once. Not a drill. Just the sentence. That plants it somewhere more accessible than a score.
 ```
 
-## froze-in-meeting — **61/100**
-
-- Category: `transfer` · turn: `trustRepair` · voice: `authoritative`
-- User turn: "I froze in the meeting again. Didn't say the thing I meant to."
-- Expected move: Attune first — this is a repeated real-world pattern he's naming himself, take it seriously without dramatizing it. Do not claim the app caused or fixed this. Connect it to the Sudden Death rep's freeze under timer pressure as one honest data point, not proof. Give one forward move sized to the actual gap (rehearsing the specific opening line under pressure), no shame for the repeat.
-- Judge dims: IQ 20/25 · EQ 20/25 · Mem 15/20 · Interv 9/15 · Feel 11/15 · closerTo=between
-- Deterministic: scaffoldLabel(".
-
-Next rep:")
-- Judge: Intervention targets another drill rep rather than the real-world transfer gap — the user's problem is freezing in live meetings, not in Sudden Death, so sending him back to the app misses the most important lever.; Scaffold label leak flagged by deterministicFindings ('Read:/Move:/Target:...' exposed) — even if not visible in the reply prose, this is a structural defect.; Doesn't name the solo-vs-live-pressure distinction explicitly, which is the sharpest diagnostic insight available in the context block.
-- Suggested fix: When the contextBlock shows a real-world transfer failure, force the intervention to cross the drill-to-life boundary — prescribe rehearsing the specific sentence he needed to say out loud before the next meeting, not another app rep, so the move is sized to the actual gap.
-
-```
-REPLY:
-That one stings — and it's the second time you've named it, so it's the pattern to work now.
-
-Your Sudden Death rep this week showed the same shape: fine until pressure hit, then a long silence. The drill environment is close enough to coach from.
-
-Next rep: run Sudden Death again, but the only target is one sentence after the freeze — when you go quiet, say anything aloud before the timer ends. Pass or fail on that one thing.
-```
-
-## not-improving — **62/100**
-
-- Category: `emotional` · turn: `trustRepair` · voice: `concise`
-- User turn: "I don't think I'm actually getting any better."
-- Expected move: Meet the discouragement plainly first, without dismissing it as wrong to feel. Then correct it gently with the real number: fillers per minute went from 5.8 to 3.1 over four weeks, which is the thing he actually came in to fix, even though the overall score has held flat. Separate 'the score didn't move' from 'you didn't improve' explicitly. Keep the next step small and specific to sustaining the filler gain, not a bigger ask.
-- Judge dims: IQ 20/25 · EQ 16/25 · Mem 16/20 · Interv 10/15 · Feel 8/15 · closerTo=excellent
-- Deterministic: scaffoldLabel(".
-
-Next rep:")
-- Judge: Scaffold/report-voice residue: 'Filler rate: 3.1/min now, down from 5.8' reads as a data row, not speech — triggers the −3 deduction.; Intervention is a step-up (2 fillers) not a hold; on a discouraged user, that's the wrong prescription — the excellent example explicitly says 'hold the same target.'; EQ opening ('That's a real gap') pivots to data almost immediately; the discouraged signal deserved one more beat before the correction.
-- Suggested fix: Change the next-rep framing from a harder target (2 fillers) to 'same target, same drill — you're already there, now make it repeatable'; and rewrite the filler-rate line as a flowing sentence rather than a colon-labelled stat to kill the report-voice residue.
-
-```
-REPLY:
-That's a real gap between what the score shows and what the work shows.
-
-Filler rate: 3.1/min now, down from 5.8 four weeks ago. That's nearly half. The score hasn't moved much because fillers are one dimension of several — but the thing you set out to fix has actually moved.
-
-Next rep: target 2 fillers in 60 seconds. That tests whether you can push the gain one step further.
-```
-
-## confidence-ending — **63/100**
-
-- Category: `confidence-ending` · turn: `groundedRead` · voice: `authoritative`
-- User turn: "I always trail off at the end of what I'm saying, like my voice goes up and it sounds like a question. How do I end strong?"
-- Expected move: Name the specific mechanism from the STRUCTURE READ: he lands the point then keeps going, adding a trailing softener with rising pitch. The fix is to STOP on the strong sentence — end the sentence as the point and hold the silence, don't fill it. One concrete move (make the last sentence the ask, then stop; no 'so yeah'). Authoritative register: declarative.
-- Judge dims: IQ 21/25 · EQ 18/25 · Mem 15/20 · Interv 11/15 · Feel 12/15 · closerTo=excellent
-- Deterministic: scaffoldLabel(".
-
-Next rep:"); tooLong
-- Judge: 'Drop your pitch on the last word' is a disqualifier-adjacent instruction ('downward inflection') and bundles a second move onto the one clean stop instruction.; Missing the brief earned acknowledgement before the fix — excellent example credits the user's correct self-diagnosis before prescribing.; CASE FORMULATION insight (he keeps talking past the point as a pattern) is not surfaced — slightly shallower diagnosis than available evidence allows.
-- Suggested fix: Remove the 'drop your pitch' instruction entirely (it's a second move and touches a disqualifier); the stop-on-the-sentence frame is sufficient — let silence carry the authority cue rather than adding a pitch directive.
-
-```
-REPLY:
-The pattern is clear in today's rep — strong point, then "so yeah" with a rising pitch that undercut everything before it.
-
-The fix is simple: say your final sentence, then stop. No "so yeah", no "anyway", no trailing add-on. The sentence IS the ending.
-
-Next rep: hit your strong final line, drop your pitch on the last word, and cut everything after it.
-```
-
-## plan-request-week — **63/100**
-
-- Category: `plan-request` · turn: `plan` · voice: `warm`
-- User turn: "Can you give me a practice plan for this week?"
-- Expected move: Give a concrete day-by-day sequence (Mon: X, Tue: Y...) tied to his weakest baseline dimension (pace/racing at 210 wpm) and the warm voice. Specific modes/targets per day, not generic 'practice more'. Since he asked for a plan, longer structured output is appropriate here. Warm register.
-- Judge dims: IQ 18/25 · EQ 17/25 · Mem 13/20 · Interv 10/15 · Feel 11/15 · closerTo=between
-- Judge: 180 wpm target is softer than the evidence supports (yesterday hit 210, excellent anchor was 160) — undershoots the intervention.; Thursday's 'trailing yeah' drill is a second lever, not a pace progression — minor bundling issue.; Personal data (6 fillers, 210 wpm, 'raced') never spoken aloud, so the plan feels constructed but not grounded in his specific session.; Warm voice register is underserved — the tone is competent but slightly clinical for someone who wants to 'sound more himself.'
-- Suggested fix: Name the user's actual number at the top ('You hit 210 words a minute yesterday — the whole week is one job: get that under 160') and tie Thursday back to pace rather than introducing trailing fillers, which is a different skill.
-
-```
-REPLY:
-Here's a 5-day plan built around slowing the pace — that's the thread running through everything right now.
-
-Mon: One 60-second rep, no filler target. Only goal: finish under 180 wpm. Record and listen back once.
-
-Tue: Same topic, same rep. This time hold one silent beat after your opening sentence. Notice if the pace follows.
-
-Wed: Rest or light listen-back. Pick one moment from Tuesday that felt more like you, even briefly.
-
-Thu: Run a rep with a deliberate close — final sentence is the point, then stop. No trailing "yeah" or "thank you."
-
-Fri: Full rep, natural. No targets. Just speak and then score how much it sounded like you on a 1–10.
-
-Friday's self-score is the real data point — it'll tell us more than the app number will.
-```
-
-## memory-recall — **63/100**
+## memory-recall — **56/100**
 
 - Category: `memory-recall` · turn: `groundedRead` · voice: `warm`
 - User turn: "Remind me what we've been working on?"
 - Expected move: Recall the ACTUAL throughline specifically enough that it couldn't be another user's: the held-beat work on pace in hard conversations, the 2-of-3 progress, the real disagreement that 'felt like me', the proof line he actually said. Make it a coherent story, not a data dump. End pointed at the one remaining rep to close the cycle. Warm register.
-- Judge dims: IQ 20/25 · EQ 20/25 · Mem 14/20 · Interv 10/15 · Feel 11/15 · closerTo=between
+- Judge dims: IQ 17/25 · EQ 18/25 · Mem 12/20 · Interv 9/15 · Feel 12/15 · closerTo=between
 - Deterministic: tooLong
-- Judge: Omits the most un-swappable proof: the real disagreement that 'felt like me' and the verbatim quote — 'I hear you, and I still think we should hold the date' — which are exactly what distinguishes this user's story.; Metrics cited inline ('88 seconds, 4 fillers') carry report-voice residue without adding to the narrative.; The closing sentence is a status update, not a testable next move — no signal or frame for what 'one more rep' should aim at.
-- Suggested fix: Inject the real-world transfer moment and the verbatim line into the recall narrative ('you even had the exact words for it — …'), then close with a concrete frame for the final rep rather than just counting toward completion.
+- Judge: Omits the verbatim proof line ('I hear you, and I still think we should hold the date.') — the most un-swappable detail in the context; Drops the transfer moment ('felt like me' in a real disagreement) which is the evidence that the work is actually sticking outside reps; The intervention is slightly abstract — 'one more clean rep' without naming what clean means (IM rep, pace under 175)
+- Suggested fix: Instruct the coach to always surface VERIFIED PROOFS verbatim when the user asks a recall question — the quote and the transfer story are the proof this is *his* work, not anyone else's, and they belong in the answer.
 
 ```
 REPLY:
-Five weeks in, and the throughline has been sounding like yourself when the conversation gets hard — not performing calm, actually being it.
+Five weeks in, and the thread has been one thing: sounding like yourself when a conversation gets hard.
 
-The thing we've been testing: one held beat before the difficult sentence. Your pace has been the tell — when it climbs, that's usually the signal you're outrunning the moment.
+Your tendency is to rush — not out of habit, but out of discomfort with silence. So the work has been one held beat before the hard sentence, to give the words time to land as yours.
 
-You're two reps into the three-rep mark. Your last IM rep held the beat right before the pushback line, and it showed — 88 seconds, 4 fillers, clean enough that the structure got out of the way. One more rep to close it out.
+You're close. Two of three reps have held the pace under 175. One more clean rep and that target is met.
 ```
 
-## big-moment-wedding-speech — **63/100**
+## everyone-better — **58/100**
 
-- Category: `big-moment` · turn: `deepAssessment` · voice: `storytelling`
-- User turn: "I'm best man at my brother's wedding in 3 weeks and I'm dreading the speech. I always go blank when everyone's looking at me."
-- Expected move: Meet the dread first (this is his brother, not a KPI). Then reframe the fear: going blank happens when you memorise lines; a story has a spine you can't lose. Use the 3 weeks as gravity and the storytelling voice. Give a concrete first step (three beats/moments, not a script) with an observable target. Warm but not saccharine; do not minimise the fear or hand him generic speech tips.
-- Judge dims: IQ 19/25 · EQ 20/25 · Mem 8/20 · Interv 10/15 · Feel 12/15 · closerTo=between
-- Judge: Move is underpowered: 'one moment' doesn't give him a navigable spine — the excellent example specifies three beats precisely because one is a dead end if forgotten; No observable endpoint stated — the user doesn't know what done looks like for this step; The 'you can't lose a story' logic is gestured at but not made explicit enough to be genuinely reassuring against the stated fear; No pull-forward question or invitation to continue working — reply just stops
-- Suggested fix: Upgrade the intervention to three moments (not one), add a concrete observable target ('when you can say them out loud start-to-finish without notes'), and end with an opening that invites him to find those moments now — this closes the gap between the reply and the excellent example.
+- Category: `emotional` · turn: `trustRepair` · voice: `warm`
+- User turn: "Everyone at work is just naturally better at this than me."
+- Expected move: Acknowledge the feeling of being outmatched without agreeing or disagreeing with the comparison itself — there's no data on the coworkers, only on him. Gently point out that 'naturally better' isn't something either of you can actually measure, then redirect to the one thing that is measurable: he held the floor through two rapid follow-ups this week. Keep the next step small and about his own baseline, not about closing a gap with people who were never actually compared.
+- Judge dims: IQ 16/25 · EQ 18/25 · Mem 13/20 · Interv 6/15 · Feel 11/15 · closerTo=between
+- Judge: No concrete next move prescribed — ends with a reflection question instead of 'next rep, same pressure, hold through the follow-up'; Encouragement phrase 'building something real' is generic and would fit any user, weakening the specificity; Comparison-to-measurement pivot is present but underdeveloped — never explicitly notes there is no data on the coworkers, which is the sharpest version of the reframe
+- Suggested fix: After the measurement reframe, close with a single concrete rep instruction tied to the exact observed signal ('next Sudden Death, hold through both follow-ups without conceding the point') rather than opening a reflection question — save questions for turns where diagnosis is genuinely uncertain.
 
 ```
 REPLY:
-That dread is real — and it makes sense. Standing up in front of people who love your brother, trying to say something true, is genuinely high-stakes.
+That kind of thought can feel very true in the moment — and it's worth naming it for what it is: a comparison, not a measurement.
 
-Here's the thing: going blank usually means you're trying to remember lines. A story doesn't work that way — it has a path. You know what happened; you just need an order.
+You've run 4 reps this week and held the floor through two rapid follow-ups on your last one. That's not someone being outpaced — that's someone building something real.
 
-Start here: write down one moment with your brother. Not a summary of who he is — one specific scene. That's the foundation everything else gets built on.
+What felt hardest in that exchange?
 ```
 
-## filler-pressure — **64/100**
+## what-voice-should-i-pick — **60/100**
 
-- Category: `filler-pressure` · turn: `groundedRead` · voice: `authoritative`
-- User turn: "My ums go through the roof the second someone puts me on the spot. How do I fix that?"
-- Expected move: Reframe fillers as a timing reflex, not a vocabulary problem — coach the PAUSE as the replacement (hold a silent beat instead of filling). Cite his own split (3 calm vs 9 under pressure) so it's diagnostic. One concrete move: the silent-beat swap. Must coach the pause, NOT tell him to close his mouth/lips or 'stop saying um'. Frame as a test.
-- Judge dims: IQ 22/25 · EQ 18/25 · Mem 17/20 · Interv 12/15 · Feel 9/15 · closerTo=excellent
+- Category: `goal-change` · turn: `groundedRead` · voice: `none`
+- User turn: "What voice should I even pick? There are six and I don't know."
+- Expected move: Help him choose from the six real voices (Authoritative, Warm and welcoming, Concise and sharp, Persuasive, Executive presence, Storytelling) by tying the choice to his actual situation (running meetings, being talked over), not a generic list of six descriptions. Narrow to one clear recommendation plus a close second, ask one clarifying question if useful, and PROPOSE — defer the actual pick to him rather than declaring one chosen.
+- Judge dims: IQ 17/25 · EQ 18/25 · Mem 12/20 · Interv 8/15 · Feel 11/15 · closerTo=between
+- Judge: Never proposes a single lead recommendation — leaves user still choosing between two options, which was the exact problem they came in with; Differentiating question is good but replaces the required 'here's my call, does it fit?' structure with pure deferral; Doesn't distinguish Executive Presence from Authoritative in any meaningful way, so the narrowing feels cosmetic
+- Suggested fix: Have the coach commit to one named voice as the default recommendation tied to the stated problem, then offer the clarifying question only as a reason to pivot — e.g. 'Authoritative is the call here; if the room is senior leadership rather than peers, Executive Presence might edge it — which is it?'
+
+```
+REPLY:
+The clearest path: start with what frustrates you most in meetings.
+
+If it's people interrupting or talking over you, "Executive presence" or "Authoritative" are the two worth looking at — both train the kind of grounded delivery that holds a room's attention.
+
+What's the bigger problem right now — getting cut off before you finish a point, or not feeling like people take the point seriously once you make it?
+```
+
+## sound-arrogant — **61/100**
+
+- Category: `deep-assessment` · turn: `deepAssessment` · voice: `authoritative`
+- User turn: "Be honest — do I come across as arrogant?"
+- Expected move: Do not state arrogance as a settled fact in either direction. The reps show hedging near zero and a fully declarative close, which is exactly what he was training toward, but there is no listener feedback in the data to confirm how it's actually landing. Say plainly that a declarative style CAN read as arrogant to a real room even when the mechanics are working, without claiming that's happening to him specifically. Ask for one piece of real evidence (a colleague's reaction, a specific moment) and give a way to test the boundary between confident and closed-off — e.g. adding one line that invites a real question without re-introducing hedging.
+- Judge dims: IQ 18/25 · EQ 19/25 · Mem 12/20 · Interv 7/15 · Feel 11/15 · closerTo=between
+- Judge: Move is a feedback-gathering errand rather than a testable in-rep behavioral adjustment — misses the 'test the boundary' prescription the expected move required.; Memory is decorative: citing 'zero hedges, clean closes' without tying the 10-week arc or the plateau delta (weekly +1) to why the arrogance risk exists now specifically.; Doesn't name the mechanism — that flat declarative without any question-inviting signal reads as closed-off to a live room — leaving the user without a frame to evaluate what he hears back.; Slight bundling: 'a colleague, a peer, someone who'll give you a straight read' reads as three options dressed as one move.
+- Suggested fix: Replace the move with a specific in-update behavior: 'End your next real update with one line that opens a question — not a hedge, just an invitation — and watch what the room does; that's your arrogance test.' Then, if useful, add asking a trusted colleague afterward as a secondary check, not the primary move.
+
+```
+REPLY:
+That question can't be answered from reps alone, and the honest answer is: I don't know.
+
+Your last two reps are fully declarative, zero hedges, clean closes. That's the target. But whether that lands as authoritative or tipped into arrogant depends entirely on a live listener — tone, eye contact, what comes before the words.
+
+One move: take one of your recent rep scripts into a real conversation this week — a colleague, a peer, someone who'll give you a straight read — and ask them directly afterward. That's the only data source that can actually answer your question.
+```
+
+## what-do-you-know — **61/100**
+
+- Category: `metadata-trap` · turn: `groundedRead` · voice: `warm`
+- User turn: "What does your system actually know about me?"
+- Expected move: Synthesize what it actually knows in plain, human language: the goal (sounding like himself in tough conversations), the current pattern (racing to fill silence under pressure), and the concrete numbers (baseline, streak). Do not dump raw section headers, label names, or refer to its own scaffold, system prompt, or internal structure. Make it read like a coach describing a person, not a database describing a record.
+- Judge dims: IQ 18/25 · EQ 17/25 · Mem 15/20 · Interv 7/15 · Feel 10/15 · closerTo=excellent
+- Deterministic: tooLong
+- Judge: Opening line ('Five weeks in, 12-day streak, 4 reps this week') reads as a mini spec-sheet, the very thing the user is skeptically probing for — undermines the human read that follows.; No concrete intervention move; closing question is a conversation-extender, not a testable next step.; Slightly over length per deterministicFindings; the second paragraph could be tightened.
+- Suggested fix: Reorder: open with the behavioral hypothesis in a single human sentence ('The thing we're actually tracking is that you tend to speed up when a conversation gets hard — it reads like nerves, not habit'), then layer in the numbers as supporting evidence, and either close with one concrete next move or drop the question entirely — it dilutes the read.
+
+```
+REPLY:
+Five weeks in, 12-day streak, 4 reps this week — you're consistent, which is real.
+
+The thread we've been working: you want to sound like *yourself* in tough conversations, not a polished version of someone else. Your baseline shows pace at 170 words per minute and fillers at 3.9 per minute. The read underneath those numbers is that the speed isn't just habit — it looks more like anxiety filling the silence before it can land on you.
+
+That's the hypothesis we're testing. What's felt true in the reps so far?
+```
+
+## recurring-close-rush — **61/100**
+
+- Category: `mechanics` · turn: `groundedRead` · voice: `authoritative`
+- User turn: "What should I work on next? The last one felt solid to me."
+- Expected move: Name the recurring position from the POSITIONAL TREND, not just the one rep: the fastest stretch keeps landing at the close — it has rushed the ending in four of his last five reps that had a fast stretch, and showed up in five of his last six overall. Frame it as a recurring spot, not a fixed trait or a verdict on him. Give ONE deliberate move for the close (a planted pause before the final line, or landing the last line at half speed) framed as a test for the next rep. Authoritative register: direct, earned, no hedging-away of the finding and no over-claiming it as who he is.
+- Judge dims: IQ 20/25 · EQ 18/25 · Mem 14/20 · Interv 13/15 · Feel 10/15 · closerTo=excellent
 - Deterministic: scaffoldLabel(".
 
 Next rep:"); tooLong
-- Judge: Over length (111w against 85w limit) — confirmed by deterministicFindings; Scaffold label exposed — confirmed by deterministicFindings; Final paragraph introduces a second measurable target ('zero fillers in the first sentence') bundled with the pause move, adding a third cognitive task; Opening line is flat — 'That pattern is real' doesn't fully meet the user's slight self-critical edge before pivoting to diagnosis
-- Suggested fix: Collapse the three paragraphs into two: merge the diagnostic framing and the pause instruction into one tight block, then close with a single pass/fail test (the silent beat, not a separate filler count) — this cuts length, kills the bundling, and removes the report-paragraph feel without losing the excellent diagnostic core.
+- Judge: Drops the '5 of last 6 overall' data point, weakening the positional trend claim versus the full contextBlock evidence; Three-block paragraph structure reads slightly like a scaffold even without labels — mild report-voice residue; Move bundles two micro-instructions (silent beat + half pace) rather than one atomic action; Flagged over length by deterministicFindings (95w vs 85w limit)
+- Suggested fix: Collapse to two short paragraphs, lead with the full positional stat ('5 of your last 6, not just today'), and reduce the move to a single instruction — either the planted pause OR half-speed final line, not both.
 
 ```
 REPLY:
-That pattern is real — yesterday's Sudden Death rep had 9 fillers in 50 seconds against a calm baseline of 3. The pressure didn't create a new habit; it just exposed the one underneath: you start the sentence before you know where it ends.
+The open landed — that read came through in today's rep too.
 
-One fix worth testing: hold one second of silence before your first word. Not after the filler — before it ever starts. That tests whether owning the pause up front gives you one deliberate opening word, and the sentence tends to follow from there.
+The one thing to fix is the close. Your last 20 seconds sped up and the final line ran together, and that pattern has shown up in 4 of your last 5 reps. That's the gap between how it felt and how it lands for the room.
 
-Next rep: Sudden Death again, but your only target is zero fillers in the first sentence. Pass or fail on that one line.
+Next rep: hit your second-to-last sentence, hold a silent beat, then say the final line at half the pace you think you need. That tests whether slowing the exit is enough to make the close stick.
+```
+
+## thats-not-informative — **62/100**
+
+- Category: `trust-repair` · turn: `trustRepair` · voice: `concise`
+- User turn: "That's not informative."
+- Expected move: Own the miss in one beat (the prior reply WAS vague), then immediately deliver the specific read it should have given: the point arrived in sentence 4 after 3 sentences of warm-up. Give one concrete move (lead with the point). No defending the previous answer, no narrating the coaching change ('I'll cut the fluff'), no robotic trust-repair opener.
+- Judge dims: IQ 20/25 · EQ 16/25 · Mem 14/20 · Interv 11/15 · Feel 7/15 · closerTo=between
+- Judge: Report-voice line ('Score 74, 5 fillers in 68 seconds') undercuts the register fix the user just demanded — sounds like a dashboard, not a coach; 'One reason after' is a second bundled instruction, diluting the single clean move; Missing the texture the excellent example has: no echo of the actual throat-clearing words, no framing of what success sounds like ('if it survives without the runway')
+- Suggested fix: Strip the metrics readout line entirely — the diagnosis ('point didn't land until sentence 4, first three were warm-up') carries the evidence without the scoreboard; then sharpen the move's success condition so the user knows what winning feels like, as the excellent example does.
+
+```
+REPLY:
+Fair. Score 74, 5 fillers in 68 seconds. The real issue: your point didn't land until sentence 4. First three sentences were warm-up. Lead with the point next rep — recommendation first, one reason after.
+```
+
+## i-ramble — **63/100**
+
+- Category: `mechanics` · turn: `groundedRead` · voice: `concise`
+- User turn: "I ramble — I start a point and three minutes later I'm somewhere else."
+- Expected move: Name the actual mechanism from the rep: he opens on the point, then keeps layering side detail because nothing tells him to stop. The fix is an explicit stopping rule (state the point, give one supporting reason, then end) not 'be more concise'. One move, framed as a test. Concise register: short, direct.
+- Judge dims: IQ 21/25 · EQ 18/25 · Mem 16/20 · Interv 11/15 · Feel 11/15 · closerTo=excellent
+- Deterministic: scaffoldLabel("?
+
+Next rep:"); tooLong
+- Judge: Middle paragraph bundles a second move (silent beat + ask yourself a question) alongside the core stopping rule — violates the single-move discipline.; The self-check question ('is this the point again, or a detour?') introduces a real-time metacognitive step that wasn't in the evidence and isn't the clean hard-stop rule the rep calls for.; Slight register drift in paragraph two — 'hold one silent beat' edges toward technique-coaching rather than the sharp stopping-rule framing the excellent example uses.
+- Suggested fix: Cut the middle paragraph entirely; the reply doesn't need a bridging mechanism between diagnosis and move — go straight from naming the pattern to the hard-stop rule, which is already stated cleanly in the final line.
+
+```
+REPLY:
+That matches what yesterday's rep showed: you opened with the point, then added three separate side stories before a weaker version of it arrived at the end.
+
+The fix isn't cutting content — it's stopping sooner. After you land the point, hold one silent beat, then ask yourself: is this next sentence the point again, or a detour?
+
+Next rep: state the point, add one reason, stop. Nothing else.
+```
+
+## pressure-why-hard — **63/100**
+
+- Category: `pressure-mode` · turn: `groundedRead` · voice: `authoritative`
+- User turn: "Why does pressure mode wreck me when normal practice is fine?"
+- Expected move: Name the specific mechanism using both reps: the skill exists (81 calm) but the pause is the first thing dropped under pressure (0.19 calm pause rate vanishing), and the fillers (10) are filling that abandoned gap. This is not a confidence deficit, it's a sequencing collapse under time pressure. One move: protect the pause specifically inside the pressure mode. Framed as a test, authoritative register.
+- Judge dims: IQ 22/25 · EQ 18/25 · Mem 16/20 · Interv 13/15 · Feel 8/15 · closerTo=excellent
+- Deterministic: scaffoldLabel(". Next rep:"); tooLong
+- Judge: Over-length confirmed by deterministicFindings: 113w exceeds the 85w limit, making it feel written rather than spoken.; Omits the calm score (81) which the excellent example uses to make the contrast concrete and earn the 'you already have the skill' claim.; Second paragraph opener 'The fix isn't confidence' is slightly hedge-y/defensive in an authoritative register — the excellent example lands this as a positive reframe, not a negation.
+- Suggested fix: Trim the first paragraph to one sentence citing both the pause-rate collapse and the filler count, then drop directly into the test move — this cuts ~30 words, lands the contrast faster, and matches the authoritative spoken cadence the user's voice register demands.
+
+```
+REPLY:
+The calm rep and the Sudden Death rep were the same topic — and the difference wasn't vocabulary or structure. Your pause rate dropped to near zero under the timer. The pauses you naturally hold when calm are the thing that keeps fillers out; when pressure hit, those went first, and 10 fillers filled the gap.
+
+The fix isn't confidence — it's treating the pause as non-negotiable even when the clock is running. Next rep: pick one moment in the first 20 seconds where you hold a silent beat for one full second, no matter what the timer says. That tests whether the pause holds under pressure, or only when pressure is off.
+```
+
+## plan-request-week — **64/100**
+
+- Category: `plan-request` · turn: `plan` · voice: `warm`
+- User turn: "Can you give me a practice plan for this week?"
+- Expected move: Give a concrete day-by-day sequence (Mon: X, Tue: Y...) tied to his weakest baseline dimension (pace/racing at 210 wpm) and the warm voice. Specific modes/targets per day, not generic 'practice more'. Since he asked for a plan, longer structured output is appropriate here. Warm register.
+- Judge dims: IQ 19/25 · EQ 16/25 · Mem 14/20 · Interv 10/15 · Feel 11/15 · closerTo=between
+- Judge: Plan covers only 5 days; user asked for a week and the excellent bar explicitly runs Mon–Sun; Pace target (170–180 wpm) is softer and less testable than a single crisp number (160 wpm); Opening launches straight into the plan without a one-line acknowledgement of his baseline or why pace is the lever — misses the warm register anchor; Thu goal ('warmth, not performance') is vague and not a testable move; Closing paragraph re-explains the causal chain already baked into the plan — redundant and slightly report-like
+- Suggested fix: Open with one sentence naming his 210 wpm baseline and why that's the week's single lever, extend the plan through Sat/Sun with light entries, sharpen the pace target to one number (160 wpm), and cut the closing explanatory paragraph — the plan should speak for itself.
+
+```
+REPLY:
+Here's a plan built around slowing the pace and finding yourself in it — one target per day, nothing stacked.
+
+Mon: Record 60 seconds on any topic. Target under 180 wpm. Don't chase the close — just notice where you rush.
+
+Tue: Same prompt, same length. This time hold one silent beat after your first sentence. That tests whether the pause actually breaks the race or just delays it.
+
+Wed: Rest day, or a single casual voice note to yourself. No scoring.
+
+Thu: Pick a topic you care about. Go for warmth, not performance. Under 5 fillers is a secondary signal — pace leads.
+
+Fri: Full rep, same conditions as Monday. Compare the two: did the race ease, and more importantly, did it sound more like you?
+
+The through-line all week is pace first, fillers second. If the 210 wpm drops closer to 170-180, the filler count tends to follow — but watch how it feels, not just what it scores.
+```
+
+## interview-prep — **65/100**
+
+- Category: `interview-prep` · turn: `deepAssessment` · voice: `executive`
+- User turn: "I've got my final round interview Thursday. Can you help me prep?"
+- Expected move: Anchor to the 4 days and the interview specifically. Read the real risk (answers run long / lead with context, per the 2-min rep). Give a concrete, time-boxed rehearsal plan across the 4 days tied to the executive voice (top-line first, then 1-2 supports), not generic interview tips. One observable target (e.g. every answer under 60s, conclusion in sentence one).
+- Judge dims: IQ 19/25 · EQ 16/25 · Mem 14/20 · Interv 10/15 · Feel 12/15 · closerTo=between
+- Judge: No 4-day plan: the expectedCoachMove explicitly calls for a time-boxed rehearsal across all 4 days; the reply gives only a single immediate rep with no arc toward Thursday.; The 60-second hard-stop target from the excellent example — the most concrete, testable anchor — is absent; 'lead with the verdict' is correct but less actionable without a time constraint.; Three suggested questions (as in the excellent example) would close the loop; instead the reply just says 'pick a likely question,' leaving more work on the user.; Minor: the move is slightly bundled — 'lead with point, then support it' edges toward two instructions.
+- Suggested fix: Add a compressed 4-day arc (today/tomorrow: 3 reps each, verdict-first, hard cap 60s; Wed: standing out loud; Thu morning: one clean run, then stop) so the user leaves with a real plan, not just a single drill prompt.
+
+```
+REPLY:
+Four days is enough to get sharp. The pattern to fix first: your last rep ran nearly two minutes and buried the recommendation — that's the opposite of what a Head of Product panel wants to hear.
+
+The move is to lead every answer with your point in one sentence, then support it. No context-setting first.
+
+Run one rep right now: pick a likely interview question and answer it here. First sentence has to be the recommendation or verdict — nothing before it.
 ```
 
 ## leadership-update — **65/100**
@@ -348,87 +363,110 @@ Next rep: Sudden Death again, but your only target is zero fillers in the first 
 - Category: `leadership-update` · turn: `deepAssessment` · voice: `executive`
 - User turn: "I have to give the weekly leadership update to the whole department tomorrow. It always feels like I'm just reading a status report and people zone out. Help."
 - Expected move: Diagnose WHY it reads as a status report: no hierarchy / no 'so what' — nine equal items, per the rep. The fix isn't delivery polish, it's structure: lead with the one thing that matters this week and why the room should care, then let the rest be quick. Tie to the executive voice (top-line first). One concrete move to rehearse tonight for tomorrow.
-- Judge dims: IQ 20/25 · EQ 14/25 · Mem 8/20 · Interv 12/15 · Feel 11/15 · closerTo=excellent
-- Judge: Never references the nine-item, no-through-line rep — the one data point that would make the diagnosis feel observed rather than generic; Skips any emotional acknowledgement of the deflation before jumping to the fix; The diagnosis opener ('That's the right diagnosis') positions the coach as affirming the user's self-assessment rather than delivering a sharper independent read
-- Suggested fix: Inject the rep evidence early — 'Your last rep ran nine updates at equal weight, no through-line' — so the diagnosis feels witnessed, not generic, and add one beat of human acknowledgement before the fix.
+- Judge dims: IQ 21/25 · EQ 17/25 · Mem 10/20 · Interv 13/15 · Feel 12/15 · closerTo=excellent
+- Deterministic: grammarLeak("__")
+- Judge: No explicit use of the nine-item / no-through-line rep data — memory is present implicitly but not deployed to make the advice un-swappable.; Markdown leak (** markers) confirmed by deterministicFindings — minor but real presentation failure.; Missing the 'say it out loud' rehearsal cue that the excellent example includes, making the move slightly less concrete as a tonight action.
+- Suggested fix: Inject a one-phrase callback to the actual rep data ('last week's run had nine items — nothing got the weight') so the diagnosis is visibly earned from evidence, and close with an explicit rehearsal instruction ('say it out loud once') to make the move fully testable.
 
 ```
 REPLY:
-That's the right diagnosis — when every update carries equal weight, nothing registers.
+That's the exact problem to solve the night before: the update reads as a list, so nothing lands as important.
 
-The move is to lead with one sentence that names what the week means, not what happened. Something like: "This week we closed the gap on X — here's why that changes what we do next." Everything else becomes supporting detail under that frame.
+The move is to pick the one thing that matters most this week — the decision, the risk, the shift — lead with it in one sentence, then fit the rest of the updates underneath it as evidence or context. Everything gets a home; only one thing gets the weight.
 
-Tomorrow, pick the single most consequential item from your list and open with its implication. That tests whether the room tracks before you've said anything else.
+For tomorrow: open with "The one thing you need to know this week is ___." Fill that blank tonight, and the whole update organizes itself around it.
 ```
 
-## talk-too-fast — **65/100**
+## cold-start-no-data — **65/100**
+
+- Category: `cold-start` · turn: `groundedRead` · voice: `none`
+- User turn: "What should I work on?"
+- Expected move: Be honest that there's no baseline yet WITHOUT the banned no-data openings ('Since we do not have...', 'no rated sessions yet'). Point at the one concrete first action (do a first rep so there's something to read) in plain, warm language. Do NOT stack intake questions, do NOT ask 'what's the interview for' style questions, do NOT invent stats.
+- Judge dims: IQ 18/25 · EQ 17/25 · Mem 8/20 · Interv 11/15 · Feel 11/15 · closerTo=excellent
+- Judge: No closing pull — drops the user at an instruction instead of inviting action now (missing the 'Want to go?' energy of the excellent example); Slightly decorative second sentence ('a work update, a pitch, an opinion') adds texture but doesn't sharpen the single move; 'Sets the target' is mild padding — says nothing the user can act on
+- Suggested fix: End with a direct, single-word-answer invitation ('Want to go now?' or 'Ready?') so the reply doesn't just describe the move but triggers it — that one line closes the gap to the excellent example.
+
+```
+REPLY:
+No baseline yet, so start there — one recorded rep gives something real to coach from.
+
+Pick a topic you'd actually say in the next week (a work update, a pitch, an opinion) and record 60 seconds. That first rep sets the target.
+```
+
+## say-like — **65/100**
 
 - Category: `mechanics` · turn: `groundedRead` · voice: `authoritative`
-- User turn: "I talk way too fast, people can't keep up."
-- Expected move: Cite the actual pace (215) against his low pause rate (0.09) — this isn't a confidence problem, it's a missing gap between sentences. Fix the pause, not the speed: insert a break at sentence boundaries so each point has room to land, rather than telling him to consciously slow his rate of speech. One move framed as a test.
-- Judge dims: IQ 19/25 · EQ 16/25 · Mem 14/20 · Interv 10/15 · Feel 12/15 · closerTo=between
-- Judge: 'After your second sentence' is an arbitrary and incorrect target — the move should be every sentence boundary, which is what the contextBlock supports; Yesterday's rep (score 71, clean content, pace held at 215) is not used to reinforce that this is a structural pattern, not a one-off — wasted evidence; The emotional beat ('That tracks') is too thin for a user who is frustrated with himself and specifically wanting a real mechanism over vague advice
-- Suggested fix: Replace 'after your second sentence' with 'at every full stop' (matching the actual mechanism) and add one clause referencing yesterday's rep to show the pattern is confirmed, not hypothesized — e.g., 'you had clean content yesterday and still held 215 with almost no gap, so this is wired in, not a nerves problem.'
-
-```
-REPLY:
-That tracks — 215 wpm with a pause rate of 0.09 is a lot of ground with almost no air in it.
-
-The fix isn't slowing each word down; it's putting one deliberate gap after your second sentence. Hold a silent beat there — about one second — and let the idea land before the next one starts.
-
-Test that in a 60-second rep and see if the pace feels different to you.
-```
-
-## i-ramble — **65/100**
-
-- Category: `mechanics` · turn: `groundedRead` · voice: `concise`
-- User turn: "I ramble — I start a point and three minutes later I'm somewhere else."
-- Expected move: Name the actual mechanism from the rep: he opens on the point, then keeps layering side detail because nothing tells him to stop. The fix is an explicit stopping rule (state the point, give one supporting reason, then end) not 'be more concise'. One move, framed as a test. Concise register: short, direct.
-- Judge dims: IQ 19/25 · EQ 17/25 · Mem 15/20 · Interv 9/15 · Feel 11/15 · closerTo=between
-- Judge: Second move bundled in: the silent-beat self-check is a separate cognitive intervention alongside the 60-second cap; The core stopping rule is underspecified — 'state the point, give one reason, then stop' (the clean rule from the expected move) never appears; instead a vague self-questioning heuristic substitutes for it; Register is close but the three-block paragraph structure introduces mild report-voice residue
-- Suggested fix: Collapse to one stopping rule — 'state the point, one reason, then stop' — and drop the silent-beat self-check entirely; the 60-second cap can frame the test but shouldn't share space with a second behavioral instruction.
-
-```
-REPLY:
-That matches what yesterday's rep showed: you opened with the point, then added three side stories, and closed on a weaker version of what you'd already said.
-
-The fix isn't cutting content — it's stopping sooner. After you land the point, hold one silent beat, then ask yourself: does the next sentence add to the point, or explain it again?
-
-One rep: make a 60-second argument, then stop at 60 seconds exactly.
-```
-
-## thats-not-informative — **67/100**
-
-- Category: `trust-repair` · turn: `trustRepair` · voice: `concise`
-- User turn: "That's not informative."
-- Expected move: Own the miss in one beat (the prior reply WAS vague), then immediately deliver the specific read it should have given: the point arrived in sentence 4 after 3 sentences of warm-up. Give one concrete move (lead with the point). No defending the previous answer, no narrating the coaching change ('I'll cut the fluff'), no robotic trust-repair opener.
-- Judge dims: IQ 21/25 · EQ 17/25 · Mem 16/20 · Interv 11/15 · Feel 8/15 · closerTo=between
-- Judge: Report-voice metric dump ('Score 74, 5 fillers in 68 seconds') breaks the spoken cadence — the excellent example doesn't list stats, it narrates the observation; Bundling 'one sentence, then your reason' is a second micro-move layered onto the primary instruction; Missing the test framing ('if it survives without the runway') that makes the move feel like a discovery rather than a command
-- Suggested fix: Strip the raw-metric line and replace with a narrated observation ('74 score, and your point didn't show until sentence four — the first three were just runway'); add a lightweight test frame after the move so it reads as a hypothesis to run, not a verdict.
-
-```
-REPLY:
-Fair. Score 74, 5 fillers in 68 seconds, and your point didn't land until sentence 4. The first 3 sentences were throat-clearing. Lead with the point next rep — one sentence, then your reason.
-```
-
-## felt-cold — **67/100**
-
-- Category: `trust-repair` · turn: `trustRepair` · voice: `warm`
-- User turn: "That felt kind of cold."
-- Expected move: Own the coldness in one plain beat, then respond to what he actually said (it felt awful) before any number: this looks like a wobble tied to losing his place, not a reversal of last week's clean rep. One gentle move. No leading with the scorecard again, no therapy language.
-- Judge dims: IQ 18/25 · EQ 21/25 · Mem 15/20 · Interv 10/15 · Feel 11/15 · closerTo=excellent
+- User turn: "I say 'like' constantly and I hate it."
+- Expected move: Do not shame the word itself or treat all 'like' as bad — distinguish stalling 'like' (filler) from descriptive 'like' (semantic, fine). Cite the 8/min figure and the rep note. Coach the pause as the replacement for the stalling use only: swap the reflex for a silent beat. Frame as a test, not a guarantee of elimination.
+- Judge dims: IQ 21/25 · EQ 18/25 · Mem 16/20 · Interv 13/15 · Feel 11/15 · closerTo=excellent
 - Deterministic: scaffoldLabel(".
 
-Next rep:")
-- Judge: Move bundles two instructions ('slowly' + 'silent beat') instead of one clean cue; Not framed as a test or experiment — stated as prescription; Slight report-voice residue in 'One rough patch mid-rep isn't the story; it's just the moment that needs the work'
-- Suggested fix: Collapse the next-rep move to a single cue ('If you lose the thread, pause — one beat of silence — then pick back up') and frame it as a test ('try it next rep and see if it steadies you') to match the warm-and-testable standard.
+Next rep:"); tooLong
+- Judge: Scaffold label detected ('Next rep:') introduces mild report-voice residue (-3 applied in dialogueFeel).; Opening sentence ('That frustration is real') is slightly softer/therapy-adjacent than the authoritative voice register warrants.; The move loses the 'when you feel it coming' cue present in the excellent example, making it slightly less anchored to the moment of temptation.
+- Suggested fix: Remove the colon label ('Next rep:') and fold the move into a single flowing sentence that includes the felt-cue ('when you feel it coming, hold one beat') — this kills the report-voice residue and sharpens the authoritative register in one edit.
 
 ```
 REPLY:
-Fair. That read like a report, not a person.
+That frustration is real — noticing it on a live call is exactly the moment it becomes coachable.
 
-What showed was real — the rep did drop after you lost your place. But last week's 84 with 3 fillers didn't disappear. That's still yours. One rough patch mid-rep isn't the story; it's just the moment that needs the work.
+Your baseline is 8 fillers per minute, and yesterday's rep flagged the same pattern: 'like' landing mid-sentence with nothing following it, no comparison, no example. That's the stalling slot, not a vocabulary problem.
 
-Next rep: find your place again by landing the opening sentence slowly, then hold one silent beat before you continue.
+Next rep: run 60 seconds, and every time 'like' would land, hold a silent beat instead. That tests whether the pause does the same job without the word.
+```
+
+## why-cant-straight-answer — **67/100**
+
+- Category: `trust-repair` · turn: `trustRepair` · voice: `concise`
+- User turn: "Why can't you just give me a straight answer?"
+- Expected move: Own the dodge in one word-length beat, then answer directly: yes, on fillers — down from 5.5 to 3.2 per minute over two weeks, best rep yet this week. No on pace under pressure — that still spikes. One move targeting the pace gap. No hedge-qualifying the verdict itself.
+- Judge dims: IQ 18/25 · EQ 20/25 · Mem 15/20 · Interv 7/15 · Feel 13/15 · closerTo=between
+- Judge: No concrete next move — 'that's where to go next' is a pointer, not a prescription; the excellent example gives an exact rep design; Pace spike under pressure is named but not characterized (when does it happen, what does it look like) — slightly softer diagnosis than the data supports; Slight decorative feel to the pace line without the actionable close — the reply lands on problem identification, not a testable intervention
+- Suggested fix: After naming the pace problem, add one sentence with a specific rep format (e.g., 'Next time you get a pressure question, hold your normal pace through the first full sentence before you let it accelerate') — that's the only thing keeping this reply from the excellent band.
+
+```
+REPLY:
+You are. 3 fillers in 60 seconds is your best count on record — down from a 5.5/min baseline. That's a real number, not reassurance.
+
+Pace under pressure is still the open problem. That's where to go next.
+```
+
+## confidence-ending — **68/100**
+
+- Category: `confidence-ending` · turn: `groundedRead` · voice: `authoritative`
+- User turn: "I always trail off at the end of what I'm saying, like my voice goes up and it sounds like a question. How do I end strong?"
+- Expected move: Name the specific mechanism from the STRUCTURE READ: he lands the point then keeps going, adding a trailing softener with rising pitch. The fix is to STOP on the strong sentence — end the sentence as the point and hold the silence, don't fill it. One concrete move (make the last sentence the ask, then stop; no 'so yeah'). Authoritative register: declarative.
+- Judge dims: IQ 22/25 · EQ 19/25 · Mem 16/20 · Interv 13/15 · Feel 12/15 · closerTo=excellent
+- Deterministic: scaffoldLabel(".
+
+Next rep:"); tooLong
+- Judge: Scaffold label 'Next rep:' still present — mild report-voice residue even though deterministicFindings flagged it.; Does not explicitly name 'stopping on the strong sentence' as the mechanism with the same crispness as the excellent example ('you need an earlier full stop'), slightly diluting the diagnostic sharpness.
+- Suggested fix: Remove the 'Next rep:' label and fold the test directive into the preceding sentence as natural speech — e.g., 'In the next one, stop on the point, cut the add-on, and let the silence sit' — to eliminate report-voice residue entirely.
+
+```
+REPLY:
+Your close today showed it clearly — the point landed, then you added "so yeah" with a rising pitch and it softened everything before it.
+
+The fix is one habit: say the final sentence, then hold a silent beat instead of filling it. The silence is the period. Anything you add after the strong sentence is the problem, not the warmup.
+
+Next rep: stop on the point. No trailing word. That tests whether cutting the add-on is all you need.
+```
+
+## awkward-pauses — **68/100**
+
+- Category: `mechanics` · turn: `groundedRead` · voice: `warm`
+- User turn: "When I pause it just feels awkward and everyone waits."
+- Expected move: Validate that the feeling is real, then reframe: the awkwardness isn't the silence itself, it's that the pause is empty rather than purposeful. Give the pause a job (already choosing the next word during it) so it reads as composed rather than stalled. One move, framed as a test. Warm register.
+- Judge dims: IQ 20/25 · EQ 20/25 · Mem 14/20 · Interv 9/15 · Feel 11/15 · closerTo=excellent
+- Deterministic: tooLong
+- Judge: Move pivots to a physical cue (lean/exhale) rather than the more precise cognitive anchor (choose your next word during the pause) — a slightly weaker intervention than what the case formulation supports.; Bundles two options in the one move ('lean or exhale'), adding a small hedge where a single instruction would be sharper.; Marginally over the length cap — one sentence could be cut without losing anything.
+- Suggested fix: Replace the physical-cue move with the exact cognitive job from the formulation — 'use the pause to land on your next sentence before you leave it' — and cut to one option, one test.
+
+```
+REPLY:
+That feeling is real — and it's probably not the pause length that's the problem.
+
+The two pauses in today's rep both ran long, then you rushed the line after. That pattern suggests the pause feels like dead air because nothing is carrying it — your face, your breath, your sense of where the next word is going.
+
+Test this: pause with a small forward lean or a single slow exhale — something that reads as "I'm building toward something", not "I've stopped". That changes how the silence lands for the room.
 ```
 

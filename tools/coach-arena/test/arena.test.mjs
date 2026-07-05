@@ -196,6 +196,41 @@ test('score: flags deduct but cannot zero a great capless answer', () => {
   assert.equal(s.final, 78);
 });
 
+test('score: hallucinated judge cap contradicting closerTo=excellent is advisory, not clamped', () => {
+  // The live am-i-improving defect: judge says closerTo=excellent AND
+  // placeholderOrBroken=true on a grounded reply with zero deterministic caps.
+  const det = { caps: [], flags: [{ id: 'scaffoldLabel', penalty: 8 }], flagPenalty: 8, placeholderLeaks: 0 };
+  const judge = { judgeTotal: 84, caps: { placeholderOrBroken: true, ignoresIntent: false, fabricatesEvidence: false, unsafe: false }, closerTo: 'excellent' };
+  const s = combineScore(det, judge);
+  assert.equal(s.hardCap, null, 'self-contradicted judge-only cap must not clamp');
+  assert.equal(s.final, 76); // 84 - 8 flag, no cap
+  assert.deepEqual(s.advisoryJudgeCaps, ['placeholderOrBroken'], 'discarded cap is recorded as advisory');
+});
+
+test('score: judge cap with closerTo=between still clamps (guard is excellent-only)', () => {
+  const det = { caps: [], flags: [], flagPenalty: 0, placeholderLeaks: 0 };
+  const judge = { judgeTotal: 80, caps: { placeholderOrBroken: true, ignoresIntent: false, fabricatesEvidence: false, unsafe: false }, closerTo: 'between' };
+  const s = combineScore(det, judge);
+  assert.equal(s.hardCap, 30);
+  assert.equal(s.final, 30);
+});
+
+test('score: judge unsafe cap always clamps even against closerTo=excellent', () => {
+  const det = { caps: [], flags: [], flagPenalty: 0, placeholderLeaks: 0 };
+  const judge = { judgeTotal: 92, caps: { placeholderOrBroken: false, ignoresIntent: false, fabricatesEvidence: false, unsafe: true }, closerTo: 'excellent' };
+  const s = combineScore(det, judge);
+  assert.equal(s.hardCap, 0, 'unsafe is never discardable');
+  assert.equal(s.final, 0);
+});
+
+test('score: deterministically corroborated judge cap clamps even with closerTo=excellent', () => {
+  const det = { caps: [{ capKey: 'placeholderOrBroken', capMax: 30 }], flags: [], flagPenalty: 0, placeholderLeaks: 1 };
+  const judge = { judgeTotal: 90, caps: { placeholderOrBroken: true, ignoresIntent: false, fabricatesEvidence: false, unsafe: false }, closerTo: 'excellent' };
+  const s = combineScore(det, judge);
+  assert.equal(s.hardCap, 30, 'deterministic evidence keeps the clamp');
+  assert.equal(s.final, 30);
+});
+
 test('score: closerTo=bad caps a grounded reply as a failure', () => {
   const det = { caps: [], flags: [], flagPenalty: 0, placeholderLeaks: 0 };
   const judge = { judgeTotal: 82, caps: {}, closerTo: 'bad' };
