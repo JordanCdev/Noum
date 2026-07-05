@@ -1,19 +1,35 @@
 # Coach Arena Failures
 
+## Production Evidence Gate
+
+- assessmentConfidence has only 1 distinct rounded value(s)
+
+## Trace Quality Gate
+
+- assessmentConfidence has only 1 distinct rounded value(s)
+
+Repeated proof-test hashes:
+- `15225bc3a8f5d742`: `repeating-yourself-005`, `filler-pressure-007`, `leadership-update-008`, `closing-ask-020`, `concise-answer-023`, `board-update-032`, `overexplaining-033`, `barge-in-045`, `real-world-outcome-047`
+- `1da8bfcae44e5806`: `interview-prep-006`, `personal-pattern-consent-012`, `too-much-writing-017`, `no-baseline-interview-018`, `opening-verdict-021`, `upcoming-conflict-028`, `fear-disagreement-034`, `evasive-polished-037`, `quote-guard-043`
+- `696c3d72287b1578`: `authoritative-distance-001`, `polite-however-pushback-003`, `not-easy-empathy-004`, `score-not-readiness-011`, `reject-hypothesis-013`, `leadership-transfer-capture-026`, `outcome-not-causation-027`, `authority-under-pressure-039`, `weekly-checkin-046`
+- `93c07d25ebae00fe`: `confidence-ending-009`, `pace-rushing-019`, `pause-before-answer-022`, `confidence-clean-stop-025`, `presentation-nerves-030`, `live-latency-short-044`, `grammar-leak-048`, `placeholder-leak-049`
+- `505fa914ffce9bf3`: `examples-from-sessions-010`, `structure-one-reason-024`, `networking-intro-029`, `sales-pitch-031`, `emotional-disconnection-036`, `no-transcript-fabrication-042`
+- `fc0e67e26d92ee08`: `lack-conviction-035`, `timidity-038`, `semantic-filler-use-040`, `prompt-echo-041`
+- `29dfb6faa4ac37c7`: `not-informative-trust-repair-002`, `markdown-tts-015`
+- `9eb06db8540c3377`: `cold-generic-016`, `assistant-wrapper-050`
+
 ## examples-from-sessions-010 (groundedRead)
 
-Score: `50/100`
+Score: `61/100`
 
 User: Can you give me an example of me doing this in sessions?
 
 Failure reasons:
-- fixture disqualifier triggered: no example
-- fixture-specific disqualifier triggered
-- reply does not match expected coach move
+- No explicit reason; score below threshold.
 
 Suggested fix:
 
-Answer the requested move: Give one verified example, explain why it shows the pattern, then one move.
+Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## outcome-not-causation-027 (groundedRead)
 
@@ -30,7 +46,7 @@ Answer the requested move: Reject causal proof, name association, ask what to re
 
 ## upcoming-conflict-028 (quickMove)
 
-Score: `63/100`
+Score: `61/100`
 
 User: I have a difficult conversation tonight. What should I practice?
 
@@ -43,69 +59,42 @@ Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## networking-intro-029 (quickMove)
 
-Score: `50/100`
+Score: `63/100`
 
 User: I ramble when introducing myself at networking events.
 
 Failure reasons:
-- reply does not match expected coach move
+- No explicit reason; score below threshold.
 
 Suggested fix:
 
-Answer the requested move: Build a 20-second intro with role, value, ask; ask for first rep if no data.
-
-## presentation-nerves-030 (groundedRead)
-
-Score: `50/100`
-
-User: My presentation sounds polished but flat. What is missing?
-
-Failure reasons:
-- reply does not match expected coach move
-
-Suggested fix:
-
-Answer the requested move: Acknowledge limits, identify structure vs energy gap as hypothesis, prescribe emphasis test.
+Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## sales-pitch-031 (quickMove)
 
-Score: `50/100`
+Score: `68/100`
 
 User: My sales pitch loses people after the first minute.
 
 Failure reasons:
-- reply does not match expected coach move
+- No explicit reason; score below threshold.
 
 Suggested fix:
 
-Answer the requested move: Add one concrete customer example after first claim, then return to ask.
-
-## fear-disagreement-034 (groundedRead)
-
-Score: `50/100`
-
-User: Am I afraid to disagree?
-
-Failure reasons:
-- reply does not match expected coach move
-
-Suggested fix:
-
-Answer the requested move: Do not diagnose fear; keep to observable delay and ask fit.
+Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## lack-conviction-035 (deepAssessment)
 
-Score: `50/100`
+Score: `59/100`
 
 User: Do I lack conviction?
 
 Failure reasons:
 - deep assessment lacks verdict/evidence calibration
-- reply does not match expected coach move
 
 Suggested fix:
 
-Answer the requested move: Avoid identity claim; name hedge-control evidence and proof test.
+Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## emotional-disconnection-036 (groundedRead)
 
@@ -124,7 +113,7 @@ Answer the requested move: Validate self-report, preserve structure, change one 
 
 ## evasive-polished-037 (deepAssessment)
 
-Score: `69/100`
+Score: `63/100`
 
 User: Could this sound polished but evasive?
 
@@ -151,36 +140,6 @@ Suggested fix:
 
 Start by naming the user's friction in human language, then give one changed coaching move.
 
-## prompt-echo-041 (groundedRead)
-
-Score: `50/100`
-
-User: The prompt made me repeat the phrase. Is that my filler?
-
-Failure reasons:
-- fixture disqualifier triggered: no fairness boundary
-- fixture-specific disqualifier triggered
-- reply does not match expected coach move
-
-Suggested fix:
-
-Answer the requested move: Exclude prompt echo and identify only user-generated disfluency.
-
-## quote-guard-043 (groundedRead)
-
-Score: `50/100`
-
-User: Did I actually say that?
-
-Failure reasons:
-- fixture disqualifier triggered: no correction
-- fixture-specific disqualifier triggered
-- reply does not match expected coach move
-
-Suggested fix:
-
-Answer the requested move: Retract unverified quote and restate only supported pattern.
-
 ## live-latency-short-044 (quickMove)
 
 Score: `50/100`
@@ -188,26 +147,12 @@ Score: `50/100`
 User: Quickly, what do I do next?
 
 Failure reasons:
+- missing evidence anchor
 - reply does not match expected coach move
 
 Suggested fix:
 
 Answer the requested move: One short coach read and action, no essay.
-
-## weekly-checkin-046 (groundedRead)
-
-Score: `50/100`
-
-User: This week felt harder even though my score improved.
-
-Failure reasons:
-- fixture disqualifier triggered: no adaptation
-- fixture-specific disqualifier triggered
-- reply does not match expected coach move
-
-Suggested fix:
-
-Answer the requested move: Hold both metric improvement and felt difficulty, ask one discriminating question or prescribe lower-friction test.
 
 ## real-world-outcome-047 (groundedRead)
 
@@ -231,6 +176,7 @@ Score: `50/100`
 User: What is the one move?
 
 Failure reasons:
+- missing evidence anchor
 - reply does not match expected coach move
 
 Suggested fix:
@@ -244,6 +190,7 @@ Score: `50/100`
 User: Can you coach this?
 
 Failure reasons:
+- missing evidence anchor
 - reply does not match expected coach move
 
 Suggested fix:

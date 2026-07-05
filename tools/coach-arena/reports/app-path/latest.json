@@ -1,33 +1,24 @@
 {
   "candidate": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
   "comparison": {
-    "averageDelta": 0.5,
+    "averageDelta": 0.0,
     "candidateChanged": false,
-    "changedScoreCount": 1,
-    "clearedFailureFixtureIDs": [
-      "assistant-wrapper-050"
-    ],
-    "failureCountDelta": -1,
+    "changedScoreCount": 0,
+    "clearedFailureFixtureIDs": [],
+    "failureCountDelta": 0,
     "fixtureCountChanged": false,
-    "largestScoreChanges": [
-      {
-        "current": 75,
-        "delta": 25,
-        "id": "assistant-wrapper-050",
-        "previous": 50
-      }
-    ],
+    "largestScoreChanges": [],
     "newlyFailingFixtureIDs": [],
     "passesChanged": false,
     "placeholderLeaksDelta": 0,
     "previousCandidate": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
-    "previousGeneratedAt": "2026-06-30T23:58:49+00:00",
+    "previousGeneratedAt": "2026-07-05T23:07:51+00:00",
     "status": "compared",
     "typeAverageDeltas": {
       "deepAssessment": 0.0,
       "groundedRead": 0.0,
       "quickMove": 0.0,
-      "trustRepair": 2.77
+      "trustRepair": 0.0
     }
   },
   "coverage": {
@@ -98,7 +89,7 @@
     "unmatchedFixtureCount": 0,
     "unmatchedFixtureIDs": []
   },
-  "generatedAt": "2026-07-01T00:06:22+00:00",
+  "generatedAt": "2026-07-05T23:08:30+00:00",
   "results": [
     {
       "fixture": {
@@ -186,14 +177,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 67,
-          "timeToFirstVisibleTokenMs": 20
+          "timeToCompleteReplyMs": 32,
+          "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
-          "assessmentConfidence": 0.73,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "deepAssessment"
@@ -219,21 +210,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: filler-silent-reset, structure-land-the-close, voice-authoritative +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 45,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "filler-silent-reset",
-            "structure-land-the-close",
-            "voice-authoritative",
-            "structure-signposting"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -332,14 +316,16 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I missed the actual question and answered around the useful read. Your last rep shows warmth came before the recommendation, so next rep say the recommendation first, then one reassurance.",
-        "gitCommit": "161b533d",
-        "issues": [],
+        "gitCommit": "854c5529",
+        "issues": [
+          "reliability:floorConfidenceWithEvidence"
+        ],
         "latency": {
-          "timeToCompleteReplyMs": 61,
-          "timeToFirstVisibleTokenMs": 20
+          "timeToCompleteReplyMs": 25,
+          "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
-          "assessmentConfidence": 0.67,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "29dfb6faa4ac37c7",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "trustRepair"
@@ -365,21 +351,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: rhetoric-parallel-structure, filler-anchor-word, filler-end-of-sentence +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 30,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "rhetoric-parallel-structure",
-            "filler-anchor-word",
-            "filler-end-of-sentence",
-            "filler-pause-beats-filler"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -477,15 +456,15 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The actual read is warmth came before the recommendation, so the listener waits for the point. Next rep, say the recommendation first, then one reassurance.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 60,
-          "timeToFirstVisibleTokenMs": 60
+          "timeToCompleteReplyMs": 23,
+          "timeToFirstVisibleTokenMs": 23
         },
         "memory": {
-          "assessmentConfidence": 0.69,
-          "proofTestHash": "505fa914ffce9bf3",
+          "assessmentConfidence": 0.2,
+          "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
         },
@@ -510,21 +489,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: conflict-name-it-then-steer, conflict-non-defensive-repair, rhetoric-rhetorical-question +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 76,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "conflict-name-it-then-steer",
-            "conflict-non-defensive-repair",
-            "rhetoric-rhetorical-question",
-            "interview-buy-thinking-time"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -622,14 +594,16 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I made that sound easier than it feels under pressure. The actual read is verdict-first structure gets harder under pressure, so shrink the next rep to one sentence before adding the full answer back.",
-        "gitCommit": "161b533d",
-        "issues": [],
+        "gitCommit": "854c5529",
+        "issues": [
+          "reliability:floorConfidenceWithEvidence"
+        ],
         "latency": {
-          "timeToCompleteReplyMs": 64,
-          "timeToFirstVisibleTokenMs": 21
+          "timeToCompleteReplyMs": 26,
+          "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
-          "assessmentConfidence": 0.67,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "trustRepair"
@@ -655,21 +629,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: rhetoric-antithesis, structure-rule-of-three, rhetoric-parallel-structure +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 14,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "rhetoric-antithesis",
-            "structure-rule-of-three",
-            "rhetoric-parallel-structure",
-            "pacing-chunk-and-pause"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -738,21 +705,21 @@
           }
         ],
         "checkFailures": [],
-        "diagnosticIQ": 14,
-        "dialogueFeel": 15,
-        "eqAttunement": 21,
+        "diagnosticIQ": 17,
+        "dialogueFeel": 13,
+        "eqAttunement": 20,
         "failureReasons": [],
         "interventionQuality": 15,
-        "overall": 80,
-        "personalMemory": 15,
-        "rawOverall": 80,
+        "overall": 82,
+        "personalMemory": 17,
+        "rawOverall": 82,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.303
+          "excellentAnswerExample": 0.194
         },
         "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.",
+      "reply": "Fair push. I repeated the same move instead of advancing the coaching. Your last rep gives one safe signal, trust repair signal I repeated the same coaching move instead of advancing the read, so keep the current target but change the proof test so the next rep teaches us something new.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -767,18 +734,21 @@
           "userTurn": "You're repeating yourself."
         },
         "fallback": {
-          "qualityGateAcceptedFallback": false,
-          "typedAssessmentFallbackApplied": false
+          "qualityGateAcceptedFallback": true,
+          "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.",
-        "gitCommit": "161b533d",
-        "issues": [],
+        "finalReply": "Fair push. I repeated the same move instead of advancing the coaching. Your last rep gives one safe signal, trust repair signal I repeated the same coaching move instead of advancing the read, so keep the current target but change the proof test so the next rep teaches us something new.",
+        "gitCommit": "854c5529",
+        "issues": [
+          "semantic:missingRepairInsight",
+          "reliability:floorConfidenceWithEvidence"
+        ],
         "latency": {
-          "timeToCompleteReplyMs": 64,
-          "timeToFirstVisibleTokenMs": 22
+          "timeToCompleteReplyMs": 68,
+          "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
-          "assessmentConfidence": 0.67,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "15225bc3a8f5d742",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "trustRepair"
@@ -788,37 +758,31 @@
           "targetCoachReply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence."
         },
         "provider": {
-          "model": "gpt-4o-mini",
-          "name": "OpenAI",
-          "tierChosen": null,
+          "model": "CoachAssessment",
+          "name": "Typed judgement fallback",
+          "tierChosen": "claudeReasoning",
           "tierRequested": "claudeReasoning"
         },
         "rawReply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.",
         "reasoning": {
           "qualityGateEvents": [
-            "passed"
+            "rejected:semantic:missingRepairInsight",
+            "fallback:typedAssessment"
           ],
-          "qualityGateOutcome": "passed",
+          "qualityGateOutcome": "fallback:typedAssessment",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: conflict-non-defensive-repair, interview-tell-me-about-yourself, rhetoric-rhetorical-question +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 26,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "conflict-non-defensive-repair",
-            "interview-tell-me-about-yourself",
-            "rhetoric-rhetorical-question",
-            "rhetoric-anaphora"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -911,14 +875,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 68,
-          "timeToFirstVisibleTokenMs": 68
+          "timeToCompleteReplyMs": 76,
+          "timeToFirstVisibleTokenMs": 76
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "1da8bfcae44e5806",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -944,9 +908,8 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
           "diagnosticReason": "Retrieved 4 cards: interview-answer-first, structure-frame-the-open, structure-signposting +1",
-          "hasDiagnosis": true,
+          "hasDiagnosis": false,
           "queryCharacterCount": 40,
           "queryPresent": true,
           "retrievedCardCount": 4,
@@ -957,8 +920,7 @@
             "interview-buy-thinking-time"
           ],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -1051,14 +1013,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and check whether fillers drop after that point.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 65,
-          "timeToFirstVisibleTokenMs": 65
+          "timeToCompleteReplyMs": 35,
+          "timeToFirstVisibleTokenMs": 35
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "15225bc3a8f5d742",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -1084,9 +1046,8 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
           "diagnosticReason": "Retrieved 4 cards: filler-pause-beats-filler, composure-sudden-death-one-line, composure-tactical-pause +1",
-          "hasDiagnosis": true,
+          "hasDiagnosis": false,
           "queryCharacterCount": 39,
           "queryPresent": true,
           "retrievedCardCount": 4,
@@ -1097,8 +1058,7 @@
             "interview-star-under-pressure"
           ],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -1191,14 +1151,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 61,
-          "timeToFirstVisibleTokenMs": 61
+          "timeToCompleteReplyMs": 26,
+          "timeToFirstVisibleTokenMs": 26
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "15225bc3a8f5d742",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -1224,21 +1184,19 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: leadership-summary-first-update, structure-thirty-second-update, progress-celebrate-the-behavior +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "Retrieved 4 cards: leadership-summary-first-update, structure-thirty-second-update, leadership-verdict-first +1",
+          "hasDiagnosis": false,
           "queryCharacterCount": 60,
           "queryPresent": true,
           "retrievedCardCount": 4,
           "retrievedCardIDs": [
             "leadership-summary-first-update",
             "structure-thirty-second-update",
-            "progress-celebrate-the-behavior",
-            "leadership-verdict-first"
+            "leadership-verdict-first",
+            "progress-celebrate-the-behavior"
           ],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -1331,14 +1289,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 61,
-          "timeToFirstVisibleTokenMs": 61
+          "timeToCompleteReplyMs": 26,
+          "timeToFirstVisibleTokenMs": 26
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "93c07d25ebae00fe",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -1364,21 +1322,14 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: filler-end-of-sentence, presentation-close-is-the-ask, structure-land-the-close +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 40,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "presentation-close-is-the-ask",
-            "structure-land-the-close",
-            "leadership-gravity-fewer-words"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -1417,19 +1368,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 60,
-            "name": "fixtureDisqualifier"
-          },
-          {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -1440,31 +1386,29 @@
             "applied": false,
             "maxScore": 0,
             "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [
-          "fixtureDisqualifier:no-example",
-          "ignoresIntent"
-        ],
-        "diagnosticIQ": 11,
-        "dialogueFeel": 15,
+        "checkFailures": [],
+        "diagnosticIQ": 12,
+        "dialogueFeel": 13,
         "eqAttunement": 13,
-        "failureReasons": [
-          "fixture disqualifier triggered: no example",
-          "fixture-specific disqualifier triggered",
-          "reply does not match expected coach move"
-        ],
+        "failureReasons": [],
         "interventionQuality": 15,
-        "overall": 50,
-        "personalMemory": 9,
-        "rawOverall": 63,
+        "overall": 61,
+        "personalMemory": 8,
+        "rawOverall": 61,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.031
+          "excellentAnswerExample": 0.407
         },
-        "suggestedFix": "Answer the requested move: Give one verified example, explain why it shows the pattern, then one move."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so make the recommendation memorable with one short phrase the listener could repeat afterward.",
+      "reply": "One specific example is the latest rep: the reasons were clear before there was a concrete scene. That shows the pattern because the listener gets logic before a picture. Next rep, add one example after the first reason, then return to the ask.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -1482,15 +1426,15 @@
           "qualityGateAcceptedFallback": true,
           "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so make the recommendation memorable with one short phrase the listener could repeat afterward.",
-        "gitCommit": "161b533d",
+        "finalReply": "One specific example is the latest rep: the reasons were clear before there was a concrete scene. That shows the pattern because the listener gets logic before a picture. Next rep, add one example after the first reason, then return to the ask.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 63,
-          "timeToFirstVisibleTokenMs": 63
+          "timeToCompleteReplyMs": 30,
+          "timeToFirstVisibleTokenMs": 30
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "505fa914ffce9bf3",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -1517,21 +1461,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: structure-prep, interview-answer-first, structure-star +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 56,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "structure-prep",
-            "interview-answer-first",
-            "structure-star",
-            "progress-wobble-not-verdict"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -1625,14 +1562,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Not proven yet. The latest timed rep score is useful evidence, and the transcript has a recommendation plus a clear decision, but board readiness needs pressure evidence because the decision ask has to survive stakes. Missing: one board-style rehearsal. Proof test: record 75 seconds with headline, one metric, decision ask, clean stop.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 67,
-          "timeToFirstVisibleTokenMs": 21
+          "timeToCompleteReplyMs": 31,
+          "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
-          "assessmentConfidence": 0.73,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "deepAssessment"
@@ -1658,21 +1595,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: leadership-summary-first-update, structure-thirty-second-update, structure-minto-pyramid +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 44,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "leadership-summary-first-update",
-            "structure-thirty-second-update",
-            "structure-minto-pyramid",
-            "filler-anchor-word"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -1764,14 +1694,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 61,
-          "timeToFirstVisibleTokenMs": 61
+          "timeToCompleteReplyMs": 27,
+          "timeToFirstVisibleTokenMs": 27
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "1da8bfcae44e5806",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -1797,21 +1727,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: conflict-non-defensive-repair, rhetoric-parallel-structure, pacing-target-band +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 37,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "conflict-non-defensive-repair",
-            "rhetoric-parallel-structure",
-            "pacing-target-band",
-            "filler-end-of-sentence"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -1908,15 +1831,15 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 58,
-          "timeToFirstVisibleTokenMs": 58
+          "timeToCompleteReplyMs": 21,
+          "timeToFirstVisibleTokenMs": 21
         },
         "memory": {
-          "assessmentConfidence": 0.69,
-          "proofTestHash": "505fa914ffce9bf3",
+          "assessmentConfidence": 0.2,
+          "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
         },
@@ -1938,24 +1861,17 @@
           "qualityGateOutcome": "passed",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
-          "visionScore": 92
+          "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: structure-thirty-second-update, presentation-close-is-the-ask, structure-frame-the-open +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 25,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "structure-thirty-second-update",
-            "presentation-close-is-the-ask",
-            "structure-frame-the-open",
-            "networking-concise-self-frame"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -2052,14 +1968,16 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it.",
-        "gitCommit": "161b533d",
-        "issues": [],
+        "gitCommit": "854c5529",
+        "issues": [
+          "reliability:floorConfidenceWithEvidence"
+        ],
         "latency": {
-          "timeToCompleteReplyMs": 52,
-          "timeToFirstVisibleTokenMs": 52
+          "timeToCompleteReplyMs": 13,
+          "timeToFirstVisibleTokenMs": 13
         },
         "memory": {
-          "assessmentConfidence": 0.7,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "f0584b862687f448",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "groundedRead"
@@ -2085,21 +2003,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: networking-memorable-hook, rhetoric-antithesis, structure-land-the-close +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 26,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "networking-memorable-hook",
-            "rhetoric-antithesis",
-            "structure-land-the-close",
-            "structure-rule-of-three"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -2197,14 +2108,16 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. Your last rep had 4 fillers, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape.",
-        "gitCommit": "161b533d",
-        "issues": [],
+        "gitCommit": "854c5529",
+        "issues": [
+          "reliability:floorConfidenceWithEvidence"
+        ],
         "latency": {
-          "timeToCompleteReplyMs": 63,
-          "timeToFirstVisibleTokenMs": 21
+          "timeToCompleteReplyMs": 28,
+          "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
-          "assessmentConfidence": 0.67,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "29dfb6faa4ac37c7",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "trustRepair"
@@ -2230,16 +2143,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "No cards matched turn",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 110,
           "queryPresent": true,
           "retrievedCardCount": 0,
           "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -2337,14 +2248,16 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance.",
-        "gitCommit": "161b533d",
-        "issues": [],
+        "gitCommit": "854c5529",
+        "issues": [
+          "reliability:floorConfidenceWithEvidence"
+        ],
         "latency": {
-          "timeToCompleteReplyMs": 61,
-          "timeToFirstVisibleTokenMs": 20
+          "timeToCompleteReplyMs": 25,
+          "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
-          "assessmentConfidence": 0.67,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "9eb06db8540c3377",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "trustRepair"
@@ -2370,16 +2283,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "No cards matched turn",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 63,
           "queryPresent": true,
           "retrievedCardCount": 0,
           "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -2476,14 +2387,16 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I used too much writing before the useful read. Your last rep gives enough signal: the close is the leak. Proof test: make the final sentence the ask and stop.",
-        "gitCommit": "161b533d",
-        "issues": [],
+        "gitCommit": "854c5529",
+        "issues": [
+          "reliability:floorConfidenceWithEvidence"
+        ],
         "latency": {
-          "timeToCompleteReplyMs": 64,
-          "timeToFirstVisibleTokenMs": 21
+          "timeToCompleteReplyMs": 25,
+          "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
-          "assessmentConfidence": 0.67,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "1da8bfcae44e5806",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "trustRepair"
@@ -2509,21 +2422,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: pacing-target-band, progress-celebrate-the-behavior, structure-minto-pyramid +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 35,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "pacing-target-band",
-            "progress-celebrate-the-behavior",
-            "structure-minto-pyramid",
-            "filler-silent-reset"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -2616,14 +2522,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your cold start is hard, so no fake read: there are no rated sessions. Use the first baseline rep as evidence: record a 60-second interview answer, answer first, give one proof, stop, then check whether sentence one gives the point.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 65,
-          "timeToFirstVisibleTokenMs": 65
+          "timeToCompleteReplyMs": 28,
+          "timeToFirstVisibleTokenMs": 28
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "1da8bfcae44e5806",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -2649,21 +2555,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: interview-buy-thinking-time, interview-answer-first, interview-star-under-pressure +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 47,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "interview-buy-thinking-time",
-            "interview-answer-first",
-            "interview-star-under-pressure",
-            "interview-tell-me-about-yourself"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -2756,14 +2655,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Yes, locally: the latest rep is 181 WPM, and the fillers rise after sentence one, so test one silent beat after the first sentence, not a slower whole answer.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 60,
-          "timeToFirstVisibleTokenMs": 60
+          "timeToCompleteReplyMs": 17,
+          "timeToFirstVisibleTokenMs": 17
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "93c07d25ebae00fe",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -2789,21 +2688,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: conflict-non-defensive-repair, composure-tactical-pause, pacing-held-beat-after-claim +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 13,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "conflict-non-defensive-repair",
-            "composure-tactical-pause",
-            "pacing-held-beat-after-claim",
-            "pacing-target-band"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -2895,14 +2787,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fix the final sentence: it recaps instead of asking for a decision, so make the last line the ask and stop before explaining it again.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 65,
-          "timeToFirstVisibleTokenMs": 65
+          "timeToCompleteReplyMs": 25,
+          "timeToFirstVisibleTokenMs": 25
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "15225bc3a8f5d742",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -2928,9 +2820,8 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
           "diagnosticReason": "Retrieved 4 cards: presentation-close-is-the-ask, structure-land-the-close, structure-thirty-second-update +1",
-          "hasDiagnosis": true,
+          "hasDiagnosis": false,
           "queryCharacterCount": 31,
           "queryPresent": true,
           "retrievedCardCount": 4,
@@ -2941,8 +2832,7 @@
             "structure-frame-the-open"
           ],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -3034,14 +2924,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Make sentence one the verdict. Your transcript warms into context before the point, so lead with the recommendation, give one reason, then stop.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 62,
-          "timeToFirstVisibleTokenMs": 62
+          "timeToCompleteReplyMs": 26,
+          "timeToFirstVisibleTokenMs": 26
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "1da8bfcae44e5806",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -3067,21 +2957,19 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: structure-land-the-close, structure-signposting, filler-silent-reset +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "Retrieved 4 cards: structure-land-the-close, structure-signposting, rhetoric-antithesis +1",
+          "hasDiagnosis": false,
           "queryCharacterCount": 34,
           "queryPresent": true,
           "retrievedCardCount": 4,
           "retrievedCardIDs": [
             "structure-land-the-close",
             "structure-signposting",
-            "filler-silent-reset",
-            "rhetoric-antithesis"
+            "rhetoric-antithesis",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -3174,14 +3062,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "That panic is the pressure cue because in pressure mode the pause disappears and the answer restarts. The signal to test is one silent beat before sentence one, then only the opener.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 58,
-          "timeToFirstVisibleTokenMs": 58
+          "timeToCompleteReplyMs": 31,
+          "timeToFirstVisibleTokenMs": 31
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "93c07d25ebae00fe",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -3207,21 +3095,19 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: composure-tactical-pause, networking-ask-before-assert, conflict-shared-goal +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "Retrieved 4 cards: composure-tactical-pause, networking-ask-before-assert, presentation-handle-qa +1",
+          "hasDiagnosis": false,
           "queryCharacterCount": 39,
           "queryPresent": true,
           "retrievedCardCount": 4,
           "retrievedCardIDs": [
             "composure-tactical-pause",
             "networking-ask-before-assert",
-            "conflict-shared-goal",
-            "presentation-handle-qa"
+            "presentation-handle-qa",
+            "structure-frame-the-open"
           ],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -3313,14 +3199,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 63,
-          "timeToFirstVisibleTokenMs": 63
+          "timeToCompleteReplyMs": 31,
+          "timeToFirstVisibleTokenMs": 31
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "15225bc3a8f5d742",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -3346,9 +3232,8 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
           "diagnosticReason": "Retrieved 4 cards: structure-land-the-close, pacing-chunk-and-pause, structure-signposting +1",
-          "hasDiagnosis": true,
+          "hasDiagnosis": false,
           "queryCharacterCount": 23,
           "queryPresent": true,
           "retrievedCardCount": 4,
@@ -3356,11 +3241,10 @@
             "structure-land-the-close",
             "pacing-chunk-and-pause",
             "structure-signposting",
-            "filler-end-of-sentence"
+            "structure-prep"
           ],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -3452,14 +3336,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your claim and reason are present; the salience hypothesis is direction because the reason is not tied to an implication or ask. Do not add more reasons. Use claim, one reason, implication, ask, then check whether the listener knows what to do next.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 63,
-          "timeToFirstVisibleTokenMs": 63
+          "timeToCompleteReplyMs": 29,
+          "timeToFirstVisibleTokenMs": 29
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "505fa914ffce9bf3",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -3485,21 +3369,14 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: structure-prep, voice-persuasive, structure-rule-of-three +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 60,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "structure-prep",
-            "voice-persuasive",
-            "structure-rule-of-three",
-            "social-invite-more"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -3591,14 +3468,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Cut the softener after the ask. The close keeps adding maybe or just after the decision, so make the ask and stop before the confidence leaks.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 62,
-          "timeToFirstVisibleTokenMs": 62
+          "timeToCompleteReplyMs": 27,
+          "timeToFirstVisibleTokenMs": 27
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "93c07d25ebae00fe",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -3624,21 +3501,19 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: structure-signposting, filler-end-of-sentence, structure-land-the-close +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "Retrieved 4 cards: structure-signposting, structure-land-the-close, social-invite-more +1",
+          "hasDiagnosis": false,
           "queryCharacterCount": 41,
           "queryPresent": true,
           "retrievedCardCount": 4,
           "retrievedCardIDs": [
             "structure-signposting",
-            "filler-end-of-sentence",
             "structure-land-the-close",
-            "social-invite-more"
+            "social-invite-more",
+            "filler-end-of-sentence"
           ],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -3736,15 +3611,15 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Check only the final 10 seconds of the 75-second update, because that is where the update transfers into the room. If the last sentence asks for alignment or a decision, keep it; if it recaps, rewrite the close.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 61,
-          "timeToFirstVisibleTokenMs": 61
+          "timeToCompleteReplyMs": 28,
+          "timeToFirstVisibleTokenMs": 28
         },
         "memory": {
-          "assessmentConfidence": 0.69,
-          "proofTestHash": "505fa914ffce9bf3",
+          "assessmentConfidence": 0.2,
+          "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
         },
@@ -3769,9 +3644,8 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
           "diagnosticReason": "Retrieved 4 cards: pacing-held-beat-after-claim, networking-memorable-hook, composure-recover-no-apology +1",
-          "hasDiagnosis": true,
+          "hasDiagnosis": false,
           "queryCharacterCount": 26,
           "queryPresent": true,
           "retrievedCardCount": 4,
@@ -3779,11 +3653,10 @@
             "pacing-held-beat-after-claim",
             "networking-memorable-hook",
             "composure-recover-no-apology",
-            "progress-celebrate-the-behavior"
+            "structure-thirty-second-update"
           ],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -3850,23 +3723,23 @@
         "checkFailures": [
           "ignoresIntent"
         ],
-        "diagnosticIQ": 11,
-        "dialogueFeel": 15,
+        "diagnosticIQ": 12,
+        "dialogueFeel": 13,
         "eqAttunement": 13,
         "failureReasons": [
           "reply does not match expected coach move"
         ],
-        "interventionQuality": 15,
+        "interventionQuality": 11,
         "overall": 50,
-        "personalMemory": 9,
-        "rawOverall": 63,
+        "personalMemory": 5,
+        "rawOverall": 54,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.028
+          "excellentAnswerExample": 0.03
         },
         "suggestedFix": "Answer the requested move: Reject causal proof, name association, ask what to repeat."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so run the same answer under a 60-90 second timer or pressure mode and keep the verdict first.",
+      "reply": "Pressure is the next lever: repeat the same answer under a timer and protect sentence one. Try this next: Run the same answer under a 60-90 second timer or pressure mode and keep the verdict first.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -3882,17 +3755,17 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": true
+          "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so run the same answer under a 60-90 second timer or pressure mode and keep the verdict first.",
-        "gitCommit": "161b533d",
+        "finalReply": "Pressure is the next lever: repeat the same answer under a timer and protect sentence one. Try this next: Run the same answer under a 60-90 second timer or pressure mode and keep the verdict first.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 77,
-          "timeToFirstVisibleTokenMs": 77
+          "timeToCompleteReplyMs": 35,
+          "timeToFirstVisibleTokenMs": 35
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -3902,38 +3775,31 @@
           "targetCoachReply": "I would not call it causation. It is useful association: you used the prepared close and your read was that the room stayed engaged. Keep the close; next time capture the exact question people asked afterward."
         },
         "provider": {
-          "model": "CoachAssessment",
-          "name": "Typed judgement fallback",
-          "tierChosen": "geminiFast",
+          "model": null,
+          "name": null,
+          "tierChosen": null,
           "tierRequested": "geminiFast"
         },
         "rawReply": "I would not call it causation. It is useful association: you used the prepared close and your read was that the room stayed engaged. Keep the close; next time capture the exact question people asked afterward.",
         "reasoning": {
           "qualityGateEvents": [
             "rejected:professional:missingInsightBridge",
-            "fallback:typedAssessment"
+            "failed:contentRejected"
           ],
-          "qualityGateOutcome": "fallback:typedAssessment",
+          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: leadership-hold-the-room-with-pause, composure-one-anchor-point, presentation-you-carry-not-slides +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 50,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "leadership-hold-the-room-with-pause",
-            "composure-one-anchor-point",
-            "presentation-you-carry-not-slides",
-            "presentation-handle-qa"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -3993,21 +3859,21 @@
           }
         ],
         "checkFailures": [],
-        "diagnosticIQ": 13,
-        "dialogueFeel": 13,
+        "diagnosticIQ": 11,
+        "dialogueFeel": 15,
         "eqAttunement": 13,
         "failureReasons": [],
         "interventionQuality": 15,
-        "overall": 63,
-        "personalMemory": 9,
-        "rawOverall": 63,
+        "overall": 61,
+        "personalMemory": 7,
+        "rawOverall": 61,
         "similarity": {
-          "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.077
+          "badAnswerExample": 0.05,
+          "excellentAnswerExample": 0.45
         },
         "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so record a 75-second answer where sentence one gives the verdict, sentence two gives one reason, and the final sentence names the ask.",
+      "reply": "Practice one boundary sentence tonight: state the disagreement, give one calm reason, then stop. That tests whether the point can land before you start defending it.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -4025,15 +3891,15 @@
           "qualityGateAcceptedFallback": true,
           "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so record a 75-second answer where sentence one gives the verdict, sentence two gives one reason, and the final sentence names the ask.",
-        "gitCommit": "161b533d",
+        "finalReply": "Practice one boundary sentence tonight: state the disagreement, give one calm reason, then stop. That tests whether the point can land before you start defending it.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 80,
-          "timeToFirstVisibleTokenMs": 80
+          "timeToCompleteReplyMs": 66,
+          "timeToFirstVisibleTokenMs": 66
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "1da8bfcae44e5806",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -4060,21 +3926,19 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: conflict-name-it-then-steer, conflict-shared-goal, conflict-non-defensive-repair +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "Retrieved 4 cards: conflict-name-it-then-steer, conflict-shared-goal, conflict-held-pause +1",
+          "hasDiagnosis": false,
           "queryCharacterCount": 64,
           "queryPresent": true,
           "retrievedCardCount": 4,
           "retrievedCardIDs": [
             "conflict-name-it-then-steer",
             "conflict-shared-goal",
-            "conflict-non-defensive-repair",
-            "conflict-held-pause"
+            "conflict-held-pause",
+            "conflict-non-defensive-repair"
           ],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -4108,14 +3972,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -4133,26 +3997,22 @@
             "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [
-          "ignoresIntent"
-        ],
-        "diagnosticIQ": 11,
+        "checkFailures": [],
+        "diagnosticIQ": 13,
         "dialogueFeel": 15,
         "eqAttunement": 13,
-        "failureReasons": [
-          "reply does not match expected coach move"
-        ],
+        "failureReasons": [],
         "interventionQuality": 15,
-        "overall": 50,
-        "personalMemory": 9,
+        "overall": 63,
+        "personalMemory": 7,
         "rawOverall": 63,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.0
+          "excellentAnswerExample": 0.094
         },
-        "suggestedFix": "Answer the requested move: Build a 20-second intro with role, value, ask; ask for first rep if no data."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so make the recommendation memorable with one short phrase the listener could repeat afterward.",
+      "reply": "Build a 20-second intro: role, value, ask. Because rambling starts when the listener cannot repeat the point, record one first rep and check whether the ask is clear by the final sentence.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -4170,15 +4030,15 @@
           "qualityGateAcceptedFallback": true,
           "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so make the recommendation memorable with one short phrase the listener could repeat afterward.",
-        "gitCommit": "161b533d",
+        "finalReply": "Build a 20-second intro: role, value, ask. Because rambling starts when the listener cannot repeat the point, record one first rep and check whether the ask is clear by the final sentence.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 71,
-          "timeToFirstVisibleTokenMs": 71
+          "timeToCompleteReplyMs": 47,
+          "timeToFirstVisibleTokenMs": 47
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "505fa914ffce9bf3",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -4205,21 +4065,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: networking-concise-self-frame, networking-memorable-hook, networking-ask-before-assert +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 54,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "networking-concise-self-frame",
-            "networking-memorable-hook",
-            "networking-ask-before-assert",
-            "interview-answer-first"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -4253,14 +4106,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -4278,26 +4131,22 @@
             "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [
-          "ignoresIntent"
-        ],
-        "diagnosticIQ": 12,
+        "checkFailures": [],
+        "diagnosticIQ": 21,
         "dialogueFeel": 15,
-        "eqAttunement": 13,
-        "failureReasons": [
-          "reply does not match expected coach move"
-        ],
+        "eqAttunement": 20,
+        "failureReasons": [],
         "interventionQuality": 15,
-        "overall": 50,
-        "personalMemory": 10,
-        "rawOverall": 65,
+        "overall": 87,
+        "personalMemory": 16,
+        "rawOverall": 87,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.0
+          "excellentAnswerExample": 1.0
         },
-        "suggestedFix": "Answer the requested move: Acknowledge limits, identify structure vs energy gap as hypothesis, prescribe emphasis test."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so use one silent beat after the verdict, then finish the answer without speeding up.",
+      "reply": "The words are structured; I cannot prove vocal energy from this text alone. Test the hypothesis by marking one sentence as the peak and recording it with a deliberate emphasis on the consequence.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -4312,18 +4161,18 @@
           "userTurn": "My presentation sounds polished but flat. What is missing?"
         },
         "fallback": {
-          "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": true
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so use one silent beat after the verdict, then finish the answer without speeding up.",
-        "gitCommit": "161b533d",
+        "finalReply": "The words are structured; I cannot prove vocal energy from this text alone. Test the hypothesis by marking one sentence as the peak and recording it with a deliberate emphasis on the consequence.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 85,
-          "timeToFirstVisibleTokenMs": 85
+          "timeToCompleteReplyMs": 36,
+          "timeToFirstVisibleTokenMs": 36
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "93c07d25ebae00fe",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -4333,38 +4182,30 @@
           "targetCoachReply": "The words are structured; I cannot prove vocal energy from this text alone. Test the hypothesis by marking one sentence as the peak and recording it with a deliberate emphasis on the consequence."
         },
         "provider": {
-          "model": "CoachAssessment",
-          "name": "Typed judgement fallback",
-          "tierChosen": "geminiFast",
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
           "tierRequested": "geminiFast"
         },
         "rawReply": "The words are structured; I cannot prove vocal energy from this text alone. Test the hypothesis by marking one sentence as the peak and recording it with a deliberate emphasis on the consequence.",
         "reasoning": {
           "qualityGateEvents": [
-            "rejected:professional:unanchoredCoaching",
-            "fallback:typedAssessment"
+            "passed"
           ],
-          "qualityGateOutcome": "fallback:typedAssessment",
+          "qualityGateOutcome": "passed",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: presentation-close-is-the-ask, filler-anchor-word, pacing-target-band +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 58,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "presentation-close-is-the-ask",
-            "filler-anchor-word",
-            "pacing-target-band",
-            "social-story-arc-small"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -4398,14 +4239,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -4423,26 +4264,22 @@
             "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [
-          "ignoresIntent"
-        ],
-        "diagnosticIQ": 12,
+        "checkFailures": [],
+        "diagnosticIQ": 16,
         "dialogueFeel": 15,
         "eqAttunement": 13,
-        "failureReasons": [
-          "reply does not match expected coach move"
-        ],
+        "failureReasons": [],
         "interventionQuality": 15,
-        "overall": 50,
-        "personalMemory": 10,
-        "rawOverall": 65,
+        "overall": 68,
+        "personalMemory": 9,
+        "rawOverall": 68,
         "similarity": {
-          "badAnswerExample": 0.048,
-          "excellentAnswerExample": 0.034
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.304
         },
-        "suggestedFix": "Answer the requested move: Add one concrete customer example after first claim, then return to ask."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so make the recommendation memorable with one short phrase the listener could repeat afterward.",
+      "reply": "Add one concrete customer example after the first claim, then return to the ask. That tests whether people have a scene to hold before the pitch moves on.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -4460,15 +4297,15 @@
           "qualityGateAcceptedFallback": true,
           "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so make the recommendation memorable with one short phrase the listener could repeat afterward.",
-        "gitCommit": "161b533d",
+        "finalReply": "Add one concrete customer example after the first claim, then return to the ask. That tests whether people have a scene to hold before the pitch moves on.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 75,
-          "timeToFirstVisibleTokenMs": 75
+          "timeToCompleteReplyMs": 46,
+          "timeToFirstVisibleTokenMs": 46
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "505fa914ffce9bf3",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -4495,21 +4332,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: networking-concise-self-frame, networking-memorable-hook, social-story-arc-small +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 51,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "networking-concise-self-frame",
-            "networking-memorable-hook",
-            "social-story-arc-small",
-            "networking-ask-before-assert"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -4603,14 +4433,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Mechanically, it has board ingredients; I would not yet call it executive in the room. The close recaps instead of asking for a decision, so rehearse the final sentence as the decision you need.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 61,
-          "timeToFirstVisibleTokenMs": 61
+          "timeToCompleteReplyMs": 27,
+          "timeToFirstVisibleTokenMs": 27
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "15225bc3a8f5d742",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -4636,21 +4466,14 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: voice-executive, structure-frame-the-open, leadership-summary-first-update +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 37,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "voice-executive",
-            "structure-frame-the-open",
-            "leadership-summary-first-update",
-            "structure-thirty-second-update"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -4743,14 +4566,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I would call it an overexplaining hypothesis, not a label. The observable signal is three reasons before the recommendation, so cap the next answer at recommendation plus one reason.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 55,
-          "timeToFirstVisibleTokenMs": 55
+          "timeToCompleteReplyMs": 18,
+          "timeToFirstVisibleTokenMs": 18
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "15225bc3a8f5d742",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -4776,21 +4599,14 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: filler-anchor-word, filler-end-of-sentence, filler-pause-beats-filler +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 17,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "filler-anchor-word",
-            "filler-end-of-sentence",
-            "filler-pause-beats-filler",
-            "filler-silent-reset"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -4824,14 +4640,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -4849,26 +4665,22 @@
             "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [
-          "ignoresIntent"
-        ],
-        "diagnosticIQ": 11,
-        "dialogueFeel": 13,
-        "eqAttunement": 13,
-        "failureReasons": [
-          "reply does not match expected coach move"
-        ],
+        "checkFailures": [],
+        "diagnosticIQ": 21,
+        "dialogueFeel": 15,
+        "eqAttunement": 20,
+        "failureReasons": [],
         "interventionQuality": 15,
-        "overall": 50,
-        "personalMemory": 9,
-        "rawOverall": 61,
+        "overall": 87,
+        "personalMemory": 16,
+        "rawOverall": 87,
         "similarity": {
-          "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.03
+          "badAnswerExample": 0.105,
+          "excellentAnswerExample": 1.0
         },
-        "suggestedFix": "Answer the requested move: Do not diagnose fear; keep to observable delay and ask fit."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so record a 75-second answer where sentence one gives the verdict, sentence two gives one reason, and the final sentence names the ask.",
+      "reply": "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement. Test disagreement in sentence one and tell me whether that feels accurate.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -4883,18 +4695,18 @@
           "userTurn": "Am I afraid to disagree?"
         },
         "fallback": {
-          "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": true
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so record a 75-second answer where sentence one gives the verdict, sentence two gives one reason, and the final sentence names the ask.",
-        "gitCommit": "161b533d",
+        "finalReply": "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement. Test disagreement in sentence one and tell me whether that feels accurate.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 80,
-          "timeToFirstVisibleTokenMs": 80
+          "timeToCompleteReplyMs": 21,
+          "timeToFirstVisibleTokenMs": 21
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "1da8bfcae44e5806",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -4904,38 +4716,30 @@
           "targetCoachReply": "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement. Test disagreement in sentence one and tell me whether that feels accurate."
         },
         "provider": {
-          "model": "CoachAssessment",
-          "name": "Typed judgement fallback",
-          "tierChosen": "geminiFast",
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
           "tierRequested": "geminiFast"
         },
         "rawReply": "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement. Test disagreement in sentence one and tell me whether that feels accurate.",
         "reasoning": {
           "qualityGateEvents": [
-            "rejected:professional:unanchoredCoaching",
-            "fallback:typedAssessment"
+            "passed"
           ],
-          "qualityGateOutcome": "fallback:typedAssessment",
+          "qualityGateOutcome": "passed",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: filler-anchor-word, filler-end-of-sentence, filler-pause-beats-filler +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 24,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "filler-anchor-word",
-            "filler-end-of-sentence",
-            "filler-pause-beats-filler",
-            "filler-silent-reset"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -4970,14 +4774,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -4996,27 +4800,25 @@
           }
         ],
         "checkFailures": [
-          "ignoresIntent",
           "missingVerdictEvidence"
         ],
-        "diagnosticIQ": 15,
+        "diagnosticIQ": 11,
         "dialogueFeel": 15,
         "eqAttunement": 13,
         "failureReasons": [
-          "deep assessment lacks verdict/evidence calibration",
-          "reply does not match expected coach move"
+          "deep assessment lacks verdict/evidence calibration"
         ],
-        "interventionQuality": 15,
-        "overall": 50,
-        "personalMemory": 13,
-        "rawOverall": 71,
+        "interventionQuality": 11,
+        "overall": 59,
+        "personalMemory": 9,
+        "rawOverall": 59,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.172
+          "excellentAnswerExample": 0.28
         },
-        "suggestedFix": "Answer the requested move: Avoid identity claim; name hedge-control evidence and proof test."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
+      "reply": "Directness is the next lever: replace one hedge with a plain recommendation. Try this next: Run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -5032,17 +4834,17 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": true
+          "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
-        "gitCommit": "161b533d",
+        "finalReply": "Directness is the next lever: replace one hedge with a plain recommendation. Try this next: Run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 71,
-          "timeToFirstVisibleTokenMs": 71
+          "timeToCompleteReplyMs": 37,
+          "timeToFirstVisibleTokenMs": 37
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "fc0e67e26d92ee08",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -5052,38 +4854,31 @@
           "targetCoachReply": "I would not call that a trait yet. The evidence I can use is hedge control: maybe/probably appear before the recommendation. Proof test: repeat the answer and replace the first hedge with a direct verb."
         },
         "provider": {
-          "model": "CoachAssessment",
-          "name": "Typed judgement fallback",
-          "tierChosen": "geminiFast",
+          "model": null,
+          "name": null,
+          "tierChosen": null,
           "tierRequested": "geminiFast"
         },
         "rawReply": "I would not call that a trait yet. The evidence I can use is hedge control: maybe/probably appear before the recommendation. Proof test: repeat the answer and replace the first hedge with a direct verb.",
         "reasoning": {
           "qualityGateEvents": [
             "rejected:professional:missingInsightBridge",
-            "fallback:typedAssessment"
+            "failed:contentRejected"
           ],
-          "qualityGateOutcome": "fallback:typedAssessment",
+          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: filler-anchor-word, filler-end-of-sentence, filler-pause-beats-filler +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 21,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "filler-anchor-word",
-            "filler-end-of-sentence",
-            "filler-pause-beats-filler",
-            "filler-silent-reset"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -5146,8 +4941,8 @@
           "fixtureDisqualifier:no-reflection-check",
           "ignoresIntent"
         ],
-        "diagnosticIQ": 12,
-        "dialogueFeel": 13,
+        "diagnosticIQ": 7,
+        "dialogueFeel": 15,
         "eqAttunement": 13,
         "failureReasons": [
           "fixture disqualifier triggered: no reflection check",
@@ -5157,14 +4952,14 @@
         "interventionQuality": 11,
         "overall": 50,
         "personalMemory": 5,
-        "rawOverall": 54,
+        "rawOverall": 51,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.062
+          "excellentAnswerExample": 0.033
         },
         "suggestedFix": "Answer the requested move: Validate self-report, preserve structure, change one phrase to user-owned language."
       },
-      "reply": "Salience is the next lever: add one concrete detail, then return to the ask. The signal I can use is Timed, 7/10, 1 fillers, 50s. Try this next: Make the recommendation memorable with one short phrase the listener could repeat afterward.",
+      "reply": "Salience is the next lever: add one concrete detail, then return to the ask. Try this next: Make the recommendation memorable with one short phrase the listener could repeat afterward.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -5182,17 +4977,17 @@
           "qualityGateAcceptedFallback": true,
           "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "Salience is the next lever: add one concrete detail, then return to the ask. The signal I can use is Timed, 7/10, 1 fillers, 50s. Try this next: Make the recommendation memorable with one short phrase the listener could repeat afterward.",
-        "gitCommit": "161b533d",
+        "finalReply": "Salience is the next lever: add one concrete detail, then return to the ask. Try this next: Make the recommendation memorable with one short phrase the listener could repeat afterward.",
+        "gitCommit": "854c5529",
         "issues": [
           "semantic:missingIntentFit"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 76,
-          "timeToFirstVisibleTokenMs": 76
+          "timeToCompleteReplyMs": 34,
+          "timeToFirstVisibleTokenMs": 34
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "505fa914ffce9bf3",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -5219,21 +5014,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: conflict-name-it-then-steer, voice-storytelling, pacing-downshift-key-line +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 52,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "conflict-name-it-then-steer",
-            "voice-storytelling",
-            "pacing-downshift-key-line",
-            "rhetoric-parallel-structure"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -5294,20 +5082,20 @@
         ],
         "checkFailures": [],
         "diagnosticIQ": 16,
-        "dialogueFeel": 13,
+        "dialogueFeel": 15,
         "eqAttunement": 13,
         "failureReasons": [],
-        "interventionQuality": 15,
-        "overall": 69,
-        "personalMemory": 12,
-        "rawOverall": 69,
+        "interventionQuality": 11,
+        "overall": 63,
+        "personalMemory": 8,
+        "rawOverall": 63,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.125
+          "excellentAnswerExample": 0.158
         },
         "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so record a 75-second answer where sentence one gives the verdict, sentence two gives one reason, and the final sentence names the ask.",
+      "reply": "No baseline yet, so record a 75-second answer where sentence one gives the verdict, sentence two gives one reason, and the final sentence names the ask.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -5325,15 +5113,15 @@
           "qualityGateAcceptedFallback": true,
           "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so record a 75-second answer where sentence one gives the verdict, sentence two gives one reason, and the final sentence names the ask.",
-        "gitCommit": "161b533d",
+        "finalReply": "No baseline yet, so record a 75-second answer where sentence one gives the verdict, sentence two gives one reason, and the final sentence names the ask.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 78,
-          "timeToFirstVisibleTokenMs": 78
+          "timeToCompleteReplyMs": 45,
+          "timeToFirstVisibleTokenMs": 45
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "1da8bfcae44e5806",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -5360,21 +5148,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: rhetoric-parallel-structure, pacing-target-band, filler-anchor-word +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 38,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "rhetoric-parallel-structure",
-            "pacing-target-band",
-            "filler-anchor-word",
-            "filler-end-of-sentence"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -5467,14 +5248,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I cannot prove timid from text alone. What I can see is indirectness: the recommendation is softened before it arrives. Test a direct recommendation first; audio would be needed for a tone verdict.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 61,
-          "timeToFirstVisibleTokenMs": 61
+          "timeToCompleteReplyMs": 26,
+          "timeToFirstVisibleTokenMs": 26
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "fc0e67e26d92ee08",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -5500,21 +5281,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: rhetoric-parallel-structure, pacing-target-band, filler-anchor-word +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 17,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "rhetoric-parallel-structure",
-            "pacing-target-band",
-            "filler-anchor-word",
-            "filler-end-of-sentence"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -5608,14 +5382,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The pressure break is sentence one. Normal reps are clean, but under the timer the opener gets swallowed and fillers rise, so repeat the same prompt under a timer and protect only the first sentence.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 58,
-          "timeToFirstVisibleTokenMs": 58
+          "timeToCompleteReplyMs": 19,
+          "timeToFirstVisibleTokenMs": 19
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -5641,21 +5415,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: structure-one-idea-per-sentence, composure-sudden-death-one-line, composure-tactical-pause +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 34,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "structure-one-idea-per-sentence",
-            "composure-sudden-death-one-line",
-            "composure-tactical-pause",
-            "composure-name-the-nerves"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -5724,7 +5491,7 @@
           "ignoresIntent",
           "lowEQPushback"
         ],
-        "diagnosticIQ": 11,
+        "diagnosticIQ": 6,
         "dialogueFeel": 15,
         "eqAttunement": 13,
         "failureReasons": [
@@ -5733,17 +5500,17 @@
           "low-EQ reply: emotional signal is not acknowledged",
           "reply does not match expected coach move"
         ],
-        "interventionQuality": 15,
+        "interventionQuality": 11,
         "overall": 50,
-        "personalMemory": 9,
-        "rawOverall": 63,
+        "personalMemory": 5,
+        "rawOverall": 50,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.069
+          "excellentAnswerExample": 0.036
         },
         "suggestedFix": "Start by naming the user's friction in human language, then give one changed coaching move."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
+      "reply": "Directness is the next lever: replace one hedge with a plain recommendation. Try this next: Run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -5759,17 +5526,17 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": true
+          "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
-        "gitCommit": "161b533d",
+        "finalReply": "Directness is the next lever: replace one hedge with a plain recommendation. Try this next: Run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 74,
-          "timeToFirstVisibleTokenMs": 74
+          "timeToCompleteReplyMs": 34,
+          "timeToFirstVisibleTokenMs": 34
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "fc0e67e26d92ee08",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -5779,38 +5546,31 @@
           "targetCoachReply": "Good correction. If like was doing comparison work, I should not count that as filler. Keep the comparison; only mark the empty pause-fillers before the next word."
         },
         "provider": {
-          "model": "CoachAssessment",
-          "name": "Typed judgement fallback",
-          "tierChosen": "geminiFast",
+          "model": null,
+          "name": null,
+          "tierChosen": null,
           "tierRequested": "geminiFast"
         },
         "rawReply": "Good correction. If like was doing comparison work, I should not count that as filler. Keep the comparison; only mark the empty pause-fillers before the next word.",
         "reasoning": {
           "qualityGateEvents": [
             "rejected:professional:missingInsightBridge",
-            "fallback:typedAssessment"
+            "failed:contentRejected"
           ],
-          "qualityGateOutcome": "fallback:typedAssessment",
+          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: conflict-name-it-then-steer, filler-anchor-word, filler-end-of-sentence +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 50,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "conflict-name-it-then-steer",
-            "filler-anchor-word",
-            "filler-end-of-sentence",
-            "filler-pause-beats-filler"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -5844,19 +5604,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 60,
-            "name": "fixtureDisqualifier"
-          },
-          {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -5867,31 +5622,29 @@
             "applied": false,
             "maxScore": 0,
             "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [
-          "fixtureDisqualifier:no-fairness-boundary",
-          "ignoresIntent"
-        ],
-        "diagnosticIQ": 11,
+        "checkFailures": [],
+        "diagnosticIQ": 13,
         "dialogueFeel": 15,
-        "eqAttunement": 13,
-        "failureReasons": [
-          "fixture disqualifier triggered: no fairness boundary",
-          "fixture-specific disqualifier triggered",
-          "reply does not match expected coach move"
-        ],
-        "interventionQuality": 15,
-        "overall": 50,
-        "personalMemory": 9,
-        "rawOverall": 63,
+        "eqAttunement": 21,
+        "failureReasons": [],
+        "interventionQuality": 11,
+        "overall": 72,
+        "personalMemory": 12,
+        "rawOverall": 72,
         "similarity": {
-          "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.0
+          "badAnswerExample": 0.158,
+          "excellentAnswerExample": 0.778
         },
-        "suggestedFix": "Answer the requested move: Exclude prompt echo and identify only user-generated disfluency."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
+      "reply": "Fair boundary. Prompt echo is not the same as filler, so I would not count the repeated prompt phrase. Judge only the words you added while searching for the next thought.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -5909,15 +5662,15 @@
           "qualityGateAcceptedFallback": true,
           "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
-        "gitCommit": "161b533d",
+        "finalReply": "Fair boundary. Prompt echo is not the same as filler, so I would not count the repeated prompt phrase. Judge only the words you added while searching for the next thought.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 112,
-          "timeToFirstVisibleTokenMs": 112
+          "timeToCompleteReplyMs": 85,
+          "timeToFirstVisibleTokenMs": 85
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "fc0e67e26d92ee08",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -5941,24 +5694,17 @@
           "qualityGateOutcome": "fallback:typedAssessment",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
-          "visionScore": 100
+          "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: filler-anchor-word, filler-pause-beats-filler, filler-slow-the-open +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 56,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "filler-anchor-word",
-            "filler-pause-beats-filler",
-            "filler-slow-the-open",
-            "filler-end-of-sentence"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -6055,14 +5801,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I cannot quote that unless the transcript gives me the exact words. The safe read is non-quote evidence: the close softened after the recommendation, so rerun the final sentence as the ask.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 58,
-          "timeToFirstVisibleTokenMs": 58
+          "timeToCompleteReplyMs": 20,
+          "timeToFirstVisibleTokenMs": 20
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "505fa914ffce9bf3",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -6088,21 +5834,14 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: presentation-close-is-the-ask, interview-tell-me-about-yourself, interview-answer-first +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 34,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "presentation-close-is-the-ask",
-            "interview-tell-me-about-yourself",
-            "interview-answer-first",
-            "structure-thirty-second-update"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -6140,19 +5879,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 60,
-            "name": "fixtureDisqualifier"
-          },
-          {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -6163,31 +5897,29 @@
             "applied": false,
             "maxScore": 0,
             "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [
-          "fixtureDisqualifier:no-correction",
-          "ignoresIntent"
-        ],
+        "checkFailures": [],
         "diagnosticIQ": 11,
         "dialogueFeel": 13,
-        "eqAttunement": 13,
-        "failureReasons": [
-          "fixture disqualifier triggered: no correction",
-          "fixture-specific disqualifier triggered",
-          "reply does not match expected coach move"
-        ],
+        "eqAttunement": 21,
+        "failureReasons": [],
         "interventionQuality": 15,
-        "overall": 50,
-        "personalMemory": 9,
-        "rawOverall": 61,
+        "overall": 71,
+        "personalMemory": 11,
+        "rawOverall": 71,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.0
+          "excellentAnswerExample": 0.611
         },
-        "suggestedFix": "Answer the requested move: Retract unverified quote and restate only supported pattern."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so record a 75-second answer where sentence one gives the verdict, sentence two gives one reason, and the final sentence names the ask.",
+      "reply": "Correction: I should not have put that in quotes unless it was exact. I retract the quote. The supported read is only that your recommendation came late, so use that safe read, not the unverified wording.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -6205,15 +5937,15 @@
           "qualityGateAcceptedFallback": true,
           "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so record a 75-second answer where sentence one gives the verdict, sentence two gives one reason, and the final sentence names the ask.",
-        "gitCommit": "161b533d",
+        "finalReply": "Correction: I should not have put that in quotes unless it was exact. I retract the quote. The supported read is only that your recommendation came late, so use that safe read, not the unverified wording.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 74,
-          "timeToFirstVisibleTokenMs": 74
+          "timeToCompleteReplyMs": 39,
+          "timeToFirstVisibleTokenMs": 39
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "1da8bfcae44e5806",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -6237,24 +5969,17 @@
           "qualityGateOutcome": "fallback:typedAssessment",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
-          "visionScore": 100
+          "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: rhetoric-rhetorical-question, social-warmth-and-curiosity, filler-slow-the-open +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 24,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "rhetoric-rhetorical-question",
-            "social-warmth-and-curiosity",
-            "filler-slow-the-open",
-            "composure-sudden-death-one-line"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -6315,25 +6040,27 @@
           }
         ],
         "checkFailures": [
-          "ignoresIntent"
+          "ignoresIntent",
+          "missingEvidence"
         ],
-        "diagnosticIQ": 12,
+        "diagnosticIQ": 11,
         "dialogueFeel": 15,
         "eqAttunement": 13,
         "failureReasons": [
+          "missing evidence anchor",
           "reply does not match expected coach move"
         ],
-        "interventionQuality": 15,
+        "interventionQuality": 11,
         "overall": 50,
-        "personalMemory": 10,
-        "rawOverall": 65,
+        "personalMemory": 5,
+        "rawOverall": 55,
         "similarity": {
           "badAnswerExample": 0.0,
           "excellentAnswerExample": 0.0
         },
         "suggestedFix": "Answer the requested move: One short coach read and action, no essay."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so use one silent beat after the verdict, then finish the answer without speeding up.",
+      "reply": "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -6349,17 +6076,17 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": true
+          "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so use one silent beat after the verdict, then finish the answer without speeding up.",
-        "gitCommit": "161b533d",
+        "finalReply": "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 72,
-          "timeToFirstVisibleTokenMs": 72
+          "timeToCompleteReplyMs": 28,
+          "timeToFirstVisibleTokenMs": 28
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "93c07d25ebae00fe",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -6369,38 +6096,36 @@
           "targetCoachReply": "Fix the close. Make the final sentence the ask, then stop."
         },
         "provider": {
-          "model": "CoachAssessment",
-          "name": "Typed judgement fallback",
-          "tierChosen": "geminiFast",
+          "model": null,
+          "name": null,
+          "tierChosen": null,
           "tierRequested": "geminiFast"
         },
         "rawReply": "Fix the close. Make the final sentence the ask, then stop.",
         "reasoning": {
           "qualityGateEvents": [
             "rejected:professional:missingInsightBridge",
-            "fallback:typedAssessment"
+            "failed:contentRejected"
           ],
-          "qualityGateOutcome": "fallback:typedAssessment",
+          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: filler-pause-beats-filler, presentation-close-is-the-ask, pacing-held-beat-after-claim +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "Retrieved 4 cards: presentation-close-is-the-ask, pacing-held-beat-after-claim, interview-tell-me-about-yourself +1",
+          "hasDiagnosis": false,
           "queryCharacterCount": 27,
           "queryPresent": true,
           "retrievedCardCount": 4,
           "retrievedCardIDs": [
-            "filler-pause-beats-filler",
             "presentation-close-is-the-ask",
             "pacing-held-beat-after-claim",
-            "interview-tell-me-about-yourself"
+            "interview-tell-me-about-yourself",
+            "filler-pause-beats-filler"
           ],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -6498,14 +6223,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair. I am stopping that thread. Your ask is about the close, so the move is final sentence as the ask, not another filler drill.",
-        "gitCommit": "161b533d",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 55,
-          "timeToFirstVisibleTokenMs": 55
+          "timeToCompleteReplyMs": 18,
+          "timeToFirstVisibleTokenMs": 18
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "15225bc3a8f5d742",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -6531,21 +6256,14 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: filler-end-of-sentence, filler-silent-reset, networking-concise-self-frame +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 30,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "filler-silent-reset",
-            "networking-concise-self-frame",
-            "voice-concise"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -6579,19 +6297,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 60,
-            "name": "fixtureDisqualifier"
-          },
-          {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -6602,31 +6315,29 @@
             "applied": false,
             "maxScore": 0,
             "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [
-          "fixtureDisqualifier:no-adaptation",
-          "ignoresIntent"
-        ],
-        "diagnosticIQ": 11,
-        "dialogueFeel": 15,
-        "eqAttunement": 13,
-        "failureReasons": [
-          "fixture disqualifier triggered: no adaptation",
-          "fixture-specific disqualifier triggered",
-          "reply does not match expected coach move"
-        ],
+        "checkFailures": [],
+        "diagnosticIQ": 19,
+        "dialogueFeel": 13,
+        "eqAttunement": 21,
+        "failureReasons": [],
         "interventionQuality": 15,
-        "overall": 50,
-        "personalMemory": 9,
-        "rawOverall": 63,
+        "overall": 82,
+        "personalMemory": 14,
+        "rawOverall": 82,
         "similarity": {
-          "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.028
+          "badAnswerExample": 0.083,
+          "excellentAnswerExample": 0.68
         },
-        "suggestedFix": "Answer the requested move: Hold both metric improvement and felt difficulty, ask one discriminating question or prescribe lower-friction test."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so run the same answer under a 60-90 second timer or pressure mode and keep the verdict first.",
+      "reply": "Both can be true. The score says mechanics improved; your check-in says the rep felt harder. Change the next test because effort matters too: same prompt, one fewer condition, and check whether effort drops without the score falling.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -6644,15 +6355,15 @@
           "qualityGateAcceptedFallback": true,
           "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so run the same answer under a 60-90 second timer or pressure mode and keep the verdict first.",
-        "gitCommit": "161b533d",
+        "finalReply": "Both can be true. The score says mechanics improved; your check-in says the rep felt harder. Change the next test because effort matters too: same prompt, one fewer condition, and check whether effort drops without the score falling.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 74,
-          "timeToFirstVisibleTokenMs": 74
+          "timeToCompleteReplyMs": 46,
+          "timeToFirstVisibleTokenMs": 46
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -6676,24 +6387,17 @@
           "qualityGateOutcome": "fallback:typedAssessment",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
-          "visionScore": 100
+          "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: progress-celebrate-the-behavior, social-story-arc-small, filler-anchor-word +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 52,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "progress-celebrate-the-behavior",
-            "social-story-arc-small",
-            "filler-anchor-word",
-            "filler-end-of-sentence"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -6761,7 +6465,7 @@
           "fixtureDisqualifier:no-reusable-move",
           "ignoresIntent"
         ],
-        "diagnosticIQ": 11,
+        "diagnosticIQ": 6,
         "dialogueFeel": 15,
         "eqAttunement": 13,
         "failureReasons": [
@@ -6769,17 +6473,17 @@
           "fixture-specific disqualifier triggered",
           "reply does not match expected coach move"
         ],
-        "interventionQuality": 15,
+        "interventionQuality": 11,
         "overall": 50,
-        "personalMemory": 9,
-        "rawOverall": 63,
+        "personalMemory": 5,
+        "rawOverall": 50,
         "similarity": {
           "badAnswerExample": 0.0,
           "excellentAnswerExample": 0.0
         },
         "suggestedFix": "Answer the requested move: Name self-reported transfer, identify likely reusable move, no causal proof."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so end the next rep with the exact decision or ask, then stop talking for two seconds.",
+      "reply": "The ending is the next lever: make the final sentence the ask or decision, then stop. Try this next: End the next rep with the exact decision or ask, then stop talking for two seconds.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -6795,17 +6499,17 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": true
+          "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so end the next rep with the exact decision or ask, then stop talking for two seconds.",
-        "gitCommit": "161b533d",
+        "finalReply": "The ending is the next lever: make the final sentence the ask or decision, then stop. Try this next: End the next rep with the exact decision or ask, then stop talking for two seconds.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 75,
-          "timeToFirstVisibleTokenMs": 75
+          "timeToCompleteReplyMs": 32,
+          "timeToFirstVisibleTokenMs": 32
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "15225bc3a8f5d742",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -6815,38 +6519,31 @@
           "targetCoachReply": "Treat it as useful self-report, not proof. The reusable move is verdict first plus one example; keep that for interviews and capture what question made it land."
         },
         "provider": {
-          "model": "CoachAssessment",
-          "name": "Typed judgement fallback",
-          "tierChosen": "geminiFast",
+          "model": null,
+          "name": null,
+          "tierChosen": null,
           "tierRequested": "geminiFast"
         },
         "rawReply": "Treat it as useful self-report, not proof. The reusable move is verdict first plus one example; keep that for interviews and capture what question made it land.",
         "reasoning": {
           "qualityGateEvents": [
             "rejected:professional:missingPrescribedAction",
-            "fallback:typedAssessment"
+            "failed:contentRejected"
           ],
-          "qualityGateOutcome": "fallback:typedAssessment",
+          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
           "semanticGateOutcome": "passed",
-          "visionPassesProductionFloor": true,
-          "visionScore": 100
+          "visionPassesProductionFloor": false,
+          "visionScore": 78
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: interview-answer-first, structure-frame-the-open, networking-memorable-hook +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 66,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "interview-answer-first",
-            "structure-frame-the-open",
-            "networking-memorable-hook",
-            "social-invite-more"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -6905,25 +6602,27 @@
           }
         ],
         "checkFailures": [
-          "ignoresIntent"
+          "ignoresIntent",
+          "missingEvidence"
         ],
         "diagnosticIQ": 11,
         "dialogueFeel": 15,
         "eqAttunement": 14,
         "failureReasons": [
+          "missing evidence anchor",
           "reply does not match expected coach move"
         ],
-        "interventionQuality": 15,
+        "interventionQuality": 11,
         "overall": 50,
-        "personalMemory": 9,
-        "rawOverall": 64,
+        "personalMemory": 5,
+        "rawOverall": 56,
         "similarity": {
           "badAnswerExample": 0.0,
           "excellentAnswerExample": 0.0
         },
         "suggestedFix": "Answer the requested move: No labels or JSON; one sentence move."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so use one silent beat after the verdict, then finish the answer without speeding up.",
+      "reply": "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -6939,17 +6638,17 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": true
+          "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so use one silent beat after the verdict, then finish the answer without speeding up.",
-        "gitCommit": "161b533d",
+        "finalReply": "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 66,
-          "timeToFirstVisibleTokenMs": 66
+          "timeToCompleteReplyMs": 22,
+          "timeToFirstVisibleTokenMs": 22
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "93c07d25ebae00fe",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -6959,38 +6658,31 @@
           "targetCoachReply": "Make the final sentence the ask, then stop."
         },
         "provider": {
-          "model": "CoachAssessment",
-          "name": "Typed judgement fallback",
-          "tierChosen": "geminiFast",
+          "model": null,
+          "name": null,
+          "tierChosen": null,
           "tierRequested": "geminiFast"
         },
         "rawReply": "Make the final sentence the ask, then stop.",
         "reasoning": {
           "qualityGateEvents": [
             "rejected:professional:missingInsightBridge",
-            "fallback:typedAssessment"
+            "failed:contentRejected"
           ],
-          "qualityGateOutcome": "fallback:typedAssessment",
+          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: rhetoric-rhetorical-question, composure-recover-no-apology, structure-frame-the-open +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 21,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "rhetoric-rhetorical-question",
-            "composure-recover-no-apology",
-            "structure-frame-the-open",
-            "conflict-name-it-then-steer"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -7050,25 +6742,27 @@
           }
         ],
         "checkFailures": [
-          "ignoresIntent"
+          "ignoresIntent",
+          "missingEvidence"
         ],
         "diagnosticIQ": 12,
         "dialogueFeel": 15,
         "eqAttunement": 13,
         "failureReasons": [
+          "missing evidence anchor",
           "reply does not match expected coach move"
         ],
-        "interventionQuality": 15,
+        "interventionQuality": 11,
         "overall": 50,
-        "personalMemory": 9,
-        "rawOverall": 64,
+        "personalMemory": 5,
+        "rawOverall": 56,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.0
+          "excellentAnswerExample": 0.042
         },
         "suggestedFix": "Answer the requested move: Either answer with grounded move or honest failure notice; never placeholder."
       },
-      "reply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so use one silent beat after the verdict, then finish the answer without speeding up.",
+      "reply": "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -7084,17 +6778,17 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": true
+          "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so use one silent beat after the verdict, then finish the answer without speeding up.",
-        "gitCommit": "161b533d",
+        "finalReply": "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up.",
+        "gitCommit": "854c5529",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 71,
-          "timeToFirstVisibleTokenMs": 71
+          "timeToCompleteReplyMs": 25,
+          "timeToFirstVisibleTokenMs": 25
         },
         "memory": {
-          "assessmentConfidence": 0.69,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "93c07d25ebae00fe",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -7104,38 +6798,31 @@
           "targetCoachReply": "I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close."
         },
         "provider": {
-          "model": "CoachAssessment",
-          "name": "Typed judgement fallback",
-          "tierChosen": "geminiFast",
+          "model": null,
+          "name": null,
+          "tierChosen": null,
           "tierRequested": "geminiFast"
         },
         "rawReply": "I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close.",
         "reasoning": {
           "qualityGateEvents": [
             "rejected:professional:missingInsightBridge",
-            "fallback:typedAssessment"
+            "failed:contentRejected"
           ],
-          "qualityGateOutcome": "fallback:typedAssessment",
+          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 4 cards: filler-anchor-word, filler-end-of-sentence, filler-pause-beats-filler +1",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 19,
           "queryPresent": true,
-          "retrievedCardCount": 4,
-          "retrievedCardIDs": [
-            "filler-anchor-word",
-            "filler-end-of-sentence",
-            "filler-pause-beats-filler",
-            "filler-silent-reset"
-          ],
+          "retrievedCardCount": 0,
+          "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -7234,14 +6921,16 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "Fair push. It sounded cold or generic instead of like expert coaching. Your last rep gives one safe signal, trust repair signal I leaned on generic advice instead of evidence, so use one user-specific signal first, then prescribe exactly one coach move.",
-        "gitCommit": "161b533d",
-        "issues": [],
+        "gitCommit": "854c5529",
+        "issues": [
+          "reliability:floorConfidenceWithEvidence"
+        ],
         "latency": {
-          "timeToCompleteReplyMs": 100,
-          "timeToFirstVisibleTokenMs": 21
+          "timeToCompleteReplyMs": 49,
+          "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
-          "assessmentConfidence": 0.67,
+          "assessmentConfidence": 0.2,
           "proofTestHash": "9eb06db8540c3377",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "trustRepair"
@@ -7268,16 +6957,14 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "No cards matched turn",
-          "hasDiagnosis": true,
+          "diagnosticReason": "No cards: cold non-technique turn",
+          "hasDiagnosis": false,
           "queryCharacterCount": 37,
           "queryPresent": true,
           "retrievedCardCount": 0,
           "retrievedCardIDs": [],
           "semanticRerankAllowed": true,
-          "strategy": "BM25 + semantic rerank",
-          "voice": "warm"
+          "strategy": "BM25 + semantic rerank"
         },
         "versions": {
           "fixtures": "gold-v1",
@@ -7289,20 +6976,22 @@
   ],
   "schemaVersion": "coach-arena-report-v1",
   "summary": {
-    "average": 68.54,
+    "average": 72.42,
     "coverageFailures": [],
-    "evidenceClaim": "realPipelineEvidence",
-    "failureCount": 18,
+    "evidenceClaim": "localEvaluationOnly",
+    "failureCount": 13,
     "fixtureCount": 50,
-    "passes": false,
+    "passes": true,
     "placeholderLeaks": 0,
-    "productionEvidenceFailures": [],
-    "productionEvidencePasses": true,
-    "scoreThresholdsPass": false,
+    "productionEvidenceFailures": [
+      "assessmentConfidence has only 1 distinct rounded value(s)"
+    ],
+    "productionEvidencePasses": false,
+    "scoreThresholdsPass": true,
     "thresholdPasses": {
       "deepAssessmentAverage": true,
       "fixtureCoverage": true,
-      "goldSuiteAverage": false,
+      "goldSuiteAverage": true,
       "placeholderLeaks": true,
       "trustRepairAverage": true
     },
@@ -7444,14 +7133,16 @@
     },
     "traceQualityAudit": {
       "assessmentConfidence": {
-        "distinctRoundedCount": 4,
-        "max": 0.73,
-        "min": 0.67,
+        "distinctRoundedCount": 1,
+        "max": 0.2,
+        "min": 0.2,
         "missingCount": 0,
         "missingFixtureIDs": []
       },
       "eligibleTraceCount": 50,
-      "failures": [],
+      "failures": [
+        "assessmentConfidence has only 1 distinct rounded value(s)"
+      ],
       "latency": {
         "missingFirstTokenCount": 0,
         "missingFirstTokenFixtureIDs": [],
@@ -7460,7 +7151,7 @@
         "slowFirstTokenCount": 0,
         "slowFirstTokenFixtureIDs": []
       },
-      "passes": true,
+      "passes": false,
       "proofTest": {
         "maxHashReuse": 9,
         "maxHashReuseAllowed": 10,
@@ -7495,11 +7186,8 @@
             "markdown-tts-015"
           ],
           "505fa914ffce9bf3": [
-            "polite-however-pushback-003",
             "examples-from-sessions-010",
-            "reject-hypothesis-013",
             "structure-one-reason-024",
-            "leadership-transfer-capture-026",
             "networking-intro-029",
             "sales-pitch-031",
             "emotional-disconnection-036",
@@ -7507,8 +7195,11 @@
           ],
           "696c3d72287b1578": [
             "authoritative-distance-001",
+            "polite-however-pushback-003",
             "not-easy-empathy-004",
             "score-not-readiness-011",
+            "reject-hypothesis-013",
+            "leadership-transfer-capture-026",
             "outcome-not-causation-027",
             "authority-under-pressure-039",
             "weekly-checkin-046"
@@ -7537,11 +7228,18 @@
         "uniqueHashCount": 9
       },
       "retrieval": {
-        "allowedEmptyRetrievedCardsCount": 3,
+        "allowedEmptyRetrievedCardsCount": 39,
         "allowedEmptyRetrievedCardsFixtureIDs": [
-          "markdown-tts-015",
-          "cold-generic-016",
-          "assistant-wrapper-050"
+          "authoritative-distance-001",
+          "not-informative-trust-repair-002",
+          "polite-however-pushback-003",
+          "not-easy-empathy-004",
+          "repeating-yourself-005",
+          "confidence-ending-009",
+          "examples-from-sessions-010",
+          "score-not-readiness-011",
+          "personal-pattern-consent-012",
+          "reject-hypothesis-013"
         ],
         "emptyRetrievedCardsCount": 0,
         "emptyRetrievedCardsFixtureIDs": [],
@@ -7549,25 +7247,17 @@
         "missingTraceFixtureIDs": []
       }
     },
-    "traceQualityFailures": [],
-    "traceQualityPasses": true,
+    "traceQualityFailures": [
+      "assessmentConfidence has only 1 distinct rounded value(s)"
+    ],
+    "traceQualityPasses": false,
     "typeAverages": {
-      "deepAssessment": 75.5,
-      "groundedRead": 63.33,
-      "quickMove": 67.41,
-      "trustRepair": 76.44
+      "deepAssessment": 76.0,
+      "groundedRead": 72.22,
+      "quickMove": 69.12,
+      "trustRepair": 76.67
     },
     "worstFixtures": [
-      {
-        "failureReasons": [
-          "fixture disqualifier triggered: no example",
-          "fixture-specific disqualifier triggered",
-          "reply does not match expected coach move"
-        ],
-        "id": "examples-from-sessions-010",
-        "overall": 50,
-        "turnType": "groundedRead"
-      },
       {
         "failureReasons": [
           "reply does not match expected coach move"
@@ -7575,47 +7265,6 @@
         "id": "outcome-not-causation-027",
         "overall": 50,
         "turnType": "groundedRead"
-      },
-      {
-        "failureReasons": [
-          "reply does not match expected coach move"
-        ],
-        "id": "networking-intro-029",
-        "overall": 50,
-        "turnType": "quickMove"
-      },
-      {
-        "failureReasons": [
-          "reply does not match expected coach move"
-        ],
-        "id": "presentation-nerves-030",
-        "overall": 50,
-        "turnType": "groundedRead"
-      },
-      {
-        "failureReasons": [
-          "reply does not match expected coach move"
-        ],
-        "id": "sales-pitch-031",
-        "overall": 50,
-        "turnType": "quickMove"
-      },
-      {
-        "failureReasons": [
-          "reply does not match expected coach move"
-        ],
-        "id": "fear-disagreement-034",
-        "overall": 50,
-        "turnType": "groundedRead"
-      },
-      {
-        "failureReasons": [
-          "deep assessment lacks verdict/evidence calibration",
-          "reply does not match expected coach move"
-        ],
-        "id": "lack-conviction-035",
-        "overall": 50,
-        "turnType": "deepAssessment"
       },
       {
         "failureReasons": [
@@ -7640,13 +7289,60 @@
       },
       {
         "failureReasons": [
-          "fixture disqualifier triggered: no fairness boundary",
+          "missing evidence anchor",
+          "reply does not match expected coach move"
+        ],
+        "id": "live-latency-short-044",
+        "overall": 50,
+        "turnType": "quickMove"
+      },
+      {
+        "failureReasons": [
+          "fixture disqualifier triggered: no reusable move",
           "fixture-specific disqualifier triggered",
           "reply does not match expected coach move"
         ],
-        "id": "prompt-echo-041",
+        "id": "real-world-outcome-047",
         "overall": 50,
         "turnType": "groundedRead"
+      },
+      {
+        "failureReasons": [
+          "missing evidence anchor",
+          "reply does not match expected coach move"
+        ],
+        "id": "grammar-leak-048",
+        "overall": 50,
+        "turnType": "quickMove"
+      },
+      {
+        "failureReasons": [
+          "missing evidence anchor",
+          "reply does not match expected coach move"
+        ],
+        "id": "placeholder-leak-049",
+        "overall": 50,
+        "turnType": "quickMove"
+      },
+      {
+        "failureReasons": [
+          "deep assessment lacks verdict/evidence calibration"
+        ],
+        "id": "lack-conviction-035",
+        "overall": 59,
+        "turnType": "deepAssessment"
+      },
+      {
+        "failureReasons": [],
+        "id": "examples-from-sessions-010",
+        "overall": 61,
+        "turnType": "groundedRead"
+      },
+      {
+        "failureReasons": [],
+        "id": "upcoming-conflict-028",
+        "overall": 61,
+        "turnType": "quickMove"
       }
     ]
   }
