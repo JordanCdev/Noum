@@ -8352,6 +8352,48 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable {
     let hasComparableScore: Bool?
     let fillerDelta: Double
     let durationDelta: Double
+    /// Focus-matched pace evidence: this rep's words-per-minute and its delta
+    /// vs the prior-rep average, present only when BOTH sides carried a
+    /// reliable reading (≥15s reps with a positive wpm). Outcomes persisted
+    /// before these fields existed decode as nil and keep the score/filler
+    /// read byte-exactly — the adaptation analyzer only judges a pace-focused
+    /// prescription on pace when the evidence is actually recorded.
+    let wordsPerMinute: Double?
+    let paceDelta: Double?
+
+    init(
+        id: UUID,
+        fingerprint: String,
+        title: String,
+        focus: String?,
+        target: String?,
+        mode: PracticeMode,
+        sessionID: UUID,
+        followed: Bool,
+        completedAt: Date,
+        scoreDelta: Double,
+        hasComparableScore: Bool?,
+        fillerDelta: Double,
+        durationDelta: Double,
+        wordsPerMinute: Double? = nil,
+        paceDelta: Double? = nil
+    ) {
+        self.id = id
+        self.fingerprint = fingerprint
+        self.title = title
+        self.focus = focus
+        self.target = target
+        self.mode = mode
+        self.sessionID = sessionID
+        self.followed = followed
+        self.completedAt = completedAt
+        self.scoreDelta = scoreDelta
+        self.hasComparableScore = hasComparableScore
+        self.fillerDelta = fillerDelta
+        self.durationDelta = durationDelta
+        self.wordsPerMinute = wordsPerMinute
+        self.paceDelta = paceDelta
+    }
 }
 
 // MARK: - Evaluation Corpus (validation substrate only)
@@ -8780,6 +8822,11 @@ enum RecommendationAdaptationAnalyzer {
     static let scoreSwing = 0.5                  // mirror assessment scoreImproved/Worsened
     static let fillerSwing = 0.75                // mirror assessment fillersImproved/Worsened (polarity-inverted)
     static let fillerMovementFloor = 0.375       // = fillerSwing * 0.5; below this, filler jitter is NOT movement
+    // Pace (focus-matched) magnitudes: judged on movement of the rep's
+    // distance from the healthy band, so polarity is correct for fast AND
+    // slow talkers. 10 wpm is a perceptible pace change; below 5 is jitter.
+    static let paceSwing = 10.0
+    static let paceMovementFloor = 5.0           // = paceSwing * 0.5, mirroring the filler ratio
     // Trend + rate thresholds.
     static let netReadTrendThreshold = 0.5       // recovering/slipping vs stalled on the {-1,0,+1} net-read scale
     static let favorableRateThreshold = 0.5
@@ -8927,11 +8974,36 @@ enum RecommendationAdaptationAnalyzer {
         return Resolved(verdict: make(.vary, .tentative), belowFloor: false)
     }
 
+    /// Focus-matched pace read (initiative: judge the intervention on the
+    /// metric it prescribed). Non-nil ONLY when the prescription is genuinely
+    /// about pace AND this outcome recorded reliable pace evidence — outcomes
+    /// persisted before the pace fields existed (nil) fall through to the
+    /// score/filler read byte-exactly. The band-distance delta (prior distance
+    /// minus current distance from 105–175) is polarity-correct for fast and
+    /// slow talkers: shrinking the distance is favorable.
+    private static func paceBandDistanceImprovement(_ outcome: RecommendationOutcome) -> Double? {
+        guard PaceCoaching.isPaceFocused(mode: outcome.mode, focus: outcome.focus, title: outcome.title),
+              let wordsPerMinute = outcome.wordsPerMinute,
+              let paceDelta = outcome.paceDelta else { return nil }
+        let priorAverage = wordsPerMinute - paceDelta
+        return PaceCoaching.distanceFromBand(priorAverage) - PaceCoaching.distanceFromBand(wordsPerMinute)
+    }
+
     private static func hasMovement(_ outcome: RecommendationOutcome) -> Bool {
-        outcome.hasComparableScore == true || abs(outcome.fillerDelta) >= fillerMovementFloor
+        if let improvement = paceBandDistanceImprovement(outcome) {
+            return abs(improvement) >= paceMovementFloor
+        }
+        return outcome.hasComparableScore == true || abs(outcome.fillerDelta) >= fillerMovementFloor
     }
 
     private static func read(of outcome: RecommendationOutcome) -> Read {
+        // A pace-focused prescription with recorded pace evidence is judged on
+        // pace — the metric it prescribed — never on the composite score.
+        if let improvement = paceBandDistanceImprovement(outcome) {
+            if improvement >= paceSwing { return .favorable }
+            if improvement <= -paceSwing { return .unfavorable }
+            return .neutral
+        }
         let scoreFavorable = outcome.hasComparableScore == true && outcome.scoreDelta >= scoreSwing
         let scoreUnfavorable = outcome.hasComparableScore == true && outcome.scoreDelta <= -scoreSwing
         let fillerFavorable = outcome.fillerDelta <= -fillerSwing   // negative filler delta = improvement
@@ -9057,6 +9129,19 @@ final class RecommendationLearningStore: ObservableObject {
         let averageDuration = relevantHistory.isEmpty
             ? session.duration
             : relevantHistory.map(\.duration).reduce(0, +) / Double(relevantHistory.count)
+        // Pace evidence, mirroring comparableScoreDelta's honesty: recorded
+        // only when this rep AND the prior history both carry a reliable
+        // reading (sub-15s fragments read as wild wpm and are excluded).
+        let reliableWordsPerMinute: (PracticeSession) -> Double? = { rep in
+            guard rep.duration >= 15, rep.wordsPerMinute > 0 else { return nil }
+            return Double(rep.wordsPerMinute)
+        }
+        let priorPaces = relevantHistory.compactMap(reliableWordsPerMinute)
+        let sessionPace = reliableWordsPerMinute(session)
+        let comparablePaceDelta: Double? = {
+            guard let sessionPace, !priorPaces.isEmpty else { return nil }
+            return sessionPace - priorPaces.reduce(0, +) / Double(priorPaces.count)
+        }()
 
         let outcome = RecommendationOutcome(
             id: UUID(),
@@ -9071,7 +9156,9 @@ final class RecommendationLearningStore: ObservableObject {
             scoreDelta: comparableScoreDelta ?? 0,
             hasComparableScore: comparableScoreDelta != nil,
             fillerDelta: Double(session.fillerWordCount) - averageFillers,
-            durationDelta: session.duration - averageDuration
+            durationDelta: session.duration - averageDuration,
+            wordsPerMinute: comparablePaceDelta != nil ? sessionPace : nil,
+            paceDelta: comparablePaceDelta
         )
 
         outcomes.insert(outcome, at: 0)

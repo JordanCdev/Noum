@@ -18319,7 +18319,9 @@ struct RecommendationAdaptationAnalyzerTests {
         at completedAt: TimeInterval,
         score: Double,
         hasScoreOptional: Bool?,
-        filler: Double = 0
+        filler: Double = 0,
+        wordsPerMinute: Double? = nil,
+        paceDelta: Double? = nil
     ) -> RecommendationOutcome {
         RecommendationOutcome(
             id: UUID(),
@@ -18334,8 +18336,78 @@ struct RecommendationAdaptationAnalyzerTests {
             scoreDelta: score,
             hasComparableScore: hasScoreOptional,
             fillerDelta: filler,
-            durationDelta: 0
+            durationDelta: 0,
+            wordsPerMinute: wordsPerMinute,
+            paceDelta: paceDelta
         )
+    }
+
+    // MARK: Focus-matched pace read (judge the intervention on the metric it prescribed)
+
+    @Test func paceFocusedPrescriptionIsJudgedOnPaceNotTheCompositeScore() {
+        // Score/filler read says NO movement (no comparable score, flat
+        // fillers) — under the old read these reps were invisible. The pace
+        // evidence shows the fast talker closing on the band each rep
+        // (distance 30 -> 15, 20 -> 8, 15 -> 3), all >= the 10wpm swing.
+        let outcomes = [
+            adOutcome(mode: .timed, focus: "controlled pacing under pressure", at: 100, score: 0, hasScoreOptional: false, wordsPerMinute: 190, paceDelta: -15),
+            adOutcome(mode: .timed, focus: "controlled pacing under pressure", at: 101, score: 0, hasScoreOptional: false, wordsPerMinute: 183, paceDelta: -12),
+            adOutcome(mode: .timed, focus: "controlled pacing under pressure", at: 102, score: 0, hasScoreOptional: false, wordsPerMinute: 178, paceDelta: -12),
+        ]
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "controlled pacing under pressure", in: outcomes)
+        #expect(verdict?.action == .reinforce)
+        #expect(verdict?.movementReps == 3, "pace movement must count toward the floor")
+        #expect(verdict?.improvedRate == 1.0)
+        #expect(RecommendationAdaptationAnalyzer.adaptationRationale(mode: .timed, focus: "controlled pacing under pressure", in: outcomes) != nil)
+    }
+
+    @Test func paceReadIsPolarityCorrectForASlowTalkerLifting() {
+        // Slow talker rising toward the band: prior 83 -> 95 wpm shrinks the
+        // band distance 22 -> 10 (+12 improvement) — favorable, not "faster
+        // is worse".
+        let outcomes = (0..<3).map { i in
+            adOutcome(mode: .timed, focus: "lift your speaking speed", at: 100 + Double(i), score: 0, hasScoreOptional: false, wordsPerMinute: 95, paceDelta: 12)
+        }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "lift your speaking speed", in: outcomes)
+        #expect(verdict?.action == .reinforce)
+        #expect(verdict?.improvedRate == 1.0)
+    }
+
+    @Test func paceDriftingAwayFromBandSustainedIsConfidentReplace() {
+        // Six reps drifting AWAY from the band (prior 188 -> 200: distance
+        // 13 -> 25, −12 each) — the same confident-replace bar as any other
+        // sustained unfavorable ledger.
+        let outcomes = (0..<6).map { i in
+            adOutcome(mode: .timed, focus: "controlled pacing", at: 100 + Double(i), score: 0, hasScoreOptional: false, wordsPerMinute: 200, paceDelta: 12)
+        }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "controlled pacing", in: outcomes)
+        #expect(verdict?.action == .replace)
+        #expect(verdict?.confidence == .confident)
+        #expect((verdict?.unfavorableRate ?? 0) >= 0.6)
+    }
+
+    @Test func outcomesWithoutPaceFieldsKeepTheScoreReadByteExactly() {
+        // Pace-focused prescription but the ledger predates the pace fields
+        // (nil) — the verdict must be EXACTLY what the score read gives today
+        // (mirror of exactlyThreeUnfavorable_varyTentative).
+        let outcomes = (0..<3).map { i in
+            adOutcome(mode: .timed, focus: "controlled pacing", at: 100 + Double(i), score: -0.7, hasScoreOptional: true)
+        }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "controlled pacing", in: outcomes)
+        #expect(verdict?.action == .vary)
+        #expect(verdict?.confidence == .tentative)
+        #expect(verdict?.movementReps == 3)
+    }
+
+    @Test func nonPaceFocusIgnoresPaceEvidence() {
+        // A close-focused prescription with incidental pace improvement must
+        // still be judged on the score read (unfavorable -> vary), never on
+        // pace it didn't prescribe.
+        let outcomes = (0..<3).map { i in
+            adOutcome(mode: .timed, focus: "a decisive close", at: 100 + Double(i), score: -0.7, hasScoreOptional: true, wordsPerMinute: 178, paceDelta: -12)
+        }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "a decisive close", in: outcomes)
+        #expect(verdict?.action == .vary)
     }
 }
 

@@ -137,6 +137,41 @@ enum CoachCaseMetric: String, Codable, Equatable {
     case wordsPerMinute
 }
 
+/// Shared pace-coaching vocabulary: one band + one prescription detector used
+/// by BOTH the success-criterion builder (PrimaryFocusMemory) and the
+/// adaptation analyzer (RecommendationAdaptationAnalyzer), so "what counts as
+/// a pace prescription" and "what counts as healthy pace" can never drift
+/// between the bar a prescription is held to and the ledger read that judges
+/// its response.
+enum PaceCoaching {
+    /// The healthy conversational band — the same slow/fast cutoffs the
+    /// reasoning pass uses (105 / 175 wpm).
+    static let healthyBand: ClosedRange<Double> = 105...175
+
+    private static let keywords = [
+        "pace", "pacing", "rushing", "rushed", "too fast",
+        "slow down", "words per minute", "wpm", "speaking speed"
+    ]
+
+    /// Whether a prescription is genuinely about pace. Filler prescriptions
+    /// keep precedence (an Ah-Counter drill mentioning "slow your pace" stays
+    /// a filler prescription).
+    static func isPaceFocused(mode: PracticeMode, focus: String?, title: String) -> Bool {
+        let haystack = "\(focus ?? "") \(title)".lowercased()
+        guard mode != .ahCounter, !haystack.contains("filler") else { return false }
+        return keywords.contains { haystack.contains($0) }
+    }
+
+    /// Distance from the healthy band (0 inside the band). The adaptation
+    /// read judges pace movement by whether this shrank — polarity-correct
+    /// for fast AND slow talkers without guessing a direction from copy.
+    static func distanceFromBand(_ wordsPerMinute: Double) -> Double {
+        if wordsPerMinute < healthyBand.lowerBound { return healthyBand.lowerBound - wordsPerMinute }
+        if wordsPerMinute > healthyBand.upperBound { return wordsPerMinute - healthyBand.upperBound }
+        return 0
+    }
+}
+
 enum CoachCaseComparator: String, Codable, Equatable {
     case atMost
     case atLeast
@@ -2082,9 +2117,9 @@ enum CoachMemoryEngine {
     /// followed-rep count, so the real number never appears on thin data.
     private static let minPriorRepsForGroundedCriterion = 3
 
-    /// The healthy conversational band the pace criterion anchors to — the
-    /// same slow/fast cutoffs the reasoning pass uses (105 / 175 wpm).
-    private static let healthyPaceBand: ClosedRange<Double> = 105...175
+    /// The healthy conversational band the pace criterion anchors to.
+    /// Shared with the adaptation analyzer via `PaceCoaching`.
+    private static var healthyPaceBand: ClosedRange<Double> { PaceCoaching.healthyBand }
 
     /// Focus-matched pace bar: a pacing prescription is judged on words per
     /// minute, not the composite session score. Returns nil — the caller then
@@ -2109,13 +2144,7 @@ enum CoachMemoryEngine {
         sessions: [PracticeSession],
         now: Date
     ) -> CoachSuccessCriterion? {
-        let haystack = "\(focus ?? "") \(title)".lowercased()
-        guard mode != .ahCounter, !haystack.contains("filler") else { return nil }
-        let paceKeywords = [
-            "pace", "pacing", "rushing", "rushed", "too fast",
-            "slow down", "words per minute", "wpm", "speaking speed"
-        ]
-        guard paceKeywords.contains(where: { haystack.contains($0) }) else { return nil }
+        guard PaceCoaching.isPaceFocused(mode: mode, focus: focus, title: title) else { return nil }
 
         let window = caseEvaluationWindow
         let values = followedRepValues(
