@@ -47,6 +47,49 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-07-06 (autonomous `noum-1` run). **23rd iteration — verified Wave-1, re-benchmarked
+to ~7.6, and shipped the two collision-safe docs/design levers while a concurrent agent
+owned the Swift lane. No app code changed; no push. Full write-up:
+`docs/COACH_PARITY_EVAL_2026-07-06.md`.**
+
+- **Context on arrival:** a concurrent `fable-5 --ultracode` agent was ACTIVELY shipping
+  the Swift "parity Wave-1" initiatives (`5e1a6052`/`c6a0320f`/`5610cf05` = pace-on-pace
+  prescriptions + one-tap reflection intake). No `ANTHROPIC_API_KEY`. So every code-bearing
+  lever was either high-collision (contended Swift / `project.pbxproj` churn) or env-gated.
+  Worked strictly in the **docs + Figma** lane — touched none of the concurrent agent's files.
+- **Verified Wave-1 is real & green:** isolated `DerivedData/Noum-verify` →
+  **TEST BUILD SUCCEEDED**; `ScoreCalibrationTests` (all pace tests) + `SessionReflectionTests`
+  (round-trip/coach-clause/bounds) **all pass**. The only DoD brush: `ReflectionCaptureRow.swift`
+  (the view) ships without a view test; its model/context ARE tested.
+- **Re-benchmark: ~7.4 → ~7.6** (5-role read-only eval, 14 agents, adversarially verified).
+  The +0.2 is earned by Wave-1. Two structural ceilings unchanged and both gated: coaches
+  HOW not WHAT (content engine reads argument SHAPE from connective words; no-transcript
+  invariant in `CoachContextBuilder`), and live roleplay is env-blocked (IM is a scored
+  tone-drill). Scorecard/limitations in the eval doc.
+- **Shipped (docs, zero-collision, keyless):** (1) `docs/POSITIONING.md` — the top-ranked
+  lever; positioning is the worst axis (5/10) because the honesty moat is invisible to
+  prospects. Category one-liner ("the communication coach that only tells you what it can
+  prove"), a first-run "why different" beat draft, and a truthfully-sourced credibility
+  line — all inside the `.forming` cap, no named-coach fabrication. Draft copy for Jordan
+  to land in `CoachingOnboardingView` when the Swift lane is free. (2) `docs/SPEC_rep_report_surface.md`
+  addendum — scope correction (`ProfileView` already has 2 real Swift Charts at :1710/:2054;
+  only the Speech-Patterns bars at :3020-3028 are hand-rolled) + recorded the Figma review file.
+- **Figma:** built **Variant A (hero-led)** of the Rep Report review file, screenshot-verified
+  premium and on-token — `https://www.figma.com/design/GKF8UITUcQv8ttEDgKkckP`. **Variant B
+  (timeline-led) NOT built** — Figma **Starter-plan MCP call limit reached** mid-build (a real
+  ceiling: one 2-variant screen exhausts it). Composition decision stays Jordan's.
+- **Next-session queue (serialize AFTER the concurrent Swift agent finishes):** land the
+  positioning copy in `CoachingOnboardingView`; pre-rep framing bridge on the real first-run
+  path (spec'd, high-collision — hot `ContentView` router); argument-logic copy fix in
+  `PracticeSupport.swift`; ungraded <2-min warm-up drill (new-file, `project.pbxproj`).
+  Jordan-only: supply `ANTHROPIC_API_KEY` for content critique + live roleplay; a paid Figma
+  tier for Variant B.
+- **10/10 answer, unchanged by design.** "Replaces a human coach" stays REFUSED (`.forming`
+  cap). Honest headline: the docs/UX loop keeps delivering real, disciplined coaching that
+  leads the category on trust — but it remains a speech-mechanics-plus-durable-memory system,
+  not a thinking partner. Closing that gap needs the API key (content + roleplay), not another
+  prompt/UX iteration.
+
 2026-07-04 (autonomous `noum2` run). **22nd iteration — reframed the ceiling and
 shipped the keyless lever it was hiding. GREEN (`node --test` 37/0, validateFixtures
 51/0), no push. Commit `a96152ac`. Full write-up:

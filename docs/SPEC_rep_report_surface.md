@@ -91,3 +91,36 @@ Nothing here is new analysis. This is a **layout / hierarchy** change only.
 Canva is **not** the right tool here (marketing collateral, not product surface).
 A Noum **brand kit** in Canva would only be worth setting up for store/marketing
 assets, and would let `generate-design` stay on-palette automatically.
+
+## Addendum — 2026-07-06 (scope correction + Figma review file)
+
+**Scope correction (verified against code).** The "Why this exists" framing above is
+slightly overbroad. `ProfileView` already renders **two real Swift Charts** — the rating
+trend (`RatingHistoryChart`, `ProfileView.swift:2054`) and the progression charts
+(`ProgressionChartsCard`, `ProfileView.swift:1710`). The **only** genuine hand-rolled
+bypass is the Speech-Patterns filler bars (`ProfileView.swift:3020-3028`, a
+`GeometryReader` + `Color.orange` fill). So the residual work is narrower than a
+wholesale chart migration:
+
+1. Replace the Speech-Patterns bars with the shipped Swift Charts vocabulary.
+2. Compose the already-existing signals into the single Rep Report surface (this spec).
+
+The Summary "Deep read" disclosure remains a flat text list — that is the real
+composition gap this surface addresses.
+
+**Figma review file (built this run).** A review file exists at
+`https://www.figma.com/design/GKF8UITUcQv8ttEDgKkckP`
+("Noum — Rep Report (review, 2 variants)"):
+
+- **Variant A (hero-led): BUILT + screenshot-verified.** iPhone frame composing verdict
+  hero (verdict gradient `#3B6EF5→#6B4DF5→#8C3DF5` + two `HeroGlassChip`s) → recurring-
+  position centrepiece (readout lede + 3-third positional timeline with honest
+  pace/pause/filler markers + legend) → rating trend strip (compact sparkline) →
+  supporting stats tiles (filler rate + pace on `innerSurface`). All tokens per §Tokens
+  above (Figtree/Manrope confirmed available in the file).
+- **Variant B (timeline-led): NOT built this run** — the Figma MCP Starter-plan tool-call
+  limit was reached mid-build (same cap iter-22 documented). Variant B should slim the
+  hero into a compact band and promote the recurring-position timeline to the visual
+  centrepiece. A follow-on session (or a Figma plan with more MCP calls) can add it.
+
+Composition decision remains **Jordan's**. Nothing here is wired to code.
