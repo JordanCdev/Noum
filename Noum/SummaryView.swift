@@ -1028,6 +1028,12 @@ struct SummaryView: View {
                     // coach's read. Self-hides when nothing is pending.
                     if !isIMSummary {
                         DeferredCaptureInlineCard()
+                        // One-tap "how did that rep feel?" intake — feeds
+                        // SessionReflectionStore -> CoachReflectionPattern so
+                        // the coach's case carries the user's own read, not
+                        // just telemetry. Optional (scrolling past declines);
+                        // collapses to a quiet "Noted" line once answered.
+                        ReflectionCaptureRow(sessionID: latestSessionID)
                     }
 
                     // IM analytics — demoted behind the chevron in the
