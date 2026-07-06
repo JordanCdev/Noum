@@ -19719,13 +19719,14 @@ struct CoachMemoryEngineTests {
         followed: Bool = true,
         completedAt: TimeInterval,
         scoreDelta: Double,
-        fillerDelta: Double
+        fillerDelta: Double,
+        focus: String = "a decisive close"
     ) -> RecommendationOutcome {
         RecommendationOutcome(
             id: UUID(),
             fingerprint: "\(mode.rawValue)-case",
             title: "Test prescription",
-            focus: "a decisive close",
+            focus: focus,
             target: "One clean final sentence",
             mode: mode,
             sessionID: UUID(),
@@ -19815,6 +19816,140 @@ struct CoachMemoryEngineTests {
         #expect(criterion?.baselineSnapshot?.sampleDepth == 3)
         #expect(criterion?.baselineSnapshot?.priorAverage == 5)
         #expect(criterion?.summary == "your last 3 reps averaged 5 — hold a 6 or higher across 2 reps")
+    }
+
+    /// A pacing session with a controlled word count: duration 60s means
+    /// wpm == word count exactly.
+    private func pacedSession(words: Int, at time: TimeInterval, duration: Double = 60) -> PracticeSession {
+        PracticeSession(
+            transcript: Array(repeating: "word", count: words).joined(separator: " "),
+            fillerWordCount: 0,
+            duration: duration,
+            date: Date(timeIntervalSince1970: time),
+            mode: .timed,
+            score: 7
+        )
+    }
+
+    @Test func paceFocusedPrescriptionIsHeldToWordsPerMinuteForAFastTalker() {
+        // Focus-matched criterion: a pacing prescription for a demonstrably
+        // fast talker (priors 190/195/185 wpm, avg 190 > 175 band edge) is
+        // judged on wpm — bar = get inside the band (175 or slower) — not on
+        // the composite session score.
+        let sessions = [
+            pacedSession(words: 150, at: 1_000),
+            pacedSession(words: 150, at: 900),
+            pacedSession(words: 190, at: 800),
+            pacedSession(words: 195, at: 700),
+            pacedSession(words: 185, at: 600),
+        ]
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: sessions,
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: [
+                interventionOutcome(mode: .timed, followed: true, completedAt: 1_000, scoreDelta: 1, fillerDelta: 0, focus: "controlled pacing under pressure")
+            ],
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        let criterion = memory?.activeIntervention?.successCriterion
+        #expect(criterion?.metric == .wordsPerMinute)
+        #expect(criterion?.comparator == .atMost)
+        #expect(criterion?.threshold == 175)
+        #expect(criterion?.baselineSnapshot?.sampleDepth == 3)
+        #expect(criterion?.baselineSnapshot?.priorAverage == 190)
+        #expect(criterion?.summary == "your last 3 reps averaged 190 words/min — bring it to 175 or slower across 2 reps")
+    }
+
+    @Test func paceFocusInsideHealthyBandFallsBackToGenericScoreCriterion() {
+        // Priors average ~150 wpm — inside 105...175. Holding an in-band
+        // speaker to a pace bar would be theatre, so the criterion must be
+        // BYTE-IDENTICAL to the generic score criterion a non-pace focus gets.
+        let sessions = [
+            pacedSession(words: 150, at: 1_000),
+            pacedSession(words: 150, at: 900),
+            pacedSession(words: 148, at: 800),
+            pacedSession(words: 152, at: 700),
+            pacedSession(words: 150, at: 600),
+        ]
+        func build(focus: String) -> CoachSuccessCriterion? {
+            CoachMemoryEngine.build(
+                profile: profile(voice: .concise),
+                baseline: .empty,
+                sessions: sessions,
+                trends: [],
+                forwardPlan: nil,
+                previous: nil,
+                lastSessionID: nil,
+                recommendationOutcomes: [
+                    interventionOutcome(mode: .timed, followed: true, completedAt: 1_000, scoreDelta: 1, fillerDelta: 0, focus: focus)
+                ],
+                now: Date(timeIntervalSince1970: 1_000)
+            )?.activeIntervention?.successCriterion
+        }
+        let paceFocused = build(focus: "controlled pacing under pressure")
+        let genericFocus = build(focus: "a decisive close")
+        #expect(paceFocused?.metric == .sessionScore)
+        #expect(paceFocused == genericFocus, "in-band pace focus must fall back byte-identically to the generic criterion")
+    }
+
+    @Test func paceFocusWithThinWpmHistoryFallsBackToGenericCriterion() {
+        // Only 2 pre-window reps carry a reliable wpm (the two oldest are
+        // sub-15s fragments whose wpm reads are noise) — below the 3-rep
+        // grounding floor, so no pace bar may be built.
+        let sessions = [
+            pacedSession(words: 150, at: 1_000),
+            pacedSession(words: 150, at: 900),
+            pacedSession(words: 190, at: 800),
+            pacedSession(words: 195, at: 700),
+            pacedSession(words: 30, at: 600, duration: 8),
+            pacedSession(words: 28, at: 500, duration: 8),
+        ]
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: sessions,
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: [
+                interventionOutcome(mode: .timed, followed: true, completedAt: 1_000, scoreDelta: 1, fillerDelta: 0, focus: "your pace keeps rushing")
+            ],
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        let criterion = memory?.activeIntervention?.successCriterion
+        #expect(criterion?.metric == .sessionScore, "thin wpm history must never ground a pace bar")
+    }
+
+    @Test func fillerPrescriptionKeepsFillerPrecedenceOverPaceKeywords() {
+        // A prescription that mentions both fillers and pace stays a filler
+        // criterion — filler precedence is the existing contract.
+        let ahSessions = [
+            ahCounterSession(fillers: 4, at: 1_000),
+            ahCounterSession(fillers: 5, at: 900),
+            ahCounterSession(fillers: 7, at: 800),
+            ahCounterSession(fillers: 6, at: 700),
+            ahCounterSession(fillers: 6, at: 600),
+        ]
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: ahSessions,
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: [
+                interventionOutcome(mode: .ahCounter, followed: true, completedAt: 1_000, scoreDelta: 0, fillerDelta: -1, focus: "cut fillers by slowing your pace")
+            ],
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        #expect(memory?.activeIntervention?.successCriterion?.metric == .fillersPerRep)
     }
 
     @Test func criterionStaysGenericBelowPriorRepFloor() {

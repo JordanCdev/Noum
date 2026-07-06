@@ -130,6 +130,11 @@ enum CoachCaseMetric: String, Codable, Equatable {
     case fillersPerRep
     case sessionScore
     case durationSeconds
+    /// Focus-matched pace bar (transcript word count / duration — a field
+    /// every session carries). Reads can be unreliable on very short reps, so
+    /// `metricValue` returns nil below a duration floor and the criterion
+    /// stays `.pending` until the window carries real readings.
+    case wordsPerMinute
 }
 
 enum CoachCaseComparator: String, Codable, Equatable {
@@ -1976,6 +1981,12 @@ enum CoachMemoryEngine {
         case .fillersPerRep: return Double(session.fillerWordCount)
         case .sessionScore: return session.score.map(Double.init)
         case .durationSeconds: return session.duration
+        case .wordsPerMinute:
+            // A very short fragment reads as a wild wpm; below the qualifying
+            // floor the reading is noise, so return nil and let the criterion
+            // stay pending rather than judge pace on garbage.
+            guard session.duration >= 15, session.wordsPerMinute > 0 else { return nil }
+            return Double(session.wordsPerMinute)
         }
     }
 
@@ -2000,6 +2011,18 @@ enum CoachMemoryEngine {
         sessions: [PracticeSession],
         now: Date
     ) -> CoachSuccessCriterion {
+        // Focus-matched bar first (hold the prescription to the metric it
+        // prescribes); falls through byte-identically to the generic path
+        // whenever the focused bar cannot be honestly grounded.
+        if let pace = paceCriterion(
+            mode: mode,
+            focus: focus,
+            title: title,
+            sessions: sessions,
+            now: now
+        ) {
+            return pace
+        }
         let (metric, comparator) = caseMetric(mode: mode, focus: focus, title: title)
         let window = caseEvaluationWindow
         let values = followedRepValues(metric: metric, mode: mode, sessions: sessions, now: now)
@@ -2020,6 +2043,11 @@ enum CoachMemoryEngine {
             threshold = min(10, ((priorAverage ?? 6) + 1).rounded())
         case .durationSeconds:
             threshold = (priorAverage ?? 45).rounded()
+        case .wordsPerMinute:
+            // Unreachable via caseMetric (pace bars are built exclusively by
+            // paceCriterion, which grounds direction in the user's own band
+            // deviation); a safe in-band default keeps the switch total.
+            threshold = healthyPaceBand.upperBound
         }
 
         let baselineSnapshot: CoachSuccessCriterion.BaselineSnapshot? =
@@ -2054,9 +2082,82 @@ enum CoachMemoryEngine {
     /// followed-rep count, so the real number never appears on thin data.
     private static let minPriorRepsForGroundedCriterion = 3
 
+    /// The healthy conversational band the pace criterion anchors to — the
+    /// same slow/fast cutoffs the reasoning pass uses (105 / 175 wpm).
+    private static let healthyPaceBand: ClosedRange<Double> = 105...175
+
+    /// Focus-matched pace bar: a pacing prescription is judged on words per
+    /// minute, not the composite session score. Returns nil — the caller then
+    /// falls back byte-identically to the generic criterion — unless ALL hold:
+    ///   • the prescription is actually about pace (focus/title keywords) and
+    ///     not a filler prescription (filler precedence is preserved),
+    ///   • at least `minPriorRepsForGroundedCriterion` pre-window reps carry a
+    ///     reliable wpm reading (never ground a bar on thin or unmeasurable
+    ///     history), and
+    ///   • the user's own prior average sits OUTSIDE the healthy band — an
+    ///     in-band speaker already meets any honest pace bar, so holding them
+    ///     to one would be theatre.
+    /// The bar is the NEAR band edge (get inside 105–175), never a number the
+    /// user hasn't shown they need, and the criterion is judged on the same
+    /// followed-rep window as every other bar. Applies only to newly built
+    /// criteria: same-prescription rebuilds carry the previous criterion
+    /// verbatim upstream, so an open intervention's goalposts never move.
+    private static func paceCriterion(
+        mode: PracticeMode,
+        focus: String?,
+        title: String,
+        sessions: [PracticeSession],
+        now: Date
+    ) -> CoachSuccessCriterion? {
+        let haystack = "\(focus ?? "") \(title)".lowercased()
+        guard mode != .ahCounter, !haystack.contains("filler") else { return nil }
+        let paceKeywords = [
+            "pace", "pacing", "rushing", "rushed", "too fast",
+            "slow down", "words per minute", "wpm", "speaking speed"
+        ]
+        guard paceKeywords.contains(where: { haystack.contains($0) }) else { return nil }
+
+        let window = caseEvaluationWindow
+        let values = followedRepValues(
+            metric: .wordsPerMinute,
+            mode: mode,
+            sessions: sessions,
+            now: now
+        )
+        let priorValues = Array(values.dropFirst(window))
+        guard priorValues.count >= minPriorRepsForGroundedCriterion else { return nil }
+        let priorAverage = priorValues.reduce(0, +) / Double(priorValues.count)
+        guard !healthyPaceBand.contains(priorAverage) else { return nil }
+
+        let comparator: CoachCaseComparator = priorAverage > healthyPaceBand.upperBound
+            ? .atMost
+            : .atLeast
+        let threshold = comparator == .atMost
+            ? healthyPaceBand.upperBound
+            : healthyPaceBand.lowerBound
+        let baseline = CoachSuccessCriterion.BaselineSnapshot(
+            priorAverage: clampedAverage(priorAverage, for: .wordsPerMinute),
+            sampleDepth: priorValues.count
+        )
+        return CoachSuccessCriterion(
+            metric: .wordsPerMinute,
+            comparator: comparator,
+            threshold: threshold,
+            evaluationWindow: window,
+            summary: criterionSummary(
+                metric: .wordsPerMinute,
+                threshold: threshold,
+                window: window,
+                baseline: baseline,
+                comparator: comparator
+            ),
+            baselineSnapshot: baseline
+        )
+    }
+
     private static func clampedAverage(_ value: Double, for metric: CoachCaseMetric) -> Double {
         switch metric {
-        case .fillersPerRep, .durationSeconds:
+        case .fillersPerRep, .durationSeconds, .wordsPerMinute:
             return max(0, value)
         case .sessionScore:
             return min(10, max(0, value))
@@ -2088,10 +2189,14 @@ enum CoachMemoryEngine {
         metric: CoachCaseMetric,
         threshold: Double,
         window: Int,
-        baseline: CoachSuccessCriterion.BaselineSnapshot? = nil
+        baseline: CoachSuccessCriterion.BaselineSnapshot? = nil,
+        comparator: CoachCaseComparator? = nil
     ) -> String {
         let count = Int(threshold)
         let reps = window <= 1 ? "the next rep" : "\(window) reps"
+        // Pace bars carry direction (a fast talker slows, a slow talker
+        // lifts); every other metric's direction is implied by the metric.
+        let paceDirection = comparator == .atLeast ? "faster" : "slower"
 
         // Grounded path: enough pre-window history AND a real average to quote.
         if let baseline {
@@ -2104,6 +2209,8 @@ enum CoachMemoryEngine {
                 return "your last \(baseline.sampleDepth) reps averaged \(avg) — hold a \(count) or higher across \(reps)"
             case .durationSeconds:
                 return "your last \(baseline.sampleDepth) reps averaged ~\(avg)s — hold ~\(count)s of structured delivery across \(reps)"
+            case .wordsPerMinute:
+                return "your last \(baseline.sampleDepth) reps averaged \(avg) words/min — bring it to \(count) or \(paceDirection) across \(reps)"
             }
         }
 
@@ -2116,6 +2223,8 @@ enum CoachMemoryEngine {
             return "score of \(count) or higher across \(reps)"
         case .durationSeconds:
             return "hold ~\(count)s of structured delivery across \(reps)"
+        case .wordsPerMinute:
+            return "\(count) words/min or \(paceDirection) across \(reps)"
         }
     }
 
