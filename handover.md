@@ -47,6 +47,47 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-07-07 (autonomous `noum-1` run). **24th iteration — ran the multi-role workflow,
+shipped the top keyless lever, and refreshed the month-stale market read into a
+category-of-one strategic reframe. Compile-verified, no push. Full write-up:
+`docs/COACH_PARITY_EVAL_2026-07-07_iter24.md`.**
+
+- **Constraints:** no `ANTHROPIC_API_KEY` (content-critique + roleplay stay key-gated);
+  a concurrent agent (pid 685) held the Swift lane, so work stayed on cold/collision-safe
+  files. Verified `CoachingOnboardingView.swift` cold (mtime Jun 21) before editing.
+- **Workflow (38 agents, ~2M tok):** ground-truth → market/UX/3×end-user-persona/coach
+  critique → adversarial verify (killed anything violating a trust red line, secretly
+  key-gated, already-built, or unverifiable) → decision-grade synthesis. 22 levers survived.
+  Notably the ground-truth pass hallucinated 3 file paths; the verify/synthesis passes
+  caught + corrected them (`RepEventTrend.swift` not `RepEventTrendEngine.swift`;
+  `coachLoopReadinessCard` ~2608 not `CoachParityReadinessCard.swift`; recommendation
+  engine in `PracticeSupport.swift`).
+- **Shipped (Move #2, keyless, compile-verified):** onboarding **coach-commitment
+  read-back** in `CoachingOnboardingView.swift`. A coach-voice card that reads the profile
+  back (reusing `SpeakingStyleGoal.coachingDescription` / `SpeakingChallenge.trainingFocusFragment`)
+  AND states the honesty stance up front — "I won't guess at a verdict from a form; your
+  first rep gives me the evidence." Zero pipeline change, no new state, no overclaim,
+  enum-derived (never quotes user text), a11y-labelled, on-token. Attacks the
+  farthest-trailing axis (positioning ~5/10 = the honesty moat is invisible until week two).
+- **Strategic reframe (refreshed 2026 competitor intel):** the whole category
+  (Speeko Convos, Yoodli custom-scenario + live-meeting coaching, Duolingo per-user
+  "List of Facts" memory) converged on cloud-LLM roleplay + memory that **transmits the
+  user's speech content** with weak governance (Bloomberg flagged consent-less notetakers
+  2026-06-30). This hands Noum a category-of-one wedge: *no rival can truthfully say "we
+  never send your words to a chat model, and every quote is verbatim-verified."* Currently
+  silent. Making it legible (backlog Moves #3–#5) is the largest keyless gain.
+- **Executable backlog queued** (see eval doc, ranked keyless×collision×leverage): #1 flip
+  `AutoGuidedFirstRep` after felt-QA; #3 scoped private-by-design trust strip (NOT a broad
+  "nothing leaves your device" — raw audio does hit cloud STT); #4 stated-stance line on
+  cold Home; #7 thread built IM prep prompts into IM mode; #8 case-history multi-entry
+  timeline; #9 positional trend in Home hero. Key-gated track (Jordan): keyed "Content Read"
+  behind the no-transcript wall + live roleplay — provider already scaffolded
+  (`AICoachChatService.swift:777`).
+- **10/10 answer, unchanged by design.** "Replaces a human coach" stays REFUSED (the
+  `.forming` cap + no-transcript + quote gate hold the ceiling below 10 on purpose — the
+  trust moat). Headline still ~7.6; keyless moves close the *visibility* + *first-rep* gaps,
+  not the *content/roleplay* gap. That last gap needs the key, not another iteration.
+
 2026-07-06 (autonomous `noum-1` run). **23rd iteration — verified Wave-1, re-benchmarked
 to ~7.6, and shipped the two collision-safe docs/design levers while a concurrent agent
 owned the Swift lane. No app code changed; no push. Full write-up:

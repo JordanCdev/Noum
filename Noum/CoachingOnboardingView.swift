@@ -550,6 +550,12 @@ struct CoachingOnboardingView: View {
                         }
                     }
                     .padding(.horizontal, Spacing.md)
+
+                    // Coach commitment: the profile read back in the coach's own
+                    // voice, plus the honesty stance stated up front — evidence
+                    // before any verdict. Enum-derived; never quotes user text.
+                    coachCommitmentCard
+                        .padding(.horizontal, Spacing.md)
                 }
                 .padding(.bottom, Spacing.lg)
             }
@@ -1275,6 +1281,53 @@ struct CoachingOnboardingView: View {
             }
         }
         return biggestChallenge.title
+    }
+
+    /// The onboarding profile spoken back in the coach's own voice, with the
+    /// honesty stance stated before the first rep: Noum names a lever only once
+    /// it has evidence. Built from the same enum resolvers Home cold-start and
+    /// the Ask Noum day-0 greeting use, so the coach sounds like one person.
+    /// Enum-derived — never surfaces user-typed challenge text (custom challenge
+    /// is mapped to a routing bucket at `CoachingOnboardingView` line ~785).
+    private var coachCommitmentLine: String {
+        let focus = biggestChallenge.trainingFocusFragment
+        let stance = "I won't guess at a verdict from a form, though — your first rep gives me the evidence, and then I'll name the one thing worth working on."
+        if let style = speakingStyleGoal {
+            return "I'll help you \(style.coachingDescription), starting with \(focus). \(stance)"
+        }
+        return "We'll start with \(focus). \(stance)"
+    }
+
+    private var coachCommitmentCard: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            ZStack {
+                Circle()
+                    .fill(AppColor.brandBlue.opacity(0.12))
+                    .frame(width: 36, height: 36)
+
+                Image(systemName: "waveform")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+            }
+
+            Text(coachCommitmentLine)
+                .font(.subheadline)
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .fill(AppColor.brandBlue.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(AppColor.brandBlue.opacity(0.18), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("How Noum will coach you. \(coachCommitmentLine)")
     }
 
     private func optionDetail<Option: Identifiable & Hashable>(for option: Option) -> String where Option: CustomStringConvertible {
