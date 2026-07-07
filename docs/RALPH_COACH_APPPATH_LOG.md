@@ -108,7 +108,29 @@ replies, **0 placeholder leaks**, but **30/61 fixtures < 70** and lowest fixture
 Full 10-turn transcript comparison: `docs/RALPH_10_TRANSCRIPTS_2026-07-07.md` — **4/10
 pass** the ≥70 bar on live replies.
 
-## KEY INSIGHT (advances the "not more prompting" thesis, now with data)
+## VERIFIED CORRECTION (2026-07-07, `CoachReportVoiceRegenerationProofTests`, TEST SUCCEEDED)
+My mid-cycle hypothesis ("the gate lacks a report-voice detector — add one") was **WRONG,
+and the truth is more important.** The app's upstream `AICoachChatService.replyQualityIssue`
+**already detects** report-voice metrics (`replyUsesTrustRepairReportVoiceMetrics` :2251,
+`replyUsesSensitiveTurnReportVoiceMetrics` :2258) **and** length (`.tooLong` :2285), and a
+non-nil issue **forces the provider chain to REGENERATE** before the reply ships (retry at
+`AICoachChatService.swift:1617→1633`). A new deterministic test feeds the EXACT leaked live
+replies to the real gate and proves it:
+- `thats-not-informative` reply ("Score 74, 5 fillers in 68 seconds") → **flagged → regenerates.**
+- `what-do-you-know` reply (116-word metric recitation) → **flagged → regenerates.**
+- `am-i-improving` reply (excellent, 90/100, cites the requested filler trend) → **NOT
+  flagged** — the guard is turn-aware, not a blanket number ban.
+
+**Therefore the arena's raw-reply 67.6 UNDERSTATES real app-path quality.** The
+prompt-faithful arena scores the RAW prompted reply and **never runs the app's regeneration
+loop**, so it counts leaks that the real app would fix before the user ever sees them. This
+is the precise form of the user's thesis ("prompt-only Arena is insufficient; app-path may
+not be exercised") — but it cuts the *opposite* way from the fear: on these cases the app
+path is BETTER than the raw arena, not canned. **The real, only gap is measurement: nothing
+currently evaluates `live model → app regeneration → final reply`.** That is exactly the
+live app-path sweep (`coach-live-eval-v1.json`), which is now the single highest-value build.
+
+## (superseded) earlier KEY INSIGHT
 The prompt **already** carries strong report-voice guards (`CoachContextBuilder`
 :146-155/:424/:447/:1549/:1658, `CoachPromptBundle` :65 — "do not lead with raw
 score/duration/filler telemetry; translate into plain coaching language"). **Yet the live
