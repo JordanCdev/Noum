@@ -11955,6 +11955,10 @@ struct CoachContextBuilderTests {
 //      with a clean thread (no orphaned typing indicators).
 
 @MainActor
+// Serialized: the immediate-pushback diagnostic tests assert on the process-wide
+// `AICallDiagnosticsStore.shared.latest`; running them in parallel lets one test's
+// reset/write clobber another's, which flaked only under full-suite contention.
+@Suite(.serialized)
 struct AskNoumStoreTests {
 
     private func freshStore() -> AskNoumStore {
