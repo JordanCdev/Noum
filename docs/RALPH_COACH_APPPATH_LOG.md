@@ -100,17 +100,50 @@ The app-path evaluation is real and **honest by construction**:
    ("score 74"), one-move discipline, off-topic report-voice. Fix in the prompt/gate,
    verify via re-run — but anchored to app-path traces, not arena score alone.
 
+## PROVE — real live baseline (production-parity, `claude-sonnet-4-6`, NOT replay)
+`ANTHROPIC_API_KEY=… ./run.sh run` over 61 fixtures. **Live gold-suite mean = 67.6**
+(target 70, FAIL — the replay 71.6 was inflated; 67.6 is the trustworthy number and
+matches Jordan's ~67.7). deepAssessment **78.6** ✓, trustRepair **70.5** ✓, 0 missing
+replies, **0 placeholder leaks**, but **30/61 fixtures < 70** and lowest fixture = 41.
+Full 10-turn transcript comparison: `docs/RALPH_10_TRANSCRIPTS_2026-07-07.md` — **4/10
+pass** the ≥70 bar on live replies.
+
+## KEY INSIGHT (advances the "not more prompting" thesis, now with data)
+The prompt **already** carries strong report-voice guards (`CoachContextBuilder`
+:146-155/:424/:447/:1549/:1658, `CoachPromptBundle` :65 — "do not lead with raw
+score/duration/filler telemetry; translate into plain coaching language"). **Yet the live
+model still leaks metrics** — `thats-not-informative` opens "Score 74, 5 fillers in 68
+seconds" (deterministic `trustRepairReportVoice` −8), `what-do-you-know` recites "170 wpm,
+pause 0.21, filler 3.9". So the failure is NOT a missing instruction — the model ignores
+the existing one. **The correct fix is the runtime RELIABILITY GATE**: detect raw-metric
+recitation on trustRepair/groundedRead/sensitive turns and trigger the gate's existing
+repair path, so a report-voice leak can never ship regardless of model compliance. This is
+the app-path direction, not another prompt line. (Lives in `CoachReliabilityGate` —
+contended; next cycle either checkpoints the sibling WIP or edits via pathspec.)
+
+The other dominant model-independent defect is **over-length grounded reads**
+(`what-do-you-know` 116w vs 85 limit, `tooLong` −6) — also a gate-enforceable clamp.
+
 ## PROVE / HARDEN status (honest scorecard)
 | Criterion | Status |
 |---|---|
-| gold-suite mean ≥70 | live baseline pending (replay was ~71.6; live number is the real one) |
-| app-path ≥70 & real | **NOT met — no valid app-path evidence yet** (stale dump; generator is next cycle) |
-| trustRepair ≥65 | pending live number; known failure `thats-not-informative` 26 |
-| deepAssessment ≥70 | pending live number |
-| placeholder/fallback leaks 0 | fallback is turn-aware but **not visibly marked** → open |
+| gold-suite mean ≥70 | **67.6 — FAIL** (real live number; 30/61 fixtures <70) |
+| app-path ≥70 & real | **NOT met — no valid app-path evidence** (stale dump; generator next cycle) |
+| trustRepair ≥65 | **70.5 — PASS** (but `thats-not-informative` 55 via report-voice leak) |
+| deepAssessment ≥70 | **78.6 — PASS** |
+| placeholder/fallback leaks 0 | **0 leaks PASS**; but fallback still **not visibly marked** → open |
 | repeated proof-test blocked | 6-turn dedup only; **cross-session open** |
 | traces prove real Swift path | infra exists; **live sweep not yet run** → open |
-| 10 transcripts feel like a paid coach | live sweep in progress |
+| 10 transcripts feel like a paid coach | **4/10 pass**; report-voice + length are the drags |
+
+## Next cycle (ACT, ordered)
+1. **Gate-level report-voice repair** — the highest-leverage, model-independent win
+   (fixes the #1 failure class the prompt can't). `CoachReliabilityGate`.
+2. **Length clamp** on groundedRead in the gate.
+3. **Live app-path sweep generator** (`coach-live-eval-v1.json`) — removes
+   `.noLiveProviderTranscriptSweep`; makes app-path evidence real.
+4. **Visible fallback marking** + cross-session proof-test dedup.
+Re-run live after each; verify the sub-70 count drops and no regression.
 
 **Not production-ready, and won't claim it.** Two of the three readiness blockers are
 permanent-by-design (professional-coach calibration + real-user longitudinal outcomes) —
