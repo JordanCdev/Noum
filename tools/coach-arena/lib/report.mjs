@@ -105,6 +105,55 @@ function delta(cur, prev) {
   return d > 0 ? ` (▲ +${d})` : ` (▼ ${d})`;
 }
 
+function currentAppPathEvidence(run) {
+  const s = run.summary || {};
+  if (s.traceAudit || s.traceQualityAudit || s.productionEvidencePasses != null || s.traceQualityPasses != null) {
+    return {
+      status: 'available',
+      score: s.appPathScore ?? s.average ?? s.mean ?? null,
+      tracePasses: s.productionEvidencePasses ?? s.traceQualityPasses ?? null,
+      realPipelineTraceCount: s.traceAudit?.realPipelineTraceCount ?? null,
+      completeTraceCount: s.traceAudit?.completeTraceCount ?? null,
+      placeholderLeaks: s.placeholderLeaks ?? null,
+      fallbackSummary: s.providerFallbackSummary ?? s.fallbackSummary ?? null,
+      latencySummary: s.traceQualityAudit?.latency ?? null,
+      cacheSummary: s.cacheSummary ?? null,
+      source: 'current run'
+    };
+  }
+  return {
+    status: 'unavailable',
+    source: 'prompt-layer run',
+    reason: 'This run used the Node prompt-faithful engine. It does not execute the Swift retrieval, memory, caching, provider fallback, live quality gate, or UI pipeline. Run ./tools/coach-arena/run.sh python with a fresh app-path dump to produce this evidence.'
+  };
+}
+
+function renderAppPathEvidence(run) {
+  const app = currentAppPathEvidence(run);
+  const L = [];
+  L.push('## App-path evidence');
+  L.push('');
+  L.push('| Metric | Value |');
+  L.push('|---|---|');
+  if (app.status === 'available') {
+    L.push(`| Status | available (${app.source}) |`);
+    L.push(`| App-path score | ${app.score ?? 'not reported'} |`);
+    L.push(`| Trace / production audit | ${app.tracePasses == null ? 'not reported' : app.tracePasses ? 'pass' : 'fail'} |`);
+    L.push(`| Real pipeline traces | ${app.realPipelineTraceCount ?? 'not reported'} |`);
+    L.push(`| Complete traces | ${app.completeTraceCount ?? 'not reported'} |`);
+    L.push(`| Placeholder / fallback leaks | ${app.placeholderLeaks ?? 'not reported'} |`);
+    L.push(`| Provider fallback summary | ${app.fallbackSummary ?? 'not reported'} |`);
+    L.push(`| Latency / TTFT | ${app.latencySummary ? JSON.stringify(app.latencySummary) : 'not reported'} |`);
+    L.push(`| Cache hit rate | ${app.cacheSummary ?? 'not reported'} |`);
+  } else {
+    L.push(`| Status | unavailable (${app.source}) |`);
+    L.push(`| App-path score | unavailable |`);
+    L.push(`| Why | ${app.reason} |`);
+  }
+  L.push('');
+  return L;
+}
+
 function renderMarkdown(run, previous) {
   const s = run.summary;
   const p = previous?.summary;
@@ -126,6 +175,7 @@ function renderMarkdown(run, previous) {
   L.push('');
   L.push(`Scored ${s.scored}/${s.n} fixtures · range ${s.min}–${s.max} · median ${s.median}.${s.missing ? ` ${s.missing} missing capture(s).` : ''}`);
   L.push('');
+  L.push(...renderAppPathEvidence(run));
   L.push(`## Dimension means (of max)`);
   L.push('');
   L.push(`| Diagnostic IQ /25 | EQ /25 | Memory /20 | Intervention /15 | Dialogue /15 |`);
