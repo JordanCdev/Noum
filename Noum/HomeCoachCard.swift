@@ -448,6 +448,24 @@ struct HomeCoachCard: View {
             return phrase
         }
 
+        // Recurring positional read — the longitudinal "the coach remembers"
+        // line. Until now this longitudinal signal reached only the coach prompt
+        // (`CoachContextBuilder`'s POSITIONAL TREND block) and the dedicated
+        // `RepEventTrendCard`; threading one line onto the hero makes the
+        // cross-rep memory visible on the highest-traffic surface — the layer
+        // whole-take-average rivals never reach. Sits ABOVE the weekly-rhythm /
+        // tier-holding / generic-blueprint fallbacks (a named recurring position
+        // is more specific and more differentiating than a cadence nudge) and
+        // BELOW BigMoment / cold-start / case-intervention / landmark (those are
+        // more time-critical or more concrete). Honest by construction: the
+        // engine's >=3-reps-with-signal + super-majority floors self-suppress
+        // below enough history for the claim to be truthful, so a thin-data user
+        // never sees it. When a case intervention is active it returns above, so
+        // the coach never double-points at one marker in a single line.
+        if let trend = positionalTrend {
+            return RepEventTrendCopy.homeSubtitle(for: trend)
+        }
+
         // Weekly rhythm milestone — fires at 3, 5, 7 reps per week.
         // Reinforces cadence between landmark and tier variants.
         let weekReps = weeklyRepCount
@@ -818,6 +836,17 @@ struct HomeCoachCard: View {
             }
         }
         return count
+    }
+
+    /// The most credible recurring-position read across the recent rep window,
+    /// or nil when no positional habit has cleared `RepEventTrendEngine`'s
+    /// honesty floors (>=3 reps carried the event AND one zone holds a >=60%
+    /// super-majority). Pure — recomputed from the live session store, no new
+    /// persistence. `compute` returns trends in a fixed kind order (rushed →
+    /// pause → filler), so `.first` deterministically prefers the most
+    /// actionable pace read when several patterns co-exist.
+    private var positionalTrend: RepEventTrend? {
+        RepEventTrendEngine.compute(sessions: sessionStore.sessions).first
     }
 
     /// Reps completed in the current ISO week.

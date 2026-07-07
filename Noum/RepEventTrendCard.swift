@@ -158,6 +158,31 @@ enum RepEventTrendCopy {
         return core + " — \(trend.repsWithSignal) of \(trend.windowRepCount) reps overall."
     }
 
+    /// A single glanceable line for the Home hero subtitle — the highest-traffic
+    /// surface, where the full card's headline + subline + hedge footer is too
+    /// much. Reuses the vetted `headline` (zone/marker as the grammatical
+    /// subject, present-continuous "keeps" — trait-safe BY CONSTRUCTION, the
+    /// exact framing a five-role panel + adversarial trust audit locked over the
+    /// second-person "you've rushed…" phrasing it rejected) and appends ONLY the
+    /// earned denominator, so one read names the recurring position AND how much
+    /// evidence stands behind it. Deliberately omits the card's belt-and-braces
+    /// `hedgeFooter`: the zone-subject "keeps" framing already reads as a rep-set
+    /// pattern (not a trait), and the fully-hedged card is one tap away — the
+    /// hedge is reinforcement here, never load-bearing. Never names all reps: the
+    /// denominator is always reps-that-CARRIED-the-event (`repsWithSignal`), so
+    /// the line can't imply a prevalence the engine hasn't measured.
+    static func homeSubtitle(for trend: RepEventTrend) -> String {
+        let head = headline(for: trend)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        let base: String
+        switch trend.kind {
+        case .rushedBurst:   base = "rushed"
+        case .longestPause:  base = "held a silence"
+        case .fillerCluster: base = "leaned on fillers"
+        }
+        return "\(head) — \(trend.dominantCount) of your last \(trend.repsWithSignal) reps that \(base)."
+    }
+
     /// The rep-set hedge, shown once at the foot of the card.
     static let hedgeFooter = "A pattern in your recent reps — a place to aim next, not a fixed trait."
 

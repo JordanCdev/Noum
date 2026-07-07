@@ -47,6 +47,43 @@ hearts/lives framing, or "replaces a human coach" claims.
 
 ## Recent handover work
 
+2026-07-07 (autonomous `noum2` run). **25th iteration — shipped the top keyless,
+collision-safe believable-memory lever (backlog #9) end-to-end with a multi-role design
+workflow behind the copy, plus a Canva competitive one-pager. Full write-up:
+`docs/COACH_PARITY_EVAL_2026-07-07_iter25.md`.**
+
+- **Constraint on arrival:** a concurrent `claude` agent held the coach-brain lane LIVE —
+  actively running `CoachContextBuilderTests`/`AICoachChatReplyQualityGateTests` and had
+  written `CoachContextBuilder.swift`+`AICoachChatService.swift` in the prior 5 min. The
+  15-file uncommitted diff is that sibling's in-flight coach/arena work — **untouched, not
+  committed by this run.** No `ANTHROPIC_API_KEY` (content-read/roleplay stay key-gated).
+- **Shipped (keyless, collision-safe, cold files only):** backlog **#9 — positional trend
+  in the Home hero subtitle.** The recurring-position read (`RepEventTrendEngine`: "your
+  fastest stretch keeps landing in the close, 4 of your last 5 reps that rushed") already
+  fed the coach prompt + the dedicated `RepEventTrendCard` but never the highest-traffic
+  surface. Threaded one line onto `HomeCoachCard` via a new
+  `RepEventTrendCopy.homeSubtitle(for:)` that **reuses the already-test-locked `headline`**
+  (zone-as-subject "keeps" framing — trait-safe by construction) + the earned denominator
+  (`repsWithSignal`, never window size). No new state/persistence; engine floors
+  self-suppress for thin-data users. Placed BELOW BigMoment/cold-start/case/landmark,
+  ABOVE weekly-rhythm/tier/generic. Files: `Noum/HomeCoachCard.swift`,
+  `Noum/RepEventTrendCard.swift`, `NoumTests/RepEventTrendCopyTests.swift` (+4 tests).
+- **Multi-role workflow behind the copy (14 agents):** UX writer + veteran coach + 2
+  end-user personas + market strategist scored 3 candidate lines; adversarial trust auditor
+  broke each. **Unanimous** on the zone-as-subject framing (~9/10); the adversary KILLED
+  the second-person "You've rushed the close…" variant on trait-framing — the exact failure
+  the reused `headline` avoids structurally, which is why reuse (not the raw workflow
+  string) is the shipped answer.
+- **Canva (connector now reachable — was unavailable in prior runs):** materialized a
+  competitive positioning one-pager, "Infographic - Noum Coaching"
+  (`https://www.canva.com/d/S0yThx6Qwca9KYD`), making the category-of-one honest-memory
+  wedge vs Speeko/Orai/Yoodli/Duolingo legible. Positioning reference, not app copy.
+- **10/10 unchanged, by design.** "Replaces a human coach" stays refused (the `.forming`
+  cap + no-transcript + quote gate hold the ceiling below 10 on purpose = the trust moat).
+  The two axes that genuinely cap parity at ~7.6 — keyed content-read + live roleplay — are
+  both real and both need `ANTHROPIC_API_KEY`; neither is a headless lever. Keyless moves
+  (incl. this one) widen the honest-memory wedge; they can't remove the (a) cap.
+
 2026-07-07 (autonomous `noum-1` run). **24th iteration — ran the multi-role workflow,
 shipped the top keyless lever, and refreshed the month-stale market read into a
 category-of-one strategic reframe. Compile-verified, no push. Full write-up:

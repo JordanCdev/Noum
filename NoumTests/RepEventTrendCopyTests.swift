@@ -115,4 +115,45 @@ struct RepEventTrendCopyTests {
         #expect(RepEventTrendCopy.style(for: .longestPause).symbol == "pause.circle.fill")
         #expect(RepEventTrendCopy.style(for: .fillerCluster).symbol == "waveform")
     }
+
+    // 5 — Home hero subtitle: the composed one-line projection.
+    //     Locks the exact string a five-role panel + adversarial trust audit
+    //     approved (zone-as-subject "keeps" framing + earned denominator).
+    @Test("Home subtitle reuses the vetted headline and appends the earned denominator")
+    func homeSubtitleComposesHeadlinePlusDenominator() {
+        let line = RepEventTrendCopy.homeSubtitle(for: trend(.rushedBurst, .close, 4, 5))
+        #expect(line == "Your fastest stretch keeps landing in the close — 4 of your last 5 reps that rushed.")
+        // Reuses the vetted headline verbatim (period swapped for the clause).
+        #expect(line.hasPrefix("Your fastest stretch keeps landing in the close"))
+        #expect(line.contains("keeps"))                 // pattern, not a trait
+    }
+
+    @Test("Home subtitle never frames a trait or a second-person verdict")
+    func homeSubtitleIsTraitSafe() {
+        for kind in RepEventTrend.EventKind.allCases {
+            let line = RepEventTrendCopy.homeSubtitle(for: trend(kind, .close, 3, 4)).lowercased()
+            #expect(!line.contains("you rush"))
+            #expect(!line.contains("you've rushed"))
+            #expect(!line.contains("you are"))
+            #expect(!line.contains("you always"))
+            #expect(!line.contains("!"))                // no hype / exclamation
+        }
+    }
+
+    @Test("Home subtitle denominator is reps-that-carried-the-event, never all reps")
+    func homeSubtitleUsesEarnedDenominator() {
+        // 4 dominant, 5 reps-with-signal, out of a 6-rep window. The line must
+        // quote the SIGNAL denominator (5), never the window (6) — quoting 6
+        // would imply the event happened on every rep (the red-line lie).
+        let line = RepEventTrendCopy.homeSubtitle(for: trend(.rushedBurst, .close, 4, 5, window: 6))
+        #expect(line.contains("4 of your last 5 reps"))
+        #expect(!line.contains("of your last 6"))
+    }
+
+    @Test("Home subtitle names each kind's own event verb")
+    func homeSubtitlePerKindVerb() {
+        #expect(RepEventTrendCopy.homeSubtitle(for: trend(.rushedBurst, .close, 3, 3)).hasSuffix("reps that rushed."))
+        #expect(RepEventTrendCopy.homeSubtitle(for: trend(.longestPause, .opening, 3, 3)).hasSuffix("reps that held a silence."))
+        #expect(RepEventTrendCopy.homeSubtitle(for: trend(.fillerCluster, .middle, 3, 3)).hasSuffix("reps that leaned on fillers."))
+    }
 }
