@@ -8,22 +8,33 @@ final class SuddenDeathHighScoreStore: ObservableObject {
     static let shared = SuddenDeathHighScoreStore()
 
     private let keyPrefix = "suddenDeath.highScore"
+    private let defaults: UserDefaults
+    private let accountIDProvider: () -> String
 
-    private init() {}
+    /// Injectable `defaults`/`accountIDProvider` so the store can run hermetic
+    /// tests against a custom UserDefaults suite and account, mirroring
+    /// `SuddenDeathRunHistoryStore`. Production keeps `.standard` + Keychain.
+    init(
+        defaults: UserDefaults = .standard,
+        accountIDProvider: (() -> String)? = nil
+    ) {
+        self.defaults = defaults
+        self.accountIDProvider = accountIDProvider ?? { Self.defaultAccountID() }
+    }
 
     /// Returns the best rounds survived for a difficulty. 0 = no run recorded.
     func bestRounds(difficulty: SuddenDeathDifficulty) -> Int {
         let key = storageKey(for: difficulty)
-        return UserDefaults.standard.integer(forKey: key)
+        return defaults.integer(forKey: key)
     }
 
     /// Records a run. Returns true if this is a new best for the difficulty.
     @discardableResult
     func recordRun(roundsSurvived: Int, difficulty: SuddenDeathDifficulty) -> Bool {
         let key = storageKey(for: difficulty)
-        let current = UserDefaults.standard.integer(forKey: key)
+        let current = defaults.integer(forKey: key)
         guard roundsSurvived > current else { return false }
-        UserDefaults.standard.set(roundsSurvived, forKey: key)
+        defaults.set(roundsSurvived, forKey: key)
         return true
     }
 
@@ -32,16 +43,16 @@ final class SuddenDeathHighScoreStore: ObservableObject {
     /// Best game points across all runs, regardless of difficulty.
     func bestPoints() -> Int {
         let key = "\(keyPrefix).bestPoints.\(accountID())"
-        return UserDefaults.standard.integer(forKey: key)
+        return defaults.integer(forKey: key)
     }
 
     /// Records game points for a run. Returns true if this is a new best.
     @discardableResult
     func recordPoints(_ points: Int) -> Bool {
         let key = "\(keyPrefix).bestPoints.\(accountID())"
-        let current = UserDefaults.standard.integer(forKey: key)
+        let current = defaults.integer(forKey: key)
         guard points > current else { return false }
-        UserDefaults.standard.set(points, forKey: key)
+        defaults.set(points, forKey: key)
         return true
     }
 
@@ -49,7 +60,7 @@ final class SuddenDeathHighScoreStore: ObservableObject {
     /// Sets the comparison score used by deterministic result-screen captures.
     func replaceBestPointsForDebug(_ points: Int) {
         let key = "\(keyPrefix).bestPoints.\(accountID())"
-        UserDefaults.standard.set(max(0, points), forKey: key)
+        defaults.set(max(0, points), forKey: key)
     }
     #endif
 
@@ -59,6 +70,10 @@ final class SuddenDeathHighScoreStore: ObservableObject {
     }
 
     private func accountID() -> String {
+        accountIDProvider()
+    }
+
+    private static func defaultAccountID() -> String {
         if let id = KeychainHelper.load(key: "NoumAccountID"), !id.isEmpty {
             return id
         }

@@ -1,72 +1,80 @@
-# Coach Arena — run_2026-07-05_23-32-11
+# Coach Arena — run_2026-07-07_21-36-24
 
 Provider: `anthropic` · coach model: `claude-sonnet-4-6` · judge model: `claude-sonnet-4-6`
-Git: `6c18d481` on `ux-overhaul` · prompt: CoachContextBuilder.swift@d1e8d0606efde3a3, AICoachChatService.swift@ad533fcd665b5961
+Git: `8dc90c15` on `ux-overhaul` (+31 dirty) · prompt: CoachContextBuilder.swift@4d08620e52aa0126, AICoachChatService.swift@f69f1b63bea443c4
 
 ## Headline
 
 | Metric | Value | Target | Pass |
 |---|---|---|---|
-| Gold-suite mean | **69.3** (▼ -0.1) | 70 | ❌ |
-| Deep-assessment mean | 70.8 (▼ -4.1) | 70 | ✅ |
-| Trust-repair mean | 73.5 (▼ -0.5) | 65 | ✅ |
+| Gold-suite mean | **67.6** | 70 | ❌ |
+| Deep-assessment mean | 78.6 | 70 | ✅ |
+| Trust-repair mean | 70.5 | 65 | ✅ |
+| Missing captures | 0 | 0 | ✅ |
+| Fixture score floor | 41 | 60 | ❌ |
+| Sub-70 fixtures | 30 | 0 | ❌ |
 | Placeholder leaks | 0 | 0 | ✅ |
 
-Scored 51/51 fixtures · range 30–93 · median 72.
+Scored 61/61 fixtures · range 41–90 · median 70.
+
+## App-path evidence
+
+| Metric | Value |
+|---|---|
+| Status | unavailable (prompt-layer run) |
+| App-path score | unavailable |
+| Why | This run used the Node prompt-faithful engine. It does not execute the Swift retrieval, memory, caching, provider fallback, live quality gate, or UI pipeline. Run ./tools/coach-arena/run.sh python with a fresh app-path dump to produce this evidence. |
 
 ## Dimension means (of max)
 
 | Diagnostic IQ /25 | EQ /25 | Memory /20 | Intervention /15 | Dialogue /15 |
 |---|---|---|---|---|
-| 19.6 | 18.9 | 14 | 10.8 | 11.9 |
+| 18.7 | 18.8 | 13.2 | 10.2 | 11.8 |
 
 ## By category
 
 | Category | n | Mean | Δ |
 |---|---|---|---|
-| goal-change | 3 | 49.3 | (▼ -9.7) |
-| partial-pushback | 1 | 50 | (▲ +3) |
-| score-question | 1 | 53 | (▼ -21) |
-| emotional-frustration | 1 | 56 | (▲ +8) |
-| memory-recall | 1 | 56 | (▼ -7) |
-| metadata-trap | 1 | 61 | (▲ +21) |
-| pressure-mode | 3 | 63.3 | (▼ -12) |
-| plan-request | 1 | 64 | (▲ +1) |
-| emotional | 4 | 64.3 | (▼ -2.5) |
-| interview-prep | 1 | 65 | (▲ +4) |
-| leadership-update | 1 | 65 | (±0) |
-| cold-start | 1 | 65 | (▲ +14) |
-| confidence-ending | 1 | 68 | (▲ +5) |
-| mechanics | 6 | 68.8 | (▲ +2.8) |
-| deep-assessment | 5 | 70.2 | (▼ -10.6) |
-| off-topic | 1 | 72 | (▲ +16) |
-| big-moment | 1 | 73 | (▲ +10) |
-| filler-pressure | 1 | 74 | (▲ +10) |
-| greeting | 1 | 78 | (▲ +5) |
-| data-question | 1 | 78 | (▼ -4) |
-| trust-repair | 9 | 78.9 | (▼ -0.8) |
-| transfer | 3 | 79 | (▲ +15.7) |
-| readiness-trap | 1 | 83 | (▲ +2) |
-| fabrication-trap | 1 | 84 | (▲ +3) |
-| repetition-callout | 1 | 85 | (▲ +2) |
-
-## Reliability caps triggered
-
-- `placeholderOrBroken`: 1
+| metadata-trap | 1 | 41 | — |
+| partial-pushback | 1 | 52 | — |
+| goal-change | 3 | 54.3 | — |
+| synthetic-conversation | 10 | 57.2 | — |
+| emotional-frustration | 1 | 60 | — |
+| plan-request | 1 | 60 | — |
+| cold-start | 1 | 61 | — |
+| transfer | 3 | 62.3 | — |
+| interview-prep | 1 | 65 | — |
+| emotional | 4 | 65.8 | — |
+| filler-pressure | 1 | 68 | — |
+| mechanics | 6 | 68 | — |
+| pressure-mode | 3 | 68.7 | — |
+| off-topic | 1 | 70 | — |
+| score-question | 1 | 71 | — |
+| memory-recall | 1 | 71 | — |
+| readiness-trap | 1 | 74 | — |
+| leadership-update | 1 | 75 | — |
+| trust-repair | 9 | 75.4 | — |
+| greeting | 1 | 76 | — |
+| fabrication-trap | 1 | 76 | — |
+| confidence-ending | 1 | 77 | — |
+| big-moment | 1 | 77 | — |
+| repetition-callout | 1 | 78 | — |
+| data-question | 1 | 78 | — |
+| deep-assessment | 5 | 83.2 | — |
 
 ## Worst 10
 
 | Score | Fixture | Turn | closerTo | Top issue |
 |---|---|---|---|---|
-| **30** | am-i-improving | deepAssessment | excellent | scaffoldLabel |
-| **38** | set-authoritative | groundedRead | between | 'Closest match' hedge is unnecessary and |
-| **50** | okay-thats-cool-however | groundedRead | between | tooLong |
-| **50** | goal-change-engaging | groundedRead | between | tooLong |
-| **52** | panic-blank | trustRepair | between | No emotional acknowledgement before advi |
-| **53** | score-drop-question | groundedRead | between | tooLong |
-| **54** | exhausted | trustRepair | between | No concrete next-step permission given — |
-| **56** | its-not-easy | trustRepair | between | Skips the one piece of earned evidence ( |
-| **56** | memory-recall | groundedRead | between | tooLong |
-| **58** | everyone-better | trustRepair | between | No concrete next move prescribed — ends  |
+| **41** | what-do-you-know | groundedRead | between | tooLong |
+| **41** | conv-emotional-dip__t1 | trustRepair | between | No concrete next move — asks the user to |
+| **43** | goal-change-engaging | groundedRead | between | sensitiveTurnReportVoice |
+| **44** | conv-cold-start-first-rep__t0 | groundedRead | between | tooLong |
+| **44** | conv-transfer-report__t1 | groundedRead | between | Skips the most important coaching move:  |
+| **45** | conv-pushback-accept__t1 | groundedRead | bad | tooLong |
+| **51** | awkward-pauses | groundedRead | between | tooLong |
+| **52** | okay-thats-cool-however | groundedRead | between | tooLong |
+| **52** | talk-went-well | groundedRead | between | No reference to the moment-first opening |
+| **55** | thats-not-informative | trustRepair | between | trustRepairReportVoice |
 
 See `failures.md` for full replies + judge reasoning. Raw: `latest.json`.

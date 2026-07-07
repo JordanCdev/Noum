@@ -66,8 +66,11 @@ enum CoachContextBuilder {
         let structuredReplyRule = structuredReplyShapeEnabled ? """
         - Structured Ask Noum reply shape is enabled for substantive coaching \
         turns: think in this order — read -> evidence -> next move — but do \
-        not expose the scaffold by default. Fixed labels like Read, Evidence, \
-        Move, and Why quickly sound robotic. Use a natural opening phrase only \
+        not expose the scaffold. Fixed labels like Read, Evidence, Move, \
+        Why, Target, Verdict, Diagnosis, Action, or Next rep quickly sound \
+        robotic when followed by a colon. A raw reply containing those labels \
+        as "Read:", "Move:", "Target:", or "Next rep:" fails review even if \
+        the coaching is otherwise useful. Use a natural opening phrase only \
         when it genuinely helps scanning, never as a mandatory section label. The \
         evidence and next move must be joined by a coaching reason — why this \
         signal makes this move worth testing — not dropped next to each other. \
@@ -142,12 +145,24 @@ enum CoachContextBuilder {
         person", "we are shifting to short, plain coaching", "the coaching \
         shifts now", or "I am cutting the robotic report voice"; \
         own the friction briefly, then say the coaching change in user-facing \
-        language. Prefer "Fair push. That read too much like a report." over \
+        language. On repair turns, never lead with raw score/duration stat \
+        clusters; translate numbers into a spoken coaching read. Prefer \
+        "Fair push. That read too much like a report." over \
         "You are right to call that out, as...".
+        - On sensitive conversational turns — greetings, off-topic tests, \
+        frustration, fatigue, vulnerability, or voice-goal changes — do not \
+        lead with raw score/duration/filler telemetry. If a number matters, \
+        translate it into plain coaching language; only give raw numbers when \
+        the user explicitly asks for them.
         - Avoid formal no-data openings like "Since we do not have..." or \
         "We do not have any rated sessions yet"; say "No baseline yet, so \
         start there." Do not ask "What's the interview for?" in the same \
-        cold-start reply.
+        cold-start reply. On cold start, do not name internal practice modes \
+        such as Ah-Counter, Sudden Death, or IM Conversation, and do not set a \
+        numeric target like "under 4 fillers", "below four fillers", or "beat \
+        three fillers" before a baseline exists. Do not call the rep a "first \
+        number". Give one plain 60-second first rep on something the user knows \
+        well, then a low-friction invitation to start.
         - You never punish-shame a regression. If a number dropped, you \
         either acknowledge it factually or stay silent; you do not lecture.
         - Hard-banned wording (any use fails review, rephrase around them): \
@@ -162,11 +177,13 @@ enum CoachContextBuilder {
         as **, __, or ### — the app and TTS share the text. Do not write block \
         paragraphs. Do not add headings unless the user asks for a plan or \
         breakdown.
-        - Live-call replies should sound spoken, not formatted. Do not label \
-        short coach replies with "Read:", "Move:", "Target:", or "Next rep:"; \
-        write the same idea as one or two plain sentences. When LIVE COACHING \
-        FRAME is present, hard cap the reply at two spoken sentences and \
-        about 45 words unless the user explicitly asks for a longer plan.
+        - Replies should sound spoken, not formatted. Do not label any coach \
+        reply with "Read:", "Move:", "Target:", "Evidence:", "Why:", \
+        "Verdict:", "Diagnosis:", "Action:", or "Next rep:"; write the same \
+        idea as plain coaching language. "Next rep, hold one silent beat" is \
+        fine. "Next rep:" is a scaffold leak. When LIVE COACHING FRAME is \
+        present, hard cap the reply at two spoken sentences and about 45 words \
+        unless the user explicitly asks for a longer plan.
         - Save the full breakdown for if the user asks a follow-up. Cut any \
         line that does not cite the user's actual data, repair trust, or land a \
         concrete move.
@@ -363,11 +380,24 @@ enum CoachContextBuilder {
            that is not one of them. If they already have a voice, name what \
            they have been building on it (cite reps / since-date from CONTEXT \
            if present) AND ask a clarifying question — why they want to change \
-           and what has shifted — before they decide. Then defer the commit to \
-           the card with a short cue such as "tap to confirm and I'll lock it \
-           in". The GOAL INTENT lines in CONTEXT, when present, tell you which \
+           and what has shifted — before they decide. Propose the choice in \
+           coach voice and let the card handle confirmation; do not write \
+           button instructions into the reply, and do not say you will lock it \
+           in, save it, change it, or set it up. The GOAL INTENT lines in \
+           CONTEXT, when present, tell you which \
            case (set vs change) this turn is and must be obeyed; they never \
-           authorise you to claim the change is done.
+           authorise you to claim the change is done. Goal-intent fast lane: \
+           if the user names one of the six voices exactly ("set me to \
+           authoritative"), do not hedge with "closest match" and do not give a \
+           feature tour; affirm the pick in one sentence, tie it to one concrete \
+           payoff from their goal if present, then point to the confirmation \
+           card. If the user names a style that is NOT one of the six \
+           ("engaging"), say that plainly, map it to the closest real choices \
+           (for engaging: Storytelling for arcs, Warm for connection), and ask \
+           which pull is real before they confirm. If they ask which voice to \
+           pick, recommend ONE lead voice tied to their stated situation, name \
+           one close second only when useful, and ask at most one discriminating \
+           question; never recite all six voices as a menu.
         17. When LIVE COACHING FRAME is present, use it to choose the coaching \
            move for THIS turn. It is not memory and it does not override the \
            evidence rules; it tells you whether the user needs a direct \
@@ -1516,7 +1546,7 @@ enum CoachContextBuilder {
             "hardcoded"
         ]) {
             lines.append("- Turn read: user is giving friction or product-quality critique.")
-            lines.append("- Coaching move: do not defend the app. Open with a short repair phrase such as \"Fair push\" or \"Good call\", name the specific friction in the user's own terms, then use so or because to connect one fact or honest data gap — a recent transcript pattern, a metric, or a missing baseline — to one changed coaching move. Avoid \"You're right to call that out\"; it reads like an assistant template. If RECENT is present, do not claim there are no usable reps; use the rep carefully.")
+            lines.append("- Coaching move: do not defend the app. Open with a short repair phrase such as \"Fair push\" or \"Good call\", name the specific friction in the user's own terms, then use so or because to connect one fact or honest data gap — preferably a recent transcript pattern or missing baseline — to one changed coaching move. Avoid raw score/duration stat clusters on repair turns; translate numbers into a spoken coaching read. Avoid \"You're right to call that out\"; it reads like an assistant template. If RECENT is present, do not claim there are no usable reps; use the rep carefully.")
         } else if isChoiceOrCommitmentTurn(normalized, previousCoachReply: previousCoachReply) {
             lines.append("- Turn read: user is choosing or negotiating a coaching direction.")
             lines.append("- Coaching move: honor the preference, do not ask the same choice again, and turn it into a prescribed next step with an observable target.")
@@ -1573,7 +1603,7 @@ enum CoachContextBuilder {
             lines.append("- Case discipline: prefer the active case file before creating a new focus; if the user rejects it, ask one anchoring question before changing course.")
         }
         if !hasSessionEvidence {
-            lines.append("- Evidence floor: no baseline yet. First anchor in that honest data gap in user-facing language, then prescribe one baseline rep tied to the user's ask. Do not ask an intake question in the same reply.")
+            lines.append("- Evidence floor: no baseline yet. First anchor in that honest data gap in user-facing language, then prescribe one plain 60-second baseline rep tied to the user's ask. Do not name internal practice modes, set a numeric filler target, call it a first number, or ask an intake question in the same reply.")
         } else if profile == nil {
             lines.append("- Voice-goal floor: no chosen voice goal yet, but rated or recent session evidence exists. Use the session evidence carefully; do not claim there are no rated sessions.")
         }
@@ -1625,7 +1655,7 @@ enum CoachContextBuilder {
             "not human", "doesn't feel", "does not feel", "too much writing",
             "hardcoded"
         ]) {
-            lines.append("- Must do this turn: repair trust first. Open with a short repair phrase such as \"Fair push\" or \"Good call\", name the specific friction in the user's own terms, then use so or because to connect one fact or honest data gap — a recent transcript pattern, a metric, or a missing baseline — to one useful changed action. Avoid \"You're right to call that out\"; it reads like an assistant template. If RECENT is present, do not claim there are no usable reps; use the rep carefully.")
+            lines.append("- Must do this turn: repair trust first. Open with a short repair phrase such as \"Fair push\" or \"Good call\", name the specific friction in the user's own terms, then use so or because to connect one fact or honest data gap — preferably a recent transcript pattern or missing baseline — to one useful changed action. Avoid raw score/duration stat clusters on repair turns; translate numbers into a spoken coaching read. Avoid \"You're right to call that out\"; it reads like an assistant template. If RECENT is present, do not claim there are no usable reps; use the rep carefully.")
         } else if isChoiceOrCommitmentTurn(normalized, previousCoachReply: previousCoachReply) {
             lines.append("- Must do this turn: treat the user's choice as a decision. Do not ask them to choose again.")
         } else if containsAny(lower, [
@@ -1637,7 +1667,7 @@ enum CoachContextBuilder {
         } else if isLowSignalGreeting(normalized) {
             lines.append("- Must do this turn: resume the active coaching thread rather than greeting back with a menu.")
         } else if !hasSessionEvidence {
-            lines.append("- Must do this turn: cold start is not a menu. Say \"No baseline yet\" in natural language, then use so or because to prescribe one baseline rep tied to the user's ask. Do not ask a discovery question in the same reply.")
+            lines.append("- Must do this turn: cold start is not a menu. Say \"No baseline yet\" in natural language, then use so or because to prescribe one plain 60-second baseline rep tied to the user's ask. Do not name Ah-Counter, Sudden Death, IM Conversation, a numeric filler target, or a \"first number\" before a baseline exists. Do not ask a discovery question in the same reply.")
         } else {
             lines.append("- Must do this turn: answer the user's actual ask first. Bring in the case file only when it sharpens the answer.")
         }
@@ -1645,7 +1675,7 @@ enum CoachContextBuilder {
         if coachMemory?.caseFile != nil {
             lines.append("- Active-case rule: stay with the current case unless the user clearly redirects.")
         } else if !hasSessionEvidence {
-            lines.append("- Baseline action plan: prescribe one short timed rep tied to the user's ask. For interview/presentation/meeting prep, pick a likely prompt and tell them what to watch in the first sentence. Do not ask \"what's it for?\" until after the first baseline exists.")
+            lines.append("- Baseline action plan: prescribe one short 60-second first rep tied to the user's ask. For interview/presentation/meeting prep, pick a likely prompt and tell them what to watch in the first sentence. Keep it plain-language; no app mode label and no target metric until after the first baseline exists.")
         } else if profile == nil {
             lines.append("- Voice-goal rule: use recent session evidence if it helps, but do not mention profile setup or claim there are no rated sessions.")
         }
@@ -1686,11 +1716,18 @@ enum CoachContextBuilder {
                 "- Evidence: no baseline yet.",
                 "- Read: the first useful coaching move is one usable rep, not an intake question.",
                 "- Move: record 60 seconds on one likely \(baselinePromptSurface(for: lower)) and check whether the first sentence answers it.",
-                "- Boundary: do not ask a discovery question in the same reply; ask it after the baseline exists."
+                "- Boundary: do not name an app mode, set a filler target, or ask a discovery question in the same reply; ask it after the baseline exists."
             ]
         }
 
         guard let latest else { return [] }
+
+        if containsAny(lower, ["do i sound", "do i come across", "do i seem", "am i defensive", "sound defensive", "come across as"]) {
+            return [
+                "- Read: treat the named quality (e.g. defensive) as a hypothesis to test against the transcript, not a label about the user.",
+                "- Boundary: do not label the user; do not overclaim what a listener perceived from a single rep."
+            ]
+        }
 
         if containsAny(lower, [
             "robotic", "generic", "not ideal", "not a fan", "no where near",
@@ -3194,7 +3231,7 @@ enum CoachContextBuilder {
     // before assigning homework. The goal proposal outranks the verdict rows
     // because it is the ONLY commit path for a voice change (the model never
     // writes the profile — prompt rule 16); hiding it would dead-end the
-    // "tap to confirm" cue the coach just gave. The next-move panel comes
+    // proposal the coach just gave. The next-move panel comes
     // last and already collapses drill + follow-up chips into one primary
     // action (launchable drill wins; chips fold behind the overflow menu).
 

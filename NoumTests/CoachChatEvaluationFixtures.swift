@@ -862,7 +862,7 @@ struct CoachRealUserTransferOutcomeEvidence: Codable, Equatable {
             reasons.append("excessiveOutcomesPerUser")
         }
         if summary.verifiedEvidenceReferenceCount != verifiedEvidenceReferenceRows ||
-            verifiedEvidenceReferenceRows < Self.requiredOutcomeCount {
+            verifiedEvidenceReferenceRows < Self.requiredOutcomeCount || verifiedEvidenceReferenceRows < rows.count {
             reasons.append("insufficientEvidenceReferences")
         }
         if summary.minimumFollowUpDelayHours != minimumObservedFollowUpDelay ||

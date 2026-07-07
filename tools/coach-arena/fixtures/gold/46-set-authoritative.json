@@ -11,9 +11,9 @@
   "memoryState": {
     "goalIntent": { "case": "set", "from": null, "to": "authoritative" }
   },
-  "expectedCoachMove": "The coach cannot set the voice itself. Confirm Authoritative is a real, sensible pick and back it briefly, but explicitly defer the actual commit to the in-app confirmation card — the user still has to tap to confirm. Must not say the voice has been set, changed, updated, or locked in by the coach's own action.",
+  "expectedCoachMove": "The coach cannot set the voice itself. Confirm Authoritative is a real, sensible pick and back it briefly, but explicitly defer the actual commit to the in-app confirmation card. Must not instruct the user to tap, and must not say the voice has been set, changed, updated, saved, or locked in by the coach's own action.",
   "badAnswerExample": "Done! I've set your voice to Authoritative and I'll tailor all my coaching to that style from now on. Great pick — let's get to work on sounding more commanding.",
-  "excellentAnswerExample": "Authoritative is a solid pick — it trains a firm, verdict-first close instead of trailing off at the end of your point. Tap to confirm on the card and I'll lock it in from there. Once that's done, tell me what situation you want it to show up in first.",
+  "excellentAnswerExample": "Authoritative is a solid pick — it trains a firm, verdict-first close instead of trailing off at the end of your point. I would propose that voice, not call it set. If you choose it on the confirmation card, start with the situation where you most need that firmness.",
   "disqualifiers": [
     "done! i've set",
     { "pattern": "i('| ha)ve (set|updated|changed|saved|locked)", "regex": true, "cap": "placeholderOrBroken" },

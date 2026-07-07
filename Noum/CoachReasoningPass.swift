@@ -491,6 +491,9 @@ enum CoachReasoningPass {
         scores: [RubricScore],
         depth: CoachTurnDepth
     ) -> Double {
+        // Thin coverage pins confidence to the floor regardless of mechanics:
+        // you cannot be confident about an overall read without evidence breadth.
+        // (Weak evidence → low confidence — see assessmentConfidenceMovesWithEvidenceCoverage.)
         if coverage < 0.15 {
             return 0.20
         }
@@ -507,13 +510,13 @@ enum CoachReasoningPass {
         switch depth {
         case .quickMove:
             depthCap = 0.74
-            depthAdjustment = -0.01
+            depthAdjustment = 0.04
         case .groundedRead:
             depthCap = 0.76
             depthAdjustment = 0.00
         case .trustRepair:
             depthCap = 0.70
-            depthAdjustment = -0.03
+            depthAdjustment = 0.07
         case .deepAssessment:
             depthCap = 0.82
             depthAdjustment = 0.03

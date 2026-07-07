@@ -10389,13 +10389,55 @@ struct CoachContextBuilderTests {
         #expect(prompt.contains("do not weaponize"))
     }
 
+    @Test func systemPromptHandlesGoalIntentWithoutSettingOrMenus() {
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+        let normalized = prompt.replacingOccurrences(
+            of: "\\s+",
+            with: " ",
+            options: .regularExpression
+        )
+
+        #expect(normalized.contains("Goal-intent fast lane"))
+        #expect(normalized.contains("if the user names one of the six voices exactly"))
+        #expect(normalized.contains("do not hedge with \"closest match\""))
+        #expect(normalized.contains("do not give a feature tour"))
+        #expect(normalized.contains("point to the confirmation card"))
+        #expect(normalized.contains("let the card handle confirmation"))
+        #expect(normalized.contains("do not write button instructions into the reply"))
+        #expect(!normalized.contains("tap to confirm and I'll lock it in"))
+        #expect(normalized.contains("If the user names a style that is NOT one of the six"))
+        #expect(normalized.contains("for engaging: Storytelling for arcs, Warm for connection"))
+        #expect(normalized.contains("recommend ONE lead voice"))
+        #expect(normalized.contains("never recite all six voices as a menu"))
+        #expect(normalized.contains("You NEVER set, change, choose, save, or confirm"))
+    }
+
+    @Test func systemPromptKeepsColdStartPlainBeforeBaseline() {
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+        let normalized = prompt.replacingOccurrences(
+            of: "\\s+",
+            with: " ",
+            options: .regularExpression
+        )
+
+        #expect(normalized.contains("On cold start"))
+        #expect(normalized.contains("do not name internal practice modes"))
+        #expect(normalized.contains("Ah-Counter"))
+        #expect(normalized.contains("do not set a numeric target"))
+        #expect(normalized.contains("under 4 fillers"))
+        #expect(normalized.contains("one plain 60-second first rep"))
+        #expect(normalized.contains("low-friction invitation to start"))
+    }
+
     @Test func systemPromptIncludesFeatureFlaggedStructuredReplyShape() {
         let prompt = CoachContextBuilder.systemPrompt(for: nil)
 
         #expect(prompt.contains("Structured Ask Noum reply shape is enabled"))
         #expect(prompt.contains("read -> evidence -> next move"))
-        #expect(prompt.contains("do not expose the scaffold by default"))
+        #expect(prompt.contains("do not expose the scaffold"))
         #expect(prompt.contains("Fixed labels like Read, Evidence"))
+        #expect(prompt.contains("raw reply containing those labels"))
+        #expect(prompt.contains("\"Next rep:\" fails review"))
         #expect(prompt.contains("VERIFIED PROOFS"))
         #expect(prompt.contains("If you cannot verify the quote"))
         // The shape is for SUBSTANTIVE turns only — greetings / off-topic /
@@ -10518,6 +10560,27 @@ struct CoachContextBuilderTests {
         #expect(normalized.contains("The pattern I'd watch is"))
         #expect(!prompt.contains("-> \"Next rep:"))
         #expect(!prompt.contains("Next rep: hold a beat"))
+    }
+
+    @Test func systemPromptTreatsColonCoachLabelsAsRawOutputFailures() {
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+        let normalized = prompt.replacingOccurrences(
+            of: "\\s+",
+            with: " ",
+            options: .regularExpression
+        )
+
+        #expect(normalized.contains("Do not label any coach reply"))
+        #expect(normalized.contains("\"Read:\""))
+        #expect(normalized.contains("\"Move:\""))
+        #expect(normalized.contains("\"Target:\""))
+        #expect(normalized.contains("\"Evidence:\""))
+        #expect(normalized.contains("\"Verdict:\""))
+        #expect(normalized.contains("\"Diagnosis:\""))
+        #expect(normalized.contains("\"Action:\""))
+        #expect(normalized.contains("\"Next rep:\""))
+        #expect(normalized.contains("\"Next rep, hold one silent beat\" is fine"))
+        #expect(normalized.contains("\"Next rep:\" is a scaffold leak"))
     }
 
     @Test func systemPromptForbidsLiteralMarkdownMarkersBecauseTTSReadsSharedText() {
@@ -10834,8 +10897,10 @@ struct CoachContextBuilderTests {
 
         #expect(lines.contains("cold start is not a menu"))
         #expect(lines.contains("No baseline yet"))
-        #expect(lines.contains("baseline rep"))
-        #expect(lines.contains("what's it for"))
+        #expect(lines.contains("plain 60-second baseline rep"))
+        #expect(lines.contains("Do not name Ah-Counter"))
+        #expect(lines.contains("numeric filler target"))
+        #expect(lines.contains("no app mode label"))
     }
 
     @Test func turnContractUsesSessionEvidenceNotProfileForColdStart() {
@@ -10847,7 +10912,7 @@ struct CoachContextBuilderTests {
             hasSessionEvidence: false
         ).joined(separator: " ")
         #expect(noRepWithProfile.contains("No baseline yet"))
-        #expect(noRepWithProfile.contains("baseline rep"))
+        #expect(noRepWithProfile.contains("plain 60-second baseline rep"))
 
         let repsWithoutProfile = CoachContextBuilder.professionalTurnContractLines(
             latestUserTurn: "How do I get better before my interview?",
@@ -16835,63 +16900,58 @@ struct SuddenDeathMechanicTests {
 
 struct SuddenDeathHighScoreStoreTests {
 
-    // Each test uses an ephemeral isolated store to avoid cross-test pollution.
-    // The store references UserDefaults.standard with per-account keys; we verify
-    // the public contract (record + retrieve + new-best detection) via a fresh
-    // key prefix unique to these tests.
+    // Each test builds a hermetic store over a unique in-memory UserDefaults
+    // suite + fixed account, so it never touches `.standard` and cannot collide
+    // with sibling tests, parallel clones, or values persisted by a prior run.
+    // This exercises the real record/retrieve/new-best contract in isolation.
+    private func isolatedStore(_ suite: String = #function) -> SuddenDeathHighScoreStore {
+        let suiteName = "SuddenDeathHighScoreStoreTests.\(suite)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return SuddenDeathHighScoreStore(defaults: defaults, accountIDProvider: { "test" })
+    }
 
     @Test func noRunRecordedReturnsZero() {
-        let store = SuddenDeathHighScoreStore.shared
-        // Cold state for a made-up difficulty string isn't directly testable
-        // without key injection, so we verify the contract via recordRun.
+        let store = isolatedStore()
+        #expect(store.bestRounds(difficulty: .medium) == 0)
         // A zero-round run should not beat 0 because 0 is not > 0.
         let isNew = store.recordRun(roundsSurvived: 0, difficulty: .medium)
         #expect(isNew == false)
     }
 
     @Test func firstPositiveRunIsAlwaysNewBest() {
-        // Use a unique per-test key prefix to isolate from persistent state.
-        // We exercise the live store; the assertion holds as long as 1 > whatever
-        // was previously stored (which may be non-zero in a repeated run).
-        // Use a very large number to ensure it beats any cached value.
-        let store = SuddenDeathHighScoreStore.shared
-        // Record an absurdly high score to guarantee a new best.
-        let isNew = store.recordRun(roundsSurvived: 999, difficulty: .easy)
+        let store = isolatedStore()
+        let isNew = store.recordRun(roundsSurvived: 7, difficulty: .easy)
         #expect(isNew == true)
-        #expect(store.bestRounds(difficulty: .easy) == 999)
+        #expect(store.bestRounds(difficulty: .easy) == 7)
     }
 
     @Test func lowerRunDoesNotReplaceHighScore() {
-        let store = SuddenDeathHighScoreStore.shared
-        // Ensure a known value is stored.
+        let store = isolatedStore()
         store.recordRun(roundsSurvived: 998, difficulty: .hard)
         // A worse run should not replace it.
         let isNew = store.recordRun(roundsSurvived: 3, difficulty: .hard)
         #expect(isNew == false)
-        #expect(store.bestRounds(difficulty: .hard) >= 998)
+        #expect(store.bestRounds(difficulty: .hard) == 998)
     }
 
     @Test func equalRunIsNotNewBest() {
-        let store = SuddenDeathHighScoreStore.shared
+        let store = isolatedStore()
         store.recordRun(roundsSurvived: 5, difficulty: .medium)
         let isNew = store.recordRun(roundsSurvived: 5, difficulty: .medium)
         #expect(isNew == false)
     }
 
     @Test func difficultiesAreTrackedIndependently() {
-        let store = SuddenDeathHighScoreStore.shared
+        let store = isolatedStore()
         store.recordRun(roundsSurvived: 997, difficulty: .easy)
         // A higher round count on a different difficulty must not bleed over.
-        let hardBest = store.bestRounds(difficulty: .hard)
-        let easyBest = store.bestRounds(difficulty: .easy)
-        #expect(easyBest >= 997)
-        // Hard best is independent — just confirm it doesn't magically equal easy.
-        // (We can't guarantee hard's exact value cross-test, only that the keys differ.)
-        _ = hardBest // suppress unused-variable warning; isolation is the contract.
+        #expect(store.bestRounds(difficulty: .easy) == 997)
+        #expect(store.bestRounds(difficulty: .hard) == 0)
     }
 
     @Test func recordRunReturnsTrueOnStrictImprovement() {
-        let store = SuddenDeathHighScoreStore.shared
+        let store = isolatedStore()
         store.recordRun(roundsSurvived: 10, difficulty: .medium)
         let isNew = store.recordRun(roundsSurvived: 11, difficulty: .medium)
         #expect(isNew == true)
@@ -26354,6 +26414,72 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .menuInsteadOfDecision)
     }
 
+    @Test func rejectsColdStartProductModeBeforeBaseline() {
+        let context = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        GOAL
+        - No voice set yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "No baseline yet, so do one Ah-Counter round for 60 seconds on a topic you know well.",
+            latestUserTurn: "What should I work on?",
+            systemContext: context
+        )
+        #expect(issue == .roboticPhrase("cold-start product mode"))
+    }
+
+    @Test func rejectsColdStartNumericFillerTargetBeforeBaseline() {
+        let context = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        GOAL
+        - No voice set yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "No baseline yet, so record 60 seconds on something you know cold, aiming to stay under 4 fillers.",
+            latestUserTurn: "What should I work on?",
+            systemContext: context
+        )
+        #expect(issue == .roboticPhrase("cold-start metric target"))
+    }
+
+    @Test func rejectsColdStartWordedFillerTargetBeforeBaseline() {
+        let context = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        GOAL
+        - No voice set yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "No baseline yet, so record 60 seconds on something you know cold and stay below four fillers.",
+            latestUserTurn: "Where should I start?",
+            systemContext: context
+        )
+        #expect(issue == .roboticPhrase("cold-start metric target"))
+    }
+
+    @Test func rejectsColdStartFirstNumberFramingOnStartVariant() {
+        let context = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "No baseline yet, so do one Ah-Counter round and get your first number.",
+            latestUserTurn: "I'm new here. What first?",
+            systemContext: context
+        )
+        #expect(issue == .roboticPhrase("cold-start product mode"))
+    }
+
     @Test func acceptsColdStartBaselineMoveWithoutDiscoveryQuestion() {
         let context = """
         PROFESSIONAL TURN CONTRACT
@@ -26364,11 +26490,35 @@ struct AICoachChatReplyQualityGateTests {
         - Not enough data for a stable baseline yet.
         """
         let issue = AICoachChatService.replyQualityIssue(
-            in: "No baseline yet, so run one timed rep on a likely interview question and review whether your first sentence answers it.",
+            in: "No baseline yet, so record 60 seconds on one likely interview question and review whether your first sentence answers it.",
             latestUserTurn: "How do I get better before my interview?",
             systemContext: context
         )
         #expect(issue == nil)
+    }
+
+    @Test func rejectsVoiceChoiceTapToConfirmStateDirective() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "For meetings I'd start with Authoritative. Tap to confirm and I'll lock it in, or switch to Executive presence if the room reads more senior.",
+            latestUserTurn: "What voice should I even pick? There are six and I don't know."
+        )
+        #expect(issue == .roboticPhrase("tap to confirm"))
+    }
+
+    @Test func rejectsVoiceChangeSetItUpStateDirective() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Warm and welcoming is the closest fit for that feedback. I'll set it up after you confirm.",
+            latestUserTurn: "Yeah maybe I should just switch to something warmer altogether."
+        )
+        #expect(issue == .roboticPhrase("i'll set it"))
+    }
+
+    @Test func acceptsVoiceChoiceRecommendationWithoutCommitDirective() {
+        let reply = "Start with Authoritative because meetings where you get talked over need short verdicts that hold the floor. Executive presence is the close second if the real pressure is senior-room calm; which room are you walking into?"
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "What voice should I even pick? There are six and I don't know."
+        ) == nil)
     }
 
     @Test func rejectsAssistantSelfNarrationInCoachReply() {
@@ -26417,6 +26567,14 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "This still sounds cold and overexplained, like generic AI tips."
         )
         #expect(issue == .roboticPhrase("generic tip-giving"))
+    }
+
+    @Test func rejectsPerformativeFluffNotCoachingTrustRepair() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Fair. That was fluff, not coaching. Your point arrived in sentence four, so say it first.",
+            latestUserTurn: "That's not informative."
+        )
+        #expect(issue == .roboticPhrase("fluff, not coaching"))
     }
 
     @Test func rejectsTrustRepairThatOnlyPromisesAssistantBehavior() {
@@ -26661,9 +26819,77 @@ struct AICoachChatReplyQualityGateTests {
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == .scaffoldLabel)
     }
 
+    @Test func rejectsRealReadCoachReplyScaffoldLabel() {
+        let reply = "Fair. That was too vague. Real read: your point arrived in sentence four, after three warm-up sentences."
+        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "That's not informative.") == .scaffoldLabel)
+    }
+
+    @Test func rejectsTrustRepairRawScoreReadout() {
+        let reply = """
+        Fair push. This week you scored 74 over 95 seconds with only 4 fillers, and the setup held the whole way.
+        So hold one second before the final line and say it slower than feels natural.
+        """
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "Ok prove it again, what specifically have I been doing wrong",
+            turnDepth: .trustRepair
+        ) == .roboticPhrase("trust-repair report voice"))
+    }
+
+    @Test func acceptsTrustRepairPlainFillerAnchor() {
+        let reply = "Fair push. That was generic, not specific coaching. Your last rep had 4 fillers, so say the decision first, give one proof point, then stop."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "This is generic.",
+            turnDepth: .trustRepair
+        ) == nil)
+    }
+
+    @Test func rejectsGoalChangeRawMetricReadout() {
+        let reply = "Before you pivot, know your authoritative work is landing: 80 this week, 3 fillers in 68 seconds, three weeks in."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "I think I want to sound more engaging."
+        ) == .roboticPhrase("sensitive-turn report voice"))
+    }
+
+    @Test func rejectsGreetingRawMetricReadout() {
+        let reply = "Good to have you back. Today's rep hit 80, 3 fillers, tight and clean, so run one more."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "Hi"
+        ) == .roboticPhrase("sensitive-turn report voice"))
+    }
+
+    @Test func explicitDataQuestionDoesNotTripSensitiveReportVoiceGate() {
+        let reply = "Your last rep had 3 fillers in 68 seconds, which is cleaner than the prior two. Keep the first sentence direct and check whether the count stays low."
+        let issue = AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "What's my filler rate?"
+        )
+        #expect(issue != .roboticPhrase("sensitive-turn report voice"))
+    }
+
     @Test func rejectsRecommendationCoachReplyScaffoldLabel() {
         let reply = "Recommend: Run a sixty-second rep where your first sentence states the point immediately."
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == .scaffoldLabel)
+    }
+
+    @Test func rejectsNextRepColonButAllowsNaturalNextRepSentence() {
+        let labelled = "Next rep: hold one silent beat before the final sentence."
+        // The comma control must be a complete reply (observation + move), not a
+        // bare imperative — otherwise it independently trips the insight-bridge
+        // rubric and stops testing the colon-vs-comma scaffold distinction.
+        let natural = "The close softened under pressure. Next rep, hold one silent beat before the final sentence."
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: labelled,
+            latestUserTurn: "What next?"
+        ) == .scaffoldLabel)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: natural,
+            latestUserTurn: "What next?"
+        ) == nil)
     }
 
     @Test func sanitizerTurnsLegacyMarkdownReplyIntoAcceptedPlainReply() {
@@ -26847,7 +27073,7 @@ struct AICoachChatReplyQualityGateTests {
             in: "Keep practicing and stay focused on improving your communication.",
             latestUserTurn: "How do I get better before my interview?"
         )
-        #expect(issue == .unanchoredCoaching)
+        #expect(issue == .roboticPhrase("keep practicing"))
     }
 
     @Test func turnAwareGateAcceptsColdStartBaselineAction() {
@@ -26857,6 +27083,38 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "How do I get better before my interview?"
         )
         #expect(issue == nil)
+    }
+
+    @Test func contextAwareGateRejectsVagueColdStartShortRep() {
+        let context = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "No baseline yet, so record one short rep before polishing the answer.",
+            latestUserTurn: "What should I work on?",
+            systemContext: context
+        )
+
+        #expect(issue == .roboticPhrase("cold-start vague baseline rep"))
+    }
+
+    @Test func contextAwareGateAcceptsPlainColdStartSixtySecondRep() {
+        let context = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let reply = "No baseline yet, so start there. Record 60 seconds on something you know well, then check whether the first sentence gives the point."
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: "What should I work on?",
+            systemContext: context
+        ) == nil)
     }
 
     @Test func turnAwareGateAcceptsTTSMarkupTrustRepair() {
@@ -27166,6 +27424,34 @@ struct AICoachChatReplyQualityGateTests {
         ) == nil)
     }
 
+    @Test func repairReferenceForIgnoredExpertiseColdStartUsesSixtySecondBaseline() throws {
+        let card = CoachKnowledgeBase.cards.first { $0.id == "filler-pause-beats-filler" }!
+        let expertise = CoachExpertiseFormatter.contextLines(for: [card]).joined(separator: "\n")
+        let system = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        \(expertise)
+        === END CONTEXT ===
+        """
+        let turn = "What should I work on?"
+        let shape = try #require(AICoachChatService.repairReferenceShape(
+            issue: .ignoredCoachingExpertise,
+            latestUserTurn: turn,
+            system: system
+        ))
+
+        #expect(shape.contains("No baseline yet"))
+        #expect(shape.contains("record 60 seconds"))
+        #expect(!shape.contains("one short rep"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: shape,
+            latestUserTurn: turn,
+            systemContext: system
+        ) == nil)
+    }
+
     @Test func techniqueTurnAcceptsColdStartBaselineMoveWhenInterviewExpertiseIsPresent() {
         let card = CoachKnowledgeBase.cards.first { $0.id == "interview-answer-first" }!
         let context = CoachContextBuilder.userContext(
@@ -27223,6 +27509,131 @@ struct AICoachChatReplyQualityGateTests {
         ) == nil)
     }
 
+    @Test func repairReferenceForNotInformativeUsesLatePointEvidence() throws {
+        let turn = "That's not informative."
+        let system = """
+        RECENT (most-recent first)
+        - The rep in question: point arrived in sentence 4; first 3 sentences were throat-clearing.
+        CASE FORMULATION
+        - Current read: the user buries the lede when pressure rises.
+        """
+        let shape = try #require(AICoachChatService.repairReferenceShape(
+            issue: .missedTrustRepair,
+            latestUserTurn: turn,
+            system: system
+        ))
+
+        #expect(shape.contains("point arrived in sentence four"))
+        #expect(shape.contains("three warm-up sentences"))
+        #expect(shape.contains("say the point first"))
+        #expect(!shape.lowercased().contains("fluff"))
+        #expect(!shape.lowercased().contains("score"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: shape,
+            latestUserTurn: turn,
+            systemContext: system
+        ) == nil)
+    }
+
+    @Test func safeReferenceRepairAcceptsTrustRepairScaffoldIssue() throws {
+        let turn = "That's not informative."
+        let system = """
+        RECENT (most-recent first)
+        - The rep in question: point arrived in sentence 4; first 3 sentences were throat-clearing.
+        CASE FORMULATION
+        - Current read: the user buries the lede when pressure rises.
+        """
+        let repair = try #require(AICoachChatService.safeReferenceRepairReply(
+            issue: .scaffoldLabel,
+            latestUserTurn: turn,
+            system: system,
+            quoteGuard: nil,
+            turnDepth: .trustRepair
+        ))
+        let lower = repair.lowercased()
+
+        #expect(repair.contains("point arrived in sentence four"))
+        #expect(repair.contains("say the point first"))
+        #expect(!lower.contains("real read:"))
+        #expect(!lower.contains("next rep:"))
+        #expect(!lower.contains("score"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repair,
+            latestUserTurn: turn,
+            systemContext: system,
+            turnDepth: .trustRepair
+        ) == nil)
+    }
+
+    @Test func safeReferenceRepairDoesNotRewriteNonCritiqueScaffoldIssue() {
+        let system = """
+        RECENT (most-recent first)
+        - Your last rep had 4 fillers.
+        """
+        let repair = AICoachChatService.safeReferenceRepairReply(
+            issue: .scaffoldLabel,
+            latestUserTurn: "What next?",
+            system: system,
+            quoteGuard: nil,
+            turnDepth: .groundedRead
+        )
+
+        #expect(repair == nil)
+    }
+
+    @Test func repairReferenceForVoiceChoiceProposesWithoutCommitting() throws {
+        let turn = "What voice should I even pick? There are six and I don't know."
+        let system = """
+        GOAL
+        - No voice set yet.
+        USER CONTEXT
+        - Wants to run meetings without getting talked over.
+        """
+        let shape = try #require(AICoachChatService.repairReferenceShape(
+            issue: .roboticPhrase("tap to confirm"),
+            latestUserTurn: turn,
+            system: system
+        ))
+
+        #expect(shape.contains("Start with Authoritative"))
+        #expect(shape.contains("meetings where you get talked over"))
+        #expect(shape.contains("Executive presence"))
+        #expect(!shape.lowercased().contains("tap to confirm"))
+        #expect(!shape.lowercased().contains("lock it in"))
+        #expect(!shape.lowercased().contains("set it"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: shape,
+            latestUserTurn: turn,
+            systemContext: system
+        ) == nil)
+    }
+
+    @Test func repairReferenceForWarmVoiceChangeDefersDecision() throws {
+        let turn = "Yeah maybe I should just switch to something warmer altogether."
+        let system = """
+        GOAL
+        - Current voice: Authoritative.
+        RECENT FEEDBACK
+        - User heard that the delivery was clear but cold.
+        """
+        let shape = try #require(AICoachChatService.repairReferenceShape(
+            issue: .roboticPhrase("i'll set it"),
+            latestUserTurn: turn,
+            system: system
+        ))
+
+        #expect(shape.contains("Warm and welcoming"))
+        #expect(shape.contains("what changed"))
+        #expect(!shape.lowercased().contains("decided. tap"))
+        #expect(!shape.lowercased().contains("lock it in"))
+        #expect(!shape.lowercased().contains("set it"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: shape,
+            latestUserTurn: turn,
+            systemContext: system
+        ) == nil)
+    }
+
     @Test func repairReferenceForWhyLandedUsesLateRecommendationEvidence() throws {
         let turn = "Why did that answer land badly?"
         let system = "TRANSCRIPT\n- I waited too long to state the recommendation, then gave the context after it."
@@ -27260,6 +27671,60 @@ struct AICoachChatReplyQualityGateTests {
         ))
 
         #expect(shape.contains("No baseline yet"))
+        #expect(!shape.contains("?"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: shape,
+            latestUserTurn: turn,
+            systemContext: system
+        ) == nil)
+    }
+
+    @Test func repairReferenceForColdStartProductModeUsesPlainFirstRep() throws {
+        let turn = "What should I work on?"
+        let system = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let shape = try #require(AICoachChatService.repairReferenceShape(
+            issue: .roboticPhrase("cold-start product mode"),
+            latestUserTurn: turn,
+            system: system
+        ))
+        let lower = shape.lowercased()
+
+        #expect(shape.contains("No baseline yet"))
+        #expect(shape.contains("Record 60 seconds"))
+        #expect(!lower.contains("ah-counter"))
+        #expect(!lower.contains("sudden death"))
+        #expect(!lower.contains("im conversation"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: shape,
+            latestUserTurn: turn,
+            systemContext: system
+        ) == nil)
+    }
+
+    @Test func repairReferenceForColdStartMetricTargetUsesPlainFirstRep() throws {
+        let turn = "What should I work on?"
+        let system = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let shape = try #require(AICoachChatService.repairReferenceShape(
+            issue: .roboticPhrase("cold-start metric target"),
+            latestUserTurn: turn,
+            system: system
+        ))
+        let lower = shape.lowercased()
+
+        #expect(shape.contains("No baseline yet"))
+        #expect(shape.contains("Record 60 seconds"))
+        #expect(!lower.contains("under 4 fillers"))
+        #expect(!lower.contains("first number"))
         #expect(!shape.contains("?"))
         #expect(AICoachChatService.replyQualityIssue(
             in: shape,
@@ -46310,7 +46775,7 @@ struct ChatContinuationSurfaceTests {
     @Test func goalProposalOutranksEveryOtherSurface() {
         // A goal-change turn whose reply also earned follow-up chips must
         // show ONLY the commit card — the chips would compete with the
-        // "tap to confirm" cue the coach just gave.
+        // proposal the coach just gave.
         let surface = CoachContextBuilder.continuationSurface(
             goalProposalEligible: true,
             hypothesisAckEligible: true,

@@ -1,14 +1,34 @@
 // Unit tests for the Coach Arena core logic. Run: node --test  (or ./run.sh test)
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 
 import { composeSystemPrompt, extractAll, VOICES } from '../lib/extractPrompt.mjs';
 import { runChecks } from '../lib/checks.mjs';
 import { combineScore } from '../lib/score.mjs';
 import { parseJudge } from '../lib/judge.mjs';
 import { renderContext } from '../lib/context.mjs';
+import { summarize } from '../lib/report.mjs';
 
+const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const baseFx = (over = {}) => ({ id: 'x', turnDepth: 'groundedRead', userTurn: 'what next?', goal: 'g', memoryState: {}, disqualifiers: [], ...over });
+const scoredRecord = (over = {}) => ({
+  status: 'scored',
+  fixture: { id: 'scored', category: 'mechanics', turnDepth: 'groundedRead', ...over.fixture },
+  score: { final: 80, capsTriggered: [], placeholderLeaks: 0, ...over.score },
+  judge: {
+    dims: {
+      diagnosticIQ: { score: 20 },
+      eqAttunement: { score: 20 },
+      personalMemory: { score: 16 },
+      interventionQuality: { score: 12 },
+      dialogueFeel: { score: 12 },
+    },
+    ...over.judge,
+  },
+});
 
 test('extractPrompt: all voices compose with integrity anchors', () => {
   const ex = extractAll();
@@ -19,6 +39,26 @@ test('extractPrompt: all voices compose with integrity anchors', () => {
     assert.ok(p.includes('Intelligence floor'));
     assert.ok(!p.includes('\\('), 'no unresolved interpolation for voice ' + v);
   }
+});
+
+test('replay captures cover every gold fixture when local captures are present', (t) => {
+  const fixtureDir = join(rootDir, 'fixtures', 'gold');
+  const captureDir = join(rootDir, 'runners', 'captures');
+  if (!existsSync(captureDir)) {
+    t.skip('local replay captures are gitignored regenerable artifacts');
+    return;
+  }
+  const missing = [];
+
+  for (const file of readdirSync(fixtureDir).filter((f) => f.endsWith('.json')).sort()) {
+    const fixture = JSON.parse(readFileSync(join(fixtureDir, file), 'utf8'));
+    for (const suffix of ['reply.txt', 'judge.json']) {
+      const expected = join(captureDir, `${fixture.id}.${suffix}`);
+      if (!existsSync(expected)) missing.push(`${fixture.id}.${suffix}`);
+    }
+  }
+
+  assert.deepEqual(missing, []);
 });
 
 test('checks: clean strong reply has no findings', () => {
@@ -172,6 +212,224 @@ test('checks: a move that ENDS on the move (no trailing question) does NOT flag'
   assert.ok(!r.findings.some((f) => f.id === 'trailingSetupQuestion'));
 });
 
+test('checks: cold-start reply flags product mode and metric target before baseline', () => {
+  const fx = baseFx({
+    category: 'cold-start',
+    evidence: { noRatedSessions: true, noVoiceSet: true },
+    userTurn: 'What should I work on?',
+  });
+  const r = runChecks(
+    'No baseline yet, so do one Ah-Counter round: 60 seconds on a topic you know cold, aiming to stay under 4 fillers. That gives you a first number.',
+    fx,
+    { contextBlock: 'BASELINE\n- Not enough data for a stable baseline yet.' },
+  );
+  assert.ok(r.findings.some((f) => f.id === 'coldStartProductJargon'));
+  assert.ok(r.findings.some((f) => f.id === 'coldStartMetricTarget'));
+  assert.ok(r.caps.some((f) => f.id === 'coldStartFakeCalibration'));
+  assert.equal(r.hardCap, 30);
+});
+
+test('checks: cold-start worded filler target flags before baseline', () => {
+  const fx = baseFx({
+    category: 'cold-start',
+    evidence: { noRatedSessions: true, noVoiceSet: true },
+    userTurn: 'Where should I start?',
+  });
+  const r = runChecks(
+    'No baseline yet, so record 60 seconds on something you know cold and stay below four fillers.',
+    fx,
+    { contextBlock: 'BASELINE\n- Not enough data for a stable baseline yet.' },
+  );
+  assert.ok(r.findings.some((f) => f.id === 'coldStartMetricTarget'));
+  assert.ok(!r.caps.some((f) => f.id === 'coldStartFakeCalibration'));
+});
+
+test('checks: plain cold-start first rep does NOT flag product or metric overreach', () => {
+  const fx = baseFx({
+    category: 'cold-start',
+    evidence: { noRatedSessions: true, noVoiceSet: true },
+    userTurn: 'What should I work on?',
+  });
+  const r = runChecks(
+    "No baseline yet, so start there. Record 60 seconds on anything you know well, and I'll have something real to read: pace, fillers, and where the point lands. Want to go now?",
+    fx,
+    { contextBlock: 'BASELINE\n- Not enough data for a stable baseline yet.' },
+  );
+  assert.ok(!r.findings.some((f) => f.id === 'coldStartProductJargon'));
+  assert.ok(!r.findings.some((f) => f.id === 'coldStartMetricTarget'));
+});
+
+test('checks: vague cold-start baseline rep flags before baseline', () => {
+  const fx = baseFx({
+    category: 'cold-start',
+    evidence: { noRatedSessions: true, noVoiceSet: true },
+    userTurn: 'What should I work on?',
+  });
+  const r = runChecks(
+    'No baseline yet, so record one short rep before polishing the answer.',
+    fx,
+    { contextBlock: 'BASELINE\n- Not enough data for a stable baseline yet.' },
+  );
+  assert.ok(r.findings.some((f) => f.id === 'coldStartVagueBaselineRep'));
+});
+
+test('checks: real-read trust-repair scaffold flags', () => {
+  const fx = baseFx({
+    category: 'trust-repair',
+    turnDepth: 'trustRepair',
+    userTurn: "That's not informative.",
+  });
+  const r = runChecks(
+    'Fair. That was too vague. Real read: your point arrived in sentence four.',
+    fx,
+    {},
+  );
+  assert.ok(r.findings.some((f) => f.id === 'scaffoldLabel'));
+});
+
+test('checks: trust-repair raw score readout flags report voice', () => {
+  const fx = baseFx({
+    category: 'trust-repair',
+    turnDepth: 'trustRepair',
+    userTurn: 'ok prove it again, what specifically have I been doing wrong',
+  });
+  const bad = runChecks(
+    'Fair push. This week you scored 74 over 95 seconds with only 4 fillers, and the setup held the whole way. So hold one second before the final line.',
+    fx,
+    {},
+  );
+  const good = runChecks(
+    'Fair push. Your last rep had 4 fillers, so say the decision first, give one proof point, then stop.',
+    fx,
+    {},
+  );
+
+  assert.ok(bad.findings.some((f) => f.id === 'trustRepairReportVoice'));
+  assert.ok(!good.findings.some((f) => f.id === 'trustRepairReportVoice'));
+});
+
+test('checks: trust-repair scaffold plus raw metric caps placeholder', () => {
+  const fx = baseFx({
+    category: 'trust-repair',
+    turnDepth: 'trustRepair',
+    userTurn: "That's not informative.",
+  });
+  const r = runChecks(
+    'Fair. That was fluff, not coaching. Real read: score 74, but your point arrived in sentence four. Next rep: say the point first.',
+    fx,
+    {},
+  );
+
+  assert.ok(r.findings.some((f) => f.id === 'scaffoldLabel'));
+  assert.ok(r.findings.some((f) => f.id === 'trustRepairReportVoice'));
+  assert.ok(r.caps.some((f) => f.id === 'trustRepairScaffoldReportVoice'));
+  assert.equal(r.hardCap, 30);
+});
+
+test('checks: sensitive goal-change metric dump flags report voice', () => {
+  const fx = baseFx({
+    category: 'goal-change',
+    turnDepth: 'groundedRead',
+    userTurn: 'I think I want to sound more engaging.',
+    memoryState: { goalIntent: { case: 'change', from: 'authoritative', to: 'engaging' } },
+  });
+  const bad = runChecks(
+    'Before you pivot, know your authoritative work is landing: 80 this week, 3 fillers in 68 seconds, three weeks in.',
+    fx,
+    {},
+  );
+  const good = runChecks(
+    'That warmer pull makes sense to test, but I would not treat it as decided yet. Engaging maps closest to Storytelling, with Warm as the softer option.',
+    fx,
+    {},
+  );
+
+  assert.ok(bad.findings.some((f) => f.id === 'sensitiveTurnReportVoice'));
+  assert.ok(!good.findings.some((f) => f.id === 'sensitiveTurnReportVoice'));
+});
+
+test('checks: sensitive greeting metric dump flags report voice but data question allows it', () => {
+  const greeting = baseFx({ turnDepth: 'greeting', userTurn: 'Hi' });
+  const dataQuestion = baseFx({ category: 'data-question', turnDepth: 'groundedRead', userTurn: "What's my filler rate?" });
+  const bad = runChecks(
+    "Good to have you back. Today's rep hit 80, 3 fillers, tight and clean, so run one more.",
+    greeting,
+    {},
+  );
+  const allowed = runChecks(
+    'Your last rep had 3 fillers in 68 seconds, which is cleaner than the prior two.',
+    dataQuestion,
+    {},
+  );
+
+  assert.ok(bad.findings.some((f) => f.id === 'sensitiveTurnReportVoice'));
+  assert.ok(!allowed.findings.some((f) => f.id === 'sensitiveTurnReportVoice'));
+});
+
+test('checks: established-user Ah-Counter target is allowed when evidence exists', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    evidence: { baseline: { fillersPerMin: 5.4 } },
+    memoryState: {
+      recentReps: [
+        { when: 'this week', mode: 'Ah-Counter', fillers: 5, durationSec: 60 },
+      ],
+    },
+    userTurn: 'What is my filler rate?',
+  });
+  const r = runChecks(
+    'Your current baseline is 5.4 fillers per minute. Your last Ah-Counter rep had them clustering in the back half, so next round target under 4 fillers after the 30-second mark.',
+    fx,
+    { contextBlock: renderContext(fx) },
+  );
+  assert.ok(!r.findings.some((f) => f.id === 'coldStartProductJargon'));
+  assert.ok(!r.findings.some((f) => f.id === 'coldStartMetricTarget'));
+});
+
+test('checks: exact voice set request flags closest-match hedge', () => {
+  const fx = baseFx({
+    category: 'goal-change',
+    memoryState: { goalIntent: { case: 'set', to: 'authoritative' } },
+    userTurn: 'Just set me to authoritative.',
+  });
+  const r = runChecks('The closest match is Authoritative. Tap to confirm on the card.', fx, {});
+  assert.ok(r.findings.some((f) => f.id === 'goalIntentExactVoiceHedge'));
+});
+
+test('checks: engaging goal-change must map to Storytelling and Warm', () => {
+  const fx = baseFx({
+    category: 'goal-change',
+    memoryState: { goalIntent: { case: 'change', from: 'authoritative', to: 'engaging' } },
+    userTurn: 'I think I want to sound more engaging.',
+  });
+  const bad = runChecks('Engaging makes sense. Tap the card when you are ready.', fx, {});
+  assert.ok(bad.findings.some((f) => f.id === 'goalIntentMissingEngagingMap'));
+
+  const good = runChecks('Engaging is not one of the six. Closest are Storytelling for arcs or Warm for connection; pick the pull before you use the confirmation card.', fx, {});
+  assert.ok(!good.findings.some((f) => f.id === 'goalIntentMissingEngagingMap'));
+});
+
+test('checks: voice-choice turn flags six-voice menu dump', () => {
+  const fx = baseFx({
+    category: 'goal-change',
+    userTurn: 'What voice should I even pick?',
+  });
+  const r = runChecks('You can choose Authoritative, Warm, Concise, Persuasive, Executive Presence, or Storytelling. Each has benefits.', fx, {});
+  assert.ok(r.findings.some((f) => f.id === 'goalIntentVoiceMenu'));
+});
+
+test('checks: goal-change turn flags UI/state directive', () => {
+  const fx = baseFx({
+    category: 'goal-change',
+    userTurn: 'What voice should I even pick?',
+  });
+  const bad = runChecks('Start with Authoritative. Tap to confirm and I’ll lock it in.', fx, {});
+  assert.ok(bad.findings.some((f) => f.id === 'goalIntentStateDirective'));
+
+  const good = runChecks('Start with Authoritative because meetings where you get talked over need short verdicts that hold the floor. Executive presence is the close second if the room is more senior than interrupt-heavy.', fx, {});
+  assert.ok(!good.findings.some((f) => f.id === 'goalIntentStateDirective'));
+});
+
 test('checks: fixture disqualifier substring + regex + cap', () => {
   const fx = baseFx({ disqualifiers: ['forbidden phrase', { pattern: '\\bset to authoritative\\b', regex: true, cap: 'placeholderOrBroken' }] });
   const r1 = runChecks('this contains a forbidden phrase here', fx, {});
@@ -306,4 +564,34 @@ test('context: POSITIONAL TREND drops malformed trends but keeps valid ones', ()
   const ctx = renderContext(fx);
   assert.ok(ctx.includes('Fillers have clustered in the middle in 3 of your last 4 reps'), 'valid trend renders');
   assert.ok(!ctx.includes('bogusKind'), 'malformed trend dropped, not leaked');
+});
+
+test('report: production readiness fails on missing captures and low fixture pockets', () => {
+  const summary = summarize([
+    scoredRecord({ fixture: { id: 'strong', turnDepth: 'deepAssessment' }, score: { final: 90 } }),
+    scoredRecord({ fixture: { id: 'weak', turnDepth: 'trustRepair' }, score: { final: 55 } }),
+    { status: 'missing-reply', fixture: { id: 'missing', category: 'mechanics', turnDepth: 'groundedRead' } },
+  ]);
+
+  assert.equal(summary.productionReady, false);
+  assert.equal(summary.missing, 1);
+  assert.equal(summary.sub70, 1);
+  assert.equal(summary.thresholds.zeroMissingReplies.pass, false);
+  assert.equal(summary.thresholds.fixtureScoreFloor.pass, false);
+  assert.equal(summary.thresholds.zeroSub70Fixtures.pass, false);
+});
+
+test('report: production readiness can pass only with complete coverage and no weak fixtures', () => {
+  const summary = summarize([
+    scoredRecord({ fixture: { id: 'deep', turnDepth: 'deepAssessment' }, score: { final: 72 } }),
+    scoredRecord({ fixture: { id: 'trust', turnDepth: 'trustRepair' }, score: { final: 70 } }),
+    scoredRecord({ fixture: { id: 'grounded', turnDepth: 'groundedRead' }, score: { final: 78 } }),
+  ]);
+
+  assert.equal(summary.productionReady, true);
+  assert.equal(summary.missing, 0);
+  assert.equal(summary.sub70, 0);
+  assert.equal(summary.thresholds.zeroMissingReplies.pass, true);
+  assert.equal(summary.thresholds.fixtureScoreFloor.pass, true);
+  assert.equal(summary.thresholds.zeroSub70Fixtures.pass, true);
 });

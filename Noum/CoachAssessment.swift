@@ -86,11 +86,19 @@ struct CoachAssessment: Codable, Equatable {
         if let signal = compactEvidence(evidence) {
             parts.append("The signal I can use is \(completeSentence(signal))")
         }
-        if let missing,
-           !missing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            parts.append("I still need \(missingRequirementPhrase(missing))")
+        let hasMissing = !(missing?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+        if hasMissing, let missing {
+            // Name the gap explicitly on a bounded/abstaining read: the word
+            // "missing" keeps "I still need …" honest about what is not yet proven.
+            parts.append("What is still missing: I still need \(missingRequirementPhrase(missing))")
         }
-        parts.append("Try this next: \(completeSentence(proofTest))")
+        if hasMissing {
+            // Label the bounded read's next step as a proof test while keeping the
+            // "Try this next:" prompt other surfaces pin verbatim.
+            parts.append("Proof test — Try this next: \(completeSentence(proofTest))")
+        } else {
+            parts.append("Try this next: \(completeSentence(proofTest))")
+        }
         return parts.joined(separator: " ")
     }
 

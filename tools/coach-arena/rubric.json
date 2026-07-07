@@ -69,6 +69,9 @@
     "goldSuiteMean": 70,
     "deepAssessmentMean": 70,
     "trustRepairMean": 65,
+    "maxMissingReplies": 0,
+    "fixtureScoreFloor": 60,
+    "maxSub70Fixtures": 0,
     "maxPlaceholderLeaks": 0
   }
 }
