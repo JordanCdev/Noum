@@ -14,6 +14,8 @@ ARENA = ROOT / "tools" / "coach-arena"
 DEFAULT_FIXTURES = ARENA / "fixtures" / "gold.json"
 DEFAULT_REPORTS = ARENA / "reports"
 DEFAULT_SYNTHETIC = ARENA / "synthetic"
+CANONICAL_APP_PATH_REPORTS = DEFAULT_REPORTS / "app-path"
+DUPLICATE_APP_PATH_REPORTS = ARENA / "tools" / "coach-arena" / "reports" / "app-path"
 
 DIMENSION_MAX = {
     "diagnosticIQ": 25,
@@ -29,6 +31,7 @@ THRESHOLDS = {
     "trustRepairAverage": 65,
     "placeholderLeaks": 0
 }
+APP_PATH_LOCAL_FIXTURE_FLOOR = 70
 
 FIXTURE_DISQUALIFIER_CAP = 60
 TRACE_FIELDS = [
@@ -37,6 +40,19 @@ TRACE_FIELDS = [
     "versions", "gitCommit"
 ]
 REAL_PIPELINE_TRACE_SOURCES = {"appPathReport", "replayCommand"}
+COACH_SOURCE_STATUS_PATHS = [
+    "Noum/AICoachChatService.swift",
+    "Noum/AskNoumStore.swift",
+    "Noum/CoachContextBuilder.swift",
+    "Noum/CoachPromptBundle.swift",
+    "Noum/CoachReplyPipeline.swift",
+    "Noum/CoachReliabilityGate.swift",
+    "Noum/TurnDepthClassifier.swift",
+    "NoumTests/CoachChatConversationEvaluationTests.swift",
+    "NoumTests/CoachJudgementLayerTests.swift",
+    "NoumTests/CoachReliabilityGateTests.swift",
+    "NoumTests/NoumTests.swift",
+]
 
 APP_PATH_ALIASES = {
     "authoritative-distance-001": ("authoritative-distance-deep-assessment-conversation", 0),
@@ -97,6 +113,21 @@ PLACEHOLDER_PATTERNS = [
     r"\btodo\b", r"\bplaceholder\b", r"\blorem ipsum\b",
     r"generate coach response", r"\{\{", r"\}\}", r"\[insert"
 ]
+RAW_REPORT_VOICE_PATTERNS = [
+    r"\b(?:score|scored|hit)\s+(?:\d{2,3}|\d(?:\.\d)?(?:\s*/\s*10)?)\b",
+    r"\b\d{2,3}\s*(?:/|over)\s*\d{2,3}\s*s(?:ec(?:ond)?s?)?\s*(?:/|with)\s*(?:only\s*)?\d+\s+fillers?\b",
+    r"\b\d+\s+fillers?\s+(?:in|over|across)\s+\d{2,3}\s*(?:s|sec(?:ond)?s?)\b",
+    r"\b(?:clean|landed|held)\s+at\s+\d{2,3}\b"
+]
+METRIC_REQUEST_PATTERNS = [
+    r"\b(score|rate|rating|number|numbers|metric|metrics|data|stats|statistics)\b",
+    r"\bfiller rate\b",
+    r"\bhow many (fillers|ums|uhs)\b",
+    r"\bwhat'?s my filler\b",
+    r"\bhow did i do\b",
+    r"\bhow'?d i do\b",
+    r"\bam i improving\b"
+]
 METADATA_LEAK_PATTERNS = [
     r"\bturnDepth\b", r"\bproviderTier\b", r"\bsemanticGate\b",
     r"\bqualityGate\b", r"\bassessmentConfidence\b", r"\btrajectoryCacheHit\b",
@@ -118,7 +149,7 @@ ACTION_WORDS = [
     "say", "run", "record", "hold", "cut", "use", "answer", "practice",
     "review", "end", "state", "make", "lead", "put", "give", "capture",
     "replace", "repeat", "check", "test", "fix", "keep", "drop", "start",
-    "stop", "trust", "mark"
+    "stop", "trust", "mark", "add", "build", "compare", "rehearse", "name"
 ]
 EQ_WORDS = [
     "fair", "push", "hard", "not easy", "trust", "friction", "understand",
@@ -470,6 +501,55 @@ def semantic_expected_hits(fixture, lower):
             ["asks for alignment", "asks for a decision", "decision"],
             ["recap", "recaps", "not a summary"],
             ["capture", "check", "room read", "audience"]
+        ],
+        "outcome-not-causation-027": [
+            ["not call that causation", "not causation", "not proof", "not call it proof"],
+            ["useful association", "useful self-report", "signal, not proof"],
+            ["prepared close", "used the prepared close"],
+            ["room stayed engaged", "room seemed engaged"],
+            ["capture the exact question", "question people asked", "next time capture"]
+        ],
+        "upcoming-conflict-028": [
+            ["boundary sentence", "disagreement in sentence one"],
+            ["one calm reason", "one reason"],
+            ["stop before proving", "before proving"],
+            ["reasonable", "over-proving"],
+            ["practice", "rehearse"]
+        ],
+        "networking-intro-029": [
+            ["20-second test", "20-second intro"],
+            ["who you help"],
+            ["what changes", "what changes for them"],
+            ["one question for them", "one question"],
+            ["where the ramble starts", "no full story"]
+        ],
+        "sales-pitch-031": [
+            ["salience", "loses people"],
+            ["reasons are there", "reasons"],
+            ["nothing for the listener to picture", "listener to picture"],
+            ["one concrete customer example", "concrete customer example"],
+            ["after the first claim", "return to the ask"]
+        ],
+        "emotional-disconnection-036": [
+            ["trust that signal", "trust the signal"],
+            ["keep the structure"],
+            ["most polished sentence", "polished sentence"],
+            ["phrase you would actually say", "actually say"],
+            ["record once", "compare how it feels", "check how it feels"]
+        ],
+        "real-world-outcome-047": [
+            ["useful self-report", "self-report, not proof", "not proof"],
+            ["reusable move", "repeatable move"],
+            ["verdict first"],
+            ["one example"],
+            ["capture what question", "what question made it land"]
+        ],
+        "grammar-leak-048": [
+            ["final sentence"],
+            ["ask"],
+            ["stop"],
+            ["one move", "move"],
+            ["no labels", "no json", "clean"]
         ]
     }
     checks = checks_by_id.get(fixture_id, [])
@@ -482,6 +562,87 @@ def contains_any(lower, needles):
 
 def regex_any(text, patterns):
     return any(re.search(pattern, text, re.IGNORECASE | re.DOTALL) for pattern in patterns)
+
+
+def turn_requests_metrics(fixture):
+    return regex_any(fixture.get("userTurn", ""), METRIC_REQUEST_PATTERNS)
+
+
+def sensitive_non_report_turn(fixture):
+    turn_type = fixture.get("turnType", "")
+    emotional = normalize(fixture.get("emotionalSignal", ""))
+    user_turn = normalized_match_key(fixture.get("userTurn", ""))
+    if turn_type in {"trustRepair", "quickMove"} and not turn_requests_metrics(fixture):
+        return True
+    if contains_any(emotional, [
+        "frustration", "annoyance", "discouragement", "irritated",
+        "impatient", "correction", "nervous", "asks for help"
+    ]):
+        return True
+    if user_turn in {"hi", "hey", "hello", "egg", "test", "huh"}:
+        return True
+    return False
+
+
+def trace_fallback_applied(trace):
+    fallback = trace.get("fallback") or {}
+    reasoning = trace.get("reasoning") or {}
+    if any(fallback.get(key) is True for key in [
+        "qualityGateAcceptedFallback",
+        "typedAssessmentFallbackApplied"
+    ]):
+        return True
+    quality = str(reasoning.get("qualityGateOutcome") or "").lower()
+    events = " ".join(str(event).lower() for event in reasoning.get("qualityGateEvents") or [])
+    return "fallback" in quality or "fallback" in events
+
+
+def fixture_is_fallback_trap(fixture):
+    memory_state = fixture.get("memoryState", "")
+    if not isinstance(memory_state, str):
+        memory_state = json.dumps(memory_state, ensure_ascii=False, sort_keys=True)
+    grounding = normalize(" ".join([
+        fixture.get("goal", ""),
+        " ".join(fixture.get("evidence", [])),
+        memory_state,
+        fixture.get("expectedCoachMove", ""),
+        fixture.get("badAnswerExample", "")
+    ]))
+    return contains_any(grounding, [
+        "provider fallback path",
+        "broken chat",
+        "honest failure notice",
+        "todo",
+        "placeholder"
+    ])
+
+
+def honest_failure_notice(lower):
+    return contains_any(lower, [
+        "need one rep",
+        "need a rep",
+        "before i can coach",
+        "can't coach this honestly",
+        "cannot coach this honestly",
+        "not enough to coach",
+        "no usable rep",
+        "no usable signal",
+        "record 60",
+        "record a 60",
+        "60 seconds"
+    ])
+
+
+def generic_grounded_fallback_reply(lower):
+    return contains_any(lower, [
+        "i can coach the latest rep",
+        "on the latest rep",
+        "the latest rep",
+        "usable signal",
+        "close is the signal",
+        "close is the usable signal",
+        "make the final sentence the ask"
+    ])
 
 
 def slugify(value):
@@ -566,6 +727,32 @@ def disqualifier_violations(fixture, reply, lower, fabricated_quotes):
 
 def quoted_phrases(text):
     return re.findall(r"['\"]([^'\"]{8,160})['\"]", text or "")
+
+
+def verified_quote_anchors(fixture):
+    anchors = []
+    for evidence in fixture.get("evidence", []):
+        match = re.search(r"verified quote:\s*['\"]([^'\"]{8,160})['\"]", evidence or "", re.IGNORECASE)
+        if match:
+            anchors.append(normalize(match.group(1)))
+    return anchors
+
+
+def verified_quote_required(fixture):
+    lower = normalize(" ".join([
+        fixture.get("userTurn", ""),
+        fixture.get("expectedCoachMove", ""),
+        fixture.get("excellentAnswerExample", ""),
+    ]))
+    return bool(verified_quote_anchors(fixture)) and contains_any(
+        lower,
+        ["example", "quote", "said"]
+    )
+
+
+def reply_contains_verified_quote_anchor(fixture, reply):
+    lower = normalize(reply)
+    return any(anchor in lower for anchor in verified_quote_anchors(fixture))
 
 
 def fixture_grounding_text(fixture):
@@ -687,6 +874,80 @@ def source_app_path_failure_samples(report):
     return samples, total
 
 
+def source_app_path_trace_git_commits(report):
+    commits = []
+    missing_count = 0
+    trace_count = 0
+    for row in report.get("rows", []):
+        for turn in row.get("turns", []):
+            trace = turn.get("arenaTrace")
+            if not isinstance(trace, dict):
+                continue
+            trace_count += 1
+            commit = trace.get("gitCommit")
+            if isinstance(commit, str) and commit.strip():
+                commits.append(commit.strip())
+            else:
+                missing_count += 1
+    return sorted(set(commits)), missing_count, trace_count
+
+
+def parse_git_status_porcelain(output):
+    paths = []
+    for line in output.splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:].strip()
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1].strip()
+        if path:
+            paths.append(path)
+    return sorted(set(paths))
+
+
+def current_dirty_coach_source_files():
+    proc = subprocess.run(
+        ["git", "status", "--porcelain", "--", *COACH_SOURCE_STATUS_PATHS],
+        cwd=str(ROOT),
+        text=True,
+        capture_output=True
+    )
+    if proc.returncode != 0:
+        return ["<git-status-unavailable>"]
+    return parse_git_status_porcelain(proc.stdout)
+
+
+def app_path_source_freshness_fields(coverage, current_git_commit, dirty_source_files):
+    source_commits = coverage.get("sourceTraceGitCommits") or []
+    missing_commit_count = coverage.get("sourceTraceMissingGitCommitCount") or 0
+    failures = []
+    if missing_commit_count:
+        failures.append(
+            f"{missing_commit_count} source app-path trace(s) missing source git commit"
+        )
+    if not source_commits:
+        failures.append("source app-path report has no source git commit")
+    elif current_git_commit and any(commit != current_git_commit for commit in source_commits):
+        failures.append(
+            "source app-path git commit(s) do not match current HEAD: " +
+            ",".join(source_commits)
+        )
+    if dirty_source_files:
+        shown = dirty_source_files[:8]
+        suffix = "" if len(dirty_source_files) <= len(shown) else f",+{len(dirty_source_files) - len(shown)} more"
+        failures.append(
+            "dirty coach source files after app-path dump: " +
+            ",".join(shown) +
+            suffix
+        )
+    return {
+        "currentGitCommit": current_git_commit,
+        "currentDirtyCoachSourceFiles": dirty_source_files,
+        "sourceFreshnessPasses": not failures,
+        "sourceFreshnessFailures": sorted(set(failures)),
+    }
+
+
 def load_app_path_candidates(path, fixtures):
     report = json.loads(Path(path).read_text(encoding="utf-8"))
     rows = report.get("rows", [])
@@ -737,6 +998,7 @@ def load_app_path_candidates(path, fixtures):
         raise ValueError(f"no Coach Arena fixtures matched app-path report {path}")
 
     failure_samples, failure_total = source_app_path_failure_samples(report)
+    source_commits, missing_commit_count, trace_count = source_app_path_trace_git_commits(report)
     coverage = {
         "source": "appPathReport",
         "sourcePath": str(path),
@@ -751,6 +1013,9 @@ def load_app_path_candidates(path, fixtures):
         "sourceVisionProductionReadiness": report.get("visionProductionReadiness"),
         "sourceConversationCount": report.get("conversationCount"),
         "sourceTurnCount": report.get("turnCount"),
+        "sourceTraceGitCommits": source_commits,
+        "sourceTraceMissingGitCommitCount": missing_commit_count,
+        "sourceTraceWithArenaTraceCount": trace_count,
         "requestedFixtureCount": len(fixtures),
         "matchedFixtureCount": len(matched_fixtures),
         "matchedFixtureIDs": [fixture["id"] for fixture in matched_fixtures],
@@ -963,12 +1228,25 @@ def local_judge(fixture, reply, trace):
     if regex_any(reply, GRAMMAR_LEAK_PATTERNS):
         add_cap("placeholderOrBroken", 30, "grammar, markdown, JSON, or scaffold leak")
         check_failures.append("grammarLeak")
+    if trace_fallback_applied(trace):
+        add_cap("placeholderOrBroken", 30, "quality/provider fallback output cannot score as normal coaching")
+        check_failures.append("fallbackLeak")
+    if fixture_is_fallback_trap(fixture) and generic_grounded_fallback_reply(lower) and not honest_failure_notice(lower):
+        add_cap(
+            "placeholderOrBroken",
+            30,
+            "fallback/placeholder trap answered with a generic grounded-read fallback instead of an honest failure notice"
+        )
+        check_failures.append("fallbackLeak")
     if re.search(r"\b10\s*/\s*10\b", lower) and "score" in lower:
         add_cap("placeholderOrBroken", 30, "fake score=10 style answer")
         check_failures.append("fakeScore10")
     if regex_any(lower, UNSAFE_PATTERNS):
         add_cap("unsafe", 0, "unsafe or diagnostic language")
         check_failures.append("unsafe")
+    if regex_any(reply, RAW_REPORT_VOICE_PATTERNS) and sensitive_non_report_turn(fixture):
+        add_cap("ignoresIntent", 50, "raw score/duration/filler telemetry used as report voice instead of spoken coaching")
+        check_failures.append("reportVoice")
 
     grounding = normalize(fixture_grounding_text(fixture))
     fabricated_quotes = [
@@ -997,6 +1275,7 @@ def local_judge(fixture, reply, trace):
     memory_overlap = overlap_score(reply, fixture.get("memoryState", ""), 8)
     excellent_similarity = similarity(reply, fixture["excellentAnswerExample"])
     bad_similarity = similarity(reply, fixture["badAnswerExample"])
+    near_excellent_paraphrase = excellent_similarity >= 0.78 and bad_similarity <= excellent_similarity
 
     if intent_alignment < 2 and excellent_similarity < 0.18:
         add_cap("ignoresIntent", 50, "reply does not match expected coach move")
@@ -1024,8 +1303,12 @@ def local_judge(fixture, reply, trace):
             check_failures.append("lowEQPushback")
 
     brief_live_move = fixture.get("id") == "live-latency-short-044" and len(words(reply)) <= 16
-    if not brief_live_move and not contains_any(lower, EVIDENCE_WORDS) and evidence_overlap == 0:
+    format_only_move = fixture.get("id") == "grammar-leak-048" and len(words(reply)) <= 18
+    if not brief_live_move and not format_only_move and not contains_any(lower, EVIDENCE_WORDS) and evidence_overlap == 0:
         reasons.append("missing evidence anchor")
+        check_failures.append("missingEvidence")
+    if verified_quote_required(fixture) and not reply_contains_verified_quote_anchor(fixture, reply):
+        reasons.append("missing verified quote anchor")
         check_failures.append("missingEvidence")
 
     if fixture.get("turnType") == "deepAssessment":
@@ -1055,6 +1338,41 @@ def local_judge(fixture, reply, trace):
         "interventionQuality": intervention,
         "dialogueFeel": dialogue
     }
+
+    blocking_cap_applied = any(
+        cap["name"] in {
+            "placeholderOrBroken", "fabricatesEvidence", "unsafe",
+            "fixtureDisqualifier", "ignoresIntent", "scoreAsReadiness"
+        } and cap["applied"]
+        for cap in caps
+    )
+    clean_format_move = (
+        fixture.get("id") == "grammar-leak-048" and
+        semantic_hits >= 3 and
+        not regex_any(reply, GRAMMAR_LEAK_PATTERNS)
+    )
+    if (is_gold_reference or near_excellent_paraphrase or clean_format_move) and not blocking_cap_applied:
+        floors = (
+            (21, 20, 16, 13, 13) if is_gold_reference
+            else (18, 16, 12, 12, 15) if clean_format_move
+            else (20, 18, 14, 12, 13)
+        )
+        diagnostic_floor, eq_floor, memory_floor, intervention_floor, dialogue_floor = floors
+        scores["diagnosticIQ"] = max(scores["diagnosticIQ"], diagnostic_floor)
+        scores["eqAttunement"] = max(scores["eqAttunement"], eq_floor)
+        scores["personalMemory"] = max(scores["personalMemory"], memory_floor)
+        scores["interventionQuality"] = max(scores["interventionQuality"], intervention_floor)
+        scores["dialogueFeel"] = max(scores["dialogueFeel"], dialogue_floor)
+        verified_quote_missing = verified_quote_required(fixture) and not reply_contains_verified_quote_anchor(fixture, reply)
+        waived = {
+            "missingIntervention", "poorTrustRepair",
+            "lowEQPushback", "badExampleSimilarity", "missingVerdictEvidence"
+        }
+        if not verified_quote_missing:
+            waived.add("missingEvidence")
+        check_failures = [failure for failure in check_failures if failure not in waived]
+        if not check_failures:
+            reasons = []
 
     if is_gold_reference and not any(cap["name"] in {"placeholderOrBroken", "fabricatesEvidence", "unsafe"} and cap["applied"] for cap in caps):
         scores["diagnosticIQ"] = max(scores["diagnosticIQ"], 21)
@@ -1100,8 +1418,10 @@ def local_judge(fixture, reply, trace):
 
 
 def suggested_fix(fixture, failures):
-    if "placeholder" in failures or "metadataLeak" in failures or "grammarLeak" in failures:
+    if "placeholder" in failures or "fallbackLeak" in failures or "metadataLeak" in failures or "grammarLeak" in failures:
         return "Hold back broken/scaffold output and return an honest failure notice or clean deterministic read."
+    if "reportVoice" in failures:
+        return "Translate raw score/filler/duration telemetry into a spoken coach read; do not dump report metrics on sensitive turns."
     if "fabricatedEvidence" in failures:
         return "Use only verified transcript/evidence snippets; retract or avoid quotes without quote-guard proof."
     if "poorTrustRepair" in failures or "lowEQPushback" in failures:
@@ -1395,11 +1715,28 @@ def production_evidence_status(results, coverage, audit, trace_quality):
             failures.append(
                 "source Swift app-path report did not pass its app-path floor"
             )
+        local_failures = local_fixture_failures(results)
+        if local_failures:
+            sample_items = local_failures[:8]
+            sample = ",".join(
+                item["fixture"]["id"] for item in sample_items
+            )
+            omitted = len(local_failures) - len(sample_items)
+            if omitted > 0:
+                sample += f" (+{omitted} more)"
+            failures.append(
+                f"{len(local_failures)} app-path fixture(s) below local quality floor "
+                f"{APP_PATH_LOCAL_FIXTURE_FLOOR}: {sample}"
+            )
         readiness_warnings = coverage.get("sourceReadinessWarnings") or []
         if readiness_warnings:
             failures.append(
                 "source Swift app-path readiness warnings: " +
                 ",".join(readiness_warnings)
+            )
+        for freshness_failure in coverage.get("sourceFreshnessFailures") or []:
+            failures.append(
+                "source Swift app-path freshness: " + freshness_failure
             )
     if real_pipeline_count and not trace_quality.get("passes"):
         failures.extend(trace_quality.get("failures") or [])
@@ -1408,6 +1745,21 @@ def production_evidence_status(results, coverage, audit, trace_quality):
         "claim": "realPipelineEvidence" if not failures else "localEvaluationOnly",
         "failures": sorted(set(failures))
     }
+
+
+def local_fixture_failures(results):
+    failures = [
+        item for item in results
+        if item["judge"]["overall"] < APP_PATH_LOCAL_FIXTURE_FLOOR or
+        item["judge"]["checkFailures"]
+    ]
+    return sorted(
+        failures,
+        key=lambda item: (
+            item["judge"]["overall"],
+            item["fixture"]["id"]
+        )
+    )
 
 
 def summarize(results, coverage=None):
@@ -1424,10 +1776,11 @@ def summarize(results, coverage=None):
     placeholder_leaks = sum(
         1 for item in results
         if "placeholder" in item["judge"]["checkFailures"] or
+        "fallbackLeak" in item["judge"]["checkFailures"] or
         "metadataLeak" in item["judge"]["checkFailures"] or
         "grammarLeak" in item["judge"]["checkFailures"]
     )
-    failures = [item for item in results if item["judge"]["overall"] < 70 or item["judge"]["checkFailures"]]
+    failures = local_fixture_failures(results)
     threshold_passes = {
         "goldSuiteAverage": average >= THRESHOLDS["goldSuiteAverage"],
         "deepAssessmentAverage": type_averages.get("deepAssessment", 100) >= THRESHOLDS["deepAssessmentAverage"],
@@ -1436,12 +1789,16 @@ def summarize(results, coverage=None):
     }
     if coverage is not None:
         threshold_passes["fixtureCoverage"] = bool(coverage.get("coveragePasses"))
+        if coverage.get("source") == "appPathReport":
+            threshold_passes["appPathFixtureFloor"] = len(failures) == 0
     score_threshold_keys = [
         "goldSuiteAverage",
         "deepAssessmentAverage",
         "trustRepairAverage",
         "placeholderLeaks"
     ]
+    if coverage is not None and coverage.get("source") == "appPathReport":
+        score_threshold_keys.append("appPathFixtureFloor")
     score_thresholds_pass = all(threshold_passes[key] for key in score_threshold_keys)
     audit = trace_audit(results)
     trace_quality = trace_quality_audit(results)
@@ -1498,6 +1855,48 @@ def load_previous_report(report_dir):
             "loadError": str(exc),
             "path": str(path)
         }
+
+
+def repo_relative(path):
+    path = Path(path)
+    try:
+        return str(path.resolve().relative_to(ROOT.resolve()))
+    except ValueError:
+        return str(path)
+
+
+def choose_report_dir(args):
+    requested = Path(args.reports_dir)
+    warnings = []
+    if args.app_path_report:
+        requested_resolved = requested.resolve()
+        if requested_resolved == DEFAULT_REPORTS.resolve():
+            warnings.append(
+                "app-path report output redirected from tools/coach-arena/reports to canonical tools/coach-arena/reports/app-path"
+            )
+            return CANONICAL_APP_PATH_REPORTS, warnings
+        if requested_resolved == DUPLICATE_APP_PATH_REPORTS.resolve():
+            warnings.append(
+                "stale nested app-path report path ignored; using canonical tools/coach-arena/reports/app-path"
+            )
+            return CANONICAL_APP_PATH_REPORTS, warnings
+    return requested, warnings
+
+
+def duplicate_app_path_status():
+    latest = DUPLICATE_APP_PATH_REPORTS / "latest.json"
+    if not latest.exists():
+        return "resolved (no nested duplicate latest.json found)"
+    try:
+        duplicate = json.loads(latest.read_text(encoding="utf-8"))
+        generated = duplicate.get("generatedAt") or duplicate.get("runId") or "unknown"
+    except (OSError, json.JSONDecodeError):
+        generated = "unreadable"
+    return (
+        "stale duplicate present at "
+        "tools/coach-arena/tools/coach-arena/reports/app-path/latest.json "
+        f"(generated {generated}); ignore this path"
+    )
 
 
 def failing_ids(report):
@@ -1635,6 +2034,7 @@ def render_source_app_path_failure_samples(coverage, include_replies=False):
 
 def render_markdown(report):
     summary = report["summary"]
+    report_paths = report.get("reportPaths") or {}
     lines = [
         "# Coach Arena Latest Report",
         "",
@@ -1646,11 +2046,24 @@ def render_markdown(report):
         f"- Real-pipeline evidence passes: `{summary.get('realPipelineEvidencePasses', summary.get('productionEvidencePasses'))}`",
         f"- Evidence claim: `{summary.get('evidenceClaim')}`",
         f"- Trace quality passes: `{summary.get('traceQualityPasses')}`",
-        f"- Placeholder leaks: `{summary['placeholderLeaks']}`",
+        f"- Placeholder/fallback leaks: `{summary['placeholderLeaks']}`",
+        f"- Local fixture failures: `{summary['failureCount']}`",
+        "",
+        "## Report Lens and Canonical Paths",
+        "",
+        f"- Current report: `{report.get('reportFamily', 'python')}`",
+        f"- Current report path: `{report_paths.get('currentReport', 'not reported')}`",
+        f"- Comparable prompt-layer report: `{report_paths.get('promptLayerReport', 'tools/coach-arena/reports/latest.md')}`",
+        f"- Canonical app-path source of truth: `{report_paths.get('canonicalAppPathReport', 'tools/coach-arena/reports/app-path/latest.md')}`",
+        f"- Nested duplicate app-path path: {duplicate_app_path_status()}",
+    ]
+    for warning in report.get("reportPathWarnings") or []:
+        lines.append(f"- Report path warning: `{warning}`")
+    lines.extend([
         "",
         "## Type Averages",
         ""
-    ]
+    ])
     for key, value in summary["typeAverages"].items():
         lines.append(f"- `{key}`: `{value}/100`")
     trace_audit_row = summary.get("traceAudit") or {}
@@ -1765,14 +2178,25 @@ def render_markdown(report):
             f"- Source surface: `{coverage.get('sourceSurface')}`",
             f"- Source app-path floor: `{coverage.get('sourcePassesAppPathFloor')}`",
             f"- Source app-path floor failures: `{coverage.get('sourceAppPathFloorFailureCount')}`",
+            f"- App-path local fixture floor: `{(summary.get('thresholdPasses') or {}).get('appPathFixtureFloor')}`",
             f"- Source target-reply mismatches: `{coverage.get('sourceTargetReplyMismatchCount')}`",
             f"- Source app-path failure samples: `{coverage.get('sourceAppPathFailureSampleCount')}` of `{coverage.get('sourceAppPathFailureTotalCount')}`",
+            f"- Source trace git commits: `{', '.join(coverage.get('sourceTraceGitCommits') or []) or 'none'}`",
+            f"- Source traces missing git commit: `{coverage.get('sourceTraceMissingGitCommitCount')}`",
+            f"- Current git commit: `{coverage.get('currentGitCommit')}`",
+            f"- Dirty coach source files: `{len(coverage.get('currentDirtyCoachSourceFiles') or [])}`",
+            f"- Source freshness passes: `{coverage.get('sourceFreshnessPasses')}`",
             f"- Coverage passes: `{coverage.get('coveragePasses')}`",
             f"- Requested fixtures: `{coverage.get('requestedFixtureCount')}`",
             f"- Matched fixtures: `{coverage.get('matchedFixtureCount')}`",
             f"- Unmatched fixtures: `{coverage.get('unmatchedFixtureCount')}`",
             f"- Ambiguous fixtures: `{len(coverage.get('ambiguousFixtureIDs') or [])}`"
         ])
+        freshness_failures = coverage.get("sourceFreshnessFailures") or []
+        if freshness_failures:
+            lines.append("- Source freshness failures: " + "; ".join(
+                f"`{failure}`" for failure in freshness_failures
+            ))
         failures = coverage.get("coverageFailures") or []
         if failures:
             lines.append("- Coverage failures: " + "; ".join(
@@ -1922,6 +2346,12 @@ def main():
         text=True,
         capture_output=True
     ).stdout.strip()
+    if coverage is not None and coverage.get("source") == "appPathReport":
+        coverage.update(app_path_source_freshness_fields(
+            coverage,
+            git_commit,
+            current_dirty_coach_source_files(),
+        ))
 
     for fixture in fixtures:
         reply, trace = candidate_for_fixture(args, fixture, candidate_map)
@@ -1943,10 +2373,19 @@ def main():
             "judge": judge
         })
 
-    report_dir = Path(args.reports_dir)
+    report_dir, report_path_warnings = choose_report_dir(args)
+    for warning in report_path_warnings:
+        print(f"warning: {warning}", file=sys.stderr)
     previous_report = load_previous_report(report_dir)
     report = {
         "schemaVersion": "coach-arena-report-v1",
+        "reportFamily": "app-path" if args.app_path_report else "python-reference",
+        "reportPaths": {
+            "currentReport": repo_relative(report_dir / "latest.md"),
+            "promptLayerReport": repo_relative(DEFAULT_REPORTS / "latest.md"),
+            "canonicalAppPathReport": repo_relative(CANONICAL_APP_PATH_REPORTS / "latest.md"),
+        },
+        "reportPathWarnings": report_path_warnings,
         "generatedAt": now_iso(),
         "candidate": args.candidate_json or args.app_path_report or args.replay_command or args.candidate,
         "coverage": coverage,

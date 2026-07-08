@@ -12,18 +12,15 @@
 // Cap keys match rubric.json: placeholderOrBroken(30), ignoresIntent(50),
 // fabricatesEvidence(40), unsafe(0).
 
-import { composeSystemPrompt } from './extractPrompt.mjs';
+import { extractAll } from './extractPrompt.mjs';
 
 let ROBOTIC = null;
 export function roboticPhrases() {
   if (!ROBOTIC) {
-    // Pull the live banned list out of the composed prompt's own listing so
-    // the checker and the shipped prompt can never drift.
-    const prompt = composeSystemPrompt('authoritative');
-    const m = prompt.match(/Hard-banned wording[^:]*:\s*([\s\S]*?)\.\s*\n/);
-    ROBOTIC = m
-      ? [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1].toLowerCase())
-      : [];
+    // Pull the live banned list from Swift source. The composed prompt now
+    // describes the category instead of listing every phrase, but the service
+    // still hard-rejects the exact `roboticPhrases` array.
+    ROBOTIC = extractAll().roboticPhrases.map((phrase) => phrase.toLowerCase());
   }
   return ROBOTIC;
 }
@@ -131,6 +128,8 @@ const RAW_REPORT_SCORE = /\b(?:score|scored|hit)\s+(?:\d{2,3}|\d(?:\.\d)?(?:\s*\
 const RAW_REPORT_STAT_CLUSTER = /\b\d{2,3}\s*(?:\/|over)\s*\d{2,3}\s*s(?:ec(?:ond)?s?)?\s*(?:\/|with)\s*(?:only\s*)?\d+\s+fillers?\b/;
 const RAW_REPORT_FILLER_DURATION = /\b\d+\s+fillers?\s+(?:in|over|across)\s+\d{2,3}\s*(?:s|sec(?:ond)?s?)\b/;
 const RAW_REPORT_CLEAN_AT = /\b(?:clean|landed|held)\s+at\s+\d{2,3}\b/;
+const RAW_REPORT_SCORE_WITH_FILLERS = /\b(?:score|scored|hit)\s+(?:\d{2,3}|\d(?:\.\d)?(?:\s*\/\s*10)?)\b[^.\n]{0,60}\b(?:only\s*)?\d+\s+fillers?\b/;
+const RAW_REPORT_SCORE_WITH_DURATION = /\b(?:score|scored|hit)\s+(?:\d{2,3}|\d(?:\.\d)?(?:\s*\/\s*10)?)\b[^.\n]{0,60}\b\d{2,3}\s*(?:s|sec(?:ond)?s?)\b/;
 
 function rawReportMetricMatch(raw, lower) {
   return firstMatch(raw, RAW_REPORT_SCORE)
@@ -141,6 +140,19 @@ function rawReportMetricMatch(raw, lower) {
     || (RAW_REPORT_STAT_CLUSTER.test(lower) ? 'stat cluster' : '')
     || (RAW_REPORT_FILLER_DURATION.test(lower) ? 'filler/duration cluster' : '')
     || (RAW_REPORT_CLEAN_AT.test(lower) ? 'score adjective readout' : '');
+}
+
+function rawReportMetricDumpMatch(raw, lower) {
+  return firstMatch(raw, RAW_REPORT_STAT_CLUSTER)
+    || firstMatch(raw, RAW_REPORT_FILLER_DURATION)
+    || firstMatch(raw, RAW_REPORT_CLEAN_AT)
+    || firstMatch(raw, RAW_REPORT_SCORE_WITH_FILLERS)
+    || firstMatch(raw, RAW_REPORT_SCORE_WITH_DURATION)
+    || (RAW_REPORT_STAT_CLUSTER.test(lower) ? 'stat cluster' : '')
+    || (RAW_REPORT_FILLER_DURATION.test(lower) ? 'filler/duration cluster' : '')
+    || (RAW_REPORT_CLEAN_AT.test(lower) ? 'score adjective readout' : '')
+    || (RAW_REPORT_SCORE_WITH_FILLERS.test(lower) ? 'score plus fillers' : '')
+    || (RAW_REPORT_SCORE_WITH_DURATION.test(lower) ? 'score plus duration' : '');
 }
 
 function normalizedTurnText(text) {
@@ -258,21 +270,36 @@ export function runChecks(reply, fixture, opts = {}) {
   const banned = roboticPhrases();
   const hitBanned = banned.find((p) => lower.includes(p));
   if (hitBanned) {
-    pushFinding(findings, flag('roboticPhrase', 12, `Hard-banned robotic phrase: "${hitBanned}"`, snippet(raw, hitBanned)));
+    // The app hard-rejects these phrases, so a reply carrying one would never
+    // ship — cap below the 70 gate rather than merely docking points.
+    pushFinding(findings, cap('roboticPhrase', 'voiceIntegrity', `Hard-banned robotic phrase: "${hitBanned}"`, snippet(raw, hitBanned)));
   }
   if (raw.includes('!')) {
     pushFinding(findings, flag('exclamation', 6, 'Exclamation mark (banned by core voice rules).', snippet(raw, '!')));
   }
   // -- scaffold labels ------------------------------------------------------
   const SCAFFOLD = /(?:^|\n|[.!?]\s+|—\s+|-\s+)\s*(Read|The read|Coach read|Real read|Observation|Diagnosis|Insight|Next move|Next rep|Move|Action|Why|Evidence|Try this|Try|Focus|Target|Drill|Practice|Recommend|Recommendation|Verdict)\s*:/i;
+  // Structural subset: internal reasoning-block labels only. Excludes imperative
+  // lead-ins (Next rep/Try/Focus/Target/Why/Drill/Practice/Recommend) that gold
+  // coaching uses as natural spoken transitions. Kept in sync with SCAFFOLD.
+  const SCAFFOLD_STRUCTURAL = /(?:^|\n|[.!?]\s+|—\s+|-\s+)\s*(Read|The read|Coach read|Real read|Observation|Diagnosis|Insight|Next move|Move|Action|Evidence|Recommendation|Verdict)\s*:/i;
   const scaffoldHit = SCAFFOLD.test(raw);
   if (scaffoldHit) {
     pushFinding(findings, flag('scaffoldLabel', 8, 'Exposed coach scaffold label (Read:/Move:/Target:...).', firstMatch(raw, SCAFFOLD)));
+  }
+  // Structural reasoning labels are the coach's internal scaffold spoken aloud —
+  // the app never surfaces these, and no gold reply uses them. A single one is a
+  // dishonest leak, so it hard-caps below the 70 gate (unlike softer imperative
+  // lead-ins such as "Next rep:"/"Target:" which the gold uses naturally and
+  // which remain point-docked flags above).
+  if (SCAFFOLD_STRUCTURAL.test(raw)) {
+    pushFinding(findings, cap('scaffoldStructuralLabel', 'voiceIntegrity', 'Exposed internal reasoning scaffold label (Read:/Diagnosis:/Move:/Verdict:...).', firstMatch(raw, SCAFFOLD_STRUCTURAL)));
   }
 
   const trustRepairTurn = fixture.turnDepth === 'trustRepair' || fixture.category === 'trust-repair';
   if (trustRepairTurn) {
     const reportMetric = rawReportMetricMatch(raw, lower);
+    const reportDump = rawReportMetricDumpMatch(raw, lower);
     if (reportMetric) {
       pushFinding(findings, flag(
         'trustRepairReportVoice',
@@ -280,6 +307,14 @@ export function runChecks(reply, fixture, opts = {}) {
         'Trust-repair reply leads with raw score/duration/filler telemetry instead of a human coach read.',
         reportMetric,
       ));
+      if (reportDump) {
+        pushFinding(findings, cap(
+          'trustRepairReportVoiceCap',
+          'ignoresIntent',
+          'Trust-repair report telemetry is not a trust repair; translate the evidence into a coach read.',
+          reportDump,
+        ));
+      }
       if (scaffoldHit) {
         pushFinding(findings, cap(
           'trustRepairScaffoldReportVoice',
@@ -291,6 +326,7 @@ export function runChecks(reply, fixture, opts = {}) {
     }
   } else if (sensitiveNonReportTurn(fixture) && !turnExplicitlyRequestsMetrics(fixture)) {
     const reportMetric = rawReportMetricMatch(raw, lower);
+    const reportDump = rawReportMetricDumpMatch(raw, lower);
     if (reportMetric) {
       pushFinding(findings, flag(
         'sensitiveTurnReportVoice',
@@ -298,6 +334,14 @@ export function runChecks(reply, fixture, opts = {}) {
         'Sensitive conversational turn leads with raw score/duration/filler telemetry instead of translating it into coaching language.',
         reportMetric,
       ));
+      if (reportDump) {
+        pushFinding(findings, cap(
+          'sensitiveTurnReportVoiceCap',
+          'ignoresIntent',
+          'Sensitive conversational turn uses report telemetry where the user needed spoken coaching.',
+          reportDump,
+        ));
+      }
     }
   }
 
@@ -349,6 +393,7 @@ export function runChecks(reply, fixture, opts = {}) {
 
     if (metricTargetHit) {
       pushFinding(findings, flag('coldStartMetricTarget', 8, 'Cold-start reply sets a metric/filler target before Noum has earned a baseline.', firstMatch(raw, METRIC_TARGET)));
+      pushFinding(findings, cap('coldStartUncalibratedMetricTarget', 'ignoresIntent', 'Cold-start reply pretends a filler target is calibrated before Noum has any baseline.', firstMatch(raw, METRIC_TARGET)));
     }
 
     if (productModeHit && metricTargetHit) {
@@ -478,7 +523,14 @@ export function runChecks(reply, fixture, opts = {}) {
     const last = (sents[sents.length - 1] || '').toLowerCase();
     const earlier = sents.slice(0, -1).join(' ').toLowerCase();
     const SETUP_Q = /\b(what'?s|what is|what are|who'?s|who is|which)\b.{0,40}\b(setting|context|situation|audience|room|preparing|prepping|goal|trying to|topic|scenario|event|meeting|role|for)\b[^?]*\?\s*$/;
-    if (sents.length >= 2 && /\?\s*$/.test(last) && MOVE_VERB.test(earlier) && SETUP_Q.test(last)) {
+    // Rule 57 EXEMPTION: a closing question that IS the move — asking the user to
+    // pick among options the reply just proposed ("Which one matches the room?",
+    // "which of these fits?") — is the correct deferral on a proposal turn, not a
+    // banned hand-back. High-precision: only "which one / which of these / which
+    // fits|matches|works|feels" selection phrasing is exempt; a fact-supply
+    // opener ("what's the setting", "which meeting are you preparing for") is not.
+    const CHOICE_Q = /\bwhich\b[^?]*\b(one|of (?:these|those|the two)|fits|matches|works|feels)\b[^?]*\?\s*$/i;
+    if (sents.length >= 2 && /\?\s*$/.test(last) && MOVE_VERB.test(earlier) && SETUP_Q.test(last) && !CHOICE_Q.test(last)) {
       pushFinding(findings, flag('trailingSetupQuestion', 6, 'Gives a move, then asks the user to supply situational context the coach should infer (rule 40 bans the cold-start setup question; rule 57: a closing question must BE the move, not an add-on).', firstMatch(raw, /[^.?!]*\?\s*$/)));
     }
   }
@@ -573,7 +625,12 @@ export function runChecks(reply, fixture, opts = {}) {
 
 // --- finding constructors ----------------------------------------------------
 
-const CAP_MAX = { placeholderOrBroken: 30, ignoresIntent: 50, fabricatesEvidence: 40, unsafe: 0 };
+// voiceIntegrity(65): honesty backstop. A reply that leaks a coach scaffold
+// label, a hard-banned robotic phrase, or raw report telemetry where spoken
+// coaching was needed is a voice the SHIPPING app hard-rejects — it must never
+// read as passing coaching (>=70), independent of how well it grounds. Set just
+// below the 70 gate so a single such leak alone cannot masquerade as expert.
+const CAP_MAX = { placeholderOrBroken: 30, ignoresIntent: 50, fabricatesEvidence: 40, voiceIntegrity: 65, unsafe: 0 };
 
 function cap(id, capKey, message, evidence) {
   return { id, tier: 'cap', capKey, capMax: CAP_MAX[capKey], penalty: 0, message, evidence: evidence || '' };

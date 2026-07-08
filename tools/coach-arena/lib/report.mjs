@@ -2,7 +2,7 @@
 // a run history for run-over-run comparison.
 
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 const THRESH = {
   goldSuiteMean: 70,
@@ -19,6 +19,48 @@ function mean(xs) {
 }
 function round1(x) {
   return Math.round(x * 10) / 10;
+}
+
+// Deterministic findings that are mirrored by the shipping live quality gate,
+// final reliability gate, or repair path. This audit is intentionally phrased as
+// "likely" because replay cannot execute the full Swift repair loop.
+const LIVE_GATE_BACKED_CAP_FINDING_IDS = new Set([
+  'bareClarification',
+  'brokenReply',
+  'coldStartFakeCalibration',
+  'coldStartMetricTarget',
+  'coldStartProductJargon',
+  'coldStartUncalibratedMetricTarget',
+  'coldStartVagueBaselineRep',
+  'defensiveProductLanguage',
+  'fabricatedMetric',
+  'fabricatedQuote',
+  'fakeScore',
+  'goalIntentStateDirective',
+  'menuInsteadOfDecision',
+  'metadataLeak',
+  'personLabelVerdict',
+  'placeholderLeak',
+  'punishShame',
+  'repeatedProofTest',
+  'roboticPhrase',
+  'scaffoldLabel',
+  'scaffoldStructuralLabel',
+  'scoreAsReadiness',
+  'sensitiveTurnReportVoice',
+  'sensitiveTurnReportVoiceCap',
+  'tooLong',
+  'trailingSetupQuestion',
+  'trustRepairReportVoice',
+  'trustRepairReportVoiceCap',
+]);
+
+function deterministicCapFindings(deterministic) {
+  return (deterministic.findings || []).filter((finding) => finding.tier === 'cap' || finding.capKey);
+}
+
+function liveQualityGateBacksFinding(finding) {
+  return LIVE_GATE_BACKED_CAP_FINDING_IDS.has(finding.id);
 }
 
 // Prompt-caching / cost accounting — COST/LATENCY evidence only, never a
@@ -82,6 +124,77 @@ function cacheSummary(records) {
   };
 }
 
+function userVisibleDeterministicSummary(records) {
+  const checked = records.filter((r) => r.status === 'scored' && (r.userVisible?.deterministic || r.deterministic));
+  if (!checked.length) {
+    return {
+      repliesChecked: 0,
+      changedFromScoredReply: 0,
+      cappedReplies: 0,
+      gateBackedCappedReplies: 0,
+      unbackedCappedReplies: 0,
+      unbackedCappedFixtureIDs: [],
+      placeholderLeaks: 0,
+      capCounts: {},
+      gateBackedCapCounts: {},
+      unbackedCapCounts: {},
+      findingCounts: {},
+    };
+  }
+
+  const capCounts = {};
+  const gateBackedCapCounts = {};
+  const unbackedCapCounts = {};
+  const findingCounts = {};
+  const unbackedCappedFixtureIDs = [];
+  let cappedReplies = 0;
+  let gateBackedCappedReplies = 0;
+  let unbackedCappedReplies = 0;
+  let placeholderLeaks = 0;
+  let changedFromScoredReply = 0;
+  for (const r of checked) {
+    const deterministic = r.userVisible?.deterministic || r.deterministic;
+    if (r.userVisible?.changedFromScoredReply) changedFromScoredReply++;
+    const capFindings = deterministicCapFindings(deterministic);
+    if (deterministic.hardCap != null) {
+      cappedReplies++;
+      const unbacked = capFindings.filter((finding) => !liveQualityGateBacksFinding(finding));
+      if (capFindings.length && unbacked.length === 0) {
+        gateBackedCappedReplies++;
+      } else {
+        unbackedCappedReplies++;
+        unbackedCappedFixtureIDs.push(r.fixture?.id || r.id || 'unknown');
+      }
+      for (const finding of capFindings) {
+        const counts = liveQualityGateBacksFinding(finding) ? gateBackedCapCounts : unbackedCapCounts;
+        const key = finding.capKey || finding.id || 'unknown';
+        counts[key] = (counts[key] || 0) + 1;
+      }
+    }
+    placeholderLeaks += deterministic.placeholderLeaks || 0;
+    for (const finding of deterministic.findings || []) {
+      findingCounts[finding.id] = (findingCounts[finding.id] || 0) + 1;
+      if (finding.tier === 'cap' && finding.capKey) {
+        capCounts[finding.capKey] = (capCounts[finding.capKey] || 0) + 1;
+      }
+    }
+  }
+
+  return {
+    repliesChecked: checked.length,
+    changedFromScoredReply,
+    cappedReplies,
+    gateBackedCappedReplies,
+    unbackedCappedReplies,
+    unbackedCappedFixtureIDs,
+    placeholderLeaks,
+    capCounts,
+    gateBackedCapCounts,
+    unbackedCapCounts,
+    findingCounts,
+  };
+}
+
 export function summarize(records) {
   const scored = records.filter((r) => r.status === 'scored');
   const all = scored.map((r) => r.score.final);
@@ -102,6 +215,16 @@ export function summarize(records) {
   }
 
   const placeholderLeaks = scored.reduce((s, r) => s + (r.score.placeholderLeaks || 0), 0);
+  const finalizerDeltas = records.filter((r) => r.finalizer?.changed).length;
+  const replayJudgeStaleFinalizerDeltas = records.filter(
+    (r) => r.finalizer?.scoringMode === 'rawReplayJudge'
+  ).length;
+  const finalizerChangeCounts = {};
+  for (const r of records) {
+    for (const change of r.finalizer?.changes || []) {
+      finalizerChangeCounts[change] = (finalizerChangeCounts[change] || 0) + 1;
+    }
+  }
   const thresholds = evalThresholds({
     mean: mean(all),
     deep: mean(byGroup((r) => r.fixture.turnDepth === 'deepAssessment')),
@@ -130,6 +253,10 @@ export function summarize(records) {
     thresholds,
     productionReady: Object.values(thresholds).every((t) => t.pass),
     cacheSummary: cacheSummary(records),
+    userVisibleDeterministic: userVisibleDeterministicSummary(records),
+    finalizerDeltas,
+    replayJudgeStaleFinalizerDeltas,
+    finalizerChangeCounts,
   };
 }
 
@@ -175,7 +302,7 @@ export function writeReports(run, reportsDir) {
 
   writeFileSync(join(reportsDir, 'latest.json'), JSON.stringify(run, null, 2));
   writeFileSync(join(reportsDir, 'history', `${run.runId}.json`), JSON.stringify(run, null, 2));
-  writeFileSync(join(reportsDir, 'latest.md'), renderMarkdown(run, previous));
+  writeFileSync(join(reportsDir, 'latest.md'), renderMarkdown(run, previous, reportsDir));
   writeFileSync(join(reportsDir, 'failures.md'), renderFailures(run));
   return { summary };
 }
@@ -185,6 +312,74 @@ function delta(cur, prev) {
   const d = round1(cur - prev);
   if (d === 0) return ' (±0)';
   return d > 0 ? ` (▲ +${d})` : ` (▼ ${d})`;
+}
+
+function readJsonIfPresent(path) {
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function latestCanonicalAppPathSnapshot(reportsDir) {
+  const appPathReport = readJsonIfPresent(join(reportsDir, 'app-path', 'latest.json'));
+  if (!appPathReport?.summary) return null;
+  const s = appPathReport.summary;
+  return {
+    generatedAt: appPathReport.generatedAt || null,
+    candidate: appPathReport.candidate || null,
+    average: s.average ?? null,
+    realPipelineEvidencePasses: s.realPipelineEvidencePasses ?? s.productionEvidencePasses ?? null,
+    evidenceClaim: s.evidenceClaim ?? null,
+    traceQualityPasses: s.traceQualityPasses ?? null,
+    placeholderLeaks: s.placeholderLeaks ?? null,
+    failureCount: s.failureCount ?? null,
+    visionScore: s.visionProductionReadiness?.score ?? null,
+    visionClaim: s.visionProductionReadiness?.claim ?? null,
+  };
+}
+
+function staleDuplicateAppPathStatus(reportsDir) {
+  const arenaRoot = dirname(reportsDir);
+  const duplicateLatest = join(arenaRoot, 'tools', 'coach-arena', 'reports', 'app-path', 'latest.json');
+  if (!existsSync(duplicateLatest)) return 'resolved (no nested duplicate latest.json found)';
+  const duplicate = readJsonIfPresent(duplicateLatest);
+  const generated = duplicate?.generatedAt || duplicate?.runId || 'unreadable';
+  return `stale duplicate present at tools/coach-arena/tools/coach-arena/reports/app-path/latest.json (generated ${generated}); ignore this path`;
+}
+
+function renderReportLens(run, reportsDir) {
+  const app = latestCanonicalAppPathSnapshot(reportsDir);
+  const L = [];
+  L.push('## Report lens and canonical paths');
+  L.push('');
+  L.push('| Field | Value |');
+  L.push('|---|---|');
+  L.push('| Current report | prompt-layer / Node prompt-faithful |');
+  L.push('| Current report path | `tools/coach-arena/reports/latest.md` |');
+  L.push('| Comparable app-path report | `tools/coach-arena/reports/app-path/latest.md` |');
+  L.push('| App-path source of truth | canonical `tools/coach-arena/reports/app-path/` only |');
+  L.push(`| Nested duplicate app-path path | ${staleDuplicateAppPathStatus(reportsDir)} |`);
+  if (app) {
+    L.push(`| Latest canonical app-path generated | ${app.generatedAt ? `\`${app.generatedAt}\`` : 'not reported'} |`);
+    L.push(`| Latest canonical app-path average | ${app.average == null ? 'not reported' : `\`${app.average}/100\``} |`);
+    // Two DISTINCT booleans that used to collide under the bare word "evidence":
+    // the freshness-inclusive production GATE (realPipelineEvidencePasses — fails
+    // when the app-path dump's source tree is dirty/uncommitted) vs. trace-level
+    // quality (traceQualityPasses — are the captured traces real/complete/unique).
+    // Render both, labeled, so a false gate on stale source can't be misread as
+    // fake traces, and a true trace-quality can't be misread as a passing gate.
+    L.push(`| App-path evidence gate (incl. source freshness) | ${app.realPipelineEvidencePasses == null ? 'not reported' : `\`${app.realPipelineEvidencePasses}\` · claim \`${app.evidenceClaim}\``} |`);
+    L.push(`| App-path trace-level quality (traces real/complete/unique) | ${app.traceQualityPasses == null ? 'not reported' : `\`${app.traceQualityPasses}\``} |`);
+    L.push(`| Latest canonical app-path leaks/failures | leaks \`${app.placeholderLeaks ?? 'not reported'}\` · failures \`${app.failureCount ?? 'not reported'}\` |`);
+    L.push(`| Latest canonical app-path VISION boundary | score \`${app.visionScore ?? 'not reported'}\` · claim \`${app.visionClaim ?? 'not reported'}\` |`);
+  } else {
+    L.push('| Latest canonical app-path snapshot | unavailable; run `./tools/coach-arena/run.sh app-path` with a fresh dump |');
+  }
+  L.push('');
+  return L;
 }
 
 function currentAppPathEvidence(run) {
@@ -233,6 +428,38 @@ function renderCacheSummary(cache) {
   return L;
 }
 
+function renderUserVisibleAudit(summary, provider) {
+  const L = [];
+  L.push('## Finalized deterministic audit');
+  L.push('');
+  if (!summary || summary.repliesChecked === 0) {
+    L.push('No finalized reply audit data on this run.');
+    L.push('');
+    return L;
+  }
+  const note = provider === 'replay'
+    ? 'Diagnostic only: replay judge scores remain tied to raw captured replies, and replay cannot execute the live quality-gate repair path.'
+    : 'Official score path: generated replies were finalized before deterministic checks and judge scoring.';
+  L.push(note);
+  L.push('');
+  L.push('| Metric | Value |');
+  L.push('|---|---|');
+  L.push(`| Replies checked | ${summary.repliesChecked} |`);
+  L.push(`| Changed from scored reply | ${summary.changedFromScoredReply} |`);
+  L.push(`| Replies with deterministic hard caps | ${summary.cappedReplies} |`);
+  L.push(`| Likely blocked/repaired by live gate | ${summary.gateBackedCappedReplies ?? 0} |`);
+  L.push(`| No production backstop identified | ${summary.unbackedCappedReplies ?? 0} |`);
+  L.push(`| Placeholder/fallback leaks after finalizer | ${summary.placeholderLeaks} |`);
+  const caps = Object.entries(summary.capCounts || {})
+    .map(([key, count]) => `${key} ${count}`)
+    .join(', ');
+  L.push(`| Cap breakdown | ${caps || 'none'} |`);
+  const unbackedIDs = (summary.unbackedCappedFixtureIDs || []).join(', ');
+  L.push(`| Unbacked capped fixture IDs | ${unbackedIDs || 'none'} |`);
+  L.push('');
+  return L;
+}
+
 function renderAppPathEvidence(run) {
   const app = currentAppPathEvidence(run);
   const L = [];
@@ -259,7 +486,7 @@ function renderAppPathEvidence(run) {
   return L;
 }
 
-function renderMarkdown(run, previous) {
+function renderMarkdown(run, previous, reportsDir) {
   const s = run.summary;
   const p = previous?.summary;
   const L = [];
@@ -282,8 +509,19 @@ function renderMarkdown(run, previous) {
   L.push(`| Placeholder leaks | ${s.placeholderLeaks} | ${t.zeroPlaceholderLeaks.target} | ${t.zeroPlaceholderLeaks.pass ? '✅' : '❌'} |`);
   L.push('');
   L.push(`Scored ${s.scored}/${s.n} fixtures · range ${s.min}–${s.max} · median ${s.median}.${s.missing ? ` ${s.missing} missing capture(s).` : ''}`);
+  if (s.finalizerDeltas) {
+    const stale = s.replayJudgeStaleFinalizerDeltas
+      ? ` ${s.replayJudgeStaleFinalizerDeltas} replay judge(s) remain scored against raw captured text.`
+      : '';
+    const breakdown = Object.entries(s.finalizerChangeCounts || {})
+      .map(([key, count]) => `${key} ${count}`)
+      .join(', ');
+    L.push(`Finalizer changed ${s.finalizerDeltas} generated repl${s.finalizerDeltas === 1 ? 'y' : 'ies'} before user display${breakdown ? ` (${breakdown})` : ''}.${stale}`);
+  }
   L.push('');
+  L.push(...renderReportLens(run, reportsDir));
   L.push(...renderCacheSummary(s.cacheSummary));
+  L.push(...renderUserVisibleAudit(s.userVisibleDeterministic, run.meta.provider));
   L.push(...renderAppPathEvidence(run));
   L.push(`## Dimension means (of max)`);
   L.push('');
@@ -352,6 +590,15 @@ function renderFailures(run) {
       L.push('REPLY:');
       L.push(r.reply || '(empty)');
       L.push('```');
+      if (r.finalizer?.changed) {
+        L.push('');
+        L.push(`- User-visible finalizer delta: ${r.finalizer.changes.join(', ')} · scoring mode \`${r.finalizer.scoringMode}\``);
+        L.push('');
+        L.push('```');
+        L.push('FINALIZED USER TEXT:');
+        L.push(r.finalizer.finalizedReply || '(empty)');
+        L.push('```');
+      }
     } else {
       L.push(`- ${r.note || 'missing capture'}`);
     }

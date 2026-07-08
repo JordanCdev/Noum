@@ -75,6 +75,23 @@ enum CoachReliabilityIssue: String, Codable, Equatable, CaseIterable {
     /// answering "hello" with a Pressure-Drill read because no live model
     /// replied. A coach greets back; it does not drill a hello.
     case greetingWithDrill
+    /// There is no baseline yet (no rated sessions) but the reply names an
+    /// internal practice mode ("Ah-Counter", "Sudden Death") or invents a metric
+    /// target ("under 4 fillers", "a first number") — product jargon and fake
+    /// calibration a first-launch user has no way to parse and that nothing on
+    /// device supports yet. The prompt bans this; this is the deterministic
+    /// backstop for a draft that ignored the ban.
+    case coldStartJargon
+    /// There is no baseline yet (no rated sessions) but the reply asserts a
+    /// confident read of a specific rep that cannot exist — "I can coach the
+    /// latest rep: the close is the usable signal…" — fabricating delivery
+    /// evidence from nothing. This is the overclaim the `placeholder-leak-049`
+    /// trap targets: today it only trips a *soft* floor-confidence smell and
+    /// ships. A cold start must answer "give me one rep first", not invent a
+    /// rep to coach. Distinct from `coldStartJargon` (mode names / metric
+    /// targets); this is fabricated *rep* evidence, and it only fires when the
+    /// reply does NOT already acknowledge the missing evidence.
+    case evidenceOverclaimNoBaseline
 
     /// Issues that are unambiguous user-facing defects and therefore trigger the
     /// truthful fallback substitution.
@@ -84,7 +101,8 @@ enum CoachReliabilityIssue: String, Codable, Equatable, CaseIterable {
                 .noAttunementOnPushback, .thinTrustRepair,
                 .repairCarryoverBreak, .silentPlanSwitch,
                 .repetitiveDiscourseMove, .repeatedProofTest,
-                .greetingWithDrill:
+                .greetingWithDrill, .coldStartJargon,
+                .evidenceOverclaimNoBaseline:
             return true
         case .nearDuplicateReply, .floorConfidenceWithEvidence:
             return false
@@ -113,6 +131,14 @@ enum CoachReliabilityGate {
     /// reasoning pass clamps confidence to a 0.20 floor; a hair of epsilon keeps
     /// the comparison robust to floating-point representation.
     static let floorConfidence: Double = 0.205
+
+    /// Evidence coverage at or below this marks a true cold start (no rated
+    /// sessions). `UserTrajectoryCache.evidenceCoverage` pins the value to
+    /// exactly 0.05 when `sessions.isEmpty`, so this ceiling isolates the
+    /// no-baseline turn without catching any user who has completed even one
+    /// rep. The cold-start jargon guard only fires under this ceiling, so a real
+    /// user citing their own filler count is never touched.
+    static let coldStartCoverageCeiling: Double = 0.051
 
     /// How many leading characters of a trust-repair reply are scanned for an
     /// acknowledgement marker.
@@ -416,6 +442,37 @@ enum CoachReliabilityGate {
            replyDrillsInsteadOfGreeting(lowered) {
             issues.append(.greetingWithDrill)
         }
+        // No baseline yet, but the reply leaked an internal mode name or invented
+        // a metric target — jargon a first-launch user can't parse and nothing on
+        // device supports. Only fires under the cold-start coverage ceiling (so a
+        // real user citing their own filler count is never touched), and not on
+        // trust-repair (its own repair path owns that surface) or a bare greeting
+        // (greetingWithDrill owns it, and takes priority below).
+        if !trimmed.isEmpty,
+           turnDepth != .trustRepair,
+           let evidenceCoverage,
+           evidenceCoverage <= coldStartCoverageCeiling,
+           !(latestUserTurn.map(TurnDepthClassifier.isGreetingOrSmallTalk) ?? false),
+           leaksColdStartJargon(lowered) {
+            issues.append(.coldStartJargon)
+        }
+        // No baseline yet, but the reply asserts a confident read of a specific
+        // rep that cannot exist ("I can coach the latest rep: the close is the
+        // usable signal…"). This is fabricated delivery evidence, not honest
+        // coaching. Same cold-start coverage ceiling as the jargon guard, and it
+        // only fires when the reply does NOT already hedge about missing evidence
+        // — so an honest "not enough evidence yet, the little I have is…" read
+        // (e.g. lack-conviction) is never blocked. Not on trust-repair (own
+        // surface) or greetings (greetingWithDrill owns those).
+        if !trimmed.isEmpty,
+           turnDepth != .trustRepair,
+           let evidenceCoverage,
+           evidenceCoverage <= coldStartCoverageCeiling,
+           !(latestUserTurn.map(TurnDepthClassifier.isGreetingOrSmallTalk) ?? false),
+           !acknowledgesMissingEvidence(lowered),
+           overclaimsRepEvidence(lowered) {
+            issues.append(.evidenceOverclaimNoBaseline)
+        }
 
         // A greeting mismatch must be answered with a warm hello, NOT the
         // deterministic coaching read (which is itself the drill we are
@@ -423,13 +480,24 @@ enum CoachReliabilityGate {
         let fallback: String?
         if issues.contains(.greetingWithDrill) {
             fallback = greetingFallback(surface: surface)
+        } else if issues.contains(.coldStartJargon) {
+            // A cold-start turn must recover with a clean plain-language first-rep
+            // invitation, NOT the deterministic read (which may itself carry the
+            // jargon) or the generic verdict-first drill line.
+            fallback = coldStartFallback(surface: surface)
+        } else if issues.contains(.evidenceOverclaimNoBaseline) {
+            // The draft invented a rep to coach. Recover with an honest "there is
+            // no rep to read yet — record one" invitation, NOT the deterministic
+            // read (which is the very overclaim we are escaping).
+            fallback = noBaselineReadFallback(surface: surface)
         } else if issues.contains(where: { $0.isBlocking }) {
             fallback = truthfulFallback(
                 turnDepth: turnDepth,
                 assessment: assessment,
                 surface: surface,
                 previousCoachReply: previousCoachReply,
-                recentCoachReplies: recentCoachReplies
+                recentCoachReplies: recentCoachReplies,
+                latestUserTurn: latestUserTurn
             )
         } else {
             fallback = nil
@@ -453,6 +521,105 @@ enum CoachReliabilityGate {
     /// brief greeting.
     static func replyDrillsInsteadOfGreeting(_ lowered: String) -> Bool {
         containsAny(lowered, greetingDrillMarkers)
+    }
+
+    /// Internal practice-mode names. On a no-baseline turn these are unexplained
+    /// product jargon (mirrors the cold-start ban in `CoachContextBuilder`).
+    static let coldStartModeMarkers: [String] = [
+        "ah-counter", "ah counter", "ahcounter",
+        "sudden death", "sudden-death",
+        "im conversation", "i.m. conversation", "im-conversation"
+    ]
+
+    /// Invented calibration language that only makes sense once a baseline
+    /// exists. On a cold start there is nothing to calibrate against, so "your
+    /// first number", "a starting number", etc. are fabricated.
+    static let coldStartInventedMetricMarkers: [String] = [
+        "first number", "starting number",
+        "first metric", "starting metric", "starting benchmark"
+    ]
+
+    /// True when a reply leaks cold-start product jargon: an internal mode name,
+    /// an invented calibration phrase, or an explicit numeric filler target
+    /// ("under 4 fillers", "stay under 3"). Matched on already-normalised text.
+    static func leaksColdStartJargon(_ lowered: String) -> Bool {
+        if containsAny(lowered, coldStartModeMarkers) { return true }
+        if containsAny(lowered, coldStartInventedMetricMarkers) { return true }
+        // An explicit numeric filler target is fabricated when no rep exists yet.
+        if lowered.range(of: "under [0-9]+ ?fillers?", options: .regularExpression) != nil {
+            return true
+        }
+        if lowered.range(of: "stay under [0-9]+", options: .regularExpression) != nil {
+            return true
+        }
+        return false
+    }
+
+    /// First-person claims to *coach* a specific rep. This is the tell that
+    /// separates an overclaim from an honest read: honest replies DESCRIBE the
+    /// rep ("on the latest rep, the reasons were clear") but never assert the
+    /// ability to coach one. Paired below with a rep reference so a bare "I can
+    /// coach this" (no named rep) is not caught. Normalised text.
+    static let coachAbilityClaimMarkers: [String] = [
+        "i can coach", "let me coach", "i will coach", "ill coach", "i'll coach"
+    ]
+
+    /// References to a specific, already-observed rep. Deliberately excludes the
+    /// bare substring "the rep" (it matches "the report") — only concrete
+    /// rep references count.
+    static let namedRepMarkers: [String] = [
+        "the latest rep", "your latest rep", "the last rep", "your last rep",
+        "this rep", "that rep", "the rep you"
+    ]
+
+    /// Phrases by which a reply openly acknowledges that the evidence is thin or
+    /// missing. When any is present the reply is being honest about its limits —
+    /// e.g. "not enough evidence to call this… the little I can use is hedge
+    /// control" — so the overclaim guard must NOT fire, even if the same reply
+    /// also names a rep. This is what keeps lack-conviction-style honest reads
+    /// (which legitimately cite "the latest rep … only support a signal") safe.
+    static let evidenceLimitAcknowledgementMarkers: [String] = [
+        "not enough evidence", "no baseline", "not enough to",
+        "missing:", "i would not", "i wouldnt", "i cannot prove",
+        "i cant prove", "not proven", "need one rep", "need a rep",
+        "before i can coach", "would be guessing", "cannot call",
+        "not a trait yet", "no rep", "havent recorded", "haven't recorded",
+        "record 60 seconds", "record one"
+    ]
+
+    /// True when the reply hedges about missing/thin evidence (see markers).
+    static func acknowledgesMissingEvidence(_ lowered: String) -> Bool {
+        containsAny(lowered, evidenceLimitAcknowledgementMarkers)
+    }
+
+    /// True when the reply claims to coach a specific, named rep — the
+    /// "I can coach the latest rep: the close is the usable signal…" overclaim.
+    /// Requires BOTH a first-person coaching-ability claim AND a named rep, so
+    /// honest reads that merely describe "the latest rep" are never caught.
+    /// Callers additionally gate on the cold-start coverage ceiling AND
+    /// `!acknowledgesMissingEvidence`, so it is high-precision by design.
+    static func overclaimsRepEvidence(_ lowered: String) -> Bool {
+        containsAny(lowered, coachAbilityClaimMarkers)
+            && containsAny(lowered, namedRepMarkers)
+    }
+
+    /// The honest recovery when a draft invented a rep to coach on a no-baseline
+    /// turn: name that there is nothing recorded to read yet, ask for one 60-second
+    /// rep, and promise a real read of it — no invented signal, no fake "latest rep".
+    static func noBaselineReadFallback(surface: CoachReplySurface) -> String {
+        surface == .live
+            ? "There's no rep for me to read yet, so I won't guess one. Give me 60 seconds — record now and I'll read the opener and close for real. Want to go?"
+            : "There's no rep for me to read yet, so I won't invent one. Record 60 seconds first, then I'll coach the opener and close from what actually happened — that's the honest way to do this."
+    }
+
+    /// A clean, warm cold-start line: honest that there's no baseline, one plain
+    /// 60-second first rep on something the user knows well, and a low-friction
+    /// invitation — no mode names, no invented metric, no banned "no rated
+    /// sessions yet" opener. Used when a draft leaked jargon on a no-baseline turn.
+    static func coldStartFallback(surface: CoachReplySurface) -> String {
+        surface == .live
+            ? "No baseline yet, so start there. Give me 60 seconds on something you know cold, like how you'd explain what you do to a stranger. Then I'll have something real to work from. Want to go now?"
+            : "No baseline yet, so start there. Run a quick 60-second rep on something you know cold — how you'd explain what you do to a stranger works well. That gives me your real pace and rhythm and the fastest read on what actually matters for you. Want to give it a go?"
     }
 
     /// A warm, brief greeting to render when the turn was a hello but the reply
@@ -489,6 +656,10 @@ enum CoachReliabilityGate {
            TurnDepthClassifier.isGreetingOrSmallTalk(latestUserTurn) {
             return greetingFallback(surface: surface)
         }
+        if let latestUserTurn,
+           isCoachThisEvidenceGapRequest(latestUserTurn) {
+            return coachThisEvidenceGapFallback(surface: surface)
+        }
         if let assessment {
             let read = assessment.immediateCoachRead.trimmingCharacters(in: .whitespacesAndNewlines)
             if isCleanCandidate(
@@ -505,6 +676,22 @@ enum CoachReliabilityGate {
             previousCoachReply: previousCoachReply,
             recentCoachReplies: recentCoachReplies
         )
+    }
+
+    static func isCoachThisEvidenceGapRequest(_ latestUserTurn: String) -> Bool {
+        let lowered = normalize(latestUserTurn)
+        return containsAny(lowered, [
+            "can you coach this",
+            "coach this?",
+            "coach this for me",
+            "coach me on this"
+        ])
+    }
+
+    static func coachThisEvidenceGapFallback(surface: CoachReplySurface) -> String {
+        surface == .live
+            ? "I need one rep before I can coach this honestly. Record 60 seconds, then I'll read the opener and close."
+            : "I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close."
     }
 
     /// True when a candidate fallback string is safe to render: non-empty, free
@@ -588,11 +775,11 @@ enum CoachReliabilityGate {
         case .quickMove, .groundedRead:
             return surface == .live
                 ? [
-                    "Let's keep it concrete: one 60-second rep, verdict first, and I'll give you the one change that matters.",
+                    "Keep it concrete: one 60-second rep, verdict first, and I'll give you the one change that matters.",
                     "One short rep — decision up front, clean stop — then I'll name the single fix."
                 ]
                 : [
-                    "Let's keep this concrete. Run one 60-second rep — verdict first, one reason, clean stop — and I'll give you the single change that matters most.",
+                    "Keep this concrete. Run one 60-second rep — verdict first, one reason, clean stop — and I'll give you the single change that matters most.",
                     "Here's the honest move: one short rep with the decision up front and a clean ending, then I'll point you to the one thing worth fixing."
                 ]
         }

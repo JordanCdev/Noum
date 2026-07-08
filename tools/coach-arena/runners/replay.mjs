@@ -19,6 +19,7 @@ import { dirname, join } from 'node:path';
 import { composeSystemPrompt, extractAll } from '../lib/extractPrompt.mjs';
 import { renderContext } from '../lib/context.mjs';
 import { runChecks } from '../lib/checks.mjs';
+import { finalizeReplyForFixture } from '../lib/finalizeReply.mjs';
 import { buildJudgeUserPayload, parseJudge, JUDGE_SYSTEM, JUDGE_VERSION } from '../lib/judge.mjs';
 import { combineScore } from '../lib/score.mjs';
 import { makeProvider, COACH_MODEL, JUDGE_MODEL } from '../lib/provider.mjs';
@@ -185,8 +186,21 @@ async function cmdRun() {
       // string they've always taken.
       const generateSystem = providerName === 'anthropic' ? req.systemBlocks : req.system;
       const gen = await provider.generate({ id: fx.id }, { system: generateSystem, messages: req.messages, maxTokens: req.maxTokens });
-      const reply = gen.text || '';
+      const rawReply = gen.text || '';
+      const finalizer = finalizeReplyForFixture(rawReply, fx);
+      const reply = providerName === 'replay' ? rawReply : finalizer.text;
       rec.reply = reply;
+      if (finalizer.changed) {
+        rec.finalizer = {
+          changed: true,
+          changes: finalizer.changes,
+          scoringMode: providerName === 'replay'
+            ? 'rawReplayJudge'
+            : 'finalizedUserText',
+          rawReply,
+          finalizedReply: finalizer.text,
+        };
+      }
       rec.trace = {
         provider: gen.provider,
         model: gen.model,
@@ -210,6 +224,18 @@ async function cmdRun() {
       const recentReplies = (fx.priorChatTurns || []).filter((t) => t.role === 'assistant').map((t) => t.text);
       const deterministic = runChecks(reply, fx, { contextBlock: req.contextBlock, recentReplies });
       rec.deterministic = { findings: deterministic.findings, flagPenalty: deterministic.flagPenalty, hardCap: deterministic.hardCap, placeholderLeaks: deterministic.placeholderLeaks };
+      const userVisibleReply = providerName === 'replay' ? finalizer.text : reply;
+      const userVisibleDeterministic = runChecks(userVisibleReply, fx, { contextBlock: req.contextBlock, recentReplies });
+      rec.userVisible = {
+        reply: userVisibleReply,
+        changedFromScoredReply: userVisibleReply !== reply,
+        deterministic: {
+          findings: userVisibleDeterministic.findings,
+          flagPenalty: userVisibleDeterministic.flagPenalty,
+          hardCap: userVisibleDeterministic.hardCap,
+          placeholderLeaks: userVisibleDeterministic.placeholderLeaks,
+        },
+      };
 
       // 3. judge
       const payload = buildJudgeUserPayload(fx, reply, req.contextBlock, deterministic);

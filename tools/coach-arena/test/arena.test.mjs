@@ -11,6 +11,7 @@ import { combineScore } from '../lib/score.mjs';
 import { parseJudge } from '../lib/judge.mjs';
 import { renderContext } from '../lib/context.mjs';
 import { summarize } from '../lib/report.mjs';
+import { finalizeReplyForFixture } from '../lib/finalizeReply.mjs';
 
 const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const baseFx = (over = {}) => ({ id: 'x', turnDepth: 'groundedRead', userTurn: 'what next?', goal: 'g', memoryState: {}, disqualifiers: [], ...over });
@@ -91,7 +92,8 @@ test('checks: length limits match the shipping gate (trustRepair loosened)', () 
 test('checks: robotic phrase flags', () => {
   const r = runChecks('Based on your data, keep practicing.', baseFx(), {});
   assert.ok(r.findings.some((f) => f.id === 'roboticPhrase'));
-  assert.ok(r.flagPenalty > 0);
+  assert.ok(r.caps.some((f) => f.id === 'roboticPhrase'));
+  assert.equal(r.hardCap, 65);
 });
 
 test('checks: exclamation flags', () => {
@@ -212,6 +214,39 @@ test('checks: a move that ENDS on the move (no trailing question) does NOT flag'
   assert.ok(!r.findings.some((f) => f.id === 'trailingSetupQuestion'));
 });
 
+test('checks: a proposal that ends on a "which one fits" choice question does NOT flag (rule 57, gold 45-what-voice)', () => {
+  // The closing question IS the move — the user picks among the options just
+  // proposed. This is the fixture gold; it must not trip trailingSetupQuestion.
+  const gold = "Given you're trying to stop getting talked over in meetings, Authoritative is the closest fit — it trains a firm, verdict-first close instead of trailing off. Executive presence is the next-closest if the room is more senior leadership than peers. Which one matches the room you're actually in?";
+  const r = runChecks(gold, baseFx({ category: 'goal-change' }), {});
+  assert.ok(!r.findings.some((f) => f.id === 'trailingSetupQuestion'), 'a "which one matches" selection question is the move, not a setup hand-back');
+  // But a "which meeting are you preparing for?" fact-supply hand-back still flags.
+  const bad = runChecks('Lead with the recommendation and stop. Which meeting are you preparing for?', baseFx(), {});
+  assert.ok(bad.findings.some((f) => f.id === 'trailingSetupQuestion'), 'a "which meeting" fact-supply question is still a banned hand-back');
+});
+
+test('checks: voiceIntegrity caps STRUCTURAL scaffold labels but NOT soft imperative lead-ins', () => {
+  // Soft lead-ins the gold uses as natural spoken transitions must NOT hard-cap.
+  for (const soft of [
+    'Your point drifted late. Next rep: say it in sentence one, then prove it once.',
+    'Four days is enough. Target: every answer leads with the verdict.',
+  ]) {
+    const r = runChecks(soft, baseFx(), {});
+    assert.ok(!r.caps.some((f) => f.id === 'scaffoldStructuralLabel'), `soft lead-in must not cap: ${soft}`);
+    assert.notEqual(r.hardCap, 65, `soft lead-in must not trip voiceIntegrity: ${soft}`);
+  }
+  // Internal reasoning-block labels are the coach's scaffold spoken aloud — cap below the gate.
+  for (const structural of [
+    'Read: your point arrived late. Say it first next time.',
+    'Diagnosis: you rush the close. Hold a beat before the last line.',
+    'Verdict: the ask was hedged. State the number flat next rep.',
+  ]) {
+    const r = runChecks(structural, baseFx(), {});
+    assert.ok(r.caps.some((f) => f.id === 'scaffoldStructuralLabel'), `structural label must cap: ${structural}`);
+    assert.equal(r.hardCap, 65, `structural label must trip voiceIntegrity (65): ${structural}`);
+  }
+});
+
 test('checks: cold-start reply flags product mode and metric target before baseline', () => {
   const fx = baseFx({
     category: 'cold-start',
@@ -225,6 +260,7 @@ test('checks: cold-start reply flags product mode and metric target before basel
   );
   assert.ok(r.findings.some((f) => f.id === 'coldStartProductJargon'));
   assert.ok(r.findings.some((f) => f.id === 'coldStartMetricTarget'));
+  assert.ok(r.caps.some((f) => f.id === 'coldStartUncalibratedMetricTarget'));
   assert.ok(r.caps.some((f) => f.id === 'coldStartFakeCalibration'));
   assert.equal(r.hardCap, 30);
 });
@@ -241,6 +277,8 @@ test('checks: cold-start worded filler target flags before baseline', () => {
     { contextBlock: 'BASELINE\n- Not enough data for a stable baseline yet.' },
   );
   assert.ok(r.findings.some((f) => f.id === 'coldStartMetricTarget'));
+  assert.ok(r.caps.some((f) => f.id === 'coldStartUncalibratedMetricTarget'));
+  assert.equal(r.hardCap, 50);
   assert.ok(!r.caps.some((f) => f.id === 'coldStartFakeCalibration'));
 });
 
@@ -305,6 +343,8 @@ test('checks: trust-repair raw score readout flags report voice', () => {
   );
 
   assert.ok(bad.findings.some((f) => f.id === 'trustRepairReportVoice'));
+  assert.ok(bad.caps.some((f) => f.id === 'trustRepairReportVoiceCap'));
+  assert.equal(bad.hardCap, 50);
   assert.ok(!good.findings.some((f) => f.id === 'trustRepairReportVoice'));
 });
 
@@ -326,6 +366,34 @@ test('checks: trust-repair scaffold plus raw metric caps placeholder', () => {
   assert.equal(r.hardCap, 30);
 });
 
+test('finalizer: trust-repair scaffold and report voice are stripped before user display', () => {
+  const fx = baseFx({
+    category: 'trust-repair',
+    turnDepth: 'trustRepair',
+    userTurn: "That's not informative.",
+  });
+  const result = finalizeReplyForFixture(
+    'Fair. That was fluff, not coaching. Real read: score 74, but your point arrived in sentence four. Next rep: say the point first.',
+    fx,
+  );
+
+  assert.equal(result.text, 'Fair. That was fluff, not coaching. Your point arrived in sentence four. Say the point first.');
+  assert.deepEqual(result.changes, ['displaySanitizer', 'reportVoiceResidue']);
+});
+
+test('finalizer: requested metric answers keep their numbers', () => {
+  const fx = baseFx({
+    category: 'data-question',
+    turnDepth: 'groundedRead',
+    userTurn: "What's my filler rate?",
+  });
+  const reply = 'Your last rep had 3 fillers in 68 seconds, which is cleaner than the prior two.';
+  const result = finalizeReplyForFixture(reply, fx);
+
+  assert.equal(result.text, reply);
+  assert.equal(result.changed, false);
+});
+
 test('checks: sensitive goal-change metric dump flags report voice', () => {
   const fx = baseFx({
     category: 'goal-change',
@@ -345,6 +413,8 @@ test('checks: sensitive goal-change metric dump flags report voice', () => {
   );
 
   assert.ok(bad.findings.some((f) => f.id === 'sensitiveTurnReportVoice'));
+  assert.ok(bad.caps.some((f) => f.id === 'sensitiveTurnReportVoiceCap'));
+  assert.equal(bad.hardCap, 50);
   assert.ok(!good.findings.some((f) => f.id === 'sensitiveTurnReportVoice'));
 });
 
@@ -363,6 +433,7 @@ test('checks: sensitive greeting metric dump flags report voice but data questio
   );
 
   assert.ok(bad.findings.some((f) => f.id === 'sensitiveTurnReportVoice'));
+  assert.equal(bad.hardCap, 50);
   assert.ok(!allowed.findings.some((f) => f.id === 'sensitiveTurnReportVoice'));
 });
 
@@ -650,4 +721,60 @@ test('report: cacheSummary reads Gemini cachedContentTokenCount independently of
   assert.equal(c.inputTokens, 900);
   assert.equal(c.outputTokens, 30);
   assert.equal(c.estimatedTokensSaved, 700);
+});
+
+test('report: user-visible deterministic audit is separate from official scoring', () => {
+  const summary = summarize([
+    {
+      ...scoredRecord({ score: { final: 82, placeholderLeaks: 1 } }),
+      userVisible: {
+        changedFromScoredReply: true,
+        deterministic: {
+          findings: [
+            { id: 'sensitiveTurnReportVoice', tier: 'flag', capKey: null },
+          ],
+          hardCap: null,
+          placeholderLeaks: 0,
+        },
+      },
+    },
+    {
+      ...scoredRecord({ score: { final: 84, placeholderLeaks: 0 } }),
+      userVisible: {
+        changedFromScoredReply: false,
+        deterministic: {
+          findings: [
+            { id: 'scaffoldStructuralLabel', tier: 'cap', capKey: 'voiceIntegrity' },
+          ],
+          hardCap: 65,
+          placeholderLeaks: 0,
+        },
+      },
+    },
+    {
+      ...scoredRecord({ score: { final: 86, placeholderLeaks: 0 }, fixture: { id: 'unmodeled-cap' } }),
+      userVisible: {
+        changedFromScoredReply: false,
+        deterministic: {
+          findings: [
+            { id: 'newUnmodeledCap', tier: 'cap', capKey: 'voiceIntegrity' },
+          ],
+          hardCap: 65,
+          placeholderLeaks: 0,
+        },
+      },
+    },
+  ]);
+
+  assert.equal(summary.placeholderLeaks, 1, 'official raw-score leak count is unchanged');
+  assert.equal(summary.userVisibleDeterministic.repliesChecked, 3);
+  assert.equal(summary.userVisibleDeterministic.changedFromScoredReply, 1);
+  assert.equal(summary.userVisibleDeterministic.cappedReplies, 2);
+  assert.equal(summary.userVisibleDeterministic.gateBackedCappedReplies, 1);
+  assert.equal(summary.userVisibleDeterministic.unbackedCappedReplies, 1);
+  assert.deepEqual(summary.userVisibleDeterministic.unbackedCappedFixtureIDs, ['unmodeled-cap']);
+  assert.equal(summary.userVisibleDeterministic.placeholderLeaks, 0);
+  assert.equal(summary.userVisibleDeterministic.capCounts.voiceIntegrity, 2);
+  assert.equal(summary.userVisibleDeterministic.gateBackedCapCounts.voiceIntegrity, 1);
+  assert.equal(summary.userVisibleDeterministic.unbackedCapCounts.voiceIntegrity, 1);
 });

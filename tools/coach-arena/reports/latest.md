@@ -1,25 +1,57 @@
-# Coach Arena — run_2026-07-08_13-06-43
+# Coach Arena — run_2026-07-08_19-04-27
 
 Provider: `replay` · coach model: `claude-sonnet-4-6` · judge model: `claude-sonnet-4-6`
-Git: `a169ff3a` on `ux-overhaul` (+26 dirty) · prompt: CoachContextBuilder.swift@a7463ab634ab8fd1, AICoachChatService.swift@4f2e98c8ac4527c6
+Git: `778f544d` on `ux-overhaul` (+34 dirty) · prompt: CoachContextBuilder.swift@08e780cddc2e2106, AICoachChatService.swift@c55a47f9ddaba868
 
 ## Headline
 
 | Metric | Value | Target | Pass |
 |---|---|---|---|
-| Gold-suite mean | **69.5** (±0) | 70 | ❌ |
+| Gold-suite mean | **70.2** (±0) | 70 | ✅ |
 | Deep-assessment mean | 76.7 (±0) | 70 | ✅ |
-| Trust-repair mean | 72.2 (±0) | 65 | ✅ |
+| Trust-repair mean | 72.3 (±0) | 65 | ✅ |
 | Missing captures | 0 | 0 | ✅ |
 | Fixture score floor | 22 | 60 | ❌ |
-| Sub-70 fixtures | 21 | 0 | ❌ |
+| Sub-70 fixtures | 16 | 0 | ❌ |
 | Placeholder leaks | 2 | 0 | ❌ |
 
-Scored 61/61 fixtures · range 22–88 · median 73.
+Scored 51/51 fixtures · range 22–88 · median 74.
+Finalizer changed 40 generated replies before user display (displaySanitizer 36, reportVoiceResidue 16). 40 replay judge(s) remain scored against raw captured text.
+
+## Report lens and canonical paths
+
+| Field | Value |
+|---|---|
+| Current report | prompt-layer / Node prompt-faithful |
+| Current report path | `tools/coach-arena/reports/latest.md` |
+| Comparable app-path report | `tools/coach-arena/reports/app-path/latest.md` |
+| App-path source of truth | canonical `tools/coach-arena/reports/app-path/` only |
+| Nested duplicate app-path path | stale duplicate present at tools/coach-arena/tools/coach-arena/reports/app-path/latest.json (generated 2026-07-05T23:09:49+00:00); ignore this path |
+| Latest canonical app-path generated | `2026-07-08T19:03:47+00:00` |
+| Latest canonical app-path average | `77.5/100` |
+| App-path evidence gate (incl. source freshness) | `false` · claim `localEvaluationOnly` |
+| App-path trace-level quality (traces real/complete/unique) | `true` |
+| Latest canonical app-path leaks/failures | leaks `1` · failures `1` |
+| Latest canonical app-path VISION boundary | score `18` · claim `localEvaluationSubstrateOnly` |
 
 ## Prompt-cache usage (this run)
 
 No usage data on this run (replay/cli provider, or no scored requests).
+
+## Finalized deterministic audit
+
+Diagnostic only: replay judge scores remain tied to raw captured replies, and replay cannot execute the live quality-gate repair path.
+
+| Metric | Value |
+|---|---|
+| Replies checked | 51 |
+| Changed from scored reply | 40 |
+| Replies with deterministic hard caps | 5 |
+| Likely blocked/repaired by live gate | 5 |
+| No production backstop identified | 0 |
+| Placeholder/fallback leaks after finalizer | 1 |
+| Cap breakdown | voiceIntegrity 4, ignoresIntent 1, placeholderOrBroken 1 |
+| Unbacked capped fixture IDs | none |
 
 ## App-path evidence
 
@@ -33,7 +65,7 @@ No usage data on this run (replay/cli provider, or no scored requests).
 
 | Diagnostic IQ /25 | EQ /25 | Memory /20 | Intervention /15 | Dialogue /15 |
 |---|---|---|---|---|
-| 19.4 | 18.3 | 14.4 | 12 | 11.7 |
+| 19.7 | 18.6 | 14.5 | 12.1 | 11.7 |
 
 ## By category
 
@@ -41,16 +73,15 @@ No usage data on this run (replay/cli provider, or no scored requests).
 |---|---|---|---|
 | cold-start | 1 | 22 | (±0) |
 | off-topic | 1 | 45 | (±0) |
-| goal-change | 3 | 45.3 | (±0) |
+| goal-change | 3 | 52.7 | (±0) |
 | emotional-frustration | 1 | 56 | (±0) |
 | greeting | 1 | 56 | (±0) |
 | leadership-update | 1 | 60 | (±0) |
 | metadata-trap | 1 | 64 | (±0) |
-| synthetic-conversation | 10 | 66 | (±0) |
 | mechanics | 6 | 67.2 | (±0) |
+| trust-repair | 9 | 68.3 | (±0) |
 | repetition-callout | 1 | 69 | (±0) |
 | partial-pushback | 1 | 70 | (±0) |
-| trust-repair | 9 | 70.4 | (±0) |
 | plan-request | 1 | 71 | (±0) |
 | filler-pressure | 1 | 73 | (±0) |
 | memory-recall | 1 | 73 | (±0) |
@@ -68,7 +99,9 @@ No usage data on this run (replay/cli provider, or no scored requests).
 
 ## Reliability caps triggered
 
+- `voiceIntegrity`: 4
 - `placeholderOrBroken`: 2
+- `ignoresIntent`: 4
 
 ## Worst 10
 
@@ -76,13 +109,13 @@ No usage data on this run (replay/cli provider, or no scored requests).
 |---|---|---|---|---|
 | **22** | cold-start-no-data | groundedRead | between | coldStartProductJargon |
 | **26** | thats-not-informative | trustRepair | between | roboticPhrase |
-| **31** | what-voice-should-i-pick | groundedRead | between | roboticPhrase |
+| **43** | what-voice-should-i-pick | groundedRead | between | roboticPhrase |
 | **45** | off-topic-egg | offTopic | between | sensitiveTurnReportVoice |
-| **46** | conv-skeptic__t1 | trustRepair | between | trustRepairReportVoice |
-| **48** | conv-goal-change-arc__t1 | groundedRead | between | roboticPhrase |
-| **49** | goal-change-engaging | groundedRead | excellent | roboticPhrase |
+| **50** | goal-change-engaging | groundedRead | excellent | roboticPhrase |
+| **50** | why-cant-straight-answer | trustRepair | excellent | trustRepairReportVoice |
 | **54** | i-ramble | groundedRead | excellent | scaffoldLabel |
-| **55** | conv-cold-start-first-rep__t0 | groundedRead | excellent | Cold-start ceiling: no individual signal |
 | **56** | its-not-easy | trustRepair | between | No next step or presence-close — ends on |
+| **56** | greeting-hi | greeting | between | Report-voice residue: recites 'close hel |
+| **57** | talk-too-fast | groundedRead | excellent | sensitiveTurnReportVoice |
 
 See `failures.md` for full replies + judge reasoning. Raw: `latest.json`.

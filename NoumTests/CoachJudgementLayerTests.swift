@@ -1214,6 +1214,40 @@ struct CoachSemanticQualityGateTests {
         #expect(issue == nil)
     }
 
+    @Test func sessionExampleRequestWithVerifiedProofRejectsNonQuotingReply() {
+        let turn = "Can you give me an example of me doing this in sessions?"
+        let quoteGuard = CoachChatQuoteGuardContext(
+            verifiedProofQuotes: ["we focused on three priorities"],
+            latestUserTurn: turn
+        )
+
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "A safe example is the latest rep: the reasons were clear, but there was no concrete scene for the listener to picture. Next rep, add one example after the first reason.",
+            latestUserTurn: turn,
+            quoteGuard: quoteGuard,
+            turnDepth: .quickMove
+        )
+
+        #expect(issue == .missingVerifiedExampleQuote)
+    }
+
+    @Test func sessionExampleRequestWithVerifiedProofAcceptsQuotedExample() {
+        let turn = "Can you give me an example of me doing this in sessions?"
+        let quoteGuard = CoachChatQuoteGuardContext(
+            verifiedProofQuotes: ["we focused on three priorities"],
+            latestUserTurn: turn
+        )
+
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "One example is the rep where you said 'we focused on three priorities.' The reasons were clear, but the listener had no scene to picture, so add one concrete example after the first reason next time.",
+            latestUserTurn: turn,
+            quoteGuard: quoteGuard,
+            turnDepth: .quickMove
+        )
+
+        #expect(issue == nil)
+    }
+
     @Test func transferCausalityFailsEvenWithoutTypedAssessment() {
         let context = """
         REAL-WORLD TRANSFER
@@ -1411,7 +1445,7 @@ struct CoachSemanticQualityGateAdversarialTests {
 
     @Test func boundedYesNoJudgementOpenersAreAccepted() {
         let issue = AICoachChatService.semanticQualityIssue(
-            in: "Yes, it could, but that is a bounded structure read, not a personality verdict. The latest rep and pace estimate only support a mechanics signal: answer-after-setup; the communication goal is not proven under pressure yet. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it.",
+            in: "Yes, it could, but keep it as a structure read, not a claim about you. The latest rep and pace estimate support answer-after-setup: mechanics are usable, but the goal is not proven under pressure. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it.",
             turnDepth: .deepAssessment,
             assessment: Self.baseDeep
         )
@@ -1934,6 +1968,25 @@ struct CoachTypedFallbackTests {
         #expect(rubric.passesSeniorCoachFloor)
     }
 
+    @Test func transferReviewCaptureCountsAsPrescribedAction() {
+        let userTurn = "My interview answer landed better than practice. What do we learn?"
+        let reply = "Treat it as useful self-report, not proof. The reusable move is verdict first plus one example, so keep that for interviews and capture what question made it land."
+
+        let rubric = AICoachChatService.professionalCoachRubric(
+            reply: reply,
+            latestUserTurn: userTurn,
+            turnDepth: .groundedRead
+        )
+
+        #expect(!rubric.misses.contains(.missingPrescribedAction))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: userTurn,
+            systemContext: "REAL-WORLD TRANSFER: user reports an interview answer landed better.",
+            turnDepth: .groundedRead
+        ) == nil)
+    }
+
     @Test func providerQualityFailureFallsBackToTypedDeepAssessment() async throws {
         let service = try Self.serviceThatAlwaysReturnsBadReply(
             "You scored 7/10, so just sound more confident next time."
@@ -2063,7 +2116,7 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "Can you give me an example of me doing this in sessions?",
                 depth: .groundedRead,
-                expectedFragments: ["one specific example", "latest rep", "concrete scene", "add one example"],
+                expectedFragments: ["safe example", "latest rep", "concrete scene", "add one example"],
                 rejectedFragments: ["fabricated quote"]
             ),
             Spec(
@@ -2075,13 +2128,13 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "I have a difficult conversation tonight. What should I practice?",
                 depth: .quickMove,
-                expectedFragments: ["boundary sentence", "one calm reason", "then stop", "tests whether"],
+                expectedFragments: ["over-proving", "boundary sentence", "one calm reason", "then stop"],
                 rejectedFragments: ["75-second answer"]
             ),
             Spec(
                 userTurn: "I ramble when introducing myself at networking events.",
                 depth: .quickMove,
-                expectedFragments: ["20-second intro", "role, value, ask", "record one first rep"],
+                expectedFragments: ["20-second test", "who you help", "one question", "ramble starts"],
                 rejectedFragments: ["memorable phrase"]
             ),
             Spec(
@@ -2093,7 +2146,7 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "My sales pitch loses people after the first minute.",
                 depth: .quickMove,
-                expectedFragments: ["customer example", "first claim", "return to the ask"],
+                expectedFragments: ["likely gap is salience", "customer example", "first claim", "return to the ask"],
                 rejectedFragments: ["memorable phrase"]
             ),
             Spec(
@@ -2111,8 +2164,8 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "Could this sound polished but evasive?",
                 depth: .deepAssessment,
-                expectedFragments: ["bounded structure read", "answer-after-setup", "not proven under pressure", "proof test"],
-                rejectedFragments: ["you are evasive"]
+                expectedFragments: ["structure read", "not a claim about you", "answer-after-setup", "proof test"],
+                rejectedFragments: ["you are evasive", "personality"]
             ),
             Spec(
                 userTurn: "Do I sound timid?",
@@ -2159,20 +2212,20 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "My interview answer landed better than practice. What do we learn?",
                 depth: .groundedRead,
-                expectedFragments: ["useful self-report", "not proof", "reusable move", "capture"],
+                expectedFragments: ["useful self-report", "not proof", "reusable move", "capture what question"],
                 rejectedFragments: ["drill caused"]
             ),
             Spec(
                 userTurn: "What is the one move?",
                 depth: .quickMove,
-                expectedFragments: ["next rep", "final sentence", "then stop"],
+                expectedFragments: ["close is the move", "final sentence", "then stop"],
                 rejectedFragments: ["read:"]
             ),
             Spec(
                 userTurn: "Can you coach this?",
                 depth: .quickMove,
-                expectedFragments: ["latest rep", "usable signal", "final sentence", "then stop"],
-                rejectedFragments: ["placeholder"]
+                expectedFragments: ["one rep", "coach this honestly", "opener and close", "record 60 seconds"],
+                rejectedFragments: ["placeholder", "latest rep"]
             )
         ]
         let context = "RECENT (most-recent first): latest rep Timed, 7/10, 1 fillers, 50s.\nREAL-WORLD TRANSFER: user reports the room seemed engaged and an interview answer landed better."

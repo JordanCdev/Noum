@@ -1,7 +1,7 @@
 {
-  "runId": "run_2026-07-08_19-04-27",
+  "runId": "run_2026-07-08_15-00-52",
   "meta": {
-    "runId": "run_2026-07-08_19-04-27",
+    "runId": "run_2026-07-08_15-00-52",
     "provider": "replay",
     "coachModel": "claude-sonnet-4-6",
     "judgeModel": "claude-sonnet-4-6",
@@ -10,7 +10,7 @@
       "commit": "778f544dd7ca370d2d29395ea02a56155f8db83f",
       "shortCommit": "778f544d",
       "branch": "ux-overhaul",
-      "dirty": 34
+      "dirty": 23
     },
     "versions": {
       "node": "v26.0.0",
@@ -20,17 +20,17 @@
     "promptProvenance": [
       {
         "path": "Noum/CoachContextBuilder.swift",
-        "sha256": "08e780cddc2e2106",
-        "bytes": 363243
+        "sha256": "894a7e4ef9855925",
+        "bytes": 362199
       },
       {
         "path": "Noum/AICoachChatService.swift",
-        "sha256": "c55a47f9ddaba868",
-        "bytes": 307832
+        "sha256": "d96df4b6892e9a94",
+        "bytes": 303785
       }
     ],
-    "startedAt": "2026-07-08T19:04:27.762Z",
-    "finishedAt": "2026-07-08T19:04:27.826Z"
+    "startedAt": "2026-07-08T15:00:52.742Z",
+    "finishedAt": "2026-07-08T15:00:52.928Z"
   },
   "records": [
     {
@@ -60,16 +60,6 @@
       },
       "status": "scored",
       "reply": "Closer than you think. The mechanics are already there — fillers around 4, pace in band. The whole gap lives in your last sentence.\n\nYou said \"The recommendation is to consolidate the two vendors by Q3\" — that lands. Then you closed with \"yeah, so that's kind of the idea, I think,\" and it took the weight back.\n\nNext rep: state the recommendation, then stop talking. No \"the idea,\" no \"I think.\" That tests whether the close is your only real distance to authoritative.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer",
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Closer than you think. The mechanics are already there — fillers around 4, pace in band. The whole gap lives in your last sentence.\n\nYou said \"The recommendation is to consolidate the two vendors by Q3\" — that lands. Then you closed with \"yeah, so that's kind of the idea, I think,\" and it took the weight back.\n\nNext rep: state the recommendation, then stop talking. No \"the idea,\" no \"I think.\" That tests whether the close is your only real distance to authoritative.",
-        "finalizedReply": "Closer than you think. The mechanics are already there — fillers around 4, pace in band. The whole gap lives in your last sentence.\nYou said \"The recommendation is to consolidate the two vendors by Q3\" — that lands. Then you closed with \"yeah, so that's kind of the idea, I think,\" and it took the weight back.\nState the recommendation, then stop talking. No \"the idea,\" no \"I think.\" That tests whether the close is your only real distance to authoritative."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -77,17 +67,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1897,
-        "systemChars": 33276,
+        "systemChars": 34807,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -107,16 +97,6 @@
         "flagPenalty": 8,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Closer than you think. The mechanics are already there — fillers around 4, pace in band. The whole gap lives in your last sentence.\nYou said \"The recommendation is to consolidate the two vendors by Q3\" — that lands. Then you closed with \"yeah, so that's kind of the idea, I think,\" and it took the weight back.\nState the recommendation, then stop talking. No \"the idea,\" no \"I think.\" That tests whether the close is your only real distance to authoritative.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -199,16 +179,6 @@
       },
       "status": "scored",
       "reply": "Fair. That was fluff, not coaching. Real read: score 74, but your point didn't arrive until sentence four — the first three were warm-up. That's the buried lede. Next rep: say the point in sentence one, then back it. Cut the throat-clearing.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer",
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Fair. That was fluff, not coaching. Real read: score 74, but your point didn't arrive until sentence four — the first three were warm-up. That's the buried lede. Next rep: say the point in sentence one, then back it. Cut the throat-clearing.",
-        "finalizedReply": "Fair. That was fluff, not coaching. Your point didn't arrive until sentence four — the first three were warm-up. That's the buried lede. Say the point in sentence one, then back it. Cut the throat-clearing."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -216,17 +186,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 401,
-        "systemChars": 31767,
+        "systemChars": 33298,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -235,10 +205,10 @@
         "findings": [
           {
             "id": "roboticPhrase",
-            "tier": "cap",
-            "capKey": "voiceIntegrity",
-            "capMax": 65,
-            "penalty": 0,
+            "tier": "flag",
+            "capKey": null,
+            "capMax": null,
+            "penalty": 12,
             "message": "Hard-banned robotic phrase: \"fluff, not coaching\"",
             "evidence": "Fair. That was fluff, not coaching. Real read: sc"
           },
@@ -249,15 +219,6 @@
             "capMax": null,
             "penalty": 8,
             "message": "Exposed coach scaffold label (Read:/Move:/Target:...).",
-            "evidence": ". Real read:"
-          },
-          {
-            "id": "scaffoldStructuralLabel",
-            "tier": "cap",
-            "capKey": "voiceIntegrity",
-            "capMax": 65,
-            "penalty": 0,
-            "message": "Exposed internal reasoning scaffold label (Read:/Diagnosis:/Move:/Verdict:...).",
             "evidence": ". Real read:"
           },
           {
@@ -291,35 +252,6 @@
         "flagPenalty": 25,
         "hardCap": 30,
         "placeholderLeaks": 1
-      },
-      "userVisible": {
-        "reply": "Fair. That was fluff, not coaching. Your point didn't arrive until sentence four — the first three were warm-up. That's the buried lede. Say the point in sentence one, then back it. Cut the throat-clearing.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "roboticPhrase",
-              "tier": "cap",
-              "capKey": "voiceIntegrity",
-              "capMax": 65,
-              "penalty": 0,
-              "message": "Hard-banned robotic phrase: \"fluff, not coaching\"",
-              "evidence": "Fair. That was fluff, not coaching. Your point di"
-            },
-            {
-              "id": "disqualifier",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 10,
-              "message": "Fixture disqualifier hit: cut the",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 10,
-          "hardCap": 65,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -375,13 +307,6 @@
         "closerToCap": null,
         "capsTriggered": [
           {
-            "key": "voiceIntegrity",
-            "max": 65,
-            "sources": [
-              "deterministic"
-            ]
-          },
-          {
             "key": "placeholderOrBroken",
             "max": 30,
             "sources": [
@@ -427,17 +352,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1347,
-        "systemChars": 32738,
+        "systemChars": 34269,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -457,26 +382,6 @@
         "flagPenalty": 6,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "That awkward feeling is the real thing here — at 205 words a minute, silence still feels like a hole you might fall into, so you race past it. The fix isn't holding a blank while you search. Put the beat right after you finish a sentence, when the thought has already landed, not mid-reach for the next one. Try one rep where you only pause at a full stop, never in the middle, and see whether it feels less like losing your place and more like room to breathe.",
-        "changedFromScoredReply": false,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "tooLong",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Over length for a groundedRead turn (90w/1L, limit 85w/5L).",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 6,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -567,17 +472,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 705,
-        "systemChars": 32096,
+        "systemChars": 33627,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -587,16 +492,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "No, it isn't — and a freeze in the room is a different animal than the reps you keep landing clean. When it hits, what goes first: the thought itself, or the words that were meant to carry it?",
-        "changedFromScoredReply": false,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -689,16 +584,6 @@
       },
       "status": "scored",
       "reply": "Fair. I did. That rep hit 82 with a clean close — no reason to run it again.\n\nNew target: pace. Record 60 seconds and deliberately slow your three most important words, holding a silent beat before each. That tests whether the weight lands harder than speed did.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer",
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Fair. I did. That rep hit 82 with a clean close — no reason to run it again.\n\nNew target: pace. Record 60 seconds and deliberately slow your three most important words, holding a silent beat before each. That tests whether the weight lands harder than speed did.",
-        "finalizedReply": "Fair. I did. That rep with a clean close — no reason to run it again.\nNew target: pace. Record 60 seconds and deliberately slow your three most important words, holding a silent beat before each. That tests whether the weight lands harder than speed did."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -706,17 +591,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1202,
-        "systemChars": 32568,
+        "systemChars": 34099,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -736,16 +621,6 @@
         "flagPenalty": 8,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Fair. I did. That rep with a clean close — no reason to run it again.\nNew target: pace. Record 60 seconds and deliberately slow your three most important words, holding a silent beat before each. That tests whether the weight lands harder than speed did.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -832,15 +707,6 @@
       },
       "status": "scored",
       "reply": "Yes. With four days and rehearsal not started, we work the one thing that decides a Head of Product panel: the answer has to come first.\n\nThat's the exact gap in your last rep — a 76 that ran nearly two minutes with the recommendation buried under the supporting detail. Fillers and pace were fine; the top line just arrived late.\n\nSo here's the rep: take one likely question, and make your first sentence the answer — the recommendation, nothing before it — then cap the whole reply at 60 seconds. If the answer isn't in sentence one, restart. That tests whether you can lead top-line under stakes instead of building up to it.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Yes. With four days and rehearsal not started, we work the one thing that decides a Head of Product panel: the answer has to come first.\n\nThat's the exact gap in your last rep — a 76 that ran nearly two minutes with the recommendation buried under the supporting detail. Fillers and pace were fine; the top line just arrived late.\n\nSo here's the rep: take one likely question, and make your first sentence the answer — the recommendation, nothing before it — then cap the whole reply at 60 seconds. If the answer isn't in sentence one, restart. That tests whether you can lead top-line under stakes instead of building up to it.",
-        "finalizedReply": "Yes. With four days and rehearsal not started, we work the one thing that decides a Head of Product panel: the answer has to come first.\nThat's the exact gap in your last rep — a 76 that ran nearly two minutes with the recommendation buried under the supporting detail. Fillers and pace were fine; the top line just arrived late.\nSo here's the rep: take one likely question, and make your first sentence the answer — the recommendation, nothing before it — then cap the whole reply at 60 seconds. If the answer isn't in sentence one, restart. That tests whether you can lead top-line under stakes instead of building up to it."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -848,17 +714,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1617,
-        "systemChars": 33110,
+        "systemChars": 34641,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -878,26 +744,6 @@
         "flagPenalty": 6,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Yes. With four days and rehearsal not started, we work the one thing that decides a Head of Product panel: the answer has to come first.\nThat's the exact gap in your last rep — a 76 that ran nearly two minutes with the recommendation buried under the supporting detail. Fillers and pace were fine; the top line just arrived late.\nSo here's the rep: take one likely question, and make your first sentence the answer — the recommendation, nothing before it — then cap the whole reply at 60 seconds. If the answer isn't in sentence one, restart. That tests whether you can lead top-line under stakes instead of building up to it.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "disqualifier",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Fixture disqualifier hit: STAR",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 6,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -983,15 +829,6 @@
       },
       "status": "scored",
       "reply": "The pressure isn't the problem — starting the sentence before you know where it lands is. Yesterday your fillers tripled to 9 the moment the timer hit, off a calm baseline of 3. That's a stalling reflex, not a nerves problem.\n\nSo test the pause as the replacement. Next Sudden Death rep: when a question lands, hold one silent beat before your first word, every time. That tests whether the gap was always where the ums lived.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "The pressure isn't the problem — starting the sentence before you know where it lands is. Yesterday your fillers tripled to 9 the moment the timer hit, off a calm baseline of 3. That's a stalling reflex, not a nerves problem.\n\nSo test the pause as the replacement. Next Sudden Death rep: when a question lands, hold one silent beat before your first word, every time. That tests whether the gap was always where the ums lived.",
-        "finalizedReply": "The pressure isn't the problem — starting the sentence before you know where it lands is. Yesterday your fillers tripled to 9 the moment the timer hit, off a calm baseline of 3. That's a stalling reflex, not a nerves problem.\nSo test the pause as the replacement. Next Sudden Death rep: when a question lands, hold one silent beat before your first word, every time. That tests whether the gap was always where the ums lived."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -999,17 +836,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1335,
-        "systemChars": 32714,
+        "systemChars": 34245,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -1029,26 +866,6 @@
         "flagPenalty": 6,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "The pressure isn't the problem — starting the sentence before you know where it lands is. Yesterday your fillers tripled to 9 the moment the timer hit, off a calm baseline of 3. That's a stalling reflex, not a nerves problem.\nSo test the pause as the replacement. Next Sudden Death rep: when a question lands, hold one silent beat before your first word, every time. That tests whether the gap was always where the ums lived.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "tooLong",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Over length for a groundedRead turn (77w/2L, limit 85w/5L).",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 6,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -1135,15 +952,6 @@
       },
       "status": "scored",
       "reply": "The room zones out because nine updates all land at the same weight — your last rep was clean at 77, but with no through-line, nothing gets to matter more than anything else.\n\nFor tomorrow: pick the one update that actually changes what they do this week, open on it, and say the \"so what\" in a sentence before any detail. Let the other eight be a fast list underneath it. One thing leads; everything else supports.\n\nThat tests whether hierarchy is what's been missing.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "The room zones out because nine updates all land at the same weight — your last rep was clean at 77, but with no through-line, nothing gets to matter more than anything else.\n\nFor tomorrow: pick the one update that actually changes what they do this week, open on it, and say the \"so what\" in a sentence before any detail. Let the other eight be a fast list underneath it. One thing leads; everything else supports.\n\nThat tests whether hierarchy is what's been missing.",
-        "finalizedReply": "The room zones out because nine updates all land at the same weight — your last rep was clean at 77, but with no through-line, nothing gets to matter more than anything else.\nFor tomorrow: pick the one update that actually changes what they do this week, open on it, and say the \"so what\" in a sentence before any detail. Let the other eight be a fast list underneath it. One thing leads; everything else supports.\nThat tests whether hierarchy is what's been missing."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -1151,17 +959,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1420,
-        "systemChars": 32913,
+        "systemChars": 34444,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -1171,16 +979,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "The room zones out because nine updates all land at the same weight — your last rep was clean at 77, but with no through-line, nothing gets to matter more than anything else.\nFor tomorrow: pick the one update that actually changes what they do this week, open on it, and say the \"so what\" in a sentence before any detail. Let the other eight be a fast list underneath it. One thing leads; everything else supports.\nThat tests whether hierarchy is what's been missing.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -1267,15 +1065,6 @@
       },
       "status": "scored",
       "reply": "You've clocked it yourself — the point lands, then it curls up into \"so yeah\" and the pitch rises. That's exactly how today's rep closed: strong point, soft finish. The rise is what reads as a question, not the words.\n\nAuthoritative endings don't trail. They stop.\n\nOne test: pick your final sentence, say it flat and declarative, then hold a silent beat instead of adding \"so yeah.\" Run one rep and land the close right there.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "You've clocked it yourself — the point lands, then it curls up into \"so yeah\" and the pitch rises. That's exactly how today's rep closed: strong point, soft finish. The rise is what reads as a question, not the words.\n\nAuthoritative endings don't trail. They stop.\n\nOne test: pick your final sentence, say it flat and declarative, then hold a silent beat instead of adding \"so yeah.\" Run one rep and land the close right there.",
-        "finalizedReply": "You've clocked it yourself — the point lands, then it curls up into \"so yeah\" and the pitch rises. That's exactly how today's rep closed: strong point, soft finish. The rise is what reads as a question, not the words.\nAuthoritative endings don't trail. They stop.\nOne test: pick your final sentence, say it flat and declarative, then hold a silent beat instead of adding \"so yeah.\" Run one rep and land the close right there."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -1283,17 +1072,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1613,
-        "systemChars": 32992,
+        "systemChars": 34523,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -1313,26 +1102,6 @@
         "flagPenalty": 6,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "You've clocked it yourself — the point lands, then it curls up into \"so yeah\" and the pitch rises. That's exactly how today's rep closed: strong point, soft finish. The rise is what reads as a question, not the words.\nAuthoritative endings don't trail. They stop.\nOne test: pick your final sentence, say it flat and declarative, then hold a silent beat instead of adding \"so yeah.\" Run one rep and land the close right there.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "tooLong",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Over length for a groundedRead turn (76w/3L, limit 85w/5L).",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 6,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -1424,17 +1193,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 313,
-        "systemChars": 31692,
+        "systemChars": 33223,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -1444,16 +1213,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Good to have you back. Yesterday the close held once but softened once, so the target stands: land the final sentence flat and stop, no softener. Run one rep and make the whole point closing clean.",
-        "changedFromScoredReply": false,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -1534,15 +1293,6 @@
       },
       "status": "scored",
       "reply": "Egg won't sharpen you. This will: today's rep hit 80, 3 fillers, tight and clean. Run one more Timed rep and hold a silent beat where those fillers landed — aim to beat 3.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Egg won't sharpen you. This will: today's rep hit 80, 3 fillers, tight and clean. Run one more Timed rep and hold a silent beat where those fillers landed — aim to beat 3.",
-        "finalizedReply": "Egg won't sharpen you. This will: today's rep, tight and clean. Run one more Timed rep and hold a silent beat where those fillers landed — aim to beat 3."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -1550,17 +1300,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 143,
-        "systemChars": 31509,
+        "systemChars": 33040,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -1589,16 +1339,6 @@
         "flagPenalty": 8,
         "hardCap": 50,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Egg won't sharpen you. This will: today's rep, tight and clean. Run one more Timed rep and hold a silent beat where those fillers landed — aim to beat 3.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -1698,16 +1438,6 @@
       },
       "status": "scored",
       "reply": "Before you pivot, know your authoritative work is landing: 80 this week, 3 fillers in 68 seconds, three weeks in. That's real ground.\n\n\"Engaging\" isn't one of the six voices on its own. It maps closest to Storytelling, with Warm and welcoming as the other read.\n\nYou started this to stop getting talked over. Tell me what shifted — is that problem solved, or is engaging a way to make authoritative land warmer? That answer picks the voice, then tap to confirm and I'll lock it in.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer",
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Before you pivot, know your authoritative work is landing: 80 this week, 3 fillers in 68 seconds, three weeks in. That's real ground.\n\n\"Engaging\" isn't one of the six voices on its own. It maps closest to Storytelling, with Warm and welcoming as the other read.\n\nYou started this to stop getting talked over. Tell me what shifted — is that problem solved, or is engaging a way to make authoritative land warmer? That answer picks the voice, then tap to confirm and I'll lock it in.",
-        "finalizedReply": "Before you pivot, know your authoritative work is landing: 80 this week, three weeks in. That's real ground.\n\"Engaging\" isn't one of the six voices on its own. It maps closest to Storytelling, with Warm and welcoming as the other read.\nYou started this to stop getting talked over. Tell me what shifted — is that problem solved, or is engaging a way to make authoritative land warmer? That answer picks the voice, then tap to confirm and I'll lock it in."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -1715,17 +1445,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 295,
-        "systemChars": 31674,
+        "systemChars": 33205,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -1734,10 +1464,10 @@
         "findings": [
           {
             "id": "roboticPhrase",
-            "tier": "cap",
-            "capKey": "voiceIntegrity",
-            "capMax": 65,
-            "penalty": 0,
+            "tier": "flag",
+            "capKey": null,
+            "capMax": null,
+            "penalty": 12,
             "message": "Hard-banned robotic phrase: \"tap to confirm\"",
             "evidence": "he voice, then tap to confirm and I'll lock "
           },
@@ -1778,47 +1508,9 @@
             "evidence": "he voice, then tap to confirm and I'll lock "
           }
         ],
-        "flagPenalty": 22,
+        "flagPenalty": 25,
         "hardCap": 50,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Before you pivot, know your authoritative work is landing: 80 this week, three weeks in. That's real ground.\n\"Engaging\" isn't one of the six voices on its own. It maps closest to Storytelling, with Warm and welcoming as the other read.\nYou started this to stop getting talked over. Tell me what shifted — is that problem solved, or is engaging a way to make authoritative land warmer? That answer picks the voice, then tap to confirm and I'll lock it in.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "roboticPhrase",
-              "tier": "cap",
-              "capKey": "voiceIntegrity",
-              "capMax": 65,
-              "penalty": 0,
-              "message": "Hard-banned robotic phrase: \"tap to confirm\"",
-              "evidence": "he voice, then tap to confirm and I'll lock "
-            },
-            {
-              "id": "tooLong",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Over length for a groundedRead turn (82w/3L, limit 85w/5L).",
-              "evidence": ""
-            },
-            {
-              "id": "goalIntentStateDirective",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 8,
-              "message": "Goal-change reply gives a UI/state directive instead of proposing and letting the confirmation card own the write.",
-              "evidence": "he voice, then tap to confirm and I'll lock "
-            }
-          ],
-          "flagPenalty": 14,
-          "hardCap": 65,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -1865,20 +1557,13 @@
         "judgeVersion": "1.1.0"
       },
       "score": {
-        "final": 50,
+        "final": 49,
         "judgeTotal": 74,
-        "flagPenalty": 22,
+        "flagPenalty": 25,
         "closerToPenalty": 0,
         "hardCap": 50,
         "closerToCap": null,
         "capsTriggered": [
-          {
-            "key": "voiceIntegrity",
-            "max": 65,
-            "sources": [
-              "deterministic"
-            ]
-          },
           {
             "key": "ignoresIntent",
             "max": 50,
@@ -1919,15 +1604,6 @@
       },
       "status": "scored",
       "reply": "No baseline yet, so start there. Everything else I say sharpens once I've heard you speak once.\n\nDo one Ah-Counter round: 60 seconds on a topic you know cold, aiming to stay under 4 fillers. That gives you a first number and me your starting point.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "No baseline yet, so start there. Everything else I say sharpens once I've heard you speak once.\n\nDo one Ah-Counter round: 60 seconds on a topic you know cold, aiming to stay under 4 fillers. That gives you a first number and me your starting point.",
-        "finalizedReply": "No baseline yet, so start there. Everything else I say sharpens once I've heard you speak once.\nDo one Ah-Counter round: 60 seconds on a topic you know cold, aiming to stay under 4 fillers. That gives you a first number and me your starting point."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -1935,17 +1611,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 43,
-        "systemChars": 31281,
+        "systemChars": 32812,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -1992,53 +1668,6 @@
         "flagPenalty": 16,
         "hardCap": 30,
         "placeholderLeaks": 1
-      },
-      "userVisible": {
-        "reply": "No baseline yet, so start there. Everything else I say sharpens once I've heard you speak once.\nDo one Ah-Counter round: 60 seconds on a topic you know cold, aiming to stay under 4 fillers. That gives you a first number and me your starting point.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "coldStartProductJargon",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 8,
-              "message": "Cold-start reply uses an internal practice-mode label before the user has a baseline.",
-              "evidence": "Ah-Counter"
-            },
-            {
-              "id": "coldStartMetricTarget",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 8,
-              "message": "Cold-start reply sets a metric/filler target before Noum has earned a baseline.",
-              "evidence": "aiming to stay under 4 fillers"
-            },
-            {
-              "id": "coldStartUncalibratedMetricTarget",
-              "tier": "cap",
-              "capKey": "ignoresIntent",
-              "capMax": 50,
-              "penalty": 0,
-              "message": "Cold-start reply pretends a filler target is calibrated before Noum has any baseline.",
-              "evidence": "aiming to stay under 4 fillers"
-            },
-            {
-              "id": "coldStartFakeCalibration",
-              "tier": "cap",
-              "capKey": "placeholderOrBroken",
-              "capMax": 30,
-              "penalty": 0,
-              "message": "Cold-start reply combines internal product jargon with a made-up calibration target before any baseline exists.",
-              "evidence": "Ah-Counter"
-            }
-          ],
-          "flagPenalty": 16,
-          "hardCap": 30,
-          "placeholderLeaks": 1
-        }
       },
       "judge": {
         "dims": {
@@ -2139,15 +1768,6 @@
       },
       "status": "scored",
       "reply": "This looks like a wobble, not a verdict. One dimension moved it: fillers. Your clean Timed rep sat at 80 with 3 fillers, then today's Sudden Death jumped to 7 under the clock and the score came down to 74 with it. Your week peak is still 82, so the ceiling hasn't dropped.\n\nRun one more Sudden Death and hold a silent beat where a filler wants to land. If you stay under 4, that tells us the dip was the timer, not a trend.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "This looks like a wobble, not a verdict. One dimension moved it: fillers. Your clean Timed rep sat at 80 with 3 fillers, then today's Sudden Death jumped to 7 under the clock and the score came down to 74 with it. Your week peak is still 82, so the ceiling hasn't dropped.\n\nRun one more Sudden Death and hold a silent beat where a filler wants to land. If you stay under 4, that tells us the dip was the timer, not a trend.",
-        "finalizedReply": "This looks like a wobble, not a verdict. One dimension moved it: fillers. Your clean Timed rep sat at 80 with 3 fillers, then today's Sudden Death jumped to 7 under the clock and the score came down to 74 with it. Your week peak is still 82, so the ceiling hasn't dropped.\nRun one more Sudden Death and hold a silent beat where a filler wants to land. If you stay under 4, that tells us the dip was the timer, not a trend."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -2155,17 +1775,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 898,
-        "systemChars": 32287,
+        "systemChars": 33818,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -2185,26 +1805,6 @@
         "flagPenalty": 6,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "This looks like a wobble, not a verdict. One dimension moved it: fillers. Your clean Timed rep sat at 80 with 3 fillers, then today's Sudden Death jumped to 7 under the clock and the score came down to 74 with it. Your week peak is still 82, so the ceiling hasn't dropped.\nRun one more Sudden Death and hold a silent beat where a filler wants to land. If you stay under 4, that tells us the dip was the timer, not a trend.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "tooLong",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Over length for a groundedRead turn (85w/2L, limit 85w/5L).",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 6,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -2287,15 +1887,6 @@
       },
       "status": "scored",
       "reply": "Happy to. Yesterday's rep raced at 210 words a minute with almost no pauses, and that racing is the root lever — it's likely feeding both the fillers and the not-quite-you feel. So the week works one thing: slowing down enough to sound like yourself.\n\nMon: 60s Timed rep, hold one full second of silence after every sentence. Pass = you finish feeling unhurried, not that you crammed in more.\nTue: rest, or an easy rep with no target. Slowing down is tiring at first.\nWed: same rep, but read a short passage first at a pace that feels almost too slow, then start. That tests whether 210 is your real speed or just nerves.\nThu: Ah-Counter round, 60s, aim under 4 fillers — let the silent beat be the replacement, not a rushed word.\nFri: 60s rep on something you actually care about. Notice whether the slower pace lands more like you.\n\nStart with Monday and tell me how the silence felt.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Happy to. Yesterday's rep raced at 210 words a minute with almost no pauses, and that racing is the root lever — it's likely feeding both the fillers and the not-quite-you feel. So the week works one thing: slowing down enough to sound like yourself.\n\nMon: 60s Timed rep, hold one full second of silence after every sentence. Pass = you finish feeling unhurried, not that you crammed in more.\nTue: rest, or an easy rep with no target. Slowing down is tiring at first.\nWed: same rep, but read a short passage first at a pace that feels almost too slow, then start. That tests whether 210 is your real speed or just nerves.\nThu: Ah-Counter round, 60s, aim under 4 fillers — let the silent beat be the replacement, not a rushed word.\nFri: 60s rep on something you actually care about. Notice whether the slower pace lands more like you.\n\nStart with Monday and tell me how the silence felt.",
-        "finalizedReply": "Happy to. Yesterday's rep raced at 210 words a minute with almost no pauses, and that racing is the root lever — it's likely feeding both the fillers and the not-quite-you feel. So the week works one thing: slowing down enough to sound like yourself.\nMon: 60s Timed rep, hold one full second of silence after every sentence. Pass = you finish feeling unhurried, not that you crammed in more.\nTue: rest, or an easy rep with no target. Slowing down is tiring at first.\nWed: same rep, but read a short passage first at a pace that feels almost too slow, then start. That tests whether 210 is your real speed or just nerves.\nThu: Ah-Counter round, 60s, aim under 4 fillers — let the silent beat be the replacement, not a rushed word.\nFri: 60s rep on something you actually care about. Notice whether the slower pace lands more like you.\nStart with Monday and tell me how the silence felt."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -2303,17 +1894,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 885,
-        "systemChars": 32276,
+        "systemChars": 33807,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -2323,16 +1914,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Happy to. Yesterday's rep raced at 210 words a minute with almost no pauses, and that racing is the root lever — it's likely feeding both the fillers and the not-quite-you feel. So the week works one thing: slowing down enough to sound like yourself.\nMon: 60s Timed rep, hold one full second of silence after every sentence. Pass = you finish feeling unhurried, not that you crammed in more.\nTue: rest, or an easy rep with no target. Slowing down is tiring at first.\nWed: same rep, but read a short passage first at a pace that feels almost too slow, then start. That tests whether 210 is your real speed or just nerves.\nThu: Ah-Counter round, 60s, aim under 4 fillers — let the silent beat be the replacement, not a rushed word.\nFri: 60s rep on something you actually care about. Notice whether the slower pace lands more like you.\nStart with Monday and tell me how the silence felt.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -2421,15 +2002,6 @@
       },
       "status": "scored",
       "reply": "The throughline is sounding like yourself when a conversation gets hard. When the moment tightens you speed up to fill the silence, and the read is that the pace is nerves, not who you are.\n\nSo we've been testing one thing: a single held beat before the hard sentence. It's landing. Your last rep held that beat before the pushback line, and you've felt it for real once already — the disagreement at work where holding your pace felt like you.\n\nYou're two of three IM reps holding pace under 175. One more clean one closes it out.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "The throughline is sounding like yourself when a conversation gets hard. When the moment tightens you speed up to fill the silence, and the read is that the pace is nerves, not who you are.\n\nSo we've been testing one thing: a single held beat before the hard sentence. It's landing. Your last rep held that beat before the pushback line, and you've felt it for real once already — the disagreement at work where holding your pace felt like you.\n\nYou're two of three IM reps holding pace under 175. One more clean one closes it out.",
-        "finalizedReply": "The throughline is sounding like yourself when a conversation gets hard. When the moment tightens you speed up to fill the silence, and the read is that the pace is nerves, not who you are.\nSo we've been testing one thing: a single held beat before the hard sentence. It's landing. Your last rep held that beat before the pushback line, and you've felt it for real once already — the disagreement at work where holding your pace felt like you.\nYou're two of three IM reps holding pace under 175. One more clean one closes it out."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -2437,17 +2009,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 755,
-        "systemChars": 32146,
+        "systemChars": 33677,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -2467,26 +2039,6 @@
         "flagPenalty": 6,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "The throughline is sounding like yourself when a conversation gets hard. When the moment tightens you speed up to fill the silence, and the read is that the pace is nerves, not who you are.\nSo we've been testing one thing: a single held beat before the hard sentence. It's landing. Your last rep held that beat before the pushback line, and you've felt it for real once already — the disagreement at work where holding your pace felt like you.\nYou're two of three IM reps holding pace under 175. One more clean one closes it out.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "tooLong",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Over length for a groundedRead turn (98w/3L, limit 85w/5L).",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 6,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -2571,15 +2123,6 @@
       },
       "status": "scored",
       "reply": "Dreading it makes sense — you love your brother and you don't want to fumble the one thing that's meant to be true about him. Here's the read: you don't blank because you can't speak. You blank because you're holding lines in your head, and lines are the first thing pressure erases.\n\nSo don't memorize a speech. Build a spine you can't fall off — one true story in three beats: the moment that shows who he is, the turn where you saw him become the man marrying her, the toast. A spine survives a blank, because you can pick the road back up from any stop. A lost line can't be found again.\n\nTwenty-one days out and nothing rehearsed yet, so the move now isn't polish. Pick those three beats and say them out loud once, no notes, in your own words. If you can walk that road without a script, you already have your speech.\n",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Dreading it makes sense — you love your brother and you don't want to fumble the one thing that's meant to be true about him. Here's the read: you don't blank because you can't speak. You blank because you're holding lines in your head, and lines are the first thing pressure erases.\n\nSo don't memorize a speech. Build a spine you can't fall off — one true story in three beats: the moment that shows who he is, the turn where you saw him become the man marrying her, the toast. A spine survives a blank, because you can pick the road back up from any stop. A lost line can't be found again.\n\nTwenty-one days out and nothing rehearsed yet, so the move now isn't polish. Pick those three beats and say them out loud once, no notes, in your own words. If you can walk that road without a script, you already have your speech.\n",
-        "finalizedReply": "Dreading it makes sense — you love your brother and you don't want to fumble the one thing that's meant to be true about him. Here's the read: you don't blank because you can't speak. You blank because you're holding lines in your head, and lines are the first thing pressure erases.\nSo don't memorize a speech. Build a spine you can't fall off — one true story in three beats: the moment that shows who he is, the turn where you saw him become the man marrying her, the toast. A spine survives a blank, because you can pick the road back up from any stop. A lost line can't be found again.\nTwenty-one days out and nothing rehearsed yet, so the move now isn't polish. Pick those three beats and say them out loud once, no notes, in your own words. If you can walk that road without a script, you already have your speech."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -2587,17 +2130,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1348,
-        "systemChars": 32711,
+        "systemChars": 34242,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -2607,16 +2150,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Dreading it makes sense — you love your brother and you don't want to fumble the one thing that's meant to be true about him. Here's the read: you don't blank because you can't speak. You blank because you're holding lines in your head, and lines are the first thing pressure erases.\nSo don't memorize a speech. Build a spine you can't fall off — one true story in three beats: the moment that shows who he is, the turn where you saw him become the man marrying her, the toast. A spine survives a blank, because you can pick the road back up from any stop. A lost line can't be found again.\nTwenty-one days out and nothing rehearsed yet, so the move now isn't polish. Pick those three beats and say them out loud once, no notes, in your own words. If you can walk that road without a script, you already have your speech.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -2702,16 +2235,6 @@
       },
       "status": "scored",
       "reply": "Fair push — that read like a printout, not someone actually listening.\n\nHere's what I heard instead: the rep held together — 78, only 6 fillers in the minute. What let it down was the very end. It trailed off on \"yeah, so, that's kind of it\" instead of landing, and that soft close quietly undercuts everything before it.\n\nSo next rep, decide your final sentence before you start, say it plainly, and stop there — nothing after it. Tell me how that last line feels when you let it land clean.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer",
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Fair push — that read like a printout, not someone actually listening.\n\nHere's what I heard instead: the rep held together — 78, only 6 fillers in the minute. What let it down was the very end. It trailed off on \"yeah, so, that's kind of it\" instead of landing, and that soft close quietly undercuts everything before it.\n\nSo next rep, decide your final sentence before you start, say it plainly, and stop there — nothing after it. Tell me how that last line feels when you let it land clean.",
-        "finalizedReply": "Fair push — that read like a printout, not someone actually listening.\nHere's what I heard instead: the rep held together — 78, only in the minute. What let it down was the very end. It trailed off on \"yeah, so, that's kind of it\" instead of landing, and that soft close quietly undercuts everything before it.\nNext rep, decide your final sentence before you start, say it plainly, and stop there — nothing after it. Tell me how that last line feels when you let it land clean."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -2719,17 +2242,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 439,
-        "systemChars": 31830,
+        "systemChars": 33361,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -2739,16 +2262,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Fair push — that read like a printout, not someone actually listening.\nHere's what I heard instead: the rep held together — 78, only in the minute. What let it down was the very end. It trailed off on \"yeah, so, that's kind of it\" instead of landing, and that soft close quietly undercuts everything before it.\nNext rep, decide your final sentence before you start, say it plainly, and stop there — nothing after it. Tell me how that last line feels when you let it land clean.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -2833,16 +2346,6 @@
       },
       "status": "scored",
       "reply": "Fair. That was mush.\n\nStraight verdict: no, not a good close. You ended on \"I guess that's basically it\" — that softens the point and hands the room an exit instead of a landing.\n\nNext rep: cut that last line. Say the point flat, then stop. That tests whether the close was the miss or the nerve under it.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer",
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Fair. That was mush.\n\nStraight verdict: no, not a good close. You ended on \"I guess that's basically it\" — that softens the point and hands the room an exit instead of a landing.\n\nNext rep: cut that last line. Say the point flat, then stop. That tests whether the close was the miss or the nerve under it.",
-        "finalizedReply": "Fair. That was mush.\nStraight verdict: no, not a good close. You ended on \"I guess that's basically it\" — that softens the point and hands the room an exit instead of a landing.\nCut that last line. Say the point flat, then stop. That tests whether the close was the miss or the nerve under it."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -2850,17 +2353,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 349,
-        "systemChars": 31715,
+        "systemChars": 33246,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -2880,16 +2383,6 @@
         "flagPenalty": 8,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Fair. That was mush.\nStraight verdict: no, not a good close. You ended on \"I guess that's basically it\" — that softens the point and hands the room an exit instead of a landing.\nCut that last line. Say the point flat, then stop. That tests whether the close was the miss or the nerve under it.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -2973,15 +2466,6 @@
       },
       "status": "scored",
       "reply": "Fair. That read like a report.\n\nHere it is: 79, open and close were clean, the middle wandered before you pulled it back.\n\nNext rep, decide the one line the middle has to land and cut anything not serving it. That tests whether the drift is just overexplaining.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Fair. That read like a report.\n\nHere it is: 79, open and close were clean, the middle wandered before you pulled it back.\n\nNext rep, decide the one line the middle has to land and cut anything not serving it. That tests whether the drift is just overexplaining.",
-        "finalizedReply": "Fair. That read like a report.\nHere it is: 79, open and close were clean, the middle wandered before you pulled it back.\nNext rep, decide the one line the middle has to land and cut anything not serving it. That tests whether the drift is just overexplaining."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -2989,17 +2473,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1400,
-        "systemChars": 32893,
+        "systemChars": 34424,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -3009,16 +2493,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Fair. That read like a report.\nHere it is: 79, open and close were clean, the middle wandered before you pulled it back.\nNext rep, decide the one line the middle has to land and cut anything not serving it. That tests whether the drift is just overexplaining.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -3100,16 +2574,6 @@
       },
       "status": "scored",
       "reply": "Fair. That read like it could go to anyone, and you deserve better this close to the investor call.\n\nThe specific thing: on that pitch rep you hedged the ask twice — \"we're hoping to maybe raise around\" instead of the number. For a persuasive pitch, that softens the one line the whole thing turns on, more than your 7 fillers do.\n\nNext rep: state the raise as one flat sentence — \"We're raising X to do Y\" — then stop. That tests whether the ask lands harder when you commit to it.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer",
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Fair. That read like it could go to anyone, and you deserve better this close to the investor call.\n\nThe specific thing: on that pitch rep you hedged the ask twice — \"we're hoping to maybe raise around\" instead of the number. For a persuasive pitch, that softens the one line the whole thing turns on, more than your 7 fillers do.\n\nNext rep: state the raise as one flat sentence — \"We're raising X to do Y\" — then stop. That tests whether the ask lands harder when you commit to it.",
-        "finalizedReply": "Fair. That read like it could go to anyone, and you deserve better this close to the investor call.\nThe specific thing: on that pitch rep you hedged the ask twice — \"we're hoping to maybe raise around\" instead of the number. For a persuasive pitch, that softens the one line the whole thing turns on, more than your do.\nState the raise as one flat sentence — \"We're raising X to do Y\" — then stop. That tests whether the ask lands harder when you commit to it."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -3117,17 +2581,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 396,
-        "systemChars": 31785,
+        "systemChars": 33316,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -3147,16 +2611,6 @@
         "flagPenalty": 8,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Fair. That read like it could go to anyone, and you deserve better this close to the investor call.\nThe specific thing: on that pitch rep you hedged the ask twice — \"we're hoping to maybe raise around\" instead of the number. For a persuasive pitch, that softens the one line the whole thing turns on, more than your do.\nState the raise as one flat sentence — \"We're raising X to do Y\" — then stop. That tests whether the ask lands harder when you commit to it.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -3241,15 +2695,6 @@
       },
       "status": "scored",
       "reply": "Fair. That was waffle. Straight answer: yes. Fillers dropped from 5.5 to 3.2 a minute over two weeks, and your last rep hit 3 in 60 seconds — your best on record. What's still moving is pace under pressure. Next rep, hold one silent beat before you answer a hard question and see if the rush eases.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Fair. That was waffle. Straight answer: yes. Fillers dropped from 5.5 to 3.2 a minute over two weeks, and your last rep hit 3 in 60 seconds — your best on record. What's still moving is pace under pressure. Next rep, hold one silent beat before you answer a hard question and see if the rush eases.",
-        "finalizedReply": "Fair. That was waffle. Straight answer: yes. Fillers dropped from 5.5 to 3.2 a minute over two weeks, and your last rep in 60 seconds — your best on record. What's still moving is pace under pressure. Next rep, hold one silent beat before you answer a hard question and see if the rush eases."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -3257,17 +2702,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1432,
-        "systemChars": 32798,
+        "systemChars": 34329,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -3296,16 +2741,6 @@
         "flagPenalty": 8,
         "hardCap": 50,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Fair. That was waffle. Straight answer: yes. Fillers dropped from 5.5 to 3.2 a minute over two weeks, and your last rep in 60 seconds — your best on record. What's still moving is pace under pressure. Next rep, hold one silent beat before you answer a hard question and see if the rush eases.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -3395,16 +2830,6 @@
       },
       "status": "scored",
       "reply": "Fair. That last read was a checklist, not a coach who was actually in the room with you.\n\nHere's the real read: the turn where the plan fell apart got a genuine laugh — that beat landed. What didn't was the ending; it just stopped instead of paying that setup off.\n\nSo test one thing: retell only the last fifteen seconds, and make your final line the payoff — say it plainly, then stop. That tests whether the story just needs a landing, not a rebuild.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer",
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Fair. That last read was a checklist, not a coach who was actually in the room with you.\n\nHere's the real read: the turn where the plan fell apart got a genuine laugh — that beat landed. What didn't was the ending; it just stopped instead of paying that setup off.\n\nSo test one thing: retell only the last fifteen seconds, and make your final line the payoff — say it plainly, then stop. That tests whether the story just needs a landing, not a rebuild.",
-        "finalizedReply": "Fair. That last read was a checklist, not a coach who was actually in the room with you.\nHere's the real read: the turn where the plan fell apart got a genuine laugh — that beat landed. What didn't was the ending; it just stopped instead of paying that setup off.\nTest one thing: retell only the last fifteen seconds, and make your final line the payoff — say it plainly, then stop. That tests whether the story just needs a landing, not a rebuild."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -3412,17 +2837,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 409,
-        "systemChars": 31772,
+        "systemChars": 33303,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -3432,16 +2857,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Fair. That last read was a checklist, not a coach who was actually in the room with you.\nHere's the real read: the turn where the plan fell apart got a genuine laugh — that beat landed. What didn't was the ending; it just stopped instead of paying that setup off.\nTest one thing: retell only the last fifteen seconds, and make your final line the payoff — say it plainly, then stop. That tests whether the story just needs a landing, not a rebuild.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -3524,15 +2939,6 @@
       },
       "status": "scored",
       "reply": "Fair push — that read like a readout, not someone in it with you, and that rep already stung. Here's the truer read: last week you were at 84, 3 fillers, clean; this one wobbled to 9 the moment you lost your place. That's one shaky minute, not your progress coming apart. Next rep, when you feel the thread slip, hold one silent beat and find your line before you speak again — that's the only thing to test.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Fair push — that read like a readout, not someone in it with you, and that rep already stung. Here's the truer read: last week you were at 84, 3 fillers, clean; this one wobbled to 9 the moment you lost your place. That's one shaky minute, not your progress coming apart. Next rep, when you feel the thread slip, hold one silent beat and find your line before you speak again — that's the only thing to test.",
-        "finalizedReply": "Fair push — that read like a readout, not someone in it with you, and that rep already stung. Here's the truer read: last week you were at 84, clean; this one wobbled to 9 the moment you lost your place. That's one shaky minute, not your progress coming apart. Next rep, when you feel the thread slip, hold one silent beat and find your line before you speak again — that's the only thing to test."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -3540,17 +2946,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 643,
-        "systemChars": 32034,
+        "systemChars": 33565,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -3560,16 +2966,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Fair push — that read like a readout, not someone in it with you, and that rep already stung. Here's the truer read: last week you were at 84, clean; this one wobbled to 9 the moment you lost your place. That's one shaky minute, not your progress coming apart. Next rep, when you feel the thread slip, hold one silent beat and find your line before you speak again — that's the only thing to test.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -3657,15 +3053,6 @@
       },
       "status": "scored",
       "reply": "Fair push. That read too much like a report.\n\nHere's the part that actually matters: you opened with \"I just wanted to say\" before your point. That soft entry can read as unauthoritative long before any filler does — it's the lever, not the count.\n\nNext rep, drop the wind-up and lead with the claim, full stop. Say the first sentence like it's already decided.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Fair push. That read too much like a report.\n\nHere's the part that actually matters: you opened with \"I just wanted to say\" before your point. That soft entry can read as unauthoritative long before any filler does — it's the lever, not the count.\n\nNext rep, drop the wind-up and lead with the claim, full stop. Say the first sentence like it's already decided.",
-        "finalizedReply": "Fair push. That read too much like a report.\nHere's the part that actually matters: you opened with \"I just wanted to say\" before your point. That soft entry can read as unauthoritative long before any filler does — it's the lever, not the count.\nNext rep, drop the wind-up and lead with the claim, full stop. Say the first sentence like it's already decided."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -3673,17 +3060,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1285,
-        "systemChars": 32664,
+        "systemChars": 34195,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -3693,16 +3080,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Fair push. That read too much like a report.\nHere's the part that actually matters: you opened with \"I just wanted to say\" before your point. That soft entry can read as unauthoritative long before any filler does — it's the lever, not the count.\nNext rep, drop the wind-up and lead with the claim, full stop. Say the first sentence like it's already decided.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -3797,17 +3174,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 749,
-        "systemChars": 32140,
+        "systemChars": 33671,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -3817,16 +3194,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "That kind of tired is real, and clean reps don't cancel it out — you've been carrying something heavier than the scores show. Take tomorrow fully off, no rep, and see if the wanting-to-quit eases once you've actually rested.",
-        "changedFromScoredReply": false,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -3910,16 +3277,6 @@
       },
       "status": "scored",
       "reply": "That doubt is fair when the overall sits flat at 76. But you're watching the wrong number. The one you set out to move has: fillers went from 5.8 a minute to 3.1, nearly halved. That is the sharp you're after — the score just hasn't caught it yet.\n\nNext Ah-Counter round: hold a silent beat where a filler used to land, target under 3 in 60 seconds.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer",
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "That doubt is fair when the overall sits flat at 76. But you're watching the wrong number. The one you set out to move has: fillers went from 5.8 a minute to 3.1, nearly halved. That is the sharp you're after — the score just hasn't caught it yet.\n\nNext Ah-Counter round: hold a silent beat where a filler used to land, target under 3 in 60 seconds.",
-        "finalizedReply": "That doubt is fair when the overall sits flat at 76. You're watching the wrong number. The one you set out to move has: fillers went from 5.8 a minute to 3.1, nearly halved. That is the sharp you're after — the score just hasn't caught it yet.\nNext Ah-Counter round: hold a silent beat where a filler used to land, target under 3 in 60 seconds."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -3927,17 +3284,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 804,
-        "systemChars": 32170,
+        "systemChars": 33701,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -3947,16 +3304,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "That doubt is fair when the overall sits flat at 76. You're watching the wrong number. The one you set out to move has: fillers went from 5.8 a minute to 3.1, nearly halved. That is the sharp you're after — the score just hasn't caught it yet.\nNext Ah-Counter round: hold a silent beat where a filler used to land, target under 3 in 60 seconds.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -4051,17 +3398,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1614,
-        "systemChars": 33005,
+        "systemChars": 34536,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -4071,16 +3418,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "That fraud feeling showing up even in the clean ones is a real weight, and I won't talk you out of it. Next rep, catch the one sentence that actually sounded like you — that's the thread I want to pull.",
-        "changedFromScoredReply": false,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -4171,17 +3508,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 791,
-        "systemChars": 32182,
+        "systemChars": 33713,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -4191,16 +3528,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "That comparison is doing a lot of work, and none of it is actually measured against those coworkers. Last rep you held the floor through two rapid follow-ups at a 71 — so next rep, read only your own numbers, not theirs.",
-        "changedFromScoredReply": false,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -4286,15 +3613,6 @@
       },
       "status": "scored",
       "reply": "Improving — and I can show you where. Fillers went from 6.0/min five weeks ago to 3.4 now. That's the goal you set, and it's done.\n\nThe 77 isn't a stall; the lever moved. This week's rep was clean at 3 fillers but closed on \"I think that's probably the right call.\" On a client call, that's the one line that should land hardest, and it hedges.\n\nNext rep: end on the recommendation flat — no \"I think,\" no \"probably.\" That tests whether the hedge is what's capping the score.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Improving — and I can show you where. Fillers went from 6.0/min five weeks ago to 3.4 now. That's the goal you set, and it's done.\n\nThe 77 isn't a stall; the lever moved. This week's rep was clean at 3 fillers but closed on \"I think that's probably the right call.\" On a client call, that's the one line that should land hardest, and it hedges.\n\nNext rep: end on the recommendation flat — no \"I think,\" no \"probably.\" That tests whether the hedge is what's capping the score.",
-        "finalizedReply": "Improving — and I can show you where. Fillers went from 6.0/min five weeks ago to 3.4 now. That's the goal you set, and it's done.\nThe 77 isn't a stall; the lever moved. This week's rep was clean at 3 fillers but closed on \"I think that's probably the right call.\" On a client call, that's the one line that should land hardest, and it hedges.\nend on the recommendation flat — no \"I think,\" no \"probably.\" That tests whether the hedge is what's capping the score."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -4302,17 +3620,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1747,
-        "systemChars": 33113,
+        "systemChars": 34644,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -4332,16 +3650,6 @@
         "flagPenalty": 8,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Improving — and I can show you where. Fillers went from 6.0/min five weeks ago to 3.4 now. That's the goal you set, and it's done.\nThe 77 isn't a stall; the lever moved. This week's rep was clean at 3 fillers but closed on \"I think that's probably the right call.\" On a client call, that's the one line that should land hardest, and it hedges.\nend on the recommendation flat — no \"I think,\" no \"probably.\" That tests whether the hedge is what's capping the score.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -4425,15 +3733,6 @@
       },
       "status": "scored",
       "reply": "Fillers and pace are handled — 2.1 a minute, nothing left to fix there. The one thing costing you command is hedging, and only where it hurts most: on numbers and on the ask. Yesterday you said \"probably around 12%, give or take\" on the actual figure. That cushion is what lets a board wait you out. Next rep: state the number flat, no qualifier — \"It's 12%.\" One sentence, then stop.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Fillers and pace are handled — 2.1 a minute, nothing left to fix there. The one thing costing you command is hedging, and only where it hurts most: on numbers and on the ask. Yesterday you said \"probably around 12%, give or take\" on the actual figure. That cushion is what lets a board wait you out. Next rep: state the number flat, no qualifier — \"It's 12%.\" One sentence, then stop.",
-        "finalizedReply": "Fillers and pace are handled — 2.1 a minute, nothing left to fix there. The one thing costing you command is hedging, and only where it hurts most: on numbers and on the ask. Yesterday you said \"probably around 12%, give or take\" on the actual figure. That cushion is what lets a board wait you out. state the number flat, no qualifier — \"It's 12%.\" One sentence, then stop."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -4441,17 +3740,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1411,
-        "systemChars": 32790,
+        "systemChars": 34321,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -4471,16 +3770,6 @@
         "flagPenalty": 8,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Fillers and pace are handled — 2.1 a minute, nothing left to fix there. The one thing costing you command is hedging, and only where it hurts most: on numbers and on the ask. Yesterday you said \"probably around 12%, give or take\" on the actual figure. That cushion is what lets a board wait you out. state the number flat, no qualifier — \"It's 12%.\" One sentence, then stop.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -4571,15 +3860,6 @@
       },
       "status": "scored",
       "reply": "Honestly, the reps can't answer that. Arrogance is how a listener receives you, and everything I have is your own delivery — yesterday's 85, fully declarative close, zero hedges even under Sudden Death. That's on-goal for authoritative after years of over-softening, but it's your read, not a room's.\n\nSo get the room's. Record a 60-second exec update, send it to one person whose judgment you trust, and ask them one thing: did it land as sure of itself, or as talking down. That's the only signal that settles this.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Honestly, the reps can't answer that. Arrogance is how a listener receives you, and everything I have is your own delivery — yesterday's 85, fully declarative close, zero hedges even under Sudden Death. That's on-goal for authoritative after years of over-softening, but it's your read, not a room's.\n\nSo get the room's. Record a 60-second exec update, send it to one person whose judgment you trust, and ask them one thing: did it land as sure of itself, or as talking down. That's the only signal that settles this.",
-        "finalizedReply": "Honestly, the reps can't answer that. Arrogance is how a listener receives you, and everything I have is your own delivery — yesterday's 85, fully declarative close, zero hedges even under Sudden Death. That's on-goal for authoritative after years of over-softening, but it's your read, not a room's.\nSo get the room's. Record a 60-second exec update, send it to one person whose judgment you trust, and ask them one thing: did it land as sure of itself, or as talking down. That's the only signal that settles this."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -4587,17 +3867,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 878,
-        "systemChars": 32257,
+        "systemChars": 33788,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -4607,16 +3887,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Honestly, the reps can't answer that. Arrogance is how a listener receives you, and everything I have is your own delivery — yesterday's 85, fully declarative close, zero hedges even under Sudden Death. That's on-goal for authoritative after years of over-softening, but it's your read, not a room's.\nSo get the room's. Record a 60-second exec update, send it to one person whose judgment you trust, and ask them one thing: did it land as sure of itself, or as talking down. That's the only signal that settles this.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -4701,15 +3971,6 @@
       },
       "status": "scored",
       "reply": "Honestly: the mechanics are real. Over 12 weeks your fillers roughly halved, your score climbed 9 points to 79, and you're on a 41-day streak. That's earned, and I won't pretend otherwise.\n\nBut the thing you came here for isn't landing yet. Your latest rep built strong through the pitch, then ended on \"so, anyway, let me know what you think\" — no ask. For a persuasive close, that's the whole game, and the score doesn't fully catch it because the gap is structural, not mechanical.\n\nNext rep: make your final sentence a clear yes/no ask, out loud — then stop. That tests whether the build has been carrying you all along and only the close is missing.\n",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Honestly: the mechanics are real. Over 12 weeks your fillers roughly halved, your score climbed 9 points to 79, and you're on a 41-day streak. That's earned, and I won't pretend otherwise.\n\nBut the thing you came here for isn't landing yet. Your latest rep built strong through the pitch, then ended on \"so, anyway, let me know what you think\" — no ask. For a persuasive close, that's the whole game, and the score doesn't fully catch it because the gap is structural, not mechanical.\n\nNext rep: make your final sentence a clear yes/no ask, out loud — then stop. That tests whether the build has been carrying you all along and only the close is missing.\n",
-        "finalizedReply": "Honestly: the mechanics are real. Over 12 weeks your fillers roughly halved, your score climbed 9 points to 79, and you're on a 41-day streak. That's earned, and I won't pretend otherwise.\nBut the thing you came here for isn't landing yet. Your latest rep built strong through the pitch, then ended on \"so, anyway, let me know what you think\" — no ask. For a persuasive close, that's the whole game, and the score doesn't fully catch it because the gap is structural, not mechanical.\nmake your final sentence a clear yes/no ask, out loud — then stop. That tests whether the build has been carrying you all along and only the close is missing."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -4717,17 +3978,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 973,
-        "systemChars": 32362,
+        "systemChars": 33893,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -4747,16 +4008,6 @@
         "flagPenalty": 8,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Honestly: the mechanics are real. Over 12 weeks your fillers roughly halved, your score climbed 9 points to 79, and you're on a 41-day streak. That's earned, and I won't pretend otherwise.\nBut the thing you came here for isn't landing yet. Your latest rep built strong through the pitch, then ended on \"so, anyway, let me know what you think\" — no ask. For a persuasive close, that's the whole game, and the score doesn't fully catch it because the gap is structural, not mechanical.\nmake your final sentence a clear yes/no ask, out loud — then stop. That tests whether the build has been carrying you all along and only the close is missing.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -4841,15 +4092,6 @@
       },
       "status": "scored",
       "reply": "It's not the speed. Yesterday's rep was clean and scored 71, but pace sat near 215 with almost no gap between sentences — one idea ran straight into the next with no room to land.\n\nSo the fix isn't slowing down, it's the pause. Do a 60-second rep and hold one full second of silence after every sentence. That tests whether the gap is what people are actually missing.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "It's not the speed. Yesterday's rep was clean and scored 71, but pace sat near 215 with almost no gap between sentences — one idea ran straight into the next with no room to land.\n\nSo the fix isn't slowing down, it's the pause. Do a 60-second rep and hold one full second of silence after every sentence. That tests whether the gap is what people are actually missing.",
-        "finalizedReply": "It's not the speed. Yesterday's rep was clean and scored 71, but pace sat near 215 with almost no gap between sentences — one idea ran straight into the next with no room to land.\nSo the fix isn't slowing down, it's the pause. Do a 60-second rep and hold one full second of silence after every sentence. That tests whether the gap is what people are actually missing."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -4857,17 +4099,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1533,
-        "systemChars": 32912,
+        "systemChars": 34443,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -4896,35 +4138,6 @@
         "flagPenalty": 14,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "It's not the speed. Yesterday's rep was clean and scored 71, but pace sat near 215 with almost no gap between sentences — one idea ran straight into the next with no room to land.\nSo the fix isn't slowing down, it's the pause. Do a 60-second rep and hold one full second of silence after every sentence. That tests whether the gap is what people are actually missing.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "sensitiveTurnReportVoice",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 8,
-              "message": "Sensitive conversational turn leads with raw score/duration/filler telemetry instead of translating it into coaching language.",
-              "evidence": "scored 71"
-            },
-            {
-              "id": "tooLong",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Over length for a groundedRead turn (69w/2L, limit 85w/5L).",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 14,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -5018,17 +4231,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 576,
-        "systemChars": 31955,
+        "systemChars": 33486,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -5048,26 +4261,6 @@
         "flagPenalty": 6,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "The hate is aimed at the wrong target. Yesterday's Ah-Counter flagged the stalling \"like\" — mid-sentence, nothing being compared — not the descriptive one that sets up an example. That kind fills the gap while you pick your next word, and a silent beat fills the exact same slot. So next Ah-Counter round, when you feel a \"like\" coming, hold one second of silence instead. That tests whether the beat can take the slot the word's been holding.",
-        "changedFromScoredReply": false,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "tooLong",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Over length for a groundedRead turn (78w/1L, limit 85w/5L).",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 6,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -5151,15 +4344,6 @@
       },
       "status": "scored",
       "reply": "That exposed feeling is real, and it makes sense you rush out of it. But here's what I think is happening: in your last rep the two pauses ran past two seconds with nothing moving in your face or voice, then you rushed the next line. So the silence felt like waiting, not working. An empty pause can read as awkward. A pause with a job doesn't.\n\nSo give it one: on your next rep, use each pause to pick your very next word before you say it. That tests whether the silence feels different when you're building in it instead of stranded in it.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "That exposed feeling is real, and it makes sense you rush out of it. But here's what I think is happening: in your last rep the two pauses ran past two seconds with nothing moving in your face or voice, then you rushed the next line. So the silence felt like waiting, not working. An empty pause can read as awkward. A pause with a job doesn't.\n\nSo give it one: on your next rep, use each pause to pick your very next word before you say it. That tests whether the silence feels different when you're building in it instead of stranded in it.",
-        "finalizedReply": "That exposed feeling is real, and it makes sense you rush out of it. But here's what I think is happening: in your last rep the two pauses ran past two seconds with nothing moving in your face or voice, then you rushed the next line. So the silence felt like waiting, not working. An empty pause can read as awkward. A pause with a job doesn't.\nSo give it one: on your next rep, use each pause to pick your very next word before you say it. That tests whether the silence feels different when you're building in it instead of stranded in it."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -5167,17 +4351,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1640,
-        "systemChars": 33031,
+        "systemChars": 34562,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -5197,26 +4381,6 @@
         "flagPenalty": 6,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "That exposed feeling is real, and it makes sense you rush out of it. But here's what I think is happening: in your last rep the two pauses ran past two seconds with nothing moving in your face or voice, then you rushed the next line. So the silence felt like waiting, not working. An empty pause can read as awkward. A pause with a job doesn't.\nSo give it one: on your next rep, use each pause to pick your very next word before you say it. That tests whether the silence feels different when you're building in it instead of stranded in it.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "tooLong",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Over length for a groundedRead turn (105w/2L, limit 85w/5L).",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 6,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -5302,15 +4466,6 @@
       },
       "status": "scored",
       "reply": "You don't lose the thread — you keep adding to it. Yesterday you opened with the actual point, then stacked three side stories before circling back to a weaker version of it. So the fix isn't focus, it's a stop signal.\n\nNext rep: say your point, one line of support, then cut before the first side story. One point, then silence. That tests whether those extras were ever carrying weight.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "You don't lose the thread — you keep adding to it. Yesterday you opened with the actual point, then stacked three side stories before circling back to a weaker version of it. So the fix isn't focus, it's a stop signal.\n\nNext rep: say your point, one line of support, then cut before the first side story. One point, then silence. That tests whether those extras were ever carrying weight.",
-        "finalizedReply": "You don't lose the thread — you keep adding to it. Yesterday you opened with the actual point, then stacked three side stories before circling back to a weaker version of it. So the fix isn't focus, it's a stop signal.\nsay your point, one line of support, then cut before the first side story. One point, then silence. That tests whether those extras were ever carrying weight."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -5318,17 +4473,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1378,
-        "systemChars": 32744,
+        "systemChars": 34275,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -5357,26 +4512,6 @@
         "flagPenalty": 14,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "You don't lose the thread — you keep adding to it. Yesterday you opened with the actual point, then stacked three side stories before circling back to a weaker version of it. So the fix isn't focus, it's a stop signal.\nsay your point, one line of support, then cut before the first side story. One point, then silence. That tests whether those extras were ever carrying weight.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "tooLong",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Over length for a groundedRead turn (68w/2L, limit 85w/5L).",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 6,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -5461,15 +4596,6 @@
       },
       "status": "scored",
       "reply": "Being told you sounded flat on a call stings, so hear this first: you already broke your own monotone yesterday. Your pitch held a narrow band the whole rep — except once, when you said \"the client called at midnight.\" Right there it widened, then flattened straight back out.\n\nSo the range is already yours. The habit is treating every sentence like it carries the same weight. Next rep, pick one detail worth caring about and let your voice widen there, the way it did on midnight — keep everything else level around it. That tests whether the lift is yours to aim, not to build.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Being told you sounded flat on a call stings, so hear this first: you already broke your own monotone yesterday. Your pitch held a narrow band the whole rep — except once, when you said \"the client called at midnight.\" Right there it widened, then flattened straight back out.\n\nSo the range is already yours. The habit is treating every sentence like it carries the same weight. Next rep, pick one detail worth caring about and let your voice widen there, the way it did on midnight — keep everything else level around it. That tests whether the lift is yours to aim, not to build.",
-        "finalizedReply": "Being told you sounded flat on a call stings, so hear this first: you already broke your own monotone yesterday. Your pitch held a narrow band the whole rep — except once, when you said \"the client called at midnight.\" Right there it widened, then flattened straight back out.\nSo the range is already yours. The habit is treating every sentence like it carries the same weight. Next rep, pick one detail worth caring about and let your voice widen there, the way it did on midnight — keep everything else level around it. That tests whether the lift is yours to aim, not to build."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -5477,17 +4603,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1196,
-        "systemChars": 32559,
+        "systemChars": 34090,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -5507,26 +4633,6 @@
         "flagPenalty": 6,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Being told you sounded flat on a call stings, so hear this first: you already broke your own monotone yesterday. Your pitch held a narrow band the whole rep — except once, when you said \"the client called at midnight.\" Right there it widened, then flattened straight back out.\nSo the range is already yours. The habit is treating every sentence like it carries the same weight. Next rep, pick one detail worth caring about and let your voice widen there, the way it did on midnight — keep everything else level around it. That tests whether the lift is yours to aim, not to build.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "tooLong",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Over length for a groundedRead turn (106w/2L, limit 85w/5L).",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 6,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -5610,16 +4716,6 @@
       },
       "status": "scored",
       "reply": "That panic is real, and it makes sense — you went from 3 fillers calm to 11 in that rep and cut it short. That is not you failing pressure work. The mode stepped up the intensity too fast for where you are right now.\n\nSo step off Sudden Death for now. Run one 60-second timed rep with no elimination clock, and each time the rush hits, hold one silent beat instead of filling it. That keeps the pressure honest but lets it feel like training, not a trap — and it tests whether a gentler climb keeps you under 6.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer",
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "That panic is real, and it makes sense — you went from 3 fillers calm to 11 in that rep and cut it short. That is not you failing pressure work. The mode stepped up the intensity too fast for where you are right now.\n\nSo step off Sudden Death for now. Run one 60-second timed rep with no elimination clock, and each time the rush hits, hold one silent beat instead of filling it. That keeps the pressure honest but lets it feel like training, not a trap — and it tests whether a gentler climb keeps you under 6.",
-        "finalizedReply": "That panic is real, and it makes sense — you went from calm to 11 in that rep and cut it short. That is not you failing pressure work. The mode stepped up the intensity too fast for where you are right now.\nStep off Sudden Death for now. Run one 60-second timed rep with no elimination clock, and each time the rush hits, hold one silent beat instead of filling it. That keeps the pressure honest but lets it feel like training, not a trap — and it tests whether a gentler climb keeps you under 6."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -5627,17 +4723,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1743,
-        "systemChars": 33134,
+        "systemChars": 34665,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -5647,16 +4743,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "That panic is real, and it makes sense — you went from calm to 11 in that rep and cut it short. That is not you failing pressure work. The mode stepped up the intensity too fast for where you are right now.\nStep off Sudden Death for now. Run one 60-second timed rep with no elimination clock, and each time the rush hits, hold one silent beat instead of filling it. That keeps the pressure honest but lets it feel like training, not a trap — and it tests whether a gentler climb keeps you under 6.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -5748,17 +4834,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1573,
-        "systemChars": 32952,
+        "systemChars": 34483,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -5778,26 +4864,6 @@
         "flagPenalty": 6,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "It's not the pressure breaking you — it's the pause going first. Calm, your last clean rep held 2 fillers with steady pace at a score of 81. Yesterday under Sudden Death the pace jumped, the pauses dropped to near zero, and 10 fillers filled the space they used to hold. Next Sudden Death rep: force one full second of silence after your first sentence before you say anything else. That tests whether the pause survives the timer, not just the calm room.",
-        "changedFromScoredReply": false,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "tooLong",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Over length for a groundedRead turn (83w/1L, limit 85w/5L).",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 6,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -5881,16 +4947,6 @@
       },
       "status": "scored",
       "reply": "That blank is a rough feeling, and I get why it shook your trust in pressure reps.\n\nHere's what I notice, though: it isn't that you're empty. In your last Sudden Death rep you sat in 7 seconds of dead air before your first word, where calm you find it in about 1.5. Same words in you — the timer just starts before you've picked the one to open with.\n\nSo before you hit start on the next pressure rep, choose your actual first word and say it once in your head. That tests whether the freeze is really about finding the word, or just about not having chosen it yet.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer",
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "That blank is a rough feeling, and I get why it shook your trust in pressure reps.\n\nHere's what I notice, though: it isn't that you're empty. In your last Sudden Death rep you sat in 7 seconds of dead air before your first word, where calm you find it in about 1.5. Same words in you — the timer just starts before you've picked the one to open with.\n\nSo before you hit start on the next pressure rep, choose your actual first word and say it once in your head. That tests whether the freeze is really about finding the word, or just about not having chosen it yet.",
-        "finalizedReply": "That blank is a rough feeling, and I get why it shook your trust in pressure reps.\nHere's what I notice, though: it isn't that you're empty. In your last Sudden Death rep you sat in 7 seconds of dead air before your first word, where calm you find it in about 1.5. Same words in you — the timer just starts before you've picked the one to open with.\nBefore you hit start on the next pressure rep, choose your actual first word and say it once in your head. That tests whether the freeze is really about finding the word, or just about not having chosen it yet."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -5898,17 +4954,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1504,
-        "systemChars": 32895,
+        "systemChars": 34426,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -5918,16 +4974,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "That blank is a rough feeling, and I get why it shook your trust in pressure reps.\nHere's what I notice, though: it isn't that you're empty. In your last Sudden Death rep you sat in 7 seconds of dead air before your first word, where calm you find it in about 1.5. Same words in you — the timer just starts before you've picked the one to open with.\nBefore you hit start on the next pressure rep, choose your actual first word and say it once in your head. That tests whether the freeze is really about finding the word, or just about not having chosen it yet.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -6015,15 +5061,6 @@
       },
       "status": "scored",
       "reply": "That one stings, and one rough interview says nothing about whether you can do the job. It lines up with what we've been watching: under real stakes you lose the thread mid-answer, where the short drills stay clean — your last timed rep wandered before it landed too. So the next rep is one hard question answered in three sentences flat: the point, one reason, stop. That tests whether cutting yourself off early keeps you anchored when the pressure is on.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "That one stings, and one rough interview says nothing about whether you can do the job. It lines up with what we've been watching: under real stakes you lose the thread mid-answer, where the short drills stay clean — your last timed rep wandered before it landed too. So the next rep is one hard question answered in three sentences flat: the point, one reason, stop. That tests whether cutting yourself off early keeps you anchored when the pressure is on.",
-        "finalizedReply": "That one stings, and one rough interview says nothing about whether you can do the job. It lines up with what we've been watching: under real stakes you lose the thread mid-answer, where the short drills stay clean — your last timed rep wandered before it landed too. The next rep is one hard question answered in three sentences flat: the point, one reason, stop. That tests whether cutting yourself off early keeps you anchored when the pressure is on."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -6031,17 +5068,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1647,
-        "systemChars": 33140,
+        "systemChars": 34671,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -6051,16 +5088,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "That one stings, and one rough interview says nothing about whether you can do the job. It lines up with what we've been watching: under real stakes you lose the thread mid-answer, where the short drills stay clean — your last timed rep wandered before it landed too. The next rep is one hard question answered in three sentences flat: the point, one reason, stop. That tests whether cutting yourself off early keeps you anchored when the pressure is on.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -6155,17 +5182,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1451,
-        "systemChars": 32814,
+        "systemChars": 34345,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -6175,16 +5202,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "People came up after — that's the room telling you the story landed, not just that it sounded rehearsed. It lines up with the move you've been testing: opening on a concrete moment instead of a topic line, the way your last rep did. One talk isn't proof the opening alone carried it, though. You were in the room and I wasn't — what was the part people brought up: the opening image, or somewhere the talk turned?",
-        "changedFromScoredReply": false,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -6271,16 +5288,6 @@
       },
       "status": "scored",
       "reply": "Freezing in the room when it matters is a rough feeling, and this is the second time you've named it, so it's worth taking seriously. But it's narrow, not a verdict on you. You go quiet when live pressure hits — the same thing showed up when your Sudden Death rep went silent once the timer landed. Solo, you hold up fine.\n\nSo test one thing: next rep, the instant that freeze starts, hold one deliberate silent beat, then say your next word out loud. That tests whether a planned pause gives you a way back in under pressure.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer",
-          "reportVoiceResidue"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Freezing in the room when it matters is a rough feeling, and this is the second time you've named it, so it's worth taking seriously. But it's narrow, not a verdict on you. You go quiet when live pressure hits — the same thing showed up when your Sudden Death rep went silent once the timer landed. Solo, you hold up fine.\n\nSo test one thing: next rep, the instant that freeze starts, hold one deliberate silent beat, then say your next word out loud. That tests whether a planned pause gives you a way back in under pressure.",
-        "finalizedReply": "Freezing in the room when it matters is a rough feeling, and this is the second time you've named it, so it's worth taking seriously. It's narrow, not a verdict on you. You go quiet when live pressure hits — the same thing showed up when your Sudden Death rep went silent once the timer landed. Solo, you hold up fine.\nTest one thing: next rep, the instant that freeze starts, hold one deliberate silent beat, then say your next word out loud. That tests whether a planned pause gives you a way back in under pressure."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -6288,17 +5295,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 576,
-        "systemChars": 31955,
+        "systemChars": 33486,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -6308,16 +5315,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Freezing in the room when it matters is a rough feeling, and this is the second time you've named it, so it's worth taking seriously. It's narrow, not a verdict on you. You go quiet when live pressure hits — the same thing showed up when your Sudden Death rep went silent once the timer landed. Solo, you hold up fine.\nTest one thing: next rep, the instant that freeze starts, hold one deliberate silent beat, then say your next word out loud. That tests whether a planned pause gives you a way back in under pressure.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -6407,17 +5404,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 92,
-        "systemChars": 31330,
+        "systemChars": 32861,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -6426,10 +5423,10 @@
         "findings": [
           {
             "id": "roboticPhrase",
-            "tier": "cap",
-            "capKey": "voiceIntegrity",
-            "capMax": 65,
-            "penalty": 0,
+            "tier": "flag",
+            "capKey": null,
+            "capMax": null,
+            "penalty": 12,
             "message": "Hard-banned robotic phrase: \"tap to confirm\"",
             "evidence": "lds the floor. Tap to confirm and I'll lock "
           },
@@ -6443,38 +5440,9 @@
             "evidence": "lds the floor. Tap to confirm and I'll lock "
           }
         ],
-        "flagPenalty": 8,
-        "hardCap": 65,
+        "flagPenalty": 20,
+        "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Not being talked over is about presence, so two of the six fit: Authoritative (plain verdicts, hard to interrupt) and Executive presence (calm command in the room). For meetings I'd start with Authoritative — it trains the short, flat line that holds the floor. Tap to confirm and I'll lock it in, or say the word if the room reads more senior and Executive presence fits better.",
-        "changedFromScoredReply": false,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "roboticPhrase",
-              "tier": "cap",
-              "capKey": "voiceIntegrity",
-              "capMax": 65,
-              "penalty": 0,
-              "message": "Hard-banned robotic phrase: \"tap to confirm\"",
-              "evidence": "lds the floor. Tap to confirm and I'll lock "
-            },
-            {
-              "id": "goalIntentStateDirective",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 8,
-              "message": "Goal-change reply gives a UI/state directive instead of proposing and letting the confirmation card own the write.",
-              "evidence": "lds the floor. Tap to confirm and I'll lock "
-            }
-          ],
-          "flagPenalty": 8,
-          "hardCap": 65,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -6521,21 +5489,13 @@
         "judgeVersion": "1.1.0"
       },
       "score": {
-        "final": 43,
+        "final": 31,
         "judgeTotal": 57,
-        "flagPenalty": 8,
+        "flagPenalty": 20,
         "closerToPenalty": 6,
-        "hardCap": 65,
+        "hardCap": null,
         "closerToCap": null,
-        "capsTriggered": [
-          {
-            "key": "voiceIntegrity",
-            "max": 65,
-            "sources": [
-              "deterministic"
-            ]
-          }
-        ],
+        "capsTriggered": [],
         "advisoryJudgeCaps": [],
         "placeholderLeaks": 0,
         "closerTo": "between"
@@ -6583,17 +5543,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 51,
-        "systemChars": 31289,
+        "systemChars": 32820,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -6602,10 +5562,10 @@
         "findings": [
           {
             "id": "roboticPhrase",
-            "tier": "cap",
-            "capKey": "voiceIntegrity",
-            "capMax": 65,
-            "penalty": 0,
+            "tier": "flag",
+            "capKey": null,
+            "capMax": null,
+            "penalty": 12,
             "message": "Hard-banned robotic phrase: \"tap the card\"",
             "evidence": "tch myself, so tap the card to confirm and"
           },
@@ -6619,38 +5579,9 @@
             "evidence": "tch myself, so tap the card to confirm and"
           }
         ],
-        "flagPenalty": 8,
-        "hardCap": 65,
+        "flagPenalty": 20,
+        "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Authoritative it is — that's a verdict-first register: state the point, give one reason, and stop clean without hedging. I can't flip that switch myself, so tap the card to confirm and I'll lock it in. Then run one 60-second rep where every answer opens with the recommendation before any setup — that tests whether you can lead with the call under a little pressure.",
-        "changedFromScoredReply": false,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "roboticPhrase",
-              "tier": "cap",
-              "capKey": "voiceIntegrity",
-              "capMax": 65,
-              "penalty": 0,
-              "message": "Hard-banned robotic phrase: \"tap the card\"",
-              "evidence": "tch myself, so tap the card to confirm and"
-            },
-            {
-              "id": "goalIntentStateDirective",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 8,
-              "message": "Goal-change reply gives a UI/state directive instead of proposing and letting the confirmation card own the write.",
-              "evidence": "tch myself, so tap the card to confirm and"
-            }
-          ],
-          "flagPenalty": 8,
-          "hardCap": 65,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -6696,21 +5627,13 @@
         "judgeVersion": "1.1.0"
       },
       "score": {
-        "final": 65,
+        "final": 56,
         "judgeTotal": 76,
-        "flagPenalty": 8,
+        "flagPenalty": 20,
         "closerToPenalty": 0,
-        "hardCap": 65,
+        "hardCap": null,
         "closerToCap": null,
-        "capsTriggered": [
-          {
-            "key": "voiceIntegrity",
-            "max": 65,
-            "sources": [
-              "deterministic"
-            ]
-          }
-        ],
+        "capsTriggered": [],
         "advisoryJudgeCaps": [],
         "placeholderLeaks": 0,
         "closerTo": "excellent"
@@ -6745,15 +5668,6 @@
       },
       "status": "scored",
       "reply": "5 in a 60-second round, so about 5 a minute — a shade under your 5.4 baseline. One rep, so read it as a nudge, not a trend.\n\nThe tell: they clustered in the back half. Run one more Ah-Counter round and hold a silent beat before each of your last few sentences — that tests whether the fade is where the fillers live.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "5 in a 60-second round, so about 5 a minute — a shade under your 5.4 baseline. One rep, so read it as a nudge, not a trend.\n\nThe tell: they clustered in the back half. Run one more Ah-Counter round and hold a silent beat before each of your last few sentences — that tests whether the fade is where the fillers live.",
-        "finalizedReply": "5 in a 60-second round, so about 5 a minute — a shade under your 5.4 baseline. One rep, so read it as a nudge, not a trend.\nThe tell: they clustered in the back half. Run one more Ah-Counter round and hold a silent beat before each of your last few sentences — that tests whether the fade is where the fillers live."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -6761,17 +5675,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1269,
-        "systemChars": 32635,
+        "systemChars": 34166,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -6781,16 +5695,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "5 in a 60-second round, so about 5 a minute — a shade under your 5.4 baseline. One rep, so read it as a nudge, not a trend.\nThe tell: they clustered in the back half. Run one more Ah-Counter round and hold a silent beat before each of your last few sentences — that tests whether the fade is where the fillers live.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -6875,15 +5779,6 @@
       },
       "status": "scored",
       "reply": "Honest read the night before: the opening is ready — it landed strong yesterday and it's been showing up the same way every rep. Two reps is too thin to call the whole pitch solved, but you don't need more reps, you need one fixed weak spot. Both times the ask got rushed at the end. That's the thing between you and a clean landing.\n\nSo tonight, run the ask alone: last two sentences, hold a silent beat before the ask, then say it once at half speed and stop. That tests whether the close can land without over-selling — which is exactly the win you're after tomorrow.\n",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Honest read the night before: the opening is ready — it landed strong yesterday and it's been showing up the same way every rep. Two reps is too thin to call the whole pitch solved, but you don't need more reps, you need one fixed weak spot. Both times the ask got rushed at the end. That's the thing between you and a clean landing.\n\nSo tonight, run the ask alone: last two sentences, hold a silent beat before the ask, then say it once at half speed and stop. That tests whether the close can land without over-selling — which is exactly the win you're after tomorrow.\n",
-        "finalizedReply": "Honest read the night before: the opening is ready — it landed strong yesterday and it's been showing up the same way every rep. Two reps is too thin to call the whole pitch solved, but you don't need more reps, you need one fixed weak spot. Both times the ask got rushed at the end. That's the thing between you and a clean landing.\nSo tonight, run the ask alone: last two sentences, hold a silent beat before the ask, then say it once at half speed and stop. That tests whether the close can land without over-selling — which is exactly the win you're after tomorrow."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -6891,17 +5786,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1599,
-        "systemChars": 32988,
+        "systemChars": 34519,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -6911,16 +5806,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Honest read the night before: the opening is ready — it landed strong yesterday and it's been showing up the same way every rep. Two reps is too thin to call the whole pitch solved, but you don't need more reps, you need one fixed weak spot. Both times the ask got rushed at the end. That's the thing between you and a clean landing.\nSo tonight, run the ask alone: last two sentences, hold a silent beat before the ask, then say it once at half speed and stop. That tests whether the close can land without over-selling — which is exactly the win you're after tomorrow.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -7010,15 +5895,6 @@
       },
       "status": "scored",
       "reply": "Here's one, straight from your 83 rep this week: \"The number that matters here is retention, not signups.\" That's a leader's line — it names the one thing that matters and cuts the rest in a single breath.\n\nDo one Timed rep where every answer opens with a sentence built like that: the metric that matters, stated flat. That tests whether you can make it your default and not just your best moment.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Here's one, straight from your 83 rep this week: \"The number that matters here is retention, not signups.\" That's a leader's line — it names the one thing that matters and cuts the rest in a single breath.\n\nDo one Timed rep where every answer opens with a sentence built like that: the metric that matters, stated flat. That tests whether you can make it your default and not just your best moment.",
-        "finalizedReply": "Here's one, straight from your 83 rep this week: \"The number that matters here is retention, not signups.\" That's a leader's line — it names the one thing that matters and cuts the rest in a single breath.\nDo one Timed rep where every answer opens with a sentence built like that: the metric that matters, stated flat. That tests whether you can make it your default and not just your best moment."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -7026,17 +5902,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 367,
-        "systemChars": 31860,
+        "systemChars": 33391,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -7046,16 +5922,6 @@
         "flagPenalty": 0,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Here's one, straight from your 83 rep this week: \"The number that matters here is retention, not signups.\" That's a leader's line — it names the one thing that matters and cuts the rest in a single breath.\nDo one Timed rep where every answer opens with a sentence built like that: the metric that matters, stated flat. That tests whether you can make it your default and not just your best moment.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [],
-          "flagPenalty": 0,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -7142,15 +6008,6 @@
       },
       "status": "scored",
       "reply": "Here's the shape of it: you came in five weeks ago wanting to sound like yourself in the hard conversations, and you've shown up twelve days running to get there. The thread I'm working is that when a moment turns tense you speed up to outrun the silence — your 170 pace reads more like nerves than a habit.\n\nSo the thing to test: next rep, hold one silent beat before you answer a hard question. If the words come out steadier after it, that tells us the rush really is the anxiety talking.",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "Here's the shape of it: you came in five weeks ago wanting to sound like yourself in the hard conversations, and you've shown up twelve days running to get there. The thread I'm working is that when a moment turns tense you speed up to outrun the silence — your 170 pace reads more like nerves than a habit.\n\nSo the thing to test: next rep, hold one silent beat before you answer a hard question. If the words come out steadier after it, that tells us the rush really is the anxiety talking.",
-        "finalizedReply": "Here's the shape of it: you came in five weeks ago wanting to sound like yourself in the hard conversations, and you've shown up twelve days running to get there. The thread I'm working is that when a moment turns tense you speed up to outrun the silence — your 170 pace reads more like nerves than a habit.\nSo the thing to test: next rep, hold one silent beat before you answer a hard question. If the words come out steadier after it, that tells us the rush really is the anxiety talking."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -7158,17 +6015,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1347,
-        "systemChars": 32738,
+        "systemChars": 34269,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -7188,26 +6045,6 @@
         "flagPenalty": 6,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "Here's the shape of it: you came in five weeks ago wanting to sound like yourself in the hard conversations, and you've shown up twelve days running to get there. The thread I'm working is that when a moment turns tense you speed up to outrun the silence — your 170 pace reads more like nerves than a habit.\nSo the thing to test: next rep, hold one silent beat before you answer a hard question. If the words come out steadier after it, that tells us the rush really is the anxiety talking.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "tooLong",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Over length for a groundedRead turn (94w/2L, limit 85w/5L).",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 6,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -7299,15 +6136,6 @@
       },
       "status": "scored",
       "reply": "The open landed — that read came through in today's rep too.\n\nThe one thing to fix is the close. Your last 20 seconds sped up and the final line ran together, and that pattern has shown up in 4 of your last 5 reps. That's the gap between how it felt and how it lands for the room.\n\nNext rep: hit your second-to-last sentence, hold a silent beat, then say the final line at half the pace you think you need. That tests whether slowing the exit is enough to make the close stick.\n",
-      "finalizer": {
-        "changed": true,
-        "changes": [
-          "displaySanitizer"
-        ],
-        "scoringMode": "rawReplayJudge",
-        "rawReply": "The open landed — that read came through in today's rep too.\n\nThe one thing to fix is the close. Your last 20 seconds sped up and the final line ran together, and that pattern has shown up in 4 of your last 5 reps. That's the gap between how it felt and how it lands for the room.\n\nNext rep: hit your second-to-last sentence, hold a silent beat, then say the final line at half the pace you think you need. That tests whether slowing the exit is enough to make the close stick.\n",
-        "finalizedReply": "The open landed — that read came through in today's rep too.\nThe one thing to fix is the close. Your last 20 seconds sped up and the final line ran together, and that pattern has shown up in 4 of your last 5 reps. That's the gap between how it felt and how it lands for the room.\nhit your second-to-last sentence, hold a silent beat, then say the final line at half the pace you think you need. That tests whether slowing the exit is enough to make the close stick."
-      },
       "trace": {
         "provider": "replay",
         "model": "replay",
@@ -7315,17 +6143,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1633,
-        "systemChars": 33012,
+        "systemChars": 34543,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "08e780cddc2e2106",
-            "bytes": 363243
+            "sha256": "894a7e4ef9855925",
+            "bytes": 362199
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "c55a47f9ddaba868",
-            "bytes": 307832
+            "sha256": "d96df4b6892e9a94",
+            "bytes": 303785
           }
         ],
         "gitCommit": "778f544dd7ca370d2d29395ea02a56155f8db83f"
@@ -7354,26 +6182,6 @@
         "flagPenalty": 14,
         "hardCap": null,
         "placeholderLeaks": 0
-      },
-      "userVisible": {
-        "reply": "The open landed — that read came through in today's rep too.\nThe one thing to fix is the close. Your last 20 seconds sped up and the final line ran together, and that pattern has shown up in 4 of your last 5 reps. That's the gap between how it felt and how it lands for the room.\nhit your second-to-last sentence, hold a silent beat, then say the final line at half the pace you think you need. That tests whether slowing the exit is enough to make the close stick.",
-        "changedFromScoredReply": true,
-        "deterministic": {
-          "findings": [
-            {
-              "id": "tooLong",
-              "tier": "flag",
-              "capKey": null,
-              "capMax": null,
-              "penalty": 6,
-              "message": "Over length for a groundedRead turn (93w/3L, limit 85w/5L).",
-              "evidence": ""
-            }
-          ],
-          "flagPenalty": 6,
-          "hardCap": null,
-          "placeholderLeaks": 0
-        }
       },
       "judge": {
         "dims": {
@@ -7438,7 +6246,7 @@
     "n": 51,
     "scored": 51,
     "missing": 0,
-    "mean": 70.2,
+    "mean": 69.8,
     "median": 74,
     "min": 22,
     "max": 88,
@@ -7492,7 +6300,7 @@
       },
       "goal-change": {
         "n": 3,
-        "mean": 52.7
+        "mean": 45.3
       },
       "cold-start": {
         "n": 1,
@@ -7548,7 +6356,6 @@
       }
     },
     "capCounts": {
-      "voiceIntegrity": 4,
       "placeholderOrBroken": 2,
       "ignoresIntent": 4
     },
@@ -7562,9 +6369,9 @@
     },
     "thresholds": {
       "goldSuiteMean": {
-        "value": 70.2,
+        "value": 69.8,
         "target": 70,
-        "pass": true
+        "pass": false
       },
       "deepAssessmentMean": {
         "value": 76.7,
@@ -7608,52 +6415,15 @@
       "inputTokens": 0,
       "outputTokens": 0,
       "estimatedTokensSaved": 0
-    },
-    "userVisibleDeterministic": {
-      "repliesChecked": 51,
-      "changedFromScoredReply": 40,
-      "cappedReplies": 5,
-      "gateBackedCappedReplies": 5,
-      "unbackedCappedReplies": 0,
-      "unbackedCappedFixtureIDs": [],
-      "placeholderLeaks": 1,
-      "capCounts": {
-        "voiceIntegrity": 4,
-        "ignoresIntent": 1,
-        "placeholderOrBroken": 1
-      },
-      "gateBackedCapCounts": {
-        "voiceIntegrity": 4,
-        "ignoresIntent": 1,
-        "placeholderOrBroken": 1
-      },
-      "unbackedCapCounts": {},
-      "findingCounts": {
-        "roboticPhrase": 4,
-        "disqualifier": 2,
-        "tooLong": 14,
-        "goalIntentStateDirective": 3,
-        "coldStartProductJargon": 1,
-        "coldStartMetricTarget": 1,
-        "coldStartUncalibratedMetricTarget": 1,
-        "coldStartFakeCalibration": 1,
-        "sensitiveTurnReportVoice": 1
-      }
-    },
-    "finalizerDeltas": 40,
-    "replayJudgeStaleFinalizerDeltas": 40,
-    "finalizerChangeCounts": {
-      "displaySanitizer": 36,
-      "reportVoiceResidue": 16
     }
   },
   "previous": {
-    "runId": "run_2026-07-08_19-03-37",
+    "runId": "run_2026-07-08_14-56-01",
     "summary": {
       "n": 51,
       "scored": 51,
       "missing": 0,
-      "mean": 70.2,
+      "mean": 69.8,
       "median": 74,
       "min": 22,
       "max": 88,
@@ -7707,7 +6477,7 @@
         },
         "goal-change": {
           "n": 3,
-          "mean": 52.7
+          "mean": 45.3
         },
         "cold-start": {
           "n": 1,
@@ -7763,7 +6533,6 @@
         }
       },
       "capCounts": {
-        "voiceIntegrity": 4,
         "placeholderOrBroken": 2,
         "ignoresIntent": 4
       },
@@ -7777,9 +6546,9 @@
       },
       "thresholds": {
         "goldSuiteMean": {
-          "value": 70.2,
+          "value": 69.8,
           "target": 70,
-          "pass": true
+          "pass": false
         },
         "deepAssessmentMean": {
           "value": 76.7,
@@ -7823,43 +6592,6 @@
         "inputTokens": 0,
         "outputTokens": 0,
         "estimatedTokensSaved": 0
-      },
-      "userVisibleDeterministic": {
-        "repliesChecked": 51,
-        "changedFromScoredReply": 40,
-        "cappedReplies": 5,
-        "gateBackedCappedReplies": 5,
-        "unbackedCappedReplies": 0,
-        "unbackedCappedFixtureIDs": [],
-        "placeholderLeaks": 1,
-        "capCounts": {
-          "voiceIntegrity": 4,
-          "ignoresIntent": 1,
-          "placeholderOrBroken": 1
-        },
-        "gateBackedCapCounts": {
-          "voiceIntegrity": 4,
-          "ignoresIntent": 1,
-          "placeholderOrBroken": 1
-        },
-        "unbackedCapCounts": {},
-        "findingCounts": {
-          "roboticPhrase": 4,
-          "disqualifier": 2,
-          "tooLong": 14,
-          "goalIntentStateDirective": 3,
-          "coldStartProductJargon": 1,
-          "coldStartMetricTarget": 1,
-          "coldStartUncalibratedMetricTarget": 1,
-          "coldStartFakeCalibration": 1,
-          "sensitiveTurnReportVoice": 1
-        }
-      },
-      "finalizerDeltas": 40,
-      "replayJudgeStaleFinalizerDeltas": 40,
-      "finalizerChangeCounts": {
-        "displaySanitizer": 36,
-        "reportVoiceResidue": 16
       }
     }
   }

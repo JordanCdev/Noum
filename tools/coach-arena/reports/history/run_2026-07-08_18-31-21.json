@@ -1,7 +1,7 @@
 {
-  "runId": "run_2026-07-08_19-04-27",
+  "runId": "run_2026-07-08_18-31-21",
   "meta": {
-    "runId": "run_2026-07-08_19-04-27",
+    "runId": "run_2026-07-08_18-31-21",
     "provider": "replay",
     "coachModel": "claude-sonnet-4-6",
     "judgeModel": "claude-sonnet-4-6",
@@ -10,7 +10,7 @@
       "commit": "778f544dd7ca370d2d29395ea02a56155f8db83f",
       "shortCommit": "778f544d",
       "branch": "ux-overhaul",
-      "dirty": 34
+      "dirty": 32
     },
     "versions": {
       "node": "v26.0.0",
@@ -29,8 +29,8 @@
         "bytes": 307832
       }
     ],
-    "startedAt": "2026-07-08T19:04:27.762Z",
-    "finishedAt": "2026-07-08T19:04:27.826Z"
+    "startedAt": "2026-07-08T18:31:21.469Z",
+    "finishedAt": "2026-07-08T18:31:21.617Z"
   },
   "records": [
     {
@@ -7613,21 +7613,12 @@
       "repliesChecked": 51,
       "changedFromScoredReply": 40,
       "cappedReplies": 5,
-      "gateBackedCappedReplies": 5,
-      "unbackedCappedReplies": 0,
-      "unbackedCappedFixtureIDs": [],
       "placeholderLeaks": 1,
       "capCounts": {
         "voiceIntegrity": 4,
         "ignoresIntent": 1,
         "placeholderOrBroken": 1
       },
-      "gateBackedCapCounts": {
-        "voiceIntegrity": 4,
-        "ignoresIntent": 1,
-        "placeholderOrBroken": 1
-      },
-      "unbackedCapCounts": {},
       "findingCounts": {
         "roboticPhrase": 4,
         "disqualifier": 2,
@@ -7648,7 +7639,7 @@
     }
   },
   "previous": {
-    "runId": "run_2026-07-08_19-03-37",
+    "runId": "run_2026-07-08_18-06-26",
     "summary": {
       "n": 51,
       "scored": 51,
@@ -7823,37 +7814,6 @@
         "inputTokens": 0,
         "outputTokens": 0,
         "estimatedTokensSaved": 0
-      },
-      "userVisibleDeterministic": {
-        "repliesChecked": 51,
-        "changedFromScoredReply": 40,
-        "cappedReplies": 5,
-        "gateBackedCappedReplies": 5,
-        "unbackedCappedReplies": 0,
-        "unbackedCappedFixtureIDs": [],
-        "placeholderLeaks": 1,
-        "capCounts": {
-          "voiceIntegrity": 4,
-          "ignoresIntent": 1,
-          "placeholderOrBroken": 1
-        },
-        "gateBackedCapCounts": {
-          "voiceIntegrity": 4,
-          "ignoresIntent": 1,
-          "placeholderOrBroken": 1
-        },
-        "unbackedCapCounts": {},
-        "findingCounts": {
-          "roboticPhrase": 4,
-          "disqualifier": 2,
-          "tooLong": 14,
-          "goalIntentStateDirective": 3,
-          "coldStartProductJargon": 1,
-          "coldStartMetricTarget": 1,
-          "coldStartUncalibratedMetricTarget": 1,
-          "coldStartFakeCalibration": 1,
-          "sensitiveTurnReportVoice": 1
-        }
       },
       "finalizerDeltas": 40,
       "replayJudgeStaleFinalizerDeltas": 40,

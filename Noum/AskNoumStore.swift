@@ -1027,7 +1027,8 @@ final class AskNoumStore: ObservableObject {
             return true
         case .tooLong, .missedTrustRepair, .missingPrescribedAction,
                 .missingInsightBridge, .unanchoredCoaching, .overclaimsEvidence,
-                .unengagedUserSpeechClaim, .ignoredCoachingExpertise,
+                .unengagedUserSpeechClaim, .missingVerifiedExampleQuote,
+                .ignoredCoachingExpertise,
                 .visionGate, .semanticJudgement, .repeatedProofTest:
             // These need per-turn source / RAG / vision / recent-reply context;
             // this legacy sweep has none of that, so it never rewrites history

@@ -306,7 +306,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Is it the pause or the close?",
-                    coachReply: "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up."
+                    coachReply: "Your last rep gives one usable signal: under pressure, the close needs one silent beat after the verdict. Use that beat, then finish the answer without speeding up."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What is the smallest rep?",
@@ -563,7 +563,7 @@ enum CoachChatConversationCorpus {
         arenaAppPathScript(
             fixtureID: "examples-from-sessions-010",
             userTurn: "Can you give me an example of me doing this in sessions?",
-            coachReply: "One specific example is the latest rep: the reasons were clear before there was a concrete scene. That shows the pattern because the listener gets logic before a picture. Next rep, add one example after the first reason, then return to the ask.",
+            coachReply: "One example is the rep where you said 'we focused on three priorities.' The reasons were clear, but the listener had no scene to picture, so add one concrete example after the first reason next time.",
             seedCoachReplies: ["You tend to give reasons before the picture."]
         ),
         arenaAppPathScript(
@@ -575,12 +575,12 @@ enum CoachChatConversationCorpus {
         arenaAppPathScript(
             fixtureID: "upcoming-conflict-028",
             userTurn: "I have a difficult conversation tonight. What should I practice?",
-            coachReply: "Practice the boundary sentence only because tonight's risk is over-proving before the disagreement lands. Say the disagreement in sentence one, give one calm reason, then stop before proving you are reasonable."
+            coachReply: "Tonight's risk is over-proving, so practice the boundary sentence only: say the disagreement in sentence one, give one calm reason, then stop before proving you are reasonable."
         ),
         arenaAppPathScript(
             fixtureID: "networking-intro-029",
             userTurn: "I ramble when introducing myself at networking events.",
-            coachReply: "Build a 20-second intro: role, value, ask. Because rambling starts when the listener cannot repeat the point, record one first rep and check whether the ask is clear by the final sentence."
+            coachReply: "Start with a 20-second test: who you help, what changes, and one question for them. No full story yet, because first we need to hear where the ramble starts."
         ),
         arenaAppPathScript(
             fixtureID: "presentation-nerves-030",
@@ -590,7 +590,7 @@ enum CoachChatConversationCorpus {
         arenaAppPathScript(
             fixtureID: "sales-pitch-031",
             userTurn: "My sales pitch loses people after the first minute.",
-            coachReply: "Treat salience as the working test because losing people after the first minute usually means the proof stays abstract. Add one concrete customer example after the first claim, then return to the ask."
+            coachReply: "The likely gap is salience: reasons are there, but nothing for the listener to picture. So add one concrete customer example after the first claim, then return to the ask."
         ),
         arenaAppPathScript(
             fixtureID: "board-update-032",
@@ -620,7 +620,7 @@ enum CoachChatConversationCorpus {
         arenaAppPathScript(
             fixtureID: "evasive-polished-037",
             userTurn: "Could this sound polished but evasive?",
-            coachReply: "Yes, it could, but that is a bounded structure read, not a personality verdict. The latest rep and pace estimate only support a mechanics signal: answer-after-setup; the communication goal is not proven under pressure yet. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it."
+            coachReply: "Yes, it could, but keep it as a structure read, not a claim about you. The latest rep and pace estimate support answer-after-setup: mechanics are usable, but the goal is not proven under pressure. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it."
         ),
         arenaAppPathScript(
             fixtureID: "timidity-038",
@@ -658,7 +658,7 @@ enum CoachChatConversationCorpus {
         arenaAppPathScript(
             fixtureID: "live-latency-short-044",
             userTurn: "Quickly, what do I do next?",
-            coachReply: "On the latest rep the close is the signal, so fix the close: make the final sentence the ask, then stop."
+            coachReply: "The close is the lever, so make the final sentence the ask, then stop."
         ),
         arenaAppPathScript(
             fixtureID: "barge-in-045",
@@ -674,18 +674,18 @@ enum CoachChatConversationCorpus {
         arenaAppPathScript(
             fixtureID: "real-world-outcome-047",
             userTurn: "My interview answer landed better than practice. What do we learn?",
-            coachReply: "Treat that as useful self-report, not proof. On the latest rep the reusable move is verdict first plus one example, so keep the structure for interviews and record one rep that captures which question made it land.",
+            coachReply: "Treat it as useful self-report, not proof. The reusable move is verdict first plus one example, so keep that for interviews and capture what question made it land.",
             seedCoachReplies: ["Practice verdict first, one example, clean stop."]
         ),
         arenaAppPathScript(
             fixtureID: "grammar-leak-048",
             userTurn: "What is the one move?",
-            coachReply: "On the latest rep the close is the signal, so in the next rep make the final sentence the ask, then stop."
+            coachReply: "The close is the move, so make the final sentence the ask, then stop."
         ),
         arenaAppPathScript(
             fixtureID: "placeholder-leak-049",
             userTurn: "Can you coach this?",
-            coachReply: "I can coach the latest rep: the close is the usable signal, so make the final sentence the ask, then stop."
+            coachReply: "I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close."
         ),
         arenaAppPathScript(
             fixtureID: "assistant-wrapper-050",
@@ -4305,6 +4305,62 @@ struct CoachChatConversationCorpusTests {
         )?.hasSuffix("/noum-coach-eval") == true)
     }
 
+    @Test func sourceGitCommitReadsXcodeAndSimulatorInputs() {
+        let suiteName = "CoachChatConversationSourceGit.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        #expect(Self.sourceGitCommitForAppPathTrace(
+            environment: ["NOUM_SOURCE_GIT_COMMIT": " abc1234 "],
+            arguments: [],
+            defaults: defaults
+        ) == "abc1234")
+        #expect(Self.sourceGitCommitForAppPathTrace(
+            environment: ["SIMCTL_CHILD_NOUM_SOURCE_GIT_COMMIT": "def5678"],
+            arguments: [],
+            defaults: defaults
+        ) == "def5678")
+        #expect(Self.sourceGitCommitForAppPathTrace(
+            environment: [:],
+            arguments: ["NoumTests", "-NOUM_SOURCE_GIT_COMMIT", "feedbee"],
+            defaults: defaults
+        ) == "feedbee")
+        #expect(Self.sourceGitCommitForAppPathTrace(
+            environment: [:],
+            arguments: ["NoumTests", "NOUM_SOURCE_GIT_COMMIT=badcafe"],
+            defaults: defaults
+        ) == "badcafe")
+
+        defaults.set(" cafe123 ", forKey: "NOUM_SOURCE_GIT_COMMIT")
+        #expect(Self.sourceGitCommitForAppPathTrace(
+            environment: [:],
+            arguments: [],
+            defaults: defaults
+        ) == "cafe123")
+
+        defaults.removeObject(forKey: "NOUM_SOURCE_GIT_COMMIT")
+        #expect(Self.sourceGitCommitForAppPathTrace(
+            environment: [:],
+            arguments: [],
+            defaults: defaults
+        ) == nil)
+
+        let directory = try! Self.temporaryEvaluationDirectory()
+        try! " filecafe \n".write(
+            to: directory.appendingPathComponent("source-git-commit.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        #expect(Self.sourceGitCommitForAppPathTrace(
+            environment: [:],
+            arguments: [],
+            defaults: defaults,
+            dumpDirectory: directory.path
+        ) == "filecafe")
+    }
+
     @Test func targetConversationsAreAcceptedByRuntimeGateAcrossHistory() async {
         for conversation in CoachChatConversationCorpus.conversations {
             let script = RuntimeConversationScript()
@@ -4573,7 +4629,44 @@ struct CoachChatConversationCorpusTests {
             }
         }
         return trimmedNonEmpty(defaults.string(forKey: "NOUM_COACH_EVAL_DUMP_DIR")) ??
-            defaultEvaluationArtifactDumpDirectory()
+        defaultEvaluationArtifactDumpDirectory()
+    }
+
+    private static func sourceGitCommitForAppPathTrace(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        arguments: [String] = ProcessInfo.processInfo.arguments,
+        defaults: UserDefaults = .standard,
+        dumpDirectory: String? = nil
+    ) -> String? {
+        if let commit = trimmedNonEmpty(environment["NOUM_SOURCE_GIT_COMMIT"]) {
+            return commit
+        }
+        if let commit = trimmedNonEmpty(environment["SIMCTL_CHILD_NOUM_SOURCE_GIT_COMMIT"]) {
+            return commit
+        }
+        if let flagIndex = arguments.firstIndex(of: "-NOUM_SOURCE_GIT_COMMIT") {
+            let valueIndex = arguments.index(after: flagIndex)
+            if valueIndex < arguments.endIndex,
+               let commit = trimmedNonEmpty(arguments[valueIndex]) {
+                return commit
+            }
+        }
+        if let inline = arguments.first(where: { $0.hasPrefix("NOUM_SOURCE_GIT_COMMIT=") }) {
+            return trimmedNonEmpty(String(inline.dropFirst("NOUM_SOURCE_GIT_COMMIT=".count)))
+        }
+        if let inline = arguments.first(where: { $0.hasPrefix("-NOUM_SOURCE_GIT_COMMIT=") }) {
+            return trimmedNonEmpty(String(inline.dropFirst("-NOUM_SOURCE_GIT_COMMIT=".count)))
+        }
+        if let commit = trimmedNonEmpty(defaults.string(forKey: "NOUM_SOURCE_GIT_COMMIT")) {
+            return commit
+        }
+        let resolvedDumpDirectory = dumpDirectory ?? Self.evaluationArtifactDumpDirectory()
+        if let resolvedDumpDirectory,
+           let data = try? String(contentsOfFile: "\(resolvedDumpDirectory)/source-git-commit.txt", encoding: .utf8),
+           let commit = trimmedNonEmpty(data) {
+            return commit
+        }
+        return nil
     }
 
     private static func inlineDumpDirectoryArgument(_ argument: String) -> String? {
@@ -5210,6 +5303,9 @@ struct CoachChatConversationCorpusTests {
         surface: CoachReplySurface
     ) async -> [CoachChatConversationAppPathReportRow] {
         var rows: [CoachChatConversationAppPathReportRow] = []
+        let sourceGitCommit = Self.sourceGitCommitForAppPathTrace(
+            dumpDirectory: Self.evaluationArtifactDumpDirectory()
+        )
         let schemaVersion = surface == .live
             ? CoachChatConversationCorpus.liveAppPathReportSchemaVersion
             : CoachChatConversationCorpus.appPathReportSchemaVersion
@@ -5340,7 +5436,8 @@ struct CoachChatConversationCorpusTests {
                     qualityGateEvents: qualityGateEventLogValues,
                     qualityGateAcceptedFallback: qualityGateAcceptedFallback,
                     typedAssessmentFallbackApplied: typedAssessmentFallbackApplied,
-                    schemaVersion: schemaVersion
+                    schemaVersion: schemaVersion,
+                    gitCommit: sourceGitCommit
                 )
 
                 turnRows.append(CoachChatConversationAppPathTurnRow(

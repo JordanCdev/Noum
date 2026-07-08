@@ -9671,6 +9671,7 @@ struct CoachReplyTextSanitizerTests {
         )
 
         #expect(!cleaned.contains("The signal I can use is Timed."))
+        #expect(!cleaned.contains(".."))
         #expect(cleaned.contains("Pacing is the next lever"))
         #expect(cleaned.contains("Try this next"))
     }
@@ -10450,7 +10451,7 @@ struct CoachContextBuilderTests {
         #expect(normalized.contains("if the user names one of the six voices exactly"))
         #expect(normalized.contains("do not hedge with \"closest match\""))
         #expect(normalized.contains("do not give a feature tour"))
-        #expect(normalized.contains("point to the confirmation card"))
+        #expect(normalized.contains("the confirmation card handles the actual commit"))
         #expect(normalized.contains("let the card handle confirmation"))
         #expect(normalized.contains("do not write button instructions into the reply"))
         #expect(!normalized.contains("tap to confirm and I'll lock it in"))
@@ -27202,6 +27203,30 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "What next?"
         )
         #expect(issue == nil)
+    }
+
+    @Test func turnAwareGateAcceptsPressureMechanicBridge() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep gives one usable signal: under pressure, the close needs one silent beat after the verdict. Use that beat, then finish the answer without speeding up.",
+            latestUserTurn: "Is it the pause or the close?"
+        )
+        #expect(issue == nil)
+    }
+
+    @Test func turnAwareGateAcceptsNextLeverFollowUpBridge() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up.",
+            latestUserTurn: "Is it the pause or the close?"
+        )
+        #expect(issue == nil)
+    }
+
+    @Test func turnAwareGateStillRejectsUsableSignalWithoutBridge() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep gives one usable signal. Next rep, hold one silent beat before the final sentence.",
+            latestUserTurn: "Is it the pause or the close?"
+        )
+        #expect(issue == .missingInsightBridge)
     }
 
     @Test func turnAwareGateAcceptsNaturalImperativeAction() {

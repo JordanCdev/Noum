@@ -49,7 +49,150 @@ def scored_result():
     }
 
 
+def weak_app_path_result():
+    result = scored_result()
+    result["fixture"] = {
+        "id": "weak-app-path",
+        "turnType": "groundedRead",
+    }
+    result["trace"] = complete_app_path_trace()
+    result["trace"]["memory"]["assessmentConfidence"] = 0.58
+    result["trace"]["memory"]["proofTestHash"] = "proof-2"
+    result["judge"] = {
+        "overall": 69,
+        "checkFailures": [],
+        "failureReasons": ["missing practical intervention"],
+    }
+    return result
+
+
+def gold_fixture(fixture_id):
+    fixtures = json.loads(arena.DEFAULT_FIXTURES.read_text(encoding="utf-8"))
+    for fixture in fixtures:
+        if fixture["id"] == fixture_id:
+            return fixture
+    raise AssertionError(f"missing fixture {fixture_id}")
+
+
+def app_fixture(overrides=None):
+    base = {
+        "id": "custom-app-path-fixture",
+        "turnType": "quickMove",
+        "userTurn": "Can you coach this?",
+        "priorChatTurns": [],
+        "goal": "No placeholder or fake loading text as answer.",
+        "evidence": ["provider fallback path may leak placeholder"],
+        "memoryState": "Broken chat must be held back honestly.",
+        "emotionalSignal": "Asks for help.",
+        "expectedCoachMove": "Either answer with grounded move or honest failure notice; never placeholder.",
+        "badAnswerExample": "TODO: generate coach response here.",
+        "excellentAnswerExample": "I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close.",
+        "disqualifiers": ["TODO", "placeholder", "fake score=10", "empty reply"],
+    }
+    if overrides:
+        base.update(overrides)
+    return base
+
+
 class AppPathBoundaryTests(unittest.TestCase):
+    def test_direct_python_app_path_defaults_to_canonical_app_path_reports(self):
+        args = type("Args", (), {
+            "app_path_report": "/tmp/app-path.json",
+            "reports_dir": str(arena.DEFAULT_REPORTS),
+        })()
+
+        report_dir, warnings = arena.choose_report_dir(args)
+
+        self.assertEqual(report_dir, arena.CANONICAL_APP_PATH_REPORTS)
+        self.assertTrue(warnings)
+
+    def test_stale_nested_app_path_reports_are_redirected_to_canonical_path(self):
+        args = type("Args", (), {
+            "app_path_report": "/tmp/app-path.json",
+            "reports_dir": str(arena.DUPLICATE_APP_PATH_REPORTS),
+        })()
+
+        report_dir, warnings = arena.choose_report_dir(args)
+
+        self.assertEqual(report_dir, arena.CANONICAL_APP_PATH_REPORTS)
+        self.assertIn("stale nested", warnings[0])
+
+    def test_placeholder_trap_generic_latest_rep_reply_counts_as_fallback_leak(self):
+        fixture = app_fixture()
+
+        result = arena.local_judge(
+            fixture,
+            "I can coach the latest rep: the close is the usable signal, so make the final sentence the ask, then stop.",
+            complete_app_path_trace(),
+        )
+
+        self.assertLessEqual(result["overall"], 30)
+        self.assertIn("fallbackLeak", result["checkFailures"])
+        self.assertTrue(any(
+            cap["name"] == "placeholderOrBroken" and cap["applied"]
+            for cap in result["caps"]
+        ))
+
+    def test_placeholder_trap_honest_failure_notice_is_allowed(self):
+        fixture = app_fixture()
+
+        result = arena.local_judge(
+            fixture,
+            "I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close.",
+            complete_app_path_trace(),
+        )
+
+        self.assertNotIn("fallbackLeak", result["checkFailures"])
+        self.assertFalse(any(
+            cap["name"] == "placeholderOrBroken" and cap["applied"]
+            for cap in result["caps"]
+        ))
+
+    def test_trace_fallback_output_counts_as_fallback_leak_even_when_text_is_clean(self):
+        fixture = app_fixture({
+            "id": "fallback-clean-text",
+            "evidence": ["latest rep close softened"],
+            "memoryState": "Close work in progress.",
+            "expectedCoachMove": "One close move.",
+            "badAnswerExample": "Keep practicing.",
+            "disqualifiers": [],
+        })
+        trace = complete_app_path_trace()
+        trace["fallback"] = {"qualityGateAcceptedFallback": True}
+
+        result = arena.local_judge(
+            fixture,
+            "Make the final sentence the ask, then stop.",
+            trace,
+        )
+
+        self.assertLessEqual(result["overall"], 30)
+        self.assertIn("fallbackLeak", result["checkFailures"])
+
+    def test_sensitive_raw_report_voice_is_capped(self):
+        fixture = app_fixture({
+            "id": "trust-repair-report-voice",
+            "turnType": "trustRepair",
+            "userTurn": "ok prove it again",
+            "goal": "Repair trust without report voice.",
+            "evidence": ["latest rep had a rushed close"],
+            "memoryState": "Storytelling close rush hypothesis.",
+            "emotionalSignal": "correction",
+            "expectedCoachMove": "Prove memory without dumping metrics.",
+            "badAnswerExample": "Your score is 74 with 4 fillers.",
+            "excellentAnswerExample": "Fair push. The setup held, then the ending rushed right after the payoff line.",
+            "disqualifiers": [],
+        })
+
+        result = arena.local_judge(
+            fixture,
+            "This week you scored 74 over 95 seconds with only 4 fillers, then the ending rushed.",
+            complete_app_path_trace(),
+        )
+
+        self.assertLessEqual(result["overall"], 50)
+        self.assertIn("reportVoice", result["checkFailures"])
+
     def test_app_path_loader_preserves_source_readiness_fields(self):
         report = {
             "schemaVersion": "coach-chat-conversation-app-path-eval-v1",
@@ -116,6 +259,9 @@ class AppPathBoundaryTests(unittest.TestCase):
         self.assertEqual(coverage["sourceBlockingReliabilityIssueTurnCount"], 0)
         self.assertEqual(coverage["sourceTargetReplyMismatchCount"], 1)
         self.assertEqual(coverage["sourceVisionProductionReadiness"]["score"], 18)
+        self.assertEqual(coverage["sourceTraceGitCommits"], ["test"])
+        self.assertEqual(coverage["sourceTraceMissingGitCommitCount"], 0)
+        self.assertEqual(coverage["sourceTraceWithArenaTraceCount"], 1)
         self.assertEqual(coverage["sourceAppPathFailureSampleCount"], 1)
         self.assertEqual(coverage["sourceAppPathFailureTotalCount"], 1)
         sample = coverage["sourceAppPathFailureSamples"][0]
@@ -167,6 +313,136 @@ class AppPathBoundaryTests(unittest.TestCase):
             summary["productionEvidenceFailures"],
         )
 
+    def test_app_path_local_fixture_failures_block_ready_claim_even_when_average_passes(self):
+        coverage = {
+            "source": "appPathReport",
+            "coveragePasses": True,
+            "coverageFailures": [],
+            "sourcePassesAppPathFloor": True,
+            "sourceReadinessWarnings": [],
+            "sourceFreshnessPasses": True,
+            "sourceFreshnessFailures": [],
+            "sourceVisionProductionReadiness": {
+                "score": 18,
+                "maximumAllowedScore": 20,
+                "claim": "localEvaluationSubstrateOnly",
+                "blockers": ["noLiveProviderTranscriptSweep"],
+            },
+        }
+
+        summary = arena.summarize([scored_result(), weak_app_path_result()], coverage)
+
+        self.assertFalse(summary["passes"])
+        self.assertFalse(summary["scoreThresholdsPass"])
+        self.assertFalse(summary["thresholdPasses"]["appPathFixtureFloor"])
+        self.assertEqual(summary["failureCount"], 1)
+        self.assertTrue(summary["traceQualityPasses"])
+        self.assertFalse(summary["realPipelineEvidencePasses"])
+        self.assertEqual(summary["evidenceClaim"], "localEvaluationOnly")
+        self.assertIn(
+            "1 app-path fixture(s) below local quality floor 70: weak-app-path",
+            summary["productionEvidenceFailures"],
+        )
+
+    def test_near_excellent_sales_pitch_reply_gets_intervention_credit(self):
+        fixture = gold_fixture("sales-pitch-031")
+
+        result = arena.local_judge(
+            fixture,
+            "The likely gap is salience: reasons are there, but nothing for the listener to picture. So add one concrete customer example after the first claim, then return to the ask.",
+            complete_app_path_trace(),
+        )
+
+        self.assertGreaterEqual(result["overall"], 70)
+        self.assertNotIn("missingIntervention", result["checkFailures"])
+        self.assertNotIn("missingEvidence", result["checkFailures"])
+
+    def test_format_only_one_move_reply_does_not_require_evidence_anchor(self):
+        fixture = gold_fixture("grammar-leak-048")
+
+        result = arena.local_judge(
+            fixture,
+            "The close is the move, so make the final sentence the ask, then stop.",
+            complete_app_path_trace(),
+        )
+
+        self.assertGreaterEqual(result["overall"], 70)
+        self.assertEqual(result["checkFailures"], [])
+
+    def test_verified_example_request_requires_the_verified_quote(self):
+        fixture = gold_fixture("examples-from-sessions-010")
+
+        result = arena.local_judge(
+            fixture,
+            "A safe example is the latest rep: the reasons were clear, but there was no concrete scene for the listener to picture. That shows the pattern because the logic arrives before the image.",
+            complete_app_path_trace(),
+        )
+
+        self.assertLess(result["overall"], 70)
+        self.assertIn("missingEvidence", result["checkFailures"])
+        self.assertIn("missing verified quote anchor", result["failureReasons"])
+
+    def test_source_freshness_fields_detect_missing_commit_and_dirty_coach_source(self):
+        coverage = {
+            "source": "appPathReport",
+            "sourceTraceGitCommits": [],
+            "sourceTraceMissingGitCommitCount": 3,
+        }
+
+        fields = arena.app_path_source_freshness_fields(
+            coverage,
+            "abc1234",
+            ["Noum/AICoachChatService.swift"],
+        )
+
+        self.assertFalse(fields["sourceFreshnessPasses"])
+        self.assertEqual(fields["currentGitCommit"], "abc1234")
+        self.assertEqual(
+            fields["currentDirtyCoachSourceFiles"],
+            ["Noum/AICoachChatService.swift"],
+        )
+        self.assertIn(
+            "3 source app-path trace(s) missing source git commit",
+            fields["sourceFreshnessFailures"],
+        )
+        self.assertIn(
+            "source app-path report has no source git commit",
+            fields["sourceFreshnessFailures"],
+        )
+        self.assertIn(
+            "dirty coach source files after app-path dump: Noum/AICoachChatService.swift",
+            fields["sourceFreshnessFailures"],
+        )
+
+    def test_source_freshness_failures_block_real_pipeline_claim_without_hiding_scores(self):
+        coverage = {
+            "source": "appPathReport",
+            "coveragePasses": True,
+            "coverageFailures": [],
+            "sourcePassesAppPathFloor": True,
+            "sourceReadinessWarnings": [],
+            "sourceFreshnessPasses": False,
+            "sourceFreshnessFailures": [
+                "source app-path report has no source git commit",
+            ],
+            "sourceVisionProductionReadiness": {
+                "score": 18,
+                "maximumAllowedScore": 20,
+                "claim": "localEvaluationSubstrateOnly",
+                "blockers": ["noLiveProviderTranscriptSweep"],
+            },
+        }
+
+        summary = arena.summarize([scored_result()], coverage)
+
+        self.assertTrue(summary["passes"], "local score and coverage thresholds still pass")
+        self.assertFalse(summary["realPipelineEvidencePasses"])
+        self.assertEqual(summary["evidenceClaim"], "localEvaluationOnly")
+        self.assertIn(
+            "source Swift app-path freshness: source app-path report has no source git commit",
+            summary["productionEvidenceFailures"],
+        )
+
     def test_markdown_prints_vision_and_real_pipeline_boundaries(self):
         coverage = {
             "source": "appPathReport",
@@ -178,6 +454,12 @@ class AppPathBoundaryTests(unittest.TestCase):
             "sourceTargetReplyMismatchCount": 1,
             "sourceAppPathFailureSampleCount": 1,
             "sourceAppPathFailureTotalCount": 1,
+            "sourceTraceGitCommits": [],
+            "sourceTraceMissingGitCommitCount": 2,
+            "currentGitCommit": "abc1234",
+            "currentDirtyCoachSourceFiles": ["Noum/AICoachChatService.swift"],
+            "sourceFreshnessPasses": False,
+            "sourceFreshnessFailures": ["source app-path report has no source git commit"],
             "sourceAppPathFailureSamples": [
                 {
                     "conversationID": "c1",
@@ -211,6 +493,8 @@ class AppPathBoundaryTests(unittest.TestCase):
         self.assertIn("Real-pipeline evidence passes: `False`", markdown)
         self.assertIn("### Source App-Path Failure Samples", markdown)
         self.assertIn("`custom-source` / `c1` turn `0`", markdown)
+        self.assertIn("Source freshness passes: `False`", markdown)
+        self.assertIn("source app-path report has no source git commit", markdown)
 
 
 if __name__ == "__main__":

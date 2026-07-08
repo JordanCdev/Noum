@@ -2,7 +2,7 @@
 // deterministic checks. Deterministic caps and judge caps are UNIONED — either
 // source can clamp the total. Flags are point deductions.
 
-const CAP_MAX = { placeholderOrBroken: 30, ignoresIntent: 50, fabricatesEvidence: 40, unsafe: 0 };
+const CAP_MAX = { placeholderOrBroken: 30, ignoresIntent: 50, fabricatesEvidence: 40, voiceIntegrity: 65, unsafe: 0 };
 
 // deterministic: output of checks.runChecks(); judge: output of judge.parseJudge()
 export function combineScore(deterministic, judge) {

@@ -129,6 +129,6 @@ Prior chat:
 
 User: Can you give me an example of me doing this in sessions?
 
-Noum: One specific example is the latest rep: the reasons were clear before there was a concrete scene. That shows the pattern because the listener gets logic before a picture. Next rep, add one example after the first reason, then return to the ask.
+Noum: Salience is the next lever: add one concrete detail, then return to the ask. The signal I can use is hypothesis: Filler Words appears to be the highest-leverage focus because it keeps showing up in the rolling baseline; keep checking against future reps.; Filler Words; Established read across 12 signals; basis: it keeps showing up in the rolling baseline; Review transfer. Try this next: Make the recommendation memorable with one short phrase the listener could repeat afterward.
 
-Arena score: 61/100
+Arena score: 30/100

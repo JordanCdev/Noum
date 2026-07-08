@@ -646,6 +646,28 @@ struct CoachReliabilityGateTests {
         #expect(verdict.fallbackText == CoachReliabilityGate.staticFallback(turnDepth: .quickMove, surface: .text))
     }
 
+    @Test func coachThisPlaceholderFallbackUsesHonestEvidenceGapNotice() throws {
+        let assessment = Self.quickMoveAssessment(
+            proofTest: "Run one clean 60-second rep: verdict first, one reason, then stop."
+        )
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "TODO: generate coach response here.",
+            previousCoachReply: nil,
+            latestUserTurn: "Can you coach this?",
+            turnDepth: .quickMove,
+            assessment: assessment,
+            evidenceCoverage: 0.1
+        )
+        let fallback = try #require(verdict.fallbackText)
+        #expect(verdict.blocked)
+        #expect(verdict.issues.contains(.placeholder))
+        #expect(fallback == CoachReliabilityGate.coachThisEvidenceGapFallback(surface: .text))
+        #expect(fallback != assessment.immediateCoachRead)
+        #expect(fallback != CoachReliabilityGate.staticFallback(turnDepth: .quickMove, surface: .text))
+        #expect(!fallback.lowercased().contains("verdict first"))
+        #expect(!fallback.lowercased().contains("decision up front"))
+    }
+
     @Test func fallbackNeverReintroducesTheDuplicateItIsEscaping() {
         // The provider duplicated the previous reply. Even if the local read wraps
         // that same proof test in extra context, the fallback must not re-emit it.
@@ -848,6 +870,173 @@ struct CoachReliabilityGateTests {
         }
     }
 
+    // MARK: - Cold-start jargon guard (no baseline -> no product jargon / fake metrics)
+
+    /// The exact leak the Arena `cold-start-no-data` fixture flags at 22/100:
+    /// a no-baseline reply that names an internal mode AND invents a filler
+    /// target. On a cold start (coverage pinned to 0.05) this must block and be
+    /// replaced with a clean plain-language first-rep invitation.
+    private static let coldStartJargonReply =
+        "No baseline yet, so start there. Do one Ah-Counter round: 60 seconds on a topic you know cold, aiming to stay under 4 fillers. That gives you a first number and me your starting point."
+
+    @Test func coldStartJargonBlocksAndRecoversClean() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: Self.coldStartJargonReply,
+            previousCoachReply: nil,
+            latestUserTurn: "What should I work on?",
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.05
+        )
+        #expect(verdict.issues.contains(.coldStartJargon))
+        #expect(verdict.blockingIssues.contains(.coldStartJargon))
+        #expect(verdict.blocked)
+        #expect(verdict.fallbackText == CoachReliabilityGate.coldStartFallback(surface: .text))
+        // The recovery must itself be clean of every cold-start marker.
+        let fb = CoachReliabilityGate.normalize(verdict.fallbackText ?? "")
+        #expect(!CoachReliabilityGate.leaksColdStartJargon(fb), "cold-start fallback must not itself leak jargon")
+        #expect(!fb.contains("let's"), "cold-start fallback must obey the no-let's coach register")
+    }
+
+    @Test func coldStartModeNameAloneBlocks() {
+        for reply in [
+            "Give a Sudden Death round a shot to see where you stand.",
+            "Start with an IM Conversation and I'll read it from there.",
+            "Run one rep and try to keep it under 3 fillers this time.",
+            "Do a quick rep — the goal is your first number so I can calibrate."
+        ] {
+            let verdict = CoachReliabilityGate.evaluate(
+                replyText: reply,
+                previousCoachReply: nil,
+                latestUserTurn: "what do I do first?",
+                turnDepth: .groundedRead,
+                assessment: Self.quickMoveAssessment(),
+                evidenceCoverage: 0.05
+            )
+            #expect(verdict.issues.contains(.coldStartJargon), "expected cold-start block for: \(reply)")
+            #expect(verdict.blocked)
+        }
+    }
+
+    @Test func coldStartCleanFirstRepReplyPasses() {
+        // The excellent-shape reply: honest, plain 60-second rep, no jargon, no
+        // invented metric. Must pass clean even at cold-start coverage.
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Good to have you here. No baseline yet, so start there — run a 60-second rep on something you know cold, like how you'd explain your job to a stranger. That gives me your real pace and where the point lands.",
+            previousCoachReply: nil,
+            latestUserTurn: "hey, what do I do first?",
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.05
+        )
+        #expect(!verdict.issues.contains(.coldStartJargon))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func establishedUserCitingFillerCountIsNeverColdStartBlocked() {
+        // A real user with a baseline may legitimately hear their own numbers.
+        // The guard must NOT fire above the cold-start coverage ceiling, even
+        // with "under 4 fillers" and a mode name present.
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Your last Ah-Counter round held under 4 fillers — that's real progress. Next rep, protect the close.",
+            previousCoachReply: nil,
+            latestUserTurn: "how did I do?",
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.55
+        )
+        #expect(!verdict.issues.contains(.coldStartJargon))
+    }
+
+    @Test func coldStartTrustRepairIsNotHijackedByJargonGuard() {
+        // Trust-repair owns its own surface; the cold-start guard must defer to
+        // it even at cold-start coverage so repair routing is unchanged.
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Fair. I don't have a read yet — do one Ah-Counter round and I'll name the gap.",
+            previousCoachReply: nil,
+            latestUserTurn: "that's not helpful",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.05
+        )
+        #expect(!verdict.issues.contains(.coldStartJargon))
+    }
+
+    // MARK: - Evidence overclaim on a no-baseline turn
+
+    /// The exact `placeholder-leak-049` overclaim: a live-style draft that
+    /// invents a rep to coach ("I can coach the latest rep: the close is the
+    /// usable signal…") on a turn with no baseline. Today this only trips a soft
+    /// floor-confidence smell and ships; it must now BLOCK and recover honestly.
+    private static let noBaselineOverclaimReply =
+        "I can coach the latest rep: the close is the usable signal, so make the final sentence the ask, then stop."
+
+    @Test func evidenceOverclaimOnNoBaselineBlocksAndRecoversHonestly() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: Self.noBaselineOverclaimReply,
+            previousCoachReply: nil,
+            latestUserTurn: "Can you coach this?",
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.05
+        )
+        #expect(verdict.issues.contains(.evidenceOverclaimNoBaseline))
+        #expect(verdict.blockingIssues.contains(.evidenceOverclaimNoBaseline))
+        // Distinguishable fallback trace: a blocking issue means the pipeline
+        // stamps reliabilityFallbackApplied and swaps the reply.
+        #expect(verdict.blocked)
+        #expect(verdict.fallbackText == CoachReliabilityGate.noBaselineReadFallback(surface: .text))
+        // The recovery must not itself repeat the invented-rep overclaim.
+        let fb = CoachReliabilityGate.normalize(verdict.fallbackText ?? "")
+        #expect(!CoachReliabilityGate.overclaimsRepEvidence(fb), "recovery must not itself overclaim a rep")
+    }
+
+    @Test func honestThinEvidenceReadIsNeverOverclaimBlocked() {
+        // lack-conviction-style: legitimately cites "the latest rep … only
+        // support a signal" but openly hedges ("not enough evidence", "Missing:").
+        // The acknowledgement guard must keep this safe even at cold-start
+        // coverage, so an honest read is never mistaken for an overclaim.
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "There is not enough evidence to call this lack of conviction overall. The latest rep and pace estimate only support a mechanics signal: hedge control before the recommendation. Missing: repeated pressure proof.",
+            previousCoachReply: nil,
+            latestUserTurn: "Do I lack conviction?",
+            turnDepth: .deepAssessment,
+            assessment: Self.deepAssessment(confidence: 0.20, evidence: ["hedges before recommendation"]),
+            evidenceCoverage: 0.05
+        )
+        #expect(!verdict.issues.contains(.evidenceOverclaimNoBaseline))
+    }
+
+    @Test func establishedUserRepReadIsNeverOverclaimBlocked() {
+        // With a real baseline (coverage above the cold-start ceiling), citing
+        // "the latest rep" and "the close is the signal" is legitimate coaching,
+        // never an overclaim.
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: Self.noBaselineOverclaimReply,
+            previousCoachReply: nil,
+            latestUserTurn: "Can you coach this?",
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.55
+        )
+        #expect(!verdict.issues.contains(.evidenceOverclaimNoBaseline))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func overclaimGuardDefersToTrustRepairSurface() {
+        // Trust-repair owns its own surface; the overclaim guard must defer even
+        // at cold-start coverage so repair routing is unchanged.
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: Self.noBaselineOverclaimReply,
+            previousCoachReply: "Earlier read.",
+            latestUserTurn: "that's not helpful",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.05
+        )
+        #expect(!verdict.issues.contains(.evidenceOverclaimNoBaseline))
+    }
+
     // MARK: - Canned fallback never repeats across turns
 
     @Test func staticFallbackVariantsAreDistinctHonestAndLiveShorter() {
@@ -861,9 +1050,12 @@ struct CoachReliabilityGateTests {
             for (i, v) in textVariants.enumerated() {
                 #expect(!v.isEmpty)
                 let lowered = v.lowercased()
-                for banned in ["amazing", "nailed", "crushed", "you're ready", "guaranteed"] {
+                for banned in ["amazing", "nailed", "crushed", "you're ready", "guaranteed", "let's"] {
                     #expect(!lowered.contains(banned), "text variant \(i) for \(depth) contains \(banned)")
                 }
+            }
+            for (i, v) in liveVariants.enumerated() {
+                #expect(!v.lowercased().contains("let's"), "live variant \(i) for \(depth) contains let's")
             }
             // The canonical (first) live line stays no longer than the text one.
             #expect(liveVariants[0].count <= textVariants[0].count)

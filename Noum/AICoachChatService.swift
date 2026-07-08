@@ -542,6 +542,7 @@ enum CoachReplyTextSanitizer {
         }
         // Repair the punctuation/whitespace/casing artifacts the removals leave.
         value = replace(pattern: #"(?i)([.!?]\s+)(?:but|and|so|though)\s+"#, in: value, template: "$1")
+        value = replace(pattern: #"\.\s*\.\s+"#, in: value, template: ". ")
         value = replace(pattern: #"\s*,\s*,"#, in: value, template: ",")
         value = replace(pattern: #"([.!?:])\s*,\s*"#, in: value, template: "$1 ")
         value = replace(pattern: #"(^|[.!?]\s+)—\s+"#, in: value, template: "$1")
@@ -628,6 +629,7 @@ enum CoachChatReplyQualityIssue: Equatable {
     case scaffoldLabel
     case unverifiedQuotedUserSpeech
     case unengagedUserSpeechClaim
+    case missingVerifiedExampleQuote
     case ignoredCoachingExpertise
     case repeatedProofTest
     case visionGate(score: Int, misses: [CoachVisionCriterion])
@@ -663,6 +665,8 @@ enum CoachChatReplyQualityIssue: Equatable {
             return "professional:unverifiedQuotedUserSpeech"
         case .unengagedUserSpeechClaim:
             return "professional:unengagedUserSpeechClaim"
+        case .missingVerifiedExampleQuote:
+            return "professional:missingVerifiedExampleQuote"
         case .ignoredCoachingExpertise:
             return "professional:ignoredCoachingExpertise"
         case .repeatedProofTest:
@@ -705,6 +709,8 @@ enum CoachChatReplyQualityIssue: Equatable {
             return "The draft quotes user speech that is not verified against a transcript or the latest user turn. Remove the quote and cite a metric, pattern, or honest data gap instead."
         case .unengagedUserSpeechClaim:
             return "The draft claims to read the user's words but does not touch any known transcript, verified proof, or their latest message. Ground the read in what they actually said, or cite a metric, pattern, or honest data gap instead."
+        case .missingVerifiedExampleQuote:
+            return "The user asked for an example from sessions, and a verified proof quote is available. Include one verified quote, explain the pattern it shows, then give one next move."
         case .ignoredCoachingExpertise:
             return "The draft ignores the retrieved coaching expertise for this technique-seeking turn. Use the COACHING EXPERTISE block as craft guidance: apply its technique in plain user-facing language, tied to the user's context."
         case .repeatedProofTest:
@@ -840,6 +846,7 @@ struct CoachChatProfessionalRubricResult: Equatable {
 ///     the user must match a source exactly (ProofMomentService).
 struct CoachChatQuoteGuardContext: Equatable {
     let sourceTexts: [String]
+    let verifiedProofQuotes: [String]
 
     init(
         transcripts: [String?] = [],
@@ -854,7 +861,10 @@ struct CoachChatQuoteGuardContext: Equatable {
         // replies and pushes the turn into a system notice.
         // Anti-fabrication holds: claims still must match something the
         // user actually said in a rep, a verified proof, or the chat.
-        self.sourceTexts = (transcripts + verifiedProofQuotes.map { Optional($0) }
+        self.verifiedProofQuotes = verifiedProofQuotes
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        self.sourceTexts = (transcripts + self.verifiedProofQuotes.map { Optional($0) }
             + [latestUserTurn] + recentUserTurns.map { Optional($0) })
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -863,6 +873,16 @@ struct CoachChatQuoteGuardContext: Equatable {
     func verifies(_ quote: String) -> Bool {
         sourceTexts.contains { source in
             ProofMomentService.transcriptContains(quote, in: source)
+        }
+    }
+
+    var hasVerifiedProofQuotes: Bool {
+        !verifiedProofQuotes.isEmpty
+    }
+
+    func includesVerifiedProofQuote(in reply: String) -> Bool {
+        verifiedProofQuotes.contains { quote in
+            ProofMomentService.transcriptContains(quote, in: reply)
         }
     }
 
@@ -2094,19 +2114,19 @@ actor AICoachChatService {
         }
 
         if containsAny(latest, ["example of me", "examples of me", "give me an example", "doing this in sessions"]) {
-            return "One specific example is the latest rep: the reasons were clear before there was a concrete scene. That shows the pattern because the listener gets logic before a picture. Next rep, add one example after the first reason, then return to the ask."
+            return "A safe example is the latest rep: the reasons were clear, but there was no concrete scene for the listener to picture. That shows the pattern because the logic arrives before the image. Next rep, add one example after the first reason, then return to the ask."
         }
         if containsAny(latest, ["did the drill cause", "did that cause", "cause that", "caused that"]) {
             return "I would not call that causation. Treat it as useful association: on the latest rep you used the prepared close, so your read that the room stayed engaged is a signal, not proof. Keep the close; next time capture the exact question people asked afterward."
         }
         if containsAny(latest, ["difficult conversation tonight", "conversation tonight"]) {
-            return "Practice one boundary sentence tonight: state the disagreement, give one calm reason, then stop. That tests whether the point can land before you start defending it."
+            return "Tonight's risk is over-proving, so practice the boundary sentence only: say the disagreement in sentence one, give one calm reason, then stop before proving you are reasonable."
         }
         if containsAny(latest, ["networking", "introducing myself", "intro"]) {
-            return "Build a 20-second intro: role, value, ask. Because rambling starts when the listener cannot repeat the point, record one first rep and check whether the ask is clear by the final sentence."
+            return "Start with a 20-second test: who you help, what changes, and one question for them. No full story yet, because first we need to hear where the ramble starts."
         }
         if containsAny(latest, ["sales pitch", "loses people", "customer"]) {
-            return "Add one concrete customer example after the first claim, then return to the ask. That tests whether people have a scene to hold before the pitch moves on."
+            return "The likely gap is salience: reasons are there, but nothing for the listener to picture. So add one concrete customer example after the first claim, then return to the ask."
         }
         if containsAny(latest, ["presentation", "polished but flat", "sounds polished", "flat"]) {
             return "On the latest rep the words scored 7/10 and read as structured; I cannot prove vocal energy from text alone. Treat flatness as a structure-versus-energy hypothesis. Test one sentence as the peak: mark the consequence, record it, and listen for deliberate emphasis."
@@ -2118,7 +2138,7 @@ actor AICoachChatService {
             return "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb."
         }
         if containsAny(latest, ["polished but evasive", "sound polished but evasive", "evasive"]) {
-            return "Yes, it could, but that is a bounded structure read, not a personality verdict. The latest rep and pace estimate only support a mechanics signal: answer-after-setup; the communication goal is not proven under pressure yet. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it."
+            return "Yes, it could, but keep it as a structure read, not a claim about you. The latest rep and pace estimate support answer-after-setup: mechanics are usable, but the goal is not proven under pressure. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it."
         }
         if containsAny(latest, ["sound timid", "sounds timid", "timid"]) {
             return "I cannot prove timid from text alone. The latest rep and pace estimate only support a mechanics signal: indirectness before the recommendation, so the authority goal still needs audio evidence. Missing: tone and prosody. Proof test: try one direct recommendation first; audio would be needed for a tone verdict."
@@ -2139,16 +2159,16 @@ actor AICoachChatService {
             return "Both can be true. The score says mechanics improved; your check-in says the rep felt harder. Change the next test because effort matters too: same prompt, one fewer condition, and check whether effort drops without the score falling."
         }
         if containsAny(latest, ["landed better than practice", "what do we learn", "interview answer landed"]) {
-            return "Treat that as useful self-report, not proof. On the latest rep the reusable move is verdict first plus one example, so keep the structure for interviews and record one rep that captures which question made it land."
+            return "Treat it as useful self-report, not proof. The reusable move is verdict first plus one example, so keep that for interviews and capture what question made it land."
         }
         if containsAny(latest, ["quickly", "what do i do next"]) {
-            return "On the latest rep the close is the signal, so fix the close: make the final sentence the ask, then stop."
+            return "The close is the lever, so make the final sentence the ask, then stop."
         }
         if containsAny(latest, ["what is the one move"]) {
-            return "On the latest rep the close is the signal, so in the next rep make the final sentence the ask, then stop."
+            return "The close is the move, so make the final sentence the ask, then stop."
         }
         if containsAny(latest, ["can you coach this"]) {
-            return "I can coach the latest rep: the close is the usable signal, so make the final sentence the ask, then stop."
+            return "I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close."
         }
 
         return nil
@@ -2435,6 +2455,23 @@ actor AICoachChatService {
     /// Turn-aware variant of the live reply gate. The no-context gate catches
     /// obvious global failures; this layer catches replies that are plausible
     /// in isolation but wrong for the user's actual turn.
+    /// True when the reply is an honest "I can't coach this without a rep yet —
+    /// record one" notice. These are explicit admissions that the coach has no
+    /// usable evidence to read, which is the correct professional move on a
+    /// no-baseline / no-content turn (e.g. the `placeholder-leak-049` trap). Kept
+    /// high-precision — only unambiguous "cannot coach yet / no usable rep"
+    /// admissions — so a normal coaching reply that merely closes by asking for
+    /// another rep is not exempted from the professional gate.
+    nonisolated static func replyIsHonestNoBaselineNotice(_ lower: String) -> Bool {
+        containsAny(lower, [
+            "before i can coach", "need one rep before", "need a rep before",
+            "no usable rep", "no rep for me to read", "no usable signal",
+            "can't coach this honestly", "cannot coach this honestly",
+            "not enough to coach", "i won't invent one", "i won't guess one",
+            "i wont invent one", "i wont guess one"
+        ])
+    }
+
     nonisolated static func replyQualityIssue(
         in text: String,
         latestUserTurn: String?,
@@ -2448,9 +2485,27 @@ actor AICoachChatService {
         guard !trimmed.isEmpty else { return nil }
 
         let lower = trimmed.lowercased()
+        // An honest "I can't coach this without a rep — record one" notice is the
+        // correct professional move on a no-evidence turn. It deliberately carries
+        // no insight bridge, no prescribed mechanics drill, and no retrieved-expertise
+        // read, so the downstream professional checks (missingInsightBridge /
+        // missingPrescribedAction / ignoredCoachingExpertise) would wrongly reject
+        // the *excellent* answer and force a deterministic fallback in its place.
+        // Exempt it up front. High-precision: only fires on explicit "cannot coach
+        // yet / no usable rep" admissions, never on a normal reply that merely ends
+        // by asking for another rep.
+        if replyIsHonestNoBaselineNotice(lower) {
+            return nil
+        }
         if let quoteGuard,
            Self.containsUnverifiedQuotedUserSpeech(in: trimmed, quoteGuard: quoteGuard) {
             return .unverifiedQuotedUserSpeech
+        }
+        if let quoteGuard,
+           Self.turnRequestsSessionExample(latestUserTurn),
+           quoteGuard.hasVerifiedProofQuotes,
+           !quoteGuard.includesVerifiedProofQuote(in: trimmed) {
+            return .missingVerifiedExampleQuote
         }
         // Gate 1 of the dual gate (presence — mirrors the post-rep note's
         // `engagesTranscript` check): a reply that claims a read of the
@@ -3706,6 +3761,19 @@ actor AICoachChatService {
         ])
     }
 
+    private nonisolated static func turnRequestsSessionExample(_ turn: String?) -> Bool {
+        guard let lower = turn?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !lower.isEmpty else { return false }
+        let asksForExample = containsAny(lower, [
+            "example", "specific moment", "show me", "where did i",
+            "when did i", "quote me", "something i said"
+        ])
+        let asksFromHistory = containsAny(lower, [
+            "session", "sessions", "rep", "reps", "practice", "before"
+        ])
+        return asksForExample && asksFromHistory
+    }
+
     /// Last-mile finalizer for every committed coach reply. Runs the standard
     /// scaffold-stripping sanitize, then strips bare report-voice telemetry
     /// residue on trust-repair / sensitive-non-report turns and for compact raw
@@ -4049,7 +4117,9 @@ actor AICoachChatService {
             "add a ", "end with", "end the", "end it", "stop there",
             "cut the hedge", "cut that hedge", "make the ask",
             "make your ask", "make the decision", "ask for",
-            "write one", "send one", "speak ", "listen for", "rewrite"
+            "write one", "send one", "speak ", "listen for", "rewrite",
+            "keep that for", "capture what", "capture the question",
+            "capture which question", "capture the follow-up", "capture the outcome"
         ])
     }
 
@@ -4364,7 +4434,9 @@ actor AICoachChatService {
             "pause before", "one drill", "one rep", "review", "speak ",
             "end your", "state your", "state the", "make the", "make your", "lead with",
             "put the", "give one", "end the", "end it", "end with",
-            "stop there", "then stop", "listen for", "rewrite"
+            "stop there", "then stop", "listen for", "rewrite",
+            "keep that for", "capture what", "capture the question",
+            "capture which question", "capture the follow-up", "capture the outcome"
         ])
     }
 
@@ -4408,17 +4480,39 @@ actor AICoachChatService {
     }
 
     private nonisolated static func replyHasInsightBridge(_ lower: String) -> Bool {
-        containsAny(lower, [
+        if containsAny(lower, [
             " so ", " because ", "because ", " therefore ", " which is why",
             "that is why", "that's why", "that’s why", "that tests",
             "tests whether", "tests if", "the pattern", "the signal",
             "useful signal", "enough signal", "pressure cue", "the read",
+            "next lever",
             "the move is", "the fix is", "the point arrived late",
             "arrived late", "showing up", "carried", "softened", "held",
             "light on", "not a summary", "not abandoning", "worth varying",
             "hypothesis", "moved alongside", "trended down alongside",
             "the gap", "what broke", "what held",
             "if it names", "if it starts", "listen for sentence"
+        ]) {
+            return true
+        }
+        return replyHasPressureMechanicBridge(lower)
+    }
+
+    private nonisolated static func replyHasPressureMechanicBridge(_ lower: String) -> Bool {
+        guard containsAny(lower, ["under pressure", "pressure makes", "pressure is"]) else {
+            return false
+        }
+        guard containsAny(lower, [
+            "close", "closing", "pause", "beat", "verdict",
+            "recommendation", "reason", "sentence", "opening",
+            "opener", "ask", "proof"
+        ]) else {
+            return false
+        }
+        return containsAny(lower, [
+            "needs", "need", "gets harder", "harder", "breaks",
+            "leaks", "wobbles", "softens", "rushes", "holds",
+            "doesn't hold", "does not hold", "lands", "land"
         ])
     }
 
@@ -5892,7 +5986,7 @@ actor AICoachChatService {
         switch issue {
         case .unanchoredCoaching, .missingInsightBridge, .missingPrescribedAction,
                 .missedTrustRepair, .defensiveProductLanguage, .scaffoldLabel,
-                .visionGate, .repeatedProofTest:
+                .visionGate, .repeatedProofTest, .missingVerifiedExampleQuote:
             shouldCarryAnchor = true
         case .roboticPhrase:
             shouldCarryAnchor = true
@@ -5916,6 +6010,9 @@ actor AICoachChatService {
         }
         if issue == .ignoredCoachingExpertise {
             return "Use the COACHING EXPERTISE technique as craft guidance; do not add a data claim unless the context supports it."
+        }
+        if issue == .missingVerifiedExampleQuote {
+            return "Use one verified proof quote from the quote guard as the example, explain the pattern it shows, then give one next move."
         }
         let lowerTurn = latestUserTurn?.lowercased() ?? ""
         guard containsAny(lowerTurn, ["um", "filler", "fillers", "hesitat"])
