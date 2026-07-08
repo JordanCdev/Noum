@@ -19,7 +19,7 @@ import { dirname, join } from 'node:path';
 import { composeSystemPrompt, extractAll } from '../lib/extractPrompt.mjs';
 import { renderContext } from '../lib/context.mjs';
 import { runChecks } from '../lib/checks.mjs';
-import { finalizeReplyForFixture } from '../lib/finalizeReply.mjs';
+import { productionSurfaceReplyForFixture } from '../lib/productionSurface.mjs';
 import { buildJudgeUserPayload, parseJudge, JUDGE_SYSTEM, JUDGE_VERSION } from '../lib/judge.mjs';
 import { combineScore } from '../lib/score.mjs';
 import { makeProvider, COACH_MODEL, JUDGE_MODEL } from '../lib/provider.mjs';
@@ -187,7 +187,12 @@ async function cmdRun() {
       const generateSystem = providerName === 'anthropic' ? req.systemBlocks : req.system;
       const gen = await provider.generate({ id: fx.id }, { system: generateSystem, messages: req.messages, maxTokens: req.maxTokens });
       const rawReply = gen.text || '';
-      const finalizer = finalizeReplyForFixture(rawReply, fx);
+      const recentReplies = (fx.priorChatTurns || []).filter((t) => t.role === 'assistant').map((t) => t.text);
+      const productionSurface = productionSurfaceReplyForFixture(rawReply, fx, {
+        contextBlock: req.contextBlock,
+        recentReplies,
+      });
+      const finalizer = productionSurface.finalizer;
       const reply = providerName === 'replay' ? rawReply : finalizer.text;
       rec.reply = reply;
       if (finalizer.changed) {
@@ -199,6 +204,17 @@ async function cmdRun() {
             : 'finalizedUserText',
           rawReply,
           finalizedReply: finalizer.text,
+        };
+      }
+      if (productionSurface.reliabilityGate.changed) {
+        rec.productionSurface = {
+          changed: true,
+          changes: productionSurface.changes,
+          scoringMode: 'diagnosticUserVisibleApproximation',
+          reliabilityGate: productionSurface.reliabilityGate,
+          rawReply,
+          finalizedReply: finalizer.text,
+          surfaceReply: productionSurface.text,
         };
       }
       rec.trace = {
@@ -221,14 +237,16 @@ async function cmdRun() {
       }
 
       // 2. deterministic checks
-      const recentReplies = (fx.priorChatTurns || []).filter((t) => t.role === 'assistant').map((t) => t.text);
       const deterministic = runChecks(reply, fx, { contextBlock: req.contextBlock, recentReplies });
       rec.deterministic = { findings: deterministic.findings, flagPenalty: deterministic.flagPenalty, hardCap: deterministic.hardCap, placeholderLeaks: deterministic.placeholderLeaks };
-      const userVisibleReply = providerName === 'replay' ? finalizer.text : reply;
-      const userVisibleDeterministic = runChecks(userVisibleReply, fx, { contextBlock: req.contextBlock, recentReplies });
+      const userVisibleReply = providerName === 'replay' ? productionSurface.text : reply;
+      const userVisibleDeterministic = providerName === 'replay'
+        ? productionSurface.deterministic
+        : runChecks(userVisibleReply, fx, { contextBlock: req.contextBlock, recentReplies });
       rec.userVisible = {
         reply: userVisibleReply,
         changedFromScoredReply: userVisibleReply !== reply,
+        reliabilityGate: productionSurface.reliabilityGate,
         deterministic: {
           findings: userVisibleDeterministic.findings,
           flagPenalty: userVisibleDeterministic.flagPenalty,

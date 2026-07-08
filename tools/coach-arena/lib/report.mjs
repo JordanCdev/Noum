@@ -134,6 +134,7 @@ function userVisibleDeterministicSummary(records) {
       gateBackedCappedReplies: 0,
       unbackedCappedReplies: 0,
       unbackedCappedFixtureIDs: [],
+      reliabilityFallbackReplies: 0,
       placeholderLeaks: 0,
       capCounts: {},
       gateBackedCapCounts: {},
@@ -150,11 +151,15 @@ function userVisibleDeterministicSummary(records) {
   let cappedReplies = 0;
   let gateBackedCappedReplies = 0;
   let unbackedCappedReplies = 0;
+  let reliabilityFallbackReplies = 0;
   let placeholderLeaks = 0;
   let changedFromScoredReply = 0;
   for (const r of checked) {
     const deterministic = r.userVisible?.deterministic || r.deterministic;
     if (r.userVisible?.changedFromScoredReply) changedFromScoredReply++;
+    if (r.userVisible?.reliabilityGate?.changed || r.productionSurface?.reliabilityGate?.changed) {
+      reliabilityFallbackReplies++;
+    }
     const capFindings = deterministicCapFindings(deterministic);
     if (deterministic.hardCap != null) {
       cappedReplies++;
@@ -187,6 +192,7 @@ function userVisibleDeterministicSummary(records) {
     gateBackedCappedReplies,
     unbackedCappedReplies,
     unbackedCappedFixtureIDs,
+    reliabilityFallbackReplies,
     placeholderLeaks,
     capCounts,
     gateBackedCapCounts,
@@ -446,10 +452,11 @@ function renderUserVisibleAudit(summary, provider) {
   L.push('|---|---|');
   L.push(`| Replies checked | ${summary.repliesChecked} |`);
   L.push(`| Changed from scored reply | ${summary.changedFromScoredReply} |`);
+  L.push(`| Reliability fallback mirrored | ${summary.reliabilityFallbackReplies ?? 0} |`);
   L.push(`| Replies with deterministic hard caps | ${summary.cappedReplies} |`);
   L.push(`| Likely blocked/repaired by live gate | ${summary.gateBackedCappedReplies ?? 0} |`);
   L.push(`| No production backstop identified | ${summary.unbackedCappedReplies ?? 0} |`);
-  L.push(`| Placeholder/fallback leaks after finalizer | ${summary.placeholderLeaks} |`);
+  L.push(`| Placeholder/fallback leaks after surface mirror | ${summary.placeholderLeaks} |`);
   const caps = Object.entries(summary.capCounts || {})
     .map(([key, count]) => `${key} ${count}`)
     .join(', ');

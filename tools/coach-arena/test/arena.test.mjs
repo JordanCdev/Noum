@@ -12,6 +12,7 @@ import { parseJudge } from '../lib/judge.mjs';
 import { renderContext } from '../lib/context.mjs';
 import { summarize } from '../lib/report.mjs';
 import { finalizeReplyForFixture } from '../lib/finalizeReply.mjs';
+import { productionSurfaceReplyForFixture } from '../lib/productionSurface.mjs';
 
 const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const baseFx = (over = {}) => ({ id: 'x', turnDepth: 'groundedRead', userTurn: 'what next?', goal: 'g', memoryState: {}, disqualifiers: [], ...over });
@@ -394,6 +395,44 @@ test('finalizer: requested metric answers keep their numbers', () => {
   assert.equal(result.changed, false);
 });
 
+test('production surface: cold-start product jargon falls back before user display', () => {
+  const fx = baseFx({
+    category: 'cold-start',
+    evidence: { noRatedSessions: true, noVoiceSet: true },
+    turnDepth: 'groundedRead',
+    userTurn: 'What should I work on?',
+  });
+  const raw = "No baseline yet, so start there.\n\nDo one Ah-Counter round: 60 seconds on a topic you know cold, aiming to stay under 4 fillers. That gives you a first number.";
+  const result = productionSurfaceReplyForFixture(raw, fx, {
+    contextBlock: 'BASELINE\n- Not enough data for a stable baseline yet.',
+  });
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['coldStartJargon']);
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.ok(!result.text.includes('Ah-Counter'));
+  assert.ok(!/under\s+4\s+fillers/i.test(result.text));
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: clean finalized text does not invent a fallback', () => {
+  const fx = baseFx({
+    category: 'cold-start',
+    evidence: { noRatedSessions: true, noVoiceSet: true },
+    turnDepth: 'groundedRead',
+    userTurn: 'What should I work on?',
+  });
+  const raw = "No baseline yet, so start there. Record 60 seconds on something you know well, and I'll have something real to read.";
+  const result = productionSurfaceReplyForFixture(raw, fx, {
+    contextBlock: 'BASELINE\n- Not enough data for a stable baseline yet.',
+  });
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
 test('checks: sensitive goal-change metric dump flags report voice', () => {
   const fx = baseFx({
     category: 'goal-change',
@@ -729,6 +768,11 @@ test('report: user-visible deterministic audit is separate from official scoring
       ...scoredRecord({ score: { final: 82, placeholderLeaks: 1 } }),
       userVisible: {
         changedFromScoredReply: true,
+        reliabilityGate: {
+          changed: true,
+          issues: ['coldStartJargon'],
+          source: 'CoachReliabilityGate.coldStartFallback',
+        },
         deterministic: {
           findings: [
             { id: 'sensitiveTurnReportVoice', tier: 'flag', capKey: null },
@@ -772,6 +816,7 @@ test('report: user-visible deterministic audit is separate from official scoring
   assert.equal(summary.userVisibleDeterministic.cappedReplies, 2);
   assert.equal(summary.userVisibleDeterministic.gateBackedCappedReplies, 1);
   assert.equal(summary.userVisibleDeterministic.unbackedCappedReplies, 1);
+  assert.equal(summary.userVisibleDeterministic.reliabilityFallbackReplies, 1);
   assert.deepEqual(summary.userVisibleDeterministic.unbackedCappedFixtureIDs, ['unmodeled-cap']);
   assert.equal(summary.userVisibleDeterministic.placeholderLeaks, 0);
   assert.equal(summary.userVisibleDeterministic.capCounts.voiceIntegrity, 2);

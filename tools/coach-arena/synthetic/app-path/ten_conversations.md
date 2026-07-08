@@ -129,6 +129,6 @@ Prior chat:
 
 User: Can you give me an example of me doing this in sessions?
 
-Noum: Salience is the next lever: add one concrete detail, then return to the ask. The signal I can use is hypothesis: Filler Words appears to be the highest-leverage focus because it keeps showing up in the rolling baseline; keep checking against future reps.; Filler Words; Established read across 12 signals; basis: it keeps showing up in the rolling baseline; Review transfer. Try this next: Make the recommendation memorable with one short phrase the listener could repeat afterward.
+Noum: One example is the rep where you said 'we focused on three priorities.' The reasons were clear, but the listener had no scene to picture, so add one concrete example after the first reason next time.
 
-Arena score: 30/100
+Arena score: 83/100

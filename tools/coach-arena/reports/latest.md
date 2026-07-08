@@ -1,7 +1,7 @@
-# Coach Arena — run_2026-07-08_19-04-27
+# Coach Arena — run_2026-07-08_19-32-18
 
 Provider: `replay` · coach model: `claude-sonnet-4-6` · judge model: `claude-sonnet-4-6`
-Git: `778f544d` on `ux-overhaul` (+34 dirty) · prompt: CoachContextBuilder.swift@08e780cddc2e2106, AICoachChatService.swift@c55a47f9ddaba868
+Git: `667735c8` on `ux-overhaul` (+4 dirty) · prompt: CoachContextBuilder.swift@08e780cddc2e2106, AICoachChatService.swift@c55a47f9ddaba868
 
 ## Headline
 
@@ -46,11 +46,12 @@ Diagnostic only: replay judge scores remain tied to raw captured replies, and re
 |---|---|
 | Replies checked | 51 |
 | Changed from scored reply | 40 |
-| Replies with deterministic hard caps | 5 |
-| Likely blocked/repaired by live gate | 5 |
+| Reliability fallback mirrored | 1 |
+| Replies with deterministic hard caps | 4 |
+| Likely blocked/repaired by live gate | 4 |
 | No production backstop identified | 0 |
-| Placeholder/fallback leaks after finalizer | 1 |
-| Cap breakdown | voiceIntegrity 4, ignoresIntent 1, placeholderOrBroken 1 |
+| Placeholder/fallback leaks after surface mirror | 0 |
+| Cap breakdown | voiceIntegrity 4 |
 | Unbacked capped fixture IDs | none |
 
 ## App-path evidence

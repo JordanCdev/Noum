@@ -1,15 +1,15 @@
 # Coach Arena Latest Report
 
-- Generated: `2026-07-08T19:03:47+00:00`
+- Generated: `2026-07-08T19:52:48+00:00`
 - Candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Fixtures: `50`
-- Average: `77.5/100`
-- Passes score/coverage thresholds: `False`
+- Average: `78.56/100`
+- Passes score/coverage thresholds: `True`
 - Real-pipeline evidence passes: `False`
 - Evidence claim: `localEvaluationOnly`
 - Trace quality passes: `True`
-- Placeholder/fallback leaks: `1`
-- Local fixture failures: `1`
+- Placeholder/fallback leaks: `0`
+- Local fixture failures: `0`
 
 ## Report Lens and Canonical Paths
 
@@ -22,7 +22,7 @@
 ## Type Averages
 
 - `deepAssessment`: `80.67/100`
-- `groundedRead`: `76.89/100`
+- `groundedRead`: `79.83/100`
 - `quickMove`: `77.18/100`
 - `trustRepair`: `77.22/100`
 
@@ -38,10 +38,7 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 
 ## Real-Pipeline Evidence
 
-- `1 app-path fixture(s) below local quality floor 70: examples-from-sessions-010`
-- `source Swift app-path freshness: dirty coach source files after app-path dump: Noum/AICoachChatService.swift,Noum/AskNoumStore.swift,Noum/CoachContextBuilder.swift,Noum/CoachPromptBundle.swift,Noum/CoachReliabilityGate.swift,NoumTests/CoachChatConversationEvaluationTests.swift,NoumTests/CoachJudgementLayerTests.swift,NoumTests/CoachReliabilityGateTests.swift,+1 more`
-- `source Swift app-path readiness warnings: appPathFloorFailures,targetReplyMismatch,semanticGateFailures`
-- `source Swift app-path report did not pass its app-path floor`
+- `source Swift app-path freshness: dirty coach source files after app-path dump: NoumTests/CoachChatConversationEvaluationTests.swift`
 
 ## Trace Audit
 
@@ -65,16 +62,16 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 ## Previous Run
 
 - Status: `compared`
-- Previous generated: `2026-07-08T18:33:48+00:00`
+- Previous generated: `2026-07-08T19:41:36+00:00`
 - Previous candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Candidate changed: `False`
 - Fixture count changed: `False`
-- Average delta: `0.0`
-- Failure count delta: `0`
-- Placeholder leak delta: `0`
-- Pass state changed: `False`
-- Type average deltas: `deepAssessment` `0.0`, `groundedRead` `0.0`, `quickMove` `0.0`, `trustRepair` `0.0`
-- Cleared failures: `none`
+- Average delta: `1.06`
+- Failure count delta: `-1`
+- Placeholder leak delta: `-1`
+- Pass state changed: `True`
+- Type average deltas: `deepAssessment` `0.0`, `groundedRead` `2.94`, `quickMove` `0.0`, `trustRepair` `0.0`
+- Cleared failures: `examples-from-sessions-010`
 - New failures: `none`
 
 ## Coverage
@@ -82,31 +79,25 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 - Source: `appPathReport`
 - Source schema: `coach-chat-conversation-app-path-eval-v1`
 - Source surface: `text`
-- Source app-path floor: `False`
-- Source app-path floor failures: `2`
-- App-path local fixture floor: `False`
-- Source target-reply mismatches: `2`
-- Source app-path failure samples: `2` of `2`
-- Source trace git commits: `778f544d`
+- Source app-path floor: `True`
+- Source app-path floor failures: `0`
+- App-path local fixture floor: `True`
+- Source target-reply mismatches: `0`
+- Source app-path failure samples: `0` of `0`
+- Source trace git commits: `667735c8`
 - Source traces missing git commit: `0`
-- Current git commit: `778f544d`
-- Dirty coach source files: `9`
+- Current git commit: `667735c8`
+- Dirty coach source files: `1`
 - Source freshness passes: `False`
 - Coverage passes: `True`
 - Requested fixtures: `50`
 - Matched fixtures: `50`
 - Unmatched fixtures: `0`
 - Ambiguous fixtures: `0`
-- Source freshness failures: `dirty coach source files after app-path dump: Noum/AICoachChatService.swift,Noum/AskNoumStore.swift,Noum/CoachContextBuilder.swift,Noum/CoachPromptBundle.swift,Noum/CoachReliabilityGate.swift,NoumTests/CoachChatConversationEvaluationTests.swift,NoumTests/CoachJudgementLayerTests.swift,NoumTests/CoachReliabilityGateTests.swift,+1 more`
-
-### Source App-Path Failure Samples
-
-- `answer-depth-one-example` / `answer-depth-one-example-conversation` turn `1`: `appPathFloor, qualityGate, semanticGate, targetReplyMismatch`; semantic `failed:missingIntentFit`; quality `fallback:deterministicAssessmentAfterContentRejected`
-- `examples-from-sessions-010` / `arena-examples-from-sessions-010-app-path-conversation` turn `0`: `appPathFloor, qualityGate, targetReplyMismatch`; semantic `passed`; quality `fallback:deterministicAssessmentAfterContentRejected`
+- Source freshness failures: `dirty coach source files after app-path dump: NoumTests/CoachChatConversationEvaluationTests.swift`
 
 ## Worst Fixtures
 
-- `examples-from-sessions-010` `groundedRead`: `30/100` - fixture disqualifier triggered: no example; fixture-specific disqualifier triggered; missing verified quote anchor; quality/provider fallback output cannot score as normal coaching; reply does not match expected coach move
 - `cold-generic-016` `trustRepair`: `70/100` - no local failure reason
 - `pace-rushing-019` `groundedRead`: `70/100` - no local failure reason
 - `confidence-clean-stop-025` `quickMove`: `70/100` - no local failure reason
@@ -116,3 +107,4 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 - `interview-prep-006` `quickMove`: `72/100` - no local failure reason
 - `leadership-transfer-capture-026` `quickMove`: `72/100` - no local failure reason
 - `semantic-filler-use-040` `groundedRead`: `72/100` - no local failure reason
+- `prompt-echo-041` `groundedRead`: `72/100` - no local failure reason

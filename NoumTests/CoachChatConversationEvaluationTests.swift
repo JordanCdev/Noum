@@ -15,13 +15,23 @@ import XCTest
 struct CoachChatAppPathConversationScript {
     let conversation: CoachChatConversationFixture
     let seedCoachReplies: [String]
+    /// Verified proof quotes to seed into `ProofMomentStore.shared` before this
+    /// fixture runs. When the user asks for a session example and a verified
+    /// proof exists, the pipeline's `missingVerifiedExampleQuote` gate requires
+    /// the reply to cite one — so a fixture whose gold cites a past-rep quote
+    /// must supply that quote as real evidence (mirrors the shipping path where
+    /// the proof archive holds the user's actual words). Seeded per-fixture and
+    /// cleared after, so it never leaks into the other conversations' evidence.
+    let seedProofQuotes: [String]
 
     init(
         conversation: CoachChatConversationFixture,
-        seedCoachReplies: [String] = []
+        seedCoachReplies: [String] = [],
+        seedProofQuotes: [String] = []
     ) {
         self.conversation = conversation
         self.seedCoachReplies = seedCoachReplies
+        self.seedProofQuotes = seedProofQuotes
     }
 }
 
@@ -564,7 +574,13 @@ enum CoachChatConversationCorpus {
             fixtureID: "examples-from-sessions-010",
             userTurn: "Can you give me an example of me doing this in sessions?",
             coachReply: "One example is the rep where you said 'we focused on three priorities.' The reasons were clear, but the listener had no scene to picture, so add one concrete example after the first reason next time.",
-            seedCoachReplies: ["You tend to give reasons before the picture."]
+            seedCoachReplies: ["You tend to give reasons before the picture."],
+            // Include the trailing period: the guard extracts the quoted fragment
+            // *with* its inner period ('we focused on three priorities.'), and
+            // `transcriptContains` matches by substring — a period-bearing source
+            // contains the fragment whether or not the period is captured, so this
+            // verifies robustly in both directions (Gate 2 + the example gate).
+            seedProofQuotes: ["we focused on three priorities."]
         ),
         arenaAppPathScript(
             fixtureID: "outcome-not-causation-027",
@@ -699,7 +715,8 @@ enum CoachChatConversationCorpus {
         fixtureID: String,
         userTurn: String,
         coachReply: String,
-        seedCoachReplies: [String] = []
+        seedCoachReplies: [String] = [],
+        seedProofQuotes: [String] = []
     ) -> CoachChatAppPathConversationScript {
         CoachChatAppPathConversationScript(
             conversation: CoachChatConversationFixture(
@@ -712,7 +729,8 @@ enum CoachChatConversationCorpus {
                     )
                 ]
             ),
-            seedCoachReplies: seedCoachReplies
+            seedCoachReplies: seedCoachReplies,
+            seedProofQuotes: seedProofQuotes
         )
     }
 
@@ -5316,10 +5334,15 @@ struct CoachChatConversationCorpusTests {
             defaults.removePersistentDomain(forName: suiteName)
             CoachAssessmentCache.shared.invalidate()
             UserTrajectoryCache.shared.invalidate()
+            // Neutralize any proof archive state (leaked from a prior fixture or
+            // an earlier test) so each conversation sees exactly its own seeded
+            // evidence — the pipeline reads the shared singleton directly.
+            ProofMomentStore.shared.clear()
             defer {
                 defaults.removePersistentDomain(forName: suiteName)
                 CoachAssessmentCache.shared.invalidate()
                 UserTrajectoryCache.shared.invalidate()
+                ProofMomentStore.shared.clear()
             }
 
             let replySource = RuntimeConversationReplySource()
@@ -5338,6 +5361,30 @@ struct CoachChatConversationCorpusTests {
             )
             for seedReply in script.seedCoachReplies {
                 store.injectCoachTurn(seedReply)
+            }
+            // Seed this fixture's verified proof quotes into the shared proof
+            // archive the live pipeline reads (`ProofMomentStore.shared.recent`).
+            // A gold reply that cites a past-rep quote (e.g. examples-from-sessions)
+            // only clears the `unverifiedQuotedUserSpeech` / `missingVerifiedExampleQuote`
+            // gates if that quote is real evidence — this makes the citation honest,
+            // not fabricated. Uses `replaceForDebug` (the deterministic seed seam
+            // DevSeedData uses); cleared above + in defer so it can't leak.
+            if !script.seedProofQuotes.isEmpty {
+                ProofMomentStore.shared.replaceForDebug(
+                    script.seedProofQuotes.map { quote in
+                        ProofMomentRecord(
+                            sessionID: UUID(),
+                            proof: ProofMoment(
+                                quote: quote,
+                                technique: "Concrete Example",
+                                claim: "That is the specific rep to point back to.",
+                                sessionDate: Date(),
+                                isAIBacked: false,
+                                generatedAt: Date()
+                            )
+                        )
+                    }
+                )
             }
             // Real evidence for this conversation: the source fixture's practice
             // sessions. Injecting them (vs. an empty global store) makes the
