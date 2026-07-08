@@ -20,6 +20,7 @@ Xcode simulator test runs.
 | Placeholder/fallback leaks | 0 | 0 (both real engines) | ✅ |
 | node validate | 0 err | 51 fixtures · 0 err · 0 warn | ✅ |
 | node arena unit tests | green | 58/58 | ✅ |
+| **Full NoumTests unit suite (HEAD, sim)** | green | **3302 / 3302 pass · 0 fail** | ✅ |
 | Real traces prove pipeline | complete | 50/50 complete traces (retrieval, provider fallback, gates, latency, confidence, proof-dedup) | ✅ |
 | 10 end-to-end transcripts | yes | `ralph-transcripts-2026-07-08.md` | ✅ |
 
@@ -144,6 +145,15 @@ designed, not a gap to hack.
 4. **"VISION standard genuinely met"** — gated BY DESIGN on real-user longitudinal
    validation (18/100 audit cap); cannot be produced in a headless session and must not be
    faked.
+
+## Regression check on the aefc7a5c pipeline rewrite
+`aefc7a5c` ("chngs") rewrote `AICoachChatService` (+586), `CoachContextBuilder` (+77),
+`CoachReliabilityGate`, `CoachReasoningPass`, and `CoachChatEvaluationFixtures` but its
+effect was never verified against the full suite. I ran the **entire `NoumTests` unit
+target** on the clean simulator: **3302 / 3302 pass, 0 fail**. So beyond the two
+confidence-distinctness assertions fixed here, the pipeline rewrite introduced no
+unit-test regressions. (The 3 historically-flaky UI failures live in `NoumUITests`,
+excluded from this unit-only run.)
 
 ## Deliverables this loop
 - `reports/app-path/latest.{md,json}` + `failures.md` — regenerated from the HEAD dump.
