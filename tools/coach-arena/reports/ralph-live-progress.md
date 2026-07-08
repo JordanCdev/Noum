@@ -131,9 +131,13 @@ longitudinal outcomes + real-device TestFlight. That refusal is the product work
 designed, not a gap to hack.
 
 ## Exact remaining blockers
-1. **Prompt-layer ≥70** — not achievable via wording (17 confirmations) and unmeasurable
-   this session (no API key). Needs a live A/B of CONTEXT-block evidence surfacing, or a
-   stronger coach model. NOT a bug.
+1. **Prompt-layer ≥70** — not achievable via wording (17 confirmations) and **verified
+   unmeasurable this session**. No `ANTHROPIC_API_KEY`; and the `ARENA_PROVIDER=cli` fallback
+   is CONTAMINATED when nested in Claude Code — `claude -p --append-system-prompt` appends the
+   coach prompt to Claude Code's own agent prompt, which dominates (direct probe returned
+   Claude-Code-agent voice, not coach; 2-fixture cli mean=44 vs ~55–68 anthropic). So the
+   contamination swamps both an absolute score and a dual-arm A/B. Needs a real API key
+   (anthropic provider) or a plain-terminal `claude -p`. NOT a bug.
 2. **App-path quickMove type-avg 68.76** (< 70) — the deterministic local_judge flags some
    scripted quickMove replies "missing evidence anchor". Injecting sessions raised
    confidence but does NOT change the (forced) scripted reply text the judge scores, so this

@@ -54,6 +54,20 @@ Work branch `ralph-app-path-evidence-0708` → **draft PR #210** (base `ux-overh
    batch, one blind judge) — never the headline `latest.json` delta (judge panels + generation
    both drift per draw). Diagnose gaps from a fresh draw, not one baseline.
 
+## VERIFIED dead-end: `ARENA_PROVIDER=cli` is contaminated when nested in Claude Code
+`claude -p` IS authenticated in a background/interactive Claude Code session (probe returned
+`PROBE_OK`; the cron-context 401 does not apply here). BUT the arena's cli provider calls
+`claude -p --model claude-sonnet-4-6 --append-system-prompt "<coach>"` — and nested inside
+Claude Code, the coach prompt is APPENDED to Claude Code's own agent system prompt, which
+dominates. Direct probe on "That's not informative." returned Claude-Code-agent voice
+("What are you referring to? I don't have context from a previous exchange here."), not a
+coach reply; a 2-fixture cli run scored mean=44 (vs ~55–68 on the anthropic baseline). So
+cli-mode is NOT a valid coach measurement here, and the contamination is large enough to
+swamp a dual-arm A/B too. **Conclusion: there is NO valid prompt-layer measurement path in a
+nested Claude Code session — a real `ANTHROPIC_API_KEY` (anthropic provider) is required.**
+Do not retry cli-mode from within Claude Code. (It may be clean from a plain terminal where
+`claude -p` has no agent system prompt — untested; Jordan could run `./run.sh run` there.)
+
 ## Testing gotchas (re-confirmed this session)
 - Swift-Testing suite id ≠ filename: the corpus suite is `CoachChatConversationCorpusTests`
   (not `…EvaluationTests`); use `-only-testing:NoumTests/CoachChatConversationCorpusTests` for
