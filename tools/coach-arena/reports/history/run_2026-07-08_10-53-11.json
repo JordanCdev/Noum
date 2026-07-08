@@ -1,7 +1,7 @@
 {
-  "runId": "run_2026-07-08_11-13-55",
+  "runId": "run_2026-07-08_10-53-11",
   "meta": {
-    "runId": "run_2026-07-08_11-13-55",
+    "runId": "run_2026-07-08_10-53-11",
     "provider": "replay",
     "coachModel": "claude-sonnet-4-6",
     "judgeModel": "claude-sonnet-4-6",
@@ -10,7 +10,7 @@
       "commit": "7955b7378c9825ea0a80812007c5fd5a008599b9",
       "shortCommit": "7955b737",
       "branch": "ux-overhaul",
-      "dirty": 22
+      "dirty": 19
     },
     "versions": {
       "node": "v26.0.0",
@@ -29,8 +29,8 @@
         "bytes": 281639
       }
     ],
-    "startedAt": "2026-07-08T11:13:55.211Z",
-    "finishedAt": "2026-07-08T11:13:55.261Z"
+    "startedAt": "2026-07-08T10:53:11.639Z",
+    "finishedAt": "2026-07-08T10:53:11.691Z"
   },
   "records": [
     {
@@ -6339,166 +6339,63 @@
     "productionReady": false
   },
   "previous": {
-    "runId": "run_2026-07-08_10-53-29",
+    "runId": "run_2026-07-08_10-52-06",
     "summary": {
       "n": 51,
-      "scored": 51,
-      "missing": 0,
-      "mean": 70.2,
-      "median": 74,
-      "min": 22,
-      "max": 88,
-      "sub70": 16,
-      "deepAssessmentMean": 76.7,
-      "trustRepairMean": 73.3,
-      "byCategory": {
-        "deep-assessment": {
-          "n": 5,
-          "mean": 77.2
-        },
-        "trust-repair": {
-          "n": 9,
-          "mean": 70.4
-        },
-        "partial-pushback": {
-          "n": 1,
-          "mean": 70
-        },
-        "emotional-frustration": {
-          "n": 1,
-          "mean": 56
-        },
-        "repetition-callout": {
-          "n": 1,
-          "mean": 69
-        },
-        "interview-prep": {
-          "n": 1,
-          "mean": 75
-        },
-        "filler-pressure": {
-          "n": 1,
-          "mean": 73
-        },
-        "leadership-update": {
-          "n": 1,
-          "mean": 60
-        },
-        "confidence-ending": {
-          "n": 1,
-          "mean": 83
-        },
-        "greeting": {
-          "n": 1,
-          "mean": 56
-        },
-        "off-topic": {
-          "n": 1,
-          "mean": 45
-        },
-        "goal-change": {
-          "n": 3,
-          "mean": 45.3
-        },
-        "cold-start": {
-          "n": 1,
-          "mean": 22
-        },
-        "score-question": {
-          "n": 1,
-          "mean": 74
-        },
-        "plan-request": {
-          "n": 1,
-          "mean": 71
-        },
-        "memory-recall": {
-          "n": 1,
-          "mean": 73
-        },
-        "big-moment": {
-          "n": 1,
-          "mean": 84
-        },
-        "emotional": {
-          "n": 4,
-          "mean": 78.5
-        },
-        "mechanics": {
-          "n": 6,
-          "mean": 67.2
-        },
-        "pressure-mode": {
-          "n": 3,
-          "mean": 82
-        },
-        "transfer": {
-          "n": 3,
-          "mean": 77
-        },
-        "data-question": {
-          "n": 1,
-          "mean": 88
-        },
-        "readiness-trap": {
-          "n": 1,
-          "mean": 85
-        },
-        "fabrication-trap": {
-          "n": 1,
-          "mean": 81
-        },
-        "metadata-trap": {
-          "n": 1,
-          "mean": 64
-        }
-      },
-      "capCounts": {
-        "placeholderOrBroken": 2
-      },
-      "placeholderLeaks": 2,
+      "scored": 0,
+      "missing": 51,
+      "mean": 0,
+      "median": 0,
+      "min": 0,
+      "max": 0,
+      "sub70": 0,
+      "deepAssessmentMean": 0,
+      "trustRepairMean": 0,
+      "byCategory": {},
+      "capCounts": {},
+      "placeholderLeaks": 0,
       "dimensionMeans": {
-        "diagnosticIQ": 19.7,
-        "eqAttunement": 18.6,
-        "personalMemory": 14.5,
-        "interventionQuality": 12.1,
-        "dialogueFeel": 11.7
+        "diagnosticIQ": 0,
+        "eqAttunement": 0,
+        "personalMemory": 0,
+        "interventionQuality": 0,
+        "dialogueFeel": 0
       },
       "thresholds": {
         "goldSuiteMean": {
-          "value": 70.2,
+          "value": 0,
           "target": 70,
-          "pass": true
+          "pass": false
         },
         "deepAssessmentMean": {
-          "value": 76.7,
+          "value": 0,
           "target": 70,
-          "pass": true
+          "pass": false
         },
         "trustRepairMean": {
-          "value": 73.3,
+          "value": 0,
           "target": 65,
-          "pass": true
+          "pass": false
         },
         "zeroMissingReplies": {
-          "value": 0,
+          "value": 51,
           "target": 0,
-          "pass": true
+          "pass": false
         },
         "fixtureScoreFloor": {
-          "value": 22,
+          "value": 0,
           "target": 60,
           "pass": false
         },
         "zeroSub70Fixtures": {
-          "value": 16,
+          "value": 0,
           "target": 0,
-          "pass": false
+          "pass": true
         },
         "zeroPlaceholderLeaks": {
-          "value": 2,
+          "value": 0,
           "target": 0,
-          "pass": false
+          "pass": true
         }
       },
       "productionReady": false

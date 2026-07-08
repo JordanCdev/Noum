@@ -1,12 +1,23 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/stop_gate.sh",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jordan/src/GitHub/Noum/.claude/skills/noum-screenshots/capture.sh",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/skills/noum-screenshots/capture.sh",
             "timeout": 60
           }
         ]

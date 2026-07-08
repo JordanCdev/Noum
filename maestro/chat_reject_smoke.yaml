@@ -1,0 +1,45 @@
+# Chat-with-Noum rejection / error smoke flow.
+#
+# Purpose: prove a failed reply renders as the honest system notice
+# (askNoum.systemNotice) and NEVER as a coach bubble parroting a raw error or
+# scaffold string. Complements chat_smoke.yaml (happy path).
+#
+# Guaranteed-deterministic runner (bare launch flags, then run this flow):
+#
+#   xcrun simctl launch booted com.jordancoaten.noum \
+#       UI_TESTING UI_TESTING_SEED_FORCE UI_TESTING_CHAT_FORCE_NOTICE
+#   maestro test maestro/chat_reject_smoke.yaml
+#
+# UI_TESTING_CHAT_FORCE_NOTICE -> the pipeline returns .failure(.network),
+#                                 which the store renders as a system notice.
+appId: com.jordancoaten.noum
+---
+- launchApp:
+    stopApp: false
+    arguments:
+      UI_TESTING: true
+      UI_TESTING_SEED_FORCE: true
+      UI_TESTING_CHAT_FORCE_NOTICE: true
+
+- openLink: "noum://asktype"
+
+- assertVisible:
+    id: "askNoum.messageField"
+
+- tapOn:
+    id: "askNoum.messageField"
+- inputText: "What should I fix first?"
+- tapOn:
+    id: "askNoum.inputControl"
+
+# The failure surfaces as the system notice, not a coach bubble.
+- extendedWaitUntil:
+    visible:
+      id: "askNoum.systemNotice"
+    timeout: 15000
+
+# And the notice must never carry internal scaffold / report-voice telemetry.
+- assertNotVisible:
+    text: "(?i)Real read:"
+- assertNotVisible:
+    text: "(?i)score\\s+\\d+"

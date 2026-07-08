@@ -56,3 +56,10 @@ PLAN.md
 .env.local
 tools/coach-arena/.env
 tools/coach-arena/.env.local
+
+# Noum Stop-gate runtime state (per-session, opt-in)
+.claude/stop_gate_enabled
+.claude/stop_gate_base
+
+# local Anthropic key for live arena runs (never commit; rotate after use)
+.noum_anthropic_key

@@ -1,0 +1,68 @@
+# Chat-with-Noum smoke flow.
+#
+# Purpose: prove the "Type" chat surface (AskNoumView) renders a coach reply
+# on the happy path AND never leaks internal scaffold / report-voice telemetry
+# into a user-facing bubble. This is the display-layer regression guard for the
+# render-time sanitizer added in AskNoumCoachVisibleText.displayText(...).
+#
+# Determinism: the app reads BARE launch flags (ProcessInfo ... .contains("UI_TESTING")).
+# The GUARANTEED-deterministic runner is to cold-launch via simctl with the bare
+# flags, then run this flow (which reuses that instance and navigates via the
+# registered noum:// deep link). See maestro/RUN.md-style notes in the handoff.
+#
+#   xcrun simctl launch booted com.jordancoaten.noum \
+#       UI_TESTING UI_TESTING_SEED_FORCE UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY
+#   maestro test maestro/chat_smoke.yaml
+#
+# UI_TESTING            -> bypasses onboarding/first-run so the deep link routes.
+# UI_TESTING_SEED_FORCE -> seeds the improving-intermediate persona (>=1 rep) so
+#                          the chat opens with a composer, not the day-0 CTA.
+# UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY -> canned reply through the real pipeline
+#                          (no live provider / keys / latency).
+appId: com.jordancoaten.noum
+---
+# Reuse the simctl-launched instance (bare flags only apply to that cold start);
+# arguments here are a best-effort fallback for runners that deliver bare flags.
+- launchApp:
+    stopApp: false
+    arguments:
+      UI_TESTING: true
+      UI_TESTING_SEED_FORCE: true
+      UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY: true
+
+# Navigate straight to the typed chat surface via the registered deep link.
+- openLink: "noum://asktype"
+
+# The composer must be present (proves we are past the day-0 read-only gate).
+- assertVisible:
+    id: "askNoum.messageField"
+
+# Send a message through the single send funnel.
+- tapOn:
+    id: "askNoum.messageField"
+- inputText: "Give me one direct move for my next update."
+- tapOn:
+    id: "askNoum.inputControl"
+
+# A reply must render. The forced markdown reply sanitizes to plain text; the
+# bullet body is a stable substring that survives the strip. Wait through the
+# pending -> word-by-word reveal.
+- extendedWaitUntil:
+    visible:
+      text: ".*Answer first.*"
+    timeout: 15000
+
+# LAST LINE OF DEFENSE assertions: no internal scaffold label and no bare
+# report-voice telemetry may reach a user-facing bubble.
+- assertNotVisible:
+    text: "(?i)Real read:"
+- assertNotVisible:
+    text: "(?i)\\*\\*"          # raw markdown bold markers
+- assertNotVisible:
+    text: "(?i)score\\s+\\d+"   # report-voice telemetry ("score 74")
+- assertNotVisible:
+    text: "(?i)\\d+\\s+fillers" # report-voice telemetry ("5 fillers")
+
+# Rejection / error path lives in chat_reject_smoke.yaml (the forced-reply
+# harness flag is mutually exclusive per launch, so it needs its own cold
+# launch with UI_TESTING_CHAT_FORCE_NOTICE).

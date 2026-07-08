@@ -177,15 +177,38 @@ enum CoachMessageTextFormatter {
 }
 
 enum AskNoumCoachVisibleText {
+    /// Last-line render-time defense for coach text. The store SHOULD hand us
+    /// already-sanitized copy — `AICoachChatService` strips scaffolding before
+    /// storage — but the display layer must NEVER render raw scaffold (a
+    /// `Read:` / `Next move:` lead-in, a `**bold**` label) even if something
+    /// upstream slips: a legacy persisted row, a UI-test seed, or a future
+    /// pipeline change. This re-runs the SAME shared strip the service uses
+    /// (`CoachReplyTextSanitizer.coachReplyText`) — not a fork of the regex —
+    /// so a scaffold label can never reach a `Text()` view. It keeps bullets
+    /// and numbered steps so chat still scans well.
+    ///
+    /// Falls back to the trimmed original ONLY if the sanitizer would blank the
+    /// bubble entirely (an all-scaffold reply). That is an extreme edge the
+    /// store already routes to a failure notice upstream; a possibly-imperfect
+    /// line still beats a silently empty coach bubble.
+    static func displayText(for message: CoachMessage) -> String {
+        let sanitized = CoachReplyTextSanitizer.coachReplyText(from: message.text)
+        if !sanitized.isEmpty { return sanitized }
+        return message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     static func text(
         for message: CoachMessage,
         revealingMessageID: UUID?,
         revealedText: String
     ) -> String {
-        guard message.id == revealingMessageID else { return message.text }
+        guard message.id == revealingMessageID else { return displayText(for: message) }
         if message.isPending {
-            return message.text
+            return displayText(for: message)
         }
+        // `revealedText` is a prefix built from `displayText(for:)` in
+        // `startReveal`, so it is already sanitized — rendering it verbatim
+        // keeps the word-by-word reveal in lockstep with the final text.
         return revealedText
     }
 }
@@ -2285,10 +2308,10 @@ struct AskNoumView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             message.isOffline
-                ? "Noum, offline reply: \(message.text)"
+                ? "Noum, offline reply: \(AskNoumCoachVisibleText.displayText(for: message))"
                 : showsProvisionalRead
-                    ? "Noum is preparing the full reply. Immediate coach read: \(message.text)"
-                : "Noum: \(message.text)"
+                    ? "Noum is preparing the full reply. Immediate coach read: \(AskNoumCoachVisibleText.displayText(for: message))"
+                : "Noum: \(AskNoumCoachVisibleText.displayText(for: message))"
         )
     }
 
@@ -2321,7 +2344,7 @@ struct AskNoumView: View {
                 .accessibilityHidden(true)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Coach read. \(message.text). Full answer coming.")
+        .accessibilityLabel("Coach read. \(AskNoumCoachVisibleText.displayText(for: message)). Full answer coming.")
     }
 
     private func visibleCoachText(for message: CoachMessage) -> String {
@@ -2841,7 +2864,12 @@ struct AskNoumView: View {
         revealTask?.cancel()
         revealingMessageID = message.id
         revealedText = ""
-        let words = message.text.split(separator: " ", omittingEmptySubsequences: false)
+        // Reveal from the SAME sanitized string the bubble renders when the
+        // reveal completes (`AskNoumCoachVisibleText.displayText`), so no
+        // scaffold word ever flashes mid-reveal and the handoff to the full
+        // text at the end is seamless (identical characters).
+        let words = AskNoumCoachVisibleText.displayText(for: message)
+            .split(separator: " ", omittingEmptySubsequences: false)
         revealTask = Task { @MainActor in
             var assembled = ""
             for (i, word) in words.enumerated() {

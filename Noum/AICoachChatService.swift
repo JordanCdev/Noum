@@ -430,8 +430,76 @@ enum CoachReplyTextSanitizer {
     }
 
     private nonisolated static func stripInlineCoachLeadIns(from value: String) -> String {
-        let pattern = #"(?i)(^|[.!?]\s+|\s+[—-]\s+)("# + coachScaffoldLeadInPattern + #"):\s*"#
+        // A scaffold lead-in can appear mid-line after sentence punctuation, an
+        // em/hyphen dash, OR a comma/semicolon join ("that was fluff, real read:
+        // ..."). The earlier pattern only anchored on `^`, `[.!?]\s+`, or a dash,
+        // so a comma-joined "Real read:" survived. Adding `[,;]\s+` closes that
+        // mid-sentence gap without touching label-free prose (the trailing `:`
+        // is still required, so only genuine "label:" scaffolds are removed).
+        let pattern = #"(?i)(^|[.!?]\s+|[,;]\s+|\s+[—-]\s+)("# + coachScaffoldLeadInPattern + #"):\s*"#
         return replace(pattern: pattern, in: value, template: "$1")
+    }
+
+    /// Bare report-voice telemetry residue the model sometimes leaves behind
+    /// after a scaffold label is stripped ("... coaching. score 74, but your
+    /// point ..."). On trust-repair / sensitive turns a raw "score 74",
+    /// "5 fillers in 68 seconds", or "170 words per minute" is not a coaching
+    /// read — the reliability gate already REJECTS these so the chain
+    /// regenerates, but this is the last-mile backstop that makes the leak
+    /// impossible in the *emitted* text even if a bypass/fallback path ever
+    /// ships an un-regenerated draft. It only runs on turns the gate marks
+    /// sensitive-and-metrics-not-requested, so an explicit progress turn that
+    /// legitimately cites a trend is never touched (see the AICoachChatService
+    /// caller predicate). Patterns are the superset of the gate's own
+    /// `replyContainsRawReportVoiceMetrics` detector so anything the gate would
+    /// flag is guaranteed gone after this pass.
+    nonisolated static let reportVoiceResiduePatterns: [String] = [
+        #"(?i)\b(?:score|scored|scoring|hit)\s+\d{1,3}(?:\.\d)?(?:\s*/\s*10)?\b"#,
+        #"(?i)\b\d{2,3}\s*(?:/|over)\s*\d{2,3}\s*s(?:ec(?:ond)?s?)?\s*(?:/|with)\s*(?:only\s*)?\d+\s+fillers?\b"#,
+        #"(?i)\b\d+\s+fillers?\s+(?:in|over|across)\s+\d{2,3}\s*s(?:ec(?:ond)?s?)?\b"#,
+        #"(?i)\b(?:clean|landed|held)\s+at\s+\d{2,3}\b"#,
+        #"(?i)\b\d{2,3}\s*(?:words per minute|wpm)\b"#,
+        #"(?i)\b\d+\s+fillers?\b"#
+    ]
+
+    nonisolated static func strippingReportVoiceResidue(from text: String) -> String {
+        var value = text
+        for pattern in reportVoiceResiduePatterns {
+            // Also swallow an immediately-following connective + separator
+            // ("score 74, but ...") so the surviving clause reflows cleanly
+            // instead of orphaning a lowercase "but"/"and".
+            let full = pattern + #"(?:\s*[,;—-]\s*(?:but|and|so|though|with|only)\b)?"#
+            value = replace(pattern: full, in: value, template: "")
+        }
+        // Repair the punctuation/whitespace/casing artifacts the removals leave.
+        value = replace(pattern: #"(?i)([.!?]\s+)(?:but|and|so|though)\s+"#, in: value, template: "$1")
+        value = replace(pattern: #"\s*,\s*,"#, in: value, template: ",")
+        value = replace(pattern: #"([.!?:])\s*,\s*"#, in: value, template: "$1 ")
+        value = replace(pattern: #"(^|[.!?]\s+)—\s+"#, in: value, template: "$1")
+        value = replace(pattern: #"\s+—\s+(?=[.!?]|$)"#, in: value, template: " ")
+        value = replace(pattern: #"([:,])\s*(?=[.!?])"#, in: value, template: "")
+        value = replace(pattern: #"\s{2,}"#, in: value, template: " ")
+        value = replace(pattern: #"\s+([,.;:!?])"#, in: value, template: "$1")
+        value = recapitalizeSentenceStarts(in: value)
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private nonisolated static func recapitalizeSentenceStarts(in value: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"(^|[.!?]\s+)([a-z])"#) else {
+            return value
+        }
+        let ns = value as NSString
+        var result = ""
+        var last = 0
+        for match in regex.matches(in: value, range: NSRange(location: 0, length: ns.length)) {
+            let pre = match.range(at: 1)
+            let ch = match.range(at: 2)
+            result += ns.substring(with: NSRange(location: last, length: pre.location + pre.length - last))
+            result += ns.substring(with: ch).uppercased()
+            last = ch.location + ch.length
+        }
+        result += ns.substring(from: last)
+        return result
     }
 
     private nonisolated static func isScaffoldOnlyDisplayLine(_ value: String) -> Bool {
@@ -1260,14 +1328,23 @@ actor AICoachChatService {
             switch outcome {
             case .reply(let text):
                 providerCooldowns[provider] = nil
-                Self.log.info("chat turn succeeded via \(provider.displayName, privacy: .public) chars=\(text.count, privacy: .public)")
+                // Single convergence point for every accepted provider reply
+                // (main commit, repaired, safe-repair). Apply the last-mile
+                // report-voice backstop here so no reply path can leak raw
+                // telemetry on a sensitive turn.
+                let finalText = Self.finalizedCoachReply(
+                    from: text,
+                    latestUserTurn: latestUserTurn,
+                    turnDepth: turnDepth
+                )
+                Self.log.info("chat turn succeeded via \(provider.displayName, privacy: .public) chars=\(finalText.count, privacy: .public)")
                 if let onProviderChosen {
                     await onProviderChosen(CoachTurnProviderChoice(
                         providerName: provider.displayName,
                         model: provider.model
                     ))
                 }
-                return .reply(text)
+                return .reply(finalText)
             case .refused(let refusal):
                 if refusal == .contentRejected { sawContentRejection = true }
                 if refusal.cooldown > 0 {
@@ -1298,7 +1375,11 @@ actor AICoachChatService {
                 await onProviderChosen(Self.typedFallbackProviderChoice)
             }
             await onQualityGateEvent?(.fallback("typedAssessment"))
-            return .reply(fallback)
+            return .reply(Self.finalizedCoachReply(
+                from: fallback,
+                latestUserTurn: latestUserTurn,
+                turnDepth: turnDepth
+            ))
         }
 
         Self.log.error("all \(chain.count) chat providers refused")
@@ -3468,6 +3549,34 @@ actor AICoachChatService {
         ])
     }
 
+    /// Last-mile finalizer for every committed coach reply. Runs the standard
+    /// scaffold-stripping sanitize, then — ONLY on the same trust-repair /
+    /// sensitive-non-report turns the reliability gate guards (and only when the
+    /// user did not explicitly ask for metrics) — strips any bare report-voice
+    /// telemetry residue. On the happy path the gate already regenerated such
+    /// replies, so this is a no-op; on a fallback / bypass path it guarantees
+    /// "score 74"-style telemetry can never reach the user on a sensitive turn,
+    /// regardless of model output. It never touches explicit-metric or
+    /// non-sensitive turns, so legitimate progress reads pass through unchanged.
+    nonisolated static func finalizedCoachReply(
+        from raw: String,
+        latestUserTurn: String?,
+        turnDepth: CoachTurnDepth
+    ) -> String {
+        let normalized = CoachReplyTextSanitizer.coachReplyText(from: raw)
+        guard !normalized.isEmpty else { return normalized }
+        let lowerTurn = latestUserTurn?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        let sensitive = turnDepth == .trustRepair
+            || turnIsSensitiveNonReportTurn(lowerTurn, turnDepth: turnDepth)
+        guard sensitive, !turnExplicitlyRequestsMetrics(lowerTurn) else {
+            return normalized
+        }
+        let stripped = CoachReplyTextSanitizer.strippingReportVoiceResidue(from: normalized)
+        return stripped.isEmpty ? normalized : stripped
+    }
+
     private nonisolated static func replyUsesTrustRepairReportVoiceMetrics(
         _ lower: String,
         latestUserTurn: String?,
@@ -3632,7 +3741,10 @@ actor AICoachChatService {
 
         let labels = CoachReplyTextSanitizer.coachScaffoldLeadInPattern
         let linePattern = #"(?im)^\s*(?:[-*+•]\s*|\d+[.)]\s*)?(?:"# + labels + #"):\s*"#
-        let inlinePattern = #"(?i)(?:[.!?]\s+|\s+[—-]\s+)(?:"# + labels + #"):\s*"#
+        // Match the sanitizer's mid-line strip anchors exactly (now including a
+        // comma/semicolon join) so the gate flags every scaffold form the strip
+        // would remove — stricter, never weaker.
+        let inlinePattern = #"(?i)(?:[.!?]\s+|[,;]\s+|\s+[—-]\s+)(?:"# + labels + #"):\s*"#
 
         return [linePattern, inlinePattern].contains { pattern in
             (try? NSRegularExpression(pattern: pattern))?
@@ -4522,7 +4634,7 @@ actor AICoachChatService {
             return "cold-start product mode"
         }
         if lower.range(
-            of: #"(?:first number|(?:under|below|less than|fewer than|no more than|at most)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?|stay\s+(?:under|below)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?|(?:target|aim(?:ing)?(?:\s+to)?|aim for)\s+(?:stay\s+)?(?:under|below|at|for|to)?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?|keep\s+(?:your\s+)?fillers?\s+(?:under|below|to)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)|beat\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?)"#,
+            of: #"(?:first number|starting number|baseline number|a number to (?:hit|beat|track|chase|aim for)|(?:under|below|less than|fewer than|no more than|at most)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?|stay\s+(?:under|below)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?|(?:target|aim(?:ing)?(?:\s+to)?|aim for)\s+(?:stay\s+)?(?:under|below|at|for|to)?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?|keep\s+(?:your\s+)?fillers?\s+(?:under|below|to)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)|beat\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?)"#,
             options: .regularExpression
         ) != nil {
             return "cold-start metric target"

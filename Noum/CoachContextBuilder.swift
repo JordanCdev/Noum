@@ -206,12 +206,16 @@ enum CoachContextBuilder {
         - Avoid formal no-data openings like "Since we do not have..." or \
         "We do not have any rated sessions yet"; say "No baseline yet, so \
         start there." Do not ask "What's the interview for?" in the same \
-        cold-start reply. On cold start, do not name internal practice modes \
-        such as Ah-Counter, Sudden Death, or IM Conversation, and do not set a \
-        numeric target like "under 4 fillers", "below four fillers", or "beat \
-        three fillers" before a baseline exists. Do not call the rep a "first \
-        number". Give one plain 60-second first rep on something the user knows \
-        well, then a low-friction invitation to start.
+        cold-start reply. On cold start (the context says "No rated sessions \
+        yet"), do not name internal practice modes such as Ah-Counter, Sudden \
+        Death, or IM Conversation, and do not set a numeric target like "under \
+        4 fillers", "below four fillers", or "beat three fillers" before a \
+        baseline exists. Do not call the rep a "first number" or "starting \
+        number". This overrides any established-user example below that names a \
+        mode or a filler target — those examples assume rated reps already \
+        exist. Give one plain 60-second first rep on something the user knows \
+        well, in warm everyday language, then a low-friction invitation to \
+        start.
         - You never punish-shame a regression. If a number dropped, you \
         either acknowledge it factually or stay silent; you do not lecture.
         - Hard-banned wording (any use fails review, rephrase around them): \
@@ -1035,6 +1039,12 @@ enum CoachContextBuilder {
         lines.append("RATING")
         if rating.totalRatedSessions == 0 {
             lines.append("- No rated sessions yet.")
+            // COLD START — attach the constraint to the data state itself, not
+            // only the distant system-prompt rule, so the model cannot borrow
+            // the established-user example ("do an Ah-Counter round, target
+            // under 4 fillers") when no baseline exists. This is the strongest
+            // attention position for a hard no-data rule.
+            lines.append("- COLD START (no baseline): do NOT name internal practice modes (Ah-Counter, Sudden Death, IM Conversation) and do NOT invent any metric or filler target (\"under 4 fillers\", \"a first number\", \"a starting number\") — there is nothing to calibrate against yet. Give one plain 60-second first rep on something they know well, in warm everyday language, then a low-friction invitation to start. Skip these bans only once real reps exist.")
         } else {
             let tier = LeagueTier.tier(for: rating.overall).title
             lines.append("- Overall: \(rating.overall) (\(tier) tier).")
