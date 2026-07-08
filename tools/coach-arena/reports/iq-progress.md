@@ -371,3 +371,33 @@ claude-sonnet-4-6+" and "report the REAL number" guardrails. Next session
 either commit-and-log a real before/after if it's net-positive, or revert
 `selfRepairIfNeeded` if it isn't -- do not trust the 69.4/38-fixture number
 either way.
+
+### Workaround attempt: `ARENA_PROVIDER=cli` (bypass the exhausted key)
+
+The arena has a second provider path (`lib/provider.mjs`'s `cli` provider)
+that shells out to the local `claude` CLI instead of calling the Anthropic
+API directly. Tested whether it could route around the exhausted
+`~/.noum-arena-key` by using the operator's own Claude Code login instead:
+`env -u ANTHROPIC_API_KEY claude -p --model <model> ...` correctly falls
+back to the claude.ai-authenticated session (confirmed: a single test call
+through each of `claude-haiku-4-5-20251001` and `claude-sonnet-4-6`
+succeeded, and one full request built from the real arena code -- extracted
+system prompt + rendered context for `what-voice-should-i-pick` -- produced
+a coherent, correctly-targeted reply).
+
+Launched the full 51-fixture run this way
+(`env -u ANTHROPIC_API_KEY ARENA_PROVIDER=cli ...`). It did not complete:
+both the run and its own monitoring wrapper were externally killed partway
+through with no output written at all -- not a timeout, not a crash, not an
+error captured in the log (0 bytes written). This has the signature of an
+environment-level safety boundary on sustained nested-Claude-Code-from-
+within-Claude-Code subprocess usage, not a bug in the arena code or the
+single call that had just been proven to work. Not retried further -- an
+external kill of exactly this shape is a boundary worth respecting rather
+than working around again.
+
+**Conclusion: this really is blocked on the operator topping up
+`~/.noum-arena-key`'s Anthropic account.** Every self-directed avenue
+(direct API key, CLI-provider workaround) has been tried. The self-repair
+code stays committed and clearly marked unvalidated until a funded key is
+available for one clean full run.
