@@ -45,8 +45,13 @@ enum KnowledgeRetriever {
     /// where BM25 alone would score it zero.
     static let leverSeedScore: Double = 0.5
     /// Default number of cards surfaced. Keeps the COACHING EXPERTISE block
-    /// tight (the formatter caps the token budget).
-    static let defaultLimit: Int = 4
+    /// tight (the formatter caps the token budget). Matches the system
+    /// prompt's own instruction to pull in "at most one or two techniques,
+    /// never a list" — narrowing here means the model sees fewer, higher-
+    /// confidence candidates instead of relying on it to self-select from a
+    /// wider, noisier set (a weak model is disproportionately hurt by
+    /// distracting context it didn't ask to filter).
+    static let defaultLimit: Int = 2
     /// Wider BM25 candidate pool handed to the optional semantic reranker, so it
     /// can promote a semantically-strong card BM25 ranked just outside the top-K.
     static let rerankCandidatePool: Int = 10
@@ -84,6 +89,7 @@ enum KnowledgeRetriever {
         guard techniqueTurn || hasDiagnosis else { return [] }
 
         let queryTokens = tokenize(trimmed)
+        let queryTokenSet = Set(queryTokens)
 
         // Score every card; keep the ones with real signal.
         var scored: [(card: CoachKnowledgeCard, score: Double)] = []
@@ -97,6 +103,22 @@ enum KnowledgeRetriever {
                 base = leverSeedScore
             }
             guard base > 0 else { continue }
+
+            // Precision gate: admit a lexically-scored card only when the
+            // user's own words hit one of the card's curated `keywords` — the
+            // terms authors picked as "what a user would actually type" — or
+            // the lever-seed path already vouches for it. Plain BM25 over the
+            // full prose (why/howToApply/domain name) is too permissive on
+            // short conversational queries: common words shared with an
+            // unrelated card (e.g. a conflict-de-escalation card matching on
+            // "however", "feel", "thought") can outscore the genuinely
+            // relevant card, injecting a distracting, off-topic technique
+            // into a weak model's context (the "distraction effect" a noisy
+            // retrieval layer causes). Requiring the keyword anchor keeps
+            // retrieval high-precision: silence over a wrong card.
+            let keywordTokens = Set(card.keywords.flatMap(KnowledgeRetriever.tokenize))
+            let keywordMatch = !keywordTokens.isDisjoint(with: queryTokenSet)
+            guard keywordMatch || (leverMatch && hasDiagnosis) else { continue }
 
             // Only boost on an EXPLICIT voice match (a card that names this
             // voice). An "any voice" card (empty alignment) stays neutral.

@@ -6,6 +6,8 @@
 // Sections are emitted ONLY when the fixture supplies data for them — the same
 // "omit when absent so the model never invents one" contract the app follows.
 
+import { retrieve, expertiseContextLines } from './knowledgeRetrieval.mjs';
+
 function line(label, value) {
   if (value === undefined || value === null || value === '') return null;
   return `${label}: ${value}`;
@@ -218,13 +220,21 @@ export function renderContext(fixture) {
     if (readouts.length) blocks.push(section('POSITIONAL TREND (recurring event position across recent reps)', readouts));
   }
 
-  if (m.coachingExpertise && m.coachingExpertise.length) {
-    blocks.push(
-      'COACHING EXPERTISE (craft reference — not a reading of the user)\n' +
-        m.coachingExpertise
-          .map((c) => `- ${c.title}${c.evidence ? ` [${c.evidence}]` : ''}: ${c.body}`)
-          .join('\n'),
-    );
+  // Retrieved live via the JS port of KnowledgeRetriever's BM25 + honesty
+  // gate (lib/knowledgeRetrieval.mjs) over the REAL corpus (extracted from
+  // Noum/CoachingKnowledgeBase.swift) — never fixture-authored, so the Arena
+  // measures the actual retrieval mechanism, not a hand-picked "right card"
+  // per fixture. `hasDiagnosis` mirrors the app's proxy (an established case
+  // exists) via the durable-context sections a fixture already carries.
+  const hasDiagnosis = Boolean(m.baseline || m.caseFormulation || m.coachMemory || m.rating);
+  const retrievedCards = retrieve({
+    query: fixture.userTurn,
+    voice: fixture.voice || null,
+    hasDiagnosis,
+  });
+  const expertiseLines = expertiseContextLines(retrievedCards);
+  if (expertiseLines.length) {
+    blocks.push(expertiseLines.join('\n'));
   }
 
   if (m.liveCoachingFrame) {
@@ -240,5 +250,16 @@ export function renderContext(fixture) {
   }
 
   const body = blocks.filter(Boolean).join('\n\n');
+  // NOTE: lib/depthRules.mjs ports CoachPromptBundle's pure depth+surface
+  // rules, but measured net-negative when wired in here (2026-07-08 run:
+  // gold-suite mean 63.7 -> 63.3, deep-assessment -7.9, big-moment -23).
+  // Diagnosis: the real app pairs those instructions with an ADAPTIVE typed
+  // verdict from CoachReasoningPass (deliberately not ported -- see the file
+  // header) that softens/retargets them per turn; applying the bare
+  // instruction text without that nuance forced a clinical "verdict first,
+  // missing evidence" framing onto emotionally-loaded deepAssessment turns
+  // (e.g. a dreaded best-man speech), which is a worse mismatch than omitting
+  // the block. Left unwired pending a version that varies by emotional
+  // signal, not just turn depth.
   return `CONTEXT\n${body || '- No durable data yet (cold start).'}`;
 }
