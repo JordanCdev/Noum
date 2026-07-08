@@ -322,3 +322,52 @@ Closing this gap further needs richer context content (the deferred
 `CoachReasoningPass` typed-verdict evidence, or a larger BASELINE/CASE
 FORMULATION per fixture), not more prompt wording — that is the highest-value
 next lever, not further system-prompt wordsmithing.
+
+## Round 8 — self-repair loop (research finding 5: ground + verify) — BLOCKED mid-validation
+
+The stop-hook pushed back on treating the round 6/7 plateau as final, correctly
+pointing out research priority #3 ("GROUND + VERIFY... strengthen deterministic
+gates + structured-output/self-check") had not been attempted. Implemented it
+for real: `runners/replay.mjs` now does a genuine SECOND Haiku call when the
+draft reply trips any deterministic finding, showing the model its own draft
+plus the same generic, rule-based finding messages already used for scoring
+(never the fixture's `expectedCoachMove`/`excellentAnswerExample`/
+`disqualifiers` -- that would leak the answer key). This mirrors production's
+actual `AICoachChatService.repairLowQualityReply` -- a real second model call,
+not fabricated data, unlike the depth-rules port this rejected earlier in the
+session. The repaired reply replaces the draft only if it isn't strictly
+worse (same-or-better hard-cap tier, same-or-lower flag penalty); ties go to
+the repair. See `selfRepairIfNeeded` in `runners/replay.mjs`.
+
+**Run result: INVALIDATED by API credit exhaustion mid-run, not by the code.**
+Self-repair roughly doubles API calls per fixture (draft + repair), which
+burned through the arena key's remaining balance faster than a normal run:
+38/51 fixtures scored before every subsequent call started failing with
+`"Your credit balance is too low to access the Anthropic API"` (a real
+Anthropic billing error, not a bug -- confirmed via the raw error body in
+every one of the 13 failed records). The 69.4 mean visible in this run's
+`latest.md` is **NOT a valid before/after number** -- it's computed over a
+non-random 38-fixture subset (whichever fixtures happen to sort first in
+the fixture directory), not the full 51, so it cannot be honestly compared
+to any prior round's mean. Per this task's own honesty guardrail ("report
+the REAL number"), this session is NOT reporting 69.4 as a result.
+
+What the partial run DID show, which is legitimate signal about the
+mechanism (not about the magnitude): the self-repair path engaged on 16/38
+scored fixtures (42% -- roughly matching the historical ~50-60% of fixtures
+that trip at least one deterministic finding), and every repaired fixture's
+individual score looks plausible (52-81/100, no collapse), so the mechanism
+is not obviously broken. But a partial, non-random sample cannot honestly
+support a mean-level verdict either way -- this needs a complete 51-fixture
+run with a funded key before it can be kept or reverted.
+
+**Status: code committed as explicitly UNVALIDATED, pending a credit top-up.**
+This is a real external blocker -- API billing -- not a decision I can make
+or work around: I do not have access to top up `~/.noum-arena-key`'s
+Anthropic account, and using a different/weaker judge or a captures-replay
+substitute to manufacture a number would violate the "judge is always
+claude-sonnet-4-6+" and "report the REAL number" guardrails. Next session
+(or once credits are topped up): re-run the full 51-fixture suite once, and
+either commit-and-log a real before/after if it's net-positive, or revert
+`selfRepairIfNeeded` if it isn't -- do not trust the 69.4/38-fixture number
+either way.
