@@ -223,6 +223,20 @@ enum CoachKnowledgeBase {
             evidenceTier: .practitioner,
             keywords: ["so", "right", "you know", "trailing", "ending fillers"]
         ),
+        CoachKnowledgeCard(
+            id: "filler-give-the-pause-a-job",
+            title: "Give the pause a job",
+            domain: .fillerReduction,
+            technique: "the working pause",
+            why: "a pause feels awkward and loses the thread when it is empty; a pause with a job — locating the exact next word — reads as composed instead of stalled",
+            howToApply: "in the silent beat, do one specific thing: find the first word of your next sentence before you say anything, then say it",
+            successMarker: "the pause holds without the thread slipping, because attention stayed on finding the next word instead of on the silence itself",
+            whenToUse: "when a pause feels awkward, or you lose your train of thought the moment you stop talking",
+            voiceAlignment: [],
+            leverTags: [.pauseUsage, .fillerReduction],
+            evidenceTier: .practitioner,
+            keywords: ["awkward", "lose my train of thought", "silence feels weird", "trail off", "pause feels", "losing my place", "blank during pause"]
+        ),
     ]
 
     // MARK: Composure under pressure
