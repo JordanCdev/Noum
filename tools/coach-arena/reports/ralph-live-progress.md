@@ -12,17 +12,19 @@ Xcode simulator test runs.
 | Criterion | Target | Result | Pass |
 |---|---|---|---|
 | Prompt-layer gold mean | ≥70 | 67.6 (committed live run 2026-07-07) | ❌ ceiling |
-| App-path score (real Swift dump, HEAD) | ≥70 | **73.84** | ✅ |
+| App-path score (real Swift dump, HEAD, sessions injected) | ≥70 | **73.8** | ✅ |
 | App-path deepAssessment | ≥70 | 76.0 | ✅ |
-| App-path trustRepair | ≥65 | 76.67 | ✅ |
+| App-path trustRepair | ≥65 | 76.44 | ✅ |
 | App-path groundedRead | ≥70 | 76.5 | ✅ |
-| App-path quickMove | ≥70 | 68.76 | ❌ (type avg only) |
+| App-path quickMove | ≥70 | 68.76 | ❌ (type avg only; scripted-corpus artifact) |
+| **App-path productionEvidence / traceQuality** | pass | **PASS — `realPipelineEvidence`** | ✅ |
+| **assessmentConfidence distinct rounded values** | ≥3 | **10 (0.20→0.38, real evidence-driven)** | ✅ |
 | Placeholder/fallback leaks | 0 | 0 (both real engines) | ✅ |
 | node validate | 0 err | 51 fixtures · 0 err · 0 warn | ✅ |
 | node arena unit tests | green | 58/58 | ✅ |
-| **Full NoumTests unit suite (HEAD, sim)** | green | **3302 / 3302 pass · 0 fail** | ✅ |
+| **NoumTests corpus suite (injection + real assertions)** | green | **70 / 70 pass · 0 fail** | ✅ |
 | Real traces prove pipeline | complete | 50/50 complete traces (retrieval, provider fallback, gates, latency, confidence, proof-dedup) | ✅ |
-| 10 end-to-end transcripts | yes | `ralph-transcripts-2026-07-08.md` | ✅ |
+| 10 end-to-end transcripts | yes | `ralph-transcripts-2026-07-08.md` (confidence now varies with evidence) | ✅ |
 
 ## What I actually found and did
 
@@ -73,45 +75,40 @@ not a pipeline bug. The corpus tests tolerate floor failures by design (conditio
 branches; the suite is a "WithoutClaimingReadiness" measurement) — the BEFORE dump had
 18–19 of them too — so they do NOT fail the tests. Only confidence-distinctness did.
 
-### 4. Fix applied (this loop): principled option (b) — honest assertion, no fabrication
-I chose the handoff's honest option (b) — "relax the assertion for an evidence-free
-corpus" — implemented as a *strengthening*, not a loosening: assert the substrate's
-true thin-evidence behavior. In both tests (`NoumTests/CoachChatConversationEvaluationTests.swift`):
-- `assessmentConfidenceDistinctRoundedCount == 1` (was `>= 3`), plus every turn's
-  confidence `<= 0.20` — pins the exact invariant floor value.
-- expect the `flatAssessmentConfidence` readiness warning to be **present** (was
-  asserted absent) — the report honestly flags flat confidence as one reason the
-  substrate is not production-ready, consistent with the already-asserted
-  `claim == .localEvaluationSubstrateOnly` / `!productionReady`.
-- Comments cite the invariant + the calibration test. There is direct codebase
-  precedent: `CoachLiveEvaluationTests.swift:437` asserts `distinctRoundedCount == 1`
-  + expects the same warning on a thin-evidence live substrate.
+### 4. Fix applied (this loop): option (a) — inject real source-fixture evidence
+I landed the handoff's PREFERRED fix (a): the app-path harness now seeds each
+conversation's real source-fixture practice sessions into the pipeline, so
+`UserTrajectory.evidenceCoverage` varies per conversation and `assessmentConfidence`
+rises above the 0.20 floor **legitimately — driven by genuine evidence, not fabrication**.
+Cold-start conversations with no sessions correctly stay at 0.20; evidence-rich ones
+rise to ~0.38. This mirrors Jordan's stated product intent (chat gated behind an
+established baseline → real evidence exists at chat time).
 
-Zero production-code change, zero eval-scoring (python judge) change — the report and
-warning machinery are entirely test-side, and the python engine's
-`productionEvidence: localEvaluationOnly` on flat confidence is left untouched because
-it is the *honest* label for an evidence-free substrate.
+Implementation (surgical, backward-compatible):
+- `Noum/CoachReplyPipeline.swift`: added an optional `sessionsOverride: [PracticeSession]? = nil`
+  parameter to `generate(...)`, threaded through the five `sessions` read-sites. Default
+  nil → production and every real caller read `PracticeSessionStore.shared` exactly as
+  before (verified: full unit suite unchanged). This mirrors the function's existing
+  injectable params (`store`, `coachService`, `judgementPassEnabled`).
+- `NoumTests/…EvaluationTests.swift`: `scriptedConversationAppPathRows` passes
+  `CoachChatConversationCorpus.sourceFixture(for: conversation)?.sessions`; restored the
+  original honest `assessmentConfidenceDistinctRoundedCount >= 3` + `!flatAssessmentConfidence`
+  assertions (now satisfied for real).
+- No global-store mutation → no Swift-Testing cross-suite pollution risk.
 
-### 5. Why NOT option (a) this session (recommended deeper follow-up)
-Option (a) — seed each conversation's real source-fixture sessions so confidence varies
-legitimately (and clears the `floorConfidenceWithEvidence` failures too) — is the
-product-truth and the handoff's preferred fix. It also matches Jordan's stated intent
-(chat gated behind an established baseline → real evidence exists at chat time). I did
-NOT land it this session because it is unsafe/unverifiable under the constraints:
-- The pipeline reads five process-global singletons (`PracticeSessionStore`,
-  `CoachingProfileStore`, `BaselineStore`/`RatingStore`, `CoachMemoryStore`) with no
-  test-injection API. Seeding them mutates shared state under Swift-Testing
-  parallelism (the memory already records a shared-store race that forced serialization).
-- A pipeline-level injection seam would re-run the semantic/reliability gates against a
-  now-rich context for scripted replies authored for the evidence-free context → likely
-  broad floor cascade, verifiable only via slow full rebuilds (no live iteration budget).
+Measured effect (dump inspection, injection vs none):
+- `assessmentConfidenceDistinctRoundedCount`: **1 → 10** (spread 0.20–0.38)
+- app-path floor failures: **26 → 21** (no cascade — 5 conversations now pass)
+- `targetReplyMismatch`: 18 → 17; semanticGate failures: 0 → 0 (no cascade)
+- `flatAssessmentConfidence` warning: **cleared**
+- python engine: **`productionEvidencePasses` False→True, `traceQualityPasses` False→True,
+  `evidenceClaim` localEvaluationOnly→`realPipelineEvidence`**, score 73.8, 0 leaks.
 
-**Recommendation:** a future loop should implement (a) via a `#if DEBUG` seeding seam
-on the stores (or a bundled evidence-override param on `CoachReplyPipeline.generate`,
-default nil), seeding `sourceFixture(for:).sessions`, with `CoachChatConversationCorpusTests`
-`.serialized`. That would legitimately vary confidence AND resolve most of the 26 floor
-failures AND clear the `floorConfidenceWithEvidence` reliability issues — a much bigger,
-honest win — but needs the rebuild budget to verify no gate regressions.
+Verified: corpus suite **70/70 pass** with real session injection + the restored `>=3`
+assertions. (The remaining 21 floor failures + `floorConfidenceWithEvidence`/other
+reliability issues on evidence-thin turns are tolerated by the test's conditional
+branches — the corpus deliberately spans cold-start conversations where thin evidence is
+correct — and are a scripted-corpus-quality matter, not a pipeline defect.)
 
 ## Prompt-layer: at its measurement ceiling (17th confirmation)
 The committed live prompt-layer mean is **67.6** (below 70). `aefc7a5c` was another
@@ -137,14 +134,17 @@ designed, not a gap to hack.
 1. **Prompt-layer ≥70** — not achievable via wording (17 confirmations) and unmeasurable
    this session (no API key). Needs a live A/B of CONTEXT-block evidence surfacing, or a
    stronger coach model. NOT a bug.
-2. **App-path quickMove type-avg 68.76** (< 70) — driven by evidence-free scripted quickMove
-   turns flagged "missing evidence anchor"; resolves with option (a) seeding (real evidence
-   → replies can anchor). Aggregate app-path score (73.84) already passes.
-3. **App-path `productionEvidence` = localEvaluationOnly** — honest for an evidence-free
-   substrate; flips to `realPipelineEvidence` once option (a) makes confidence vary.
+2. **App-path quickMove type-avg 68.76** (< 70) — the deterministic local_judge flags some
+   scripted quickMove replies "missing evidence anchor". Injecting sessions raised
+   confidence but does NOT change the (forced) scripted reply text the judge scores, so this
+   is a scripted-corpus-quality matter — improving it means editing gold replies, which
+   would be corpus-gaming, so left as-is. Aggregate app-path score (73.8) already passes ≥70.
+3. ~~App-path `productionEvidence` = localEvaluationOnly~~ **RESOLVED** — option (a) session
+   injection made confidence vary legitimately; the engine now reports `realPipelineEvidence`
+   with productionEvidence + traceQuality passing.
 4. **"VISION standard genuinely met"** — gated BY DESIGN on real-user longitudinal
    validation (18/100 audit cap); cannot be produced in a headless session and must not be
-   faked.
+   faked. This is the one structurally-unreachable criterion for a headless run.
 
 ## Regression check on the aefc7a5c pipeline rewrite
 `aefc7a5c` ("chngs") rewrote `AICoachChatService` (+586), `CoachContextBuilder` (+77),
@@ -156,7 +156,20 @@ unit-test regressions. (The 3 historically-flaky UI failures live in `NoumUITest
 excluded from this unit-only run.)
 
 ## Deliverables this loop
-- `reports/app-path/latest.{md,json}` + `failures.md` — regenerated from the HEAD dump.
-- `reports/ralph-transcripts-2026-07-08.md` — 10 end-to-end transcripts with full real traces.
-- `NoumTests/CoachChatConversationEvaluationTests.swift` — 2 tests fixed (principled b).
+- `Noum/CoachReplyPipeline.swift` — `sessionsOverride` injection seam (default nil = prod
+  unchanged; verified full unit suite 3302/3302).
+- `NoumTests/CoachChatConversationEvaluationTests.swift` — app-path harness injects real
+  source-fixture sessions; the two RED confidence-distinctness tests now pass with the
+  original honest `>=3` assertions (option a).
+- `reports/app-path/latest.{md,json}` + `failures.md` — regenerated; now `realPipelineEvidence`,
+  productionEvidence + traceQuality PASS.
+- `reports/ralph-transcripts-2026-07-08.md` — 10 end-to-end transcripts; confidence now varies
+  with real evidence (0.20 cold-start → 0.38 evidence-rich).
 - This log.
+
+## Verification trail (all on the iOS simulator, this session)
+- corpus suite `CoachChatConversationCorpusTests`: 70/70 (option a) — was 70/72 at HEAD.
+- **full `NoumTests` unit target: 3302/3302 with the `sessionsOverride` product change.**
+- node validate 51·0·0; node arena tests 58 (0 fail).
+- python app-path over the injected real-pipeline dump: 73.8, `realPipelineEvidence`,
+  productionEvidence ✅, traceQuality ✅, 0 leaks, 50/50 complete traces.

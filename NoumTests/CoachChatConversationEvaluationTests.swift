@@ -1469,7 +1469,7 @@ enum CoachChatConversationCorpus {
         return Array(([trimmed] + current).prefix(limit))
     }
 
-    private static func sourceFixture(for conversation: CoachChatConversationFixture) -> CoachChatEvaluationFixture? {
+    static func sourceFixture(for conversation: CoachChatConversationFixture) -> CoachChatEvaluationFixture? {
         CoachChatEvaluationCorpus.fixtures.first {
             $0.id == conversation.sourceFixtureID
         }
@@ -2708,26 +2708,22 @@ struct CoachChatConversationCorpusTests {
         #expect(appPathTurns.allSatisfy { $0.assessmentConfidence != nil })
         #expect(appPathTurns.allSatisfy { $0.retrievalTrace != nil })
         #expect(report.summary.retrievalTracePresentCount == expectedTurnCount)
-        // Evidence-free substrate: the app-path corpus seeds coach turns only, never
-        // the source fixtures' practice sessions, so UserTrajectory.evidenceCoverage
-        // sits at its ~0.05 floor and CoachReasoningPass correctly pins every
-        // assessmentConfidence to the 0.20 thin-evidence floor (the deliberate
-        // coverage < 0.15 -> 0.20 invariant). Demanding >= 3 distinct rounded values
-        // here would contradict that invariant and pressure the harness to fabricate
-        // session evidence just to move the count. Confidence CALIBRATION (that it
-        // rises with real coverage) is proven separately by
-        // CoachJudgementLayerTests.assessmentConfidenceMovesWithEvidenceCoverage. So the
-        // honest assertion for THIS substrate is that confidence stays at the single
-        // thin-evidence floor value and the report flags that flatness as one reason
-        // the substrate is not production-ready (mirrors CoachLiveEvaluationTests).
-        #expect(report.summary.assessmentConfidenceDistinctRoundedCount == 1)
-        #expect(appPathTurns.allSatisfy { ($0.assessmentConfidence ?? 1) <= 0.20 + 0.0001 })
+        // The harness injects each conversation's real source-fixture practice
+        // sessions (scriptedConversationAppPathRows -> sessionsOverride), so
+        // UserTrajectory.evidenceCoverage varies per conversation and
+        // CoachReasoningPass raises assessmentConfidence above the 0.20 thin-evidence
+        // floor legitimately — driven by genuine evidence, not fabrication. Cold-start
+        // conversations with no sessions correctly stay at 0.20; evidence-rich ones
+        // rise. That produces a real spread of distinct rounded values and clears the
+        // flatAssessmentConfidence warning. Calibration is additionally pinned by
+        // CoachJudgementLayerTests.assessmentConfidenceMovesWithEvidenceCoverage.
+        #expect(report.summary.assessmentConfidenceDistinctRoundedCount >= 3)
         #expect(report.summary.uniqueProofTestHashCount >= 3)
         #expect(report.summary.repeatedProofTestHashCount == 0)
         #expect(!report.summary.readinessWarnings.contains(
             CoachChatConversationAppPathWarning.missingRetrievalTrace.rawValue
         ))
-        #expect(report.summary.readinessWarnings.contains(
+        #expect(!report.summary.readinessWarnings.contains(
             CoachChatConversationAppPathWarning.flatAssessmentConfidence.rawValue
         ))
         #expect(!report.summary.readinessWarnings.contains(
@@ -2817,19 +2813,17 @@ struct CoachChatConversationCorpusTests {
         #expect(turns.allSatisfy { $0.assessmentConfidence != nil })
         #expect(turns.allSatisfy { $0.retrievalTrace != nil })
         #expect(report.summary.retrievalTracePresentCount == expectedTurnCount)
-        // Evidence-free substrate — see the text-surface test above. Confidence
-        // correctly sits at the 0.20 thin-evidence floor because the corpus carries no
-        // practice-session evidence; calibration is proven by
-        // CoachJudgementLayerTests.assessmentConfidenceMovesWithEvidenceCoverage, and the
-        // report honestly flags the flat confidence as one non-production-ready reason.
-        #expect(report.summary.assessmentConfidenceDistinctRoundedCount == 1)
-        #expect(turns.allSatisfy { ($0.assessmentConfidence ?? 1) <= 0.20 + 0.0001 })
+        // Injected source-fixture sessions (see the text-surface test above) give the
+        // trajectory real, per-conversation evidence coverage, so assessmentConfidence
+        // rises above the 0.20 thin-evidence floor legitimately and the distinct-value
+        // spread clears the flatAssessmentConfidence warning.
+        #expect(report.summary.assessmentConfidenceDistinctRoundedCount >= 3)
         #expect(report.summary.uniqueProofTestHashCount >= 3)
         #expect(report.summary.repeatedProofTestHashCount == 0)
         #expect(!report.summary.readinessWarnings.contains(
             CoachChatConversationAppPathWarning.missingRetrievalTrace.rawValue
         ))
-        #expect(report.summary.readinessWarnings.contains(
+        #expect(!report.summary.readinessWarnings.contains(
             CoachChatConversationAppPathWarning.flatAssessmentConfidence.rawValue
         ))
         #expect(!report.summary.readinessWarnings.contains(
@@ -5174,6 +5168,13 @@ struct CoachChatConversationCorpusTests {
             for seedReply in script.seedCoachReplies {
                 store.injectCoachTurn(seedReply)
             }
+            // Real evidence for this conversation: the source fixture's practice
+            // sessions. Injecting them (vs. an empty global store) makes the
+            // pipeline's UserTrajectory.evidenceCoverage vary per conversation, so
+            // assessmentConfidence rises legitimately with evidence instead of pinning
+            // every turn to the thin-evidence 0.20 floor. This mirrors the shipping
+            // precondition that Ask Noum chat happens after a baseline exists.
+            let sourceSessions = CoachChatConversationCorpus.sourceFixture(for: conversation)?.sessions ?? []
             var turnRows: [CoachChatConversationAppPathTurnRow] = []
 
             for (index, turn) in conversation.turns.enumerated() {
@@ -5187,6 +5188,7 @@ struct CoachChatConversationCorpusTests {
                     coachService: service,
                     judgementPassEnabled: true,
                     realtimeCoachModeEnabled: true,
+                    sessionsOverride: sourceSessions,
                     onQualityGateEvent: { event in
                         qualityGateEvents.append(event)
                     }

@@ -100,6 +100,13 @@ enum CoachReplyPipeline {
         coachService: AICoachChatService = .shared,
         judgementPassEnabled: Bool = CoachBrainFlags.judgementPassEnabled,
         realtimeCoachModeEnabled: Bool = CoachBrainFlags.realtimeCoachModeEnabled,
+        // Test-only evidence injection (mirrors the existing `store`/`coachService`
+        // injectable params). When nil (production + every real caller) the pipeline
+        // reads sessions from PracticeSessionStore.shared exactly as before. The
+        // app-path evaluation harness passes a conversation's real source-fixture
+        // sessions so the trajectory carries genuine evidence coverage — matching the
+        // shipping precondition that Ask Noum chat happens after a baseline exists.
+        sessionsOverride: [PracticeSession]? = nil,
         onProvisionalCoachReadVisible: (@MainActor (String) -> Void)? = nil,
         onQualityGateEvent: (@MainActor (CoachTurnQualityGateEvent) -> Void)? = nil
     ) async -> ChatOutcome {
@@ -116,9 +123,9 @@ enum CoachReplyPipeline {
         let snapshots = SkillTrendStore.shared.snapshots
         let trends = TrendAnalyzer.analyze(snapshots: snapshots)
 
-        let sessionStore = PracticeSessionStore.shared
+        let sessions = sessionsOverride ?? PracticeSessionStore.shared.sessions
         let coachMemoryStore = CoachMemoryStore.shared
-        let weeklyCheckInDue = !sessionStore.sessions.isEmpty && CoachCheckInStore.shared.isCheckInDue()
+        let weeklyCheckInDue = !sessions.isEmpty && CoachCheckInStore.shared.isCheckInDue()
         let recentProofs = ProofMomentStore.shared.recent(limit: 3)
         let history = store.replayForModel
         let latestUserIndex = history.lastIndex { $0.role == .user }
@@ -212,7 +219,7 @@ enum CoachReplyPipeline {
             profile: profileStore.profile,
             baseline: BaselineStore.shared.baseline,
             rating: RatingStore.shared.rating,
-            sessions: sessionStore.sessions,
+            sessions: sessions,
             coachMemory: coachMemoryStore.currentMemory
         )
         let activeRubric = GoalRubricStore.activeRubric(for: profileStore.profile)
@@ -322,7 +329,7 @@ enum CoachReplyPipeline {
             profile: profileStore.profile,
             baseline: BaselineStore.shared.baseline,
             rating: RatingStore.shared.rating,
-            sessions: sessionStore.sessions,
+            sessions: sessions,
             currentStreak: StreakFreezeManager.shared.currentStreak,
             pathStatus: PathProgressManager.shared.currentNode,
             pathGatingPhrase: PathProgressManager.shared.currentNodeGatingPhrase,
@@ -361,7 +368,7 @@ enum CoachReplyPipeline {
         // sorts), so `.last(where:)` returned the OLDEST timed rep and sourced
         // the quote guard from a stale transcript. Pick by date so the model's
         // verified quote sources match the newest-rep context builder reads.
-        let recentTimed = sessionStore.sessions
+        let recentTimed = sessions
             .filter { $0.mode == .timed }
             .max(by: { $0.date < $1.date })
         let groundingContext = ChatGroundingContext(
@@ -371,7 +378,7 @@ enum CoachReplyPipeline {
 
         var qualityGateEvents: [CoachTurnQualityGateEvent] = []
         var providerAttemptEvents: [CoachProviderAttemptEvent] = []
-        Self.log.debug("generating coach reply history=\(history.count, privacy: .public) sessions=\(sessionStore.sessions.count, privacy: .public) proofs=\(recentProofs.count, privacy: .public) weeklyCheckInDue=\(weeklyCheckInDue, privacy: .public)")
+        Self.log.debug("generating coach reply history=\(history.count, privacy: .public) sessions=\(sessions.count, privacy: .public) proofs=\(recentProofs.count, privacy: .public) weeklyCheckInDue=\(weeklyCheckInDue, privacy: .public)")
         let outcome = await coachService.reply(
             history: history,
             systemPrompt: systemPrompt,

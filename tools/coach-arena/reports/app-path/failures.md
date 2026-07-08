@@ -1,23 +1,5 @@
 # Coach Arena Failures
 
-## Production Evidence Gate
-
-- assessmentConfidence has only 1 distinct rounded value(s)
-
-## Trace Quality Gate
-
-- assessmentConfidence has only 1 distinct rounded value(s)
-
-Repeated proof-test hashes:
-- `15225bc3a8f5d742`: `repeating-yourself-005`, `filler-pressure-007`, `leadership-update-008`, `closing-ask-020`, `concise-answer-023`, `board-update-032`, `overexplaining-033`, `barge-in-045`, `real-world-outcome-047`
-- `1da8bfcae44e5806`: `interview-prep-006`, `personal-pattern-consent-012`, `too-much-writing-017`, `no-baseline-interview-018`, `opening-verdict-021`, `upcoming-conflict-028`, `fear-disagreement-034`, `evasive-polished-037`, `quote-guard-043`
-- `696c3d72287b1578`: `authoritative-distance-001`, `polite-however-pushback-003`, `not-easy-empathy-004`, `score-not-readiness-011`, `reject-hypothesis-013`, `leadership-transfer-capture-026`, `outcome-not-causation-027`, `authority-under-pressure-039`, `weekly-checkin-046`
-- `93c07d25ebae00fe`: `confidence-ending-009`, `pace-rushing-019`, `pause-before-answer-022`, `confidence-clean-stop-025`, `presentation-nerves-030`, `live-latency-short-044`, `grammar-leak-048`, `placeholder-leak-049`
-- `505fa914ffce9bf3`: `examples-from-sessions-010`, `structure-one-reason-024`, `networking-intro-029`, `sales-pitch-031`, `emotional-disconnection-036`, `no-transcript-fabrication-042`
-- `fc0e67e26d92ee08`: `lack-conviction-035`, `timidity-038`, `semantic-filler-use-040`, `prompt-echo-041`
-- `29dfb6faa4ac37c7`: `not-informative-trust-repair-002`, `markdown-tts-015`
-- `9eb06db8540c3377`: `cold-generic-016`, `assistant-wrapper-050`
-
 ## examples-from-sessions-010 (groundedRead)
 
 Score: `61/100`
