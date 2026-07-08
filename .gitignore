@@ -51,3 +51,8 @@ PLAN.md
 # Written by noum-orchestrator into each agent worktree so teammates auto-approve
 # safe ops; must stay out of git so it doesn't pollute review diffs.
 .claude/settings.local.json
+.arena-key
+*.env.local
+.env.local
+tools/coach-arena/.env
+tools/coach-arena/.env.local
