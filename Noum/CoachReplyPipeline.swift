@@ -359,6 +359,10 @@ enum CoachReplyPipeline {
                 surface: surface
             )
         }
+        let promptTrace = CoachPromptTrace.make(
+            systemPrompt: systemPrompt,
+            userContext: context
+        )
 
         // Quote-grounding context — assembled in the same main-actor prologue
         // so the live model can reference recent rep/proof text without
@@ -407,6 +411,7 @@ enum CoachReplyPipeline {
                     proofTestHash: assessmentProofTestHash,
                     proofTestRecentlyRepeated: proofTestRecentlyRepeated,
                     retrievalTrace: retrievalTrace,
+                    promptTrace: promptTrace,
                     assessmentCacheHit: assessmentResult?.cacheHit,
                     assessmentCacheAgeMs: assessmentCacheAgeMsAt(streamedVisibleAt),
                     immediateCoachReadShown: immediateCoachReadShown,
@@ -578,6 +583,7 @@ enum CoachReplyPipeline {
             proofTestHash: assessmentProofTestHash,
             proofTestRecentlyRepeated: proofTestRecentlyRepeated,
             retrievalTrace: retrievalTrace,
+            promptTrace: promptTrace,
             visionScore: finalVision?.score,
             visionCriticalMisses: finalVision?.criticalMisses,
             visionPassesProductionFloor: finalVision?.passesProductionFloor,

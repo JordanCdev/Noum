@@ -2707,6 +2707,19 @@ struct CoachChatConversationCorpusTests {
             appPathTurns.filter(\.qualityGateBlockingFailure).count)
         #expect(appPathTurns.allSatisfy { $0.assessmentConfidence != nil })
         #expect(appPathTurns.allSatisfy { $0.retrievalTrace != nil })
+        #expect(appPathTurns.allSatisfy { $0.arenaTrace != nil })
+        let appPathPromptModules = appPathTurns.compactMap { $0.arenaTrace?.prompt.modules }
+        #expect(appPathPromptModules.count == expectedTurnCount)
+        #expect(appPathPromptModules.allSatisfy { modules in
+            modules.contains { module in
+                module.name == "coachSystemPrompt" && module.cachePolicy == .ephemeral
+            }
+        })
+        #expect(appPathPromptModules.allSatisfy { modules in
+            modules.contains { module in
+                module.name == "userContext" && module.cachePolicy == .none
+            }
+        })
         #expect(report.summary.retrievalTracePresentCount == expectedTurnCount)
         // Cache state is captured from the real pipeline and proves the caching layer is
         // exercised end-to-end: the first turn of a conversation computes the trajectory
@@ -2752,6 +2765,11 @@ struct CoachChatConversationCorpusTests {
         #expect(json.contains("\"retrievalTracePresentCount\""))
         #expect(json.contains("\"retrievalTrace\""))
         #expect(json.contains("\"retrievedCardIDs\""))
+        #expect(json.contains("\"arenaTrace\""))
+        #expect(json.contains("\"coachSystemPrompt\""))
+        #expect(json.contains("\"cachePolicy\":\"ephemeral\""))
+        #expect(json.contains("\"userContext\""))
+        #expect(json.contains("\"traceSchemaVersion\":\"coach-arena-app-path-trace-v1\""))
         #expect(json.contains("\"assessmentConfidenceDistinctRoundedCount\""))
         #expect(json.contains("\"uniqueProofTestHashCount\""))
         #expect(json.contains("\"repeatedProofTestHashCount\""))
@@ -2817,6 +2835,19 @@ struct CoachChatConversationCorpusTests {
         }
         #expect(turns.allSatisfy { $0.assessmentConfidence != nil })
         #expect(turns.allSatisfy { $0.retrievalTrace != nil })
+        #expect(turns.allSatisfy { $0.arenaTrace != nil })
+        let livePromptModules = turns.compactMap { $0.arenaTrace?.prompt.modules }
+        #expect(livePromptModules.count == expectedTurnCount)
+        #expect(livePromptModules.allSatisfy { modules in
+            modules.contains { module in
+                module.name == "coachSystemPrompt" && module.cachePolicy == .ephemeral
+            }
+        })
+        #expect(livePromptModules.allSatisfy { modules in
+            modules.contains { module in
+                module.name == "userContext" && module.cachePolicy == .none
+            }
+        })
         #expect(report.summary.retrievalTracePresentCount == expectedTurnCount)
         // Injected source-fixture sessions (see the text-surface test above) give the
         // trajectory real, per-conversation evidence coverage, so assessmentConfidence
@@ -2846,6 +2877,11 @@ struct CoachChatConversationCorpusTests {
         #expect(json.contains("\"retrievalTracePresentCount\""))
         #expect(json.contains("\"retrievalTrace\""))
         #expect(json.contains("\"retrievedCardIDs\""))
+        #expect(json.contains("\"arenaTrace\""))
+        #expect(json.contains("\"coachSystemPrompt\""))
+        #expect(json.contains("\"cachePolicy\":\"ephemeral\""))
+        #expect(json.contains("\"userContext\""))
+        #expect(json.contains("\"traceSchemaVersion\":\"coach-arena-app-path-trace-v1\""))
         #expect(json.contains("\"assessmentConfidenceDistinctRoundedCount\""))
         #expect(json.contains("\"uniqueProofTestHashCount\""))
         #expect(json.contains("\"repeatedProofTestHashCount\""))
@@ -4607,6 +4643,7 @@ struct CoachChatConversationCorpusTests {
                         retrievedCardIDs: [],
                         diagnosticReason: "Clean manifest trace; scripted app-path test captures real retrieval."
                     ),
+                    arenaTrace: nil,
                     timeToFirstVisibleTokenMs: surface == .live ? 1 : nil,
                     timeToCompleteReplyMs: 1,
                     trajectoryCacheHit: nil,
@@ -5145,6 +5182,9 @@ struct CoachChatConversationCorpusTests {
         surface: CoachReplySurface
     ) async -> [CoachChatConversationAppPathReportRow] {
         var rows: [CoachChatConversationAppPathReportRow] = []
+        let schemaVersion = surface == .live
+            ? CoachChatConversationCorpus.liveAppPathReportSchemaVersion
+            : CoachChatConversationCorpus.appPathReportSchemaVersion
         for script in CoachChatConversationCorpus.appPathConversationScripts {
             let conversation = script.conversation
             let suiteName = "CoachChatConversationAppPath.\(surface.rawValue).\(conversation.id).\(UUID().uuidString)"
@@ -5234,6 +5274,7 @@ struct CoachChatConversationCorpusTests {
                     qualityGateEvents.contains(.fallback("typedAssessment"))
                 let qualityGateBlockingFailure = qualityGateOutcome?.hasPrefix("failed:") == true
                 let reliabilityIssues = metadata?.reliabilityIssues?.map(\.rawValue) ?? []
+                let qualityGateEventLogValues = qualityGateEvents.map(CoachReplyPipeline.qualityGateEventLogValue)
                 let immediateCoachReadExpected: Bool = {
                     guard let depth = metadata?.turnDepth,
                           let responseMode = metadata?.assessment?.responseMode else {
@@ -5256,6 +5297,20 @@ struct CoachChatConversationCorpusTests {
                     reliabilityIssues.isEmpty &&
                     metadata?.visionPassesProductionFloor == true &&
                     immediateCoachReadSatisfied
+                let arenaTrace = CoachArenaAppPathTrace.make(
+                    conversationID: conversation.id,
+                    sourceFixtureID: conversation.sourceFixtureID,
+                    turnIndex: index,
+                    userTurn: turn.userTurn,
+                    surface: surface,
+                    targetCoachReply: sanitizedTarget,
+                    finalCoachReply: finalReply,
+                    metadata: metadata,
+                    qualityGateEvents: qualityGateEventLogValues,
+                    qualityGateAcceptedFallback: qualityGateAcceptedFallback,
+                    typedAssessmentFallbackApplied: typedAssessmentFallbackApplied,
+                    schemaVersion: schemaVersion
+                )
 
                 turnRows.append(CoachChatConversationAppPathTurnRow(
                     turnIndex: index,
@@ -5274,7 +5329,7 @@ struct CoachChatConversationCorpusTests {
                     semanticGateIssue: metadata?.semanticGateIssue,
                     semanticGatePassed: semanticGatePassed,
                     qualityGateOutcome: qualityGateOutcome,
-                    qualityGateEvents: qualityGateEvents.map(CoachReplyPipeline.qualityGateEventLogValue),
+                    qualityGateEvents: qualityGateEventLogValues,
                     qualityGateClean: qualityGateClean,
                     qualityGateAcceptedFallback: qualityGateAcceptedFallback,
                     typedAssessmentFallbackApplied: typedAssessmentFallbackApplied,
@@ -5288,6 +5343,7 @@ struct CoachChatConversationCorpusTests {
                     proofTestHash: metadata?.proofTestHash,
                     proofTestRecentlyRepeated: metadata?.proofTestRecentlyRepeated,
                     retrievalTrace: metadata?.retrievalTrace,
+                    arenaTrace: arenaTrace,
                     timeToFirstVisibleTokenMs: metadata?.timeToFirstVisibleTokenMs,
                     timeToCompleteReplyMs: metadata?.timeToCompleteReplyMs,
                     trajectoryCacheHit: metadata?.trajectoryCacheHit,

@@ -177,6 +177,65 @@ struct CoachRetrievalTrace: Codable, Equatable {
     var diagnosticReason: String
 }
 
+enum CoachPromptCachePolicy: String, Codable, Equatable {
+    case none
+    case ephemeral
+}
+
+struct CoachPromptModuleTrace: Codable, Equatable {
+    let name: String
+    let cachePolicy: CoachPromptCachePolicy
+    let characterCount: Int
+    let nonEmptyLineCount: Int
+}
+
+struct CoachPromptTrace: Codable, Equatable {
+    let moduleCount: Int
+    let cacheableModuleCount: Int
+    let totalCharacterCount: Int
+    let modules: [CoachPromptModuleTrace]
+
+    static func make(
+        systemPrompt: String,
+        userContext: String
+    ) -> CoachPromptTrace {
+        let modules = [
+            moduleTrace(
+                name: "coachSystemPrompt",
+                text: systemPrompt,
+                cachePolicy: .ephemeral
+            ),
+            moduleTrace(
+                name: "userContext",
+                text: userContext,
+                cachePolicy: .none
+            )
+        ]
+        return CoachPromptTrace(
+            moduleCount: modules.count,
+            cacheableModuleCount: modules.filter { $0.cachePolicy != .none }.count,
+            totalCharacterCount: systemPrompt.count + userContext.count,
+            modules: modules
+        )
+    }
+
+    private static func moduleTrace(
+        name: String,
+        text: String,
+        cachePolicy: CoachPromptCachePolicy
+    ) -> CoachPromptModuleTrace {
+        CoachPromptModuleTrace(
+            name: name,
+            cachePolicy: cachePolicy,
+            characterCount: text.count,
+            nonEmptyLineCount: text
+                .split(separator: "\n")
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .count
+        )
+    }
+}
+
 /// Persisted per-turn observability for the Ask Noum coach thread.
 ///
 /// Optional fields keep old persisted rows decodable and let non-pipeline
@@ -195,6 +254,7 @@ struct CoachTurnMetadata: Codable, Equatable {
     var proofTestHash: String?
     var proofTestRecentlyRepeated: Bool?
     var retrievalTrace: CoachRetrievalTrace?
+    var promptTrace: CoachPromptTrace?
     var visionScore: Int?
     var visionCriticalMisses: [CoachVisionCriterion]?
     var visionPassesProductionFloor: Bool?
@@ -240,6 +300,7 @@ struct CoachTurnMetadata: Codable, Equatable {
         proofTestHash: String? = nil,
         proofTestRecentlyRepeated: Bool? = nil,
         retrievalTrace: CoachRetrievalTrace? = nil,
+        promptTrace: CoachPromptTrace? = nil,
         visionScore: Int? = nil,
         visionCriticalMisses: [CoachVisionCriterion]? = nil,
         visionPassesProductionFloor: Bool? = nil,
@@ -280,6 +341,7 @@ struct CoachTurnMetadata: Codable, Equatable {
         self.proofTestHash = proofTestHash
         self.proofTestRecentlyRepeated = proofTestRecentlyRepeated
         self.retrievalTrace = retrievalTrace
+        self.promptTrace = promptTrace
         self.visionScore = visionScore
         self.visionCriticalMisses = visionCriticalMisses
         self.visionPassesProductionFloor = visionPassesProductionFloor

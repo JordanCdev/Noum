@@ -27638,6 +27638,83 @@ struct AICoachChatReplyQualityGateTests {
         ) == nil)
     }
 
+    @Test func safeReferenceRepairAcceptsVoiceChoiceStateDirective() throws {
+        let turn = "What voice should I even pick? There are six and I don't know."
+        let system = """
+        GOAL
+        - No voice set yet.
+        USER CONTEXT
+        - Wants to run meetings without getting talked over.
+        """
+        let repair = try #require(AICoachChatService.safeReferenceRepairReply(
+            issue: .roboticPhrase("tap to confirm"),
+            latestUserTurn: turn,
+            system: system,
+            quoteGuard: nil,
+            turnDepth: .groundedRead
+        ))
+        let lower = repair.lowercased()
+
+        #expect(repair.contains("Start with Authoritative"))
+        #expect(repair.contains("Executive presence"))
+        #expect(!lower.contains("tap to confirm"))
+        #expect(!lower.contains("lock it in"))
+        #expect(!lower.contains("set it"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repair,
+            latestUserTurn: turn,
+            systemContext: system
+        ) == nil)
+    }
+
+    @Test func safeReferenceRepairAcceptsWarmVoiceChangeStateDirective() throws {
+        let turn = "Yeah maybe I should just switch to something warmer altogether."
+        let system = """
+        GOAL
+        - Current voice: Authoritative.
+        RECENT FEEDBACK
+        - User heard that the delivery was clear but cold.
+        """
+        let repair = try #require(AICoachChatService.safeReferenceRepairReply(
+            issue: .roboticPhrase("i'll set it"),
+            latestUserTurn: turn,
+            system: system,
+            quoteGuard: nil,
+            turnDepth: .groundedRead
+        ))
+        let lower = repair.lowercased()
+
+        #expect(repair.contains("Warm and welcoming"))
+        #expect(repair.contains("what changed"))
+        #expect(!lower.contains("tap to confirm"))
+        #expect(!lower.contains("lock it in"))
+        #expect(!lower.contains("set it"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repair,
+            latestUserTurn: turn,
+            systemContext: system
+        ) == nil)
+    }
+
+    @Test func safeReferenceRepairDoesNotRewriteGenericVoiceGoalRoboticPhrase() {
+        let turn = "What voice should I even pick? There are six and I don't know."
+        let system = """
+        GOAL
+        - No voice set yet.
+        USER CONTEXT
+        - Wants to run meetings without getting talked over.
+        """
+        let repair = AICoachChatService.safeReferenceRepairReply(
+            issue: .roboticPhrase("based on your data"),
+            latestUserTurn: turn,
+            system: system,
+            quoteGuard: nil,
+            turnDepth: .groundedRead
+        )
+
+        #expect(repair == nil)
+    }
+
     @Test func repairReferenceForWhyLandedUsesLateRecommendationEvidence() throws {
         let turn = "Why did that answer land badly?"
         let system = "TRANSCRIPT\n- I waited too long to state the recommendation, then gave the context after it."

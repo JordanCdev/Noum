@@ -594,11 +594,35 @@ enum CoachReliabilityGate {
         }
     }
 
+    /// A final, honest line for the rare case where every depth-shaped static
+    /// fallback variant was already seen recently. It is separate from the main
+    /// variant rotation so exhaustion can still produce a clean reply once.
+    static func exhaustedStaticFallback(
+        turnDepth: CoachTurnDepth,
+        surface: CoachReplySurface
+    ) -> String {
+        switch turnDepth {
+        case .trustRepair:
+            return surface == .live
+                ? "Fair. I don't have a fresh read yet. Give me the exact moment and I'll answer that first."
+                : "Fair. I don't have a fresh enough read to make this more useful yet. Give me the exact moment I missed and I'll answer that first."
+        case .deepAssessment:
+            return surface == .live
+                ? "I don't have a fresh sample yet. Give me one pressured answer and I'll read the gap from that."
+                : "I don't have a fresh enough sample to update the verdict honestly. Give me one pressured answer and I'll judge the gap from that evidence."
+        case .quickMove, .groundedRead:
+            return surface == .live
+                ? "I don't have a fresh signal yet. Give me one concrete answer and I'll make the next read specific."
+                : "I don't have a fresh enough signal yet. Give me one concrete answer with a clear ask, and I'll make the next read specific."
+        }
+    }
+
     /// Pick the first static variant the user has not just seen (not equal to,
     /// contained in, or a near-duplicate of the previous or any recent coach
-    /// turn). If every variant collides — a rare pathological loop — the last
-    /// variant is returned so the user at least never gets a verbatim repeat of
-    /// the immediately previous line.
+    /// turn). If every depth-shaped variant collides, use a separate honest
+    /// recovery line. If even that was just shown, choose a non-immediate repeat
+    /// as the least-bad option rather than handing back the same canned line
+    /// twice in a row.
     static func selectStaticFallback(
         turnDepth: CoachTurnDepth,
         surface: CoachReplySurface,
@@ -616,7 +640,19 @@ enum CoachReliabilityGate {
                 s == v || v.contains(s) || s.contains(v) || isNearDuplicate(v, s)
             }
         }
-        return variants.first { !collides($0) } ?? variants.last ?? variants[0]
+        if let freshVariant = variants.first(where: { !collides($0) }) {
+            return freshVariant
+        }
+        let exhausted = exhaustedStaticFallback(turnDepth: turnDepth, surface: surface)
+        if isCleanCandidate(
+            exhausted,
+            previousCoachReply: previousCoachReply,
+            recentCoachReplies: recentCoachReplies
+        ) {
+            return exhausted
+        }
+        let previous = previousCoachReply.map(normalize)
+        return variants.first { normalize($0) != previous } ?? variants[0]
     }
 
     // MARK: Helpers

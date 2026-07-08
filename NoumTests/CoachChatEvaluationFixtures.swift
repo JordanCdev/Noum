@@ -1768,6 +1768,7 @@ struct CoachChatConversationAppPathTurnRow: Codable, Equatable {
     let proofTestHash: String?
     let proofTestRecentlyRepeated: Bool?
     let retrievalTrace: CoachRetrievalTrace?
+    let arenaTrace: CoachArenaAppPathTrace?
     let timeToFirstVisibleTokenMs: Int?
     let timeToCompleteReplyMs: Int?
     // Cache state captured from the real pipeline: whether this turn reused a cached
@@ -1776,6 +1777,175 @@ struct CoachChatConversationAppPathTurnRow: Codable, Equatable {
     let trajectoryCacheHit: Bool?
     let assessmentCacheHit: Bool?
     let passesAppPathFloor: Bool
+}
+
+struct CoachArenaAppPathTrace: Codable, Equatable {
+    let candidateSource: String
+    let context: Context
+    let retrieval: CoachRetrievalTrace?
+    let memory: Memory
+    let reasoning: Reasoning
+    let prompt: Prompt
+    let provider: Provider
+    let rawReply: String?
+    let finalReply: String?
+    let issues: [String]
+    let latency: Latency
+    let cache: Cache
+    let fallback: Fallback
+    let versions: Versions
+    let gitCommit: String?
+
+    struct Context: Codable, Equatable {
+        let conversationID: String
+        let sourceFixtureID: String
+        let turnIndex: Int
+        let userTurn: String
+        let surface: String
+        let matchSource: String?
+    }
+
+    struct Memory: Codable, Equatable {
+        let turnDepth: String?
+        let assessmentConfidence: Double?
+        let proofTestHash: String?
+        let proofTestRecentlyRepeated: Bool?
+    }
+
+    struct Reasoning: Codable, Equatable {
+        let visionScore: Int?
+        let visionPassesProductionFloor: Bool?
+        let semanticGateOutcome: String?
+        let qualityGateOutcome: String?
+        let qualityGateEvents: [String]
+    }
+
+    struct Prompt: Codable, Equatable {
+        let source: String
+        let targetCoachReply: String
+        let moduleCount: Int?
+        let cacheableModuleCount: Int?
+        let modules: [CoachPromptModuleTrace]
+    }
+
+    struct Provider: Codable, Equatable {
+        let name: String?
+        let model: String?
+        let tierRequested: String?
+        let tierChosen: String?
+    }
+
+    struct Latency: Codable, Equatable {
+        let timeToFirstVisibleTokenMs: Int?
+        let timeToCompleteReplyMs: Int?
+    }
+
+    struct Cache: Codable, Equatable {
+        let trajectoryCacheHit: Bool?
+        let assessmentCacheHit: Bool?
+        let assessmentCacheAgeMs: Int?
+    }
+
+    struct Fallback: Codable, Equatable {
+        let qualityGateAcceptedFallback: Bool
+        let typedAssessmentFallbackApplied: Bool
+        let reliabilityFallbackApplied: Bool?
+    }
+
+    struct Versions: Codable, Equatable {
+        let sourceSchemaVersion: String
+        let traceSchemaVersion: String
+        let promptTraceSchemaVersion: String
+    }
+
+    static func make(
+        conversationID: String,
+        sourceFixtureID: String,
+        turnIndex: Int,
+        userTurn: String,
+        surface: CoachReplySurface,
+        targetCoachReply: String,
+        finalCoachReply: String?,
+        metadata: CoachTurnMetadata?,
+        qualityGateEvents: [String],
+        qualityGateAcceptedFallback: Bool,
+        typedAssessmentFallbackApplied: Bool,
+        schemaVersion: String,
+        gitCommit: String? = nil
+    ) -> CoachArenaAppPathTrace {
+        var issues: [String] = []
+        if let semanticGateIssue = metadata?.semanticGateIssue,
+           !semanticGateIssue.isEmpty {
+            issues.append("semantic:\(semanticGateIssue)")
+        }
+        issues.append(contentsOf: (metadata?.reliabilityIssues ?? []).map { "reliability:\($0.rawValue)" })
+        if metadata?.qualityGateOutcome?.logValue.hasPrefix("failed:") == true {
+            issues.append("qualityGateBlockingFailure")
+        }
+
+        let promptTrace = metadata?.promptTrace
+        return CoachArenaAppPathTrace(
+            candidateSource: "appPathReport",
+            context: Context(
+                conversationID: conversationID,
+                sourceFixtureID: sourceFixtureID,
+                turnIndex: turnIndex,
+                userTurn: userTurn,
+                surface: surface.rawValue,
+                matchSource: nil
+            ),
+            retrieval: metadata?.retrievalTrace,
+            memory: Memory(
+                turnDepth: metadata?.turnDepth?.rawValue,
+                assessmentConfidence: metadata?.assessmentConfidence ?? metadata?.assessment?.confidence,
+                proofTestHash: metadata?.proofTestHash,
+                proofTestRecentlyRepeated: metadata?.proofTestRecentlyRepeated
+            ),
+            reasoning: Reasoning(
+                visionScore: metadata?.visionScore,
+                visionPassesProductionFloor: metadata?.visionPassesProductionFloor,
+                semanticGateOutcome: metadata?.semanticGateOutcome?.logValue,
+                qualityGateOutcome: metadata?.qualityGateOutcome?.logValue,
+                qualityGateEvents: qualityGateEvents
+            ),
+            prompt: Prompt(
+                source: "CoachReplyPipeline real Swift app-path harness",
+                targetCoachReply: targetCoachReply,
+                moduleCount: promptTrace?.moduleCount,
+                cacheableModuleCount: promptTrace?.cacheableModuleCount,
+                modules: promptTrace?.modules ?? []
+            ),
+            provider: Provider(
+                name: metadata?.providerName,
+                model: metadata?.providerModel,
+                tierRequested: metadata?.providerTier?.rawValue,
+                tierChosen: metadata?.providerTierChosen?.rawValue
+            ),
+            rawReply: targetCoachReply,
+            finalReply: finalCoachReply,
+            issues: issues,
+            latency: Latency(
+                timeToFirstVisibleTokenMs: metadata?.timeToFirstVisibleTokenMs,
+                timeToCompleteReplyMs: metadata?.timeToCompleteReplyMs
+            ),
+            cache: Cache(
+                trajectoryCacheHit: metadata?.trajectoryCacheHit,
+                assessmentCacheHit: metadata?.assessmentCacheHit,
+                assessmentCacheAgeMs: metadata?.assessmentCacheAgeMs
+            ),
+            fallback: Fallback(
+                qualityGateAcceptedFallback: qualityGateAcceptedFallback,
+                typedAssessmentFallbackApplied: typedAssessmentFallbackApplied,
+                reliabilityFallbackApplied: metadata?.reliabilityFallbackApplied
+            ),
+            versions: Versions(
+                sourceSchemaVersion: schemaVersion,
+                traceSchemaVersion: "coach-arena-app-path-trace-v1",
+                promptTraceSchemaVersion: "coach-prompt-modules-v1"
+            ),
+            gitCommit: gitCommit
+        )
+    }
 }
 
 struct CoachLiveProviderSweepEvidence: Codable, Equatable {

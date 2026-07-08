@@ -5429,6 +5429,12 @@ actor AICoachChatService {
         let lowerTurn = latestUserTurn?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? ""
+        if safeReferenceRepairShouldRunForVoiceGoal(
+            issue: issue,
+            latestUserTurn: lowerTurn
+        ) {
+            return true
+        }
         guard isCritiqueTurn(lowerTurn) else {
             return false
         }
@@ -5440,6 +5446,26 @@ actor AICoachChatService {
                 || phrase.contains("sensitive-turn report voice")
                 || phrase.contains("fluff, not coaching")
                 || phrase.contains("generic tip-giving")
+        default:
+            return false
+        }
+    }
+
+    private nonisolated static func safeReferenceRepairShouldRunForVoiceGoal(
+        issue: CoachChatReplyQualityIssue,
+        latestUserTurn: String?
+    ) -> Bool {
+        guard turnLooksLikeVoiceGoalIntent(latestUserTurn) else {
+            return false
+        }
+        switch issue {
+        case .menuInsteadOfDecision:
+            return true
+        case .roboticPhrase(let phrase):
+            return replyUsesVoiceGoalStateDirective(
+                phrase.lowercased(),
+                latestUserTurn: latestUserTurn
+            ) != nil
         default:
             return false
         }
@@ -5469,6 +5495,9 @@ actor AICoachChatService {
             .lowercased() ?? ""
         let lowerSystem = system.lowercased()
         if isCritiqueTurn(lowerTurn) {
+            return true
+        }
+        if voiceGoalRepairReferenceShape(for: lowerTurn, system: system) != nil {
             return true
         }
         if coldStartRepairReferenceShape(for: lowerTurn, system: system) != nil {

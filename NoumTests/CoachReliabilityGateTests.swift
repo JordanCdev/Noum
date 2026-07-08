@@ -869,6 +869,38 @@ struct CoachReliabilityGateTests {
         #expect(variants.contains(picked))
     }
 
+    @Test func selectStaticFallbackUsesRecoveryLineWhenVariantsAreExhausted() {
+        let variants = CoachReliabilityGate.staticFallbackVariants(turnDepth: .quickMove, surface: .text)
+        let picked = CoachReliabilityGate.selectStaticFallback(
+            turnDepth: .quickMove,
+            surface: .text,
+            previousCoachReply: variants.last,
+            recentCoachReplies: variants
+        )
+        #expect(picked != variants.last)
+        #expect(!variants.contains(picked))
+        #expect(
+            CoachReliabilityGate.isCleanCandidate(
+                picked,
+                previousCoachReply: variants.last,
+                recentCoachReplies: variants
+            )
+        )
+    }
+
+    @Test func selectStaticFallbackAvoidsImmediateRepeatWhenRecoveryWasAlsoRecent() {
+        let variants = CoachReliabilityGate.staticFallbackVariants(turnDepth: .quickMove, surface: .text)
+        let recovery = CoachReliabilityGate.exhaustedStaticFallback(turnDepth: .quickMove, surface: .text)
+        let picked = CoachReliabilityGate.selectStaticFallback(
+            turnDepth: .quickMove,
+            surface: .text,
+            previousCoachReply: recovery,
+            recentCoachReplies: variants + [recovery]
+        )
+        #expect(picked != recovery)
+        #expect(variants.contains(picked))
+    }
+
     @Test func selectStaticFallbackWithNoHistoryReturnsCanonicalVariant() {
         let picked = CoachReliabilityGate.selectStaticFallback(
             turnDepth: .deepAssessment,

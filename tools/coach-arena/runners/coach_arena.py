@@ -711,6 +711,24 @@ def load_app_path_candidates(path, fixtures):
 
 
 def app_path_trace(row, turn, report, source_path, match_source):
+    exported = turn.get("arenaTrace")
+    if isinstance(exported, dict):
+        trace = dict(exported)
+        trace.setdefault("candidateSource", "appPathReport")
+        context = dict(trace.get("context") or {})
+        context.setdefault("conversationID", row.get("conversationID"))
+        context.setdefault("sourceFixtureID", row.get("sourceFixtureID"))
+        context.setdefault("turnIndex", turn.get("turnIndex"))
+        context.setdefault("userTurn", turn.get("userTurn"))
+        context.setdefault("surface", report.get("surface"))
+        context.setdefault("matchSource", match_source)
+        trace["context"] = context
+        trace.setdefault("retrieval", turn.get("retrievalTrace"))
+        cache = dict(trace.get("cache") or {})
+        cache.setdefault("sourcePath", str(source_path))
+        trace["cache"] = cache
+        return trace
+
     quality_events = turn.get("qualityGateEvents") or []
     issues = []
     if turn.get("semanticGateIssue"):
