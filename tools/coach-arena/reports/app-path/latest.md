@@ -1,15 +1,15 @@
 # Coach Arena Latest Report
 
-- Generated: `2026-07-08T20:43:26+00:00`
-- Candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
+- Generated: `2026-07-08T22:05:07+00:00`
+- Candidate: `/private/tmp/noum-coach-eval/coach-chat-live-app-path-eval-v1.json`
 - Fixtures: `50`
-- Average: `77.58/100`
-- Passes score/coverage thresholds: `False`
-- Real-pipeline evidence passes: `False`
-- Evidence claim: `localEvaluationOnly`
+- Average: `78.56/100`
+- Passes score/coverage thresholds: `True`
+- Real-pipeline evidence passes: `True`
+- Evidence claim: `realPipelineEvidence`
 - Trace quality passes: `True`
-- Placeholder/fallback leaks: `1`
-- Local fixture failures: `1`
+- Placeholder/fallback leaks: `0`
+- Local fixture failures: `0`
 
 ## Report Lens and Canonical Paths
 
@@ -23,7 +23,7 @@
 
 - `deepAssessment`: `80.67/100`
 - `groundedRead`: `79.83/100`
-- `quickMove`: `74.29/100`
+- `quickMove`: `77.18/100`
 - `trustRepair`: `77.22/100`
 
 ## VISION Readiness Boundary
@@ -36,13 +36,6 @@
 
 VISION production readiness 18/100; local target-shape 85/100; claim localEvaluationSubstrateOnly; blockers: noLiveProviderTranscriptSweep, noProfessionalCoachCalibration, noRealUserLongitudinalTransferOutcomes, noRealDeviceTestFlightVerification, operationalLaunchChecklistIncomplete.
 
-## Real-Pipeline Evidence
-
-- `1 app-path fixture(s) below local quality floor 70: live-latency-short-044`
-- `source Swift app-path freshness: dirty coach source files after app-path dump: NoumTests/CoachJudgementLayerTests.swift`
-- `source Swift app-path readiness warnings: appPathFloorFailures,targetReplyMismatch`
-- `source Swift app-path report did not pass its app-path floor`
-
 ## Trace Audit
 
 - Real-pipeline trace fixtures: `50`
@@ -54,60 +47,56 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 
 - Eligible real-pipeline traces: `50`
 - Passes: `True`
-- Unique proof-test hashes: `29`
-- Max proof-test hash reuse: `3`
+- Unique proof-test hashes: `28`
+- Max proof-test hash reuse: `4`
 - Max proof-test hash reuse allowed: `10`
-- Distinct rounded confidence values: `10`
+- Distinct rounded confidence values: `11`
 - Empty retrieval-card traces: `0`
-- Allowed empty retrieval-card traces: `3`
+- Allowed empty retrieval-card traces: `43`
 - Slow first-token traces: `0`
 
 ## Previous Run
 
 - Status: `compared`
-- Previous generated: `2026-07-08T20:07:49+00:00`
+- Previous generated: `2026-07-08T22:04:17+00:00`
 - Previous candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
-- Candidate changed: `False`
+- Candidate changed: `True`
 - Fixture count changed: `False`
-- Average delta: `-0.98`
-- Failure count delta: `1`
-- Placeholder leak delta: `1`
-- Pass state changed: `True`
-- Type average deltas: `deepAssessment` `0.0`, `groundedRead` `0.0`, `quickMove` `-2.89`, `trustRepair` `0.0`
+- Average delta: `0.0`
+- Failure count delta: `0`
+- Placeholder leak delta: `0`
+- Pass state changed: `False`
+- Type average deltas: `deepAssessment` `0.0`, `groundedRead` `0.0`, `quickMove` `0.0`, `trustRepair` `0.0`
 - Cleared failures: `none`
-- New failures: `live-latency-short-044`
+- New failures: `none`
 
 ## Coverage
 
 - Source: `appPathReport`
-- Source schema: `coach-chat-conversation-app-path-eval-v1`
-- Source surface: `text`
-- Source app-path floor: `False`
-- Source app-path floor failures: `3`
-- App-path local fixture floor: `False`
-- Source target-reply mismatches: `3`
-- Source app-path failure samples: `3` of `3`
-- Source trace git commits: `e101bc82`
+- Source schema: `coach-chat-live-app-path-eval-v1`
+- Source surface: `live`
+- Source app-path floor: `True`
+- Source app-path floor failures: `0`
+- App-path local fixture floor: `True`
+- Source target-reply mismatches: `0`
+- Source app-path failure samples: `0` of `0`
+- Source trace git commits: `da978b2f`
 - Source traces missing git commit: `0`
-- Current git commit: `e101bc82`
-- Dirty coach source files: `1`
-- Source freshness passes: `False`
+- Current git commit: `da978b2f`
+- Source trace coach fingerprints: `sha256:2b637c7f785df79623806d1b3a5ee7d6906fd8eb3777f8968d225b34aac58a08`
+- Source traces missing coach fingerprint: `0`
+- Current coach source fingerprint: `sha256:2b637c7f785df79623806d1b3a5ee7d6906fd8eb3777f8968d225b34aac58a08`
+- Source fingerprint matches current: `True`
+- Dirty coach source files: `5`
+- Source freshness passes: `True`
 - Coverage passes: `True`
 - Requested fixtures: `50`
 - Matched fixtures: `50`
 - Unmatched fixtures: `0`
 - Ambiguous fixtures: `0`
-- Source freshness failures: `dirty coach source files after app-path dump: NoumTests/CoachJudgementLayerTests.swift`
-
-### Source App-Path Failure Samples
-
-- `answer-depth-one-example` / `answer-depth-one-example-conversation` turn `2`: `appPathFloor, qualityGate, targetReplyMismatch`; semantic `passed`; quality `fallback:deterministicAssessmentAfterContentRejected`
-- `assistant-explainer-register` / `not-informative-trust-repair-conversation` turn `2`: `appPathFloor, qualityGate, targetReplyMismatch`; semantic `passed`; quality `fallback:typedAssessment`
-- `live-latency-short-044` / `arena-live-latency-short-044-app-path-conversation` turn `0`: `appPathFloor, qualityGate, targetReplyMismatch`; semantic `passed`; quality `fallback:deterministicAssessmentAfterContentRejected`
 
 ## Worst Fixtures
 
-- `live-latency-short-044` `quickMove`: `30/100` - quality/provider fallback output cannot score as normal coaching; reply does not match expected coach move
 - `cold-generic-016` `trustRepair`: `70/100` - no local failure reason
 - `pace-rushing-019` `groundedRead`: `70/100` - no local failure reason
 - `confidence-clean-stop-025` `quickMove`: `70/100` - no local failure reason
@@ -117,3 +106,4 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 - `interview-prep-006` `quickMove`: `72/100` - no local failure reason
 - `leadership-transfer-capture-026` `quickMove`: `72/100` - no local failure reason
 - `semantic-filler-use-040` `groundedRead`: `72/100` - no local failure reason
+- `prompt-echo-041` `groundedRead`: `72/100` - no local failure reason

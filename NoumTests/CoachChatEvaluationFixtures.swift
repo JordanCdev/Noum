@@ -1811,6 +1811,7 @@ struct CoachArenaAppPathTrace: Codable, Equatable {
     let fallback: Fallback
     let versions: Versions
     let gitCommit: String?
+    let sourceFingerprint: String?
 
     struct Context: Codable, Equatable {
         let conversationID: String
@@ -1887,7 +1888,8 @@ struct CoachArenaAppPathTrace: Codable, Equatable {
         qualityGateAcceptedFallback: Bool,
         typedAssessmentFallbackApplied: Bool,
         schemaVersion: String,
-        gitCommit: String? = nil
+        gitCommit: String? = nil,
+        sourceFingerprint: String? = nil
     ) -> CoachArenaAppPathTrace {
         var issues: [String] = []
         if let semanticGateIssue = metadata?.semanticGateIssue,
@@ -1959,7 +1961,8 @@ struct CoachArenaAppPathTrace: Codable, Equatable {
                 traceSchemaVersion: "coach-arena-app-path-trace-v1",
                 promptTraceSchemaVersion: "coach-prompt-modules-v1"
             ),
-            gitCommit: gitCommit
+            gitCommit: gitCommit,
+            sourceFingerprint: sourceFingerprint
         )
     }
 }
@@ -1981,6 +1984,9 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
     ]
 
     let schemaVersion: String
+    let sourceGitCommit: String?
+    let sourceCoachFingerprint: String?
+    let sourceFreshnessFailures: [String]?
     let fixtureCount: Int
     let longFormConversationCount: Int
     let longFormConversationIDsPassingProductionFloor: [String]
@@ -2006,6 +2012,18 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
         var reasons: [String] = []
         if schemaVersion != Self.expectedSchemaVersion {
             reasons.append("schemaVersion=\(schemaVersion)")
+        }
+        if Self.trimmedNonEmpty(sourceGitCommit) == nil {
+            reasons.append("sourceGitCommitMissing")
+        }
+        if Self.trimmedNonEmpty(sourceCoachFingerprint) == nil {
+            reasons.append("sourceCoachFingerprintMissing")
+        }
+        for failure in sourceFreshnessFailures ?? [] {
+            if let reason = Self.trimmedNonEmpty(failure),
+               !reasons.contains(reason) {
+                reasons.append(reason)
+            }
         }
         if fixtureCount < 10 || rows.count < 10 {
             reasons.append("fewerThanTenRows")
@@ -2246,6 +2264,34 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
         return try JSONDecoder().decode(CoachLiveProviderSweepEvidence.self, from: data)
     }
 
+    func withSourceFreshnessExpectation(
+        gitCommit expectedGitCommit: String?,
+        coachFingerprint expectedCoachFingerprint: String?
+    ) -> CoachLiveProviderSweepEvidence {
+        let failures = Self.sourceFreshnessFailures(
+            sourceGitCommit: sourceGitCommit,
+            sourceCoachFingerprint: sourceCoachFingerprint,
+            expectedGitCommit: expectedGitCommit,
+            expectedCoachFingerprint: expectedCoachFingerprint
+        )
+        return CoachLiveProviderSweepEvidence(
+            schemaVersion: schemaVersion,
+            sourceGitCommit: sourceGitCommit,
+            sourceCoachFingerprint: sourceCoachFingerprint,
+            sourceFreshnessFailures: failures.isEmpty ? nil : failures,
+            fixtureCount: fixtureCount,
+            longFormConversationCount: longFormConversationCount,
+            longFormConversationIDsPassingProductionFloor: longFormConversationIDsPassingProductionFloor,
+            longFormConversationFailureIDs: longFormConversationFailureIDs,
+            longFormConversations: longFormConversations,
+            providerChain: providerChain,
+            passesProductionFloor: passesProductionFloor,
+            passesRunReadinessFloor: passesRunReadinessFloor,
+            summary: summary,
+            rows: rows
+        )
+    }
+
     private static func duplicateReplyIDs(in rows: [Row]) -> [String] {
         var firstIDByReply: [String: String] = [:]
         var duplicateIDs = Set<String>()
@@ -2286,6 +2332,50 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
             "based on your data",
             "keep practicing and track your progress"
         ].contains { normalized.contains($0) }
+    }
+
+    private static func sourceFreshnessFailures(
+        sourceGitCommit: String?,
+        sourceCoachFingerprint: String?,
+        expectedGitCommit: String?,
+        expectedCoachFingerprint: String?
+    ) -> [String] {
+        var failures: [String] = []
+        let actualCommit = trimmedNonEmpty(sourceGitCommit)
+        let actualFingerprint = trimmedNonEmpty(sourceCoachFingerprint)
+        let expectedCommit = trimmedNonEmpty(expectedGitCommit)
+        let expectedFingerprint = trimmedNonEmpty(expectedCoachFingerprint)
+
+        if let expectedCommit {
+            if let actualCommit {
+                if actualCommit != expectedCommit {
+                    failures.append("sourceGitCommitMismatch")
+                }
+            } else {
+                failures.append("sourceGitCommitMissing")
+            }
+        } else {
+            failures.append("currentSourceGitCommitMissing")
+        }
+
+        if let expectedFingerprint {
+            if let actualFingerprint {
+                if actualFingerprint != expectedFingerprint {
+                    failures.append("sourceCoachFingerprintMismatch")
+                }
+            } else {
+                failures.append("sourceCoachFingerprintMissing")
+            }
+        } else {
+            failures.append("currentSourceCoachFingerprintMissing")
+        }
+
+        return failures
+    }
+
+    private static func trimmedNonEmpty(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     func encodedSortedJSON() throws -> String {

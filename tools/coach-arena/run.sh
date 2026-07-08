@@ -16,6 +16,8 @@
 #   ./run.sh test         run unit tests
 #   ./run.sh app-path [report.json]
 #                         score a real Swift app-path dump into reports/app-path
+#   ./run.sh app-path-source [dump-dir]
+#                         stamp source commit/fingerprint sidecars before XCTest
 #   ./run.sh python ...   run the legacy Python engine directly (unsafe default:
 #                         without --app-path-report it grades gold examples)
 #
@@ -58,6 +60,9 @@ case "$cmd" in
       --reports-dir reports/app-path \
       --synthetic-dir synthetic/app-path \
       "$@" ;;
+  app-path-source)
+    dump_dir="${1:-${NOUM_COACH_EVAL_DUMP_DIR:-/private/tmp/noum-coach-eval}}"
+    python3 runners/coach_arena.py --write-app-path-source-sidecars "$dump_dir" ;;
   python)   python3 runners/coach_arena.py "$@" ;;
-  *)        echo "usage: ./run.sh {run|plan|prepare|report|validate|synth|extract|test|app-path|python}" >&2; exit 1 ;;
+  *)        echo "usage: ./run.sh {run|plan|prepare|report|validate|synth|extract|test|app-path|app-path-source|python}" >&2; exit 1 ;;
 esac

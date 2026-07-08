@@ -1363,6 +1363,73 @@ struct CoachSemanticQualityGateTests {
         #expect(issue == nil)
     }
 
+    @Test func briefTacticalMoveCanClearRetrievedExpertiseGate() {
+        let context = """
+        COACHING EXPERTISE
+        - Progress can wobble when the close softens after the ask.
+        - Conflict coaching should name the point early, then stop.
+        """
+
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "The close is the lever, so make the final sentence the ask, then stop.",
+            latestUserTurn: "Quickly, what do I do next?",
+            systemContext: context,
+            turnDepth: .quickMove
+        )
+
+        #expect(issue == nil)
+    }
+
+    @Test func briefRecordingMoveCanClearRetrievedExpertiseGate() {
+        let context = """
+        COACHING EXPERTISE
+        - Answer depth improves when the same recommendation keeps one claim, one reason, and one example.
+        - The drill should isolate answer depth rather than adding a second thread.
+        """
+
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Record the same executive recommendation in 60 seconds because it isolates answer depth. Sentence one is the claim, sentence two is one reason, sentence three is one example, then stop.",
+            latestUserTurn: "What should I record?",
+            systemContext: context,
+            turnDepth: .quickMove
+        )
+
+        #expect(issue == nil)
+    }
+
+    @Test func briefFollowupMoveCanClearRetrievedExpertiseGate() {
+        let context = """
+        COACHING EXPERTISE
+        - Order is the useful read when warmth arrives before the recommendation.
+        - The next rep should isolate order without removing reassurance.
+        """
+
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Run one 45-second client concern answer because it isolates order. Sentence one is the recommendation; sentence two is one reassurance; then stop.",
+            latestUserTurn: "What should I do with that?",
+            systemContext: context,
+            turnDepth: .quickMove
+        )
+
+        #expect(issue == nil)
+    }
+
+    @Test func briefTacticalMoveExceptionRequiresConcreteAnchor() {
+        let context = """
+        COACHING EXPERTISE
+        - Order is the useful read when warmth arrives before the recommendation.
+        """
+
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Practice once because it will help. Then stop.",
+            latestUserTurn: "What should I do with that?",
+            systemContext: context,
+            turnDepth: .quickMove
+        )
+
+        #expect(issue != nil)
+    }
+
     @Test func unconfirmedPersonalPatternLabelFailsProfessionalGate() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "You are defensive because you fear disagreement. Run a 60-second rep with the disagreement first, then one reason.",

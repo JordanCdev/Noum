@@ -66,6 +66,7 @@ ARENA_PROVIDER=replay ./tools/coach-arena/run.sh run
 ARENA_INCLUDE_SYNTHETIC=1 ./tools/coach-arena/run.sh run
 
 # Real Swift app-path evidence from the XCTest artifact dump
+./tools/coach-arena/run.sh app-path-source
 ./tools/coach-arena/run.sh app-path
 ```
 
@@ -73,16 +74,23 @@ ARENA_INCLUDE_SYNTHETIC=1 ./tools/coach-arena/run.sh run
 `$NOUM_COACH_EVAL_DUMP_DIR/coach-chat-conversation-app-path-eval-v1.json`, defaulting
 to `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`,
 and writes the scored report to `reports/app-path/`. Pass an explicit report path
-as the first argument when scoring another dump. Use the XCTest bridge
-`NoumTests/CoachChatConversationArtifactDumpXCTest` to refresh the dump first.
+as the first argument when scoring another dump. Before refreshing the dump, run
+`app-path-source` for the same dump directory. It writes
+`source-git-commit.txt` and `source-coach-fingerprint.txt`, letting the XCTest
+bridge stamp every trace with the exact source commit and coach-source byte
+fingerprint used for that run. Then use the XCTest bridge
+`NoumTests/CoachChatConversationArtifactDumpXCTest` to refresh the app-path JSON.
+The same source sidecars now gate `coach-live-eval-v1.json`: a live-provider
+sweep only clears `.noLiveProviderTranscriptSweep` when its `sourceGitCommit`
+and `sourceCoachFingerprint` match the sidecars in the dump directory.
 
 Other commands: `plan` (compose real prompts/context to `runs/<id>/requests.json`),
 `prepare [n]` (per-voice prompts + per-fixture reqs + n agent batches),
 `report` (re-render), `validate` (fixture integrity), `synth` (rebuild
 conversations), `extract <voice|--json>` (print the extracted system prompt),
-`test`, and `python` (direct access to the legacy engine; do not use it for
-app-path readiness unless you pass `--app-path-report`, otherwise it grades
-reference examples).
+`test`, `app-path-source` (stamp real app-path source sidecars), and `python`
+(direct access to the legacy engine; do not use it for app-path readiness unless
+you pass `--app-path-report`, otherwise it grades reference examples).
 
 ### Providers
 

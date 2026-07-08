@@ -3066,6 +3066,7 @@ struct CoachChatConversationCorpusTests {
         let directory = try Self.temporaryEvaluationDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let sweep = Self.liveProviderSweepEvidence()
+        try Self.writeSourceSidecars(to: directory)
         try sweep.encodedSortedJSON().write(
             to: directory.appendingPathComponent(CoachChatConversationCorpus.liveProviderSweepArtifactFileName),
             atomically: true,
@@ -3091,6 +3092,42 @@ struct CoachChatConversationCorpusTests {
         #expect(manifest.audit.score == 20)
         #expect(manifest.audit.maximumAllowedScore == 20)
         #expect(!manifest.audit.productionReady)
+    }
+
+    @MainActor
+    @Test func productionReadinessManifestRejectsStaleLiveSweepSourceFingerprint() async throws {
+        let directory = try Self.temporaryEvaluationDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let staleSweep = Self.liveProviderSweepEvidence(
+            sourceGitCommit: "stale123",
+            sourceCoachFingerprint: "sha256:stale"
+        )
+        try Self.writeSourceSidecars(
+            to: directory,
+            gitCommit: "fresh123",
+            coachFingerprint: "sha256:fresh"
+        )
+        try staleSweep.encodedSortedJSON().write(
+            to: directory.appendingPathComponent(CoachChatConversationCorpus.liveProviderSweepArtifactFileName),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let manifest = try Self.productionReadinessEvidenceManifestFromCurrentArtifacts(
+            environment: ["NOUM_COACH_EVAL_DUMP_DIR": directory.path],
+            arguments: [],
+            defaults: UserDefaults(suiteName: "CoachLiveProviderSweepFreshness.\(UUID().uuidString)")!
+        )
+        let liveProviderRow = try #require(
+            manifest.rows.first { $0.key == "liveProviderTranscriptSweep" }
+        )
+
+        #expect(manifest.evidence.liveProviderRowsPassingFloor == 0)
+        #expect(liveProviderRow.status == .missing)
+        #expect(liveProviderRow.blocker == .noLiveProviderTranscriptSweep)
+        #expect(liveProviderRow.notes.contains("sourceGitCommitMismatch"))
+        #expect(liveProviderRow.notes.contains("sourceCoachFingerprintMismatch"))
+        #expect(manifest.audit.blockers.contains(.noLiveProviderTranscriptSweep))
     }
 
     @MainActor
@@ -3237,6 +3274,36 @@ struct CoachChatConversationCorpusTests {
         #expect(!failingDecoded.qualifiesForReadiness)
         #expect(failingDecoded.rowsPassingReadinessFloor == 0)
         #expect(failingDecoded.rejectionReasons.contains("productionFloorFailures"))
+    }
+
+    @Test func liveProviderSweepEvidenceRequiresCurrentSourceProvenance() throws {
+        let missingSourceSweep = Self.liveProviderSweepEvidence(
+            sourceGitCommit: nil,
+            sourceCoachFingerprint: nil
+        )
+        let missingDecoded = try CoachLiveProviderSweepEvidence.decode(
+            from: missingSourceSweep.encodedSortedJSON()
+        )
+
+        #expect(!missingDecoded.qualifiesForReadiness)
+        #expect(missingDecoded.rowsPassingReadinessFloor == 0)
+        #expect(missingDecoded.rejectionReasons.contains("sourceGitCommitMissing"))
+        #expect(missingDecoded.rejectionReasons.contains("sourceCoachFingerprintMissing"))
+
+        let staleSweep = Self.liveProviderSweepEvidence(
+            sourceFreshnessFailures: [
+                "sourceGitCommitMismatch",
+                "sourceCoachFingerprintMismatch"
+            ]
+        )
+        let staleDecoded = try CoachLiveProviderSweepEvidence.decode(
+            from: staleSweep.encodedSortedJSON()
+        )
+
+        #expect(!staleDecoded.qualifiesForReadiness)
+        #expect(staleDecoded.rowsPassingReadinessFloor == 0)
+        #expect(staleDecoded.rejectionReasons.contains("sourceGitCommitMismatch"))
+        #expect(staleDecoded.rejectionReasons.contains("sourceCoachFingerprintMismatch"))
     }
 
     @Test func liveProviderSweepEvidenceRequiresLatestFixtureCoverage() throws {
@@ -3603,6 +3670,7 @@ struct CoachChatConversationCorpusTests {
         let directory = try Self.temporaryEvaluationDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let sweep = Self.liveProviderSweepEvidence()
+        try Self.writeSourceSidecars(to: directory)
         try sweep.encodedSortedJSON().write(
             to: directory.appendingPathComponent(CoachChatConversationCorpus.liveProviderSweepArtifactFileName),
             atomically: true,
@@ -3621,6 +3689,27 @@ struct CoachChatConversationCorpusTests {
                 CoachLiveProviderSweepEvidence.requiredReadinessEvidenceCount
         )
         #expect(loaded?.providerChain == ["Gemini (gemini-test)"])
+    }
+
+    @Test func liveProviderSweepLoaderRequiresCurrentSourceSidecars() throws {
+        let directory = try Self.temporaryEvaluationDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sweep = Self.liveProviderSweepEvidence()
+        try sweep.encodedSortedJSON().write(
+            to: directory.appendingPathComponent(CoachChatConversationCorpus.liveProviderSweepArtifactFileName),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let loaded = try Self.liveProviderSweepEvidenceIfAvailable(
+            environment: ["NOUM_COACH_EVAL_DUMP_DIR": directory.path],
+            arguments: [],
+            defaults: UserDefaults(suiteName: "CoachLiveProviderSweepLoader.\(UUID().uuidString)")!
+        )
+
+        #expect(loaded?.qualifiesForReadiness == false)
+        #expect(loaded?.rejectionReasons.contains("currentSourceGitCommitMissing") == true)
+        #expect(loaded?.rejectionReasons.contains("currentSourceCoachFingerprintMissing") == true)
     }
 
     @Test func liveProviderSweepLoaderSurfacesMalformedSidecar() throws {
@@ -4359,10 +4448,12 @@ struct CoachChatConversationCorpusTests {
         ) == "cafe123")
 
         defaults.removeObject(forKey: "NOUM_SOURCE_GIT_COMMIT")
+        let emptyDirectory = try! Self.temporaryEvaluationDirectory()
         #expect(Self.sourceGitCommitForAppPathTrace(
             environment: [:],
             arguments: [],
-            defaults: defaults
+            defaults: defaults,
+            dumpDirectory: emptyDirectory.path
         ) == nil)
 
         let directory = try! Self.temporaryEvaluationDirectory()
@@ -4377,6 +4468,64 @@ struct CoachChatConversationCorpusTests {
             defaults: defaults,
             dumpDirectory: directory.path
         ) == "filecafe")
+    }
+
+    @Test func sourceCoachFingerprintReadsXcodeAndSimulatorInputs() {
+        let suiteName = "CoachChatConversationSourceFingerprint.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        #expect(Self.sourceCoachFingerprintForAppPathTrace(
+            environment: ["NOUM_SOURCE_COACH_FINGERPRINT": " sha256:abc1234 "],
+            arguments: [],
+            defaults: defaults
+        ) == "sha256:abc1234")
+        #expect(Self.sourceCoachFingerprintForAppPathTrace(
+            environment: ["SIMCTL_CHILD_NOUM_SOURCE_COACH_FINGERPRINT": "sha256:def5678"],
+            arguments: [],
+            defaults: defaults
+        ) == "sha256:def5678")
+        #expect(Self.sourceCoachFingerprintForAppPathTrace(
+            environment: [:],
+            arguments: ["NoumTests", "-NOUM_SOURCE_COACH_FINGERPRINT", "sha256:feedbee"],
+            defaults: defaults
+        ) == "sha256:feedbee")
+        #expect(Self.sourceCoachFingerprintForAppPathTrace(
+            environment: [:],
+            arguments: ["NoumTests", "NOUM_SOURCE_COACH_FINGERPRINT=sha256:badcafe"],
+            defaults: defaults
+        ) == "sha256:badcafe")
+
+        defaults.set(" sha256:cafe123 ", forKey: "NOUM_SOURCE_COACH_FINGERPRINT")
+        #expect(Self.sourceCoachFingerprintForAppPathTrace(
+            environment: [:],
+            arguments: [],
+            defaults: defaults
+        ) == "sha256:cafe123")
+
+        defaults.removeObject(forKey: "NOUM_SOURCE_COACH_FINGERPRINT")
+        let emptyDirectory = try! Self.temporaryEvaluationDirectory()
+        #expect(Self.sourceCoachFingerprintForAppPathTrace(
+            environment: [:],
+            arguments: [],
+            defaults: defaults,
+            dumpDirectory: emptyDirectory.path
+        ) == nil)
+
+        let directory = try! Self.temporaryEvaluationDirectory()
+        try! " sha256:filecafe \n".write(
+            to: directory.appendingPathComponent("source-coach-fingerprint.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        #expect(Self.sourceCoachFingerprintForAppPathTrace(
+            environment: [:],
+            arguments: [],
+            defaults: defaults,
+            dumpDirectory: directory.path
+        ) == "sha256:filecafe")
     }
 
     @Test func targetConversationsAreAcceptedByRuntimeGateAcrossHistory() async {
@@ -4459,7 +4608,21 @@ struct CoachChatConversationCorpusTests {
             return nil
         }
         let json = try String(contentsOf: sidecarURL, encoding: .utf8)
-        return try CoachLiveProviderSweepEvidence.decode(from: json)
+        let evidence = try CoachLiveProviderSweepEvidence.decode(from: json)
+        return evidence.withSourceFreshnessExpectation(
+            gitCommit: Self.sourceGitCommitForAppPathTrace(
+                environment: environment,
+                arguments: arguments,
+                defaults: defaults,
+                dumpDirectory: directory
+            ),
+            coachFingerprint: Self.sourceCoachFingerprintForAppPathTrace(
+                environment: environment,
+                arguments: arguments,
+                defaults: defaults,
+                dumpDirectory: directory
+            )
+        )
     }
 
     private static func professionalCalibrationEvidenceIfAvailable(
@@ -4687,6 +4850,46 @@ struct CoachChatConversationCorpusTests {
         return nil
     }
 
+    private static func sourceCoachFingerprintForAppPathTrace(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        arguments: [String] = ProcessInfo.processInfo.arguments,
+        defaults: UserDefaults = .standard,
+        dumpDirectory: String? = nil
+    ) -> String? {
+        if let fingerprint = trimmedNonEmpty(environment["NOUM_SOURCE_COACH_FINGERPRINT"]) {
+            return fingerprint
+        }
+        if let fingerprint = trimmedNonEmpty(environment["SIMCTL_CHILD_NOUM_SOURCE_COACH_FINGERPRINT"]) {
+            return fingerprint
+        }
+        if let flagIndex = arguments.firstIndex(of: "-NOUM_SOURCE_COACH_FINGERPRINT") {
+            let valueIndex = arguments.index(after: flagIndex)
+            if valueIndex < arguments.endIndex,
+               let fingerprint = trimmedNonEmpty(arguments[valueIndex]) {
+                return fingerprint
+            }
+        }
+        if let inline = arguments.first(where: { $0.hasPrefix("NOUM_SOURCE_COACH_FINGERPRINT=") }) {
+            return trimmedNonEmpty(String(inline.dropFirst("NOUM_SOURCE_COACH_FINGERPRINT=".count)))
+        }
+        if let inline = arguments.first(where: { $0.hasPrefix("-NOUM_SOURCE_COACH_FINGERPRINT=") }) {
+            return trimmedNonEmpty(String(inline.dropFirst("-NOUM_SOURCE_COACH_FINGERPRINT=".count)))
+        }
+        if let fingerprint = trimmedNonEmpty(defaults.string(forKey: "NOUM_SOURCE_COACH_FINGERPRINT")) {
+            return fingerprint
+        }
+        let resolvedDumpDirectory = dumpDirectory ?? Self.evaluationArtifactDumpDirectory()
+        if let resolvedDumpDirectory,
+           let data = try? String(
+            contentsOfFile: "\(resolvedDumpDirectory)/source-coach-fingerprint.txt",
+            encoding: .utf8
+           ),
+           let fingerprint = trimmedNonEmpty(data) {
+            return fingerprint
+        }
+        return nil
+    }
+
     private static func inlineDumpDirectoryArgument(_ argument: String) -> String? {
         let prefixes = [
             "NOUM_COACH_EVAL_DUMP_DIR=",
@@ -4715,6 +4918,23 @@ struct CoachChatConversationCorpusTests {
             withIntermediateDirectories: true
         )
         return directory
+    }
+
+    private static func writeSourceSidecars(
+        to directory: URL,
+        gitCommit: String = "abc123",
+        coachFingerprint: String = "sha256:test-current"
+    ) throws {
+        try gitCommit.write(
+            to: directory.appendingPathComponent("source-git-commit.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try coachFingerprint.write(
+            to: directory.appendingPathComponent("source-coach-fingerprint.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
     }
 
     private static func cleanAppPathReport(
@@ -4819,7 +5039,10 @@ struct CoachChatConversationCorpusTests {
             CoachLiveProviderSweepEvidence.requiredLongFormConversationIDs,
         longFormConversationFailureIDs: [String] = [],
         longFormConversations: [CoachLiveProviderSweepEvidence.LongFormConversation]? = nil,
-        omitLongFormConversationDetails: Bool = false
+        omitLongFormConversationDetails: Bool = false,
+        sourceGitCommit: String? = "abc123",
+        sourceCoachFingerprint: String? = "sha256:test-current",
+        sourceFreshnessFailures: [String]? = nil
     ) -> CoachLiveProviderSweepEvidence {
         let rowCount = fixtureIDs.count
         let requiredDepths = CoachLiveProviderSweepEvidence.requiredTurnDepths
@@ -4858,6 +5081,9 @@ struct CoachChatConversationCorpusTests {
             )
         return CoachLiveProviderSweepEvidence(
             schemaVersion: CoachLiveProviderSweepEvidence.expectedSchemaVersion,
+            sourceGitCommit: sourceGitCommit,
+            sourceCoachFingerprint: sourceCoachFingerprint,
+            sourceFreshnessFailures: sourceFreshnessFailures,
             fixtureCount: rowCount,
             longFormConversationCount: longFormConversationIDsPassingProductionFloor.count +
                 longFormFailureCount,
@@ -4894,6 +5120,9 @@ struct CoachChatConversationCorpusTests {
     ) -> CoachLiveProviderSweepEvidence {
         CoachLiveProviderSweepEvidence(
             schemaVersion: evidence.schemaVersion,
+            sourceGitCommit: evidence.sourceGitCommit,
+            sourceCoachFingerprint: evidence.sourceCoachFingerprint,
+            sourceFreshnessFailures: evidence.sourceFreshnessFailures,
             fixtureCount: evidence.fixtureCount,
             longFormConversationCount: evidence.longFormConversationCount,
             longFormConversationIDsPassingProductionFloor: evidence.longFormConversationIDsPassingProductionFloor,
@@ -5324,6 +5553,9 @@ struct CoachChatConversationCorpusTests {
         let sourceGitCommit = Self.sourceGitCommitForAppPathTrace(
             dumpDirectory: Self.evaluationArtifactDumpDirectory()
         )
+        let sourceFingerprint = Self.sourceCoachFingerprintForAppPathTrace(
+            dumpDirectory: Self.evaluationArtifactDumpDirectory()
+        )
         let schemaVersion = surface == .live
             ? CoachChatConversationCorpus.liveAppPathReportSchemaVersion
             : CoachChatConversationCorpus.appPathReportSchemaVersion
@@ -5484,7 +5716,8 @@ struct CoachChatConversationCorpusTests {
                     qualityGateAcceptedFallback: qualityGateAcceptedFallback,
                     typedAssessmentFallbackApplied: typedAssessmentFallbackApplied,
                     schemaVersion: schemaVersion,
-                    gitCommit: sourceGitCommit
+                    gitCommit: sourceGitCommit,
+                    sourceFingerprint: sourceFingerprint
                 )
 
                 turnRows.append(CoachChatConversationAppPathTurnRow(

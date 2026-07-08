@@ -837,10 +837,24 @@ enum CoachReasoningPass {
         if turnDepth == .deepAssessment {
             return nil
         }
+        if turnDepth == .quickMove,
+           let tacticalID = weakestTacticalEvidenceDimensionID(from: scores) {
+            return tacticalID
+        }
         return scores.sorted {
             if $0.score != $1.score { return $0.score < $1.score }
             return $0.dimensionID < $1.dimensionID
         }.first?.dimensionID
+    }
+
+    private static func weakestTacticalEvidenceDimensionID(from scores: [RubricScore]) -> String? {
+        scores
+            .filter { $0.dimensionID != "pressure_stability" && $0.score < 0.55 }
+            .sorted {
+                if $0.score != $1.score { return $0.score < $1.score }
+                return $0.dimensionID < $1.dimensionID
+            }
+            .first?.dimensionID
     }
 
     private static func restatement(for question: String, depth: CoachTurnDepth) -> String {

@@ -1,7 +1,7 @@
-# Coach Arena — run_2026-07-08_20-41-48
+# Coach Arena — run_2026-07-08_22-04-39
 
 Provider: `replay` · coach model: `claude-sonnet-4-6` · judge model: `claude-sonnet-4-6`
-Git: `e101bc82` on `ux-overhaul` (+9 dirty) · prompt: CoachContextBuilder.swift@08e780cddc2e2106, AICoachChatService.swift@c55a47f9ddaba868
+Git: `da978b2f` on `ux-overhaul` (+19 dirty) · prompt: CoachContextBuilder.swift@08e780cddc2e2106, AICoachChatService.swift@ce7da401a3545fb8
 
 ## Headline
 
@@ -27,10 +27,10 @@ Finalizer changed 40 generated replies before user display (displaySanitizer 36,
 | Comparable app-path report | `tools/coach-arena/reports/app-path/latest.md` |
 | App-path source of truth | canonical `tools/coach-arena/reports/app-path/` only |
 | Nested duplicate app-path path | stale duplicate present at tools/coach-arena/tools/coach-arena/reports/app-path/latest.json (generated 2026-07-05T23:09:49+00:00); ignore this path |
-| Latest canonical app-path generated | `2026-07-08T20:07:49+00:00` |
+| Latest canonical app-path generated | `2026-07-08T22:04:17+00:00` |
 | Latest canonical app-path average | `78.56/100` |
-| App-path evidence gate (incl. source freshness) | `true` · claim `realPipelineEvidence` |
-| App-path trace-level quality (traces real/complete/unique) | `true` |
+| App-path evidence gate (incl. source freshness) | `false` · claim `localEvaluationOnly` |
+| App-path trace-level quality (traces real/complete/unique) | `false` |
 | Latest canonical app-path leaks/failures | leaks `0` · failures `0` |
 | Latest canonical app-path VISION boundary | score `18` · claim `localEvaluationSubstrateOnly` |
 

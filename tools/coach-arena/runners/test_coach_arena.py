@@ -30,6 +30,7 @@ def complete_app_path_trace():
         "fallback": {"qualityGateAcceptedFallback": False},
         "versions": {"runner": "test"},
         "gitCommit": "test",
+        "sourceFingerprint": "sha256:test",
     }
 
 
@@ -261,6 +262,8 @@ class AppPathBoundaryTests(unittest.TestCase):
         self.assertEqual(coverage["sourceVisionProductionReadiness"]["score"], 18)
         self.assertEqual(coverage["sourceTraceGitCommits"], ["test"])
         self.assertEqual(coverage["sourceTraceMissingGitCommitCount"], 0)
+        self.assertEqual(coverage["sourceTraceCoachSourceFingerprints"], ["sha256:test"])
+        self.assertEqual(coverage["sourceTraceMissingCoachSourceFingerprintCount"], 0)
         self.assertEqual(coverage["sourceTraceWithArenaTraceCount"], 1)
         self.assertEqual(coverage["sourceAppPathFailureSampleCount"], 1)
         self.assertEqual(coverage["sourceAppPathFailureTotalCount"], 1)
@@ -387,6 +390,7 @@ class AppPathBoundaryTests(unittest.TestCase):
             "source": "appPathReport",
             "sourceTraceGitCommits": [],
             "sourceTraceMissingGitCommitCount": 3,
+            "sourceTraceMissingCoachSourceFingerprintCount": 3,
         }
 
         fields = arena.app_path_source_freshness_fields(
@@ -401,6 +405,11 @@ class AppPathBoundaryTests(unittest.TestCase):
             fields["currentDirtyCoachSourceFiles"],
             ["Noum/AICoachChatService.swift"],
         )
+        self.assertFalse(fields["sourceFingerprintMatchesCurrent"])
+        self.assertIn(
+            "3 source app-path trace(s) missing coach source fingerprint",
+            fields["sourceFreshnessFailures"],
+        )
         self.assertIn(
             "3 source app-path trace(s) missing source git commit",
             fields["sourceFreshnessFailures"],
@@ -413,6 +422,42 @@ class AppPathBoundaryTests(unittest.TestCase):
             "dirty coach source files after app-path dump: Noum/AICoachChatService.swift",
             fields["sourceFreshnessFailures"],
         )
+
+    def test_source_fingerprint_allows_dirty_tree_app_path_trace_to_prove_fresh_source(self):
+        coverage = {
+            "source": "appPathReport",
+            "sourceTraceGitCommits": ["older"],
+            "sourceTraceMissingGitCommitCount": 0,
+            "sourceTraceCoachSourceFingerprints": ["sha256:fresh"],
+            "sourceTraceMissingCoachSourceFingerprintCount": 0,
+        }
+
+        fields = arena.app_path_source_freshness_fields(
+            coverage,
+            "current",
+            ["Noum/AICoachChatService.swift"],
+            current_source_fingerprint="sha256:fresh",
+        )
+
+        self.assertTrue(fields["sourceFreshnessPasses"])
+        self.assertTrue(fields["sourceFingerprintMatchesCurrent"])
+        self.assertEqual(fields["currentCoachSourceFingerprint"], "sha256:fresh")
+        self.assertEqual(fields["sourceFreshnessFailures"], [])
+
+    def test_write_app_path_source_sidecars_stamps_commit_and_fingerprint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            payload = arena.write_app_path_source_sidecars(temp_dir)
+            commit_path = Path(payload["gitCommitSidecar"])
+            fingerprint_path = Path(payload["coachSourceFingerprintSidecar"])
+
+            self.assertTrue(commit_path.exists())
+            self.assertTrue(fingerprint_path.exists())
+            self.assertEqual(commit_path.read_text(encoding="utf-8").strip(), payload["gitCommit"])
+            self.assertEqual(
+                fingerprint_path.read_text(encoding="utf-8").strip(),
+                payload["coachSourceFingerprint"],
+            )
+            self.assertTrue(payload["coachSourceFingerprint"].startswith("sha256:"))
 
     def test_source_freshness_failures_block_real_pipeline_claim_without_hiding_scores(self):
         coverage = {
@@ -456,7 +501,11 @@ class AppPathBoundaryTests(unittest.TestCase):
             "sourceAppPathFailureTotalCount": 1,
             "sourceTraceGitCommits": [],
             "sourceTraceMissingGitCommitCount": 2,
+            "sourceTraceCoachSourceFingerprints": ["sha256:test"],
+            "sourceTraceMissingCoachSourceFingerprintCount": 0,
             "currentGitCommit": "abc1234",
+            "currentCoachSourceFingerprint": "sha256:test",
+            "sourceFingerprintMatchesCurrent": True,
             "currentDirtyCoachSourceFiles": ["Noum/AICoachChatService.swift"],
             "sourceFreshnessPasses": False,
             "sourceFreshnessFailures": ["source app-path report has no source git commit"],
@@ -494,6 +543,7 @@ class AppPathBoundaryTests(unittest.TestCase):
         self.assertIn("### Source App-Path Failure Samples", markdown)
         self.assertIn("`custom-source` / `c1` turn `0`", markdown)
         self.assertIn("Source freshness passes: `False`", markdown)
+        self.assertIn("Source fingerprint matches current: `True`", markdown)
         self.assertIn("source app-path report has no source git commit", markdown)
 
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -16,6 +17,8 @@ DEFAULT_REPORTS = ARENA / "reports"
 DEFAULT_SYNTHETIC = ARENA / "synthetic"
 CANONICAL_APP_PATH_REPORTS = DEFAULT_REPORTS / "app-path"
 DUPLICATE_APP_PATH_REPORTS = ARENA / "tools" / "coach-arena" / "reports" / "app-path"
+SOURCE_GIT_COMMIT_SIDECAR = "source-git-commit.txt"
+SOURCE_FINGERPRINT_SIDECAR = "source-coach-fingerprint.txt"
 
 DIMENSION_MAX = {
     "diagnosticIQ": 25,
@@ -48,7 +51,9 @@ COACH_SOURCE_STATUS_PATHS = [
     "Noum/CoachReplyPipeline.swift",
     "Noum/CoachReliabilityGate.swift",
     "Noum/TurnDepthClassifier.swift",
+    "NoumTests/CoachChatEvaluationFixtures.swift",
     "NoumTests/CoachChatConversationEvaluationTests.swift",
+    "NoumTests/CoachLiveEvaluationTests.swift",
     "NoumTests/CoachJudgementLayerTests.swift",
     "NoumTests/CoachReliabilityGateTests.swift",
     "NoumTests/NoumTests.swift",
@@ -892,6 +897,24 @@ def source_app_path_trace_git_commits(report):
     return sorted(set(commits)), missing_count, trace_count
 
 
+def source_app_path_trace_fingerprints(report):
+    fingerprints = []
+    missing_count = 0
+    trace_count = 0
+    for row in report.get("rows", []):
+        for turn in row.get("turns", []):
+            trace = turn.get("arenaTrace")
+            if not isinstance(trace, dict):
+                continue
+            trace_count += 1
+            fingerprint = trace.get("sourceFingerprint")
+            if isinstance(fingerprint, str) and fingerprint.strip():
+                fingerprints.append(fingerprint.strip())
+            else:
+                missing_count += 1
+    return sorted(set(fingerprints)), missing_count, trace_count
+
+
 def parse_git_status_porcelain(output):
     paths = []
     for line in output.splitlines():
@@ -917,22 +940,86 @@ def current_dirty_coach_source_files():
     return parse_git_status_porcelain(proc.stdout)
 
 
-def app_path_source_freshness_fields(coverage, current_git_commit, dirty_source_files):
+def current_git_commit(short=True):
+    args = ["git", "rev-parse", "--short", "HEAD"] if short else ["git", "rev-parse", "HEAD"]
+    proc = subprocess.run(
+        args,
+        cwd=str(ROOT),
+        text=True,
+        capture_output=True
+    )
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.strip()
+
+
+def coach_source_fingerprint(paths=COACH_SOURCE_STATUS_PATHS):
+    digest = hashlib.sha256()
+    for rel_path in sorted(paths):
+        path = ROOT / rel_path
+        digest.update(rel_path.encode("utf-8"))
+        digest.update(b"\0")
+        if path.exists():
+            digest.update(path.read_bytes())
+        else:
+            digest.update(b"<missing>")
+        digest.update(b"\0")
+    return "sha256:" + digest.hexdigest()
+
+
+def write_app_path_source_sidecars(dump_dir):
+    dump_path = Path(dump_dir)
+    dump_path.mkdir(parents=True, exist_ok=True)
+    commit = current_git_commit(short=True)
+    fingerprint = coach_source_fingerprint()
+    (dump_path / SOURCE_GIT_COMMIT_SIDECAR).write_text(commit + "\n", encoding="utf-8")
+    (dump_path / SOURCE_FINGERPRINT_SIDECAR).write_text(fingerprint + "\n", encoding="utf-8")
+    return {
+        "dumpDir": str(dump_path),
+        "gitCommit": commit,
+        "coachSourceFingerprint": fingerprint,
+        "gitCommitSidecar": str(dump_path / SOURCE_GIT_COMMIT_SIDECAR),
+        "coachSourceFingerprintSidecar": str(dump_path / SOURCE_FINGERPRINT_SIDECAR),
+    }
+
+
+def app_path_source_freshness_fields(
+    coverage,
+    current_git_commit,
+    dirty_source_files,
+    current_source_fingerprint=None
+):
     source_commits = coverage.get("sourceTraceGitCommits") or []
     missing_commit_count = coverage.get("sourceTraceMissingGitCommitCount") or 0
+    source_fingerprints = coverage.get("sourceTraceCoachSourceFingerprints") or []
+    missing_fingerprint_count = coverage.get("sourceTraceMissingCoachSourceFingerprintCount") or 0
+    current_source_fingerprint = current_source_fingerprint or coach_source_fingerprint()
+    fingerprint_matches = (
+        bool(source_fingerprints) and
+        bool(current_source_fingerprint) and
+        all(fingerprint == current_source_fingerprint for fingerprint in source_fingerprints)
+    )
     failures = []
     if missing_commit_count:
         failures.append(
             f"{missing_commit_count} source app-path trace(s) missing source git commit"
         )
+    if dirty_source_files and missing_fingerprint_count:
+        failures.append(
+            f"{missing_fingerprint_count} source app-path trace(s) missing coach source fingerprint"
+        )
     if not source_commits:
         failures.append("source app-path report has no source git commit")
-    elif current_git_commit and any(commit != current_git_commit for commit in source_commits):
+    elif (
+        current_git_commit and
+        any(commit != current_git_commit for commit in source_commits) and
+        not fingerprint_matches
+    ):
         failures.append(
             "source app-path git commit(s) do not match current HEAD: " +
             ",".join(source_commits)
         )
-    if dirty_source_files:
+    if dirty_source_files and not fingerprint_matches:
         shown = dirty_source_files[:8]
         suffix = "" if len(dirty_source_files) <= len(shown) else f",+{len(dirty_source_files) - len(shown)} more"
         failures.append(
@@ -942,7 +1029,9 @@ def app_path_source_freshness_fields(coverage, current_git_commit, dirty_source_
         )
     return {
         "currentGitCommit": current_git_commit,
+        "currentCoachSourceFingerprint": current_source_fingerprint,
         "currentDirtyCoachSourceFiles": dirty_source_files,
+        "sourceFingerprintMatchesCurrent": fingerprint_matches,
         "sourceFreshnessPasses": not failures,
         "sourceFreshnessFailures": sorted(set(failures)),
     }
@@ -999,6 +1088,7 @@ def load_app_path_candidates(path, fixtures):
 
     failure_samples, failure_total = source_app_path_failure_samples(report)
     source_commits, missing_commit_count, trace_count = source_app_path_trace_git_commits(report)
+    source_fingerprints, missing_fingerprint_count, _ = source_app_path_trace_fingerprints(report)
     coverage = {
         "source": "appPathReport",
         "sourcePath": str(path),
@@ -1015,6 +1105,8 @@ def load_app_path_candidates(path, fixtures):
         "sourceTurnCount": report.get("turnCount"),
         "sourceTraceGitCommits": source_commits,
         "sourceTraceMissingGitCommitCount": missing_commit_count,
+        "sourceTraceCoachSourceFingerprints": source_fingerprints,
+        "sourceTraceMissingCoachSourceFingerprintCount": missing_fingerprint_count,
         "sourceTraceWithArenaTraceCount": trace_count,
         "requestedFixtureCount": len(fixtures),
         "matchedFixtureCount": len(matched_fixtures),
@@ -2184,6 +2276,10 @@ def render_markdown(report):
             f"- Source trace git commits: `{', '.join(coverage.get('sourceTraceGitCommits') or []) or 'none'}`",
             f"- Source traces missing git commit: `{coverage.get('sourceTraceMissingGitCommitCount')}`",
             f"- Current git commit: `{coverage.get('currentGitCommit')}`",
+            f"- Source trace coach fingerprints: `{', '.join(coverage.get('sourceTraceCoachSourceFingerprints') or []) or 'none'}`",
+            f"- Source traces missing coach fingerprint: `{coverage.get('sourceTraceMissingCoachSourceFingerprintCount')}`",
+            f"- Current coach source fingerprint: `{coverage.get('currentCoachSourceFingerprint')}`",
+            f"- Source fingerprint matches current: `{coverage.get('sourceFingerprintMatchesCurrent')}`",
             f"- Dirty coach source files: `{len(coverage.get('currentDirtyCoachSourceFiles') or [])}`",
             f"- Source freshness passes: `{coverage.get('sourceFreshnessPasses')}`",
             f"- Coverage passes: `{coverage.get('coveragePasses')}`",
@@ -2322,8 +2418,14 @@ def main():
     parser.add_argument("--replay-command")
     parser.add_argument("--reports-dir", default=str(DEFAULT_REPORTS))
     parser.add_argument("--synthetic-dir", default=str(DEFAULT_SYNTHETIC))
+    parser.add_argument("--write-app-path-source-sidecars")
     parser.add_argument("--no-fail", action="store_true")
     args = parser.parse_args()
+
+    if args.write_app_path_source_sidecars:
+        payload = write_app_path_source_sidecars(args.write_app_path_source_sidecars)
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
 
     fixtures = load_fixtures(args.fixtures)
     candidate_modes = [
@@ -2339,18 +2441,13 @@ def main():
     else:
         candidate_map = load_candidate_json(args.candidate_json) if args.candidate_json else None
     results = []
-    git_commit = subprocess.run(
-        "git rev-parse --short HEAD",
-        shell=True,
-        cwd=str(ROOT),
-        text=True,
-        capture_output=True
-    ).stdout.strip()
+    git_commit = current_git_commit(short=True)
     if coverage is not None and coverage.get("source") == "appPathReport":
         coverage.update(app_path_source_freshness_fields(
             coverage,
             git_commit,
             current_dirty_coach_source_files(),
+            coach_source_fingerprint(),
         ))
 
     for fixture in fixtures:

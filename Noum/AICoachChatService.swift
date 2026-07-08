@@ -872,7 +872,9 @@ struct CoachChatQuoteGuardContext: Equatable {
 
     func verifies(_ quote: String) -> Bool {
         sourceTexts.contains { source in
-            ProofMomentService.transcriptContains(quote, in: source)
+            Self.quoteVerificationCandidates(quote).contains { candidate in
+                ProofMomentService.transcriptContains(candidate, in: source)
+            }
         }
     }
 
@@ -884,6 +886,19 @@ struct CoachChatQuoteGuardContext: Equatable {
         verifiedProofQuotes.contains { quote in
             ProofMomentService.transcriptContains(quote, in: reply)
         }
+    }
+
+    private static func quoteVerificationCandidates(_ quote: String) -> [String] {
+        let trimmed = quote.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        var strippedTerminalPunctuation = trimmed
+        while strippedTerminalPunctuation.last.map({ ".!?".contains($0) }) == true {
+            strippedTerminalPunctuation.removeLast()
+        }
+        if strippedTerminalPunctuation.isEmpty || strippedTerminalPunctuation == trimmed {
+            return [trimmed]
+        }
+        return [trimmed, strippedTerminalPunctuation]
     }
 
     /// Gate 1 of the dual gate: true when the reply genuinely engages at
@@ -2685,6 +2700,14 @@ actor AICoachChatService {
             return .unrequestedNamedTechnique
         }
 
+        if replyDirectlyAnswersBriefTacticalTurn(
+            lower,
+            latestUserTurn: latestUserTurn,
+            turnDepth: turnDepth
+        ) {
+            return nil
+        }
+
         if replyIgnoresRetrievedCoachingExpertise(
             lower,
             latestUserTurn: latestUserTurn,
@@ -4049,6 +4072,32 @@ actor AICoachChatService {
             "practice", "prepare", "fix", "improve", "replace", "go for",
             "make a bigger stride"
         ]) || isCritiqueTurn(lower)
+    }
+
+    private nonisolated static func replyDirectlyAnswersBriefTacticalTurn(
+        _ lower: String,
+        latestUserTurn: String?,
+        turnDepth: CoachTurnDepth
+    ) -> Bool {
+        guard turnDepth == .quickMove else { return false }
+        guard let latestUserTurn else { return false }
+        let turn = latestUserTurn.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard containsAny(turn, [
+            "quickly", "what do i do next", "what's next",
+            "what is the one move", "one move", "next move",
+            "what should i record", "what should i do with that"
+        ]) else {
+            return false
+        }
+        guard wordCount(in: lower) <= 30,
+              sentenceCount(in: lower) <= 2,
+              !replyOffersMenu(lower),
+              replyHasObservableAnchor(lower),
+              replyPrescribesAction(lower),
+              replyHasInsightBridge(lower) else {
+            return false
+        }
+        return true
     }
 
     private nonisolated static func turnAsksWhyAnswerLandedBadly(_ turn: String?) -> Bool {

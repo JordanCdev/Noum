@@ -327,11 +327,15 @@ struct CoachLiveEvaluationTests {
         )
         let report = CoachLiveEvaluationReport.make(
             providerChain: ["Claude (claude-test)"],
-            rows: [row]
+            rows: [row],
+            sourceGitCommit: "abc123",
+            sourceCoachFingerprint: "sha256:test-current"
         )
         let json = try report.encodedSortedJSON()
 
         #expect(report.schemaVersion == Self.liveReportSchemaVersion)
+        #expect(report.sourceGitCommit == "abc123")
+        #expect(report.sourceCoachFingerprint == "sha256:test-current")
         #expect(report.fixtureCount == 1)
         #expect(report.longFormConversationCount == 0)
         #expect(report.longFormConversationIDsPassingProductionFloor.isEmpty)
@@ -349,6 +353,8 @@ struct CoachLiveEvaluationTests {
         #expect(report.summary.immediateCoachReadMissingCount == 0)
         #expect(report.summary.missingImmediateCoachReadFixtureIDs.isEmpty)
         #expect(json.contains("\"schemaVersion\":\"coach-live-eval-v1\""))
+        #expect(json.contains("\"sourceGitCommit\":\"abc123\""))
+        #expect(json.contains("\"sourceCoachFingerprint\":\"sha256:test-current\""))
         #expect(json.contains("\"summary\""))
         #expect(json.contains("\"passesRunReadinessFloor\":true"))
         #expect(json.contains("\"readinessWarnings\":[]"))
@@ -625,6 +631,15 @@ struct CoachLiveEvaluationTests {
             ? outputPath!
             : Self.defaultReportPath()
         let resolvedJSONOutputPath = Self.jsonReportPath(for: resolvedOutputPath)
+        let resolvedJSONDirectory = URL(fileURLWithPath: resolvedJSONOutputPath)
+            .deletingLastPathComponent()
+            .path
+        let sourceGitCommit = Self.sourceGitCommitForLiveProviderSweep(
+            dumpDirectory: resolvedJSONDirectory
+        )
+        let sourceCoachFingerprint = Self.sourceCoachFingerprintForLiveProviderSweep(
+            dumpDirectory: resolvedJSONDirectory
+        )
         let providerChain = Self.liveProviderChain()
         let providerChainLabels = providerChain.map { "\($0.displayName) (\($0.model))" }
 
@@ -634,6 +649,8 @@ struct CoachLiveEvaluationTests {
         emit("Secrets: API keys and request bodies are not written to this report.")
         emit("reportPath: \(resolvedOutputPath)")
         emit("jsonReportPath: \(resolvedJSONOutputPath)")
+        emit("sourceGitCommit: \(sourceGitCommit ?? "missing")")
+        emit("sourceCoachFingerprint: \(sourceCoachFingerprint ?? "missing")")
         emit("fixtures: \(fixtures.map { $0.id }.joined(separator: ","))")
         emit("longFormConversations: \(longFormConversations.map { $0.id }.joined(separator: ","))")
         emit("providerChain: \(providerChainLabels.joined(separator: " -> "))")
@@ -1025,7 +1042,9 @@ struct CoachLiveEvaluationTests {
         let jsonReport = CoachLiveEvaluationReport.make(
             providerChain: providerChainLabels,
             rows: liveRows,
-            longFormConversations: longFormRows
+            longFormConversations: longFormRows,
+            sourceGitCommit: sourceGitCommit,
+            sourceCoachFingerprint: sourceCoachFingerprint
         )
         do {
             try jsonReport
@@ -1051,6 +1070,8 @@ struct CoachLiveEvaluationTests {
 
     private struct CoachLiveEvaluationReport: Codable, Equatable {
         let schemaVersion: String
+        let sourceGitCommit: String?
+        let sourceCoachFingerprint: String?
         let fixtureCount: Int
         let longFormConversationCount: Int
         let longFormConversationIDsPassingProductionFloor: [String]
@@ -1065,7 +1086,9 @@ struct CoachLiveEvaluationTests {
         static func make(
             providerChain: [String],
             rows: [CoachLiveEvaluationReportRow],
-            longFormConversations: [CoachLiveLongFormConversationReportRow] = []
+            longFormConversations: [CoachLiveLongFormConversationReportRow] = [],
+            sourceGitCommit: String? = nil,
+            sourceCoachFingerprint: String? = nil
         ) -> CoachLiveEvaluationReport {
             let summary = CoachLiveEvaluationSummary.make(from: rows)
             let passingLongFormIDs = longFormConversations
@@ -1079,6 +1102,8 @@ struct CoachLiveEvaluationTests {
                 failingLongFormIDs.isEmpty
             return CoachLiveEvaluationReport(
                 schemaVersion: CoachLiveEvaluationTests.liveReportSchemaVersion,
+                sourceGitCommit: sourceGitCommit,
+                sourceCoachFingerprint: sourceCoachFingerprint,
                 fixtureCount: rows.count,
                 longFormConversationCount: longFormConversations.count,
                 longFormConversationIDsPassingProductionFloor: passingLongFormIDs,
@@ -1428,6 +1453,133 @@ struct CoachLiveEvaluationTests {
             return markdownPath + ".json"
         }
         return url.deletingPathExtension().appendingPathExtension("json").path
+    }
+
+    private static func sourceGitCommitForLiveProviderSweep(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        arguments: [String] = ProcessInfo.processInfo.arguments,
+        defaults: UserDefaults = .standard,
+        dumpDirectory: String? = nil
+    ) -> String? {
+        sourceValueForLiveProviderSweep(
+            key: "NOUM_SOURCE_GIT_COMMIT",
+            sidecarName: "source-git-commit.txt",
+            environment: environment,
+            arguments: arguments,
+            defaults: defaults,
+            dumpDirectory: dumpDirectory
+        )
+    }
+
+    private static func sourceCoachFingerprintForLiveProviderSweep(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        arguments: [String] = ProcessInfo.processInfo.arguments,
+        defaults: UserDefaults = .standard,
+        dumpDirectory: String? = nil
+    ) -> String? {
+        sourceValueForLiveProviderSweep(
+            key: "NOUM_SOURCE_COACH_FINGERPRINT",
+            sidecarName: "source-coach-fingerprint.txt",
+            environment: environment,
+            arguments: arguments,
+            defaults: defaults,
+            dumpDirectory: dumpDirectory
+        )
+    }
+
+    private static func sourceValueForLiveProviderSweep(
+        key: String,
+        sidecarName: String,
+        environment: [String: String],
+        arguments: [String],
+        defaults: UserDefaults,
+        dumpDirectory: String?
+    ) -> String? {
+        if let value = trimmedNonEmpty(environment[key]) {
+            return value
+        }
+        if let value = trimmedNonEmpty(environment["SIMCTL_CHILD_\(key)"]) {
+            return value
+        }
+        if let flagIndex = arguments.firstIndex(of: "-\(key)") {
+            let valueIndex = arguments.index(after: flagIndex)
+            if valueIndex < arguments.endIndex,
+               let value = trimmedNonEmpty(arguments[valueIndex]) {
+                return value
+            }
+        }
+        if let inline = arguments.first(where: { $0.hasPrefix("\(key)=") }) {
+            return trimmedNonEmpty(String(inline.dropFirst("\(key)=".count)))
+        }
+        if let inline = arguments.first(where: { $0.hasPrefix("-\(key)=") }) {
+            return trimmedNonEmpty(String(inline.dropFirst("-\(key)=".count)))
+        }
+        if let value = trimmedNonEmpty(defaults.string(forKey: key)) {
+            return value
+        }
+        let directories = [
+            dumpDirectory,
+            liveEvaluationDumpDirectory(
+                environment: environment,
+                arguments: arguments,
+                defaults: defaults
+            )
+        ].compactMap { trimmedNonEmpty($0) }
+        var seenDirectories = Set<String>()
+        for directory in directories where !seenDirectories.contains(directory) {
+            seenDirectories.insert(directory)
+            if let data = try? String(
+                contentsOfFile: "\(directory)/\(sidecarName)",
+                encoding: .utf8
+            ),
+               let value = trimmedNonEmpty(data) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func liveEvaluationDumpDirectory(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        arguments: [String] = ProcessInfo.processInfo.arguments,
+        defaults: UserDefaults = .standard
+    ) -> String? {
+        if let directory = trimmedNonEmpty(environment["NOUM_COACH_EVAL_DUMP_DIR"]) {
+            return directory
+        }
+        if let directory = trimmedNonEmpty(environment["SIMCTL_CHILD_NOUM_COACH_EVAL_DUMP_DIR"]) {
+            return directory
+        }
+        if let flagIndex = arguments.firstIndex(of: "-NOUM_COACH_EVAL_DUMP_DIR") {
+            let valueIndex = arguments.index(after: flagIndex)
+            if valueIndex < arguments.endIndex,
+               let directory = trimmedNonEmpty(arguments[valueIndex]) {
+                return directory
+            }
+        }
+        for argument in arguments {
+            if let directory = inlineDumpDirectoryArgument(argument) {
+                return directory
+            }
+        }
+        return trimmedNonEmpty(defaults.string(forKey: "NOUM_COACH_EVAL_DUMP_DIR")) ??
+            "/private/tmp/noum-coach-eval"
+    }
+
+    private static func inlineDumpDirectoryArgument(_ argument: String) -> String? {
+        let prefixes = [
+            "NOUM_COACH_EVAL_DUMP_DIR=",
+            "-NOUM_COACH_EVAL_DUMP_DIR="
+        ]
+        for prefix in prefixes where argument.hasPrefix(prefix) {
+            return trimmedNonEmpty(String(argument.dropFirst(prefix.count)))
+        }
+        return nil
+    }
+
+    private static func trimmedNonEmpty(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private static func immediateCoachReadExpected(
