@@ -394,178 +394,9 @@ struct ContentView: View {
 
                     VStack(spacing: Spacing.cardGap) {
                         if sessionStore.sessions.isEmpty {
-                            // Empty-state — use the same coach-first floor as
-                            // the signal-gated populated home. First screen:
-                            // coach presence + Begin. Status and progression
-                            // surfaces unlock after signal instead of reading
-                            // like a habit dashboard before the user has
-                            // completed a rep. The Ask Noum shortcut alone
-                            // opens on day 0 once onboarding produced a
-                            // profile — the thread is seeded/read-only until
-                            // rep 1 (HomeSignalGate / AskNoumDayZeroGreeting).
-                            let gate = homeCardGate
-                            if goalRefresh.shouldPresent {
-                                GoalRefreshInlineCard()
-                                    .cardEntrance(0)
-                            }
-                            if gate.coachCard {
-                                HomeCoachCard(
-                                    navigationPath: $navigationPath,
-                                    scrollOffset: homeScrollOffset,
-                                    showsPlanArc: gate.planArc
-                                ).cardEntrance(goalRefresh.shouldPresent ? 1 : 0)
-                            }
-                            if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
-                                BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
-                            } else if let ackReport = bigMomentStore.pendingOutcomeAck {
-                                // The coach's receipt for a just-saved
-                                // check-in — fills the card's slot for a
-                                // beat instead of a silent vanish, then
-                                // self-consumes (transient, in-memory).
-                                BigMomentOutcomeAckCard(report: ackReport) {
-                                    bigMomentStore.consumeOutcomeAck()
-                                }
-                                .cardEntrance(1)
-                                .transition(.opacity)
-                            }
-                            // Ask Noum coach door — a quiet white row, not a
-                            // nested chip on the hero. On day 0 (empty home)
-                            // this is the one calm progression cue under the
-                            // Begin CTA once onboarding produced a profile.
-                            if gate.askNoumShortcut {
-                                homeAskNoumRow.cardEntrance(2)
-                            }
-                            if showAllHomeCards && authManager.isDeveloper {
-                                secondaryDiscoveryCard.cardEntrance(3)
-                            }
+                            emptyStateHomeCards
                         } else {
-                            // Populated home — coach-led revamp.
-                            //
-                            // Default stack:
-                            //  1. HomeCoachCard — coach voice, primary CTA.
-                            //  2. journeyPreviewCard — next path move.
-                            //  3. AIWeeklyInsightCard — only after three
-                            //     current-week reps.
-                            //
-                            // Retired Home dashboard surfaces stay out of
-                            // the tree. Attendance, rank/level, lessons,
-                            // raw diagnostics and alternate practice entry
-                            // points now live in their owned routes instead
-                            // of competing with the coach-led Home.
-                            //
-                            // Premium personal-best anchor — M14 demotion:
-                            // this is no longer the always-on top card
-                            // whenever there happens to be a current-week
-                            // peak. It's a post-session glow that fades in
-                            // for ~7s after the user finishes a rep that
-                            // raised their week peak, then self-dismisses
-                            // and stays gone until they earn a NEW peak.
-                            //
-                            // Why: rendering this whenever `isWeekPeakCurrent`
-                            // was true meant the home opened with a victory
-                            // lap before today's rep. That stole attention
-                            // from the coach. Glow keeps the celebration
-                            // honest — it only shows when something just
-                            // happened. The full peak list still lives on
-                            // Profile via `PeakRatingWallCard`.
-                            if ratingStore.pendingPeakGlow && ratingStore.rating.hasRatedEvidence {
-                                personalBestHeroCard
-                                    .cardEntrance(0)
-                                    .transition(.opacity)
-                                    .task {
-                                        // Reduced-motion users get a slightly
-                                        // shorter window — the fade itself is
-                                        // suppressed, so the card just
-                                        // appears, sits, then disappears.
-                                        let seconds: UInt64 = reduceMotion ? 5 : 7
-                                        try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
-                                        if reduceMotion {
-                                            ratingStore.markPeakGlowConsumed()
-                                        } else {
-                                            withAnimation(.easeInOut(duration: 0.45)) {
-                                                ratingStore.markPeakGlowConsumed()
-                                            }
-                                        }
-                                    }
-                            }
-                            // M15 Phase 4 — signal-gated composition. The
-                            // Coach Card is the cold-start floor; the in-card
-                            // coach-chat entry unlocks after one completed
-                            // rep.
-                            // Reversible for developer inspection via
-                            // `practice.showAllHomeCards`.
-                            let gate = homeCardGate
-                            // M14 redesign: HomeCoachCard is the single
-                            // composed hero with NoumCharacter present, the
-                            // coach's recommendation as primary copy, and a single
-                            // Begin CTA. The recommendation pipeline
-                            // (RecommendationBiasEngine + CoachingPlanner)
-                            // feeds it directly — no new coaching logic.
-                            if goalRefresh.shouldPresent {
-                                GoalRefreshInlineCard()
-                                    .cardEntrance(0)
-                            }
-                            if gate.coachCard {
-                                HomeCoachCard(
-                                    navigationPath: $navigationPath,
-                                    scrollOffset: homeScrollOffset,
-                                    showsPlanArc: gate.planArc
-                                ).cardEntrance(goalRefresh.shouldPresent ? 1 : 0)
-                            }
-                            // Quiet streak status — the ONE status line the
-                            // populated home keeps (roadmap Iter 4). Gated on
-                            // a real >=2-day freeze-aware streak; the copy
-                            // helper returns nil below that floor so even the
-                            // developer show-all override can't render "0 day
-                            // streak" furniture. No countdown, no tap target,
-                            // no loss-aversion — a reset simply removes the
-                            // line silently.
-                            if gate.streakStatus,
-                               let streakLine = HomeStreakStatusCopy.line(days: streakFreeze.currentStreak) {
-                                HomeStreakStatusLine(
-                                    days: streakFreeze.currentStreak,
-                                    line: streakLine
-                                ).cardEntrance(1)
-                            }
-                            if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
-                                BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
-                            } else if let ackReport = bigMomentStore.pendingOutcomeAck {
-                                // The coach's receipt for a just-saved
-                                // check-in — fills the card's slot for a
-                                // beat instead of a silent vanish, then
-                                // self-consumes (transient, in-memory).
-                                BigMomentOutcomeAckCard(report: ackReport) {
-                                    bigMomentStore.consumeOutcomeAck()
-                                }
-                                .cardEntrance(1)
-                                .transition(.opacity)
-                            }
-                            // Path Journey — a quiet supporting row. The
-                            // Coach Card owns Home's hero register; Path
-                            // stays nearby as the next progression cue
-                            // without becoming a competing second hero.
-                            if gate.journey {
-                                journeyPreviewCard.cardEntrance(2)
-                            }
-                            // H1 — Home-gap fill. The AI Weekly Insight card
-                            // below is gated on 3 current-week reps and is
-                            // usually absent, which left dead space under the
-                            // Path row. The Ask Noum coach door (relocated out
-                            // of the hero) now fills that slot as a quiet
-                            // white row + violet chat chip — a real,
-                            // signal-gated surface, never empty furniture.
-                            if gate.askNoumShortcut {
-                                homeAskNoumRow.cardEntrance(3)
-                            }
-                            if gate.aiWeeklyInsight {
-                                AIWeeklyInsightCard(
-                                    sessionStore: sessionStore,
-                                    ratingStore: ratingStore,
-                                    clutchWordStore: ClutchWordStore.shared,
-                                    coachingProfileStore: coachingProfileStore
-                                )
-                                .cardEntrance(6)
-                            }
+                            populatedHomeCards
                         }
                     }
                     .padding(.horizontal, Spacing.screenH)
@@ -688,6 +519,10 @@ struct ContentView: View {
                     SuddenDeathDifficultyRunsView(difficulty: difficulty)
                 case .imScenarioDetail(let scenario):
                     IMScenarioDetailView(scenario: scenario, navigationPath: $navigationPath)
+                case .roleplaySetup:
+                    RoleplaySetupView(navigationPath: $navigationPath)
+                case .roleplayRun(let scenario, let startingLevel):
+                    RoleplayView(scenario: scenario, startingLevel: startingLevel, navigationPath: $navigationPath)
                 }
             }
         }
@@ -1166,6 +1001,194 @@ struct ContentView: View {
     // empty furniture: hidden on a cold start with no profile, present once
     // onboarding produced a CoachingProfile (day-0 seeded thread) or after
     // the first rep.
+
+    // Extracted from the Home `body` — the combined empty/populated card
+    // stack in one `ViewBuilder` closure was too complex for the compiler
+    // to type-check ("unable to type-check this expression in reasonable
+    // time"). Splitting each branch into its own `@ViewBuilder` computed
+    // property is a pure refactor: identical card set, identical
+    // conditions, identical `cardEntrance` ordering.
+    @ViewBuilder
+    private var emptyStateHomeCards: some View {
+        // Empty-state — use the same coach-first floor as
+        // the signal-gated populated home. First screen:
+        // coach presence + Begin. Status and progression
+        // surfaces unlock after signal instead of reading
+        // like a habit dashboard before the user has
+        // completed a rep. The Ask Noum shortcut alone
+        // opens on day 0 once onboarding produced a
+        // profile — the thread is seeded/read-only until
+        // rep 1 (HomeSignalGate / AskNoumDayZeroGreeting).
+        let gate = homeCardGate
+        if goalRefresh.shouldPresent {
+            GoalRefreshInlineCard()
+                .cardEntrance(0)
+        }
+        if gate.coachCard {
+            HomeCoachCard(
+                navigationPath: $navigationPath,
+                scrollOffset: homeScrollOffset,
+                showsPlanArc: gate.planArc
+            ).cardEntrance(goalRefresh.shouldPresent ? 1 : 0)
+        }
+        if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
+            BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
+        } else if let ackReport = bigMomentStore.pendingOutcomeAck {
+            // The coach's receipt for a just-saved
+            // check-in — fills the card's slot for a
+            // beat instead of a silent vanish, then
+            // self-consumes (transient, in-memory).
+            BigMomentOutcomeAckCard(report: ackReport) {
+                bigMomentStore.consumeOutcomeAck()
+            }
+            .cardEntrance(1)
+            .transition(.opacity)
+        }
+        // Ask Noum coach door — a quiet white row, not a
+        // nested chip on the hero. On day 0 (empty home)
+        // this is the one calm progression cue under the
+        // Begin CTA once onboarding produced a profile.
+        if gate.askNoumShortcut {
+            homeAskNoumRow.cardEntrance(2)
+        }
+        roleplayEntryRow.cardEntrance(3)
+        if showAllHomeCards && authManager.isDeveloper {
+            secondaryDiscoveryCard.cardEntrance(4)
+        }
+    }
+
+    @ViewBuilder
+    private var populatedHomeCards: some View {
+        // Populated home — coach-led revamp.
+        //
+        // Default stack:
+        //  1. HomeCoachCard — coach voice, primary CTA.
+        //  2. journeyPreviewCard — next path move.
+        //  3. AIWeeklyInsightCard — only after three
+        //     current-week reps.
+        //
+        // Retired Home dashboard surfaces stay out of
+        // the tree. Attendance, rank/level, lessons,
+        // raw diagnostics and alternate practice entry
+        // points now live in their owned routes instead
+        // of competing with the coach-led Home.
+        //
+        // Premium personal-best anchor — M14 demotion:
+        // this is no longer the always-on top card
+        // whenever there happens to be a current-week
+        // peak. It's a post-session glow that fades in
+        // for ~7s after the user finishes a rep that
+        // raised their week peak, then self-dismisses
+        // and stays gone until they earn a NEW peak.
+        //
+        // Why: rendering this whenever `isWeekPeakCurrent`
+        // was true meant the home opened with a victory
+        // lap before today's rep. That stole attention
+        // from the coach. Glow keeps the celebration
+        // honest — it only shows when something just
+        // happened. The full peak list still lives on
+        // Profile via `PeakRatingWallCard`.
+        if ratingStore.pendingPeakGlow && ratingStore.rating.hasRatedEvidence {
+            personalBestHeroCard
+                .cardEntrance(0)
+                .transition(.opacity)
+                .task {
+                    // Reduced-motion users get a slightly
+                    // shorter window — the fade itself is
+                    // suppressed, so the card just
+                    // appears, sits, then disappears.
+                    let seconds: UInt64 = reduceMotion ? 5 : 7
+                    try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+                    if reduceMotion {
+                        ratingStore.markPeakGlowConsumed()
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.45)) {
+                            ratingStore.markPeakGlowConsumed()
+                        }
+                    }
+                }
+        }
+        // M15 Phase 4 — signal-gated composition. The
+        // Coach Card is the cold-start floor; the in-card
+        // coach-chat entry unlocks after one completed
+        // rep.
+        // Reversible for developer inspection via
+        // `practice.showAllHomeCards`.
+        let gate = homeCardGate
+        // M14 redesign: HomeCoachCard is the single
+        // composed hero with NoumCharacter present, the
+        // coach's recommendation as primary copy, and a single
+        // Begin CTA. The recommendation pipeline
+        // (RecommendationBiasEngine + CoachingPlanner)
+        // feeds it directly — no new coaching logic.
+        if goalRefresh.shouldPresent {
+            GoalRefreshInlineCard()
+                .cardEntrance(0)
+        }
+        if gate.coachCard {
+            HomeCoachCard(
+                navigationPath: $navigationPath,
+                scrollOffset: homeScrollOffset,
+                showsPlanArc: gate.planArc
+            ).cardEntrance(goalRefresh.shouldPresent ? 1 : 0)
+        }
+        // Quiet streak status — the ONE status line the
+        // populated home keeps (roadmap Iter 4). Gated on
+        // a real >=2-day freeze-aware streak; the copy
+        // helper returns nil below that floor so even the
+        // developer show-all override can't render "0 day
+        // streak" furniture. No countdown, no tap target,
+        // no loss-aversion — a reset simply removes the
+        // line silently.
+        if gate.streakStatus,
+           let streakLine = HomeStreakStatusCopy.line(days: streakFreeze.currentStreak) {
+            HomeStreakStatusLine(
+                days: streakFreeze.currentStreak,
+                line: streakLine
+            ).cardEntrance(1)
+        }
+        if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
+            BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
+        } else if let ackReport = bigMomentStore.pendingOutcomeAck {
+            // The coach's receipt for a just-saved
+            // check-in — fills the card's slot for a
+            // beat instead of a silent vanish, then
+            // self-consumes (transient, in-memory).
+            BigMomentOutcomeAckCard(report: ackReport) {
+                bigMomentStore.consumeOutcomeAck()
+            }
+            .cardEntrance(1)
+            .transition(.opacity)
+        }
+        // Path Journey — a quiet supporting row. The
+        // Coach Card owns Home's hero register; Path
+        // stays nearby as the next progression cue
+        // without becoming a competing second hero.
+        if gate.journey {
+            journeyPreviewCard.cardEntrance(2)
+        }
+        // H1 — Home-gap fill. The AI Weekly Insight card
+        // below is gated on 3 current-week reps and is
+        // usually absent, which left dead space under the
+        // Path row. The Ask Noum coach door (relocated out
+        // of the hero) now fills that slot as a quiet
+        // white row + violet chat chip — a real,
+        // signal-gated surface, never empty furniture.
+        if gate.askNoumShortcut {
+            homeAskNoumRow.cardEntrance(3)
+        }
+        if gate.aiWeeklyInsight {
+            AIWeeklyInsightCard(
+                sessionStore: sessionStore,
+                ratingStore: ratingStore,
+                clutchWordStore: ClutchWordStore.shared,
+                coachingProfileStore: coachingProfileStore
+            )
+            .cardEntrance(6)
+        }
+        roleplayEntryRow.cardEntrance(7)
+    }
+
     private var homeAskNoumRow: some View {
         let tint = AppColor.pro // brand violet — the chat/ask hue
         let body = HomeAskNoumShortcut.body(sessionCount: sessionStore.sessions.count)
@@ -1218,6 +1241,57 @@ struct ContentView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("\(HomeAskNoumShortcut.title). \(body). \(HomeAskNoumShortcut.actionTitle)."))
         .accessibilityIdentifier(HomeAskNoumShortcut.accessibilityIdentifier)
+    }
+
+    // Quiet entry point for the pressure-ladder roleplay feature — same
+    // visual weight as `homeAskNoumRow` (a white row, not a competing
+    // hero), matching the existing note that alternate practice entry
+    // points live in their own routes rather than piling onto the
+    // coach-led hero.
+    private var roleplayEntryRow: some View {
+        let tint = AppColor.modeIM
+        return Button {
+            navigationPath.append(AppDestination.roleplaySetup)
+        } label: {
+            HStack(alignment: .center, spacing: Spacing.md) {
+                Image(systemName: "person.2.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 32, height: 32)
+                    .background(tint.opacity(0.10), in: Circle())
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("Practise a real conversation")
+                        .microLabel(tint)
+                    Text("Interview, leadership update, stakeholder pushback — under rising pressure.")
+                        .font(Typography.caption)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+        .background(AppColor.cardBackground.opacity(0.82), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(tint.opacity(0.10), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("Practise a real conversation. Interview, leadership update, stakeholder pushback, under rising pressure."))
+        .accessibilityIdentifier("home.roleplay.row")
     }
 
     // Shortcut dock — deliberately NOT a tab bar (roadmap Iter 4 "resolve

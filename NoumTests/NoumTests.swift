@@ -48617,3 +48617,193 @@ struct CoachingOnboardingCustomChallengeTests {
         )
     }
 }
+
+// MARK: - Scenario roleplay pressure ladder
+
+struct RoleplayEngineTests {
+
+    // MARK: Catalog integrity
+
+    @Test func catalogHasFourNamedScenarios() {
+        let ids = Set(RoleplayCatalog.all.map { $0.scenarioId })
+        #expect(ids == ["interview", "leadershipUpdate", "stakeholderPushback", "difficultQA"])
+    }
+
+    @Test func everyObjectionIdIsGloballyUnique() {
+        let allIDs = RoleplayCatalog.all.flatMap { $0.objectionSet.map { $0.id } }
+        #expect(allIDs.count == Set(allIDs).count)
+    }
+
+    @Test func everyScenarioHasObjectionsAtEveryPressureLevel() {
+        for scenario in RoleplayCatalog.all {
+            for level in RoleplayPressureLevel.allCases {
+                #expect(!scenario.objections(at: level).isEmpty, "\(scenario.scenarioId) missing objections at \(level)")
+            }
+        }
+    }
+
+    @Test func objectionsVaryByPressureLevelWithinAScenario() {
+        for scenario in RoleplayCatalog.all {
+            let easyTexts = Set(scenario.objections(at: .easy).map { $0.text })
+            let realisticTexts = Set(scenario.objections(at: .realistic).map { $0.text })
+            let hostileTexts = Set(scenario.objections(at: .hostile).map { $0.text })
+            #expect(easyTexts.isDisjoint(with: realisticTexts))
+            #expect(realisticTexts.isDisjoint(with: hostileTexts))
+            #expect(easyTexts.isDisjoint(with: hostileTexts))
+        }
+    }
+
+    @Test func rubricWeightsSumToApproximatelyOne() {
+        for scenario in RoleplayCatalog.all {
+            let total = scenario.rubric.reduce(0) { $0 + $1.weight }
+            #expect(abs(total - 1.0) < 0.001, "\(scenario.scenarioId) rubric weights sum to \(total)")
+        }
+    }
+
+    @Test func brandVoiceHasNoExclamationsOrFanfare() {
+        let banned = ["!", "amazing", "crushed", "nailed", "let's go", "hurry"]
+        for scenario in RoleplayCatalog.all {
+            for objection in scenario.objectionSet {
+                for phrase in banned {
+                    #expect(!objection.text.lowercased().contains(phrase), "\(objection.id) contains banned phrase '\(phrase)'")
+                }
+            }
+            for criterion in scenario.rubric {
+                for phrase in banned {
+                    #expect(!criterion.lowSignalHint.lowercased().contains(phrase))
+                    #expect(!criterion.strongSignalHint.lowercased().contains(phrase))
+                }
+            }
+        }
+    }
+
+    // MARK: Objection selection (no-repeat contract)
+
+    @Test func nextObjectionAvoidsUsedIdsWhenFreshOnesRemain() {
+        let scenario = RoleplayCatalog.interview
+        let used = Set(scenario.objections(at: .easy).prefix(2).map { $0.id })
+        let picked = RoleplayEngine.nextObjection(for: scenario, pressureLevel: .easy, excluding: used)
+        #expect(picked != nil)
+        #expect(!used.contains(picked!.id))
+    }
+
+    @Test func nextObjectionFallsBackToReuseOncePoolExhausted() {
+        let scenario = RoleplayCatalog.interview
+        let allEasyIDs = Set(scenario.objections(at: .easy).map { $0.id })
+        let picked = RoleplayEngine.nextObjection(for: scenario, pressureLevel: .easy, excluding: allEasyIDs)
+        #expect(picked != nil)
+        #expect(allEasyIDs.contains(picked!.id))
+    }
+
+    @Test func nextObjectionNeverCrossesScenarios() {
+        // The exclusion set is drawn from ANOTHER scenario's objections —
+        // since IDs are scenario-prefixed and never collide, this proves
+        // the same drill can't be "used up" by an unrelated roleplay.
+        let interviewUsed = Set(RoleplayCatalog.interview.objectionSet.map { $0.id })
+        let picked = RoleplayEngine.nextObjection(for: RoleplayCatalog.leadershipUpdate, pressureLevel: .easy, excluding: interviewUsed)
+        #expect(picked != nil)
+    }
+
+    // MARK: Response scoring
+
+    @Test func directEvidencedResponseScoresHigherThanRamblingFillerResponse() {
+        let rubric = RoleplayCatalog.interview.rubric
+        let strong = "We shipped it two weeks late because the vendor missed a component deadline, specifically the sensor batch."
+        let weak = "Um, I guess, like, maybe it was kind of, sort of, actually late, I think, not sure why."
+        #expect(RoleplayEngine.score(response: strong, rubric: rubric) > RoleplayEngine.score(response: weak, rubric: rubric))
+    }
+
+    @Test func emptyResponseScoresAtTheFloor() {
+        let rubric = RoleplayCatalog.interview.rubric
+        #expect(RoleplayEngine.score(response: "", rubric: rubric) == 0)
+    }
+
+    @Test func scoreStaysWithinUnitRange() {
+        let rubric = RoleplayCatalog.interview.rubric
+        let responses = [
+            "",
+            "yes",
+            "We hit the number because the data specifically showed a 20% lift last quarter, for example in the west region.",
+            String(repeating: "um like actually basically ", count: 20)
+        ]
+        for response in responses {
+            let score = RoleplayEngine.score(response: response, rubric: rubric)
+            #expect(score >= 0 && score <= 1)
+        }
+    }
+
+    // MARK: Feedback
+
+    @Test func feedbackReturnsOneStrengthAndOneGap() {
+        let rubric = RoleplayCatalog.interview.rubric
+        let (strength, gap) = RoleplayEngine.feedback(response: "We hit the number because the data showed a 20% lift.", rubric: rubric)
+        #expect(!strength.isEmpty)
+        #expect(!gap.isEmpty)
+    }
+
+    @Test func emptyResponseFeedbackIsGentleNotShaming() {
+        let rubric = RoleplayCatalog.interview.rubric
+        let (strength, gap) = RoleplayEngine.feedback(response: "   ", rubric: rubric)
+        #expect(!strength.isEmpty)
+        #expect(!gap.isEmpty)
+        let shameWords = ["fail", "wrong", "bad", "terrible"]
+        for word in shameWords {
+            #expect(!gap.lowercased().contains(word))
+            #expect(!strength.lowercased().contains(word))
+        }
+    }
+
+    // MARK: Retry mode / pressure ladder movement
+
+    @Test func strongResponseAtNonTopLevelRecommendsLevelUp() {
+        let mode = RoleplayEngine.retryMode(afterQuality: 0.9, currentLevel: .easy)
+        #expect(mode == .levelUp)
+        #expect(RoleplayEngine.nextLevel(after: mode, currentLevel: .easy) == .realistic)
+    }
+
+    @Test func strongResponseAtHostileStaysAtHostile() {
+        let mode = RoleplayEngine.retryMode(afterQuality: 0.9, currentLevel: .hostile)
+        #expect(mode == .sameLevelNewObjection)
+        #expect(RoleplayEngine.nextLevel(after: mode, currentLevel: .hostile) == .hostile)
+    }
+
+    @Test func weakResponseAtEasyRepeatsRatherThanDroppingFurther() {
+        let mode = RoleplayEngine.retryMode(afterQuality: 0.1, currentLevel: .easy)
+        #expect(mode == .sameObjectionSlower)
+        #expect(RoleplayEngine.nextLevel(after: mode, currentLevel: .easy) == .easy)
+    }
+
+    @Test func weakResponseAboveEasyStepsDown() {
+        let mode = RoleplayEngine.retryMode(afterQuality: 0.1, currentLevel: .realistic)
+        #expect(mode == .levelDown)
+        #expect(RoleplayEngine.nextLevel(after: mode, currentLevel: .realistic) == .easy)
+    }
+
+    @Test func midQualityResponseStaysAtLevelWithFreshObjection() {
+        let mode = RoleplayEngine.retryMode(afterQuality: 0.6, currentLevel: .realistic)
+        #expect(mode == .sameLevelNewObjection)
+        #expect(RoleplayEngine.nextLevel(after: mode, currentLevel: .realistic) == .realistic)
+    }
+
+    // MARK: Turn composition — the data contract
+
+    @Test func evaluateTurnProducesTheRequiredDataContractFields() {
+        let scenario = RoleplayCatalog.stakeholderPushback
+        let objection = scenario.objections(at: .realistic)[0]
+        let result = RoleplayEngine.evaluateTurn(scenario: scenario, objection: objection, response: "Because the last rollout held at 98% uptime for six months.")
+        #expect(result.scenarioId == scenario.scenarioId)
+        #expect(result.pressureLevel == .realistic)
+        #expect(result.objectionType == objection.type)
+        #expect(result.objectionId == objection.id)
+        #expect(result.responseQuality >= 0 && result.responseQuality <= 1)
+    }
+
+    // MARK: Pressure ladder ordering
+
+    @Test func pressureLevelOrderingIsEasyBeforeRealisticBeforeHostile() {
+        #expect(RoleplayPressureLevel.easy < RoleplayPressureLevel.realistic)
+        #expect(RoleplayPressureLevel.realistic < RoleplayPressureLevel.hostile)
+        #expect(RoleplayPressureLevel.hostile.next == nil)
+        #expect(RoleplayPressureLevel.easy.previous == nil)
+    }
+}
