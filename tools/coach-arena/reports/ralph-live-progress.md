@@ -131,13 +131,18 @@ longitudinal outcomes + real-device TestFlight. That refusal is the product work
 designed, not a gap to hack.
 
 ## Exact remaining blockers
-1. **Prompt-layer ≥70** — not achievable via wording (17 confirmations) and **verified
-   unmeasurable this session**. No `ANTHROPIC_API_KEY`; and the `ARENA_PROVIDER=cli` fallback
-   is CONTAMINATED when nested in Claude Code — `claude -p --append-system-prompt` appends the
-   coach prompt to Claude Code's own agent prompt, which dominates (direct probe returned
-   Claude-Code-agent voice, not coach; 2-fixture cli mean=44 vs ~55–68 anthropic). So the
-   contamination swamps both an absolute score and a dual-arm A/B. Needs a real API key
-   (anthropic provider) or a plain-terminal `claude -p`. NOT a bug.
+1. **Prompt-layer ≥70** — MEASURED this session (task item 3) after fixing the cli provider
+   to use `--system-prompt` (replace) instead of `--append` (which let Claude Code's agent
+   prompt contaminate the coach). Clean production-parity `claude-sonnet-4-6` via the OAuth
+   CLI. **HEAD raw-draft mean = 64.1** (committed anthropic anchor 67.6; ~3.5 = draw variance
+   + provider transport). DECISIVE finding (`ralph-cli-baseline-analysis-2026-07-08.md`): of
+   the 40 sub-70 fixtures, **24/26 deterministic findings are GATE-CAUGHT types** (tooLong 17,
+   scaffoldLabel 4, trustRepair/sensitive report-voice 3, leaks 2) that the shipping
+   `replyLengthLimits`/`replyQualityIssue` gate repairs before display — the Node arena scores
+   the RAW draft, not the gated shipped reply. The other 19 are pure judge-rubric gaps on a
+   mature prompt (17-iter ceiling). So the prompt-layer number UNDER-states shipped quality;
+   the faithful gated measure is the app-path (realPipelineEvidence, all thresholds ≥ target).
+   Crossing the raw-draft 70 needs a stronger coach model, not a fixable bug.
 2. **App-path quickMove type-avg 68.76** (< 70) — the deterministic local_judge flags some
    scripted quickMove replies "missing evidence anchor". Injecting sessions raised
    confidence but does NOT change the (forced) scripted reply text the judge scores, so this
