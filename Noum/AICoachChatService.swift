@@ -197,6 +197,56 @@ enum ChatExtractionResult: Equatable {
     case lengthTruncated
 }
 
+/// Token usage + prompt-cache accounting for one provider response. COST/
+/// LATENCY instrumentation only — never a signal about reply quality. Fields
+/// are provider-shaped: Anthropic reports `cacheCreationInputTokens` /
+/// `cacheReadInputTokens`; Gemini's implicit caching reports a single
+/// `cachedContentTokenCount`. A field is nil when the provider's response
+/// omitted it (e.g. no usage on a refused/errored call), not when it is zero.
+struct CoachChatUsage: Equatable {
+    var inputTokens: Int?
+    var outputTokens: Int?
+    var cacheCreationInputTokens: Int?
+    var cacheReadInputTokens: Int?
+    var cachedContentTokenCount: Int?
+
+    var hasAnyTokenData: Bool {
+        inputTokens != nil || outputTokens != nil
+            || cacheCreationInputTokens != nil || cacheReadInputTokens != nil
+            || cachedContentTokenCount != nil
+    }
+
+    var cacheHit: Bool {
+        (cacheReadInputTokens ?? 0) > 0 || (cachedContentTokenCount ?? 0) > 0
+    }
+
+    /// Overlays `newer`'s non-nil fields on top of `self`. Anthropic's
+    /// streaming `message_delta` event repeats only `output_tokens`, so a
+    /// naive overwrite would drop the cache fields `message_start` already
+    /// reported — this keeps every field's most-recent non-nil value.
+    func merged(with newer: CoachChatUsage) -> CoachChatUsage {
+        CoachChatUsage(
+            inputTokens: newer.inputTokens ?? inputTokens,
+            outputTokens: newer.outputTokens ?? outputTokens,
+            cacheCreationInputTokens: newer.cacheCreationInputTokens ?? cacheCreationInputTokens,
+            cacheReadInputTokens: newer.cacheReadInputTokens ?? cacheReadInputTokens,
+            cachedContentTokenCount: newer.cachedContentTokenCount ?? cachedContentTokenCount
+        )
+    }
+
+    /// Compact non-secret line for the AI call diagnostics reason field.
+    var diagnosticSummary: String {
+        var parts: [String] = []
+        if let inputTokens { parts.append("input=\(inputTokens)") }
+        if let cacheReadInputTokens { parts.append("cacheRead=\(cacheReadInputTokens)") }
+        if let cacheCreationInputTokens { parts.append("cacheCreate=\(cacheCreationInputTokens)") }
+        if let cachedContentTokenCount { parts.append("cachedContent=\(cachedContentTokenCount)") }
+        if let outputTokens { parts.append("output=\(outputTokens)") }
+        guard !parts.isEmpty else { return "Cache usage: no token data" }
+        return "Cache usage: " + parts.joined(separator: " ")
+    }
+}
+
 /// Normalizes live coach text before it is stored, rendered in the live call,
 /// or sent to TTS. The model may still occasionally emit Markdown-ish text;
 /// Noum's app surfaces should never expose raw scaffolding like `**Read:**`,
@@ -1314,6 +1364,8 @@ actor AICoachChatService {
                 endpoint: endpoint,
                 key: key,
                 system: composedSystem,
+                cacheableSystemPrompt: systemPrompt,
+                cacheableUserContext: userContext,
                 messages: trimmed,
                 quoteGuard: quoteGuard,
                 latestUserTurn: latestUserTurn,
@@ -1600,6 +1652,8 @@ actor AICoachChatService {
         endpoint: URL,
         key: String,
         system: String,
+        cacheableSystemPrompt: String,
+        cacheableUserContext: String,
         messages: [CoachMessage],
         quoteGuard: CoachChatQuoteGuardContext,
         latestUserTurn: String?,
@@ -1626,7 +1680,8 @@ actor AICoachChatService {
             let requestEndpoint = usesProviderStream ? (streamEndpoint ?? endpoint) : endpoint
             let body = chatRequestBody(
                 for: provider,
-                system: system,
+                systemPrompt: cacheableSystemPrompt,
+                userContext: cacheableUserContext,
                 messages: messages,
                 maxOutputTokens: CoachPromptBundle.maxOutputTokens(
                     for: turnDepth,
@@ -1673,7 +1728,7 @@ actor AICoachChatService {
                 )
                 await onProviderAttemptEvent?(.refused(providerChoice))
                 return .refused(.classify(status: status))
-            case .success(let extraction, let firstTokenAt):
+            case .success(let extraction, let firstTokenAt, let usage):
                 if let firstTokenAt {
                     recordChatDiagnostic(
                         .success,
@@ -1683,6 +1738,7 @@ actor AICoachChatService {
                         now: firstTokenAt
                     )
                 }
+                recordCacheUsageDiagnostic(usage: usage, provider: provider, startedAt: startedAt)
                 switch extraction {
                 case .text(let text):
                     let display = CoachReplyTextSanitizer.displayText(from: text)
@@ -5804,6 +5860,32 @@ actor AICoachChatService {
         )
     }
 
+    /// COST/LATENCY instrumentation only, separate from `recordChatDiagnostic`
+    /// so the existing `diagnosticRecorder` closure (and any test double built
+    /// against it) keeps its signature. A no-op when the provider response
+    /// carried no token data at all (e.g. a transport error never reached
+    /// `usage` parsing) — logging an empty cache record would just be noise.
+    private func recordCacheUsageDiagnostic(
+        usage: CoachChatUsage?,
+        provider: CoachChatProvider,
+        startedAt: Date
+    ) {
+        guard let usage, usage.hasAnyTokenData else { return }
+        AICallDiagnostics.record(
+            surface: Self.chatSurface,
+            providerName: provider.displayName,
+            model: provider.model,
+            outcome: .success,
+            reason: usage.diagnosticSummary,
+            startedAt: startedAt,
+            cacheCreationInputTokens: usage.cacheCreationInputTokens,
+            cacheReadInputTokens: usage.cacheReadInputTokens,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            cachedContentTokenCount: usage.cachedContentTokenCount
+        )
+    }
+
     enum ProviderHTTPResult {
         case success(Data)
         /// The server answered with a non-2xx. `retryAfter` carries the
@@ -5812,7 +5894,7 @@ actor AICoachChatService {
     }
 
     private enum ProviderTextTransportResult {
-        case success(ChatExtractionResult, firstTokenReceivedAt: Date?)
+        case success(ChatExtractionResult, firstTokenReceivedAt: Date?, usage: CoachChatUsage?)
         /// The server answered with a non-2xx. `retryAfter` carries the
         /// parsed Retry-After header when the server named one.
         case refused(status: Int, retryAfter: TimeInterval?)
@@ -5846,7 +5928,8 @@ actor AICoachChatService {
         case .success(let data):
             return .success(
                 Self.chatExtractReplyText(from: data, provider: provider),
-                firstTokenReceivedAt: nil
+                firstTokenReceivedAt: nil,
+                usage: Self.chatExtractUsage(from: data, provider: provider)
             )
         case .refused(let status, let retryAfter):
             return .refused(status: status, retryAfter: retryAfter)
@@ -5939,7 +6022,7 @@ actor AICoachChatService {
                 startedAt: started,
                 now: completedAt
             )
-            return .success(accumulator.extractionResult, firstTokenReceivedAt: firstTokenAt)
+            return .success(accumulator.extractionResult, firstTokenReceivedAt: firstTokenAt, usage: accumulator.usage)
         } catch {
             recordChatDiagnostic(
                 .failure,
@@ -6147,6 +6230,152 @@ actor AICoachChatService {
         }
     }
 
+    // MARK: - Prompt caching (system-field split)
+    //
+    // The composed system content is STABLE `systemPrompt` (the voice, fixed
+    // for the life of the app build) followed by DYNAMIC `userContext` (goal,
+    // memory, recent transcript — different on every turn). Splitting the two
+    // lets the provider cache the stable prefix instead of re-billing/re-
+    // processing it every turn. Total text sent to the model is unchanged —
+    // only how it is chunked in the request body.
+
+    /// Anthropic Messages API: `system` becomes an array of content blocks.
+    /// The first block carries the explicit `cache_control` breakpoint — it
+    /// MUST be byte-identical across requests to hit the cache, so nothing
+    /// per-turn (timestamps, memory, the user's latest words) may leak into
+    /// it. The second, dynamic block sits after the breakpoint and is never
+    /// marked cacheable, since Anthropic would otherwise auto-place a
+    /// top-level `cache_control` on the LAST cacheable block — caching
+    /// content that changes every request instead of the stable prefix.
+    /// Pure + `nonisolated` so the split itself is directly unit-testable.
+    nonisolated static func anthropicSystemBlocks(
+        systemPrompt: String,
+        userContext: String
+    ) -> [[String: Any]] {
+        [
+            [
+                "type": "text",
+                "text": systemPrompt,
+                "cache_control": ["type": "ephemeral"]
+            ],
+            [
+                "type": "text",
+                "text": userContext
+            ]
+        ]
+    }
+
+    /// Gemini implicit caching is prefix-based, not an explicit marked block:
+    /// the provider caches however much of the request's start matches a
+    /// prior request byte-for-byte. Keeping the stable prompt as its own part
+    /// ahead of the dynamic context (rather than one concatenated string)
+    /// maximizes that shared prefix without changing what the model reads.
+    nonisolated static func geminiSystemParts(
+        systemPrompt: String,
+        userContext: String
+    ) -> [[String: Any]] {
+        [
+            ["text": systemPrompt],
+            ["text": userContext]
+        ]
+    }
+
+    private func chatRequestBody(
+        for provider: CoachChatProvider,
+        systemPrompt: String,
+        userContext: String,
+        messages: [CoachMessage],
+        maxOutputTokens: Int? = nil,
+        streaming: Bool = false
+    ) -> [String: Any] {
+        let tokenCap = maxOutputTokens ?? Self.coachReplyMaxOutputTokens
+        if let shared = provider.sharedProvider {
+            return requestBody(
+                for: shared,
+                systemPrompt: systemPrompt,
+                userContext: userContext,
+                messages: messages,
+                maxOutputTokens: tokenCap,
+                streaming: streaming
+            )
+        }
+
+        // Anthropic branch only — same message-shaping as the non-cacheable
+        // overload above, just with the cache-split system field.
+        var msgs: [[String: Any]] = []
+        for m in messages {
+            let role: String
+            switch m.role {
+            case .user: role = "user"
+            case .coach: role = "assistant"
+            case .systemNotice: continue // UI-only, never sent to model
+            }
+            msgs.append(["role": role, "content": m.text])
+        }
+        while let first = msgs.first, first["role"] as? String == "assistant" {
+            msgs.removeFirst()
+        }
+        var body: [String: Any] = [
+            "model": provider.model,
+            "max_tokens": tokenCap,
+            "system": Self.anthropicSystemBlocks(systemPrompt: systemPrompt, userContext: userContext),
+            "messages": msgs
+        ]
+        if streaming {
+            body["stream"] = true
+        }
+        return body
+    }
+
+    private func requestBody(
+        for provider: AIProvider,
+        systemPrompt: String,
+        userContext: String,
+        messages: [CoachMessage],
+        maxOutputTokens: Int? = nil,
+        streaming: Bool = false
+    ) -> [String: Any] {
+        switch provider {
+        case .openAI, .deepSeek:
+            // No caching contract given for these providers in this pass;
+            // recombine to the identical single-string system this class has
+            // always sent them.
+            return requestBody(
+                for: provider,
+                system: systemPrompt + "\n\n" + userContext,
+                messages: messages,
+                maxOutputTokens: maxOutputTokens,
+                streaming: streaming
+            )
+        case .gemini:
+            var contents: [[String: Any]] = []
+            for m in messages {
+                let role: String
+                switch m.role {
+                case .user: role = "user"
+                case .coach: role = "model"
+                case .systemNotice: continue
+                }
+                contents.append([
+                    "role": role,
+                    "parts": [["text": m.text]]
+                ])
+            }
+            let tokenCap = maxOutputTokens ?? Self.coachReplyMaxOutputTokens
+            return [
+                "systemInstruction": ["parts": Self.geminiSystemParts(systemPrompt: systemPrompt, userContext: userContext)],
+                "contents": contents,
+                "generationConfig": [
+                    "temperature": 0.6,
+                    "thinkingConfig": ["thinkingBudget": 0],
+                    "maxOutputTokens": tokenCap
+                ]
+            ]
+        case .none:
+            return [:]
+        }
+    }
+
     // MARK: - Response parsing
 
     static func healthRequestBody(for provider: CoachChatProvider) throws -> Data {
@@ -6227,6 +6456,60 @@ actor AICoachChatService {
         return extractAnthropicReplyText(from: data)
     }
 
+    /// Cache/cost accounting from a non-streaming response body. `nil` when
+    /// the response has no usage object at all (malformed JSON, or a shape
+    /// this parser does not recognize) — distinct from a `CoachChatUsage`
+    /// whose fields are individually nil because the provider omitted them.
+    static func chatExtractUsage(from data: Data, provider: CoachChatProvider) -> CoachChatUsage? {
+        if let shared = provider.sharedProvider {
+            return chatExtractUsage(from: data, provider: shared)
+        }
+        return extractAnthropicUsage(from: data)
+    }
+
+    private static func chatExtractUsage(from data: Data, provider: AIProvider) -> CoachChatUsage? {
+        switch provider {
+        case .gemini: return extractGeminiUsage(from: data)
+        case .openAI, .deepSeek, .none: return nil
+        }
+    }
+
+    /// Anthropic `usage` object: `input_tokens`/`output_tokens` are always
+    /// present on a real reply; `cache_creation_input_tokens`/
+    /// `cache_read_input_tokens` are present whenever prompt caching is
+    /// active for this account, 0 when the prefix was below the minimum
+    /// cacheable length or the cache entry expired.
+    static func extractAnthropicUsage(from data: Data) -> CoachChatUsage? {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let usage = object["usage"] as? [String: Any]
+        else { return nil }
+        return CoachChatUsage(
+            inputTokens: usage["input_tokens"] as? Int,
+            outputTokens: usage["output_tokens"] as? Int,
+            cacheCreationInputTokens: usage["cache_creation_input_tokens"] as? Int,
+            cacheReadInputTokens: usage["cache_read_input_tokens"] as? Int,
+            cachedContentTokenCount: nil
+        )
+    }
+
+    /// Gemini `usageMetadata`. `cachedContentTokenCount` is only present when
+    /// implicit caching actually hit — absent (not zero) otherwise, so this
+    /// stays nil rather than defaulting to 0 on a cache miss.
+    static func extractGeminiUsage(from data: Data) -> CoachChatUsage? {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let usageMetadata = object["usageMetadata"] as? [String: Any]
+        else { return nil }
+        return CoachChatUsage(
+            inputTokens: usageMetadata["promptTokenCount"] as? Int,
+            outputTokens: usageMetadata["candidatesTokenCount"] as? Int,
+            cacheCreationInputTokens: nil,
+            cacheReadInputTokens: nil,
+            cachedContentTokenCount: usageMetadata["cachedContentTokenCount"] as? Int
+        )
+    }
+
     static func chatExtractStreamReplyText(from data: Data, provider: CoachChatProvider) -> ChatExtractionResult {
         var accumulator = CoachChatStreamAccumulator(provider: provider)
         guard let text = String(data: data, encoding: .utf8) else {
@@ -6243,6 +6526,7 @@ actor AICoachChatService {
         private var chunks: [String] = []
         private var lengthTruncated = false
         private var partialGate = CoachStreamingPartialGate()
+        private(set) var usage: CoachChatUsage?
 
         init(provider: CoachChatProvider) {
             self.provider = provider
@@ -6268,6 +6552,9 @@ actor AICoachChatService {
             let delta = AICoachChatService.streamDelta(from: data, provider: provider)
             if delta.lengthTruncated {
                 lengthTruncated = true
+            }
+            if let partialUsage = AICoachChatService.streamUsage(from: data, provider: provider) {
+                usage = usage?.merged(with: partialUsage) ?? partialUsage
             }
             let visiblePartial = partialGate.consume(delta: delta.text)
             if !delta.text.isEmpty {
@@ -6366,6 +6653,41 @@ actor AICoachChatService {
             lengthTruncated = true
         }
         return CoachChatStreamDelta(text: text, lengthTruncated: lengthTruncated)
+    }
+
+    /// Usage from a single SSE chunk, if this chunk carries any. Anthropic
+    /// splits it across two events (`message_start` has the cache fields,
+    /// `message_delta` repeats only `output_tokens`); the accumulator merges
+    /// successive non-nil calls so both halves survive. Gemini repeats the
+    /// full `usageMetadata` on the relevant chunk(s), so the latest wins.
+    private static func streamUsage(from data: Data, provider: CoachChatProvider) -> CoachChatUsage? {
+        if let shared = provider.sharedProvider {
+            return streamUsage(from: data, provider: shared)
+        }
+        return anthropicStreamUsage(from: data)
+    }
+
+    private static func streamUsage(from data: Data, provider: AIProvider) -> CoachChatUsage? {
+        switch provider {
+        case .gemini: return extractGeminiUsage(from: data)
+        case .openAI, .deepSeek, .none: return nil
+        }
+    }
+
+    private static func anthropicStreamUsage(from data: Data) -> CoachChatUsage? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        let usage = (object["message"] as? [String: Any])?["usage"] as? [String: Any]
+            ?? object["usage"] as? [String: Any]
+        guard let usage else { return nil }
+        return CoachChatUsage(
+            inputTokens: usage["input_tokens"] as? Int,
+            outputTokens: usage["output_tokens"] as? Int,
+            cacheCreationInputTokens: usage["cache_creation_input_tokens"] as? Int,
+            cacheReadInputTokens: usage["cache_read_input_tokens"] as? Int,
+            cachedContentTokenCount: nil
+        )
     }
 
     /// Anthropic Messages API extraction: text blocks joined, with

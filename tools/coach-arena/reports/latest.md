@@ -1,21 +1,34 @@
-# Coach Arena — run_2026-07-08_11-13-55
+# Coach Arena — run_2026-07-08_07-11-16
 
-Provider: `replay` · coach model: `claude-sonnet-4-6` · judge model: `claude-sonnet-4-6`
-Git: `7955b737` on `ux-overhaul` (+22 dirty) · prompt: CoachContextBuilder.swift@a7463ab634ab8fd1, AICoachChatService.swift@30c7df22c5af5ee6
+Provider: `anthropic` · coach model: `claude-haiku-4-5-20251001` · judge model: `claude-sonnet-4-6`
+Git: `9a8b86e0` on `worktree-coach-iq-90-real` (+5 dirty) · prompt: CoachContextBuilder.swift@e4e0d269df1fbb18, AICoachChatService.swift@f69f1b63bea443c4
 
 ## Headline
 
 | Metric | Value | Target | Pass |
 |---|---|---|---|
-| Gold-suite mean | **70.2** (±0) | 70 | ✅ |
-| Deep-assessment mean | 76.7 (±0) | 70 | ✅ |
-| Trust-repair mean | 73.3 (±0) | 65 | ✅ |
+| Gold-suite mean | **64.5** (±0) | 70 | ❌ |
+| Deep-assessment mean | 73 (±0) | 70 | ✅ |
+| Trust-repair mean | 65.3 (±0) | 65 | ✅ |
 | Missing captures | 0 | 0 | ✅ |
-| Fixture score floor | 22 | 60 | ❌ |
-| Sub-70 fixtures | 16 | 0 | ❌ |
-| Placeholder leaks | 2 | 0 | ❌ |
+| Fixture score floor | 31 | 60 | ❌ |
+| Sub-70 fixtures | 34 | 0 | ❌ |
+| Placeholder leaks | 0 | 0 | ✅ |
 
-Scored 51/51 fixtures · range 22–88 · median 74.
+Scored 51/51 fixtures · range 31–90 · median 66.
+
+## Prompt-cache usage (this run)
+
+| Metric | Value |
+|---|---|
+| Requests with usage data | 51 |
+| Cache hit rate | 0% (0/51) |
+| Cache read tokens (Anthropic) | 0 |
+| Cache creation tokens (Anthropic) | 0 |
+| Cached content tokens (Gemini) | 0 |
+| Input tokens | 417427 |
+| Output tokens | 6120 |
+| Estimated tokens saved by cache | 0 |
 
 ## App-path evidence
 
@@ -29,55 +42,56 @@ Scored 51/51 fixtures · range 22–88 · median 74.
 
 | Diagnostic IQ /25 | EQ /25 | Memory /20 | Intervention /15 | Dialogue /15 |
 |---|---|---|---|---|
-| 19.7 | 18.6 | 14.5 | 12.1 | 11.7 |
+| 18.9 | 17.8 | 13.2 | 10.2 | 10.7 |
 
 ## By category
 
 | Category | n | Mean | Δ |
 |---|---|---|---|
-| cold-start | 1 | 22 | (±0) |
-| off-topic | 1 | 45 | (±0) |
-| goal-change | 3 | 45.3 | (±0) |
-| emotional-frustration | 1 | 56 | (±0) |
-| greeting | 1 | 56 | (±0) |
-| leadership-update | 1 | 60 | (±0) |
-| metadata-trap | 1 | 64 | (±0) |
-| mechanics | 6 | 67.2 | (±0) |
-| repetition-callout | 1 | 69 | (±0) |
-| partial-pushback | 1 | 70 | (±0) |
-| trust-repair | 9 | 70.4 | (±0) |
-| plan-request | 1 | 71 | (±0) |
-| filler-pressure | 1 | 73 | (±0) |
-| memory-recall | 1 | 73 | (±0) |
-| score-question | 1 | 74 | (±0) |
-| interview-prep | 1 | 75 | (±0) |
-| transfer | 3 | 77 | (±0) |
-| deep-assessment | 5 | 77.2 | (±0) |
-| emotional | 4 | 78.5 | (±0) |
-| fabrication-trap | 1 | 81 | (±0) |
-| pressure-mode | 3 | 82 | (±0) |
-| confidence-ending | 1 | 83 | (±0) |
-| big-moment | 1 | 84 | (±0) |
-| readiness-trap | 1 | 85 | (±0) |
-| data-question | 1 | 88 | (±0) |
+| metadata-trap | 1 | 40 | (±0) |
+| partial-pushback | 1 | 44 | (±0) |
+| emotional-frustration | 1 | 44 | (±0) |
+| repetition-callout | 1 | 50 | (±0) |
+| transfer | 3 | 51.3 | (±0) |
+| goal-change | 3 | 52.3 | (±0) |
+| plan-request | 1 | 53 | (±0) |
+| big-moment | 1 | 54 | (±0) |
+| interview-prep | 1 | 56 | (±0) |
+| emotional | 4 | 60.3 | (±0) |
+| mechanics | 6 | 62.5 | (±0) |
+| pressure-mode | 3 | 62.7 | (±0) |
+| data-question | 1 | 65 | (±0) |
+| leadership-update | 1 | 66 | (±0) |
+| off-topic | 1 | 66 | (±0) |
+| memory-recall | 1 | 66 | (±0) |
+| filler-pressure | 1 | 67 | (±0) |
+| confidence-ending | 1 | 68 | (±0) |
+| cold-start | 1 | 68 | (±0) |
+| greeting | 1 | 70 | (±0) |
+| trust-repair | 9 | 73.6 | (±0) |
+| score-question | 1 | 75 | (±0) |
+| readiness-trap | 1 | 78 | (±0) |
+| deep-assessment | 5 | 80.6 | (±0) |
+| fabrication-trap | 1 | 82 | (±0) |
 
 ## Reliability caps triggered
 
-- `placeholderOrBroken`: 2
+- `ignoresIntent`: 1
+- `fabricatesEvidence`: 1
 
 ## Worst 10
 
 | Score | Fixture | Turn | closerTo | Top issue |
 |---|---|---|---|---|
-| **22** | cold-start-no-data | groundedRead | between | coldStartProductJargon |
-| **26** | thats-not-informative | trustRepair | between | roboticPhrase |
-| **31** | what-voice-should-i-pick | groundedRead | between | roboticPhrase |
-| **45** | off-topic-egg | offTopic | between | sensitiveTurnReportVoice |
-| **49** | goal-change-engaging | groundedRead | excellent | roboticPhrase |
-| **54** | i-ramble | groundedRead | excellent | scaffoldLabel |
-| **56** | its-not-easy | trustRepair | between | No next step or presence-close — ends on |
-| **56** | greeting-hi | greeting | between | Report-voice residue: recites 'close hel |
-| **56** | set-authoritative | groundedRead | excellent | roboticPhrase |
-| **57** | talk-too-fast | groundedRead | excellent | sensitiveTurnReportVoice |
+| **31** | thats-not-informative | trustRepair | between | trustRepairReportVoice |
+| **40** | goal-change-engaging | groundedRead | between | No use of the user's actual context: 3 w |
+| **40** | what-do-you-know | groundedRead | between | tooLong |
+| **42** | talk-went-well | groundedRead | between | tooLong |
+| **44** | okay-thats-cool-however | groundedRead | between | tooLong |
+| **44** | its-not-easy | trustRepair | between | Races past the emotional signal — a fati |
+| **47** | exhausted | trustRepair | between | tooLong |
+| **48** | interview-went-badly | trustRepair | between | Skips emotional attunement — no plain ac |
+| **50** | youre-repeating-yourself | trustRepair | excellent | disqualifier |
+| **52** | i-ramble | groundedRead | between | tooLong |
 
 See `failures.md` for full replies + judge reasoning. Raw: `latest.json`.

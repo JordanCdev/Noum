@@ -6336,7 +6336,18 @@
         "pass": false
       }
     },
-    "productionReady": false
+    "productionReady": false,
+    "cacheSummary": {
+      "requestsWithUsage": 51,
+      "cacheHits": 0,
+      "cacheHitRate": 0,
+      "cacheReadTokens": 0,
+      "cacheCreationTokens": 0,
+      "cachedContentTokens": 0,
+      "inputTokens": 417427,
+      "outputTokens": 6120,
+      "estimatedTokensSaved": 0
+    }
   },
   "previous": {
     "runId": "run_2026-07-08_10-53-29",

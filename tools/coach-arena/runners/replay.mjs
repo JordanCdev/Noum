@@ -88,6 +88,19 @@ function expandConversation(conv) {
 
 const MAX_TOKENS = { greeting: 300, preference: 300, offTopic: 300, groundedRead: 500, trustRepair: 700, deepAssessment: 900, plan: 1100 };
 
+// Anthropic prompt-caching system split, matching Noum/AICoachChatService.swift
+// exactly: the stable voice prompt as its own cache_control-marked block,
+// followed by the per-fixture dynamic context block, uncached. Only the live
+// 'anthropic' provider path uses this — cli/plan consumers keep the flattened
+// `system` string so requests.json and `claude -p --system-prompt` (which
+// takes a single string arg) are unaffected.
+function anthropicSystemBlocks(system, contextBlock) {
+  return [
+    { type: 'text', text: system, cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: contextBlock },
+  ];
+}
+
 function composeRequest(fixture, extracted) {
   const system = composeSystemPrompt(fixture.voice || null, {}, extracted);
   const contextBlock = renderContext(fixture);
@@ -95,7 +108,13 @@ function composeRequest(fixture, extracted) {
   const messages = [];
   for (const t of fixture.priorChatTurns || []) messages.push({ role: t.role === 'assistant' ? 'assistant' : 'user', content: t.text });
   messages.push({ role: 'user', content: fixture.userTurn });
-  return { system: fullSystem, contextBlock, messages, maxTokens: MAX_TOKENS[fixture.turnDepth] || 500 };
+  return {
+    system: fullSystem,
+    systemBlocks: anthropicSystemBlocks(system, contextBlock),
+    contextBlock,
+    messages,
+    maxTokens: MAX_TOKENS[fixture.turnDepth] || 500,
+  };
 }
 
 function newRunId() {
@@ -160,8 +179,12 @@ async function cmdRun() {
     const req = composeRequest(fx, extracted);
     const rec = { fixture: publicFixture(fx), status: 'pending' };
     try {
-      // 1. generate
-      const gen = await provider.generate({ id: fx.id }, { system: req.system, messages: req.messages, maxTokens: req.maxTokens });
+      // 1. generate — the live anthropic provider gets the cache-split
+      // system (production parity, and the only way this run can ever
+      // produce a non-zero cache-read count); cli/replay get the flattened
+      // string they've always taken.
+      const generateSystem = providerName === 'anthropic' ? req.systemBlocks : req.system;
+      const gen = await provider.generate({ id: fx.id }, { system: generateSystem, messages: req.messages, maxTokens: req.maxTokens });
       const reply = gen.text || '';
       rec.reply = reply;
       rec.trace = {
