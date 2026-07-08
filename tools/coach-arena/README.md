@@ -17,7 +17,7 @@ Coach Arena has two complementary lenses (see *Provenance* at the bottom):
 | Engine | Entry | Grades | Judge | Strength |
 |---|---|---|---|---|
 | **Prompt-faithful** (Node, canonical) | `./run.sh` | the **real extracted Swift system prompt** run on 60 gold+synthetic fixtures | LLM judge vs bad/excellent + deterministic checks | tests the shipping instructions directly; production-parity provider |
-| **App-path** (Python, legacy) | `./run.sh python` | **real app-generated candidates** + trace/production-evidence audits | heuristic `local_judge` + optional LLM hook | can score actual pipeline output when a dump exists |
+| **App-path** (Python, legacy) | `./run.sh app-path [report.json]` | **real app-generated candidates** + trace/real-pipeline evidence audits | heuristic `local_judge` + optional LLM hook | can score actual pipeline output when a dump exists, and refuses to run without one |
 
 Both share the same rubric, caps, and thresholds. The Node engine is the default
 because it needs no app dump to run and it tests the instruction layer that most
@@ -64,13 +64,25 @@ ARENA_PROVIDER=replay ./tools/coach-arena/run.sh run
 
 # Include the 10 synthetic multi-turn conversations
 ARENA_INCLUDE_SYNTHETIC=1 ./tools/coach-arena/run.sh run
+
+# Real Swift app-path evidence from the XCTest artifact dump
+./tools/coach-arena/run.sh app-path
 ```
+
+`app-path` reads
+`$NOUM_COACH_EVAL_DUMP_DIR/coach-chat-conversation-app-path-eval-v1.json`, defaulting
+to `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`,
+and writes the scored report to `reports/app-path/`. Pass an explicit report path
+as the first argument when scoring another dump. Use the XCTest bridge
+`NoumTests/CoachChatConversationArtifactDumpXCTest` to refresh the dump first.
 
 Other commands: `plan` (compose real prompts/context to `runs/<id>/requests.json`),
 `prepare [n]` (per-voice prompts + per-fixture reqs + n agent batches),
 `report` (re-render), `validate` (fixture integrity), `synth` (rebuild
 conversations), `extract <voice|--json>` (print the extracted system prompt),
-`test`.
+`test`, and `python` (direct access to the legacy engine; do not use it for
+app-path readiness unless you pass `--app-path-report`, otherwise it grades
+reference examples).
 
 ### Providers
 
@@ -139,10 +151,17 @@ weak-to-moderate local evidence, **not** proof of anything shippable. Specifical
   provider, replies are pre-captured files — editing the Swift prompt does **not**
   change a replay reply. Attribute prompt-change deltas only to a `--live`
   (`anthropic`/`cli`) run that actually generates from the prompt.
-- **Not the production model or pipeline.** Production's default coach model is
-  `gemini-3.5-flash` (Sonnet is a fallback), and the live Swift pipeline —
-  retrieval, memory assembly, the quality gate, provider fallback, caching — is
-  never exercised. Arena is blind to that whole class of real failures.
+- **Prompt-faithful runs are not the production model or pipeline.** Production's
+  default coach model is `gemini-3.5-flash` (Sonnet is a fallback), and the
+  prompt-faithful Node engine never exercises the live Swift pipeline —
+  retrieval, memory assembly, the quality gate, provider fallback, caching.
+  Use `./run.sh app-path` for the real Swift trace lens.
+- **App-path green is still not VISION production readiness.** The app-path report
+  proves local real-pipeline evidence and trace quality. It does not remove the
+  VISION blockers for live-provider transcript sweeps, professional-coach
+  calibration, real-user longitudinal transfer outcomes, real-device TestFlight
+  verification, or launch operations. The app-path markdown prints that boundary
+  from the Swift readiness audit when present.
 - **Within-noise deltas.** The same prompt at the same commit has produced 75.7
   and 76.5; per-fixture judge scores swing ±9. Treat small movements as noise.
 - The judge runs lenient (most replies land "excellent"); `closerTo` is advisory.

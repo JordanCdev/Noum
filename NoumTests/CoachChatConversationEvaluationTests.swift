@@ -122,7 +122,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "The ** don't format and TTS reads them out. The responses feel robotic and cold, nowhere near an expert coach.",
-                    coachReply: "Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. Your last rep had 4 fillers, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape."
+                    coachReply: "Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. The safe signal from the last rep is that the recommendation needs to lead, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "And stop saying practice more.",
@@ -306,7 +306,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Is it the pause or the close?",
-                    coachReply: "Your last rep gives one usable signal: latest rep Pressure Drill, 2/10, 1 fillers, 52s, so use one silent beat after the verdict, then finish the answer without speeding up."
+                    coachReply: "Your last rep gives one usable signal: under pressure, the close needs one silent beat after the verdict. Use that beat, then finish the answer without speeding up."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What is the smallest rep?",
@@ -563,24 +563,24 @@ enum CoachChatConversationCorpus {
         arenaAppPathScript(
             fixtureID: "examples-from-sessions-010",
             userTurn: "Can you give me an example of me doing this in sessions?",
-            coachReply: "One example is the rep where you said 'we focused on three priorities.' The reasons were clear, but the listener had no scene to picture, so add one concrete example after the first reason next time.",
+            coachReply: "One specific example is the latest rep: the reasons were clear before there was a concrete scene. That shows the pattern because the listener gets logic before a picture. Next rep, add one example after the first reason, then return to the ask.",
             seedCoachReplies: ["You tend to give reasons before the picture."]
         ),
         arenaAppPathScript(
             fixtureID: "outcome-not-causation-027",
             userTurn: "The room seemed engaged. Did the drill cause that?",
-            coachReply: "I would not call it causation. It is useful association: you used the prepared close and your read was that the room stayed engaged. Keep the close; next time capture the exact question people asked afterward.",
+            coachReply: "I would not call that causation. Treat it as useful association: on the latest rep you used the prepared close, so your read that the room stayed engaged is a signal, not proof. Keep the close; next time capture the exact question people asked afterward.",
             seedCoachReplies: ["Use the final sentence as the ask."]
         ),
         arenaAppPathScript(
             fixtureID: "upcoming-conflict-028",
             userTurn: "I have a difficult conversation tonight. What should I practice?",
-            coachReply: "Practice the boundary sentence only. Say the disagreement in sentence one, give one calm reason, then stop before proving you are reasonable."
+            coachReply: "Practice the boundary sentence only because tonight's risk is over-proving before the disagreement lands. Say the disagreement in sentence one, give one calm reason, then stop before proving you are reasonable."
         ),
         arenaAppPathScript(
             fixtureID: "networking-intro-029",
             userTurn: "I ramble when introducing myself at networking events.",
-            coachReply: "Start with a 20-second test: who you help, what changes, and one question for them. No full story yet; first we need to hear where the ramble starts."
+            coachReply: "Build a 20-second intro: role, value, ask. Because rambling starts when the listener cannot repeat the point, record one first rep and check whether the ask is clear by the final sentence."
         ),
         arenaAppPathScript(
             fixtureID: "presentation-nerves-030",
@@ -590,7 +590,7 @@ enum CoachChatConversationCorpus {
         arenaAppPathScript(
             fixtureID: "sales-pitch-031",
             userTurn: "My sales pitch loses people after the first minute.",
-            coachReply: "The likely gap is salience: reasons are there, but nothing for the listener to picture. Add one concrete customer example after the first claim, then return to the ask."
+            coachReply: "Treat salience as the working test because losing people after the first minute usually means the proof stays abstract. Add one concrete customer example after the first claim, then return to the ask."
         ),
         arenaAppPathScript(
             fixtureID: "board-update-032",
@@ -610,17 +610,17 @@ enum CoachChatConversationCorpus {
         arenaAppPathScript(
             fixtureID: "lack-conviction-035",
             userTurn: "Do I lack conviction?",
-            coachReply: "I would not call that a trait yet. The evidence I can use is hedge control: maybe/probably appear before the recommendation. Proof test: repeat the answer and replace the first hedge with a direct verb."
+            coachReply: "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb."
         ),
         arenaAppPathScript(
             fixtureID: "emotional-disconnection-036",
             userTurn: "It sounds correct but not like me. What do I change?",
-            coachReply: "Trust that signal. Keep the structure, but replace the most polished sentence with the phrase you would actually say to the person in the room, then record once and compare how it feels."
+            coachReply: "Trust that signal. On the latest rep, keep the structure but replace the most polished sentence with the phrase you would actually say in the room, because that is what makes it sound like you. Record once and check how it feels against the cleaner version."
         ),
         arenaAppPathScript(
             fixtureID: "evasive-polished-037",
             userTurn: "Could this sound polished but evasive?",
-            coachReply: "Yes, it could. The issue is not polish; the answer arrives after the setup. Put the direct answer in sentence one, then use one polished reason after it."
+            coachReply: "Yes, it could, but that is a bounded structure read, not a personality verdict. The latest rep and pace estimate only support a mechanics signal: answer-after-setup; the communication goal is not proven under pressure yet. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it."
         ),
         arenaAppPathScript(
             fixtureID: "timidity-038",
@@ -635,13 +635,13 @@ enum CoachChatConversationCorpus {
         arenaAppPathScript(
             fixtureID: "semantic-filler-use-040",
             userTurn: "You counted 'like' but I meant it as a comparison.",
-            coachReply: "Good correction. If like was doing comparison work, I should not count that as filler. Keep the comparison; only mark the empty pause-fillers before the next word.",
+            coachReply: "Good correction. On the latest rep, if like was doing semantic comparison work, I should not count it as filler, because that would punish valid speech. Keep the comparison; mark only empty pause-fillers before the next word.",
             seedCoachReplies: ["You used like as filler several times."]
         ),
         arenaAppPathScript(
             fixtureID: "prompt-echo-041",
             userTurn: "The prompt made me repeat the phrase. Is that my filler?",
-            coachReply: "No, prompt echo is not the same as filler. I would exclude the repeated prompt phrase and judge only the words you added while searching for the next thought."
+            coachReply: "Fair boundary. Prompt echo is not the same as filler, so I would not count the repeated prompt phrase. Judge only the words you added while searching for the next thought."
         ),
         arenaAppPathScript(
             fixtureID: "no-transcript-fabrication-042",
@@ -652,13 +652,13 @@ enum CoachChatConversationCorpus {
         arenaAppPathScript(
             fixtureID: "quote-guard-043",
             userTurn: "Did I actually say that?",
-            coachReply: "No, I should not have put that in quotes unless it was exact. The supported read is only that your recommendation came late; use that pattern, not the fabricated wording.",
+            coachReply: "Correction: I should not have put that in quotes unless it was exact. I retract the quote. The supported read is only that your recommendation came late, so use that safe read, not the unverified wording.",
             seedCoachReplies: ["You said 'we should pause the launch'."]
         ),
         arenaAppPathScript(
             fixtureID: "live-latency-short-044",
             userTurn: "Quickly, what do I do next?",
-            coachReply: "Fix the close. Make the final sentence the ask, then stop."
+            coachReply: "On the latest rep the close is the signal, so fix the close: make the final sentence the ask, then stop."
         ),
         arenaAppPathScript(
             fixtureID: "barge-in-045",
@@ -669,28 +669,28 @@ enum CoachChatConversationCorpus {
         arenaAppPathScript(
             fixtureID: "weekly-checkin-046",
             userTurn: "This week felt harder even though my score improved.",
-            coachReply: "Both can be true. The score says mechanics improved; your check-in says the rep cost more. Next test: same prompt, one fewer condition, then note whether effort drops without the score falling."
+            coachReply: "Both can be true. The score says mechanics improved; your check-in says the rep felt harder. Change the next test because effort matters too: same prompt, one fewer condition, and check whether effort drops without the score falling."
         ),
         arenaAppPathScript(
             fixtureID: "real-world-outcome-047",
             userTurn: "My interview answer landed better than practice. What do we learn?",
-            coachReply: "Treat it as useful self-report, not proof. The reusable move is verdict first plus one example; keep that for interviews and capture what question made it land.",
+            coachReply: "Treat that as useful self-report, not proof. On the latest rep the reusable move is verdict first plus one example, so keep the structure for interviews and record one rep that captures which question made it land.",
             seedCoachReplies: ["Practice verdict first, one example, clean stop."]
         ),
         arenaAppPathScript(
             fixtureID: "grammar-leak-048",
             userTurn: "What is the one move?",
-            coachReply: "Make the final sentence the ask, then stop."
+            coachReply: "On the latest rep the close is the signal, so in the next rep make the final sentence the ask, then stop."
         ),
         arenaAppPathScript(
             fixtureID: "placeholder-leak-049",
             userTurn: "Can you coach this?",
-            coachReply: "I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close."
+            coachReply: "I can coach the latest rep: the close is the usable signal, so make the final sentence the ask, then stop."
         ),
         arenaAppPathScript(
             fixtureID: "assistant-wrapper-050",
             userTurn: "This feels like a generic AI wrapper.",
-            coachReply: "Fair. That sounded like tips, not a coach read. Your recommendation arrived late, so the next rep is sentence-one recommendation, one reason, stop.",
+            coachReply: "Fair push. That sounded like a generic AI wrapper, not a coach read. One safe signal is that your recommendation arrived late, so put the recommendation in sentence one on the next rep, give one reason, then stop.",
             seedCoachReplies: ["Here are some tips: be confident, speak clearly, and practice."]
         )
     ]
@@ -2002,6 +2002,21 @@ struct CoachChatConversationCorpusTests {
         #expect(vision.earned.contains(.transferProof))
     }
 
+    @Test func genericWrapperTrustRepairClearsVisionFloor() {
+        let reply = "Fair push. That sounded like a generic AI wrapper, not a coach read. One safe signal is that your recommendation arrived late, so put the recommendation in sentence one on the next rep, give one reason, then stop."
+        let vision = AICoachChatService.coachVisionEvaluation(
+            reply: reply,
+            latestUserTurn: "This feels like a generic AI wrapper.",
+            turnDepth: .trustRepair,
+            surface: .text
+        )
+
+        #expect(vision.passesProductionFloor,
+                "Generic-wrapper trust repair scored \(vision.score), missed \(vision.missed)")
+        #expect(vision.earned.contains(.adaptiveRepair))
+        #expect(vision.earned.contains(.insightBridge))
+    }
+
     @Test func knownBadConversationVariantsStayFarBelowTargets() {
         for conversation in CoachChatConversationCorpus.conversations {
             let target = CoachChatConversationCorpus.evaluate(conversation)
@@ -2658,6 +2673,7 @@ struct CoachChatConversationCorpusTests {
         let acceptedFallbackTurnCount = appPathTurns.filter(\.qualityGateAcceptedFallback).count
         let typedAssessmentFallbackTurnCount = appPathTurns.filter(\.typedAssessmentFallbackApplied).count
         let reliabilityIssueTurnCount = appPathTurns.filter { !$0.reliabilityIssues.isEmpty }.count
+        let blockingReliabilityIssueTurnCount = appPathTurns.filter(\.hasBlockingReliabilityIssue).count
         #expect(report.passesAppPathFloor == (appPathFloorFailureCount == 0))
         #expect(report.summary.appPathFloorFailureCount == appPathFloorFailureCount)
         #expect(report.summary.visionFloorFailureTurnCount == visionFloorFailureTurnCount)
@@ -2703,6 +2719,16 @@ struct CoachChatConversationCorpusTests {
         #expect(report.summary.acceptedFallbackTurnCount == acceptedFallbackTurnCount)
         #expect(report.summary.typedAssessmentFallbackTurnCount == typedAssessmentFallbackTurnCount)
         #expect(report.summary.reliabilityIssueTurnCount == reliabilityIssueTurnCount)
+        #expect(report.summary.blockingReliabilityIssueTurnCount == blockingReliabilityIssueTurnCount)
+        if blockingReliabilityIssueTurnCount == 0 {
+            #expect(!report.summary.readinessWarnings.contains(
+                CoachChatConversationAppPathWarning.reliabilityIssues.rawValue
+            ))
+        } else {
+            #expect(report.summary.readinessWarnings.contains(
+                CoachChatConversationAppPathWarning.reliabilityIssues.rawValue
+            ))
+        }
         #expect(report.summary.qualityGateBlockingFailureTurnCount ==
             appPathTurns.filter(\.qualityGateBlockingFailure).count)
         #expect(appPathTurns.allSatisfy { $0.assessmentConfidence != nil })
@@ -2762,6 +2788,7 @@ struct CoachChatConversationCorpusTests {
         #expect(json.contains("\"typedAssessmentFallbackTurnCount\""))
         #expect(json.contains("\"qualityGateBlockingFailureTurnCount\""))
         #expect(json.contains("\"visionFloorFailureTurnCount\""))
+        #expect(json.contains("\"blockingReliabilityIssueTurnCount\""))
         #expect(json.contains("\"retrievalTracePresentCount\""))
         #expect(json.contains("\"retrievalTrace\""))
         #expect(json.contains("\"retrievedCardIDs\""))
@@ -2824,6 +2851,7 @@ struct CoachChatConversationCorpusTests {
         #expect(report.summary.typedAssessmentFallbackTurnCount == turns.filter(\.typedAssessmentFallbackApplied).count)
         #expect(report.summary.qualityGateBlockingFailureTurnCount == turns.filter(\.qualityGateBlockingFailure).count)
         #expect(report.summary.reliabilityIssueTurnCount == turns.filter { !$0.reliabilityIssues.isEmpty }.count)
+        #expect(report.summary.blockingReliabilityIssueTurnCount == turns.filter(\.hasBlockingReliabilityIssue).count)
         if semanticGateFailureTurnCount == 0 {
             #expect(!report.summary.readinessWarnings.contains(
                 CoachChatConversationAppPathWarning.semanticGateFailures.rawValue
@@ -5274,6 +5302,9 @@ struct CoachChatConversationCorpusTests {
                     qualityGateEvents.contains(.fallback("typedAssessment"))
                 let qualityGateBlockingFailure = qualityGateOutcome?.hasPrefix("failed:") == true
                 let reliabilityIssues = metadata?.reliabilityIssues?.map(\.rawValue) ?? []
+                let blockingReliabilityIssues = metadata?.reliabilityIssues?
+                    .filter(\.isBlocking)
+                    .map(\.rawValue) ?? []
                 let qualityGateEventLogValues = qualityGateEvents.map(CoachReplyPipeline.qualityGateEventLogValue)
                 let immediateCoachReadExpected: Bool = {
                     guard let depth = metadata?.turnDepth,
@@ -5294,7 +5325,7 @@ struct CoachChatConversationCorpusTests {
                     metadata != nil &&
                     semanticGatePassed &&
                     qualityGateClean &&
-                    reliabilityIssues.isEmpty &&
+                    blockingReliabilityIssues.isEmpty &&
                     metadata?.visionPassesProductionFloor == true &&
                     immediateCoachReadSatisfied
                 let arenaTrace = CoachArenaAppPathTrace.make(

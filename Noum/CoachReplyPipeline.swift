@@ -500,6 +500,11 @@ enum CoachReplyPipeline {
         let effectiveOutcome: ChatOutcome = reliabilityVerdict.fallbackText.map { .reply($0) } ??
             contentRejectedFallback.map { .reply($0) } ??
             outcome
+        let finalizedOutcome = Self.finalizedOutcome(
+            effectiveOutcome,
+            latestUserTurn: latestUserTurn,
+            turnDepth: turnDepth
+        )
         // Observability: record whether the reply the user finally sees is the
         // streamed one or a gate substitution — this is what makes the
         // "rich draft quietly replaced by a shorter final" incident legible.
@@ -534,7 +539,7 @@ enum CoachReplyPipeline {
         }
 
         let finalVision: CoachVisionEvaluationResult? = {
-            guard case .reply(let rawText) = effectiveOutcome else { return nil }
+            guard case .reply(let rawText) = finalizedOutcome else { return nil }
             let reply = CoachReplyTextSanitizer.coachReplyText(from: rawText)
             guard !reply.isEmpty else { return nil }
             return AICoachChatService.coachVisionEvaluation(
@@ -554,11 +559,11 @@ enum CoachReplyPipeline {
             )
         }()
         let finalReplyWordCount: Int? = {
-            guard case .reply(let rawText) = effectiveOutcome else { return nil }
+            guard case .reply(let rawText) = finalizedOutcome else { return nil }
             return Self.wordCount(in: CoachReplyTextSanitizer.coachReplyText(from: rawText))
         }()
         let finalSemanticGateOutcome = Self.semanticGateOutcome(
-            for: effectiveOutcome,
+            for: finalizedOutcome,
             latestUserTurn: latestUserTurn,
             turnDepth: turnDepth,
             assessment: assessment
@@ -654,7 +659,7 @@ enum CoachReplyPipeline {
             startedAt: turnStartedAt,
             now: completionAt
         )
-        switch effectiveOutcome {
+        switch finalizedOutcome {
         case .reply(let text):
             Self.log.info("coach pipeline produced live reply chars=\(text.count, privacy: .public)")
         case .failure(let failure):
@@ -662,10 +667,27 @@ enum CoachReplyPipeline {
         }
         store.completeCoachTurn(
             id: coachID,
-            outcome: effectiveOutcome,
+            outcome: finalizedOutcome,
             metadata: finalMetadata
         )
-        return effectiveOutcome
+        return finalizedOutcome
+    }
+
+    nonisolated static func finalizedOutcome(
+        _ outcome: ChatOutcome,
+        latestUserTurn: String?,
+        turnDepth: CoachTurnDepth
+    ) -> ChatOutcome {
+        switch outcome {
+        case .reply(let text):
+            return .reply(AICoachChatService.finalizedCoachReply(
+                from: text,
+                latestUserTurn: latestUserTurn,
+                turnDepth: turnDepth
+            ))
+        case .failure:
+            return outcome
+        }
     }
 
     private static func semanticGateOutcome(

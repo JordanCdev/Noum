@@ -1,5 +1,21 @@
 # Coach Arena Failures
 
+## Production Evidence Gate
+
+- source Swift app-path readiness warnings: appPathFloorFailures,targetReplyMismatch,semanticGateFailures,visionFloorFailures
+- source Swift app-path report did not pass its app-path floor
+
+Source app-path failure samples:
+
+- `filler-pressure-prescription` / `not-easy-empathy-conversation` turn `1`: `appPathFloor, qualityGate, targetReplyMismatch`; semantic `passed`; quality `fallback:typedAssessment`
+  User: Is it the pause or the close?
+  Final: Your last rep gives one usable signal: latest rep Timed, so use one silent beat after the verdict, then finish the answer without speeding up.
+  Target: Your last rep gives one usable signal: under pressure, the close needs one silent beat after the verdict. Use that beat, then finish the answer without speeding up.
+- `lack-conviction-035` / `arena-lack-conviction-035-app-path-conversation` turn `0`: `appPathFloor, qualityGate, semanticGate, targetReplyMismatch, visionFloor`; semantic `failed:unsupportedClosenessClaim`; quality `fallback:deterministicAssessmentAfterContentRejected`
+  User: Do I lack conviction?
+  Final: I do not have enough evidence for an overall authoritative communication verdict yet. The signal I can use is hypothesis: Filler Words appears to be the highest-leverage focus because it keeps showing up in the rolling b...
+  Target: There is not enough evidence to call this lack of conviction overall. The latest rep and pace estimate only support a mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated...
+
 ## examples-from-sessions-010 (groundedRead)
 
 Score: `61/100`
@@ -28,19 +44,16 @@ Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## upcoming-conflict-028 (quickMove)
 
-Score: `50/100`
+Score: `57/100`
 
 User: I have a difficult conversation tonight. What should I practice?
 
 Failure reasons:
-- fixture disqualifier triggered: too broad
-- fixture-specific disqualifier triggered
-- missing evidence anchor
-- reply does not match expected coach move
+- No explicit reason; score below threshold.
 
 Suggested fix:
 
-Answer the requested move: One rehearsal: boundary sentence, one reason, stop.
+Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## networking-intro-029 (quickMove)
 
@@ -57,26 +70,12 @@ Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## sales-pitch-031 (quickMove)
 
-Score: `50/100`
+Score: `67/100`
 
 User: My sales pitch loses people after the first minute.
 
 Failure reasons:
-- missing evidence anchor
-- reply does not match expected coach move
-
-Suggested fix:
-
-Answer the requested move: Add one concrete customer example after first claim, then return to ask.
-
-## lack-conviction-035 (deepAssessment)
-
-Score: `59/100`
-
-User: Do I lack conviction?
-
-Failure reasons:
-- deep assessment lacks verdict/evidence calibration
+- No explicit reason; score below threshold.
 
 Suggested fix:
 
@@ -97,16 +96,17 @@ Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## evasive-polished-037 (deepAssessment)
 
-Score: `63/100`
+Score: `60/100`
 
 User: Could this sound polished but evasive?
 
 Failure reasons:
-- No explicit reason; score below threshold.
+- fixture disqualifier triggered: personality judgment
+- fixture-specific disqualifier triggered
 
 Suggested fix:
 
-Tighten diagnosis, cite one real signal, and prescribe one testable move.
+Remove the fixture-specific disqualified behavior before optimizing score.
 
 ## live-latency-short-044 (quickMove)
 

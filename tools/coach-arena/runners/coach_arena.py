@@ -628,6 +628,65 @@ def load_candidate_json(path):
     raise ValueError("candidate JSON must be an object or an object with answers[]")
 
 
+SOURCE_APP_PATH_FAILURE_SAMPLE_LIMIT = 12
+SOURCE_APP_PATH_SNIPPET_LIMIT = 220
+
+
+def clipped_text(value, limit=SOURCE_APP_PATH_SNIPPET_LIMIT):
+    if not isinstance(value, str):
+        return ""
+    compact = " ".join(value.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[:limit].rstrip() + "..."
+
+
+def source_app_path_failure_samples(report):
+    samples = []
+    total = 0
+    for row in report.get("rows", []):
+        conversation_id = row.get("conversationID")
+        source_fixture_id = row.get("sourceFixtureID")
+        for turn in row.get("turns", []):
+            kinds = []
+            if turn.get("passesAppPathFloor") is False:
+                kinds.append("appPathFloor")
+            if turn.get("targetReplyMatched") is False:
+                kinds.append("targetReplyMismatch")
+            semantic_outcome = turn.get("semanticGateOutcome")
+            if semantic_outcome and semantic_outcome != "passed":
+                kinds.append("semanticGate")
+            if turn.get("visionPassesProductionFloor") is False:
+                kinds.append("visionFloor")
+            quality_events = turn.get("qualityGateEvents") or []
+            non_clean_quality = [
+                event for event in quality_events
+                if event and event != "passed"
+            ]
+            if non_clean_quality:
+                kinds.append("qualityGate")
+            if not kinds:
+                continue
+
+            total += 1
+            if len(samples) >= SOURCE_APP_PATH_FAILURE_SAMPLE_LIMIT:
+                continue
+            samples.append({
+                "conversationID": conversation_id,
+                "sourceFixtureID": source_fixture_id,
+                "turnIndex": turn.get("turnIndex"),
+                "failureKinds": sorted(set(kinds)),
+                "userTurn": clipped_text(turn.get("userTurn")),
+                "finalCoachReply": clipped_text(turn.get("finalCoachReply")),
+                "targetCoachReply": clipped_text(turn.get("targetCoachReply")),
+                "semanticGateOutcome": semantic_outcome,
+                "qualityGateOutcome": turn.get("qualityGateOutcome"),
+                "qualityGateEvents": quality_events,
+                "reliabilityIssues": turn.get("reliabilityIssues") or [],
+            })
+    return samples, total
+
+
 def load_app_path_candidates(path, fixtures):
     report = json.loads(Path(path).read_text(encoding="utf-8"))
     rows = report.get("rows", [])
@@ -677,12 +736,19 @@ def load_app_path_candidates(path, fixtures):
     if not matched_fixtures:
         raise ValueError(f"no Coach Arena fixtures matched app-path report {path}")
 
+    failure_samples, failure_total = source_app_path_failure_samples(report)
     coverage = {
         "source": "appPathReport",
         "sourcePath": str(path),
         "sourceSchemaVersion": report.get("schemaVersion"),
         "sourceSurface": report.get("surface"),
         "sourcePassesAppPathFloor": report.get("passesAppPathFloor"),
+        "sourceReadinessWarnings": (report.get("summary") or {}).get("readinessWarnings", []),
+        "sourceAppPathFloorFailureCount": (report.get("summary") or {}).get("appPathFloorFailureCount"),
+        "sourceReliabilityIssueTurnCount": (report.get("summary") or {}).get("reliabilityIssueTurnCount"),
+        "sourceBlockingReliabilityIssueTurnCount": (report.get("summary") or {}).get("blockingReliabilityIssueTurnCount"),
+        "sourceTargetReplyMismatchCount": (report.get("summary") or {}).get("targetReplyMismatchCount"),
+        "sourceVisionProductionReadiness": report.get("visionProductionReadiness"),
         "sourceConversationCount": report.get("conversationCount"),
         "sourceTurnCount": report.get("turnCount"),
         "requestedFixtureCount": len(fixtures),
@@ -690,7 +756,11 @@ def load_app_path_candidates(path, fixtures):
         "matchedFixtureIDs": [fixture["id"] for fixture in matched_fixtures],
         "unmatchedFixtureCount": len(unmatched_ids),
         "unmatchedFixtureIDs": unmatched_ids,
-        "ambiguousFixtureIDs": ambiguous_ids
+        "ambiguousFixtureIDs": ambiguous_ids,
+        "sourceAppPathFailureSampleCount": len(failure_samples),
+        "sourceAppPathFailureTotalCount": failure_total,
+        "sourceAppPathFailureOmittedCount": max(0, failure_total - len(failure_samples)),
+        "sourceAppPathFailureSamples": failure_samples,
     }
     coverage_failures = []
     if unmatched_ids:
@@ -1320,6 +1390,17 @@ def production_evidence_status(results, coverage, audit, trace_quality):
         )
     if coverage is not None and not coverage.get("coveragePasses"):
         failures.extend(coverage.get("coverageFailures") or [])
+    if coverage is not None and coverage.get("source") == "appPathReport":
+        if coverage.get("sourcePassesAppPathFloor") is not True:
+            failures.append(
+                "source Swift app-path report did not pass its app-path floor"
+            )
+        readiness_warnings = coverage.get("sourceReadinessWarnings") or []
+        if readiness_warnings:
+            failures.append(
+                "source Swift app-path readiness warnings: " +
+                ",".join(readiness_warnings)
+            )
     if real_pipeline_count and not trace_quality.get("passes"):
         failures.extend(trace_quality.get("failures") or [])
     return {
@@ -1365,6 +1446,14 @@ def summarize(results, coverage=None):
     audit = trace_audit(results)
     trace_quality = trace_quality_audit(results)
     production_evidence = production_evidence_status(results, coverage, audit, trace_quality)
+    vision_readiness = (coverage or {}).get("sourceVisionProductionReadiness")
+    vision_production_ready = None
+    if isinstance(vision_readiness, dict):
+        vision_production_ready = (
+            vision_readiness.get("score", 0) >= 85 and
+            not vision_readiness.get("blockers") and
+            vision_readiness.get("claim") == "productionReadyEvidenceAvailable"
+        )
     return {
         "fixtureCount": total,
         "average": average,
@@ -1377,8 +1466,11 @@ def summarize(results, coverage=None):
         "passes": all(threshold_passes.values()),
         "coverageFailures": (coverage or {}).get("coverageFailures", []),
         "productionEvidencePasses": production_evidence["passes"],
+        "realPipelineEvidencePasses": production_evidence["passes"],
         "evidenceClaim": production_evidence["claim"],
         "productionEvidenceFailures": production_evidence["failures"],
+        "visionProductionReadiness": vision_readiness,
+        "visionProductionReady": vision_production_ready,
         "traceAudit": audit,
         "traceQualityPasses": trace_quality["passes"],
         "traceQualityFailures": trace_quality["failures"],
@@ -1509,6 +1601,38 @@ def write_reports(report, report_dir, synthetic_dir):
     (synthetic_dir / "ten_conversations.md").write_text(render_ten_conversations(report), encoding="utf-8")
 
 
+def render_source_app_path_failure_samples(coverage, include_replies=False):
+    samples = coverage.get("sourceAppPathFailureSamples") or []
+    if not samples:
+        return []
+    lines = []
+    omitted = coverage.get("sourceAppPathFailureOmittedCount") or 0
+    for sample in samples:
+        fixture_id = sample.get("sourceFixtureID") or "unknown-fixture"
+        conversation_id = sample.get("conversationID") or "unknown-conversation"
+        turn_index = sample.get("turnIndex")
+        kinds = ", ".join(sample.get("failureKinds") or ["unknown"])
+        semantic = sample.get("semanticGateOutcome") or "unknown"
+        quality = sample.get("qualityGateOutcome") or "unknown"
+        lines.append(
+            f"- `{fixture_id}` / `{conversation_id}` turn `{turn_index}`: "
+            f"`{kinds}`; semantic `{semantic}`; quality `{quality}`"
+        )
+        if include_replies:
+            user_turn = sample.get("userTurn") or ""
+            final_reply = sample.get("finalCoachReply") or ""
+            target_reply = sample.get("targetCoachReply") or ""
+            if user_turn:
+                lines.append(f"  User: {user_turn}")
+            if final_reply:
+                lines.append(f"  Final: {final_reply}")
+            if target_reply:
+                lines.append(f"  Target: {target_reply}")
+    if omitted:
+        lines.append(f"- `{omitted}` additional source app-path failure turn(s) omitted from samples.")
+    return lines
+
+
 def render_markdown(report):
     summary = report["summary"]
     lines = [
@@ -1519,7 +1643,7 @@ def render_markdown(report):
         f"- Fixtures: `{summary['fixtureCount']}`",
         f"- Average: `{summary['average']}/100`",
         f"- Passes score/coverage thresholds: `{summary['passes']}`",
-        f"- Production evidence passes: `{summary.get('productionEvidencePasses')}`",
+        f"- Real-pipeline evidence passes: `{summary.get('realPipelineEvidencePasses', summary.get('productionEvidencePasses'))}`",
         f"- Evidence claim: `{summary.get('evidenceClaim')}`",
         f"- Trace quality passes: `{summary.get('traceQualityPasses')}`",
         f"- Placeholder leaks: `{summary['placeholderLeaks']}`",
@@ -1531,10 +1655,27 @@ def render_markdown(report):
         lines.append(f"- `{key}`: `{value}/100`")
     trace_audit_row = summary.get("traceAudit") or {}
     production_failures = summary.get("productionEvidenceFailures") or []
+    vision_readiness = summary.get("visionProductionReadiness")
+    if isinstance(vision_readiness, dict):
+        blockers = vision_readiness.get("blockers") or []
+        blocker_text = ", ".join(f"`{blocker}`" for blocker in blockers) if blockers else "`none`"
+        lines.extend([
+            "",
+            "## VISION Readiness Boundary",
+            "",
+            f"- Production ready: `{summary.get('visionProductionReady')}`",
+            f"- Score: `{vision_readiness.get('score')}/100`",
+            f"- Maximum allowed score: `{vision_readiness.get('maximumAllowedScore')}/100`",
+            f"- Claim: `{vision_readiness.get('claim')}`",
+            f"- Blockers: {blocker_text}",
+            ""
+        ])
+        if vision_readiness.get("summary"):
+            lines.append(vision_readiness["summary"])
     if production_failures:
         lines.extend([
             "",
-            "## Production Evidence",
+            "## Real-Pipeline Evidence",
             ""
         ])
         for failure in production_failures:
@@ -1623,6 +1764,9 @@ def render_markdown(report):
             f"- Source schema: `{coverage.get('sourceSchemaVersion')}`",
             f"- Source surface: `{coverage.get('sourceSurface')}`",
             f"- Source app-path floor: `{coverage.get('sourcePassesAppPathFloor')}`",
+            f"- Source app-path floor failures: `{coverage.get('sourceAppPathFloorFailureCount')}`",
+            f"- Source target-reply mismatches: `{coverage.get('sourceTargetReplyMismatchCount')}`",
+            f"- Source app-path failure samples: `{coverage.get('sourceAppPathFailureSampleCount')}` of `{coverage.get('sourceAppPathFailureTotalCount')}`",
             f"- Coverage passes: `{coverage.get('coveragePasses')}`",
             f"- Requested fixtures: `{coverage.get('requestedFixtureCount')}`",
             f"- Matched fixtures: `{coverage.get('matchedFixtureCount')}`",
@@ -1634,6 +1778,10 @@ def render_markdown(report):
             lines.append("- Coverage failures: " + "; ".join(
                 f"`{failure}`" for failure in failures
             ))
+        source_failure_lines = render_source_app_path_failure_samples(coverage)
+        if source_failure_lines:
+            lines.extend(["", "### Source App-Path Failure Samples", ""])
+            lines.extend(source_failure_lines)
     lines.extend(["", "## Worst Fixtures", ""])
     for row in summary["worstFixtures"]:
         reasons = "; ".join(row["failureReasons"]) or "no local failure reason"
@@ -1648,6 +1796,13 @@ def render_failures(report):
         lines.extend(["## Production Evidence Gate", ""])
         for failure in production_failures:
             lines.append(f"- {failure}")
+        source_failure_lines = render_source_app_path_failure_samples(
+            report.get("coverage") or {},
+            include_replies=True,
+        )
+        if source_failure_lines:
+            lines.extend(["", "Source app-path failure samples:", ""])
+            lines.extend(source_failure_lines)
         lines.append("")
     trace_quality_failures = (report.get("summary") or {}).get("traceQualityFailures") or []
     if trace_quality_failures:
@@ -1801,8 +1956,11 @@ def main():
     report["comparison"] = compare_reports(report, previous_report)
     write_reports(report, report_dir, Path(args.synthetic_dir))
 
-    print(json.dumps(report["summary"], indent=2, sort_keys=True))
-    if not args.no_fail and not report["summary"]["passes"]:
+    summary = report["summary"]
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    if not args.no_fail and not summary["passes"]:
+        return 1
+    if not args.no_fail and args.app_path_report and not summary["realPipelineEvidencePasses"]:
         return 1
     return 0
 

@@ -9636,6 +9636,43 @@ struct CoachReplyTextSanitizerTests {
         #expect(!spoken.contains("✅"))
         #expect(!spoken.lowercased().contains("move:"))
     }
+
+    @Test func reportVoiceStripKeepsCoachingMoveAfterFillerBridge() {
+        let cleaned = CoachReplyTextSanitizer.strippingReportVoiceResidue(
+            from: "Fair push: the symbols broke trust. Your last rep had 4 fillers, so for the next rep, state the recommendation first, give one proof, then stop."
+        )
+        let lower = cleaned.lowercased()
+
+        #expect(!lower.contains("4 fillers"))
+        #expect(!lower.contains("had for"))
+        #expect(cleaned.contains("For the next rep, state the recommendation first"))
+    }
+
+    @Test func finalizedCoachReplyStripsCompactMetricClusterFromNonMetricTurn() {
+        let cleaned = AICoachChatService.finalizedCoachReply(
+            from: "The opening is the next lever. The signal I can use is Pressure Drill, 1/10, 0 fillers, 0s. Try this next: end the next rep on the exact ask.",
+            latestUserTurn: "Give me one direct move for my next update.",
+            turnDepth: .quickMove
+        )
+        let lower = cleaned.lowercased()
+
+        #expect(!lower.contains("1/10"))
+        #expect(!lower.contains("0 fillers"))
+        #expect(!lower.contains("0s"))
+        #expect(cleaned.contains("The signal I can use is Pressure Drill."))
+        #expect(cleaned.contains("Try this next"))
+    }
+
+    @Test func finalizedCoachReplyKeepsRequestedMetrics() {
+        let reply = "The signal I can use is Pressure Drill, 1/10, 0 fillers, 0s."
+        let cleaned = AICoachChatService.finalizedCoachReply(
+            from: reply,
+            latestUserTurn: "What were the exact metrics?",
+            turnDepth: .quickMove
+        )
+
+        #expect(cleaned == reply)
+    }
 }
 
 struct HomeAskNoumShortcutTests {
@@ -27812,6 +27849,106 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: turn,
             systemContext: system
         ) == nil)
+    }
+
+    @Test func safeReferenceRepairAcceptsColdStartProductModeIssue() throws {
+        let turn = "What should I work on?"
+        let system = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let repair = try #require(AICoachChatService.safeReferenceRepairReply(
+            issue: .roboticPhrase("cold-start product mode"),
+            latestUserTurn: turn,
+            system: system,
+            quoteGuard: nil,
+            turnDepth: .groundedRead
+        ))
+        let lower = repair.lowercased()
+
+        #expect(repair.contains("No baseline yet"))
+        #expect(repair.contains("Record 60 seconds"))
+        #expect(!lower.contains("ah-counter"))
+        #expect(!lower.contains("sudden death"))
+        #expect(!lower.contains("im conversation"))
+        #expect(!lower.contains("first number"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repair,
+            latestUserTurn: turn,
+            systemContext: system
+        ) == nil)
+    }
+
+    @Test func safeReferenceRepairAcceptsColdStartMetricTargetIssue() throws {
+        let turn = "What should I work on?"
+        let system = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let repair = try #require(AICoachChatService.safeReferenceRepairReply(
+            issue: .roboticPhrase("cold-start metric target"),
+            latestUserTurn: turn,
+            system: system,
+            quoteGuard: nil,
+            turnDepth: .groundedRead
+        ))
+        let lower = repair.lowercased()
+
+        #expect(repair.contains("No baseline yet"))
+        #expect(repair.contains("Record 60 seconds"))
+        #expect(!lower.contains("under 4 fillers"))
+        #expect(!lower.contains("first number"))
+        #expect(!repair.contains("?"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repair,
+            latestUserTurn: turn,
+            systemContext: system
+        ) == nil)
+    }
+
+    @Test func safeReferenceRepairAcceptsColdStartIntakeQuestionIssue() throws {
+        let turn = "How do I get better before my interview?"
+        let system = """
+        PROFESSIONAL TURN CONTRACT
+        - Personalization floor: no rated sessions yet.
+        BASELINE
+        - Not enough data for a stable baseline yet.
+        """
+        let repair = try #require(AICoachChatService.safeReferenceRepairReply(
+            issue: .menuInsteadOfDecision,
+            latestUserTurn: turn,
+            system: system,
+            quoteGuard: nil,
+            turnDepth: .groundedRead
+        ))
+
+        #expect(repair.contains("No baseline yet"))
+        #expect(repair.contains("Record 60 seconds on one likely question"))
+        #expect(!repair.contains("?"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repair,
+            latestUserTurn: turn,
+            systemContext: system
+        ) == nil)
+    }
+
+    @Test func safeReferenceRepairDoesNotRewriteColdStartIssueWithRecentEvidence() {
+        let repair = AICoachChatService.safeReferenceRepairReply(
+            issue: .roboticPhrase("cold-start metric target"),
+            latestUserTurn: "What should I work on?",
+            system: """
+            RECENT (most-recent first)
+            - Your last rep had 4 fillers and a late close.
+            """,
+            quoteGuard: nil,
+            turnDepth: .groundedRead
+        )
+
+        #expect(repair == nil)
     }
 
     @Test func quoteGuardRejectsUnverifiedYouSaidQuote() {

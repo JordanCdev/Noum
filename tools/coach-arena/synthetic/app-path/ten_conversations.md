@@ -129,6 +129,6 @@ Prior chat:
 
 User: Can you give me an example of me doing this in sessions?
 
-Noum: Your last rep gives one usable signal: latest rep Timed, 7/10, 1 fillers, 50s, so make the recommendation memorable with one short phrase the listener could repeat afterward.
+Noum: One specific example is the latest rep: the reasons were clear before there was a concrete scene. That shows the pattern because the listener gets logic before a picture. Next rep, add one example after the first reason, then return to the ask.
 
-Arena score: 50/100
+Arena score: 61/100

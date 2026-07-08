@@ -344,6 +344,33 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.blocked)
     }
 
+    @Test func trustRepairGenericWrapperComplaintWithSafeSignalPasses() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Fair push. That sounded like a generic AI wrapper, not a coach read. One safe signal is that your recommendation arrived late, so put the recommendation in sentence one on the next rep, give one reason, then stop.",
+            previousCoachReply: "Here are some tips: be confident, speak clearly, and practice.",
+            latestUserTurn: "This feels like a generic AI wrapper.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.noAttunementOnPushback))
+        #expect(!verdict.issues.contains(.thinTrustRepair))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func trustRepairGenericWrapperRepairPasses() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Fair push. That sounded like a generic AI wrapper, not a coach read. The safe signal I can use is that your recommendation arrived late, so the next rep is sentence-one recommendation, one reason, stop.",
+            previousCoachReply: "Here are some tips: be confident, speak clearly, and practice.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.noAttunementOnPushback))
+        #expect(!verdict.issues.contains(.thinTrustRepair))
+        #expect(!verdict.blocked)
+    }
+
     @Test func trustRepairStraightAnswerCountsAsSubstantiveRepair() {
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "Fair. Straight answer: the close is not decisive yet; proof it with one timer rep.",

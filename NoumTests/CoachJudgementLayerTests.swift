@@ -96,6 +96,39 @@ struct TurnDepthClassifierTests {
         ) == .deepAssessment)
     }
 
+    @Test func qualitativeJudgementQuestionsAreDeepAssessment() {
+        #expect(TurnDepthClassifier.classify(
+            userText: "Do I lack conviction?"
+        ) == .deepAssessment)
+        #expect(TurnDepthClassifier.classify(
+            userText: "Could this sound polished but evasive?"
+        ) == .deepAssessment)
+        #expect(TurnDepthClassifier.classify(
+            userText: "Does this sound credible enough for the board?"
+        ) == .deepAssessment)
+    }
+
+    @Test func softerPerceptionQuestionsAreGroundedRead() {
+        #expect(TurnDepthClassifier.classify(
+            userText: "Do I sound timid?"
+        ) == .groundedRead)
+        #expect(TurnDepthClassifier.classify(
+            userText: "How did I sound in that answer?"
+        ) == .groundedRead)
+    }
+
+    @Test func howToSoundMoreConfidentIsQuickMove() {
+        #expect(TurnDepthClassifier.classify(
+            userText: "How do I sound more confident at the end?"
+        ) == .quickMove)
+    }
+
+    @Test func goalChangeLanguageDoesNotBecomeDeepAssessment() {
+        #expect(TurnDepthClassifier.classify(
+            userText: "I think I want to sound more engaging."
+        ) == .quickMove)
+    }
+
     @Test func nextMoveQuestionsAreQuickMove() {
         #expect(TurnDepthClassifier.classify(
             userText: "What should I do next?"
@@ -1376,6 +1409,26 @@ struct CoachSemanticQualityGateAdversarialTests {
         #expect(issue == nil)
     }
 
+    @Test func boundedYesNoJudgementOpenersAreAccepted() {
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Yes, it could, but that is a bounded structure read, not a personality verdict. The latest rep and pace estimate only support a mechanics signal: answer-after-setup; the communication goal is not proven under pressure yet. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it.",
+            turnDepth: .deepAssessment,
+            assessment: Self.baseDeep
+        )
+
+        #expect(issue == nil)
+    }
+
+    @Test func evidenceBoundaryJudgementOpenersAreAccepted() {
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "I cannot prove timid from text alone. The latest rep and pace estimate only support a mechanics signal: indirectness before the recommendation, so the authority goal still needs audio evidence. Missing: tone and prosody. Proof test: try one direct recommendation first; audio would be needed for a tone verdict.",
+            turnDepth: .deepAssessment,
+            assessment: Self.baseDeep
+        )
+
+        #expect(issue == nil)
+    }
+
     @Test func mechanicsWithoutGoalLanguageFailsDistinction() {
         // Verdict-first and mechanics-laden but no goal-readiness language -> check 2.
         let issue = AICoachChatService.semanticQualityIssue(
@@ -1862,7 +1915,7 @@ struct CoachSemanticGateDryRunTests {
     )
 }
 
-@Suite("CoachTypedFallbackTests")
+@Suite("CoachTypedFallbackTests", .serialized)
 struct CoachTypedFallbackTests {
 
     @Test func trustRepairRubricUsesDepthAwareBudget() {
@@ -2052,8 +2105,20 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "Do I lack conviction?",
                 depth: .deepAssessment,
-                expectedFragments: ["not enough evidence", "hedge control", "not an identity verdict", "proof test"],
+                expectedFragments: ["not enough evidence", "rolling baseline", "hedge control", "not an identity verdict", "proof test"],
                 rejectedFragments: ["you lack conviction"]
+            ),
+            Spec(
+                userTurn: "Could this sound polished but evasive?",
+                depth: .deepAssessment,
+                expectedFragments: ["bounded structure read", "answer-after-setup", "not proven under pressure", "proof test"],
+                rejectedFragments: ["you are evasive"]
+            ),
+            Spec(
+                userTurn: "Do I sound timid?",
+                depth: .groundedRead,
+                expectedFragments: ["cannot prove timid", "audio evidence", "direct recommendation", "tone verdict"],
+                rejectedFragments: ["you are timid"]
             ),
             Spec(
                 userTurn: "It sounds correct but not like me. What do I change?",
@@ -2157,6 +2222,59 @@ struct CoachTypedFallbackTests {
             case .failure(let failure):
                 #expect(Bool(false), "\(spec.userTurn) typed fallback should prevent content rejection, got \(failure)")
             }
+        }
+    }
+
+    @Test func lackConvictionTypedFallbackPassesCaseAnchorGate() async throws {
+        let service = try Self.serviceThatAlwaysReturnsBadReply(
+            "You lack conviction, so try to sound more confident."
+        )
+        let userTurn = "Do I lack conviction?"
+        let assessment = CoachAssessment(
+            turnDepth: .deepAssessment,
+            surface: .text,
+            questionRestatement: userTurn,
+            directVerdict: "There is not enough evidence to call this lack of conviction overall.",
+            confidence: 0.62,
+            evidenceUsed: [
+                "latest rep: Timed, 7/10, 1 fillers, 50s",
+                "pace estimate: 145 WPM",
+                "case summary: hypothesis: Filler Words appears to be the highest-leverage focus because it keeps showing up in the rolling baseline; keep checking against future reps."
+            ],
+            rubricScores: [],
+            missingEvidence: [
+                "Need repeated pressure proof before making an identity-level call."
+            ],
+            nextProofTest: "Repeat the answer and replace the first hedge with a direct verb.",
+            responseMode: .expandable
+        )
+        let context = "RECENT (most-recent first): latest rep Timed, 7/10, 1 fillers, 50s."
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: userTurn)],
+            systemPrompt: "You are Noum.",
+            userContext: context,
+            turnDepth: .deepAssessment,
+            assessment: assessment,
+            surface: .text,
+            preferredTier: .claudeReasoning
+        )
+
+        switch outcome {
+        case .reply(let text):
+            let lower = text.lowercased()
+            #expect(lower.contains("rolling baseline"))
+            #expect(lower.contains("highest-leverage mechanics signal"))
+            #expect(!lower.contains("you lack conviction"))
+            #expect(AICoachChatService.semanticQualityIssue(
+                in: text,
+                latestUserTurn: userTurn,
+                systemContext: context,
+                turnDepth: .deepAssessment,
+                assessment: assessment
+            ) == nil, "case-anchored lack-conviction fallback should pass semantic quality: \(text)")
+        case .failure(let failure):
+            #expect(Bool(false), "case-anchored lack-conviction fallback should prevent content rejection, got \(failure)")
         }
     }
 
@@ -2722,6 +2840,23 @@ struct CoachProvisionalReadEligibilityTests {
         #expect(fallback?.contains("Try this next") == true)
         #expect(noProviderFallback == nil)
         #expect(missingAssessmentFallback == nil)
+    }
+
+    @Test func pipelineFinalizedOutcomeStripsFallbackMetricResidue() {
+        let outcome = CoachReplyPipeline.finalizedOutcome(
+            .reply("The opening is the next lever. The signal I can use is Pressure Drill, 1/10, 0 fillers, 0s. Try this next: end the next rep on the exact ask."),
+            latestUserTurn: "Give me one direct move for my next update.",
+            turnDepth: .quickMove
+        )
+
+        guard case .reply(let text) = outcome else {
+            Issue.record("Expected finalized reply")
+            return
+        }
+        #expect(text.contains("1/10") == false)
+        #expect(text.contains("0 fillers") == false)
+        #expect(text.contains("The signal I can use is Pressure Drill."))
+        #expect(text.contains("Try this next"))
     }
 }
 

@@ -7,9 +7,12 @@
 # Guaranteed-deterministic runner (bare launch flags, then run this flow):
 #
 #   xcrun simctl launch booted com.jordancoaten.noum \
-#       UI_TESTING UI_TESTING_SEED_FORCE UI_TESTING_CHAT_FORCE_NOTICE
+#       UI_TESTING UI_TESTING_SEED_FORCE UI_TESTING_CLEAR_ASK_NOUM
+#       UI_TESTING_CHAT_FORCE_NOTICE
 #   maestro test maestro/chat_reject_smoke.yaml
 #
+# UI_TESTING_CLEAR_ASK_NOUM -> clears persisted chat so prior smoke/manual runs
+#                              cannot affect the rejection assertion.
 # UI_TESTING_CHAT_FORCE_NOTICE -> the pipeline returns .failure(.network),
 #                                 which the store renders as a system notice.
 appId: com.jordancoaten.noum
@@ -19,9 +22,10 @@ appId: com.jordancoaten.noum
     arguments:
       UI_TESTING: true
       UI_TESTING_SEED_FORCE: true
+      UI_TESTING_CLEAR_ASK_NOUM: true
       UI_TESTING_CHAT_FORCE_NOTICE: true
 
-- openLink: "noum://asktype"
+- openLink: "noum://ask/type"
 
 - assertVisible:
     id: "askNoum.messageField"

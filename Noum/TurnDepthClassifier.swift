@@ -139,7 +139,10 @@ enum TurnDepthClassifier {
     }
 
     static func isDeepAssessment(_ lower: String) -> Bool {
-        containsAny(lower, [
+        if isHowToSoundMoreIntent(lower) {
+            return false
+        }
+        return containsAny(lower, [
             "how far off", "how close am i", "am i close",
             "am i far", "where am i really", "how far away",
             "overall", "be honest", "honest verdict",
@@ -148,16 +151,49 @@ enum TurnDepthClassifier {
             "close to sounding", "from sounding",
             "how much more", "distance from", "where do i stand",
             "where am i at", "in terms of my sessions"
+        ]) || asksForJudgementVerdict(lower)
+    }
+
+    /// Meta-judgement turns are often phrased as identity or perception
+    /// questions, not just "how far off am I". Route those to the deeper
+    /// assessment path so the coach must calibrate verdict, evidence, missing
+    /// evidence, and proof test instead of answering like a quick drill.
+    private static func asksForJudgementVerdict(_ lower: String) -> Bool {
+        guard containsAny(lower, [
+            "do i lack", "am i lacking", "do i have",
+            "do i sound", "does this sound", "does it sound",
+            "could this sound", "could i sound", "would this sound",
+            "would i sound", "am i sounding", "is this sounding",
+            "do i come across", "does this come across",
+            "could this come across", "am i coming across",
+            "is this coming across", "could this be", "does this read",
+            "would this read", "is this too"
+        ]) else {
+            return false
+        }
+
+        return containsAny(lower, [
+            "conviction", "convincing", "credible", "credibility",
+            "authoritative", "authority", "executive", "leadership",
+            "confident", "confidence", "evasive", "polished",
+            "prepared", "ready"
         ])
     }
 
     static func isGroundedRead(_ lower: String) -> Bool {
-        containsAny(lower, [
+        if isHowToSoundMoreIntent(lower) {
+            return false
+        }
+        return containsAny(lower, [
             "what happened", "what did you notice", "what do you notice",
             "read this rep", "read my rep", "last rep",
             "latest rep", "use my last rep", "what am i doing wrong",
             "why did that happen", "why did my score",
-            "what went wrong", "what went well", "how did that land"
+            "what went wrong", "what went well", "how did that land",
+            "how did i sound", "how do i sound", "do i sound",
+            "did i sound", "does this sound", "does it sound",
+            "how does this sound", "do i come across",
+            "how do i come across"
         ])
     }
 
@@ -193,6 +229,15 @@ enum TurnDepthClassifier {
 
     private static func containsAny(_ value: String, _ needles: [String]) -> Bool {
         needles.contains { value.contains($0) }
+    }
+
+    private static func isHowToSoundMoreIntent(_ lower: String) -> Bool {
+        containsAny(lower, [
+            "how do i sound more",
+            "how can i sound more",
+            "sound more confident",
+            "sound more authoritative"
+        ])
     }
 
     private static func wordCount(_ value: String) -> Int {

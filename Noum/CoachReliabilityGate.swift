@@ -207,6 +207,8 @@ enum CoachReliabilityGate {
         "robotic and cold",
         "too much writing",
         "that was generic",
+        "generic ai wrapper",
+        "not a coach read",
         "generic advice",
         "too generic",
         "should never",
@@ -249,6 +251,8 @@ enum CoachReliabilityGate {
         "straight answer:",
         "the real read is",
         "real read:",
+        "safe signal",
+        "one safe signal",
         "what matters is"
     ]
 

@@ -3,7 +3,7 @@
 #   • Node "prompt-faithful" engine (default, canonical): grades the REAL
 #     extracted Swift coach prompt on 60 gold+synthetic fixtures via an LLM judge.
 #   • Python "app-path" engine (legacy): grades REAL app-generated candidates and
-#     runs production-evidence/trace audits. Reach it with `./run.sh python ...`.
+#     runs real-pipeline evidence/trace audits. Reach it with `./run.sh app-path`.
 #
 #   ./run.sh              full Node run (auto provider) + reports
 #   ./run.sh run          same
@@ -14,7 +14,10 @@
 #   ./run.sh synth        (re)generate the 10 synthetic conversations
 #   ./run.sh extract [voice|--json]   print the extracted real system prompt
 #   ./run.sh test         run unit tests
-#   ./run.sh python ...   run the legacy Python app-path engine (runners/coach_arena.py)
+#   ./run.sh app-path [report.json]
+#                         score a real Swift app-path dump into reports/app-path
+#   ./run.sh python ...   run the legacy Python engine directly (unsafe default:
+#                         without --app-path-report it grades gold examples)
 #
 # Provider (env ARENA_PROVIDER, else auto): anthropic (needs ANTHROPIC_API_KEY,
 # model claude-sonnet-4-6, production parity) | cli (`claude -p`) | replay
@@ -39,7 +42,22 @@ case "$cmd" in
   validate) node lib/validateFixtures.mjs "$@" ;;
   synth)    node synthetic/generate.mjs "$@" ;;
   extract)  node lib/extractPrompt.mjs "$@" ;;
-  test)     node --test "$@" ;;
+  test)
+    node --test "$@"
+    python3 -m unittest discover -s runners -p 'test_*.py' ;;
+  app-path)
+    report_path="${1:-${NOUM_COACH_EVAL_DUMP_DIR:-/private/tmp/noum-coach-eval}/coach-chat-conversation-app-path-eval-v1.json}"
+    if [[ ! -f "$report_path" ]]; then
+      echo "No real Swift app-path dump found at: $report_path" >&2
+      echo "Generate it with the CoachChatConversationArtifactDumpXCTest bridge, or pass the report path explicitly." >&2
+      exit 1
+    fi
+    shift || true
+    python3 runners/coach_arena.py \
+      --app-path-report "$report_path" \
+      --reports-dir reports/app-path \
+      --synthetic-dir synthetic/app-path \
+      "$@" ;;
   python)   python3 runners/coach_arena.py "$@" ;;
-  *)        echo "usage: ./run.sh {run|plan|prepare|report|validate|synth|extract|test|python}" >&2; exit 1 ;;
+  *)        echo "usage: ./run.sh {run|plan|prepare|report|validate|synth|extract|test|app-path|python}" >&2; exit 1 ;;
 esac

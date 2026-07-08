@@ -505,6 +505,7 @@ enum CoachReplyTextSanitizer {
     /// flag is guaranteed gone after this pass.
     nonisolated static let reportVoiceResiduePatterns: [String] = [
         #"(?i)\b(?:score|scored|scoring|hit)\s+\d{1,3}(?:\.\d)?(?:\s*/\s*10)?\b"#,
+        #"(?i)(?:,\s*)?\b\d(?:\.\d)?\s*/\s*10\s*,\s*\d+\s+fillers?\s*,\s*\d+\s*s(?:ec(?:ond)?s?)?\b"#,
         #"(?i)\b\d{2,3}\s*(?:/|over)\s*\d{2,3}\s*s(?:ec(?:ond)?s?)?\s*(?:/|with)\s*(?:only\s*)?\d+\s+fillers?\b"#,
         #"(?i)\b\d+\s+fillers?\s+(?:in|over|across)\s+\d{2,3}\s*s(?:ec(?:ond)?s?)?\b"#,
         #"(?i)\b(?:clean|landed|held)\s+at\s+\d{2,3}\b"#,
@@ -512,13 +513,24 @@ enum CoachReplyTextSanitizer {
         #"(?i)\b\d+\s+fillers?\b"#
     ]
 
+    private nonisolated static let reportVoiceBridgeResiduePatterns: [String] = [
+        #"(?i)\b(?:your|the)\s+(?:last|latest)\s+rep\s+had\s+\d+\s+fillers?\s*,?\s+so\s+"#,
+        #"(?i)\byou\s+had\s+\d+\s+fillers?\s*,?\s+so\s+"#,
+        #"(?i)\bthere\s+(?:was|were)\s+\d+\s+fillers?\s*,?\s+so\s+"#
+    ]
+
     nonisolated static func strippingReportVoiceResidue(from text: String) -> String {
         var value = text
+        for pattern in reportVoiceBridgeResiduePatterns {
+            value = replace(pattern: pattern, in: value, template: "")
+        }
         for pattern in reportVoiceResiduePatterns {
             // Also swallow an immediately-following connective + separator
             // ("score 74, but ...") so the surviving clause reflows cleanly
-            // instead of orphaning a lowercase "but"/"and".
-            let full = pattern + #"(?:\s*[,;—-]\s*(?:but|and|so|though|with|only)\b)?"#
+            // instead of orphaning a lowercase "but"/"and". "So" is kept:
+            // it often introduces the actual coaching move after a stripped
+            // metric, and removing it can leave broken prose ("had for...").
+            let full = pattern + #"(?:\s*[,;—-]\s*(?:but|and|though|with|only)\b)?"#
             value = replace(pattern: full, in: value, template: "")
         }
         // Repair the punctuation/whitespace/casing artifacts the removals leave.
@@ -1270,14 +1282,27 @@ actor AICoachChatService {
         // latency or keys. Runtime-gated by `UI_TESTING` rather than
         // compile-gated so UI tests stay deterministic across build configs.
         let launchArguments = ProcessInfo.processInfo.arguments
-        if launchArguments.contains("UI_TESTING") {
-            if launchArguments.contains("UI_TESTING_CHAT_FORCE_GOAL_REPLY") {
+        let launchEnvironment = ProcessInfo.processInfo.environment
+        if Self.uiHarnessFlagPresent(
+            "UI_TESTING",
+            arguments: launchArguments,
+            environment: launchEnvironment
+        ) {
+            if Self.uiHarnessFlagPresent(
+                "UI_TESTING_CHAT_FORCE_GOAL_REPLY",
+                arguments: launchArguments,
+                environment: launchEnvironment
+            ) {
                 if let onProviderChosen {
                     await onProviderChosen(Self.uiHarnessProviderChoice)
                 }
                 return .reply("I can help with that shift. Confirm the voice card below, then I will tune the next rep around it.")
             }
-            if launchArguments.contains("UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY") {
+            if Self.uiHarnessFlagPresent(
+                "UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY",
+                arguments: launchArguments,
+                environment: launchEnvironment
+            ) {
                 if let onProviderChosen {
                     await onProviderChosen(Self.uiHarnessProviderChoice)
                 }
@@ -1288,13 +1313,21 @@ actor AICoachChatService {
                 - Give one 30-second update, so the recommendation lands before the explanation: recommendation, one proof point, stop.
                 """)
             }
-            if launchArguments.contains("UI_TESTING_CHAT_FORCE_JUDGEMENT_REPLY") {
+            if Self.uiHarnessFlagPresent(
+                "UI_TESTING_CHAT_FORCE_JUDGEMENT_REPLY",
+                arguments: launchArguments,
+                environment: launchEnvironment
+            ) {
                 if let onProviderChosen {
                     await onProviderChosen(Self.uiHarnessProviderChoice)
                 }
                 return .reply("You are closer mechanically than you are to sounding authoritative overall. Mechanics: your latest rep is usable, but goal readiness still needs pressure evidence and repeated clean closes. Missing: repeated reps under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.")
             }
-            if launchArguments.contains("UI_TESTING_CHAT_FORCE_NOTICE") {
+            if Self.uiHarnessFlagPresent(
+                "UI_TESTING_CHAT_FORCE_NOTICE",
+                arguments: launchArguments,
+                environment: launchEnvironment
+            ) {
                 return .failure(.network)
             }
         }
@@ -2075,7 +2108,13 @@ actor AICoachChatService {
             return "I would not diagnose fear from the latest rep alone. Treat fear as a hypothesis only: the observable pattern is delay, with reassurance before disagreement. Test disagreement in sentence one, so you find out whether that read feels accurate."
         }
         if containsAny(latest, ["lack conviction", "lacking conviction"]) {
-            return "There is not enough evidence to call this lack of conviction overall. On the latest rep the useful mechanics signal is hedge control: a filler or hedge can soften the recommendation, but that is not an identity verdict. Missing: repeated pressure proof and a clean pace read. Proof test: run one answer with no maybe or probably before the recommendation and check whether the verdict sounds cleaner."
+            return "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb."
+        }
+        if containsAny(latest, ["polished but evasive", "sound polished but evasive", "evasive"]) {
+            return "Yes, it could, but that is a bounded structure read, not a personality verdict. The latest rep and pace estimate only support a mechanics signal: answer-after-setup; the communication goal is not proven under pressure yet. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it."
+        }
+        if containsAny(latest, ["sound timid", "sounds timid", "timid"]) {
+            return "I cannot prove timid from text alone. The latest rep and pace estimate only support a mechanics signal: indirectness before the recommendation, so the authority goal still needs audio evidence. Missing: tone and prosody. Proof test: try one direct recommendation first; audio would be needed for a tone verdict."
         }
         if containsAny(latest, ["not like me", "sounds correct but not like me"]) {
             return "Trust that signal. On the latest rep, keep the structure but replace the most polished sentence with the phrase you would actually say in the room, because that is what makes it sound like you. Record once and check how it feels against the cleaner version."
@@ -2108,13 +2147,34 @@ actor AICoachChatService {
         return nil
     }
 
+    nonisolated static func uiHarnessFlagPresent(
+        _ flag: String,
+        arguments: [String],
+        environment: [String: String]
+    ) -> Bool {
+        if arguments.contains(flag) ||
+            arguments.contains("\(flag)=true") ||
+            arguments.contains("\(flag)=1") {
+            return true
+        }
+        guard let value = environment[flag]?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return false
+        }
+        return ["1", "true", "yes"].contains(value.lowercased())
+    }
+
     private nonisolated static func deterministicQuickMoveReply(
         _ assessment: CoachAssessment
     ) -> String {
-        guard let anchor = conciseEvidencePhrase(from: assessment.evidenceUsed.first) else {
-            return "No baseline yet, so \(connectorClause(assessment.nextProofTest))"
+        let action = connectorClause(assessment.nextProofTest)
+        guard let anchor = coachSafeEvidencePhrase(from: assessment.evidenceUsed.first) else {
+            if action.contains("one silent beat after the verdict"),
+               action.contains("without speeding up") {
+                return "Your last rep gives one usable signal: under pressure, the close needs one silent beat after the verdict. Use that beat, then finish the answer without speeding up."
+            }
+            return "Your last rep gives one usable signal so far, so \(action)"
         }
-        return "Your last rep gives one usable signal: \(anchor), so \(connectorClause(assessment.nextProofTest))"
+        return "Your last rep gives one usable signal: \(anchor), so \(action)"
     }
 
     private nonisolated static func deterministicGroundedReadReply(
@@ -2183,10 +2243,35 @@ actor AICoachChatService {
         if contextSaysWarmthBeforeRecommendation(systemContext) {
             return "\(friction) Your last rep shows warmth came before the recommendation, so \(action)"
         }
-        if let evidence = conciseEvidencePhrase(from: assessment.evidenceUsed.first) {
+        if let evidence = coachSafeEvidencePhrase(from: assessment.evidenceUsed.first) {
             return "\(friction) Your last rep gives one safe signal, \(evidence), so \(action)"
         }
-        return "\(friction) I do not have enough reliable evidence yet, so \(action)"
+        return "\(friction) Your last rep gives only one safe signal so far, so \(action)"
+    }
+
+    private nonisolated static func coachSafeEvidencePhrase(
+        from raw: String?
+    ) -> String? {
+        guard let evidence = conciseEvidencePhrase(from: raw) else { return nil }
+        let stripped = CoachReplyTextSanitizer.strippingReportVoiceResidue(from: evidence)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = stripped
+            .trimmingCharacters(in: CharacterSet(charactersIn: " .,:;"))
+            .lowercased()
+        let evidenceNucleus = normalized
+            .replacingOccurrences(of: #"^(?:the\s+)?(?:last|latest)\s+rep\s+"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: " .,:;"))
+        guard !normalized.isEmpty,
+              ![
+                "timed",
+                "timed practice",
+                "practice",
+                "pressure",
+                "pressure drill"
+              ].contains(evidenceNucleus) else {
+            return nil
+        }
+        return stripped
     }
 
     private nonisolated static func trustRepairFallbackFriction(
@@ -3321,9 +3406,18 @@ actor AICoachChatService {
         if verdict.split(separator: " ").prefix(4).allSatisfy({ first.contains($0) }) {
             return true
         }
+        if first.hasPrefix("yes,") ||
+            first.hasPrefix("yes.") ||
+            first.hasPrefix("yes ") ||
+            first.hasPrefix("no,") ||
+            first.hasPrefix("no.") ||
+            first.hasPrefix("no ") {
+            return true
+        }
         return containsAny(first, [
             "you are", "you're", "you have", "you do not", "you don't",
             "not enough evidence", "i do not have enough", "i don't have enough",
+            "i would not", "i wouldn't", "i cannot prove", "i can't prove",
             "closer mechanically", "closer on mechanics", "not proven",
             "the verdict"
         ])
@@ -3606,14 +3700,12 @@ actor AICoachChatService {
     }
 
     /// Last-mile finalizer for every committed coach reply. Runs the standard
-    /// scaffold-stripping sanitize, then — ONLY on the same trust-repair /
-    /// sensitive-non-report turns the reliability gate guards (and only when the
-    /// user did not explicitly ask for metrics) — strips any bare report-voice
-    /// telemetry residue. On the happy path the gate already regenerated such
-    /// replies, so this is a no-op; on a fallback / bypass path it guarantees
-    /// "score 74"-style telemetry can never reach the user on a sensitive turn,
-    /// regardless of model output. It never touches explicit-metric or
-    /// non-sensitive turns, so legitimate progress reads pass through unchanged.
+    /// scaffold-stripping sanitize, then strips bare report-voice telemetry
+    /// residue on trust-repair / sensitive-non-report turns and for compact raw
+    /// metric clusters, unless the user explicitly asked for metrics. On the
+    /// happy path the gate already regenerated such replies, so this is a no-op;
+    /// on a fallback / bypass path it prevents "score 74"-style telemetry from
+    /// reaching the user when it would weaken coaching trust.
     nonisolated static func finalizedCoachReply(
         from raw: String,
         latestUserTurn: String?,
@@ -3624,9 +3716,11 @@ actor AICoachChatService {
         let lowerTurn = latestUserTurn?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? ""
+        let containsCompactMetricCluster = replyContainsCompactMetricCluster(normalized.lowercased())
         let sensitive = turnDepth == .trustRepair
             || turnIsSensitiveNonReportTurn(lowerTurn, turnDepth: turnDepth)
-        guard sensitive, !turnExplicitlyRequestsMetrics(lowerTurn) else {
+        guard (sensitive || containsCompactMetricCluster),
+              !turnExplicitlyRequestsMetrics(lowerTurn) else {
             return normalized
         }
         let stripped = CoachReplyTextSanitizer.strippingReportVoiceResidue(from: normalized)
@@ -3658,9 +3752,18 @@ actor AICoachChatService {
         return replyContainsRawReportVoiceMetrics(lower)
     }
 
+    private nonisolated static func replyContainsCompactMetricCluster(_ lower: String) -> Bool {
+        let compactMetricCluster = #"\b\d(?:\.\d)?\s*/\s*10\s*,\s*\d+\s+fillers?\s*,\s*\d+\s*s(?:ec(?:ond)?s?)?\b"#
+        return lower.range(of: compactMetricCluster, options: .regularExpression) != nil
+    }
+
     private nonisolated static func replyContainsRawReportVoiceMetrics(_ lower: String) -> Bool {
         let scoreReadout = #"\b(?:score|scored|hit)\s+(?:\d{2,3}|\d(?:\.\d)?(?:\s*/\s*10)?)\b"#
         if lower.range(of: scoreReadout, options: .regularExpression) != nil {
+            return true
+        }
+
+        if replyContainsCompactMetricCluster(lower) {
             return true
         }
 
@@ -4796,7 +4899,17 @@ actor AICoachChatService {
               ]) else {
             return false
         }
-        guard containsAny(latestUserTurn?.lowercased() ?? "", [
+        return turnLooksLikeColdStartBaselineIntent(latestUserTurn)
+    }
+
+    private nonisolated static func turnLooksLikeColdStartBaselineIntent(_ turn: String?) -> Bool {
+        guard let lower = turn?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              !lower.isEmpty else {
+            return false
+        }
+        return containsAny(lower, [
             "what should i work on",
             "what do i work on",
             "where should i start",
@@ -4824,10 +4937,7 @@ actor AICoachChatService {
             "meeting",
             "update",
             "pitch"
-        ]) else {
-            return false
-        }
-        return true
+        ])
     }
 
     private nonisolated static func replyUsesUnrequestedNamedTechnique(
@@ -5429,6 +5539,12 @@ actor AICoachChatService {
         let lowerTurn = latestUserTurn?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? ""
+        if safeReferenceRepairShouldRunForColdStart(
+            issue: issue,
+            latestUserTurn: lowerTurn
+        ) {
+            return true
+        }
         if safeReferenceRepairShouldRunForVoiceGoal(
             issue: issue,
             latestUserTurn: lowerTurn
@@ -5446,6 +5562,26 @@ actor AICoachChatService {
                 || phrase.contains("sensitive-turn report voice")
                 || phrase.contains("fluff, not coaching")
                 || phrase.contains("generic tip-giving")
+        default:
+            return false
+        }
+    }
+
+    private nonisolated static func safeReferenceRepairShouldRunForColdStart(
+        issue: CoachChatReplyQualityIssue,
+        latestUserTurn: String?
+    ) -> Bool {
+        guard turnLooksLikeColdStartBaselineIntent(latestUserTurn) else {
+            return false
+        }
+        switch issue {
+        case .menuInsteadOfDecision:
+            return true
+        case .roboticPhrase(let phrase):
+            let lowerPhrase = phrase.lowercased()
+            return lowerPhrase.contains("cold-start product mode")
+                || lowerPhrase.contains("cold-start metric target")
+                || lowerPhrase.contains("cold-start vague baseline rep")
         default:
             return false
         }
@@ -5530,35 +5666,7 @@ actor AICoachChatService {
         ]) else {
             return nil
         }
-        guard containsAny(lowerTurn, [
-            "what should i work on",
-            "what do i work on",
-            "where should i start",
-            "where do i start",
-            "where do i begin",
-            "where do we start",
-            "how should i start",
-            "how do i start",
-            "what should i do first",
-            "what first",
-            "first thing",
-            "what next",
-            "what do i do first",
-            "just downloaded",
-            "just installed",
-            "new here",
-            "i'm new",
-            "im new",
-            "get better",
-            "improve",
-            "practice",
-            "prepare",
-            "interview",
-            "presentation",
-            "meeting",
-            "update",
-            "pitch"
-        ]) else {
+        guard turnLooksLikeColdStartBaselineIntent(lowerTurn) else {
             return nil
         }
 

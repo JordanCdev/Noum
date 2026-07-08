@@ -696,7 +696,7 @@
     "emotionalSignal": "Direct product-quality criticism.",
     "expectedCoachMove": "Own wrapper feel, use one specific signal, prescribe one senior-coach move.",
     "badAnswerExample": "As an AI, I can provide general communication advice tailored to your needs.",
-    "excellentAnswerExample": "Fair. That sounded like tips, not a coach read. Your recommendation arrived late, so the next rep is sentence-one recommendation, one reason, stop.",
+    "excellentAnswerExample": "Fair. That sounded like a generic AI wrapper, not a coach read. One safe signal is that your recommendation arrived late, so put the recommendation in sentence one on the next rep, give one reason, then stop.",
     "disqualifiers": ["as an AI", "generic tips", "no transcript signal", "defensive product language"]
   }
 ]

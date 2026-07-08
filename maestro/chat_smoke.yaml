@@ -11,12 +11,15 @@
 # registered noum:// deep link). See maestro/RUN.md-style notes in the handoff.
 #
 #   xcrun simctl launch booted com.jordancoaten.noum \
-#       UI_TESTING UI_TESTING_SEED_FORCE UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY
+#       UI_TESTING UI_TESTING_SEED_FORCE UI_TESTING_CLEAR_ASK_NOUM
+#       UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY
 #   maestro test maestro/chat_smoke.yaml
 #
 # UI_TESTING            -> bypasses onboarding/first-run so the deep link routes.
 # UI_TESTING_SEED_FORCE -> seeds the improving-intermediate persona (>=1 rep) so
 #                          the chat opens with a composer, not the day-0 CTA.
+# UI_TESTING_CLEAR_ASK_NOUM -> clears persisted chat so reliability context from
+#                          prior smoke/manual runs cannot affect this assertion.
 # UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY -> canned reply through the real pipeline
 #                          (no live provider / keys / latency).
 appId: com.jordancoaten.noum
@@ -28,10 +31,11 @@ appId: com.jordancoaten.noum
     arguments:
       UI_TESTING: true
       UI_TESTING_SEED_FORCE: true
+      UI_TESTING_CLEAR_ASK_NOUM: true
       UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY: true
 
 # Navigate straight to the typed chat surface via the registered deep link.
-- openLink: "noum://asktype"
+- openLink: "noum://ask/type"
 
 # The composer must be present (proves we are past the day-0 read-only gate).
 - assertVisible:

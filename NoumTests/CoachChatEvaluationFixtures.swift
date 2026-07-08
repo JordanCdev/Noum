@@ -1518,6 +1518,7 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
     let qualityGateBlockingFailureTurnCount: Int
     let visionFloorFailureTurnCount: Int
     let reliabilityIssueTurnCount: Int
+    let blockingReliabilityIssueTurnCount: Int
     let immediateCoachReadExpectedCount: Int
     let immediateCoachReadMissingCount: Int
     let retrievalTracePresentCount: Int
@@ -1548,6 +1549,7 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
         let qualityGateBlockingFailureTurnCount = turns.filter(\.qualityGateBlockingFailure).count
         let visionFloorFailureTurnCount = turns.filter { $0.visionPassesProductionFloor == false }.count
         let reliabilityIssueTurnCount = turns.filter { !$0.reliabilityIssues.isEmpty }.count
+        let blockingReliabilityIssueTurnCount = turns.filter(\.hasBlockingReliabilityIssue).count
         let immediateExpected = turns.filter(\.immediateCoachReadExpected)
         let immediateMissing = immediateExpected.filter { !$0.immediateCoachReadShown }
         let retrievalTracePresentCount = turns.filter { $0.retrievalTrace != nil }.count
@@ -1573,7 +1575,7 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
             missingMetadataTurnCount: missingMetadataTurnCount,
             semanticGateFailureTurnCount: semanticGateFailureTurnCount,
             visionFloorFailureTurnCount: visionFloorFailureTurnCount,
-            reliabilityIssueTurnCount: reliabilityIssueTurnCount,
+            blockingReliabilityIssueTurnCount: blockingReliabilityIssueTurnCount,
             immediateCoachReadMissingCount: immediateMissing.count,
             retrievalTraceMissingCount: turns.count - retrievalTracePresentCount,
             assessmentConfidenceDistinctRoundedCount: assessmentConfidenceDistinctRoundedCount,
@@ -1597,6 +1599,7 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
             qualityGateBlockingFailureTurnCount: qualityGateBlockingFailureTurnCount,
             visionFloorFailureTurnCount: visionFloorFailureTurnCount,
             reliabilityIssueTurnCount: reliabilityIssueTurnCount,
+            blockingReliabilityIssueTurnCount: blockingReliabilityIssueTurnCount,
             immediateCoachReadExpectedCount: immediateExpected.count,
             immediateCoachReadMissingCount: immediateMissing.count,
             retrievalTracePresentCount: retrievalTracePresentCount,
@@ -1648,7 +1651,7 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
         missingMetadataTurnCount: Int,
         semanticGateFailureTurnCount: Int,
         visionFloorFailureTurnCount: Int,
-        reliabilityIssueTurnCount: Int,
+        blockingReliabilityIssueTurnCount: Int,
         immediateCoachReadMissingCount: Int,
         retrievalTraceMissingCount: Int,
         assessmentConfidenceDistinctRoundedCount: Int,
@@ -1674,7 +1677,7 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
         if visionFloorFailureTurnCount > 0 {
             warnings.append(.visionFloorFailures)
         }
-        if reliabilityIssueTurnCount > 0 {
+        if blockingReliabilityIssueTurnCount > 0 {
             warnings.append(.reliabilityIssues)
         }
         if immediateCoachReadMissingCount > 0 {
@@ -1777,6 +1780,19 @@ struct CoachChatConversationAppPathTurnRow: Codable, Equatable {
     let trajectoryCacheHit: Bool?
     let assessmentCacheHit: Bool?
     let passesAppPathFloor: Bool
+
+    var blockingReliabilityIssues: [String] {
+        reliabilityIssues.filter { label in
+            guard let issue = CoachReliabilityIssue(rawValue: label) else {
+                return true
+            }
+            return issue.isBlocking
+        }
+    }
+
+    var hasBlockingReliabilityIssue: Bool {
+        !blockingReliabilityIssues.isEmpty
+    }
 }
 
 struct CoachArenaAppPathTrace: Codable, Equatable {

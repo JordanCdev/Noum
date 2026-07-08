@@ -1,6 +1,6 @@
-# Coach Arena failures — run_2026-07-08_11-13-55
+# Coach Arena failures — run_2026-07-08_13-06-43
 
-16 fixture(s) below 70 / capped / missing.
+21 fixture(s) below 70 / capped / missing.
 
 ## cold-start-no-data — **22/100**
 
@@ -66,6 +66,40 @@ REPLY:
 Egg won't sharpen you. This will: today's rep hit 80, 3 fillers, tight and clean. Run one more Timed rep and hold a silent beat where those fillers landed — aim to beat 3.
 ```
 
+## conv-skeptic__t1 — **46/100**
+
+- Category: `synthetic-conversation` · turn: `trustRepair` · voice: `storytelling`
+- User turn: "ok prove it again, what specifically have I been doing wrong"
+- Expected move: Cite specific real memory again, different angle than the last reply, with no defensiveness and no re-explaining that the system remembers him. Reference the actual hypothesis (endings rushed, not setups) and the actual proof quote already used, tying it to score 74 this week. Storytelling register.
+- Judge dims: IQ 15/25 · EQ 12/25 · Mem 14/20 · Interv 11/15 · Feel 8/15 · closerTo=between
+- Deterministic: trustRepairReportVoice("scored 74")
+- Judge: Opens with a stat readout (74 / 95s / 4 fillers) — report-voice residue matching the bad example, worst on a turn testing for templating; Same diagnosis as the prior turn, not a new angle of proof; No register acknowledgement of the combative tone before advice; Over trust-repair length limit (113w/2L vs 110w/6L)
+- Suggested fix: On trust-repair/skeptic turns, instruct the coach to prove memory through a narrated moment (the proof quote + what happened in the room) and forbid leading with the numeric score/filler recap.
+
+```
+REPLY:
+Specifically: this week you scored 74 over 95 seconds with only 4 fillers, and the setup held the whole way. Then the ending folded into one rushed sentence. You built all the way to "and that's the moment I realized the whole plan was already dead" — your best line — and sprinted right past it instead of letting it sit.
+
+That's the throughline: the room stays with you up to the payoff, then the payoff gets clipped. Next rep, when you hit that turn, hold one full second of silence before the final line and say it slower than feels natural. That tests whether the rush is what's costing you the ending.
+```
+
+## conv-goal-change-arc__t1 — **48/100**
+
+- Category: `synthetic-conversation` · turn: `groundedRead` · voice: `authoritative`
+- User turn: "yeah maybe I should just switch to something warmer altogether"
+- Expected move: Propose, do not set. Map "warmer" to the closest real voice (Warm) and ask him to confirm, referencing the specific feedback (clear but cold) and the 3 weeks already banked on authoritative. Ask one clarifying question before treating this as decided. Defer the actual change to the in-app confirmation card. Must not say the voice has been changed/set/saved.
+- Judge dims: IQ 19/25 · EQ 15/25 · Mem 16/20 · Interv 11/15 · Feel 11/15 · closerTo=between
+- Deterministic: roboticPhrase("wer that, then tap to confirm and I'll lock "); tooLong
+- Judge: opens with a corrective 'Slow down' on a reflective/testing turn instead of attuning first; bundles the clarifying question with a 'tap to confirm and I'll lock it in' commitment; over length (98w/2L) and cites raw score '80' as mild report residue
+- Suggested fix: On tentative goal-change turns, instruct the coach to lead with a brief acknowledgement of the reflection, keep to ONE clarifying question, and defer the action to the confirm card with softer wording ('tap to confirm and I'll set it up') rather than 'lock it in'.
+
+```
+REPLY:
+Slow down before you tear it up. You started authoritative three weeks ago to stop getting talked over — and this week's rep hit 80 with the work landing. That's not a register you abandon over one "cold." Cold usually means a warmer edge in two or three moments, not a different person.
+
+The closest real voice to what you're describing is Warm and welcoming. But tell me first: what changed — this one comment, or has authoritative stopped feeling like you across more than one room? Answer that, then tap to confirm and I'll lock it in.
+```
+
 ## goal-change-engaging — **49/100**
 
 - Category: `goal-change` · turn: `groundedRead` · voice: `authoritative`
@@ -102,6 +136,22 @@ REPLY:
 You don't lose the thread — you keep adding to it. Yesterday you opened with the actual point, then stacked three side stories before circling back to a weaker version of it. So the fix isn't focus, it's a stop signal.
 
 Next rep: say your point, one line of support, then cut before the first side story. One point, then silence. That tests whether those extras were ever carrying weight.
+```
+
+## conv-cold-start-first-rep__t0 — **55/100**
+
+- Category: `synthetic-conversation` · turn: `groundedRead` · voice: `none`
+- User turn: "hey, just downloaded this. what do I do first"
+- Expected move: Be honest there is no baseline yet without any banned no-data phrasing ("since we don't have", "no rated sessions yet"). Give exactly one concrete first action (a first rep) in plain language. Do not stack intake questions, do not ask what the interview/goal is, do not invent stats or a voice.
+- Judge dims: IQ 12/25 · EQ 15/25 · Mem 4/20 · Interv 12/15 · Feel 12/15 · closerTo=excellent
+- Judge: Cold-start ceiling: no individual signal to diagnose or personalize against, so the read is a correct-but-generic first-action rather than an un-swappable one; 'tells us where to point next' is slightly vaguer than the excellent example's 'where the point lands'
+- Suggested fix: On cold start, have the coach anchor the first-rep prompt to a phrase the user just used or a stated context so the suggestion feels chosen for them rather than a default onboarding line, lifting the personalization ceiling.
+
+```
+REPLY:
+Good to have you here. No baseline yet, so start there — one short rep gives me something real to coach from instead of a guess.
+
+Run a 60-second rep on something you know cold, like how you'd explain your job to a stranger. That gives me your actual pace and fillers, and it tells us where to point next.
 ```
 
 ## its-not-easy — **56/100**
@@ -204,6 +254,20 @@ Next rep: hit your second-to-last sentence, hold a silent beat, then say the fin
 
 ```
 
+## conv-transfer-report__t1 — **62/100**
+
+- Category: `synthetic-conversation` · turn: `groundedRead` · voice: `persuasive`
+- User turn: "yeah I led with the ask and they said yes on the spot, first time that's ever happened"
+- Expected move: Treat the outcome as subjective and associative, not proof of causation — a real meeting has many variables, the drill is one input, not the sole cause. Do not claim the technique "worked" or guarantee it will repeat. Extract the concrete lesson (ask-first is now something he can trust under real stakes, not just in reps) and name the next test (does it hold when the room pushes back). Persuasive register: confident, not salesy.
+- Judge dims: IQ 17/25 · EQ 20/25 · Mem 12/20 · Interv 7/15 · Feel 12/15 · closerTo=between
+- Judge: No named next test — the excellent reply's key lever (how it holds when the room pushes back) is absent; Substitutes a user-facing question for the decisive move, and that question partly re-litigates the causation the reply just resolved; Memory is grounded but only lightly changes the advice
+- Suggested fix: On a win-report turn, instruct the coach to land the concrete lesson and one forward test in its own voice (e.g. 'the real test is when the room pushes back') rather than deferring the move to a user-facing question.
+
+```
+REPLY:
+First yes in the room, and your first one ever — that's worth sitting with. It lines up with the work; the ask has led cleanly every rep lately. The room isn't the drill though, so before I read too much into one meeting: what did you feel actually landed it — leading with the ask, or how you held them right after?
+```
+
 ## too-generic — **64/100**
 
 - Category: `trust-repair` · turn: `trustRepair` · voice: `persuasive`
@@ -272,5 +336,19 @@ New target: pace. Record 60 seconds and deliberately slow your three most import
 ```
 REPLY:
 Fair. That was waffle. Straight answer: yes. Fillers dropped from 5.5 to 3.2 a minute over two weeks, and your last rep hit 3 in 60 seconds — your best on record. What's still moving is pace under pressure. Next rep, hold one silent beat before you answer a hard question and see if the rush eases.
+```
+
+## conv-offtopic-then-work__t1 — **69/100**
+
+- Category: `synthetic-conversation` · turn: `groundedRead` · voice: `concise`
+- User turn: "yeah ok — how do I actually get to the point faster when someone puts me on the spot"
+- Expected move: Answer the real question directly, citing the actual data point (20 seconds of wander before the point in this week's rep). Give one concrete mechanic to test (e.g. answer in one sentence before elaborating) tied to a next rep. Do not reference or acknowledge the "toast" aside. Concise register.
+- Judge dims: IQ 16/25 · EQ 15/25 · Mem 14/20 · Interv 12/15 · Feel 12/15 · closerTo=excellent
+- Judge: Diagnosis restates the already-implied signal rather than sharpening it; Move is testable but lacks the excellent example's concrete clock/5-second success criterion
+- Suggested fix: Prompt the coach to attach a measurable pass/fail checkpoint to the prescribed move (e.g. 'get the point out inside the first 5 seconds, check the clock') so the test is verifiable, not just directional.
+
+```
+REPLY:
+Your last rep spent 20 seconds circling before the point landed — that gap is the rambly-under-pressure thing you flagged. So make the answer come out first: next Pressure Q&A, force your very first sentence to be the one-line answer, then let the reasons follow. That tests whether leading with the takeaway is what cuts the wander.
 ```
 

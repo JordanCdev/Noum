@@ -128,6 +128,29 @@ struct CoachProviderChainTests {
         #expect(AICoachChatService.usableAPIKey("sk-live-test") == "sk-live-test")
     }
 
+    @Test func uiHarnessFlagsAcceptBareMaestroAndEnvironmentShapes() {
+        #expect(AICoachChatService.uiHarnessFlagPresent(
+            "UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY",
+            arguments: ["Noum", "UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY"],
+            environment: [:]
+        ))
+        #expect(AICoachChatService.uiHarnessFlagPresent(
+            "UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY",
+            arguments: ["Noum", "UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY=true"],
+            environment: [:]
+        ))
+        #expect(AICoachChatService.uiHarnessFlagPresent(
+            "UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY",
+            arguments: ["Noum"],
+            environment: ["UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY": "1"]
+        ))
+        #expect(!AICoachChatService.uiHarnessFlagPresent(
+            "UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY",
+            arguments: ["Noum"],
+            environment: ["UI_TESTING_CHAT_FORCE_MARKDOWN_REPLY": "false"]
+        ))
+    }
+
     @Test func diagnosticSnapshotRedactsKeys() async {
         let service = AICoachChatService(
             keyedProviders: { [.gemini] },
