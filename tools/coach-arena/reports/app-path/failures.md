@@ -2,19 +2,15 @@
 
 ## Production Evidence Gate
 
-- source Swift app-path readiness warnings: appPathFloorFailures,targetReplyMismatch,semanticGateFailures,visionFloorFailures
+- source Swift app-path readiness warnings: appPathFloorFailures,targetReplyMismatch
 - source Swift app-path report did not pass its app-path floor
 
 Source app-path failure samples:
 
-- `filler-pressure-prescription` / `not-easy-empathy-conversation` turn `1`: `appPathFloor, qualityGate, targetReplyMismatch`; semantic `passed`; quality `fallback:typedAssessment`
+- `filler-pressure-prescription` / `not-easy-empathy-conversation` turn `1`: `appPathFloor, qualityGate, targetReplyMismatch`; semantic `passed`; quality `fallback:deterministicAssessmentAfterContentRejected`
   User: Is it the pause or the close?
-  Final: Your last rep gives one usable signal: latest rep Timed, so use one silent beat after the verdict, then finish the answer without speeding up.
+  Final: Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. The signal I can use is Timed. Try this next: Use one silent beat after the verdict, then finish the answer without speedin...
   Target: Your last rep gives one usable signal: under pressure, the close needs one silent beat after the verdict. Use that beat, then finish the answer without speeding up.
-- `lack-conviction-035` / `arena-lack-conviction-035-app-path-conversation` turn `0`: `appPathFloor, qualityGate, semanticGate, targetReplyMismatch, visionFloor`; semantic `failed:unsupportedClosenessClaim`; quality `fallback:deterministicAssessmentAfterContentRejected`
-  User: Do I lack conviction?
-  Final: I do not have enough evidence for an overall authoritative communication verdict yet. The signal I can use is hypothesis: Filler Words appears to be the highest-leverage focus because it keeps showing up in the rolling b...
-  Target: There is not enough evidence to call this lack of conviction overall. The latest rep and pace estimate only support a mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated...
 
 ## examples-from-sessions-010 (groundedRead)
 

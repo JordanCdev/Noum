@@ -9659,7 +9659,19 @@ struct CoachReplyTextSanitizerTests {
         #expect(!lower.contains("1/10"))
         #expect(!lower.contains("0 fillers"))
         #expect(!lower.contains("0s"))
-        #expect(cleaned.contains("The signal I can use is Pressure Drill."))
+        #expect(!cleaned.contains("The signal I can use is Pressure Drill."))
+        #expect(cleaned.contains("Try this next"))
+    }
+
+    @Test func finalizedCoachReplyStripsModeOnlyEvidenceSentence() {
+        let cleaned = AICoachChatService.finalizedCoachReply(
+            from: "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. The signal I can use is Timed. Try this next: use one silent beat after the verdict.",
+            latestUserTurn: "Is it the pause or the close?",
+            turnDepth: .quickMove
+        )
+
+        #expect(!cleaned.contains("The signal I can use is Timed."))
+        #expect(cleaned.contains("Pacing is the next lever"))
         #expect(cleaned.contains("Try this next"))
     }
 

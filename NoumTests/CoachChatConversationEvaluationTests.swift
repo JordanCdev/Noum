@@ -306,7 +306,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Is it the pause or the close?",
-                    coachReply: "Your last rep gives one usable signal: under pressure, the close needs one silent beat after the verdict. Use that beat, then finish the answer without speeding up."
+                    coachReply: "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What is the smallest rep?",

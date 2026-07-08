@@ -1,21 +1,28 @@
 {
   "candidate": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
   "comparison": {
-    "averageDelta": 0.0,
+    "averageDelta": 0.04,
     "candidateChanged": false,
-    "changedScoreCount": 0,
+    "changedScoreCount": 1,
     "clearedFailureFixtureIDs": [],
     "failureCountDelta": 0,
     "fixtureCountChanged": false,
-    "largestScoreChanges": [],
+    "largestScoreChanges": [
+      {
+        "current": 74,
+        "delta": 2,
+        "id": "lack-conviction-035",
+        "previous": 72
+      }
+    ],
     "newlyFailingFixtureIDs": [],
     "passesChanged": false,
     "placeholderLeaksDelta": 0,
     "previousCandidate": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
-    "previousGeneratedAt": "2026-07-08T14:00:58+00:00",
+    "previousGeneratedAt": "2026-07-08T14:03:33+00:00",
     "status": "compared",
     "typeAverageDeltas": {
-      "deepAssessment": 0.0,
+      "deepAssessment": 0.33,
       "groundedRead": 0.0,
       "quickMove": 0.0,
       "trustRepair": 0.0
@@ -81,7 +88,7 @@
     "requestedFixtureCount": 50,
     "source": "appPathReport",
     "sourceAppPathFailureOmittedCount": 0,
-    "sourceAppPathFailureSampleCount": 2,
+    "sourceAppPathFailureSampleCount": 1,
     "sourceAppPathFailureSamples": [
       {
         "conversationID": "not-easy-empathy-conversation",
@@ -90,58 +97,34 @@
           "qualityGate",
           "targetReplyMismatch"
         ],
-        "finalCoachReply": "Your last rep gives one usable signal: latest rep Timed, so use one silent beat after the verdict, then finish the answer without speeding up.",
+        "finalCoachReply": "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. The signal I can use is Timed. Try this next: Use one silent beat after the verdict, then finish the answer without speedin...",
         "qualityGateEvents": [
           "rejected:professional:missingInsightBridge",
-          "fallback:typedAssessment"
+          "failed:contentRejected"
         ],
-        "qualityGateOutcome": "fallback:typedAssessment",
+        "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
         "reliabilityIssues": [],
         "semanticGateOutcome": "passed",
         "sourceFixtureID": "filler-pressure-prescription",
         "targetCoachReply": "Your last rep gives one usable signal: under pressure, the close needs one silent beat after the verdict. Use that beat, then finish the answer without speeding up.",
         "turnIndex": 1,
         "userTurn": "Is it the pause or the close?"
-      },
-      {
-        "conversationID": "arena-lack-conviction-035-app-path-conversation",
-        "failureKinds": [
-          "appPathFloor",
-          "qualityGate",
-          "semanticGate",
-          "targetReplyMismatch",
-          "visionFloor"
-        ],
-        "finalCoachReply": "I do not have enough evidence for an overall authoritative communication verdict yet. The signal I can use is hypothesis: Filler Words appears to be the highest-leverage focus because it keeps showing up in the rolling b...",
-        "qualityGateEvents": [
-          "rejected:semantic:missingCaseAnchor",
-          "failed:contentRejected"
-        ],
-        "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
-        "reliabilityIssues": [],
-        "semanticGateOutcome": "failed:unsupportedClosenessClaim",
-        "sourceFixtureID": "lack-conviction-035",
-        "targetCoachReply": "There is not enough evidence to call this lack of conviction overall. The latest rep and pace estimate only support a mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated...",
-        "turnIndex": 0,
-        "userTurn": "Do I lack conviction?"
       }
     ],
-    "sourceAppPathFailureTotalCount": 2,
-    "sourceAppPathFloorFailureCount": 2,
+    "sourceAppPathFailureTotalCount": 1,
+    "sourceAppPathFloorFailureCount": 1,
     "sourceBlockingReliabilityIssueTurnCount": 0,
     "sourceConversationCount": 53,
     "sourcePassesAppPathFloor": false,
     "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
     "sourceReadinessWarnings": [
       "appPathFloorFailures",
-      "targetReplyMismatch",
-      "semanticGateFailures",
-      "visionFloorFailures"
+      "targetReplyMismatch"
     ],
-    "sourceReliabilityIssueTurnCount": 30,
+    "sourceReliabilityIssueTurnCount": 31,
     "sourceSchemaVersion": "coach-chat-conversation-app-path-eval-v1",
     "sourceSurface": "text",
-    "sourceTargetReplyMismatchCount": 2,
+    "sourceTargetReplyMismatchCount": 1,
     "sourceTurnCount": 109,
     "sourceVisionProductionReadiness": {
       "blockers": [
@@ -160,7 +143,7 @@
     "unmatchedFixtureCount": 0,
     "unmatchedFixtureIDs": []
   },
-  "generatedAt": "2026-07-08T14:03:33+00:00",
+  "generatedAt": "2026-07-08T14:19:03+00:00",
   "results": [
     {
       "fixture": {
@@ -232,7 +215,7 @@
       "reply": "You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 55,
+          "assessmentCacheAgeMs": 72,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -251,11 +234,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 74,
-          "timeToFirstVisibleTokenMs": 18
+          "timeToCompleteReplyMs": 91,
+          "timeToFirstVisibleTokenMs": 19
         },
         "memory": {
           "assessmentConfidence": 0.45,
@@ -397,7 +380,7 @@
       "reply": "Fair push: I missed the actual question and answered around the useful read. Your last rep shows warmth came before the recommendation, so next rep say the recommendation first, then one reassurance.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 48,
+          "assessmentCacheAgeMs": 62,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -416,10 +399,10 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I missed the actual question and answered around the useful read. Your last rep shows warmth came before the recommendation, so next rep say the recommendation first, then one reassurance.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 68,
+          "timeToCompleteReplyMs": 81,
           "timeToFirstVisibleTokenMs": 19
         },
         "memory": {
@@ -561,7 +544,7 @@
       "reply": "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The actual read is warmth came before the recommendation, so the listener waits for the point. Next rep, say the recommendation first, then one reassurance.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 52,
+          "assessmentCacheAgeMs": 42,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -580,11 +563,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The actual read is warmth came before the recommendation, so the listener waits for the point. Next rep, say the recommendation first, then one reassurance.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 73,
-          "timeToFirstVisibleTokenMs": 73
+          "timeToCompleteReplyMs": 60,
+          "timeToFirstVisibleTokenMs": 60
         },
         "memory": {
           "assessmentConfidence": 0.42,
@@ -725,7 +708,7 @@
       "reply": "Fair push: I made that sound easier than it feels under pressure. The actual read is verdict-first structure gets harder under pressure, so shrink the next rep to one sentence before adding the full answer back.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 46,
+          "assessmentCacheAgeMs": 52,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -744,10 +727,10 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I made that sound easier than it feels under pressure. The actual read is verdict-first structure gets harder under pressure, so shrink the next rep to one sentence before adding the full answer back.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 64,
+          "timeToCompleteReplyMs": 69,
           "timeToFirstVisibleTokenMs": 17
         },
         "memory": {
@@ -893,7 +876,7 @@
       "reply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 61,
+          "assessmentCacheAgeMs": 48,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -912,11 +895,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 78,
-          "timeToFirstVisibleTokenMs": 16
+          "timeToCompleteReplyMs": 66,
+          "timeToFirstVisibleTokenMs": 17
         },
         "memory": {
           "assessmentConfidence": 0.37,
@@ -1052,7 +1035,7 @@
       "reply": "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 47,
+          "assessmentCacheAgeMs": 150,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -1071,13 +1054,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 49,
-          "timeToFirstVisibleTokenMs": 49
+          "timeToCompleteReplyMs": 154,
+          "timeToFirstVisibleTokenMs": 154
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -1213,7 +1196,7 @@
       "reply": "Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and check whether fillers drop after that point.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 65,
+          "assessmentCacheAgeMs": 64,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -1232,11 +1215,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and check whether fillers drop after that point.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 67,
-          "timeToFirstVisibleTokenMs": 67
+          "timeToCompleteReplyMs": 86,
+          "timeToFirstVisibleTokenMs": 86
         },
         "memory": {
           "assessmentConfidence": 0.34,
@@ -1372,7 +1355,7 @@
       "reply": "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 52,
+          "assessmentCacheAgeMs": 89,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -1391,11 +1374,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 71,
-          "timeToFirstVisibleTokenMs": 71
+          "timeToCompleteReplyMs": 131,
+          "timeToFirstVisibleTokenMs": 131
         },
         "memory": {
           "assessmentConfidence": 0.43,
@@ -1531,7 +1514,7 @@
       "reply": "The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 52,
+          "assessmentCacheAgeMs": 54,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -1550,11 +1533,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 69,
-          "timeToFirstVisibleTokenMs": 69
+          "timeToCompleteReplyMs": 73,
+          "timeToFirstVisibleTokenMs": 73
         },
         "memory": {
           "assessmentConfidence": 0.46,
@@ -1695,7 +1678,7 @@
       "reply": "One specific example is the latest rep: the reasons were clear before there was a concrete scene. That shows the pattern because the listener gets logic before a picture. Next rep, add one example after the first reason, then return to the ask.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 43,
+          "assessmentCacheAgeMs": 44,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -1714,13 +1697,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "One specific example is the latest rep: the reasons were clear before there was a concrete scene. That shows the pattern because the listener gets logic before a picture. Next rep, add one example after the first reason, then return to the ask.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 61,
-          "timeToFirstVisibleTokenMs": 61
+          "timeToCompleteReplyMs": 62,
+          "timeToFirstVisibleTokenMs": 62
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -1857,7 +1840,7 @@
       "reply": "Not proven yet. The latest timed rep score is useful evidence, and the transcript has a recommendation plus a clear decision, but board readiness needs pressure evidence because the decision ask has to survive stakes. Missing: one board-style rehearsal. Proof test: record 75 seconds with headline, one metric, decision ask, clean stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 52,
+          "assessmentCacheAgeMs": 62,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -1876,11 +1859,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Not proven yet. The latest timed rep score is useful evidence, and the transcript has a recommendation plus a clear decision, but board readiness needs pressure evidence because the decision ask has to survive stakes. Missing: one board-style rehearsal. Proof test: record 75 seconds with headline, one metric, decision ask, clean stop.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 69,
-          "timeToFirstVisibleTokenMs": 16
+          "timeToCompleteReplyMs": 79,
+          "timeToFirstVisibleTokenMs": 17
         },
         "memory": {
           "assessmentConfidence": 0.45,
@@ -2015,7 +1998,7 @@
       "reply": "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 45,
+          "assessmentCacheAgeMs": 58,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -2034,11 +2017,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 63,
-          "timeToFirstVisibleTokenMs": 63
+          "timeToCompleteReplyMs": 78,
+          "timeToFirstVisibleTokenMs": 78
         },
         "memory": {
           "assessmentConfidence": 0.34,
@@ -2178,7 +2161,7 @@
       "reply": "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 43,
+          "assessmentCacheAgeMs": 49,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": true
@@ -2197,11 +2180,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 62,
-          "timeToFirstVisibleTokenMs": 62
+          "timeToCompleteReplyMs": 69,
+          "timeToFirstVisibleTokenMs": 69
         },
         "memory": {
           "assessmentConfidence": 0.38,
@@ -2341,7 +2324,7 @@
       "reply": "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 30,
+          "assessmentCacheAgeMs": 64,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": true
@@ -2360,11 +2343,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 48,
-          "timeToFirstVisibleTokenMs": 48
+          "timeToCompleteReplyMs": 66,
+          "timeToFirstVisibleTokenMs": 66
         },
         "memory": {
           "assessmentConfidence": 0.34,
@@ -2505,7 +2488,7 @@
       "reply": "Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. The safe signal from the last rep is that the recommendation needs to lead, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 52,
+          "assessmentCacheAgeMs": 60,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -2524,11 +2507,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. The safe signal from the last rep is that the recommendation needs to lead, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 71,
-          "timeToFirstVisibleTokenMs": 18
+          "timeToCompleteReplyMs": 79,
+          "timeToFirstVisibleTokenMs": 19
         },
         "memory": {
           "assessmentConfidence": 0.48,
@@ -2666,7 +2649,7 @@
       "reply": "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 46,
+          "assessmentCacheAgeMs": 65,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -2685,11 +2668,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 63,
-          "timeToFirstVisibleTokenMs": 17
+          "timeToCompleteReplyMs": 84,
+          "timeToFirstVisibleTokenMs": 19
         },
         "memory": {
           "assessmentConfidence": 0.45,
@@ -2826,7 +2809,7 @@
       "reply": "Fair push: I used too much writing before the useful read. Your last rep gives enough signal: the close is the leak. Proof test: make the final sentence the ask and stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 60,
+          "assessmentCacheAgeMs": 46,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -2845,10 +2828,10 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I used too much writing before the useful read. Your last rep gives enough signal: the close is the leak. Proof test: make the final sentence the ask and stop.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 78,
+          "timeToCompleteReplyMs": 63,
           "timeToFirstVisibleTokenMs": 17
         },
         "memory": {
@@ -2985,7 +2968,7 @@
       "reply": "Your cold start is hard, so no fake read: there are no rated sessions. Use the first baseline rep as evidence: record a 60-second interview answer, answer first, give one proof, stop, then check whether sentence one gives the point.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 49,
+          "assessmentCacheAgeMs": 66,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -3004,13 +2987,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your cold start is hard, so no fake read: there are no rated sessions. Use the first baseline rep as evidence: record a 60-second interview answer, answer first, give one proof, stop, then check whether sentence one gives the point.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 66,
-          "timeToFirstVisibleTokenMs": 66
+          "timeToCompleteReplyMs": 89,
+          "timeToFirstVisibleTokenMs": 89
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -3165,11 +3148,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Yes, locally: the latest rep is 181 WPM, and the fillers rise after sentence one, so test one silent beat after the first sentence, not a slower whole answer.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 55,
-          "timeToFirstVisibleTokenMs": 55
+          "timeToCompleteReplyMs": 56,
+          "timeToFirstVisibleTokenMs": 56
         },
         "memory": {
           "assessmentConfidence": 0.46,
@@ -3304,7 +3287,7 @@
       "reply": "Fix the final sentence: it recaps instead of asking for a decision, so make the last line the ask and stop before explaining it again.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 44,
+          "assessmentCacheAgeMs": 58,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -3323,11 +3306,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fix the final sentence: it recaps instead of asking for a decision, so make the last line the ask and stop before explaining it again.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 61,
-          "timeToFirstVisibleTokenMs": 61
+          "timeToCompleteReplyMs": 77,
+          "timeToFirstVisibleTokenMs": 77
         },
         "memory": {
           "assessmentConfidence": 0.42,
@@ -3462,7 +3445,7 @@
       "reply": "Make sentence one the verdict. Your transcript warms into context before the point, so lead with the recommendation, give one reason, then stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 48,
+          "assessmentCacheAgeMs": 44,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -3481,11 +3464,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Make sentence one the verdict. Your transcript warms into context before the point, so lead with the recommendation, give one reason, then stop.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 66,
-          "timeToFirstVisibleTokenMs": 66
+          "timeToCompleteReplyMs": 61,
+          "timeToFirstVisibleTokenMs": 61
         },
         "memory": {
           "assessmentConfidence": 0.46,
@@ -3621,7 +3604,7 @@
       "reply": "That panic is the pressure cue because in pressure mode the pause disappears and the answer restarts. The signal to test is one silent beat before sentence one, then only the opener.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 41,
+          "assessmentCacheAgeMs": 45,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -3640,11 +3623,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "That panic is the pressure cue because in pressure mode the pause disappears and the answer restarts. The signal to test is one silent beat before sentence one, then only the opener.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 59,
-          "timeToFirstVisibleTokenMs": 59
+          "timeToCompleteReplyMs": 63,
+          "timeToFirstVisibleTokenMs": 63
         },
         "memory": {
           "assessmentConfidence": 0.44,
@@ -3779,7 +3762,7 @@
       "reply": "For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 44,
+          "assessmentCacheAgeMs": 52,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -3798,11 +3781,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 62,
-          "timeToFirstVisibleTokenMs": 62
+          "timeToCompleteReplyMs": 71,
+          "timeToFirstVisibleTokenMs": 71
         },
         "memory": {
           "assessmentConfidence": 0.43,
@@ -3937,7 +3920,7 @@
       "reply": "Your claim and reason are present; the salience hypothesis is direction because the reason is not tied to an implication or ask. Do not add more reasons. Use claim, one reason, implication, ask, then check whether the listener knows what to do next.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 46,
+          "assessmentCacheAgeMs": 52,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -3956,11 +3939,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your claim and reason are present; the salience hypothesis is direction because the reason is not tied to an implication or ask. Do not add more reasons. Use claim, one reason, implication, ask, then check whether the listener knows what to do next.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 62,
-          "timeToFirstVisibleTokenMs": 62
+          "timeToCompleteReplyMs": 70,
+          "timeToFirstVisibleTokenMs": 70
         },
         "memory": {
           "assessmentConfidence": 0.45,
@@ -4095,7 +4078,7 @@
       "reply": "Cut the softener after the ask. The close keeps adding maybe or just after the decision, so make the ask and stop before the confidence leaks.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 43,
+          "assessmentCacheAgeMs": 44,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -4114,11 +4097,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Cut the softener after the ask. The close keeps adding maybe or just after the decision, so make the ask and stop before the confidence leaks.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 59,
-          "timeToFirstVisibleTokenMs": 59
+          "timeToCompleteReplyMs": 63,
+          "timeToFirstVisibleTokenMs": 63
         },
         "memory": {
           "assessmentConfidence": 0.46,
@@ -4259,7 +4242,7 @@
       "reply": "Check only the final 10 seconds of the 75-second update, because that is where the update transfers into the room. If the last sentence asks for alignment or a decision, keep it; if it recaps, rewrite the close.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 54,
+          "assessmentCacheAgeMs": 61,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": true
@@ -4278,11 +4261,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Check only the final 10 seconds of the 75-second update, because that is where the update transfers into the room. If the last sentence asks for alignment or a decision, keep it; if it recaps, rewrite the close.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 72,
-          "timeToFirstVisibleTokenMs": 72
+          "timeToCompleteReplyMs": 79,
+          "timeToFirstVisibleTokenMs": 79
         },
         "memory": {
           "assessmentConfidence": 0.43,
@@ -4423,7 +4406,7 @@
       "reply": "I would not call that causation. Treat it as useful association: on the latest rep you used the prepared close, so your read that the room stayed engaged is a signal, not proof. Keep the close; next time capture the exact question people asked afterward.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 51,
+          "assessmentCacheAgeMs": 45,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -4442,13 +4425,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I would not call that causation. Treat it as useful association: on the latest rep you used the prepared close, so your read that the room stayed engaged is a signal, not proof. Keep the close; next time capture the exact question people asked afterward.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 68,
-          "timeToFirstVisibleTokenMs": 68
+          "timeToCompleteReplyMs": 64,
+          "timeToFirstVisibleTokenMs": 64
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4584,7 +4567,7 @@
       "reply": "Practice the boundary sentence only because tonight's risk is over-proving before the disagreement lands. Say the disagreement in sentence one, give one calm reason, then stop before proving you are reasonable.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 54,
+          "assessmentCacheAgeMs": 56,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -4603,13 +4586,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Practice the boundary sentence only because tonight's risk is over-proving before the disagreement lands. Say the disagreement in sentence one, give one calm reason, then stop before proving you are reasonable.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 72,
-          "timeToFirstVisibleTokenMs": 72
+          "timeToCompleteReplyMs": 75,
+          "timeToFirstVisibleTokenMs": 75
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4745,7 +4728,7 @@
       "reply": "Build a 20-second intro: role, value, ask. Because rambling starts when the listener cannot repeat the point, record one first rep and check whether the ask is clear by the final sentence.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 41,
+          "assessmentCacheAgeMs": 49,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -4764,13 +4747,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Build a 20-second intro: role, value, ask. Because rambling starts when the listener cannot repeat the point, record one first rep and check whether the ask is clear by the final sentence.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 57,
-          "timeToFirstVisibleTokenMs": 57
+          "timeToCompleteReplyMs": 68,
+          "timeToFirstVisibleTokenMs": 68
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4906,7 +4889,7 @@
       "reply": "The words are structured; I cannot prove vocal energy from this text alone. Test the hypothesis by marking one sentence as the peak and recording it with a deliberate emphasis on the consequence.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 52,
+          "assessmentCacheAgeMs": 50,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -4925,13 +4908,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The words are structured; I cannot prove vocal energy from this text alone. Test the hypothesis by marking one sentence as the peak and recording it with a deliberate emphasis on the consequence.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 69,
-          "timeToFirstVisibleTokenMs": 69
+          "timeToCompleteReplyMs": 68,
+          "timeToFirstVisibleTokenMs": 68
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5067,7 +5050,7 @@
       "reply": "Treat salience as the working test because losing people after the first minute usually means the proof stays abstract. Add one concrete customer example after the first claim, then return to the ask.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 48,
+          "assessmentCacheAgeMs": 50,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -5086,13 +5069,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Treat salience as the working test because losing people after the first minute usually means the proof stays abstract. Add one concrete customer example after the first claim, then return to the ask.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 67,
-          "timeToFirstVisibleTokenMs": 67
+          "timeToCompleteReplyMs": 70,
+          "timeToFirstVisibleTokenMs": 70
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5229,7 +5212,7 @@
       "reply": "Mechanically, it has board ingredients; I would not yet call it executive in the room. The close recaps instead of asking for a decision, so rehearse the final sentence as the decision you need.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 53,
+          "assessmentCacheAgeMs": 61,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -5248,13 +5231,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Mechanically, it has board ingredients; I would not yet call it executive in the room. The close recaps instead of asking for a decision, so rehearse the final sentence as the decision you need.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 71,
-          "timeToFirstVisibleTokenMs": 71
+          "timeToCompleteReplyMs": 80,
+          "timeToFirstVisibleTokenMs": 80
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5390,7 +5373,7 @@
       "reply": "I would call it an overexplaining hypothesis, not a label. The observable signal is three reasons before the recommendation, so cap the next answer at recommendation plus one reason.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 43,
+          "assessmentCacheAgeMs": 75,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -5409,13 +5392,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I would call it an overexplaining hypothesis, not a label. The observable signal is three reasons before the recommendation, so cap the next answer at recommendation plus one reason.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 63,
-          "timeToFirstVisibleTokenMs": 63
+          "timeToCompleteReplyMs": 95,
+          "timeToFirstVisibleTokenMs": 95
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5551,7 +5534,7 @@
       "reply": "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement. Test disagreement in sentence one and tell me whether that feels accurate.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 49,
+          "assessmentCacheAgeMs": 84,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -5570,13 +5553,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement. Test disagreement in sentence one and tell me whether that feels accurate.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 67,
-          "timeToFirstVisibleTokenMs": 67
+          "timeToCompleteReplyMs": 103,
+          "timeToFirstVisibleTokenMs": 103
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5696,24 +5679,24 @@
           }
         ],
         "checkFailures": [],
-        "diagnosticIQ": 19,
-        "dialogueFeel": 9,
-        "eqAttunement": 13,
+        "diagnosticIQ": 20,
+        "dialogueFeel": 13,
+        "eqAttunement": 14,
         "failureReasons": [],
         "interventionQuality": 15,
-        "overall": 72,
-        "personalMemory": 16,
-        "rawOverall": 72,
+        "overall": 74,
+        "personalMemory": 12,
+        "rawOverall": 74,
         "similarity": {
-          "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.127
+          "badAnswerExample": 0.057,
+          "excellentAnswerExample": 0.35
         },
         "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "I do not have enough evidence for an overall authoritative communication verdict yet. The signal I can use is hypothesis: Filler Words appears to be the highest-leverage focus because it keeps showing up in the rolling baseline; keep checking against future reps.; Filler Words; Established read across 12 signals; basis: it keeps showing up in the rolling baseline; Review transfer. What is still missing: I still need repeated evidence across more than one clean rep before calling the user close overall. Proof test \u2014 Try this next: Run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
+      "reply": "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 126,
+          "assessmentCacheAgeMs": 98,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -5728,17 +5711,17 @@
           "userTurn": "Do I lack conviction?"
         },
         "fallback": {
-          "qualityGateAcceptedFallback": true,
+          "qualityGateAcceptedFallback": false,
           "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "I do not have enough evidence for an overall authoritative communication verdict yet. The signal I can use is hypothesis: Filler Words appears to be the highest-leverage focus because it keeps showing up in the rolling baseline; keep checking against future reps.; Filler Words; Established read across 12 signals; basis: it keeps showing up in the rolling baseline; Review transfer. What is still missing: I still need repeated evidence across more than one clean rep before calling the user close overall. Proof test \u2014 Try this next: Run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
-        "gitCommit": "a169ff3a",
+        "finalReply": "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb.",
+        "gitCommit": "83fdc331",
         "issues": [
-          "semantic:unsupportedClosenessClaim"
+          "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 145,
-          "timeToFirstVisibleTokenMs": 19
+          "timeToCompleteReplyMs": 120,
+          "timeToFirstVisibleTokenMs": 22
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5764,21 +5747,22 @@
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
-          "targetCoachReply": "There is not enough evidence to call this lack of conviction overall. The latest rep and pace estimate only support a mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb."
+          "targetCoachReply": "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb."
         },
         "provider": {
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
           "tierRequested": "claudeReasoning"
         },
-        "rawReply": "There is not enough evidence to call this lack of conviction overall. The latest rep and pace estimate only support a mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb.",
+        "rawReply": "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb.",
         "reasoning": {
           "qualityGateEvents": [
-            "rejected:semantic:missingCaseAnchor",
-            "failed:contentRejected"
+            "passed"
           ],
-          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
-          "semanticGateOutcome": "failed:unsupportedClosenessClaim",
-          "visionPassesProductionFloor": false,
-          "visionScore": 44
+          "qualityGateOutcome": "passed",
+          "semanticGateOutcome": "passed",
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
         },
         "retrieval": {
           "activeLever": "fillerReduction",
@@ -5873,7 +5857,7 @@
       "reply": "Trust that signal. On the latest rep, keep the structure but replace the most polished sentence with the phrase you would actually say in the room, because that is what makes it sound like you. Record once and check how it feels against the cleaner version.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 52,
+          "assessmentCacheAgeMs": 80,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -5892,13 +5876,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Trust that signal. On the latest rep, keep the structure but replace the most polished sentence with the phrase you would actually say in the room, because that is what makes it sound like you. Record once and check how it feels against the cleaner version.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 71,
-          "timeToFirstVisibleTokenMs": 71
+          "timeToCompleteReplyMs": 103,
+          "timeToFirstVisibleTokenMs": 103
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6039,7 +6023,7 @@
       "reply": "Yes, it could, but that is a bounded structure read, not a personality verdict. The latest rep and pace estimate only support a mechanics signal: answer-after-setup; the communication goal is not proven under pressure yet. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 65,
+          "assessmentCacheAgeMs": 75,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -6058,13 +6042,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Yes, it could, but that is a bounded structure read, not a personality verdict. The latest rep and pace estimate only support a mechanics signal: answer-after-setup; the communication goal is not proven under pressure yet. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 83,
-          "timeToFirstVisibleTokenMs": 17
+          "timeToCompleteReplyMs": 93,
+          "timeToFirstVisibleTokenMs": 18
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6200,7 +6184,7 @@
       "reply": "I cannot prove timid from text alone. What I can see is indirectness: the recommendation is softened before it arrives. Test a direct recommendation first; audio would be needed for a tone verdict.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 72,
+          "assessmentCacheAgeMs": 59,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -6219,13 +6203,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I cannot prove timid from text alone. What I can see is indirectness: the recommendation is softened before it arrives. Test a direct recommendation first; audio would be needed for a tone verdict.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 91,
-          "timeToFirstVisibleTokenMs": 91
+          "timeToCompleteReplyMs": 78,
+          "timeToFirstVisibleTokenMs": 78
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6362,7 +6346,7 @@
       "reply": "The pressure break is sentence one. Normal reps are clean, but under the timer the opener gets swallowed and fillers rise, so repeat the same prompt under a timer and protect only the first sentence.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 79,
+          "assessmentCacheAgeMs": 50,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -6381,13 +6365,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The pressure break is sentence one. Normal reps are clean, but under the timer the opener gets swallowed and fillers rise, so repeat the same prompt under a timer and protect only the first sentence.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 109,
-          "timeToFirstVisibleTokenMs": 109
+          "timeToCompleteReplyMs": 52,
+          "timeToFirstVisibleTokenMs": 52
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6528,7 +6512,7 @@
       "reply": "Good correction. On the latest rep, if like was doing semantic comparison work, I should not count it as filler, because that would punish valid speech. Keep the comparison; mark only empty pause-fillers before the next word.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 81,
+          "assessmentCacheAgeMs": 59,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -6547,13 +6531,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Good correction. On the latest rep, if like was doing semantic comparison work, I should not count it as filler, because that would punish valid speech. Keep the comparison; mark only empty pause-fillers before the next word.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 118,
-          "timeToFirstVisibleTokenMs": 118
+          "timeToCompleteReplyMs": 78,
+          "timeToFirstVisibleTokenMs": 78
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6689,7 +6673,7 @@
       "reply": "Fair boundary. Prompt echo is not the same as filler, so I would not count the repeated prompt phrase. Judge only the words you added while searching for the next thought.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 67,
+          "assessmentCacheAgeMs": 70,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -6708,7 +6692,7 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair boundary. Prompt echo is not the same as filler, so I would not count the repeated prompt phrase. Judge only the words you added while searching for the next thought.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
@@ -6854,7 +6838,7 @@
       "reply": "I cannot quote that unless the transcript gives me the exact words. The safe read is non-quote evidence: the close softened after the recommendation, so rerun the final sentence as the ask.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 56,
+          "assessmentCacheAgeMs": 76,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -6873,13 +6857,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I cannot quote that unless the transcript gives me the exact words. The safe read is non-quote evidence: the close softened after the recommendation, so rerun the final sentence as the ask.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 82,
-          "timeToFirstVisibleTokenMs": 82
+          "timeToCompleteReplyMs": 93,
+          "timeToFirstVisibleTokenMs": 93
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -7019,7 +7003,7 @@
       "reply": "Correction: I should not have put that in quotes unless it was exact. I retract the quote. The supported read is only that your recommendation came late, so use that safe read, not the unverified wording.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 59,
+          "assessmentCacheAgeMs": 68,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -7038,13 +7022,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Correction: I should not have put that in quotes unless it was exact. I retract the quote. The supported read is only that your recommendation came late, so use that safe read, not the unverified wording.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 85,
-          "timeToFirstVisibleTokenMs": 85
+          "timeToCompleteReplyMs": 89,
+          "timeToFirstVisibleTokenMs": 89
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -7181,7 +7165,7 @@
       "reply": "On the latest rep the close is the signal, so fix the close: make the final sentence the ask, then stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 48,
+          "assessmentCacheAgeMs": 47,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -7200,7 +7184,7 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "On the latest rep the close is the signal, so fix the close: make the final sentence the ask, then stop.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
@@ -7347,7 +7331,7 @@
       "reply": "Fair. I am stopping that thread. Your ask is about the close, so the move is final sentence as the ask, not another filler drill.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 43,
+          "assessmentCacheAgeMs": 42,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -7366,13 +7350,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair. I am stopping that thread. Your ask is about the close, so the move is final sentence as the ask, not another filler drill.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 61,
-          "timeToFirstVisibleTokenMs": 61
+          "timeToCompleteReplyMs": 59,
+          "timeToFirstVisibleTokenMs": 59
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -7508,7 +7492,7 @@
       "reply": "Both can be true. The score says mechanics improved; your check-in says the rep felt harder. Change the next test because effort matters too: same prompt, one fewer condition, and check whether effort drops without the score falling.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 54,
+          "assessmentCacheAgeMs": 55,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -7527,7 +7511,7 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Both can be true. The score says mechanics improved; your check-in says the rep felt harder. Change the next test because effort matters too: same prompt, one fewer condition, and check whether effort drops without the score falling.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
@@ -7674,7 +7658,7 @@
       "reply": "Treat that as useful self-report, not proof. On the latest rep the reusable move is verdict first plus one example, so keep the structure for interviews and record one rep that captures which question made it land.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 52,
+          "assessmentCacheAgeMs": 62,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -7693,13 +7677,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Treat that as useful self-report, not proof. On the latest rep the reusable move is verdict first plus one example, so keep the structure for interviews and record one rep that captures which question made it land.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 71,
-          "timeToFirstVisibleTokenMs": 71
+          "timeToCompleteReplyMs": 80,
+          "timeToFirstVisibleTokenMs": 80
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -7834,7 +7818,7 @@
       "reply": "On the latest rep the close is the signal, so in the next rep make the final sentence the ask, then stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 39,
+          "assessmentCacheAgeMs": 40,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -7853,13 +7837,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "On the latest rep the close is the signal, so in the next rep make the final sentence the ask, then stop.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 57,
-          "timeToFirstVisibleTokenMs": 57
+          "timeToCompleteReplyMs": 58,
+          "timeToFirstVisibleTokenMs": 58
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -7999,7 +7983,7 @@
       "reply": "I can coach the latest rep: the close is the usable signal, so make the final sentence the ask, then stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 44,
+          "assessmentCacheAgeMs": 51,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -8018,13 +8002,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I can coach the latest rep: the close is the usable signal, so make the final sentence the ask, then stop.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 61,
-          "timeToFirstVisibleTokenMs": 61
+          "timeToCompleteReplyMs": 68,
+          "timeToFirstVisibleTokenMs": 68
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -8166,7 +8150,7 @@
       "reply": "Fair push. That sounded like a generic AI wrapper, not a coach read. One safe signal is that your recommendation arrived late, so put the recommendation in sentence one on the next rep, give one reason, then stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 74,
+          "assessmentCacheAgeMs": 76,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -8185,13 +8169,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push. That sounded like a generic AI wrapper, not a coach read. One safe signal is that your recommendation arrived late, so put the recommendation in sentence one on the next rep, give one reason, then stop.",
-        "gitCommit": "a169ff3a",
+        "gitCommit": "83fdc331",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 92,
-          "timeToFirstVisibleTokenMs": 18
+          "timeToCompleteReplyMs": 95,
+          "timeToFirstVisibleTokenMs": 19
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -8259,7 +8243,7 @@
   ],
   "schemaVersion": "coach-arena-report-v1",
   "summary": {
-    "average": 74.5,
+    "average": 74.54,
     "coverageFailures": [],
     "evidenceClaim": "localEvaluationOnly",
     "failureCount": 11,
@@ -8267,7 +8251,7 @@
     "passes": true,
     "placeholderLeaks": 0,
     "productionEvidenceFailures": [
-      "source Swift app-path readiness warnings: appPathFloorFailures,targetReplyMismatch,semanticGateFailures,visionFloorFailures",
+      "source Swift app-path readiness warnings: appPathFloorFailures,targetReplyMismatch",
       "source Swift app-path report did not pass its app-path floor"
     ],
     "productionEvidencePasses": false,
@@ -8526,7 +8510,7 @@
     "traceQualityFailures": [],
     "traceQualityPasses": true,
     "typeAverages": {
-      "deepAssessment": 77.67,
+      "deepAssessment": 78.0,
       "groundedRead": 76.5,
       "quickMove": 70.18,
       "trustRepair": 76.56

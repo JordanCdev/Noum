@@ -2855,7 +2855,7 @@ struct CoachProvisionalReadEligibilityTests {
         }
         #expect(text.contains("1/10") == false)
         #expect(text.contains("0 fillers") == false)
-        #expect(text.contains("The signal I can use is Pressure Drill."))
+        #expect(text.contains("The signal I can use is Pressure Drill.") == false)
         #expect(text.contains("Try this next"))
     }
 }

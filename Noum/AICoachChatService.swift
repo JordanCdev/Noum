@@ -519,10 +519,17 @@ enum CoachReplyTextSanitizer {
         #"(?i)\bthere\s+(?:was|were)\s+\d+\s+fillers?\s*,?\s+so\s+"#
     ]
 
+    private nonisolated static let reportVoiceModeOnlyEvidencePatterns: [String] = [
+        #"(?i)(^|[.!?]\s+)the signal i can use is\s+(?:timed(?:\s+practice)?|practice|pressure(?:\s+drill)?)\s*[.!?]?\s*"#
+    ]
+
     nonisolated static func strippingReportVoiceResidue(from text: String) -> String {
         var value = text
         for pattern in reportVoiceBridgeResiduePatterns {
             value = replace(pattern: pattern, in: value, template: "")
+        }
+        for pattern in reportVoiceModeOnlyEvidencePatterns {
+            value = replace(pattern: pattern, in: value, template: "$1")
         }
         for pattern in reportVoiceResiduePatterns {
             // Also swallow an immediately-following connective + separator
@@ -3717,9 +3724,10 @@ actor AICoachChatService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? ""
         let containsCompactMetricCluster = replyContainsCompactMetricCluster(normalized.lowercased())
+        let containsModeOnlyEvidenceSentence = replyContainsModeOnlyEvidenceSentence(normalized.lowercased())
         let sensitive = turnDepth == .trustRepair
             || turnIsSensitiveNonReportTurn(lowerTurn, turnDepth: turnDepth)
-        guard (sensitive || containsCompactMetricCluster),
+        guard (sensitive || containsCompactMetricCluster || containsModeOnlyEvidenceSentence),
               !turnExplicitlyRequestsMetrics(lowerTurn) else {
             return normalized
         }
@@ -3755,6 +3763,11 @@ actor AICoachChatService {
     private nonisolated static func replyContainsCompactMetricCluster(_ lower: String) -> Bool {
         let compactMetricCluster = #"\b\d(?:\.\d)?\s*/\s*10\s*,\s*\d+\s+fillers?\s*,\s*\d+\s*s(?:ec(?:ond)?s?)?\b"#
         return lower.range(of: compactMetricCluster, options: .regularExpression) != nil
+    }
+
+    private nonisolated static func replyContainsModeOnlyEvidenceSentence(_ lower: String) -> Bool {
+        let modeOnlySignal = #"(^|[.!?]\s+)the signal i can use is\s+(?:timed(?:\s+practice)?|practice|pressure(?:\s+drill)?)\s*[.!?]?"#
+        return lower.range(of: modeOnlySignal, options: .regularExpression) != nil
     }
 
     private nonisolated static func replyContainsRawReportVoiceMetrics(_ lower: String) -> Bool {

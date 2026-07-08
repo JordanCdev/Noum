@@ -1,9 +1,9 @@
 # Coach Arena Latest Report
 
-- Generated: `2026-07-08T14:03:33+00:00`
+- Generated: `2026-07-08T14:19:03+00:00`
 - Candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Fixtures: `50`
-- Average: `74.5/100`
+- Average: `74.54/100`
 - Passes score/coverage thresholds: `True`
 - Real-pipeline evidence passes: `False`
 - Evidence claim: `localEvaluationOnly`
@@ -12,7 +12,7 @@
 
 ## Type Averages
 
-- `deepAssessment`: `77.67/100`
+- `deepAssessment`: `78.0/100`
 - `groundedRead`: `76.5/100`
 - `quickMove`: `70.18/100`
 - `trustRepair`: `76.56/100`
@@ -29,7 +29,7 @@ VISION production readiness 18/100; local target-shape 86/100; claim localEvalua
 
 ## Real-Pipeline Evidence
 
-- `source Swift app-path readiness warnings: appPathFloorFailures,targetReplyMismatch,semanticGateFailures,visionFloorFailures`
+- `source Swift app-path readiness warnings: appPathFloorFailures,targetReplyMismatch`
 - `source Swift app-path report did not pass its app-path floor`
 
 ## Trace Audit
@@ -54,15 +54,15 @@ VISION production readiness 18/100; local target-shape 86/100; claim localEvalua
 ## Previous Run
 
 - Status: `compared`
-- Previous generated: `2026-07-08T14:00:58+00:00`
+- Previous generated: `2026-07-08T14:03:33+00:00`
 - Previous candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Candidate changed: `False`
 - Fixture count changed: `False`
-- Average delta: `0.0`
+- Average delta: `0.04`
 - Failure count delta: `0`
 - Placeholder leak delta: `0`
 - Pass state changed: `False`
-- Type average deltas: `deepAssessment` `0.0`, `groundedRead` `0.0`, `quickMove` `0.0`, `trustRepair` `0.0`
+- Type average deltas: `deepAssessment` `0.33`, `groundedRead` `0.0`, `quickMove` `0.0`, `trustRepair` `0.0`
 - Cleared failures: `none`
 - New failures: `none`
 
@@ -72,9 +72,9 @@ VISION production readiness 18/100; local target-shape 86/100; claim localEvalua
 - Source schema: `coach-chat-conversation-app-path-eval-v1`
 - Source surface: `text`
 - Source app-path floor: `False`
-- Source app-path floor failures: `2`
-- Source target-reply mismatches: `2`
-- Source app-path failure samples: `2` of `2`
+- Source app-path floor failures: `1`
+- Source target-reply mismatches: `1`
+- Source app-path failure samples: `1` of `1`
 - Coverage passes: `True`
 - Requested fixtures: `50`
 - Matched fixtures: `50`
@@ -83,8 +83,7 @@ VISION production readiness 18/100; local target-shape 86/100; claim localEvalua
 
 ### Source App-Path Failure Samples
 
-- `filler-pressure-prescription` / `not-easy-empathy-conversation` turn `1`: `appPathFloor, qualityGate, targetReplyMismatch`; semantic `passed`; quality `fallback:typedAssessment`
-- `lack-conviction-035` / `arena-lack-conviction-035-app-path-conversation` turn `0`: `appPathFloor, qualityGate, semanticGate, targetReplyMismatch, visionFloor`; semantic `failed:unsupportedClosenessClaim`; quality `fallback:deterministicAssessmentAfterContentRejected`
+- `filler-pressure-prescription` / `not-easy-empathy-conversation` turn `1`: `appPathFloor, qualityGate, targetReplyMismatch`; semantic `passed`; quality `fallback:deterministicAssessmentAfterContentRejected`
 
 ## Worst Fixtures
 

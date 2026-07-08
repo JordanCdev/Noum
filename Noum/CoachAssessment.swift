@@ -119,12 +119,36 @@ struct CoachAssessment: Codable, Equatable {
             "trust repair signal:"
         ]
         let lowered = trimmed.lowercased()
-        for prefix in prefixes where lowered.hasPrefix(prefix) {
+        let candidate: String
+        if let prefix = prefixes.first(where: { lowered.hasPrefix($0) }) {
             let value = trimmed.dropFirst(prefix.count)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return value.isEmpty ? trimmed : String(value)
+            candidate = value.isEmpty ? trimmed : String(value)
+        } else {
+            candidate = trimmed
         }
-        return trimmed
+        return compactEvidenceIsModeOnly(candidate) ? nil : candidate
+    }
+
+    private static func compactEvidenceIsModeOnly(_ value: String) -> Bool {
+        let punctuation = CharacterSet(charactersIn: " .,:;")
+        let normalized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines.union(punctuation))
+            .lowercased()
+        let nucleus = normalized
+            .replacingOccurrences(
+                of: #"^(?:the\s+)?(?:last|latest)\s+rep\s+"#,
+                with: "",
+                options: .regularExpression
+            )
+            .trimmingCharacters(in: .whitespacesAndNewlines.union(punctuation))
+        return [
+            "timed",
+            "timed practice",
+            "practice",
+            "pressure",
+            "pressure drill"
+        ].contains(nucleus)
     }
 
     private static func missingRequirementPhrase(_ raw: String) -> String {
