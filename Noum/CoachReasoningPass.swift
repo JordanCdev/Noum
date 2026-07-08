@@ -784,8 +784,7 @@ enum CoachReasoningPass {
         }
         if containsAny(lower, [
             "presentation", "flat", "energy", "emphasis", "nerves",
-            "nervous", "confidence", "confident", "quickly", "quick",
-            "panic", "what next", "one move", "coach this"
+            "nervous", "confidence", "confident", "panic"
         ]) {
             return "controlled_pacing"
         }
