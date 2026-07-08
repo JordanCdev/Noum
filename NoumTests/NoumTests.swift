@@ -48805,6 +48805,9 @@ struct RoleplayEngineTests {
         #expect(RoleplayPressureLevel.realistic < RoleplayPressureLevel.hostile)
         #expect(RoleplayPressureLevel.hostile.next == nil)
         #expect(RoleplayPressureLevel.easy.previous == nil)
+    }
+}
+
 // MARK: - Transparent memory & trajectory (TrajectorySummaryBuilder)
 
 @Suite("TrajectorySummaryBuilderTests")
