@@ -937,6 +937,54 @@ struct CoachReasoningPassTests {
         #expect(proofs[5].lowercased().contains("maybe") || proofs[5].lowercased().contains("hedge"))
     }
 
+    @Test func proofTestsStayCaseSpecificAcrossRepresentativeArenaTurns() {
+        let turns: [(CoachTurnDepth, String)] = [
+            (.deepAssessment, "How far off am I from sounding authoritative overall?"),
+            (.trustRepair, "That was too much writing and it missed the point."),
+            (.groundedRead, "Can you give me examples from my sessions?"),
+            (.quickMove, "I have an interview tomorrow. What should I practice?"),
+            (.quickMove, "My leadership update is tomorrow."),
+            (.quickMove, "I have a difficult conversation tonight and need to disagree."),
+            (.quickMove, "I ramble when introducing myself at networking events."),
+            (.quickMove, "My sales pitch loses the customer."),
+            (.quickMove, "I panic and blank when I get interrupted."),
+            (.groundedRead, "You counted 'like' but I meant it as a comparison."),
+            (.quickMove, "My filler words spike under pressure."),
+            (.quickMove, "I overexplain before I get to the ask."),
+            (.groundedRead, "The room seemed engaged. Did the drill cause that?")
+        ]
+        var recentProofTests: [String] = []
+        var proofs: [String] = []
+
+        for (depth, question) in turns {
+            let assessment = CoachReasoningPass.assess(
+                turnDepth: depth,
+                userQuestion: question,
+                trajectory: Self.singleRepTrajectory,
+                rubric: ActiveGoalRubric(
+                    rubric: GoalRubricStore.rubric(for: .authoritative),
+                    voice: .authoritative
+                ),
+                surface: .text,
+                recentProofTests: recentProofTests
+            )
+            proofs.append(assessment.nextProofTest)
+            recentProofTests = Array(([assessment.nextProofTest] + recentProofTests).prefix(6))
+        }
+
+        let proofKeys = proofs.map { CoachReplyPipeline.proofTestHash(for: $0) }
+        let counts = Dictionary(grouping: proofKeys, by: { $0 }).mapValues(\.count)
+        let lowerProofs = proofs.map { $0.lowercased() }
+
+        #expect(Set(proofKeys).count >= 11)
+        #expect((counts.values.max() ?? 0) <= 2)
+        #expect(lowerProofs.contains { $0.contains("stakes-style pressure proof") })
+        #expect(lowerProofs.contains { $0.contains("verified session example") })
+        #expect(lowerProofs.contains { $0.contains("field note") })
+        #expect(lowerProofs.contains { $0.contains("memorable detail") })
+        #expect(lowerProofs.contains { $0.contains("semantic words") })
+    }
+
     @Test func quickMoveVerdictVariesWithUserNamedLever() {
         let pacing = CoachReasoningPass.assess(
             turnDepth: .quickMove,

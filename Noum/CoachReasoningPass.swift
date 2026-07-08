@@ -61,11 +61,15 @@ enum CoachReasoningPass {
         let proofTest = isMemoryHandoff
             ? memoryHandoffProofTest(previousCoachReply: previousCoachReply)
             : nextProofTest(
+                userQuestion: userQuestion,
+                turnDepth: turnDepth,
+                trajectory: trajectory,
                 from: scores,
                 rubric: rubric.rubric,
                 surface: surface,
                 preferredDimensionID: preferredDimensionID,
                 preferredProofTest: preferredProofTest,
+                repairFocus: repairFocus,
                 recentProofTests: recentProofTests
             )
 
@@ -369,11 +373,15 @@ enum CoachReasoningPass {
     }
 
     private static func nextProofTest(
+        userQuestion: String,
+        turnDepth: CoachTurnDepth,
+        trajectory: UserTrajectorySnapshot,
         from scores: [RubricScore],
         rubric: GoalRubric,
         surface: CoachReplySurface,
         preferredDimensionID: String?,
         preferredProofTest: String?,
+        repairFocus: String?,
         recentProofTests: [String]
     ) -> String {
         let sortedIDs = scores.sorted {
@@ -392,6 +400,18 @@ enum CoachReasoningPass {
            !recentKeys.contains(proofTestKey(preferredProofTest)) {
             return surface == .live ? liveVersion(of: preferredProofTest) : preferredProofTest
         }
+        for candidate in contextualProofTestCandidates(
+            userQuestion: userQuestion,
+            turnDepth: turnDepth,
+            trajectory: trajectory,
+            preferredDimensionID: preferredDimensionID,
+            repairFocus: repairFocus
+        ) {
+            let rendered = surface == .live ? liveVersion(of: candidate) : candidate
+            if !recentKeys.contains(proofTestKey(rendered)) {
+                return rendered
+            }
+        }
         for id in orderedIDs {
             guard let dimension = rubric.dimensions.first(where: { $0.id == id }) else { continue }
             for candidate in proofTestCandidates(for: dimension, surface: surface) where !recentKeys.contains(proofTestKey(candidate)) {
@@ -401,6 +421,124 @@ enum CoachReasoningPass {
         let fallbackID = orderedIDs.first ?? rubric.dimensions[0].id
         let fallbackDimension = rubric.dimensions.first { $0.id == fallbackID } ?? rubric.dimensions[0]
         return proofTestCandidates(for: fallbackDimension, surface: surface).first ?? fallbackDimension.proofTest
+    }
+
+    private static func contextualProofTestCandidates(
+        userQuestion: String,
+        turnDepth: CoachTurnDepth,
+        trajectory: UserTrajectorySnapshot,
+        preferredDimensionID: String?,
+        repairFocus: String?
+    ) -> [String] {
+        let lower = userQuestion.lowercased()
+        var candidates: [String] = []
+
+        if turnDepth == .trustRepair {
+            if let repairFocus,
+               !repairFocus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                candidates.append("Repair this turn first: name that \(repairFocus), then give one signal and one move.")
+            }
+            if containsAny(lower, ["not informative", "not helpful", "missed the point", "doesn't answer", "does not answer"]) {
+                candidates.append("Answer the actual question in sentence one, then give one grounded next move.")
+            }
+            if containsAny(lower, ["too much writing", "too long", "less writing", "shorter", "get to the point"]) {
+                candidates.append("Rewrite the answer in two sentences: the read first, the move second.")
+            }
+            if containsAny(lower, ["repeating yourself", "same thing again", "said that already", "already said that"]) {
+                candidates.append("Advance the read: keep the prior target, but change the proof to the next observable sentence.")
+            }
+            if containsAny(lower, ["it's not easy", "its not easy", "not that easy", "harder than that", "easier said"]) {
+                candidates.append("Make the pressure visible: run the same answer once with a timer and name where it breaks.")
+            }
+        }
+
+        if containsAny(lower, ["give me examples", "example of me", "examples from", "quote what", "quote me"]) {
+            candidates.append("Use one verified session example, name the behavior it shows, then run that behavior once cleaner.")
+        }
+        if containsAny(lower, [
+            "how far", "ready", "readiness", "overall", "where do i stand",
+            "authoritative", "authority", "am i there"
+        ]) {
+            candidates.append("Run one stakes-style pressure proof: verdict first, one reason, clean stop, then compare it with a normal rep.")
+        }
+        if containsAny(lower, ["outcome", "cause", "caused", "landed better", "room seemed", "audience"]) {
+            candidates.append("Log the outcome as a field note, then repeat one pressure rep and check the same observable target.")
+        }
+        if containsAny(lower, ["interview", "answer questions", "tell me about yourself"]) {
+            candidates.append("Answer one interview prompt with the recommendation first, one example, then a clean stop.")
+        }
+        if containsAny(lower, ["leadership", "board", "executive", "update tomorrow", "status update"]) {
+            candidates.append("Give the update as decision, one business reason, and the ask in under 45 seconds.")
+        }
+        if containsAny(lower, ["disagree", "disagreement", "conflict", "difficult conversation", "defensive"]) {
+            candidates.append("Say the disagreement in sentence one, add one calm reason, then stop before reassuring.")
+        }
+        if containsAny(lower, ["networking", "introducing myself", "intro"]) {
+            candidates.append("Run a 30-second intro: role, one memorable detail, then one handoff question.")
+        }
+        if containsAny(lower, ["sales", "pitch", "customer", "client concern"]) {
+            candidates.append("Give the customer problem, one proof point, and the ask without adding a second example.")
+        }
+        if containsAny(lower, ["presentation", "flat", "energy", "emphasis", "nerves", "nervous"]) {
+            candidates.append("Open the presentation answer with the point, hold one beat, then give one proof.")
+        }
+        if containsAny(lower, ["panic", "blank", "freeze", "barge", "interrupt", "under fire"]) {
+            candidates.append("Run the same prompt under a timer and protect only sentence one from setup.")
+        }
+        if containsAny(lower, ["semantic", "like as a comparison", "meant it as a comparison", "prompt echo"]) {
+            candidates.append("Replay the sentence and keep the word only if it adds meaning; cut the hedge if it buys time.")
+        }
+        if containsAny(lower, ["filler", "fillers", " um", " uh", " ah", "say like"]) {
+            candidates.append("Run one answer and separate semantic words from filler words before cutting anything.")
+        }
+        if containsAny(lower, ["conviction", "convincing", "timid", "timidity", "weak"]) {
+            candidates.append("Make one plain recommendation with no maybe/probably, then stop before explaining twice.")
+        }
+        if containsAny(lower, ["ramble", "overexplain", "over-explain", "too much context"]) {
+            candidates.append("Run one answer with verdict, one reason, and a hard stop before the second example.")
+        }
+
+        if let pack = trajectory.latestRepEvidencePack {
+            let mode = shortModeName(pack.mode)
+            switch preferredDimensionID {
+            case "controlled_pacing":
+                if let wpm = pack.wordsPerMinute, wpm > 175 {
+                    candidates.append("Repeat the latest \(mode) rep one beat slower: verdict, beat, one reason, stop.")
+                } else {
+                    candidates.append("Repeat the latest \(mode) rep with one silent beat after sentence one.")
+                }
+            case "hedge_control":
+                if pack.fillerCount > 0 {
+                    candidates.append("Replay the latest \(mode) rep and replace the first filler or hedge with the direct verb.")
+                } else {
+                    candidates.append("Replay the latest \(mode) rep and remove one softening word before the recommendation.")
+                }
+            case "clean_close":
+                candidates.append("Replay the latest \(mode) rep and make the final sentence the ask, then stop.")
+            case "verdict_first":
+                candidates.append("Replay the latest \(mode) rep with the answer in sentence one before any setup.")
+            case "pressure_stability":
+                candidates.append("Run the latest \(mode) topic under a 60-second pressure timer and keep sentence one intact.")
+            case "salience":
+                candidates.append("Replay the latest \(mode) rep with one concrete detail after the verdict, then return to the ask.")
+            default:
+                break
+            }
+        }
+
+        return unique(candidates)
+    }
+
+    private static func shortModeName(_ mode: String) -> String {
+        let trimmed = mode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "practice" }
+        let lower = trimmed.lowercased()
+        if lower.contains("timed") { return "Timed" }
+        if lower.contains("pressure") || lower.contains("sudden") { return "pressure" }
+        if lower.contains("ah") { return "Ah-Counter" }
+        if lower.contains("im") || lower.contains("interaction") { return "conversation" }
+        if lower.contains("free") { return "free practice" }
+        return trimmed
     }
 
     private static func proofTestCandidates(
