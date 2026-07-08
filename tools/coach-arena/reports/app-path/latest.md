@@ -1,9 +1,9 @@
 # Coach Arena Latest Report
 
-- Generated: `2026-07-05T23:08:30+00:00`
+- Generated: `2026-07-07T23:56:34+00:00`
 - Candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Fixtures: `50`
-- Average: `72.42/100`
+- Average: `73.84/100`
 - Passes score/coverage thresholds: `True`
 - Production evidence passes: `False`
 - Evidence claim: `localEvaluationOnly`
@@ -13,8 +13,8 @@
 ## Type Averages
 
 - `deepAssessment`: `76.0/100`
-- `groundedRead`: `72.22/100`
-- `quickMove`: `69.12/100`
+- `groundedRead`: `76.5/100`
+- `quickMove`: `68.76/100`
 - `trustRepair`: `76.67/100`
 
 ## Production Evidence
@@ -44,16 +44,16 @@
 ## Previous Run
 
 - Status: `compared`
-- Previous generated: `2026-07-05T23:07:51+00:00`
+- Previous generated: `2026-07-05T23:08:30+00:00`
 - Previous candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Candidate changed: `False`
 - Fixture count changed: `False`
-- Average delta: `0.0`
-- Failure count delta: `0`
+- Average delta: `1.42`
+- Failure count delta: `-1`
 - Placeholder leak delta: `0`
 - Pass state changed: `False`
-- Type average deltas: `deepAssessment` `0.0`, `groundedRead` `0.0`, `quickMove` `0.0`, `trustRepair` `0.0`
-- Cleared failures: `none`
+- Type average deltas: `deepAssessment` `0.0`, `groundedRead` `4.28`, `quickMove` `-0.36`, `trustRepair` `0.0`
+- Cleared failures: `semantic-filler-use-040`
 - New failures: `none`
 
 ## Coverage
@@ -70,13 +70,13 @@
 
 ## Worst Fixtures
 
-- `outcome-not-causation-027` `groundedRead`: `50/100` - reply does not match expected coach move
-- `emotional-disconnection-036` `groundedRead`: `50/100` - fixture disqualifier triggered: no reflection check; fixture-specific disqualifier triggered; reply does not match expected coach move
-- `semantic-filler-use-040` `groundedRead`: `50/100` - fixture disqualifier triggered: no adjusted rule; fixture-specific disqualifier triggered; low-EQ reply: emotional signal is not acknowledged; reply does not match expected coach move
-- `live-latency-short-044` `quickMove`: `50/100` - missing evidence anchor; reply does not match expected coach move
-- `real-world-outcome-047` `groundedRead`: `50/100` - fixture disqualifier triggered: no reusable move; fixture-specific disqualifier triggered; reply does not match expected coach move
-- `grammar-leak-048` `quickMove`: `50/100` - missing evidence anchor; reply does not match expected coach move
-- `placeholder-leak-049` `quickMove`: `50/100` - missing evidence anchor; reply does not match expected coach move
+- `upcoming-conflict-028` `quickMove`: `50/100` - fixture disqualifier triggered: too broad; fixture-specific disqualifier triggered; missing evidence anchor; reply does not match expected coach move
+- `sales-pitch-031` `quickMove`: `50/100` - missing evidence anchor; reply does not match expected coach move
+- `placeholder-leak-049` `quickMove`: `50/100` - reply does not match expected coach move
 - `lack-conviction-035` `deepAssessment`: `59/100` - deep assessment lacks verdict/evidence calibration
+- `grammar-leak-048` `quickMove`: `60/100` - no local failure reason
 - `examples-from-sessions-010` `groundedRead`: `61/100` - no local failure reason
-- `upcoming-conflict-028` `quickMove`: `61/100` - no local failure reason
+- `networking-intro-029` `quickMove`: `63/100` - no local failure reason
+- `evasive-polished-037` `deepAssessment`: `63/100` - no local failure reason
+- `live-latency-short-044` `quickMove`: `63/100` - no local failure reason
+- `real-world-outcome-047` `groundedRead`: `67/100` - no local failure reason

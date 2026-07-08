@@ -33,22 +33,9 @@ Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## outcome-not-causation-027 (groundedRead)
 
-Score: `50/100`
+Score: `69/100`
 
 User: The room seemed engaged. Did the drill cause that?
-
-Failure reasons:
-- reply does not match expected coach move
-
-Suggested fix:
-
-Answer the requested move: Reject causal proof, name association, ask what to repeat.
-
-## upcoming-conflict-028 (quickMove)
-
-Score: `61/100`
-
-User: I have a difficult conversation tonight. What should I practice?
 
 Failure reasons:
 - No explicit reason; score below threshold.
@@ -56,6 +43,22 @@ Failure reasons:
 Suggested fix:
 
 Tighten diagnosis, cite one real signal, and prescribe one testable move.
+
+## upcoming-conflict-028 (quickMove)
+
+Score: `50/100`
+
+User: I have a difficult conversation tonight. What should I practice?
+
+Failure reasons:
+- fixture disqualifier triggered: too broad
+- fixture-specific disqualifier triggered
+- missing evidence anchor
+- reply does not match expected coach move
+
+Suggested fix:
+
+Answer the requested move: One rehearsal: boundary sentence, one reason, stop.
 
 ## networking-intro-029 (quickMove)
 
@@ -72,16 +75,17 @@ Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## sales-pitch-031 (quickMove)
 
-Score: `68/100`
+Score: `50/100`
 
 User: My sales pitch loses people after the first minute.
 
 Failure reasons:
-- No explicit reason; score below threshold.
+- missing evidence anchor
+- reply does not match expected coach move
 
 Suggested fix:
 
-Tighten diagnosis, cite one real signal, and prescribe one testable move.
+Answer the requested move: Add one concrete customer example after first claim, then return to ask.
 
 ## lack-conviction-035 (deepAssessment)
 
@@ -98,18 +102,16 @@ Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## emotional-disconnection-036 (groundedRead)
 
-Score: `50/100`
+Score: `69/100`
 
 User: It sounds correct but not like me. What do I change?
 
 Failure reasons:
-- fixture disqualifier triggered: no reflection check
-- fixture-specific disqualifier triggered
-- reply does not match expected coach move
+- No explicit reason; score below threshold.
 
 Suggested fix:
 
-Answer the requested move: Validate self-report, preserve structure, change one phrase to user-owned language.
+Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## evasive-polished-037 (deepAssessment)
 
@@ -124,64 +126,44 @@ Suggested fix:
 
 Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
-## semantic-filler-use-040 (groundedRead)
-
-Score: `50/100`
-
-User: You counted 'like' but I meant it as a comparison.
-
-Failure reasons:
-- fixture disqualifier triggered: no adjusted rule
-- fixture-specific disqualifier triggered
-- low-EQ reply: emotional signal is not acknowledged
-- reply does not match expected coach move
-
-Suggested fix:
-
-Start by naming the user's friction in human language, then give one changed coaching move.
-
 ## live-latency-short-044 (quickMove)
 
-Score: `50/100`
+Score: `63/100`
 
 User: Quickly, what do I do next?
 
 Failure reasons:
-- missing evidence anchor
-- reply does not match expected coach move
+- No explicit reason; score below threshold.
 
 Suggested fix:
 
-Answer the requested move: One short coach read and action, no essay.
+Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## real-world-outcome-047 (groundedRead)
 
-Score: `50/100`
+Score: `67/100`
 
 User: My interview answer landed better than practice. What do we learn?
 
 Failure reasons:
-- fixture disqualifier triggered: no reusable move
-- fixture-specific disqualifier triggered
-- reply does not match expected coach move
+- No explicit reason; score below threshold.
 
 Suggested fix:
 
-Answer the requested move: Name self-reported transfer, identify likely reusable move, no causal proof.
+Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## grammar-leak-048 (quickMove)
 
-Score: `50/100`
+Score: `60/100`
 
 User: What is the one move?
 
 Failure reasons:
-- missing evidence anchor
-- reply does not match expected coach move
+- No explicit reason; score below threshold.
 
 Suggested fix:
 
-Answer the requested move: No labels or JSON; one sentence move.
+Tighten diagnosis, cite one real signal, and prescribe one testable move.
 
 ## placeholder-leak-049 (quickMove)
 
@@ -190,7 +172,6 @@ Score: `50/100`
 User: Can you coach this?
 
 Failure reasons:
-- missing evidence anchor
 - reply does not match expected coach move
 
 Suggested fix:
