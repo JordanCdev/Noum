@@ -23,7 +23,7 @@ Xcode simulator test runs.
 | node validate | 0 err | 51 fixtures · 0 err · 0 warn | ✅ |
 | node arena unit tests | green | 58/58 | ✅ |
 | **NoumTests corpus suite (injection + real assertions)** | green | **70 / 70 pass · 0 fail** | ✅ |
-| Real traces prove pipeline | complete | 50/50 complete traces (retrieval, provider fallback, gates, latency, confidence, proof-dedup) | ✅ |
+| Real traces prove pipeline | complete | 50/50 complete traces (Swift path, retrieval, evidence-driven memory/confidence, **cache state cold→warm**, provider fallback, quality/semantic/reliability gates, final reply, latency, proof-dedup) | ✅ |
 | 10 end-to-end transcripts | yes | `ralph-transcripts-2026-07-08.md` (confidence now varies with evidence) | ✅ |
 
 ## What I actually found and did
