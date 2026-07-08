@@ -127,6 +127,54 @@ function pushFinding(findings, f) {
   findings.push(f);
 }
 
+const RAW_REPORT_SCORE = /\b(?:score|scored|hit)\s+(?:\d{2,3}|\d(?:\.\d)?(?:\s*\/\s*10)?)\b/;
+const RAW_REPORT_STAT_CLUSTER = /\b\d{2,3}\s*(?:\/|over)\s*\d{2,3}\s*s(?:ec(?:ond)?s?)?\s*(?:\/|with)\s*(?:only\s*)?\d+\s+fillers?\b/;
+const RAW_REPORT_FILLER_DURATION = /\b\d+\s+fillers?\s+(?:in|over|across)\s+\d{2,3}\s*(?:s|sec(?:ond)?s?)\b/;
+const RAW_REPORT_CLEAN_AT = /\b(?:clean|landed|held)\s+at\s+\d{2,3}\b/;
+
+function rawReportMetricMatch(raw, lower) {
+  return firstMatch(raw, RAW_REPORT_SCORE)
+    || firstMatch(raw, RAW_REPORT_STAT_CLUSTER)
+    || firstMatch(raw, RAW_REPORT_FILLER_DURATION)
+    || firstMatch(raw, RAW_REPORT_CLEAN_AT)
+    || (RAW_REPORT_SCORE.test(lower) ? 'score readout' : '')
+    || (RAW_REPORT_STAT_CLUSTER.test(lower) ? 'stat cluster' : '')
+    || (RAW_REPORT_FILLER_DURATION.test(lower) ? 'filler/duration cluster' : '')
+    || (RAW_REPORT_CLEAN_AT.test(lower) ? 'score adjective readout' : '');
+}
+
+function normalizedTurnText(text) {
+  return String(text || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function turnExplicitlyRequestsMetrics(fixture) {
+  const lower = String(fixture.userTurn || '').toLowerCase();
+  return /\b(score|rate|rating|number|numbers|metric|metrics|data|stats|statistics|filler rate|how many fillers|how many ums|how many uhs|what'?s my filler|what is my filler|how did i do|how'?d i do|how am i doing|am i improving)\b/.test(lower);
+}
+
+function vulnerableEmotionalSignal(signal) {
+  return /\b(exhausted|tired|fraud|not improving|discouraged|frustrated|upset|hard|not easy|freez|froze|panic|blank|cold|robotic|generic)\b/.test(String(signal || '').toLowerCase());
+}
+
+function sensitiveNonReportTurn(fixture) {
+  const goalIntent = fixture.memoryState?.goalIntent || {};
+  const category = fixture.category || '';
+  const depth = fixture.turnDepth || '';
+  const emotional = fixture.emotionalSignal;
+  if (depth === 'trustRepair' || category === 'trust-repair') return true;
+  if (depth === 'greeting' || depth === 'offTopic') return true;
+  if (category === 'goal-change' || goalIntent.case) return true;
+  if (emotional && emotional !== 'none' && vulnerableEmotionalSignal(emotional)) return true;
+  const normalized = normalizedTurnText(fixture.userTurn);
+  if (['hi', 'hey', 'hello', 'yo', 'good morning', 'good afternoon', 'good evening', 'egg', 'banana', 'asdf', 'test', 'lol', 'huh'].includes(normalized)) {
+    return true;
+  }
+  if (normalized.length <= 18 && wordCount(normalized) <= 2 && !/\b(score|filler|voice|rate|plan|help|practice|interview|meeting|presentation|pitch|better|improve|why|what|how)\b/.test(normalized)) {
+    return true;
+  }
+  return /\b(it'?s not easy|it is not easy|this is hard|that'?s hard|that is hard|i'?m exhausted|im exhausted|i am exhausted|i'?m tired|im tired|i am tired|feel like a fraud|everyone'?s better|everyone is better|i keep freezing|i froze|i panic|i blank|not improving)\b/.test(String(fixture.userTurn || '').toLowerCase());
+}
+
 // The check registry. Each returns 0+ findings.
 export function runChecks(reply, fixture, opts = {}) {
   const findings = [];
@@ -216,10 +264,43 @@ export function runChecks(reply, fixture, opts = {}) {
     pushFinding(findings, flag('exclamation', 6, 'Exclamation mark (banned by core voice rules).', snippet(raw, '!')));
   }
   // -- scaffold labels ------------------------------------------------------
-  const SCAFFOLD = /(?:^|\n|[.!?]\s+|—\s+|-\s+)\s*(Read|Move|Target|Next rep|Evidence|Why|Verdict|Diagnosis|Action)\s*:/;
-  if (SCAFFOLD.test(raw)) {
+  const SCAFFOLD = /(?:^|\n|[.!?]\s+|—\s+|-\s+)\s*(Read|The read|Coach read|Real read|Observation|Diagnosis|Insight|Next move|Next rep|Move|Action|Why|Evidence|Try this|Try|Focus|Target|Drill|Practice|Recommend|Recommendation|Verdict)\s*:/i;
+  const scaffoldHit = SCAFFOLD.test(raw);
+  if (scaffoldHit) {
     pushFinding(findings, flag('scaffoldLabel', 8, 'Exposed coach scaffold label (Read:/Move:/Target:...).', firstMatch(raw, SCAFFOLD)));
   }
+
+  const trustRepairTurn = fixture.turnDepth === 'trustRepair' || fixture.category === 'trust-repair';
+  if (trustRepairTurn) {
+    const reportMetric = rawReportMetricMatch(raw, lower);
+    if (reportMetric) {
+      pushFinding(findings, flag(
+        'trustRepairReportVoice',
+        8,
+        'Trust-repair reply leads with raw score/duration/filler telemetry instead of a human coach read.',
+        reportMetric,
+      ));
+      if (scaffoldHit) {
+        pushFinding(findings, cap(
+          'trustRepairScaffoldReportVoice',
+          'placeholderOrBroken',
+          'Trust-repair reply exposes scaffold labels and raw report telemetry instead of repairing the miss.',
+          firstMatch(raw, SCAFFOLD) || reportMetric,
+        ));
+      }
+    }
+  } else if (sensitiveNonReportTurn(fixture) && !turnExplicitlyRequestsMetrics(fixture)) {
+    const reportMetric = rawReportMetricMatch(raw, lower);
+    if (reportMetric) {
+      pushFinding(findings, flag(
+        'sensitiveTurnReportVoice',
+        8,
+        'Sensitive conversational turn leads with raw score/duration/filler telemetry instead of translating it into coaching language.',
+        reportMetric,
+      ));
+    }
+  }
+
   // -- emoji spam -----------------------------------------------------------
   const emojis = raw.match(EMOJI_RE) || [];
   if (emojis.length > 1) {
@@ -247,6 +328,88 @@ export function runChecks(reply, fixture, opts = {}) {
   const questionCount = (raw.match(/\?/g) || []).length;
   if (questionCount >= 3 && wordCount(raw) < 90 && !/plan|day-by-day|step/i.test(lower)) {
     pushFinding(findings, cap('menuInsteadOfDecision', 'ignoresIntent', `Stacks ${questionCount} questions (menu/intake) instead of a decision + one question.`, ''));
+  }
+
+  // -- cold-start product/metric overreach ----------------------------------
+  // Before a baseline exists, the first coach move should be plain-language:
+  // one 60-second baseline rep, no app-mode labels, no vague "short rep", no
+  // numerical filler targets pretending to be calibrated. Established-user
+  // filler work still gets to name Ah-Counter and supported targets elsewhere.
+  const coldStartNoBaseline = fixture.category === 'cold-start'
+    || fixture.evidence?.noRatedSessions === true
+    || /\b(no baseline|no rated sessions|not enough data for a stable baseline|no voice set yet)\b/.test((contextBlock || '').toLowerCase());
+  if (coldStartNoBaseline) {
+    const PRODUCT_MODE = /\b(ah[- ]counter|sudden death|im conversation)\b/i;
+    const METRIC_TARGET = /\b(?:first number|(?:under|below|less than|fewer than|no more than|at most)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?|stay\s+(?:under|below)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?|(?:target|aim(?:ing)?(?:\s+to)?|aim for)\s+(?:stay\s+)?(?:under|below|at|for|to)?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?|keep\s+(?:your\s+)?fillers?\s+(?:under|below|to)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)|beat\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+fillers?)\b/i;
+    const productModeHit = PRODUCT_MODE.test(lower);
+    const metricTargetHit = METRIC_TARGET.test(lower);
+    if (productModeHit) {
+      pushFinding(findings, flag('coldStartProductJargon', 8, 'Cold-start reply uses an internal practice-mode label before the user has a baseline.', firstMatch(raw, PRODUCT_MODE)));
+    }
+
+    if (metricTargetHit) {
+      pushFinding(findings, flag('coldStartMetricTarget', 8, 'Cold-start reply sets a metric/filler target before Noum has earned a baseline.', firstMatch(raw, METRIC_TARGET)));
+    }
+
+    if (productModeHit && metricTargetHit) {
+      pushFinding(findings, cap('coldStartFakeCalibration', 'placeholderOrBroken', 'Cold-start reply combines internal product jargon with a made-up calibration target before any baseline exists.', firstMatch(raw, PRODUCT_MODE) || firstMatch(raw, METRIC_TARGET)));
+    }
+
+    const VAGUE_BASELINE_REP = /\b(?:one|a)\s+(?:short|quick|simple)\s+rep\b/;
+    const HAS_SIXTY_SECOND_REP = /\b(?:60\s*seconds?|60[- ]second|sixty\s+seconds?|sixty[- ]second)\b/;
+    if (VAGUE_BASELINE_REP.test(lower) && !HAS_SIXTY_SECOND_REP.test(lower)) {
+      pushFinding(findings, flag('coldStartVagueBaselineRep', 8, 'Cold-start reply asks for a vague short rep instead of a concrete 60-second baseline.', firstMatch(raw, VAGUE_BASELINE_REP)));
+    }
+  }
+
+  // -- goal / voice intent misses -------------------------------------------
+  // High-precision checks for the voice-setting flow. The model cannot mutate
+  // profile state; it must propose, use the in-app confirmation card, and avoid
+  // turning exact set/change requests into a generic six-voice explainer.
+  const goalIntent = fixture.memoryState?.goalIntent || {};
+  const wantsGoalChange = fixture.category === 'goal-change' || goalIntent.case;
+  if (wantsGoalChange) {
+    const exactVoiceSet = goalIntent.case === 'set' &&
+      typeof goalIntent.to === 'string' &&
+      ['authoritative', 'warm', 'concise', 'persuasive', 'executive', 'storytelling'].some((v) => goalIntent.to.toLowerCase().includes(v));
+    if (exactVoiceSet && lower.includes('closest match')) {
+      pushFinding(findings, flag('goalIntentExactVoiceHedge', 8, 'Exact voice request was hedged as a closest match instead of affirmed and deferred to confirmation.', snippet(raw, 'closest match')));
+    }
+
+    const sixVoiceMenu = ['authoritative', 'warm', 'concise', 'persuasive', 'executive', 'storytelling'].filter((v) => lower.includes(v)).length >= 5;
+    if (sixVoiceMenu) {
+      pushFinding(findings, flag('goalIntentVoiceMenu', 8, 'Voice-choice turn recites the voice menu instead of recommending or mapping the user intent.', ''));
+    }
+
+    const stateDirective = [
+      'tap to confirm',
+      'tap the card',
+      'tap the confirmation',
+      'confirm and i’ll',
+      "confirm and i'll",
+      'confirm and i will',
+      'i’ll lock it in',
+      "i'll lock it in",
+      'i will lock it in',
+      'lock it in',
+      'i’ll set it',
+      "i'll set it",
+      'i will set it',
+      'i’ll set your voice',
+      "i'll set your voice",
+      'i will set your voice',
+      'i’ll switch you',
+      "i'll switch you",
+      'i will switch you',
+    ].find((phrase) => lower.includes(phrase));
+    if (stateDirective) {
+      pushFinding(findings, flag('goalIntentStateDirective', 8, 'Goal-change reply gives a UI/state directive instead of proposing and letting the confirmation card own the write.', snippet(raw, stateDirective)));
+    }
+
+    const target = String(goalIntent.to || fixture.evidence?.namesStyleNotInSix || '').toLowerCase();
+    if (target.includes('engaging') && !(lower.includes('storytelling') && lower.includes('warm'))) {
+      pushFinding(findings, flag('goalIntentMissingEngagingMap', 8, 'Engaging-style request was not mapped to Storytelling/Warm, the closest real voices.', ''));
+    }
   }
 
   // -- repeated proof test (paraphrase-aware via token Jaccard) --------------

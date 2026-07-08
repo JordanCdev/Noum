@@ -46,7 +46,12 @@ function cliMessages({ system, messages, model, maxTokens = 1024 }) {
     const started = Date.now();
     const child = execFile(
       'claude',
-      ['-p', '--model', model, '--append-system-prompt', system, '--max-turns', '1'],
+      // Use --system-prompt (REPLACE), not --append-system-prompt: when the arena runs
+      // nested inside a Claude Code session, --append leaves Claude Code's own agent
+      // system prompt in place and the coach/judge prompt loses (replies come back in
+      // agent voice, "I don't have context from a previous exchange"). Replacing the
+      // system prompt gives clean, production-parity coach/judge output.
+      ['-p', '--model', model, '--system-prompt', system, '--max-turns', '1'],
       { maxBuffer: 8 * 1024 * 1024 },
       (err, stdout) => {
         const latencyMs = Date.now() - started;

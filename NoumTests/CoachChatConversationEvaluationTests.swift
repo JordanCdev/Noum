@@ -1469,7 +1469,7 @@ enum CoachChatConversationCorpus {
         return Array(([trimmed] + current).prefix(limit))
     }
 
-    private static func sourceFixture(for conversation: CoachChatConversationFixture) -> CoachChatEvaluationFixture? {
+    static func sourceFixture(for conversation: CoachChatConversationFixture) -> CoachChatEvaluationFixture? {
         CoachChatEvaluationCorpus.fixtures.first {
             $0.id == conversation.sourceFixtureID
         }
@@ -2708,6 +2708,20 @@ struct CoachChatConversationCorpusTests {
         #expect(appPathTurns.allSatisfy { $0.assessmentConfidence != nil })
         #expect(appPathTurns.allSatisfy { $0.retrievalTrace != nil })
         #expect(report.summary.retrievalTracePresentCount == expectedTurnCount)
+        // Cache state is captured from the real pipeline and proves the caching layer is
+        // exercised end-to-end: the first turn of a conversation computes the trajectory
+        // (cold miss) and later turns reuse the cached UserTrajectory snapshot (warm hit).
+        #expect(appPathTurns.contains { $0.trajectoryCacheHit == false })
+        #expect(appPathTurns.contains { $0.trajectoryCacheHit == true })
+        // The harness injects each conversation's real source-fixture practice
+        // sessions (scriptedConversationAppPathRows -> sessionsOverride), so
+        // UserTrajectory.evidenceCoverage varies per conversation and
+        // CoachReasoningPass raises assessmentConfidence above the 0.20 thin-evidence
+        // floor legitimately — driven by genuine evidence, not fabrication. Cold-start
+        // conversations with no sessions correctly stay at 0.20; evidence-rich ones
+        // rise. That produces a real spread of distinct rounded values and clears the
+        // flatAssessmentConfidence warning. Calibration is additionally pinned by
+        // CoachJudgementLayerTests.assessmentConfidenceMovesWithEvidenceCoverage.
         #expect(report.summary.assessmentConfidenceDistinctRoundedCount >= 3)
         #expect(report.summary.uniqueProofTestHashCount >= 3)
         #expect(report.summary.repeatedProofTestHashCount == 0)
@@ -2804,6 +2818,10 @@ struct CoachChatConversationCorpusTests {
         #expect(turns.allSatisfy { $0.assessmentConfidence != nil })
         #expect(turns.allSatisfy { $0.retrievalTrace != nil })
         #expect(report.summary.retrievalTracePresentCount == expectedTurnCount)
+        // Injected source-fixture sessions (see the text-surface test above) give the
+        // trajectory real, per-conversation evidence coverage, so assessmentConfidence
+        // rises above the 0.20 thin-evidence floor legitimately and the distinct-value
+        // spread clears the flatAssessmentConfidence warning.
         #expect(report.summary.assessmentConfidenceDistinctRoundedCount >= 3)
         #expect(report.summary.uniqueProofTestHashCount >= 3)
         #expect(report.summary.repeatedProofTestHashCount == 0)
@@ -4591,6 +4609,8 @@ struct CoachChatConversationCorpusTests {
                     ),
                     timeToFirstVisibleTokenMs: surface == .live ? 1 : nil,
                     timeToCompleteReplyMs: 1,
+                    trajectoryCacheHit: nil,
+                    assessmentCacheHit: nil,
                     passesAppPathFloor: true
                 )
             }
@@ -5155,6 +5175,13 @@ struct CoachChatConversationCorpusTests {
             for seedReply in script.seedCoachReplies {
                 store.injectCoachTurn(seedReply)
             }
+            // Real evidence for this conversation: the source fixture's practice
+            // sessions. Injecting them (vs. an empty global store) makes the
+            // pipeline's UserTrajectory.evidenceCoverage vary per conversation, so
+            // assessmentConfidence rises legitimately with evidence instead of pinning
+            // every turn to the thin-evidence 0.20 floor. This mirrors the shipping
+            // precondition that Ask Noum chat happens after a baseline exists.
+            let sourceSessions = CoachChatConversationCorpus.sourceFixture(for: conversation)?.sessions ?? []
             var turnRows: [CoachChatConversationAppPathTurnRow] = []
 
             for (index, turn) in conversation.turns.enumerated() {
@@ -5168,6 +5195,7 @@ struct CoachChatConversationCorpusTests {
                     coachService: service,
                     judgementPassEnabled: true,
                     realtimeCoachModeEnabled: true,
+                    sessionsOverride: sourceSessions,
                     onQualityGateEvent: { event in
                         qualityGateEvents.append(event)
                     }
@@ -5262,6 +5290,8 @@ struct CoachChatConversationCorpusTests {
                     retrievalTrace: metadata?.retrievalTrace,
                     timeToFirstVisibleTokenMs: metadata?.timeToFirstVisibleTokenMs,
                     timeToCompleteReplyMs: metadata?.timeToCompleteReplyMs,
+                    trajectoryCacheHit: metadata?.trajectoryCacheHit,
+                    assessmentCacheHit: metadata?.assessmentCacheHit,
                     passesAppPathFloor: passesAppPathFloor
                 ))
             }

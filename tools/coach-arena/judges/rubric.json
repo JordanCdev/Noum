@@ -34,6 +34,9 @@
     "goldSuiteAverage": 70,
     "deepAssessmentAverage": 70,
     "trustRepairAverage": 65,
+    "missingReplies": 0,
+    "fixtureScoreFloor": 60,
+    "sub70Fixtures": 0,
     "placeholderLeaks": 0
   },
   "checks": [

@@ -8,6 +8,9 @@ const THRESH = {
   goldSuiteMean: 70,
   deepAssessmentMean: 70,
   trustRepairMean: 65,
+  maxMissingReplies: 0,
+  fixtureScoreFloor: 60,
+  maxSub70Fixtures: 0,
   maxPlaceholderLeaks: 0,
 };
 
@@ -22,6 +25,9 @@ export function summarize(records) {
   const scored = records.filter((r) => r.status === 'scored');
   const all = scored.map((r) => r.score.final);
   const byGroup = (pred) => scored.filter(pred).map((r) => r.score.final);
+  const missing = records.filter((r) => r.status !== 'scored').length;
+  const min = all.length ? Math.min(...all) : 0;
+  const sub70 = scored.filter((r) => r.score.final < 70).length;
 
   const groups = {};
   for (const r of scored) {
@@ -35,22 +41,33 @@ export function summarize(records) {
   }
 
   const placeholderLeaks = scored.reduce((s, r) => s + (r.score.placeholderLeaks || 0), 0);
+  const thresholds = evalThresholds({
+    mean: mean(all),
+    deep: mean(byGroup((r) => r.fixture.turnDepth === 'deepAssessment')),
+    trust: mean(byGroup((r) => r.fixture.turnDepth === 'trustRepair')),
+    missing,
+    min,
+    sub70,
+    placeholderLeaks,
+  });
 
   return {
     n: records.length,
     scored: scored.length,
-    missing: records.filter((r) => r.status !== 'scored').length,
+    missing,
     mean: round1(mean(all)),
     median: all.length ? all.slice().sort((a, b) => a - b)[Math.floor(all.length / 2)] : 0,
-    min: all.length ? Math.min(...all) : 0,
+    min,
     max: all.length ? Math.max(...all) : 0,
+    sub70,
     deepAssessmentMean: round1(mean(byGroup((r) => r.fixture.turnDepth === 'deepAssessment'))),
     trustRepairMean: round1(mean(byGroup((r) => r.fixture.turnDepth === 'trustRepair'))),
     byCategory: Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, { n: v.length, mean: round1(mean(v)) }])),
     capCounts,
     placeholderLeaks,
     dimensionMeans: dimensionMeans(scored),
-    thresholds: evalThresholds({ mean: mean(all), deep: mean(byGroup((r) => r.fixture.turnDepth === 'deepAssessment')), trust: mean(byGroup((r) => r.fixture.turnDepth === 'trustRepair')), placeholderLeaks }),
+    thresholds,
+    productionReady: Object.values(thresholds).every((t) => t.pass),
   };
 }
 
@@ -64,11 +81,14 @@ function dimensionMeans(scored) {
   return out;
 }
 
-function evalThresholds({ mean: m, deep, trust, placeholderLeaks }) {
+function evalThresholds({ mean: m, deep, trust, missing, min, sub70, placeholderLeaks }) {
   return {
     goldSuiteMean: { value: round1(m), target: THRESH.goldSuiteMean, pass: m >= THRESH.goldSuiteMean },
     deepAssessmentMean: { value: round1(deep), target: THRESH.deepAssessmentMean, pass: !Number.isFinite(deep) || deep >= THRESH.deepAssessmentMean },
     trustRepairMean: { value: round1(trust), target: THRESH.trustRepairMean, pass: !Number.isFinite(trust) || trust >= THRESH.trustRepairMean },
+    zeroMissingReplies: { value: missing, target: THRESH.maxMissingReplies, pass: missing <= THRESH.maxMissingReplies },
+    fixtureScoreFloor: { value: min, target: THRESH.fixtureScoreFloor, pass: min >= THRESH.fixtureScoreFloor },
+    zeroSub70Fixtures: { value: sub70, target: THRESH.maxSub70Fixtures, pass: sub70 <= THRESH.maxSub70Fixtures },
     zeroPlaceholderLeaks: { value: placeholderLeaks, target: THRESH.maxPlaceholderLeaks, pass: placeholderLeaks <= THRESH.maxPlaceholderLeaks },
   };
 }
@@ -171,6 +191,9 @@ function renderMarkdown(run, previous) {
   L.push(`| Gold-suite mean | **${s.mean}**${delta(s.mean, p?.mean)} | ${t.goldSuiteMean.target} | ${t.goldSuiteMean.pass ? '✅' : '❌'} |`);
   L.push(`| Deep-assessment mean | ${s.deepAssessmentMean}${delta(s.deepAssessmentMean, p?.deepAssessmentMean)} | ${t.deepAssessmentMean.target} | ${t.deepAssessmentMean.pass ? '✅' : '❌'} |`);
   L.push(`| Trust-repair mean | ${s.trustRepairMean}${delta(s.trustRepairMean, p?.trustRepairMean)} | ${t.trustRepairMean.target} | ${t.trustRepairMean.pass ? '✅' : '❌'} |`);
+  L.push(`| Missing captures | ${s.missing} | ${t.zeroMissingReplies.target} | ${t.zeroMissingReplies.pass ? '✅' : '❌'} |`);
+  L.push(`| Fixture score floor | ${s.min} | ${t.fixtureScoreFloor.target} | ${t.fixtureScoreFloor.pass ? '✅' : '❌'} |`);
+  L.push(`| Sub-70 fixtures | ${s.sub70} | ${t.zeroSub70Fixtures.target} | ${t.zeroSub70Fixtures.pass ? '✅' : '❌'} |`);
   L.push(`| Placeholder leaks | ${s.placeholderLeaks} | ${t.zeroPlaceholderLeaks.target} | ${t.zeroPlaceholderLeaks.pass ? '✅' : '❌'} |`);
   L.push('');
   L.push(`Scored ${s.scored}/${s.n} fixtures · range ${s.min}–${s.max} · median ${s.median}.${s.missing ? ` ${s.missing} missing capture(s).` : ''}`);

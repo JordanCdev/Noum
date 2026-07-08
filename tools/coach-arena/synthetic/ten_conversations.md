@@ -11,9 +11,9 @@ Prior chat:
 
 User: How far off am I from sounding authoritative?
 
-Noum: You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.
+Noum: Closer mechanically, not proven authoritative yet. The useful evidence is 7/10 with 1 filler at 145 WPM; the missing evidence is whether that holds under pressure. Proof test: record 75 seconds with the verdict in sentence one, one reason, and a clean stop.
 
-Arena score: 87/100
+Arena score: 85/100
 
 ## not-informative-trust-repair-002
 
@@ -24,9 +24,9 @@ Prior chat:
 
 User: That's not informative at all.
 
-Noum: Fair push: I missed the actual question and answered around the useful read. Your last rep shows warmth came before the recommendation, so next rep say the recommendation first, then one reassurance.
+Noum: Fair. That was advice, not a read. The usable signal is that your point arrived after setup, so run the same answer once with the point in sentence one and stop after one reason.
 
-Arena score: 73/100
+Arena score: 85/100
 
 ## polite-however-pushback-003
 
@@ -37,9 +37,9 @@ Prior chat:
 
 User: Okay that's cool, however I still don't feel like that answers what I meant.
 
-Noum: Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The actual read is warmth came before the recommendation, so the listener waits for the point. Next rep, say the recommendation first, then one reassurance.
+Noum: Fair push. I answered the drill, not the question underneath it: you are asking whether this pattern is actually you. Treat it as a hypothesis only, and test it once with a verdict-first answer before keeping it.
 
-Arena score: 76/100
+Arena score: 87/100
 
 ## not-easy-empathy-004
 
@@ -50,9 +50,9 @@ Prior chat:
 
 User: It's not easy.
 
-Noum: Fair push: I made that sound easier than it feels under pressure. The actual read is verdict-first structure gets harder under pressure, so shrink the next rep to one sentence before adding the full answer back.
+Noum: No, it is not easy. The hard part is that sentence one carries the social risk, so shrink the rep: say only the disagreement and one calm reason, then stop before defending it.
 
-Arena score: 71/100
+Arena score: 86/100
 
 ## repeating-yourself-005
 
@@ -64,9 +64,9 @@ Prior chat:
 
 User: You're repeating yourself.
 
-Noum: Fair push. I repeated the same move instead of advancing the coaching. Your last rep gives one safe signal, trust repair signal I repeated the same coaching move instead of advancing the read, so keep the current target but change the proof test so the next rep teaches us something new.
+Noum: Fair. I repeated the same test instead of changing the evidence. Keep verdict-first fixed this time, and change only the close: final sentence must ask for the decision, then stop.
 
-Arena score: 82/100
+Arena score: 88/100
 
 ## interview-prep-006
 
@@ -77,9 +77,9 @@ Prior chat:
 
 User: How do I get better before my interview?
 
-Noum: No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.
+Noum: No baseline yet, so start there. Record 60 seconds on 'Why should we hire you?' and check whether sentence one answers before you polish anything else.
 
-Arena score: 72/100
+Arena score: 87/100
 
 ## filler-pressure-007
 
@@ -90,9 +90,9 @@ Prior chat:
 
 User: How do I stop saying um under pressure?
 
-Noum: Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and check whether fillers drop after that point.
+Noum: Your last pressure rep had 6 fillers, mostly before the close. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask.
 
-Arena score: 71/100
+Arena score: 85/100
 
 ## leadership-update-008
 
@@ -103,9 +103,9 @@ Prior chat:
 
 User: I have a leadership update tomorrow. What should I practice?
 
-Noum: Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.
+Noum: Practice the close, not the whole update. Record 75 seconds: headline, one implication, then final sentence as the decision or ask you need from the room.
 
-Arena score: 74/100
+Arena score: 85/100
 
 ## confidence-ending-009
 
@@ -116,9 +116,9 @@ Prior chat:
 
 User: Why does my ending sound less confident?
 
-Noum: The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.
+Noum: The confidence leak is the extra softener after the recommendation. Keep the recommendation, cut the final qualifier, and end on the ask so the close does not turn into a retreat.
 
-Arena score: 73/100
+Arena score: 87/100
 
 ## examples-from-sessions-010
 
@@ -129,6 +129,6 @@ Prior chat:
 
 User: Can you give me an example of me doing this in sessions?
 
-Noum: One specific example is the latest rep: the reasons were clear before there was a concrete scene. That shows the pattern because the listener gets logic before a picture. Next rep, add one example after the first reason, then return to the ask.
+Noum: One example is the rep where you said 'we focused on three priorities.' The reasons were clear, but the listener had no scene to picture, so add one concrete example after the first reason next time.
 
-Arena score: 61/100
+Arena score: 83/100

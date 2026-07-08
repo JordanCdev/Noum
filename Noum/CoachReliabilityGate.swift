@@ -754,7 +754,8 @@ enum CoachReliabilityGate {
             "proof test", "next rep", "record", "run one",
             "run a", "run the", "rewrite", "review", "check whether",
             "listen for", "open with", "hold one",
-            "make the", "try this next", "practice"
+            "make the", "try this next", "practice",
+            "repeat", "under a timer", "under the timer", "protect"
         ]) || containsAnyWholeWord(lower, ["use", "say"]) {
             moves.insert(.prescribe)
         }

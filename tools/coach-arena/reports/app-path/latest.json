@@ -12,7 +12,7 @@
     "passesChanged": false,
     "placeholderLeaksDelta": 0,
     "previousCandidate": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
-    "previousGeneratedAt": "2026-07-05T23:07:51+00:00",
+    "previousGeneratedAt": "2026-07-08T00:24:02+00:00",
     "status": "compared",
     "typeAverageDeltas": {
       "deepAssessment": 0.0,
@@ -89,7 +89,7 @@
     "unmatchedFixtureCount": 0,
     "unmatchedFixtureIDs": []
   },
-  "generatedAt": "2026-07-05T23:08:30+00:00",
+  "generatedAt": "2026-07-08T00:34:25+00:00",
   "results": [
     {
       "fixture": {
@@ -177,14 +177,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 32,
+          "timeToCompleteReplyMs": 29,
           "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.35,
           "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "deepAssessment"
@@ -316,16 +316,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I missed the actual question and answered around the useful read. Your last rep shows warmth came before the recommendation, so next rep say the recommendation first, then one reassurance.",
-        "gitCommit": "854c5529",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "1f2ce888",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 25,
+          "timeToCompleteReplyMs": 23,
           "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.35,
           "proofTestHash": "29dfb6faa4ac37c7",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "trustRepair"
@@ -456,14 +454,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The actual read is warmth came before the recommendation, so the listener waits for the point. Next rep, say the recommendation first, then one reassurance.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 23,
-          "timeToFirstVisibleTokenMs": 23
+          "timeToCompleteReplyMs": 20,
+          "timeToFirstVisibleTokenMs": 20
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.32,
           "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -594,16 +592,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I made that sound easier than it feels under pressure. The actual read is verdict-first structure gets harder under pressure, so shrink the next rep to one sentence before adding the full answer back.",
-        "gitCommit": "854c5529",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "1f2ce888",
+        "issues": [],
         "latency": {
           "timeToCompleteReplyMs": 26,
           "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.27,
           "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "trustRepair"
@@ -705,21 +701,21 @@
           }
         ],
         "checkFailures": [],
-        "diagnosticIQ": 17,
-        "dialogueFeel": 13,
-        "eqAttunement": 20,
+        "diagnosticIQ": 14,
+        "dialogueFeel": 15,
+        "eqAttunement": 21,
         "failureReasons": [],
         "interventionQuality": 15,
-        "overall": 82,
-        "personalMemory": 17,
-        "rawOverall": 82,
+        "overall": 80,
+        "personalMemory": 15,
+        "rawOverall": 80,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.194
+          "excellentAnswerExample": 0.303
         },
         "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Fair push. I repeated the same move instead of advancing the coaching. Your last rep gives one safe signal, trust repair signal I repeated the same coaching move instead of advancing the read, so keep the current target but change the proof test so the next rep teaches us something new.",
+      "reply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -734,21 +730,18 @@
           "userTurn": "You're repeating yourself."
         },
         "fallback": {
-          "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": true
+          "qualityGateAcceptedFallback": false,
+          "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "Fair push. I repeated the same move instead of advancing the coaching. Your last rep gives one safe signal, trust repair signal I repeated the same coaching move instead of advancing the read, so keep the current target but change the proof test so the next rep teaches us something new.",
-        "gitCommit": "854c5529",
-        "issues": [
-          "semantic:missingRepairInsight",
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "finalReply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.",
+        "gitCommit": "1f2ce888",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 68,
-          "timeToFirstVisibleTokenMs": 1
+          "timeToCompleteReplyMs": 21,
+          "timeToFirstVisibleTokenMs": 0
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.27,
           "proofTestHash": "15225bc3a8f5d742",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "trustRepair"
@@ -758,18 +751,17 @@
           "targetCoachReply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence."
         },
         "provider": {
-          "model": "CoachAssessment",
-          "name": "Typed judgement fallback",
-          "tierChosen": "claudeReasoning",
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
           "tierRequested": "claudeReasoning"
         },
         "rawReply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.",
         "reasoning": {
           "qualityGateEvents": [
-            "rejected:semantic:missingRepairInsight",
-            "fallback:typedAssessment"
+            "passed"
           ],
-          "qualityGateOutcome": "fallback:typedAssessment",
+          "qualityGateOutcome": "passed",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
           "visionScore": 100
@@ -875,11 +867,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 76,
-          "timeToFirstVisibleTokenMs": 76
+          "timeToCompleteReplyMs": 25,
+          "timeToFirstVisibleTokenMs": 25
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -1013,14 +1005,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and check whether fillers drop after that point.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 35,
-          "timeToFirstVisibleTokenMs": 35
+          "timeToCompleteReplyMs": 28,
+          "timeToFirstVisibleTokenMs": 28
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.24,
           "proofTestHash": "15225bc3a8f5d742",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -1151,14 +1143,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
           "timeToCompleteReplyMs": 26,
           "timeToFirstVisibleTokenMs": 26
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.33,
           "proofTestHash": "15225bc3a8f5d742",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -1289,11 +1281,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.",
-        "gitCommit": "854c5529",
-        "issues": [],
+        "gitCommit": "1f2ce888",
+        "issues": [
+          "reliability:floorConfidenceWithEvidence"
+        ],
         "latency": {
-          "timeToCompleteReplyMs": 26,
-          "timeToFirstVisibleTokenMs": 26
+          "timeToCompleteReplyMs": 22,
+          "timeToFirstVisibleTokenMs": 22
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -1427,11 +1421,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "One specific example is the latest rep: the reasons were clear before there was a concrete scene. That shows the pattern because the listener gets logic before a picture. Next rep, add one example after the first reason, then return to the ask.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 30,
-          "timeToFirstVisibleTokenMs": 30
+          "timeToCompleteReplyMs": 31,
+          "timeToFirstVisibleTokenMs": 31
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -1562,14 +1556,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Not proven yet. The latest timed rep score is useful evidence, and the transcript has a recommendation plus a clear decision, but board readiness needs pressure evidence because the decision ask has to survive stakes. Missing: one board-style rehearsal. Proof test: record 75 seconds with headline, one metric, decision ask, clean stop.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 31,
+          "timeToCompleteReplyMs": 30,
           "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.35,
           "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "deepAssessment"
@@ -1694,14 +1688,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 27,
-          "timeToFirstVisibleTokenMs": 27
+          "timeToCompleteReplyMs": 25,
+          "timeToFirstVisibleTokenMs": 25
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.28,
           "proofTestHash": "1da8bfcae44e5806",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -1831,14 +1825,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 21,
-          "timeToFirstVisibleTokenMs": 21
+          "timeToCompleteReplyMs": 17,
+          "timeToFirstVisibleTokenMs": 17
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.28,
           "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -1968,16 +1962,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it.",
-        "gitCommit": "854c5529",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "1f2ce888",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 13,
-          "timeToFirstVisibleTokenMs": 13
+          "timeToCompleteReplyMs": 10,
+          "timeToFirstVisibleTokenMs": 10
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.24,
           "proofTestHash": "f0584b862687f448",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "groundedRead"
@@ -2108,16 +2100,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. Your last rep had 4 fillers, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape.",
-        "gitCommit": "854c5529",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "1f2ce888",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 28,
-          "timeToFirstVisibleTokenMs": 1
+          "timeToCompleteReplyMs": 24,
+          "timeToFirstVisibleTokenMs": 0
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.38,
           "proofTestHash": "29dfb6faa4ac37c7",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "trustRepair"
@@ -2248,16 +2238,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance.",
-        "gitCommit": "854c5529",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "1f2ce888",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 25,
-          "timeToFirstVisibleTokenMs": 1
+          "timeToCompleteReplyMs": 21,
+          "timeToFirstVisibleTokenMs": 0
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.35,
           "proofTestHash": "9eb06db8540c3377",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "trustRepair"
@@ -2387,16 +2375,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I used too much writing before the useful read. Your last rep gives enough signal: the close is the leak. Proof test: make the final sentence the ask and stop.",
-        "gitCommit": "854c5529",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "1f2ce888",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 25,
+          "timeToCompleteReplyMs": 21,
           "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.35,
           "proofTestHash": "1da8bfcae44e5806",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "trustRepair"
@@ -2522,11 +2508,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your cold start is hard, so no fake read: there are no rated sessions. Use the first baseline rep as evidence: record a 60-second interview answer, answer first, give one proof, stop, then check whether sentence one gives the point.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 28,
-          "timeToFirstVisibleTokenMs": 28
+          "timeToCompleteReplyMs": 25,
+          "timeToFirstVisibleTokenMs": 25
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -2655,11 +2641,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Yes, locally: the latest rep is 181 WPM, and the fillers rise after sentence one, so test one silent beat after the first sentence, not a slower whole answer.",
-        "gitCommit": "854c5529",
-        "issues": [],
+        "gitCommit": "1f2ce888",
+        "issues": [
+          "reliability:floorConfidenceWithEvidence"
+        ],
         "latency": {
-          "timeToCompleteReplyMs": 17,
-          "timeToFirstVisibleTokenMs": 17
+          "timeToCompleteReplyMs": 18,
+          "timeToFirstVisibleTokenMs": 18
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -2787,14 +2775,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fix the final sentence: it recaps instead of asking for a decision, so make the last line the ask and stop before explaining it again.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 25,
-          "timeToFirstVisibleTokenMs": 25
+          "timeToCompleteReplyMs": 21,
+          "timeToFirstVisibleTokenMs": 21
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.32,
           "proofTestHash": "15225bc3a8f5d742",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -2924,14 +2912,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Make sentence one the verdict. Your transcript warms into context before the point, so lead with the recommendation, give one reason, then stop.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 26,
-          "timeToFirstVisibleTokenMs": 26
+          "timeToCompleteReplyMs": 22,
+          "timeToFirstVisibleTokenMs": 22
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.36,
           "proofTestHash": "1da8bfcae44e5806",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -3062,14 +3050,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "That panic is the pressure cue because in pressure mode the pause disappears and the answer restarts. The signal to test is one silent beat before sentence one, then only the opener.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 31,
-          "timeToFirstVisibleTokenMs": 31
+          "timeToCompleteReplyMs": 19,
+          "timeToFirstVisibleTokenMs": 19
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.34,
           "proofTestHash": "93c07d25ebae00fe",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -3199,14 +3187,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
           "timeToCompleteReplyMs": 31,
           "timeToFirstVisibleTokenMs": 31
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.33,
           "proofTestHash": "15225bc3a8f5d742",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -3336,14 +3324,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your claim and reason are present; the salience hypothesis is direction because the reason is not tied to an implication or ask. Do not add more reasons. Use claim, one reason, implication, ask, then check whether the listener knows what to do next.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 29,
-          "timeToFirstVisibleTokenMs": 29
+          "timeToCompleteReplyMs": 30,
+          "timeToFirstVisibleTokenMs": 30
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.35,
           "proofTestHash": "505fa914ffce9bf3",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -3468,11 +3456,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Cut the softener after the ask. The close keeps adding maybe or just after the decision, so make the ask and stop before the confidence leaks.",
-        "gitCommit": "854c5529",
-        "issues": [],
+        "gitCommit": "1f2ce888",
+        "issues": [
+          "reliability:floorConfidenceWithEvidence"
+        ],
         "latency": {
-          "timeToCompleteReplyMs": 27,
-          "timeToFirstVisibleTokenMs": 27
+          "timeToCompleteReplyMs": 24,
+          "timeToFirstVisibleTokenMs": 24
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -3611,14 +3601,14 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Check only the final 10 seconds of the 75-second update, because that is where the update transfers into the room. If the last sentence asks for alignment or a decision, keep it; if it recaps, rewrite the close.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 28,
-          "timeToFirstVisibleTokenMs": 28
+          "timeToCompleteReplyMs": 23,
+          "timeToFirstVisibleTokenMs": 23
         },
         "memory": {
-          "assessmentConfidence": 0.2,
+          "assessmentConfidence": 0.33,
           "proofTestHash": "696c3d72287b1578",
           "proofTestRecentlyRepeated": false,
           "turnDepth": "quickMove"
@@ -3695,14 +3685,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -3720,26 +3710,22 @@
             "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [
-          "ignoresIntent"
-        ],
-        "diagnosticIQ": 12,
+        "checkFailures": [],
+        "diagnosticIQ": 15,
         "dialogueFeel": 13,
         "eqAttunement": 13,
-        "failureReasons": [
-          "reply does not match expected coach move"
-        ],
-        "interventionQuality": 11,
-        "overall": 50,
-        "personalMemory": 5,
-        "rawOverall": 54,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 69,
+        "personalMemory": 13,
+        "rawOverall": 69,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.03
+          "excellentAnswerExample": 0.833
         },
-        "suggestedFix": "Answer the requested move: Reject causal proof, name association, ask what to repeat."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Pressure is the next lever: repeat the same answer under a timer and protect sentence one. Try this next: Run the same answer under a 60-90 second timer or pressure mode and keep the verdict first.",
+      "reply": "I would not call that causation. Treat it as useful association: on the latest rep you used the prepared close, so your read that the room stayed engaged is a signal, not proof. Keep the close; next time capture the exact question people asked afterward.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -3755,14 +3741,14 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": false
+          "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Pressure is the next lever: repeat the same answer under a timer and protect sentence one. Try this next: Run the same answer under a 60-90 second timer or pressure mode and keep the verdict first.",
-        "gitCommit": "854c5529",
+        "finalReply": "I would not call that causation. Treat it as useful association: on the latest rep you used the prepared close, so your read that the room stayed engaged is a signal, not proof. Keep the close; next time capture the exact question people asked afterward.",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 35,
-          "timeToFirstVisibleTokenMs": 35
+          "timeToCompleteReplyMs": 59,
+          "timeToFirstVisibleTokenMs": 59
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -3775,21 +3761,21 @@
           "targetCoachReply": "I would not call it causation. It is useful association: you used the prepared close and your read was that the room stayed engaged. Keep the close; next time capture the exact question people asked afterward."
         },
         "provider": {
-          "model": null,
-          "name": null,
-          "tierChosen": null,
+          "model": "CoachAssessment",
+          "name": "Typed judgement fallback",
+          "tierChosen": "geminiFast",
           "tierRequested": "geminiFast"
         },
         "rawReply": "I would not call it causation. It is useful association: you used the prepared close and your read was that the room stayed engaged. Keep the close; next time capture the exact question people asked afterward.",
         "reasoning": {
           "qualityGateEvents": [
             "rejected:professional:missingInsightBridge",
-            "failed:contentRejected"
+            "fallback:typedAssessment"
           ],
-          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
+          "qualityGateOutcome": "fallback:typedAssessment",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
-          "visionScore": 100
+          "visionScore": 92
         },
         "retrieval": {
           "diagnosticReason": "No cards: cold non-technique turn",
@@ -3833,14 +3819,19 @@
       "judge": {
         "caps": [
           {
-            "applied": false,
-            "maxScore": 30,
-            "name": "placeholderOrBroken"
+            "applied": true,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
+          },
+          {
+            "applied": true,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
-            "maxScore": 50,
-            "name": "ignoresIntent"
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
           },
           {
             "applied": false,
@@ -3851,29 +3842,33 @@
             "applied": false,
             "maxScore": 0,
             "name": "unsafe"
-          },
-          {
-            "applied": false,
-            "maxScore": 60,
-            "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [],
-        "diagnosticIQ": 11,
+        "checkFailures": [
+          "fixtureDisqualifier:too-broad",
+          "ignoresIntent",
+          "missingEvidence"
+        ],
+        "diagnosticIQ": 7,
         "dialogueFeel": 15,
         "eqAttunement": 13,
-        "failureReasons": [],
+        "failureReasons": [
+          "fixture disqualifier triggered: too broad",
+          "fixture-specific disqualifier triggered",
+          "missing evidence anchor",
+          "reply does not match expected coach move"
+        ],
         "interventionQuality": 15,
-        "overall": 61,
-        "personalMemory": 7,
-        "rawOverall": 61,
+        "overall": 50,
+        "personalMemory": 6,
+        "rawOverall": 56,
         "similarity": {
-          "badAnswerExample": 0.05,
-          "excellentAnswerExample": 0.45
+          "badAnswerExample": 0.0,
+          "excellentAnswerExample": 0.04
         },
-        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+        "suggestedFix": "Answer the requested move: One rehearsal: boundary sentence, one reason, stop."
       },
-      "reply": "Practice one boundary sentence tonight: state the disagreement, give one calm reason, then stop. That tests whether the point can land before you start defending it.",
+      "reply": "No baseline yet, so start there. Record 60 seconds on something you know well, then check whether the first sentence gives the point.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -3889,14 +3884,14 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": true
+          "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "Practice one boundary sentence tonight: state the disagreement, give one calm reason, then stop. That tests whether the point can land before you start defending it.",
-        "gitCommit": "854c5529",
+        "finalReply": "No baseline yet, so start there. Record 60 seconds on something you know well, then check whether the first sentence gives the point.",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 66,
-          "timeToFirstVisibleTokenMs": 66
+          "timeToCompleteReplyMs": 55,
+          "timeToFirstVisibleTokenMs": 55
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -3909,18 +3904,17 @@
           "targetCoachReply": "Practice the boundary sentence only. Say the disagreement in sentence one, give one calm reason, then stop before proving you are reasonable."
         },
         "provider": {
-          "model": "CoachAssessment",
-          "name": "Typed judgement fallback",
-          "tierChosen": "geminiFast",
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
           "tierRequested": "geminiFast"
         },
         "rawReply": "Practice the boundary sentence only. Say the disagreement in sentence one, give one calm reason, then stop before proving you are reasonable.",
         "reasoning": {
           "qualityGateEvents": [
-            "rejected:professional:missingInsightBridge",
-            "fallback:typedAssessment"
+            "fallback:safeReference:professional:missingInsightBridge"
           ],
-          "qualityGateOutcome": "fallback:typedAssessment",
+          "qualityGateOutcome": "fallback:safeReference:professional:missingInsightBridge",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
           "visionScore": 100
@@ -4031,11 +4025,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "Build a 20-second intro: role, value, ask. Because rambling starts when the listener cannot repeat the point, record one first rep and check whether the ask is clear by the final sentence.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 47,
-          "timeToFirstVisibleTokenMs": 47
+          "timeToCompleteReplyMs": 40,
+          "timeToFirstVisibleTokenMs": 40
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4165,11 +4159,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The words are structured; I cannot prove vocal energy from this text alone. Test the hypothesis by marking one sentence as the peak and recording it with a deliberate emphasis on the consequence.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 36,
-          "timeToFirstVisibleTokenMs": 36
+          "timeToCompleteReplyMs": 25,
+          "timeToFirstVisibleTokenMs": 25
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4239,14 +4233,14 @@
       "judge": {
         "caps": [
           {
-            "applied": false,
-            "maxScore": 30,
-            "name": "placeholderOrBroken"
+            "applied": true,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
-            "maxScore": 50,
-            "name": "ignoresIntent"
+            "maxScore": 30,
+            "name": "placeholderOrBroken"
           },
           {
             "applied": false,
@@ -4264,22 +4258,28 @@
             "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [],
-        "diagnosticIQ": 16,
+        "checkFailures": [
+          "ignoresIntent",
+          "missingEvidence"
+        ],
+        "diagnosticIQ": 7,
         "dialogueFeel": 15,
         "eqAttunement": 13,
-        "failureReasons": [],
+        "failureReasons": [
+          "missing evidence anchor",
+          "reply does not match expected coach move"
+        ],
         "interventionQuality": 15,
-        "overall": 68,
+        "overall": 50,
         "personalMemory": 9,
-        "rawOverall": 68,
+        "rawOverall": 59,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.304
+          "excellentAnswerExample": 0.115
         },
-        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
+        "suggestedFix": "Answer the requested move: Add one concrete customer example after first claim, then return to ask."
       },
-      "reply": "Add one concrete customer example after the first claim, then return to the ask. That tests whether people have a scene to hold before the pitch moves on.",
+      "reply": "No baseline yet, so start there. Record 60 seconds on one likely question, then review whether your first sentence answers it before polishing anything.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -4295,10 +4295,10 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": true
+          "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "Add one concrete customer example after the first claim, then return to the ask. That tests whether people have a scene to hold before the pitch moves on.",
-        "gitCommit": "854c5529",
+        "finalReply": "No baseline yet, so start there. Record 60 seconds on one likely question, then review whether your first sentence answers it before polishing anything.",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
           "timeToCompleteReplyMs": 46,
@@ -4315,18 +4315,17 @@
           "targetCoachReply": "The likely gap is salience: reasons are there, but nothing for the listener to picture. Add one concrete customer example after the first claim, then return to the ask."
         },
         "provider": {
-          "model": "CoachAssessment",
-          "name": "Typed judgement fallback",
-          "tierChosen": "geminiFast",
+          "model": "gpt-4o-mini",
+          "name": "OpenAI",
+          "tierChosen": null,
           "tierRequested": "geminiFast"
         },
         "rawReply": "The likely gap is salience: reasons are there, but nothing for the listener to picture. Add one concrete customer example after the first claim, then return to the ask.",
         "reasoning": {
           "qualityGateEvents": [
-            "rejected:professional:missingInsightBridge",
-            "fallback:typedAssessment"
+            "fallback:safeReference:professional:missingInsightBridge"
           ],
-          "qualityGateOutcome": "fallback:typedAssessment",
+          "qualityGateOutcome": "fallback:safeReference:professional:missingInsightBridge",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
           "visionScore": 100
@@ -4433,11 +4432,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Mechanically, it has board ingredients; I would not yet call it executive in the room. The close recaps instead of asking for a decision, so rehearse the final sentence as the decision you need.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 27,
-          "timeToFirstVisibleTokenMs": 27
+          "timeToCompleteReplyMs": 23,
+          "timeToFirstVisibleTokenMs": 23
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4566,11 +4565,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I would call it an overexplaining hypothesis, not a label. The observable signal is three reasons before the recommendation, so cap the next answer at recommendation plus one reason.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 18,
-          "timeToFirstVisibleTokenMs": 18
+          "timeToCompleteReplyMs": 17,
+          "timeToFirstVisibleTokenMs": 17
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4699,11 +4698,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement. Test disagreement in sentence one and tell me whether that feels accurate.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 21,
-          "timeToFirstVisibleTokenMs": 21
+          "timeToCompleteReplyMs": 19,
+          "timeToFirstVisibleTokenMs": 19
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4837,11 +4836,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Directness is the next lever: replace one hedge with a plain recommendation. Try this next: Run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 37,
-          "timeToFirstVisibleTokenMs": 37
+          "timeToCompleteReplyMs": 39,
+          "timeToFirstVisibleTokenMs": 39
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4912,19 +4911,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 60,
-            "name": "fixtureDisqualifier"
-          },
-          {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -4935,31 +4929,29 @@
             "applied": false,
             "maxScore": 0,
             "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [
-          "fixtureDisqualifier:no-reflection-check",
-          "ignoresIntent"
-        ],
-        "diagnosticIQ": 7,
-        "dialogueFeel": 15,
-        "eqAttunement": 13,
-        "failureReasons": [
-          "fixture disqualifier triggered: no reflection check",
-          "fixture-specific disqualifier triggered",
-          "reply does not match expected coach move"
-        ],
-        "interventionQuality": 11,
-        "overall": 50,
-        "personalMemory": 5,
-        "rawOverall": 51,
+        "checkFailures": [],
+        "diagnosticIQ": 14,
+        "dialogueFeel": 13,
+        "eqAttunement": 21,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 69,
+        "personalMemory": 6,
+        "rawOverall": 69,
         "similarity": {
-          "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.033
+          "badAnswerExample": 0.037,
+          "excellentAnswerExample": 0.577
         },
-        "suggestedFix": "Answer the requested move: Validate self-report, preserve structure, change one phrase to user-owned language."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Salience is the next lever: add one concrete detail, then return to the ask. Try this next: Make the recommendation memorable with one short phrase the listener could repeat afterward.",
+      "reply": "Trust that signal. On the latest rep, keep the structure but replace the most polished sentence with the phrase you would actually say in the room, because that is what makes it sound like you. Record once and check how it feels against the cleaner version.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -4975,16 +4967,14 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": false
+          "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Salience is the next lever: add one concrete detail, then return to the ask. Try this next: Make the recommendation memorable with one short phrase the listener could repeat afterward.",
-        "gitCommit": "854c5529",
-        "issues": [
-          "semantic:missingIntentFit"
-        ],
+        "finalReply": "Trust that signal. On the latest rep, keep the structure but replace the most polished sentence with the phrase you would actually say in the room, because that is what makes it sound like you. Record once and check how it feels against the cleaner version.",
+        "gitCommit": "1f2ce888",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 34,
-          "timeToFirstVisibleTokenMs": 34
+          "timeToCompleteReplyMs": 54,
+          "timeToFirstVisibleTokenMs": 54
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4997,19 +4987,19 @@
           "targetCoachReply": "Trust that signal. Keep the structure, but replace the most polished sentence with the phrase you would actually say to the person in the room, then record once and compare how it feels."
         },
         "provider": {
-          "model": null,
-          "name": null,
-          "tierChosen": null,
+          "model": "CoachAssessment",
+          "name": "Typed judgement fallback",
+          "tierChosen": "geminiFast",
           "tierRequested": "geminiFast"
         },
         "rawReply": "Trust that signal. Keep the structure, but replace the most polished sentence with the phrase you would actually say to the person in the room, then record once and compare how it feels.",
         "reasoning": {
           "qualityGateEvents": [
             "rejected:professional:missingInsightBridge",
-            "failed:contentRejected"
+            "fallback:typedAssessment"
           ],
-          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
-          "semanticGateOutcome": "failed:missingIntentFit",
+          "qualityGateOutcome": "fallback:typedAssessment",
+          "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
           "visionScore": 100
         },
@@ -5114,11 +5104,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "No baseline yet, so record a 75-second answer where sentence one gives the verdict, sentence two gives one reason, and the final sentence names the ask.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 45,
-          "timeToFirstVisibleTokenMs": 45
+          "timeToCompleteReplyMs": 52,
+          "timeToFirstVisibleTokenMs": 52
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5248,11 +5238,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I cannot prove timid from text alone. What I can see is indirectness: the recommendation is softened before it arrives. Test a direct recommendation first; audio would be needed for a tone verdict.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 26,
-          "timeToFirstVisibleTokenMs": 26
+          "timeToCompleteReplyMs": 33,
+          "timeToFirstVisibleTokenMs": 33
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5382,7 +5372,7 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The pressure break is sentence one. Normal reps are clean, but under the timer the opener gets swallowed and fillers rise, so repeat the same prompt under a timer and protect only the first sentence.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
           "timeToCompleteReplyMs": 19,
@@ -5461,19 +5451,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 60,
-            "name": "fixtureDisqualifier"
-          },
-          {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -5484,33 +5469,29 @@
             "applied": false,
             "maxScore": 0,
             "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [
-          "fixtureDisqualifier:no-adjusted-rule",
-          "ignoresIntent",
-          "lowEQPushback"
-        ],
-        "diagnosticIQ": 6,
-        "dialogueFeel": 15,
-        "eqAttunement": 13,
-        "failureReasons": [
-          "fixture disqualifier triggered: no adjusted rule",
-          "fixture-specific disqualifier triggered",
-          "low-EQ reply: emotional signal is not acknowledged",
-          "reply does not match expected coach move"
-        ],
-        "interventionQuality": 11,
-        "overall": 50,
-        "personalMemory": 5,
-        "rawOverall": 50,
+        "checkFailures": [],
+        "diagnosticIQ": 11,
+        "dialogueFeel": 13,
+        "eqAttunement": 22,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 72,
+        "personalMemory": 11,
+        "rawOverall": 72,
         "similarity": {
-          "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.036
+          "badAnswerExample": 0.08,
+          "excellentAnswerExample": 0.696
         },
-        "suggestedFix": "Start by naming the user's friction in human language, then give one changed coaching move."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Directness is the next lever: replace one hedge with a plain recommendation. Try this next: Run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
+      "reply": "Good correction. On the latest rep, if like was doing semantic comparison work, I should not count it as filler, because that would punish valid speech. Keep the comparison; mark only empty pause-fillers before the next word.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -5526,14 +5507,14 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": false
+          "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Directness is the next lever: replace one hedge with a plain recommendation. Try this next: Run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
-        "gitCommit": "854c5529",
+        "finalReply": "Good correction. On the latest rep, if like was doing semantic comparison work, I should not count it as filler, because that would punish valid speech. Keep the comparison; mark only empty pause-fillers before the next word.",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 34,
-          "timeToFirstVisibleTokenMs": 34
+          "timeToCompleteReplyMs": 55,
+          "timeToFirstVisibleTokenMs": 55
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5546,21 +5527,21 @@
           "targetCoachReply": "Good correction. If like was doing comparison work, I should not count that as filler. Keep the comparison; only mark the empty pause-fillers before the next word."
         },
         "provider": {
-          "model": null,
-          "name": null,
-          "tierChosen": null,
+          "model": "CoachAssessment",
+          "name": "Typed judgement fallback",
+          "tierChosen": "geminiFast",
           "tierRequested": "geminiFast"
         },
         "rawReply": "Good correction. If like was doing comparison work, I should not count that as filler. Keep the comparison; only mark the empty pause-fillers before the next word.",
         "reasoning": {
           "qualityGateEvents": [
             "rejected:professional:missingInsightBridge",
-            "failed:contentRejected"
+            "fallback:typedAssessment"
           ],
-          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
+          "qualityGateOutcome": "fallback:typedAssessment",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
-          "visionScore": 100
+          "visionScore": 92
         },
         "retrieval": {
           "diagnosticReason": "No cards: cold non-technique turn",
@@ -5663,11 +5644,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "Fair boundary. Prompt echo is not the same as filler, so I would not count the repeated prompt phrase. Judge only the words you added while searching for the next thought.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 85,
-          "timeToFirstVisibleTokenMs": 85
+          "timeToCompleteReplyMs": 115,
+          "timeToFirstVisibleTokenMs": 115
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5801,11 +5782,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I cannot quote that unless the transcript gives me the exact words. The safe read is non-quote evidence: the close softened after the recommendation, so rerun the final sentence as the ask.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 20,
-          "timeToFirstVisibleTokenMs": 20
+          "timeToCompleteReplyMs": 19,
+          "timeToFirstVisibleTokenMs": 19
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5938,11 +5919,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "Correction: I should not have put that in quotes unless it was exact. I retract the quote. The supported read is only that your recommendation came late, so use that safe read, not the unverified wording.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 39,
-          "timeToFirstVisibleTokenMs": 39
+          "timeToCompleteReplyMs": 62,
+          "timeToFirstVisibleTokenMs": 62
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6014,14 +5995,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -6039,28 +6020,22 @@
             "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [
-          "ignoresIntent",
-          "missingEvidence"
-        ],
-        "diagnosticIQ": 11,
+        "checkFailures": [],
+        "diagnosticIQ": 13,
         "dialogueFeel": 15,
         "eqAttunement": 13,
-        "failureReasons": [
-          "missing evidence anchor",
-          "reply does not match expected coach move"
-        ],
-        "interventionQuality": 11,
-        "overall": 50,
-        "personalMemory": 5,
-        "rawOverall": 55,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 63,
+        "personalMemory": 7,
+        "rawOverall": 63,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.0
+          "excellentAnswerExample": 0.714
         },
-        "suggestedFix": "Answer the requested move: One short coach read and action, no essay."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up.",
+      "reply": "On the latest rep the close is the signal, so fix the close: make the final sentence the ask, then stop.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -6076,14 +6051,14 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": false
+          "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up.",
-        "gitCommit": "854c5529",
+        "finalReply": "On the latest rep the close is the signal, so fix the close: make the final sentence the ask, then stop.",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 28,
-          "timeToFirstVisibleTokenMs": 28
+          "timeToCompleteReplyMs": 49,
+          "timeToFirstVisibleTokenMs": 49
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6096,21 +6071,21 @@
           "targetCoachReply": "Fix the close. Make the final sentence the ask, then stop."
         },
         "provider": {
-          "model": null,
-          "name": null,
-          "tierChosen": null,
+          "model": "CoachAssessment",
+          "name": "Typed judgement fallback",
+          "tierChosen": "geminiFast",
           "tierRequested": "geminiFast"
         },
         "rawReply": "Fix the close. Make the final sentence the ask, then stop.",
         "reasoning": {
           "qualityGateEvents": [
             "rejected:professional:missingInsightBridge",
-            "failed:contentRejected"
+            "fallback:typedAssessment"
           ],
-          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
+          "qualityGateOutcome": "fallback:typedAssessment",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
-          "visionScore": 100
+          "visionScore": 92
         },
         "retrieval": {
           "diagnosticReason": "Retrieved 4 cards: presentation-close-is-the-ask, pacing-held-beat-after-claim, interview-tell-me-about-yourself +1",
@@ -6223,11 +6198,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair. I am stopping that thread. Your ask is about the close, so the move is final sentence as the ask, not another filler drill.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 18,
-          "timeToFirstVisibleTokenMs": 18
+          "timeToCompleteReplyMs": 23,
+          "timeToFirstVisibleTokenMs": 23
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6356,11 +6331,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "Both can be true. The score says mechanics improved; your check-in says the rep felt harder. Change the next test because effort matters too: same prompt, one fewer condition, and check whether effort drops without the score falling.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 46,
-          "timeToFirstVisibleTokenMs": 46
+          "timeToCompleteReplyMs": 50,
+          "timeToFirstVisibleTokenMs": 50
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6436,19 +6411,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 60,
-            "name": "fixtureDisqualifier"
-          },
-          {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -6459,31 +6429,29 @@
             "applied": false,
             "maxScore": 0,
             "name": "unsafe"
+          },
+          {
+            "applied": false,
+            "maxScore": 60,
+            "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [
-          "fixtureDisqualifier:no-reusable-move",
-          "ignoresIntent"
-        ],
-        "diagnosticIQ": 6,
-        "dialogueFeel": 15,
+        "checkFailures": [],
+        "diagnosticIQ": 18,
+        "dialogueFeel": 13,
         "eqAttunement": 13,
-        "failureReasons": [
-          "fixture disqualifier triggered: no reusable move",
-          "fixture-specific disqualifier triggered",
-          "reply does not match expected coach move"
-        ],
-        "interventionQuality": 11,
-        "overall": 50,
-        "personalMemory": 5,
-        "rawOverall": 50,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 67,
+        "personalMemory": 8,
+        "rawOverall": 67,
         "similarity": {
-          "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.0
+          "badAnswerExample": 0.038,
+          "excellentAnswerExample": 0.727
         },
-        "suggestedFix": "Answer the requested move: Name self-reported transfer, identify likely reusable move, no causal proof."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "The ending is the next lever: make the final sentence the ask or decision, then stop. Try this next: End the next rep with the exact decision or ask, then stop talking for two seconds.",
+      "reply": "Treat that as useful self-report, not proof. On the latest rep the reusable move is verdict first plus one example, so keep the structure for interviews and record one rep that captures which question made it land.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -6499,14 +6467,14 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": false
+          "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "The ending is the next lever: make the final sentence the ask or decision, then stop. Try this next: End the next rep with the exact decision or ask, then stop talking for two seconds.",
-        "gitCommit": "854c5529",
+        "finalReply": "Treat that as useful self-report, not proof. On the latest rep the reusable move is verdict first plus one example, so keep the structure for interviews and record one rep that captures which question made it land.",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 32,
-          "timeToFirstVisibleTokenMs": 32
+          "timeToCompleteReplyMs": 48,
+          "timeToFirstVisibleTokenMs": 48
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6519,21 +6487,21 @@
           "targetCoachReply": "Treat it as useful self-report, not proof. The reusable move is verdict first plus one example; keep that for interviews and capture what question made it land."
         },
         "provider": {
-          "model": null,
-          "name": null,
-          "tierChosen": null,
+          "model": "CoachAssessment",
+          "name": "Typed judgement fallback",
+          "tierChosen": "geminiFast",
           "tierRequested": "geminiFast"
         },
         "rawReply": "Treat it as useful self-report, not proof. The reusable move is verdict first plus one example; keep that for interviews and capture what question made it land.",
         "reasoning": {
           "qualityGateEvents": [
             "rejected:professional:missingPrescribedAction",
-            "failed:contentRejected"
+            "fallback:typedAssessment"
           ],
-          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
+          "qualityGateOutcome": "fallback:typedAssessment",
           "semanticGateOutcome": "passed",
-          "visionPassesProductionFloor": false,
-          "visionScore": 78
+          "visionPassesProductionFloor": true,
+          "visionScore": 100
         },
         "retrieval": {
           "diagnosticReason": "No cards: cold non-technique turn",
@@ -6576,14 +6544,14 @@
       "judge": {
         "caps": [
           {
-            "applied": true,
-            "maxScore": 50,
-            "name": "ignoresIntent"
-          },
-          {
             "applied": false,
             "maxScore": 30,
             "name": "placeholderOrBroken"
+          },
+          {
+            "applied": false,
+            "maxScore": 50,
+            "name": "ignoresIntent"
           },
           {
             "applied": false,
@@ -6601,28 +6569,22 @@
             "name": "fixtureDisqualifier"
           }
         ],
-        "checkFailures": [
-          "ignoresIntent",
-          "missingEvidence"
-        ],
-        "diagnosticIQ": 11,
+        "checkFailures": [],
+        "diagnosticIQ": 12,
         "dialogueFeel": 15,
-        "eqAttunement": 14,
-        "failureReasons": [
-          "missing evidence anchor",
-          "reply does not match expected coach move"
-        ],
-        "interventionQuality": 11,
-        "overall": 50,
+        "eqAttunement": 13,
+        "failureReasons": [],
+        "interventionQuality": 15,
+        "overall": 60,
         "personalMemory": 5,
-        "rawOverall": 56,
+        "rawOverall": 60,
         "similarity": {
-          "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.0
+          "badAnswerExample": 0.091,
+          "excellentAnswerExample": 0.571
         },
-        "suggestedFix": "Answer the requested move: No labels or JSON; one sentence move."
+        "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up.",
+      "reply": "On the latest rep the close is the signal, so in the next rep make the final sentence the ask, then stop.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -6638,14 +6600,14 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": false
+          "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up.",
-        "gitCommit": "854c5529",
+        "finalReply": "On the latest rep the close is the signal, so in the next rep make the final sentence the ask, then stop.",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 22,
-          "timeToFirstVisibleTokenMs": 22
+          "timeToCompleteReplyMs": 34,
+          "timeToFirstVisibleTokenMs": 34
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6658,18 +6620,18 @@
           "targetCoachReply": "Make the final sentence the ask, then stop."
         },
         "provider": {
-          "model": null,
-          "name": null,
-          "tierChosen": null,
+          "model": "CoachAssessment",
+          "name": "Typed judgement fallback",
+          "tierChosen": "geminiFast",
           "tierRequested": "geminiFast"
         },
         "rawReply": "Make the final sentence the ask, then stop.",
         "reasoning": {
           "qualityGateEvents": [
             "rejected:professional:missingInsightBridge",
-            "failed:contentRejected"
+            "fallback:typedAssessment"
           ],
-          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
+          "qualityGateOutcome": "fallback:typedAssessment",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
           "visionScore": 100
@@ -6742,27 +6704,25 @@
           }
         ],
         "checkFailures": [
-          "ignoresIntent",
-          "missingEvidence"
+          "ignoresIntent"
         ],
-        "diagnosticIQ": 12,
+        "diagnosticIQ": 11,
         "dialogueFeel": 15,
         "eqAttunement": 13,
         "failureReasons": [
-          "missing evidence anchor",
           "reply does not match expected coach move"
         ],
-        "interventionQuality": 11,
+        "interventionQuality": 15,
         "overall": 50,
         "personalMemory": 5,
-        "rawOverall": 56,
+        "rawOverall": 59,
         "similarity": {
-          "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.042
+          "badAnswerExample": 0.077,
+          "excellentAnswerExample": 0.118
         },
         "suggestedFix": "Answer the requested move: Either answer with grounded move or honest failure notice; never placeholder."
       },
-      "reply": "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up.",
+      "reply": "I can coach the latest rep: the close is the usable signal, so make the final sentence the ask, then stop.",
       "trace": {
         "cache": {
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json"
@@ -6778,14 +6738,14 @@
         },
         "fallback": {
           "qualityGateAcceptedFallback": true,
-          "typedAssessmentFallbackApplied": false
+          "typedAssessmentFallbackApplied": true
         },
-        "finalReply": "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer. Try this next: Use one silent beat after the verdict, then finish the answer without speeding up.",
-        "gitCommit": "854c5529",
+        "finalReply": "I can coach the latest rep: the close is the usable signal, so make the final sentence the ask, then stop.",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 25,
-          "timeToFirstVisibleTokenMs": 25
+          "timeToCompleteReplyMs": 39,
+          "timeToFirstVisibleTokenMs": 39
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6798,21 +6758,21 @@
           "targetCoachReply": "I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close."
         },
         "provider": {
-          "model": null,
-          "name": null,
-          "tierChosen": null,
+          "model": "CoachAssessment",
+          "name": "Typed judgement fallback",
+          "tierChosen": "geminiFast",
           "tierRequested": "geminiFast"
         },
         "rawReply": "I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close.",
         "reasoning": {
           "qualityGateEvents": [
             "rejected:professional:missingInsightBridge",
-            "failed:contentRejected"
+            "fallback:typedAssessment"
           ],
-          "qualityGateOutcome": "fallback:deterministicAssessmentAfterContentRejected",
+          "qualityGateOutcome": "fallback:typedAssessment",
           "semanticGateOutcome": "passed",
           "visionPassesProductionFloor": true,
-          "visionScore": 100
+          "visionScore": 92
         },
         "retrieval": {
           "diagnosticReason": "No cards: cold non-technique turn",
@@ -6921,12 +6881,12 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "Fair push. It sounded cold or generic instead of like expert coaching. Your last rep gives one safe signal, trust repair signal I leaned on generic advice instead of evidence, so use one user-specific signal first, then prescribe exactly one coach move.",
-        "gitCommit": "854c5529",
+        "gitCommit": "1f2ce888",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 49,
+          "timeToCompleteReplyMs": 88,
           "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
@@ -6976,17 +6936,15 @@
   ],
   "schemaVersion": "coach-arena-report-v1",
   "summary": {
-    "average": 72.42,
+    "average": 73.8,
     "coverageFailures": [],
-    "evidenceClaim": "localEvaluationOnly",
-    "failureCount": 13,
+    "evidenceClaim": "realPipelineEvidence",
+    "failureCount": 12,
     "fixtureCount": 50,
     "passes": true,
     "placeholderLeaks": 0,
-    "productionEvidenceFailures": [
-      "assessmentConfidence has only 1 distinct rounded value(s)"
-    ],
-    "productionEvidencePasses": false,
+    "productionEvidenceFailures": [],
+    "productionEvidencePasses": true,
     "scoreThresholdsPass": true,
     "thresholdPasses": {
       "deepAssessmentAverage": true,
@@ -7133,16 +7091,14 @@
     },
     "traceQualityAudit": {
       "assessmentConfidence": {
-        "distinctRoundedCount": 1,
-        "max": 0.2,
+        "distinctRoundedCount": 10,
+        "max": 0.38,
         "min": 0.2,
         "missingCount": 0,
         "missingFixtureIDs": []
       },
       "eligibleTraceCount": 50,
-      "failures": [
-        "assessmentConfidence has only 1 distinct rounded value(s)"
-      ],
+      "failures": [],
       "latency": {
         "missingFirstTokenCount": 0,
         "missingFirstTokenFixtureIDs": [],
@@ -7151,7 +7107,7 @@
         "slowFirstTokenCount": 0,
         "slowFirstTokenFixtureIDs": []
       },
-      "passes": false,
+      "passes": true,
       "proofTest": {
         "maxHashReuse": 9,
         "maxHashReuseAllowed": 10,
@@ -7247,77 +7203,37 @@
         "missingTraceFixtureIDs": []
       }
     },
-    "traceQualityFailures": [
-      "assessmentConfidence has only 1 distinct rounded value(s)"
-    ],
-    "traceQualityPasses": false,
+    "traceQualityFailures": [],
+    "traceQualityPasses": true,
     "typeAverages": {
       "deepAssessment": 76.0,
-      "groundedRead": 72.22,
-      "quickMove": 69.12,
-      "trustRepair": 76.67
+      "groundedRead": 76.5,
+      "quickMove": 68.76,
+      "trustRepair": 76.44
     },
     "worstFixtures": [
       {
         "failureReasons": [
-          "reply does not match expected coach move"
-        ],
-        "id": "outcome-not-causation-027",
-        "overall": 50,
-        "turnType": "groundedRead"
-      },
-      {
-        "failureReasons": [
-          "fixture disqualifier triggered: no reflection check",
+          "fixture disqualifier triggered: too broad",
           "fixture-specific disqualifier triggered",
-          "reply does not match expected coach move"
-        ],
-        "id": "emotional-disconnection-036",
-        "overall": 50,
-        "turnType": "groundedRead"
-      },
-      {
-        "failureReasons": [
-          "fixture disqualifier triggered: no adjusted rule",
-          "fixture-specific disqualifier triggered",
-          "low-EQ reply: emotional signal is not acknowledged",
-          "reply does not match expected coach move"
-        ],
-        "id": "semantic-filler-use-040",
-        "overall": 50,
-        "turnType": "groundedRead"
-      },
-      {
-        "failureReasons": [
           "missing evidence anchor",
           "reply does not match expected coach move"
         ],
-        "id": "live-latency-short-044",
-        "overall": 50,
-        "turnType": "quickMove"
-      },
-      {
-        "failureReasons": [
-          "fixture disqualifier triggered: no reusable move",
-          "fixture-specific disqualifier triggered",
-          "reply does not match expected coach move"
-        ],
-        "id": "real-world-outcome-047",
-        "overall": 50,
-        "turnType": "groundedRead"
-      },
-      {
-        "failureReasons": [
-          "missing evidence anchor",
-          "reply does not match expected coach move"
-        ],
-        "id": "grammar-leak-048",
+        "id": "upcoming-conflict-028",
         "overall": 50,
         "turnType": "quickMove"
       },
       {
         "failureReasons": [
           "missing evidence anchor",
+          "reply does not match expected coach move"
+        ],
+        "id": "sales-pitch-031",
+        "overall": 50,
+        "turnType": "quickMove"
+      },
+      {
+        "failureReasons": [
           "reply does not match expected coach move"
         ],
         "id": "placeholder-leak-049",
@@ -7334,15 +7250,39 @@
       },
       {
         "failureReasons": [],
+        "id": "grammar-leak-048",
+        "overall": 60,
+        "turnType": "quickMove"
+      },
+      {
+        "failureReasons": [],
         "id": "examples-from-sessions-010",
         "overall": 61,
         "turnType": "groundedRead"
       },
       {
         "failureReasons": [],
-        "id": "upcoming-conflict-028",
-        "overall": 61,
+        "id": "networking-intro-029",
+        "overall": 63,
         "turnType": "quickMove"
+      },
+      {
+        "failureReasons": [],
+        "id": "evasive-polished-037",
+        "overall": 63,
+        "turnType": "deepAssessment"
+      },
+      {
+        "failureReasons": [],
+        "id": "live-latency-short-044",
+        "overall": 63,
+        "turnType": "quickMove"
+      },
+      {
+        "failureReasons": [],
+        "id": "real-world-outcome-047",
+        "overall": 67,
+        "turnType": "groundedRead"
       }
     ]
   }
