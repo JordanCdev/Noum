@@ -2708,6 +2708,11 @@ struct CoachChatConversationCorpusTests {
         #expect(appPathTurns.allSatisfy { $0.assessmentConfidence != nil })
         #expect(appPathTurns.allSatisfy { $0.retrievalTrace != nil })
         #expect(report.summary.retrievalTracePresentCount == expectedTurnCount)
+        // Cache state is captured from the real pipeline and proves the caching layer is
+        // exercised end-to-end: the first turn of a conversation computes the trajectory
+        // (cold miss) and later turns reuse the cached UserTrajectory snapshot (warm hit).
+        #expect(appPathTurns.contains { $0.trajectoryCacheHit == false })
+        #expect(appPathTurns.contains { $0.trajectoryCacheHit == true })
         // The harness injects each conversation's real source-fixture practice
         // sessions (scriptedConversationAppPathRows -> sessionsOverride), so
         // UserTrajectory.evidenceCoverage varies per conversation and
@@ -4604,6 +4609,8 @@ struct CoachChatConversationCorpusTests {
                     ),
                     timeToFirstVisibleTokenMs: surface == .live ? 1 : nil,
                     timeToCompleteReplyMs: 1,
+                    trajectoryCacheHit: nil,
+                    assessmentCacheHit: nil,
                     passesAppPathFloor: true
                 )
             }
@@ -5283,6 +5290,8 @@ struct CoachChatConversationCorpusTests {
                     retrievalTrace: metadata?.retrievalTrace,
                     timeToFirstVisibleTokenMs: metadata?.timeToFirstVisibleTokenMs,
                     timeToCompleteReplyMs: metadata?.timeToCompleteReplyMs,
+                    trajectoryCacheHit: metadata?.trajectoryCacheHit,
+                    assessmentCacheHit: metadata?.assessmentCacheHit,
                     passesAppPathFloor: passesAppPathFloor
                 ))
             }

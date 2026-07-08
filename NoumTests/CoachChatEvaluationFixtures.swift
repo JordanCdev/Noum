@@ -1770,6 +1770,11 @@ struct CoachChatConversationAppPathTurnRow: Codable, Equatable {
     let retrievalTrace: CoachRetrievalTrace?
     let timeToFirstVisibleTokenMs: Int?
     let timeToCompleteReplyMs: Int?
+    // Cache state captured from the real pipeline: whether this turn reused a cached
+    // UserTrajectory snapshot / CoachAssessment (true) or recomputed it (false/nil).
+    // Proves the caching layer is exercised end-to-end in the app-path trace.
+    let trajectoryCacheHit: Bool?
+    let assessmentCacheHit: Bool?
     let passesAppPathFloor: Bool
 }
 

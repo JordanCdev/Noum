@@ -146,6 +146,20 @@ designed, not a gap to hack.
    validation (18/100 audit cap); cannot be produced in a headless session and must not be
    faked. This is the one structurally-unreachable criterion for a headless run.
 
+### 5. Trace capture: cache state (items 7 + 8, "prove caching / cache state")
+The pipeline already computed `trajectoryCacheHit` / `assessmentCacheHit` into
+`CoachTurnMetadata`, but the app-path turn row never captured them, so the trace could
+not prove cache state. Added both fields to `CoachChatConversationAppPathTurnRow`
+(Codable, optional → backward-compatible) and populated them from the real metadata.
+The captured pattern is genuinely correct caching behavior:
+- `trajectoryCacheHit`: **False on turn 0 (cold miss) → True on turns 1-2 (warm reuse)**
+  (53 miss / 56 hit across the corpus) — the first turn computes the UserTrajectory
+  snapshot; later turns in the same conversation reuse it.
+- `assessmentCacheHit`: False every turn — correct, because each turn's user question
+  differs so the assessment key changes and it recomputes.
+Added deterministic assertions (`trajectoryCacheHit` contains both true and false) and a
+`↳ CACHE:` line in every transcript. Verified corpus suite 70/70.
+
 ## Regression check on the aefc7a5c pipeline rewrite
 `aefc7a5c` ("chngs") rewrote `AICoachChatService` (+586), `CoachContextBuilder` (+77),
 `CoachReliabilityGate`, `CoachReasoningPass`, and `CoachChatEvaluationFixtures` but its

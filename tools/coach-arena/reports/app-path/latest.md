@@ -1,6 +1,6 @@
 # Coach Arena Latest Report
 
-- Generated: `2026-07-08T00:24:02+00:00`
+- Generated: `2026-07-08T00:34:25+00:00`
 - Candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Fixtures: `50`
 - Average: `73.8/100`
@@ -39,15 +39,15 @@
 ## Previous Run
 
 - Status: `compared`
-- Previous generated: `2026-07-07T23:56:34+00:00`
+- Previous generated: `2026-07-08T00:24:02+00:00`
 - Previous candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Candidate changed: `False`
 - Fixture count changed: `False`
-- Average delta: `-0.04`
+- Average delta: `0.0`
 - Failure count delta: `0`
 - Placeholder leak delta: `0`
 - Pass state changed: `False`
-- Type average deltas: `deepAssessment` `0.0`, `groundedRead` `0.0`, `quickMove` `0.0`, `trustRepair` `-0.23`
+- Type average deltas: `deepAssessment` `0.0`, `groundedRead` `0.0`, `quickMove` `0.0`, `trustRepair` `0.0`
 - Cleared failures: `none`
 - New failures: `none`
 

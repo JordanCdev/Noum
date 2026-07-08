@@ -17,7 +17,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=claudeReasoning → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.35 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=0ms complete=33ms
+  ↳ LATENCY: TTFT=1ms complete=29ms
+  ↳ CACHE: trajectory=False assessment=False
   COACH: You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.
 
   ── Turn 2 · depth=quickMove ──
@@ -26,7 +27,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.36 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=24ms complete=24ms
+  ↳ LATENCY: TTFT=21ms complete=21ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: No. 7/10 means the mechanics are not the bottleneck yet. The open question is whether the same steadiness survives a more consequential prompt.
 
   ── Turn 3 · depth=quickMove ──
@@ -36,6 +38,7 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.36 typedFallback=False proofTestRepeated=False
   ↳ LATENCY: TTFT=26ms complete=26ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: Record 2 clean pressure reps with verdict-first openings because that is the evidence that would move the diagnosis from mechanics to presence: less explaining, more settled commitment.
 
 ---
@@ -50,7 +53,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=claudeReasoning → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.35 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=1ms complete=25ms
+  ↳ LATENCY: TTFT=1ms complete=23ms
+  ↳ CACHE: trajectory=False assessment=False
   COACH: Fair push: I missed the actual question and answered around the useful read. Your last rep shows warmth came before the recommendation, so next rep say the recommendation first, then one reassurance.
 
   ── Turn 2 · depth=quickMove ──
@@ -59,7 +63,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.32 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=24ms complete=24ms
+  ↳ LATENCY: TTFT=22ms complete=22ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: The useful read is order: in your last rep, comfort arrived before the point, so the listener waits too long for the recommendation even though the tone is warm.
 
   ── Turn 3 · depth=quickMove ──
@@ -68,7 +73,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.32 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=26ms complete=26ms
+  ↳ LATENCY: TTFT=27ms complete=27ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: Run one 45-second client concern answer because it isolates order. Sentence one is the recommendation; sentence two is one reassurance; then stop.
 
 ---
@@ -83,7 +89,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=claudeReasoning → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.27 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=0ms complete=24ms
+  ↳ LATENCY: TTFT=1ms complete=26ms
+  ↳ CACHE: trajectory=False assessment=False
   COACH: Fair push: I made that sound easier than it feels under pressure. The actual read is verdict-first structure gets harder under pressure, so shrink the next rep to one sentence before adding the full answer back.
 
   ── Turn 2 · depth=quickMove ──
@@ -92,7 +99,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.24 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=25ms complete=25ms
+  ↳ LATENCY: TTFT=27ms complete=27ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: Your last rep gives one usable signal: latest rep Pressure Drill, 2/10, 1 fillers, 52s, so use one silent beat after the verdict, then finish the answer without speeding up.
 
   ── Turn 3 · depth=quickMove ──
@@ -101,7 +109,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.24 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=23ms complete=23ms
+  ↳ LATENCY: TTFT=21ms complete=21ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: Use a 20-second close only because it isolates the pressure cue: decision, one reason, stop. If a filler appears before the close, restart with one silent beat first.
 
 ---
@@ -116,7 +125,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=claudeReasoning → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.27 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=0ms complete=25ms
+  ↳ LATENCY: TTFT=0ms complete=21ms
+  ↳ CACHE: trajectory=False assessment=False
   COACH: Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.
 
   ── Turn 2 · depth=quickMove ──
@@ -125,7 +135,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.24 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=21ms complete=21ms
+  ↳ LATENCY: TTFT=16ms complete=16ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: Right. Same target, different check, because your last rep already proved the pause exists; now we need to find where the filler enters the close.
 
   ── Turn 3 · depth=quickMove ──
@@ -134,7 +145,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.24 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=27ms complete=27ms
+  ↳ LATENCY: TTFT=19ms complete=19ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: Your last rep gives the signal: mark the first filler after the decision line because that tells us whether the pressure leak is timing or wording in the close.
 
 ---
@@ -149,7 +161,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.2 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=37ms complete=37ms
+  ↳ LATENCY: TTFT=25ms complete=25ms
+  ↳ CACHE: trajectory=False assessment=False
   COACH: No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.
 
   ── Turn 2 · depth=quickMove ──
@@ -158,7 +171,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.2 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=26ms complete=26ms
+  ↳ LATENCY: TTFT=25ms complete=25ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: For your first baseline rep, listen for sentence one only. If it names the answer before the setup, keep it. If it starts with background, rewrite that first sentence and run the rep again.
 
   ── Turn 3 · depth=quickMove ──
@@ -167,7 +181,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.2 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=22ms complete=22ms
+  ↳ LATENCY: TTFT=18ms complete=18ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: Right, because one rep is too thin for a style diagnosis. Use this first pass to create the baseline, then Noum can judge whether the same pattern repeats.
 
 ---
@@ -182,7 +197,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.24 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=38ms complete=38ms
+  ↳ LATENCY: TTFT=28ms complete=28ms
+  ↳ CACHE: trajectory=False assessment=False
   COACH: Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and check whether fillers drop after that point.
 
   ── Turn 2 · depth=quickMove ──
@@ -191,7 +207,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.24 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=25ms complete=25ms
+  ↳ LATENCY: TTFT=19ms complete=19ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: No, because the pause belongs where the pressure leaks: before the close. If you pause everywhere, the answer will sound managed instead of steady.
 
   ── Turn 3 · depth=quickMove ──
@@ -200,7 +217,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.24 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=35ms complete=35ms
+  ↳ LATENCY: TTFT=16ms complete=16ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: Use the same 60-second prompt and timer because you only want to test the pause point. Success is fewer fillers after that point and a final sentence that still lands cleanly.
 
 ---
@@ -216,6 +234,7 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.33 typedFallback=False proofTestRepeated=False
   ↳ LATENCY: TTFT=26ms complete=26ms
+  ↳ CACHE: trajectory=False assessment=False
   COACH: Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.
 
   ── Turn 2 · depth=quickMove ──
@@ -224,7 +243,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.33 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=22ms complete=22ms
+  ↳ LATENCY: TTFT=16ms complete=16ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: For the 75-second update, use a placeholder ask: I need alignment on the next step, because it lets you train the shape of the close before the business content is final.
 
   ── Turn 3 · depth=quickMove ──
@@ -233,7 +253,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.33 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=30ms complete=30ms
+  ↳ LATENCY: TTFT=23ms complete=23ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: Check only the final 10 seconds of the 75-second update, because that is where the update transfers into the room. If the last sentence asks for alignment or a decision, keep it; if it recaps, rewrite the close.
 
 ---
@@ -248,7 +269,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.34 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=28ms complete=28ms
+  ↳ LATENCY: TTFT=22ms complete=22ms
+  ↳ CACHE: trajectory=False assessment=False
   COACH: Last rep had 5 fillers; the signal is inside the recommendation, not before it. Next rep, hold one beat after the decision line and restart if a filler appears.
 
   ── Turn 2 · depth=quickMove ──
@@ -257,7 +279,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.34 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=23ms complete=23ms
+  ↳ LATENCY: TTFT=17ms complete=17ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: Because the filler interrupts the moment where authority should sound settled. The pause after the decision gives your reason somewhere to go without weakening the recommendation.
 
   ── Turn 3 · depth=quickMove ──
@@ -266,7 +289,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.34 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=27ms complete=27ms
+  ↳ LATENCY: TTFT=19ms complete=19ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: Use a 45-second recommendation prompt because it tests the decision line without inviting a full essay. Sentence one is the decision, sentence two is one reason, then stop cleanly.
 
 ---
@@ -281,7 +305,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=claudeReasoning → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.35 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=1ms complete=28ms
+  ↳ LATENCY: TTFT=0ms complete=20ms
+  ↳ CACHE: trajectory=False assessment=False
   COACH: Fair push: that read was robotic and too much writing. The last rep gives enough signal; next rep, use one clean opener and stop after the point lands.
 
   ── Turn 2 · depth=quickMove ──
@@ -290,7 +315,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.32 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=30ms complete=30ms
+  ↳ LATENCY: TTFT=21ms complete=21ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: That was generic because it named a plan without naming the behavior. The target is the opener: run a 45-second rep where sentence one lands before the explanation starts.
 
   ── Turn 3 · depth=quickMove ──
@@ -299,7 +325,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.32 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=24ms complete=24ms
+  ↳ LATENCY: TTFT=17ms complete=17ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: Short version: the opener is the target because the prior reply buried the behavior. Open with the point, add one reason, then stop. Run that once and check whether sentence one lands before any setup.
 
 ---
@@ -314,7 +341,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=claudeReasoning → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.38 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=0ms complete=32ms
+  ↳ LATENCY: TTFT=0ms complete=24ms
+  ↳ CACHE: trajectory=False assessment=False
   COACH: Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. Your last rep had 4 fillers, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape.
 
   ── Turn 2 · depth=quickMove ──
@@ -323,7 +351,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.35 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=30ms complete=30ms
+  ↳ LATENCY: TTFT=24ms complete=24ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: Agreed: that was too generic. The move is not more volume; the target is a cleaner first sentence because it turns vague advice into a testable line: recommendation, one proof, stop.
 
   ── Turn 3 · depth=quickMove ──
@@ -332,7 +361,8 @@ Each turn ran end-to-end through the production `CoachReplyPipeline` on the iOS 
   ↳ PROVIDER: requested=geminiFast → served=OpenAI/gpt-4o-mini (FALLBACK)
   ↳ GATES: quality=passed semantic=passed reliabilityIssues=[] acceptedFallback=False
   ↳ MEMORY/ASSESS: confidence=0.35 typedFallback=False proofTestRepeated=False
-  ↳ LATENCY: TTFT=29ms complete=29ms
+  ↳ LATENCY: TTFT=23ms complete=23ms
+  ↳ CACHE: trajectory=True assessment=False
   COACH: Record one 45-second answer to a recommendation prompt because it tests whether the first sentence carries the recommendation. If sentence one is not the recommendation, restart.
 
 ---

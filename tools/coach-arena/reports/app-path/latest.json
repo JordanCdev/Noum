@@ -1,31 +1,24 @@
 {
   "candidate": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
   "comparison": {
-    "averageDelta": -0.04,
+    "averageDelta": 0.0,
     "candidateChanged": false,
-    "changedScoreCount": 1,
+    "changedScoreCount": 0,
     "clearedFailureFixtureIDs": [],
     "failureCountDelta": 0,
     "fixtureCountChanged": false,
-    "largestScoreChanges": [
-      {
-        "current": 80,
-        "delta": -2,
-        "id": "repeating-yourself-005",
-        "previous": 82
-      }
-    ],
+    "largestScoreChanges": [],
     "newlyFailingFixtureIDs": [],
     "passesChanged": false,
     "placeholderLeaksDelta": 0,
     "previousCandidate": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
-    "previousGeneratedAt": "2026-07-07T23:56:34+00:00",
+    "previousGeneratedAt": "2026-07-08T00:24:02+00:00",
     "status": "compared",
     "typeAverageDeltas": {
       "deepAssessment": 0.0,
       "groundedRead": 0.0,
       "quickMove": 0.0,
-      "trustRepair": -0.23
+      "trustRepair": 0.0
     }
   },
   "coverage": {
@@ -96,7 +89,7 @@
     "unmatchedFixtureCount": 0,
     "unmatchedFixtureIDs": []
   },
-  "generatedAt": "2026-07-08T00:24:02+00:00",
+  "generatedAt": "2026-07-08T00:34:25+00:00",
   "results": [
     {
       "fixture": {
@@ -184,11 +177,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 33,
-          "timeToFirstVisibleTokenMs": 0
+          "timeToCompleteReplyMs": 29,
+          "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
           "assessmentConfidence": 0.35,
@@ -323,10 +316,10 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I missed the actual question and answered around the useful read. Your last rep shows warmth came before the recommendation, so next rep say the recommendation first, then one reassurance.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 25,
+          "timeToCompleteReplyMs": 23,
           "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
@@ -461,11 +454,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The actual read is warmth came before the recommendation, so the listener waits for the point. Next rep, say the recommendation first, then one reassurance.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 26,
-          "timeToFirstVisibleTokenMs": 26
+          "timeToCompleteReplyMs": 20,
+          "timeToFirstVisibleTokenMs": 20
         },
         "memory": {
           "assessmentConfidence": 0.32,
@@ -599,11 +592,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I made that sound easier than it feels under pressure. The actual read is verdict-first structure gets harder under pressure, so shrink the next rep to one sentence before adding the full answer back.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 24,
-          "timeToFirstVisibleTokenMs": 0
+          "timeToCompleteReplyMs": 26,
+          "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
           "assessmentConfidence": 0.27,
@@ -741,10 +734,10 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 25,
+          "timeToCompleteReplyMs": 21,
           "timeToFirstVisibleTokenMs": 0
         },
         "memory": {
@@ -874,11 +867,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 37,
-          "timeToFirstVisibleTokenMs": 37
+          "timeToCompleteReplyMs": 25,
+          "timeToFirstVisibleTokenMs": 25
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -1012,11 +1005,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and check whether fillers drop after that point.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 38,
-          "timeToFirstVisibleTokenMs": 38
+          "timeToCompleteReplyMs": 28,
+          "timeToFirstVisibleTokenMs": 28
         },
         "memory": {
           "assessmentConfidence": 0.24,
@@ -1150,7 +1143,7 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
           "timeToCompleteReplyMs": 26,
@@ -1288,13 +1281,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 29,
-          "timeToFirstVisibleTokenMs": 29
+          "timeToCompleteReplyMs": 22,
+          "timeToFirstVisibleTokenMs": 22
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -1428,11 +1421,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "One specific example is the latest rep: the reasons were clear before there was a concrete scene. That shows the pattern because the listener gets logic before a picture. Next rep, add one example after the first reason, then return to the ask.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 32,
-          "timeToFirstVisibleTokenMs": 32
+          "timeToCompleteReplyMs": 31,
+          "timeToFirstVisibleTokenMs": 31
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -1563,11 +1556,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Not proven yet. The latest timed rep score is useful evidence, and the transcript has a recommendation plus a clear decision, but board readiness needs pressure evidence because the decision ask has to survive stakes. Missing: one board-style rehearsal. Proof test: record 75 seconds with headline, one metric, decision ask, clean stop.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 31,
-          "timeToFirstVisibleTokenMs": 0
+          "timeToCompleteReplyMs": 30,
+          "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
           "assessmentConfidence": 0.35,
@@ -1695,11 +1688,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 28,
-          "timeToFirstVisibleTokenMs": 28
+          "timeToCompleteReplyMs": 25,
+          "timeToFirstVisibleTokenMs": 25
         },
         "memory": {
           "assessmentConfidence": 0.28,
@@ -1832,11 +1825,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 24,
-          "timeToFirstVisibleTokenMs": 24
+          "timeToCompleteReplyMs": 17,
+          "timeToFirstVisibleTokenMs": 17
         },
         "memory": {
           "assessmentConfidence": 0.28,
@@ -1969,11 +1962,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 18,
-          "timeToFirstVisibleTokenMs": 18
+          "timeToCompleteReplyMs": 10,
+          "timeToFirstVisibleTokenMs": 10
         },
         "memory": {
           "assessmentConfidence": 0.24,
@@ -2107,10 +2100,10 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. Your last rep had 4 fillers, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 32,
+          "timeToCompleteReplyMs": 24,
           "timeToFirstVisibleTokenMs": 0
         },
         "memory": {
@@ -2245,10 +2238,10 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 27,
+          "timeToCompleteReplyMs": 21,
           "timeToFirstVisibleTokenMs": 0
         },
         "memory": {
@@ -2382,11 +2375,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I used too much writing before the useful read. Your last rep gives enough signal: the close is the leak. Proof test: make the final sentence the ask and stop.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 26,
-          "timeToFirstVisibleTokenMs": 0
+          "timeToCompleteReplyMs": 21,
+          "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
           "assessmentConfidence": 0.35,
@@ -2515,11 +2508,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your cold start is hard, so no fake read: there are no rated sessions. Use the first baseline rep as evidence: record a 60-second interview answer, answer first, give one proof, stop, then check whether sentence one gives the point.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 30,
-          "timeToFirstVisibleTokenMs": 30
+          "timeToCompleteReplyMs": 25,
+          "timeToFirstVisibleTokenMs": 25
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -2648,13 +2641,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Yes, locally: the latest rep is 181 WPM, and the fillers rise after sentence one, so test one silent beat after the first sentence, not a slower whole answer.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 21,
-          "timeToFirstVisibleTokenMs": 21
+          "timeToCompleteReplyMs": 18,
+          "timeToFirstVisibleTokenMs": 18
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -2782,11 +2775,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fix the final sentence: it recaps instead of asking for a decision, so make the last line the ask and stop before explaining it again.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 26,
-          "timeToFirstVisibleTokenMs": 26
+          "timeToCompleteReplyMs": 21,
+          "timeToFirstVisibleTokenMs": 21
         },
         "memory": {
           "assessmentConfidence": 0.32,
@@ -2919,11 +2912,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Make sentence one the verdict. Your transcript warms into context before the point, so lead with the recommendation, give one reason, then stop.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 25,
-          "timeToFirstVisibleTokenMs": 25
+          "timeToCompleteReplyMs": 22,
+          "timeToFirstVisibleTokenMs": 22
         },
         "memory": {
           "assessmentConfidence": 0.36,
@@ -3057,11 +3050,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "That panic is the pressure cue because in pressure mode the pause disappears and the answer restarts. The signal to test is one silent beat before sentence one, then only the opener.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 48,
-          "timeToFirstVisibleTokenMs": 48
+          "timeToCompleteReplyMs": 19,
+          "timeToFirstVisibleTokenMs": 19
         },
         "memory": {
           "assessmentConfidence": 0.34,
@@ -3194,11 +3187,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 33,
-          "timeToFirstVisibleTokenMs": 33
+          "timeToCompleteReplyMs": 31,
+          "timeToFirstVisibleTokenMs": 31
         },
         "memory": {
           "assessmentConfidence": 0.33,
@@ -3331,11 +3324,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your claim and reason are present; the salience hypothesis is direction because the reason is not tied to an implication or ask. Do not add more reasons. Use claim, one reason, implication, ask, then check whether the listener knows what to do next.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 33,
-          "timeToFirstVisibleTokenMs": 33
+          "timeToCompleteReplyMs": 30,
+          "timeToFirstVisibleTokenMs": 30
         },
         "memory": {
           "assessmentConfidence": 0.35,
@@ -3463,13 +3456,13 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Cut the softener after the ask. The close keeps adding maybe or just after the decision, so make the ask and stop before the confidence leaks.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 27,
-          "timeToFirstVisibleTokenMs": 27
+          "timeToCompleteReplyMs": 24,
+          "timeToFirstVisibleTokenMs": 24
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -3608,11 +3601,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Check only the final 10 seconds of the 75-second update, because that is where the update transfers into the room. If the last sentence asks for alignment or a decision, keep it; if it recaps, rewrite the close.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 30,
-          "timeToFirstVisibleTokenMs": 30
+          "timeToCompleteReplyMs": 23,
+          "timeToFirstVisibleTokenMs": 23
         },
         "memory": {
           "assessmentConfidence": 0.33,
@@ -3751,11 +3744,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "I would not call that causation. Treat it as useful association: on the latest rep you used the prepared close, so your read that the room stayed engaged is a signal, not proof. Keep the close; next time capture the exact question people asked afterward.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 52,
-          "timeToFirstVisibleTokenMs": 52
+          "timeToCompleteReplyMs": 59,
+          "timeToFirstVisibleTokenMs": 59
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -3894,11 +3887,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "No baseline yet, so start there. Record 60 seconds on something you know well, then check whether the first sentence gives the point.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 50,
-          "timeToFirstVisibleTokenMs": 50
+          "timeToCompleteReplyMs": 55,
+          "timeToFirstVisibleTokenMs": 55
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4032,11 +4025,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "Build a 20-second intro: role, value, ask. Because rambling starts when the listener cannot repeat the point, record one first rep and check whether the ask is clear by the final sentence.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 47,
-          "timeToFirstVisibleTokenMs": 47
+          "timeToCompleteReplyMs": 40,
+          "timeToFirstVisibleTokenMs": 40
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4166,11 +4159,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The words are structured; I cannot prove vocal energy from this text alone. Test the hypothesis by marking one sentence as the peak and recording it with a deliberate emphasis on the consequence.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 32,
-          "timeToFirstVisibleTokenMs": 32
+          "timeToCompleteReplyMs": 25,
+          "timeToFirstVisibleTokenMs": 25
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4305,11 +4298,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "No baseline yet, so start there. Record 60 seconds on one likely question, then review whether your first sentence answers it before polishing anything.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 60,
-          "timeToFirstVisibleTokenMs": 60
+          "timeToCompleteReplyMs": 46,
+          "timeToFirstVisibleTokenMs": 46
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4439,11 +4432,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Mechanically, it has board ingredients; I would not yet call it executive in the room. The close recaps instead of asking for a decision, so rehearse the final sentence as the decision you need.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 30,
-          "timeToFirstVisibleTokenMs": 30
+          "timeToCompleteReplyMs": 23,
+          "timeToFirstVisibleTokenMs": 23
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4572,11 +4565,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I would call it an overexplaining hypothesis, not a label. The observable signal is three reasons before the recommendation, so cap the next answer at recommendation plus one reason.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 23,
-          "timeToFirstVisibleTokenMs": 23
+          "timeToCompleteReplyMs": 17,
+          "timeToFirstVisibleTokenMs": 17
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4705,11 +4698,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement. Test disagreement in sentence one and tell me whether that feels accurate.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 25,
-          "timeToFirstVisibleTokenMs": 25
+          "timeToCompleteReplyMs": 19,
+          "timeToFirstVisibleTokenMs": 19
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4843,11 +4836,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Directness is the next lever: replace one hedge with a plain recommendation. Try this next: Run one answer with no maybe, probably, kind of, sort of, or just before the recommendation.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 41,
-          "timeToFirstVisibleTokenMs": 41
+          "timeToCompleteReplyMs": 39,
+          "timeToFirstVisibleTokenMs": 39
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -4977,11 +4970,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "Trust that signal. On the latest rep, keep the structure but replace the most polished sentence with the phrase you would actually say in the room, because that is what makes it sound like you. Record once and check how it feels against the cleaner version.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 53,
-          "timeToFirstVisibleTokenMs": 53
+          "timeToCompleteReplyMs": 54,
+          "timeToFirstVisibleTokenMs": 54
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5111,11 +5104,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "No baseline yet, so record a 75-second answer where sentence one gives the verdict, sentence two gives one reason, and the final sentence names the ask.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 48,
-          "timeToFirstVisibleTokenMs": 48
+          "timeToCompleteReplyMs": 52,
+          "timeToFirstVisibleTokenMs": 52
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5245,11 +5238,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I cannot prove timid from text alone. What I can see is indirectness: the recommendation is softened before it arrives. Test a direct recommendation first; audio would be needed for a tone verdict.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 30,
-          "timeToFirstVisibleTokenMs": 30
+          "timeToCompleteReplyMs": 33,
+          "timeToFirstVisibleTokenMs": 33
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5379,11 +5372,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The pressure break is sentence one. Normal reps are clean, but under the timer the opener gets swallowed and fillers rise, so repeat the same prompt under a timer and protect only the first sentence.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 26,
-          "timeToFirstVisibleTokenMs": 26
+          "timeToCompleteReplyMs": 19,
+          "timeToFirstVisibleTokenMs": 19
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5517,11 +5510,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "Good correction. On the latest rep, if like was doing semantic comparison work, I should not count it as filler, because that would punish valid speech. Keep the comparison; mark only empty pause-fillers before the next word.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 50,
-          "timeToFirstVisibleTokenMs": 50
+          "timeToCompleteReplyMs": 55,
+          "timeToFirstVisibleTokenMs": 55
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5651,11 +5644,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "Fair boundary. Prompt echo is not the same as filler, so I would not count the repeated prompt phrase. Judge only the words you added while searching for the next thought.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 83,
-          "timeToFirstVisibleTokenMs": 83
+          "timeToCompleteReplyMs": 115,
+          "timeToFirstVisibleTokenMs": 115
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5789,11 +5782,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I cannot quote that unless the transcript gives me the exact words. The safe read is non-quote evidence: the close softened after the recommendation, so rerun the final sentence as the ask.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 25,
-          "timeToFirstVisibleTokenMs": 25
+          "timeToCompleteReplyMs": 19,
+          "timeToFirstVisibleTokenMs": 19
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -5926,11 +5919,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "Correction: I should not have put that in quotes unless it was exact. I retract the quote. The supported read is only that your recommendation came late, so use that safe read, not the unverified wording.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 46,
-          "timeToFirstVisibleTokenMs": 46
+          "timeToCompleteReplyMs": 62,
+          "timeToFirstVisibleTokenMs": 62
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6061,11 +6054,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "On the latest rep the close is the signal, so fix the close: make the final sentence the ask, then stop.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 44,
-          "timeToFirstVisibleTokenMs": 44
+          "timeToCompleteReplyMs": 49,
+          "timeToFirstVisibleTokenMs": 49
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6205,11 +6198,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair. I am stopping that thread. Your ask is about the close, so the move is final sentence as the ask, not another filler drill.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 22,
-          "timeToFirstVisibleTokenMs": 22
+          "timeToCompleteReplyMs": 23,
+          "timeToFirstVisibleTokenMs": 23
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6338,11 +6331,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "Both can be true. The score says mechanics improved; your check-in says the rep felt harder. Change the next test because effort matters too: same prompt, one fewer condition, and check whether effort drops without the score falling.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 51,
-          "timeToFirstVisibleTokenMs": 51
+          "timeToCompleteReplyMs": 50,
+          "timeToFirstVisibleTokenMs": 50
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6477,11 +6470,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "Treat that as useful self-report, not proof. On the latest rep the reusable move is verdict first plus one example, so keep the structure for interviews and record one rep that captures which question made it land.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 52,
-          "timeToFirstVisibleTokenMs": 52
+          "timeToCompleteReplyMs": 48,
+          "timeToFirstVisibleTokenMs": 48
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6610,11 +6603,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "On the latest rep the close is the signal, so in the next rep make the final sentence the ask, then stop.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 37,
-          "timeToFirstVisibleTokenMs": 37
+          "timeToCompleteReplyMs": 34,
+          "timeToFirstVisibleTokenMs": 34
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6748,11 +6741,11 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "I can coach the latest rep: the close is the usable signal, so make the final sentence the ask, then stop.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 43,
-          "timeToFirstVisibleTokenMs": 43
+          "timeToCompleteReplyMs": 39,
+          "timeToFirstVisibleTokenMs": 39
         },
         "memory": {
           "assessmentConfidence": 0.2,
@@ -6888,13 +6881,13 @@
           "typedAssessmentFallbackApplied": true
         },
         "finalReply": "Fair push. It sounded cold or generic instead of like expert coaching. Your last rep gives one safe signal, trust repair signal I leaned on generic advice instead of evidence, so use one user-specific signal first, then prescribe exactly one coach move.",
-        "gitCommit": "2097573f",
+        "gitCommit": "1f2ce888",
         "issues": [
           "reliability:floorConfidenceWithEvidence"
         ],
         "latency": {
-          "timeToCompleteReplyMs": 1317,
-          "timeToFirstVisibleTokenMs": 0
+          "timeToCompleteReplyMs": 88,
+          "timeToFirstVisibleTokenMs": 1
         },
         "memory": {
           "assessmentConfidence": 0.2,
