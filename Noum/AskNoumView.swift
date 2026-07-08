@@ -439,6 +439,11 @@ struct AskNoumView: View {
     // profile; only a tap on this card's chip commits.
     @State private var pendingGoalIntent: CoachContextBuilder.GoalIntent?
 
+    // Transparent memory / trajectory — sheet presentation for "Your
+    // trajectory", opened from the memory-usage pill under the latest coach
+    // reply (and from the thread options menu for discoverability).
+    @State private var showTrajectorySheet = false
+
     // S4 — live top offset of the thread ScrollView, published by the
     // zero-height probe inside it (`AskNoumScrollOffsetKey`). Drives the
     // collapsing header so the ~25% pinned intro block shrinks the moment
@@ -535,6 +540,19 @@ struct AskNoumView: View {
         return store.messages.isEmpty ? .calm : .coaching
     }
 
+    /// Bounded, honest read of what's currently feeding personalization —
+    /// built fresh from the same read-only stores the reply pipeline uses.
+    /// See `TrajectorySummaryBuilder` for the no-overclaim contract.
+    private var memoryTrajectorySnapshot: MemoryTrajectorySnapshot {
+        TrajectorySummaryBuilder.build(
+            profile: coachingProfileStore.profile,
+            baseline: baselineStore.baseline,
+            sessions: sessionStore.sessions,
+            coachMemory: coachMemoryStore.currentMemory,
+            now: Date()
+        )
+    }
+
     var body: some View {
         ZStack {
             AppColor.screenBackground
@@ -594,6 +612,20 @@ struct AskNoumView: View {
                                     .id("coachNextMove")
                                 case nil:
                                     EmptyView()
+                                }
+
+                                // Transparent memory — only once a real (non-
+                                // pending) coach reply has landed, so the pill
+                                // never appears beside an empty thread or a
+                                // still-composing reply.
+                                if let lastMessage = store.messages.last,
+                                   lastMessage.role == .coach,
+                                   !lastMessage.isPending {
+                                    MemoryUsagePill(snapshot: memoryTrajectorySnapshot) {
+                                        showTrajectorySheet = true
+                                    }
+                                    .padding(.top, 2)
+                                    .id("memoryUsagePill")
                                 }
 
                                 // End chat — the deliberate session exit,
@@ -692,6 +724,9 @@ struct AskNoumView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showTrajectorySheet) {
+            TrajectoryView(snapshot: memoryTrajectorySnapshot)
+        }
         // T2 (owner refinement): the deliberate exit is the bottom-of-thread
         // "End chat" row (`endChatRow`), not a top-bar control — "shouldn't
         // be at the top." The standard back chevron stays for plain
@@ -839,6 +874,13 @@ struct AskNoumView: View {
                         )
                     }
                 }
+                Button {
+                    showTrajectorySheet = true
+                } label: {
+                    Label("Your trajectory", systemImage: "brain")
+                }
+                .accessibilityIdentifier("askNoum.trajectoryMenuItem")
+
                 if !store.messages.isEmpty {
                     Button(role: .destructive) {
                         store.clearThread()
@@ -862,7 +904,9 @@ struct AskNoumView: View {
     }
 
     private var shouldShowThreadOptions: Bool {
-        onGoLive != nil || speaker.canSpeakReplies || !store.messages.isEmpty
+        // "Your trajectory" is always available, so the menu itself is
+        // always worth showing now.
+        true
     }
 
     private func toggleSpokenReplies() {

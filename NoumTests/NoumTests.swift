@@ -48617,3 +48617,223 @@ struct CoachingOnboardingCustomChallengeTests {
         )
     }
 }
+
+// MARK: - Transparent memory & trajectory (TrajectorySummaryBuilder)
+
+@Suite("TrajectorySummaryBuilderTests")
+struct TrajectorySummaryBuilderTests {
+
+    // MARK: Honest empty state
+
+    @Test func honestEmptyStateWithNoProfileAndNoSessions() {
+        let snapshot = TrajectorySummaryBuilder.build(
+            profile: nil,
+            baseline: .empty,
+            sessions: [],
+            coachMemory: nil,
+            now: Date(timeIntervalSince1970: 1_000_000)
+        )
+
+        #expect(snapshot.activeGoals.isEmpty)
+        #expect(snapshot.recentReps.isEmpty)
+        #expect(snapshot.trendSignals.isEmpty)
+        #expect(snapshot.evidenceFreshnessDays == nil)
+        #expect(snapshot.confidence == .insufficient)
+        #expect(snapshot.isStale == false)
+        #expect(snapshot.userVisibility == TrajectorySummaryBuilder.notEnoughYetLine)
+        // The honest state must never claim a goal or reps it doesn't have.
+        #expect(!snapshot.userVisibility.contains("Using:"))
+    }
+
+    @Test func emptyStateWithProfileButNoRepsNamesTheGoalOnly() {
+        let snapshot = TrajectorySummaryBuilder.build(
+            profile: testProfile(),
+            baseline: .empty,
+            sessions: [],
+            coachMemory: nil,
+            now: Date(timeIntervalSince1970: 1_000_000)
+        )
+
+        #expect(!snapshot.activeGoals.isEmpty)
+        #expect(snapshot.recentReps.isEmpty)
+        #expect(snapshot.trendSignals.isEmpty)
+        // No rep history at all — freshness must stay nil, never fabricated.
+        #expect(snapshot.evidenceFreshnessDays == nil)
+        #expect(snapshot.userVisibility.hasPrefix("Using:"))
+        #expect(snapshot.userVisibility.contains("goal"))
+        #expect(!snapshot.userVisibility.contains("reps"))
+    }
+
+    // MARK: Freshness bounding
+
+    @Test func freshnessBoundingFlagsStaleEvidence() {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let staleDays = TrajectorySummaryBuilder.stalenessThresholdDays + 5
+        let staleDate = Calendar(identifier: .gregorian).date(byAdding: .day, value: -staleDays, to: now)!
+
+        let snapshot = TrajectorySummaryBuilder.build(
+            profile: testProfile(),
+            baseline: .empty,
+            sessions: [testSession(date: staleDate, fillerWordCount: 4, score: 5)],
+            coachMemory: nil,
+            now: now
+        )
+
+        #expect(snapshot.evidenceFreshnessDays == staleDays)
+        #expect(snapshot.isStale == true)
+        #expect(snapshot.userVisibility.contains("out of date"))
+        #expect(snapshot.userVisibility.contains("\(staleDays) days ago"))
+    }
+
+    @Test func freshnessBoundingLeavesRecentEvidenceUnflagged() {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let recentDays = TrajectorySummaryBuilder.stalenessThresholdDays - 3
+        let recentDate = Calendar(identifier: .gregorian).date(byAdding: .day, value: -recentDays, to: now)!
+
+        let snapshot = TrajectorySummaryBuilder.build(
+            profile: testProfile(),
+            baseline: .empty,
+            sessions: [testSession(date: recentDate, fillerWordCount: 2, score: 7)],
+            coachMemory: nil,
+            now: now
+        )
+
+        #expect(snapshot.evidenceFreshnessDays == recentDays)
+        #expect(snapshot.isStale == false)
+        #expect(!snapshot.userVisibility.contains("out of date"))
+    }
+
+    @Test func stalenessBoundaryIsExclusive() {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let boundaryDate = Calendar(identifier: .gregorian).date(
+            byAdding: .day,
+            value: -TrajectorySummaryBuilder.stalenessThresholdDays,
+            to: now
+        )!
+
+        let snapshot = TrajectorySummaryBuilder.build(
+            profile: testProfile(),
+            baseline: .empty,
+            sessions: [testSession(date: boundaryDate, fillerWordCount: 2, score: 7)],
+            coachMemory: nil,
+            now: now
+        )
+
+        // Exactly at the threshold is still fresh — only strictly-older reps
+        // flip the flag, mirroring the codebase's other freshness gates.
+        #expect(snapshot.isStale == false)
+    }
+
+    // MARK: No overclaim (weekly trend evidence floor)
+
+    @Test func thinEvidenceProducesNoTrendSignalsEvenAcrossTwoWeeks() {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = calendar.date(from: DateComponents(weekday: 4, weekOfYear: 10, yearForWeekOfYear: 2026))!
+        let lastWeek = calendar.date(byAdding: .weekOfYear, value: -1, to: now)!
+
+        // Only 2 total reps — below `minimumSessionsForTrend` — even though
+        // they land in two different calendar weeks. The builder must refuse
+        // to compute a delta from that little evidence.
+        let snapshot = TrajectorySummaryBuilder.build(
+            profile: testProfile(),
+            baseline: .empty,
+            sessions: [
+                testSession(date: now, fillerWordCount: 1, score: 8),
+                testSession(date: lastWeek, fillerWordCount: 5, score: 4)
+            ],
+            coachMemory: nil,
+            now: now
+        )
+
+        #expect(snapshot.trendSignals.isEmpty)
+    }
+
+    @Test func sufficientEvidenceAcrossTwoWeeksProducesAnHonestBoundedSignal() {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = calendar.date(from: DateComponents(weekday: 4, weekOfYear: 10, yearForWeekOfYear: 2026))!
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
+        let lastWeekAnchor = calendar.date(byAdding: .weekOfYear, value: -1, to: now)!
+        let lastWeekEarlier = calendar.date(byAdding: .day, value: -1, to: lastWeekAnchor)!
+
+        let snapshot = TrajectorySummaryBuilder.build(
+            profile: testProfile(),
+            baseline: .empty,
+            sessions: [
+                testSession(date: now, fillerWordCount: 1, score: 8),
+                testSession(date: yesterday, fillerWordCount: 2, score: 7),
+                testSession(date: lastWeekAnchor, fillerWordCount: 6, score: 4),
+                testSession(date: lastWeekEarlier, fillerWordCount: 8, score: 3)
+            ],
+            coachMemory: nil,
+            now: now
+        )
+
+        let fillerSignal = snapshot.trendSignals.first { $0.metricLabel == "Filler words" }
+        #expect(fillerSignal != nil)
+        #expect(fillerSignal?.direction == .improving)
+        #expect(fillerSignal?.exampleEvidenceLine != nil)
+
+        let scoreSignal = snapshot.trendSignals.first { $0.metricLabel == "Score" }
+        #expect(scoreSignal != nil)
+        #expect(scoreSignal?.direction == .improving)
+
+        // Every signal must cite a concrete example rep — never an
+        // unsubstantiated claim.
+        #expect(snapshot.trendSignals.allSatisfy { $0.exampleEvidenceLine != nil })
+    }
+
+    @Test func recentRepsAreBoundedToThreeEvenWithLongerHistory() {
+        let now = Date(timeIntervalSince1970: 3_000_000)
+        let calendar = Calendar(identifier: .gregorian)
+        let sessions = (0..<10).map { offset in
+            testSession(
+                date: calendar.date(byAdding: .day, value: -offset, to: now)!,
+                fillerWordCount: offset,
+                score: 5
+            )
+        }
+
+        let snapshot = TrajectorySummaryBuilder.build(
+            profile: testProfile(),
+            baseline: .empty,
+            sessions: sessions,
+            coachMemory: nil,
+            now: now
+        )
+
+        #expect(snapshot.recentReps.count == 3)
+    }
+
+    // MARK: - Fixtures
+
+    private func testProfile() -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            customChallengeText: nil,
+            desiredOutcome: .composed,
+            speakingStyleGoal: .executive,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: "",
+            chosenStyleGoal: .executive
+        )
+    }
+
+    private func testSession(date: Date, fillerWordCount: Int, score: Int) -> PracticeSession {
+        PracticeSession(
+            transcript: "test transcript",
+            fillerWordCount: fillerWordCount,
+            duration: 45,
+            date: date,
+            mode: .timed,
+            score: score,
+            isRated: true
+        )
+    }
+}
