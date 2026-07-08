@@ -21,6 +21,67 @@ function round1(x) {
   return Math.round(x * 10) / 10;
 }
 
+// Prompt-caching / cost accounting — COST/LATENCY evidence only, never a
+// quality signal. Reads whatever `usage` the provider call captured on
+// `record.trace.usage` (Anthropic: cache_creation_input_tokens /
+// cache_read_input_tokens; Gemini: cachedContentTokenCount). Records without
+// a `trace.usage` (replay/cli providers, or a fixture that errored before
+// generation) are silently excluded from the denominator rather than
+// counted as cache misses — there's no usage data to judge either way.
+function cacheSummary(records) {
+  let requestsWithUsage = 0;
+  let cacheHits = 0;
+  let cacheReadTokens = 0;
+  let cacheCreationTokens = 0;
+  let cachedContentTokens = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  for (const r of records) {
+    const usage = r.trace?.usage;
+    if (!usage) continue;
+    requestsWithUsage++;
+    const read = usage.cache_read_input_tokens || 0;
+    const created = usage.cache_creation_input_tokens || 0;
+    const cachedContent = usage.cachedContentTokenCount || 0;
+    cacheReadTokens += read;
+    cacheCreationTokens += created;
+    cachedContentTokens += cachedContent;
+    inputTokens += usage.input_tokens || usage.promptTokenCount || 0;
+    outputTokens += usage.output_tokens || usage.candidatesTokenCount || 0;
+    if (read > 0 || cachedContent > 0) cacheHits++;
+  }
+
+  if (requestsWithUsage === 0) {
+    return {
+      requestsWithUsage: 0,
+      cacheHits: 0,
+      cacheHitRate: null,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      cachedContentTokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      estimatedTokensSaved: 0,
+    };
+  }
+
+  return {
+    requestsWithUsage,
+    cacheHits,
+    cacheHitRate: round1((cacheHits / requestsWithUsage) * 100),
+    cacheReadTokens,
+    cacheCreationTokens,
+    cachedContentTokens,
+    inputTokens,
+    outputTokens,
+    // Cache reads bill at a fraction of a fresh input token (provider
+    // pricing, not modeled here) — this is the raw token count that avoided
+    // full-price re-processing, not a dollar or latency claim.
+    estimatedTokensSaved: cacheReadTokens + cachedContentTokens,
+  };
+}
+
 export function summarize(records) {
   const scored = records.filter((r) => r.status === 'scored');
   const all = scored.map((r) => r.score.final);
@@ -68,6 +129,7 @@ export function summarize(records) {
     dimensionMeans: dimensionMeans(scored),
     thresholds,
     productionReady: Object.values(thresholds).every((t) => t.pass),
+    cacheSummary: cacheSummary(records),
   };
 }
 
@@ -148,6 +210,29 @@ function currentAppPathEvidence(run) {
   };
 }
 
+function renderCacheSummary(cache) {
+  const L = [];
+  L.push('## Prompt-cache usage (this run)');
+  L.push('');
+  if (!cache || cache.requestsWithUsage === 0) {
+    L.push('No usage data on this run (replay/cli provider, or no scored requests).');
+    L.push('');
+    return L;
+  }
+  L.push('| Metric | Value |');
+  L.push('|---|---|');
+  L.push(`| Requests with usage data | ${cache.requestsWithUsage} |`);
+  L.push(`| Cache hit rate | ${cache.cacheHitRate}% (${cache.cacheHits}/${cache.requestsWithUsage}) |`);
+  L.push(`| Cache read tokens (Anthropic) | ${cache.cacheReadTokens} |`);
+  L.push(`| Cache creation tokens (Anthropic) | ${cache.cacheCreationTokens} |`);
+  L.push(`| Cached content tokens (Gemini) | ${cache.cachedContentTokens} |`);
+  L.push(`| Input tokens | ${cache.inputTokens} |`);
+  L.push(`| Output tokens | ${cache.outputTokens} |`);
+  L.push(`| Estimated tokens saved by cache | ${cache.estimatedTokensSaved} |`);
+  L.push('');
+  return L;
+}
+
 function renderAppPathEvidence(run) {
   const app = currentAppPathEvidence(run);
   const L = [];
@@ -198,6 +283,7 @@ function renderMarkdown(run, previous) {
   L.push('');
   L.push(`Scored ${s.scored}/${s.n} fixtures · range ${s.min}–${s.max} · median ${s.median}.${s.missing ? ` ${s.missing} missing capture(s).` : ''}`);
   L.push('');
+  L.push(...renderCacheSummary(s.cacheSummary));
   L.push(...renderAppPathEvidence(run));
   L.push(`## Dimension means (of max)`);
   L.push('');

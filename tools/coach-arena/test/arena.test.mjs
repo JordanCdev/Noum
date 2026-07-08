@@ -595,3 +595,59 @@ test('report: production readiness can pass only with complete coverage and no w
   assert.equal(summary.thresholds.fixtureScoreFloor.pass, true);
   assert.equal(summary.thresholds.zeroSub70Fixtures.pass, true);
 });
+
+test('report: cacheSummary is additive and reports zero on records with no usage data', () => {
+  const summary = summarize([
+    scoredRecord({ fixture: { id: 'a' } }),
+    scoredRecord({ fixture: { id: 'b' } }),
+  ]);
+  assert.deepEqual(summary.cacheSummary, {
+    requestsWithUsage: 0,
+    cacheHits: 0,
+    cacheHitRate: null,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    cachedContentTokens: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    estimatedTokensSaved: 0,
+  });
+});
+
+test('report: cacheSummary aggregates Anthropic cache_read/cache_creation across records', () => {
+  const summary = summarize([
+    {
+      ...scoredRecord({ fixture: { id: 'hit' } }),
+      trace: { usage: { input_tokens: 1300, output_tokens: 40, cache_creation_input_tokens: 0, cache_read_input_tokens: 1180 } },
+    },
+    {
+      ...scoredRecord({ fixture: { id: 'miss' } }),
+      trace: { usage: { input_tokens: 1300, output_tokens: 38, cache_creation_input_tokens: 1180, cache_read_input_tokens: 0 } },
+    },
+  ]);
+  const c = summary.cacheSummary;
+  assert.equal(c.requestsWithUsage, 2);
+  assert.equal(c.cacheHits, 1);
+  assert.equal(c.cacheHitRate, 50);
+  assert.equal(c.cacheReadTokens, 1180);
+  assert.equal(c.cacheCreationTokens, 1180);
+  assert.equal(c.inputTokens, 2600);
+  assert.equal(c.outputTokens, 78);
+  assert.equal(c.estimatedTokensSaved, 1180);
+});
+
+test('report: cacheSummary reads Gemini cachedContentTokenCount independently of Anthropic fields', () => {
+  const summary = summarize([
+    {
+      ...scoredRecord({ fixture: { id: 'gemini-hit' } }),
+      trace: { usage: { promptTokenCount: 900, candidatesTokenCount: 30, cachedContentTokenCount: 700 } },
+    },
+  ]);
+  const c = summary.cacheSummary;
+  assert.equal(c.requestsWithUsage, 1);
+  assert.equal(c.cacheHits, 1);
+  assert.equal(c.cachedContentTokens, 700);
+  assert.equal(c.inputTokens, 900);
+  assert.equal(c.outputTokens, 30);
+  assert.equal(c.estimatedTokensSaved, 700);
+});

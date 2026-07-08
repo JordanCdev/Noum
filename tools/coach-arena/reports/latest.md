@@ -7,15 +7,28 @@ Git: `9a8b86e0` on `worktree-coach-iq-90-real` (+5 dirty) · prompt: CoachContex
 
 | Metric | Value | Target | Pass |
 |---|---|---|---|
-| Gold-suite mean | **64.5** (▼ -0.8) | 70 | ❌ |
-| Deep-assessment mean | 73 (▼ -1.2) | 70 | ✅ |
-| Trust-repair mean | 65.3 (▼ -1.8) | 65 | ✅ |
+| Gold-suite mean | **64.5** (±0) | 70 | ❌ |
+| Deep-assessment mean | 73 (±0) | 70 | ✅ |
+| Trust-repair mean | 65.3 (±0) | 65 | ✅ |
 | Missing captures | 0 | 0 | ✅ |
 | Fixture score floor | 31 | 60 | ❌ |
 | Sub-70 fixtures | 34 | 0 | ❌ |
 | Placeholder leaks | 0 | 0 | ✅ |
 
 Scored 51/51 fixtures · range 31–90 · median 66.
+
+## Prompt-cache usage (this run)
+
+| Metric | Value |
+|---|---|
+| Requests with usage data | 51 |
+| Cache hit rate | 0% (0/51) |
+| Cache read tokens (Anthropic) | 0 |
+| Cache creation tokens (Anthropic) | 0 |
+| Cached content tokens (Gemini) | 0 |
+| Input tokens | 417427 |
+| Output tokens | 6120 |
+| Estimated tokens saved by cache | 0 |
 
 ## App-path evidence
 
@@ -35,31 +48,31 @@ Scored 51/51 fixtures · range 31–90 · median 66.
 
 | Category | n | Mean | Δ |
 |---|---|---|---|
-| metadata-trap | 1 | 40 | (▼ -23) |
-| partial-pushback | 1 | 44 | (▼ -2) |
-| emotional-frustration | 1 | 44 | (▲ +9) |
-| repetition-callout | 1 | 50 | (▼ -24) |
-| transfer | 3 | 51.3 | (▼ -5) |
-| goal-change | 3 | 52.3 | (▼ -0.4) |
-| plan-request | 1 | 53 | (▲ +13) |
-| big-moment | 1 | 54 | (▼ -20) |
-| interview-prep | 1 | 56 | (▲ +4) |
-| emotional | 4 | 60.3 | (▼ -7.2) |
-| mechanics | 6 | 62.5 | (▲ +0.2) |
-| pressure-mode | 3 | 62.7 | (▼ -6) |
-| data-question | 1 | 65 | (▼ -7) |
-| leadership-update | 1 | 66 | (▼ -9) |
-| off-topic | 1 | 66 | (▼ -7) |
-| memory-recall | 1 | 66 | (▲ +12) |
-| filler-pressure | 1 | 67 | (▲ +5) |
-| confidence-ending | 1 | 68 | (▼ -2) |
-| cold-start | 1 | 68 | (▲ +29) |
-| greeting | 1 | 70 | (▼ -6) |
-| trust-repair | 9 | 73.6 | (▲ +2.8) |
-| score-question | 1 | 75 | (▲ +5) |
+| metadata-trap | 1 | 40 | (±0) |
+| partial-pushback | 1 | 44 | (±0) |
+| emotional-frustration | 1 | 44 | (±0) |
+| repetition-callout | 1 | 50 | (±0) |
+| transfer | 3 | 51.3 | (±0) |
+| goal-change | 3 | 52.3 | (±0) |
+| plan-request | 1 | 53 | (±0) |
+| big-moment | 1 | 54 | (±0) |
+| interview-prep | 1 | 56 | (±0) |
+| emotional | 4 | 60.3 | (±0) |
+| mechanics | 6 | 62.5 | (±0) |
+| pressure-mode | 3 | 62.7 | (±0) |
+| data-question | 1 | 65 | (±0) |
+| leadership-update | 1 | 66 | (±0) |
+| off-topic | 1 | 66 | (±0) |
+| memory-recall | 1 | 66 | (±0) |
+| filler-pressure | 1 | 67 | (±0) |
+| confidence-ending | 1 | 68 | (±0) |
+| cold-start | 1 | 68 | (±0) |
+| greeting | 1 | 70 | (±0) |
+| trust-repair | 9 | 73.6 | (±0) |
+| score-question | 1 | 75 | (±0) |
 | readiness-trap | 1 | 78 | (±0) |
-| deep-assessment | 5 | 80.6 | (▲ +2.8) |
-| fabrication-trap | 1 | 82 | (▲ +6) |
+| deep-assessment | 5 | 80.6 | (±0) |
+| fabrication-trap | 1 | 82 | (±0) |
 
 ## Reliability caps triggered
 

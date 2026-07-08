@@ -1145,9 +1145,23 @@ struct AICallDiagnosticRecord: Codable, Equatable, Identifiable {
     let reason: String
     let statusCode: Int?
     let latencyMs: Int?
+    // Prompt-caching / token-cost accounting (additive — nil on every record
+    // logged before this field existed, and on any call this session that
+    // never carried usage data, e.g. a transport failure).
+    var cacheCreationInputTokens: Int? = nil
+    var cacheReadInputTokens: Int? = nil
+    var inputTokens: Int? = nil
+    var outputTokens: Int? = nil
+    /// Gemini implicit-caching token count. Anthropic reports cache activity
+    /// via the two fields above instead.
+    var cachedContentTokenCount: Int? = nil
 
     var statusLabel: String {
         statusCode.map { "HTTP \($0)" } ?? outcome.title
+    }
+
+    var cacheHit: Bool {
+        (cacheReadInputTokens ?? 0) > 0 || (cachedContentTokenCount ?? 0) > 0
     }
 
     static func make(
@@ -1159,7 +1173,12 @@ struct AICallDiagnosticRecord: Codable, Equatable, Identifiable {
         outcome: AICallDiagnosticOutcome,
         reason: String,
         statusCode: Int? = nil,
-        latencyMs: Int? = nil
+        latencyMs: Int? = nil,
+        cacheCreationInputTokens: Int? = nil,
+        cacheReadInputTokens: Int? = nil,
+        inputTokens: Int? = nil,
+        outputTokens: Int? = nil,
+        cachedContentTokenCount: Int? = nil
     ) -> AICallDiagnosticRecord {
         AICallDiagnosticRecord(
             id: id,
@@ -1170,7 +1189,12 @@ struct AICallDiagnosticRecord: Codable, Equatable, Identifiable {
             outcome: outcome,
             reason: bounded(reason, fallback: outcome.title, maxLength: 256),
             statusCode: statusCode,
-            latencyMs: latencyMs
+            latencyMs: latencyMs,
+            cacheCreationInputTokens: cacheCreationInputTokens,
+            cacheReadInputTokens: cacheReadInputTokens,
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            cachedContentTokenCount: cachedContentTokenCount
         )
     }
 
@@ -1292,7 +1316,12 @@ enum AICallDiagnostics {
         reason: String,
         statusCode: Int? = nil,
         startedAt: Date? = nil,
-        now: Date = Date()
+        now: Date = Date(),
+        cacheCreationInputTokens: Int? = nil,
+        cacheReadInputTokens: Int? = nil,
+        inputTokens: Int? = nil,
+        outputTokens: Int? = nil,
+        cachedContentTokenCount: Int? = nil
     ) {
         let latencyMs = startedAt.map { max(0, Int(now.timeIntervalSince($0) * 1_000)) }
         let record = AICallDiagnosticRecord.make(
@@ -1303,7 +1332,12 @@ enum AICallDiagnostics {
             outcome: outcome,
             reason: reason,
             statusCode: statusCode,
-            latencyMs: latencyMs
+            latencyMs: latencyMs,
+            cacheCreationInputTokens: cacheCreationInputTokens,
+            cacheReadInputTokens: cacheReadInputTokens,
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            cachedContentTokenCount: cachedContentTokenCount
         )
         Task { @MainActor in
             AICallDiagnosticsStore.shared.record(record)

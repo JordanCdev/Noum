@@ -49027,3 +49027,209 @@ struct TrajectorySummaryBuilderTests {
         )
     }
 }
+
+// MARK: - Prompt caching (Anthropic/Gemini system-field split)
+//
+// Proves the DYNAMIC per-turn data (userContext / latest user words) never
+// lands inside the block Anthropic marks `cache_control: ephemeral` — that
+// block must be byte-identical across requests within the cache TTL, so any
+// per-turn leakage silently kills the cache hit. Also proves the stable
+// block stays byte-stable across two calls that differ only in the dynamic
+// context, which is the literal precondition for a cache hit.
+
+@Suite("AnthropicSystemBlocksCacheSplitTests")
+struct AnthropicSystemBlocksCacheSplitTests {
+    private let stableSystemPrompt = "You are Noum's senior communications coach. Voice: direct, warm, no fluff."
+    private let dynamicUserContext = "GOAL: land the promotion pitch. RECENT REP: 2026-07-08, 4 fillers, score 71. LATEST USER TURN: \"did that pitch actually land or was I just hoping?\""
+
+    @Test func stableBlockCarriesTheSystemPromptVerbatim() {
+        let blocks = AICoachChatService.anthropicSystemBlocks(
+            systemPrompt: stableSystemPrompt,
+            userContext: dynamicUserContext
+        )
+        #expect(blocks.count == 2)
+        #expect(blocks[0]["text"] as? String == stableSystemPrompt)
+        #expect(blocks[0]["type"] as? String == "text")
+    }
+
+    @Test func stableBlockCarriesTheCacheControlBreakpoint() {
+        let blocks = AICoachChatService.anthropicSystemBlocks(
+            systemPrompt: stableSystemPrompt,
+            userContext: dynamicUserContext
+        )
+        let cacheControl = blocks[0]["cache_control"] as? [String: String]
+        #expect(cacheControl?["type"] == "ephemeral")
+    }
+
+    @Test func stableBlockDoesNotContainTheDynamicUserContext() {
+        let blocks = AICoachChatService.anthropicSystemBlocks(
+            systemPrompt: stableSystemPrompt,
+            userContext: dynamicUserContext
+        )
+        let stableText = blocks[0]["text"] as? String ?? ""
+        #expect(!stableText.contains("did that pitch actually land"))
+        #expect(!stableText.contains("4 fillers"))
+        #expect(!stableText.contains(dynamicUserContext))
+    }
+
+    @Test func dynamicBlockCarriesTheUserContextAndHasNoCacheControl() {
+        let blocks = AICoachChatService.anthropicSystemBlocks(
+            systemPrompt: stableSystemPrompt,
+            userContext: dynamicUserContext
+        )
+        #expect(blocks[1]["text"] as? String == dynamicUserContext)
+        #expect(blocks[1]["type"] as? String == "text")
+        #expect(blocks[1]["cache_control"] == nil)
+    }
+
+    @Test func stableBlockIsByteStableAcrossTwoRequestsWithDifferentDynamicContext() {
+        let firstTurn = AICoachChatService.anthropicSystemBlocks(
+            systemPrompt: stableSystemPrompt,
+            userContext: "GOAL: land the promotion pitch. LATEST USER TURN: \"how did I do?\""
+        )
+        let secondTurn = AICoachChatService.anthropicSystemBlocks(
+            systemPrompt: stableSystemPrompt,
+            userContext: "GOAL: land the promotion pitch. LATEST USER TURN: \"what should I fix next?\""
+        )
+        // The precondition for a cache hit: identical stable block...
+        #expect((firstTurn[0]["text"] as? String) == (secondTurn[0]["text"] as? String))
+        #expect((firstTurn[0]["cache_control"] as? [String: String]) == (secondTurn[0]["cache_control"] as? [String: String]))
+        // ...while the dynamic block is free to differ.
+        #expect((firstTurn[1]["text"] as? String) != (secondTurn[1]["text"] as? String))
+    }
+
+    @Test func totalTextContentIsUnchangedFromASingleComposedString() {
+        let composed = stableSystemPrompt + "\n\n" + dynamicUserContext
+        let blocks = AICoachChatService.anthropicSystemBlocks(
+            systemPrompt: stableSystemPrompt,
+            userContext: dynamicUserContext
+        )
+        let reassembled = (blocks[0]["text"] as? String ?? "") + "\n\n" + (blocks[1]["text"] as? String ?? "")
+        #expect(reassembled == composed)
+    }
+}
+
+@Suite("GeminiSystemPartsPrefixOrderingTests")
+struct GeminiSystemPartsPrefixOrderingTests {
+    private let stableSystemPrompt = "You are Noum's senior communications coach."
+    private let dynamicUserContext = "RECENT REP: score 71. LATEST USER TURN: \"was that any good?\""
+
+    @Test func stablePartComesFirstAndDynamicPartComesLast() {
+        let parts = AICoachChatService.geminiSystemParts(
+            systemPrompt: stableSystemPrompt,
+            userContext: dynamicUserContext
+        )
+        #expect(parts.count == 2)
+        #expect(parts[0]["text"] as? String == stableSystemPrompt)
+        #expect(parts[1]["text"] as? String == dynamicUserContext)
+    }
+
+    @Test func stablePartDoesNotContainDynamicUserContext() {
+        let parts = AICoachChatService.geminiSystemParts(
+            systemPrompt: stableSystemPrompt,
+            userContext: dynamicUserContext
+        )
+        let stableText = parts[0]["text"] as? String ?? ""
+        #expect(!stableText.contains("was that any good"))
+    }
+
+    @Test func stablePartIsByteStableAcrossDifferentDynamicContext() {
+        let a = AICoachChatService.geminiSystemParts(systemPrompt: stableSystemPrompt, userContext: "turn one")
+        let b = AICoachChatService.geminiSystemParts(systemPrompt: stableSystemPrompt, userContext: "turn two")
+        #expect((a[0]["text"] as? String) == (b[0]["text"] as? String))
+        #expect((a[1]["text"] as? String) != (b[1]["text"] as? String))
+    }
+}
+
+// MARK: - Prompt-cache usage extraction (Anthropic + Gemini)
+
+@Suite("CoachChatCacheUsageExtractionTests")
+struct CoachChatCacheUsageExtractionTests {
+    private func data(_ object: [String: Any]) -> Data {
+        try! JSONSerialization.data(withJSONObject: object)
+    }
+
+    @Test func anthropicUsageParsesAllFourFields() {
+        let object: [String: Any] = [
+            "content": [["type": "text", "text": "Fair push."]],
+            "stop_reason": "end_turn",
+            "usage": [
+                "input_tokens": 1300,
+                "output_tokens": 42,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 1180
+            ]
+        ]
+        let usage = AICoachChatService.extractAnthropicUsage(from: data(object))
+        #expect(usage?.inputTokens == 1300)
+        #expect(usage?.outputTokens == 42)
+        #expect(usage?.cacheCreationInputTokens == 0)
+        #expect(usage?.cacheReadInputTokens == 1180)
+        #expect(usage?.cacheHit == true)
+    }
+
+    @Test func anthropicUsageMissingUsageObjectReturnsNil() {
+        let object: [String: Any] = ["content": [["type": "text", "text": "hi"]]]
+        #expect(AICoachChatService.extractAnthropicUsage(from: data(object)) == nil)
+    }
+
+    @Test func anthropicUsageOnFreshCacheCreationReportsNoReadYet() {
+        let object: [String: Any] = [
+            "usage": [
+                "input_tokens": 1300,
+                "output_tokens": 42,
+                "cache_creation_input_tokens": 1180,
+                "cache_read_input_tokens": 0
+            ]
+        ]
+        let usage = AICoachChatService.extractAnthropicUsage(from: data(object))
+        #expect(usage?.cacheCreationInputTokens == 1180)
+        #expect(usage?.cacheReadInputTokens == 0)
+        #expect(usage?.cacheHit == false)
+    }
+
+    @Test func geminiUsageParsesCachedContentTokenCountWhenPresent() {
+        let object: [String: Any] = [
+            "candidates": [["content": ["parts": [["text": "hi"]]]]],
+            "usageMetadata": [
+                "promptTokenCount": 900,
+                "candidatesTokenCount": 30,
+                "cachedContentTokenCount": 700
+            ]
+        ]
+        let usage = AICoachChatService.extractGeminiUsage(from: data(object))
+        #expect(usage?.inputTokens == 900)
+        #expect(usage?.outputTokens == 30)
+        #expect(usage?.cachedContentTokenCount == 700)
+        #expect(usage?.cacheHit == true)
+    }
+
+    @Test func geminiUsageGuardsAbsentCachedContentTokenCount() {
+        // Absent (not zero) on a cache miss — must not fabricate a 0.
+        let object: [String: Any] = [
+            "usageMetadata": [
+                "promptTokenCount": 900,
+                "candidatesTokenCount": 30
+            ]
+        ]
+        let usage = AICoachChatService.extractGeminiUsage(from: data(object))
+        #expect(usage?.cachedContentTokenCount == nil)
+        #expect(usage?.cacheHit == false)
+    }
+
+    @Test func geminiUsageMissingUsageMetadataReturnsNil() {
+        let object: [String: Any] = ["candidates": [["content": ["parts": [["text": "hi"]]]]]]
+        #expect(AICoachChatService.extractGeminiUsage(from: data(object)) == nil)
+    }
+
+    @Test func chatExtractUsageDispatchesAnthropicVersusGemini() {
+        let anthropicObject: [String: Any] = [
+            "usage": ["input_tokens": 500, "output_tokens": 10, "cache_read_input_tokens": 400]
+        ]
+        let geminiObject: [String: Any] = [
+            "usageMetadata": ["promptTokenCount": 500, "candidatesTokenCount": 10, "cachedContentTokenCount": 400]
+        ]
+        #expect(AICoachChatService.chatExtractUsage(from: data(anthropicObject), provider: .anthropic)?.cacheReadInputTokens == 400)
+        #expect(AICoachChatService.chatExtractUsage(from: data(geminiObject), provider: .gemini)?.cachedContentTokenCount == 400)
+    }
+}
