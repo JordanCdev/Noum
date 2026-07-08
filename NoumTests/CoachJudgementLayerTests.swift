@@ -839,6 +839,37 @@ struct CoachReasoningPassTests {
         #expect(read.contains("pause") || read.contains("beat"))
     }
 
+    @Test func quickLatencyCueDoesNotOverrideCleanCloseEvidence() {
+        var trajectory = Self.singleRepTrajectory
+        trajectory.latestRepEvidencePack = LatestRepEvidencePack(
+            mode: "Timed",
+            score: 7,
+            fillerCount: 1,
+            durationSeconds: 60,
+            wordsPerMinute: 145,
+            transcriptWordCount: 72,
+            transcriptExcerpt: "My recommendation is to prioritize the launch because the team needs one decision this week so",
+            evidenceLines: [
+                "latest rep: Timed, 7/10, 1 fillers, 60s",
+                "pace estimate: 145 WPM"
+            ]
+        )
+
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: .quickMove,
+            userQuestion: "Quickly, what do I do next?",
+            trajectory: trajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text
+        )
+
+        let verdict = assessment.directVerdict.lowercased()
+        let proof = assessment.nextProofTest.lowercased()
+        #expect(verdict.contains("ending"))
+        #expect(!verdict.contains("pacing"))
+        #expect(proof.contains("final sentence") || proof.contains("ask"))
+    }
+
     @Test func deepAssessmentCarriesCaseSummaryAndInterventionEvidence() {
         var trajectory = Self.singleRepTrajectory
         trajectory.evidenceCoverage = 0.64
