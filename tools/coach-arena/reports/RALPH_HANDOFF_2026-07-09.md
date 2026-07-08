@@ -54,7 +54,23 @@ Work branch `ralph-app-path-evidence-0708` → **draft PR #210** (base `ux-overh
    batch, one blind judge) — never the headline `latest.json` delta (judge panels + generation
    both drift per draw). Diagnose gaps from a fresh draw, not one baseline.
 
-## VERIFIED dead-end: `ARENA_PROVIDER=cli` is contaminated when nested in Claude Code
+## UPDATE: cli-mode NOW WORKS keyless (fixed) — HEAD raw-draft prompt-layer = 64.1
+The contamination below is FIXED (commit): the arena's cli provider now uses
+`--system-prompt` (replace) instead of `--append-system-prompt`, so nested-in-Claude-Code
+runs get clean production-parity `claude-sonnet-4-6` coach + judge output via the OAuth CLI.
+`ARENA_PROVIDER=cli ARENA_INCLUDE_SYNTHETIC=1 node runners/replay.mjs run` → **HEAD raw-draft
+mean 64.1** (anchor 67.6; within draw variance). KEY FINDING
+(`ralph-cli-baseline-analysis-2026-07-08.md`): 24/26 deterministic findings on the 40 sub-70
+fixtures are GATE-CAUGHT types (tooLong/scaffold/report-voice) the shipping gate repairs
+before display; the other 19 are judge-rubric gaps on a mature prompt (17-iter ceiling). So
+prompt-layer<70 is a raw-draft artifact — the faithful gated measure (app-path) passes all
+thresholds. If a future loop still wants to chase the raw-draft number: run a cli dual-arm
+A/B (old vs new prompt, one blind judge) on the 19 non-gate-caught sub-70 fixtures, testing
+the CONTEXT-block evidence-surfacing lever — but it's LOW VALUE (moves a number that
+under-states shipped quality; app-path already ≥ target). Do NOT overwrite the committed
+anthropic `latest.md` (67.6) with a cli run — restore it via git after.
+
+## (Historical, now FIXED) `ARENA_PROVIDER=cli` was contaminated when nested in Claude Code
 `claude -p` IS authenticated in a background/interactive Claude Code session (probe returned
 `PROBE_OK`; the cron-context 401 does not apply here). BUT the arena's cli provider calls
 `claude -p --model claude-sonnet-4-6 --append-system-prompt "<coach>"` — and nested inside
