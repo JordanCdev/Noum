@@ -15,13 +15,24 @@ import XCTest
 struct CoachChatAppPathConversationScript {
     let conversation: CoachChatConversationFixture
     let seedCoachReplies: [String]
+    /// Verbatim transcript quotes to seed into `ProofMomentStore.shared`
+    /// for this fixture's app-path run, so a reply that legitimately cites
+    /// the user's own past words (e.g. an "example from my sessions"
+    /// request) is grounded as verified proof instead of tripping the
+    /// `missingVerifiedExampleQuote` gate and falling back. Seeded and
+    /// cleared per fixture so it never leaks into the other fixtures or
+    /// sibling suites. Mirrors the shipping precondition + the passing
+    /// `sessionExampleRequestWithVerifiedProofAcceptsQuotedExample` unit test.
+    let seedProofQuotes: [String]
 
     init(
         conversation: CoachChatConversationFixture,
-        seedCoachReplies: [String] = []
+        seedCoachReplies: [String] = [],
+        seedProofQuotes: [String] = []
     ) {
         self.conversation = conversation
         self.seedCoachReplies = seedCoachReplies
+        self.seedProofQuotes = seedProofQuotes
     }
 }
 
@@ -564,7 +575,12 @@ enum CoachChatConversationCorpus {
             fixtureID: "examples-from-sessions-010",
             userTurn: "Can you give me an example of me doing this in sessions?",
             coachReply: "One example is the rep where you said 'we focused on three priorities.' The reasons were clear, but the listener had no scene to picture, so add one concrete example after the first reason next time.",
-            seedCoachReplies: ["You tend to give reasons before the picture."]
+            seedCoachReplies: ["You tend to give reasons before the picture."],
+            // The gold cites the archive's canonical proof quote; seed it so
+            // the citation is legitimately verified (matches the passing
+            // sessionExampleRequestWithVerifiedProofAcceptsQuotedExample test)
+            // rather than reading as fabricated → gate fallback → cap 30.
+            seedProofQuotes: ["we focused on three priorities"]
         ),
         arenaAppPathScript(
             fixtureID: "outcome-not-causation-027",
@@ -699,7 +715,8 @@ enum CoachChatConversationCorpus {
         fixtureID: String,
         userTurn: String,
         coachReply: String,
-        seedCoachReplies: [String] = []
+        seedCoachReplies: [String] = [],
+        seedProofQuotes: [String] = []
     ) -> CoachChatAppPathConversationScript {
         CoachChatAppPathConversationScript(
             conversation: CoachChatConversationFixture(
@@ -712,7 +729,8 @@ enum CoachChatConversationCorpus {
                     )
                 ]
             ),
-            seedCoachReplies: seedCoachReplies
+            seedCoachReplies: seedCoachReplies,
+            seedProofQuotes: seedProofQuotes
         )
     }
 
@@ -5316,11 +5334,22 @@ struct CoachChatConversationCorpusTests {
             defaults.removePersistentDomain(forName: suiteName)
             CoachAssessmentCache.shared.invalidate()
             UserTrajectoryCache.shared.invalidate()
+            // Per-fixture proof-store isolation. The pipeline reads
+            // `ProofMomentStore.shared.recent(...)` to build its verified
+            // quote guard; clearing before + after each fixture keeps the
+            // seed (below) from leaking into the other 49 fixtures or any
+            // sibling suite, and guarantees a deterministic empty baseline
+            // for the fixtures that seed nothing.
+            ProofMomentStore.shared.clear()
             defer {
                 defaults.removePersistentDomain(forName: suiteName)
                 CoachAssessmentCache.shared.invalidate()
                 UserTrajectoryCache.shared.invalidate()
+                ProofMomentStore.shared.clear()
             }
+            // (Proof quotes are seeded just before the turn loop below, after
+            // the store is built, so nothing between the seed and the pipeline's
+            // `ProofMomentStore.shared.recent(...)` read can reset the archive.)
 
             let replySource = RuntimeConversationReplySource()
             let service = AICoachChatService(
@@ -5347,6 +5376,31 @@ struct CoachChatConversationCorpusTests {
             // precondition that Ask Noum chat happens after a baseline exists.
             let sourceSessions = CoachChatConversationCorpus.sourceFixture(for: conversation)?.sessions ?? []
             var turnRows: [CoachChatConversationAppPathTurnRow] = []
+
+            // Seed the fixture's verified proof quotes into the shared archive
+            // the pipeline reads (`ProofMomentStore.shared.recent(...)` →
+            // `verifiedProofQuotes`), so a reply that legitimately cites the
+            // user's own past words is grounded instead of tripping
+            // `unverifiedQuotedUserSpeech` → deterministic fallback. Seeded here,
+            // after the store is built and immediately before the pipeline runs,
+            // so no intervening store/account setup resets the archive. Cleared
+            // per fixture (top + defer) so it never leaks into the other 49.
+            if !script.seedProofQuotes.isEmpty {
+                ProofMomentStore.shared.clear()
+                for (quoteIndex, proofQuote) in script.seedProofQuotes.enumerated() {
+                    ProofMomentStore.shared.record(
+                        ProofMoment(
+                            quote: proofQuote,
+                            technique: "Session example",
+                            claim: "Verified session example seeded for app-path proof grounding.",
+                            sessionDate: Date(timeIntervalSince1970: 1_720_000_000 + Double(quoteIndex)),
+                            isAIBacked: false,
+                            generatedAt: Date(timeIntervalSince1970: 1_720_000_000 + Double(quoteIndex))
+                        ),
+                        for: UUID()
+                    )
+                }
+            }
 
             for (index, turn) in conversation.turns.enumerated() {
                 await replySource.set(turn.coachReply)
