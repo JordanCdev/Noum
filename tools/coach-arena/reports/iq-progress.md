@@ -251,4 +251,74 @@ gap needs a different lever than this session pulled (e.g., an explicit
 wiring real `CoachCaseFile`/trajectory evidence into a richer, adaptive
 context block — the `CoachReasoningPass`/`CoachPromptBundle` typed-verdict
 half this session deliberately did not fake). That is the highest-value
+
+## Round 6 — decorative-memory rule (direct attempt at the Memory plateau)
+
+Pulled the `personalMemory` judge score + `failureReasons` for every scored
+fixture across the last several runs (`history/*.json`) instead of guessing:
+33 separate judge citations, overwhelmingly the SAME complaint —
+"decorative memory": the coach names a specific number/streak/quote, but the
+advice given would be word-for-word identical for a stranger with zero
+history. Examples pulled directly from the data: "22-day streak cited in
+spirit but never weaponised... decorative", "8/min datum... omitted, making
+memory partially decorative", "the accomplishment facts don't change the
+advice... they just appear". This is a precise, generalizable, non-fixture-
+specific pattern (the rubric's own wording: "not a decorative fact drop").
+
+Added a concrete, mechanically-actionable rule to Intelligence-floor rule 1:
+citing a fact is not enough — the model must check "if I deleted every
+specific number/name/quote, would the move itself have to change?" and if
+not, go back and let the data pick the move, with a worked contrast example
+("fillers cluster at the close, not the open, so the move is X" vs "you have
+5 fillers. Try X").
+
+**Result: mean 63.9 (round-3 code baseline for this specific comparison,
+but really vs the 5-run avg 63.7) -> 65.3 (+1.4-1.6).** Best run of the
+whole session. Floor jumped to 34 (best floor by far) because
+`set-authoritative` — the single worst, most-reproducing failure across
+every prior round (1-16/100 in all 5 measured runs) — scored **69/100**: the
+model's reply was "Authoritative fits what you're after — I'd propose it.
+Confirm it on the card and the next reps will train toward a verdict-first
+close," an almost verbatim echo of the few-shot example added in round 4.
+This is NOT noise — it's a direct, mechanistically-legible confirmation the
+few-shot example (which needed a full round to show up, since round 5's
+single draw happened not to trigger it) works. Dimensions: IQ 18.9, EQ 17.9,
+Memory 13.4 (still flat), Intervention 10.1 (best of session), Dialogue 11.1
+(best of session). Decorative-memory citations in this run's failures: 13/51
+— present but the aggregate Memory number did not move, meaning the rule
+reduced neither the frequency enough nor the judge continued penalizing
+residual instances at similar severity.
+
+## Round 7 — confirmatory re-run, same code, no changes
+
+Re-ran the identical committed state to check round 6 wasn't a lucky draw.
+**Result: mean 64.5** (IQ 18.9, EQ 17.8, Memory 13.2, Intervention 10.2,
+Dialogue 10.7). `set-authoritative` floor held at 31 (not caught in worst-10
+detail this time but consistent with round 6 — the fix reproduces). Average
+of rounds 6+7: **mean 64.9**, IQ 18.9, EQ 17.85, Memory 13.3, Intervention
+10.15, Dialogue 10.9 — a real, reproducible step up from the prior 5-run
+average of 63.7, concentrated in Intervention and Dialogue, NOT Memory.
+
+**Committed this state** (`Noum/CoachContextBuilder.swift` decorative-memory
+rule addition) on top of the prior commit. Full `NoumTests` suite re-verified
+green (3316/3316) after this change too.
+
+**Updated honest ceiling**: two consecutive, consistent runs at mean
+64.5-65.3 (avg 64.9) is the best-supported estimate of where this session's
+work landed — call it **+2.2 over the 62.7 baseline**. Memory is now the
+clearest standing puzzle: a data-driven, judge-citation-backed rule targeting
+its #1 named failure mode (decorative fact-dropping) measurably helped
+OTHER dimensions (Intervention, Dialogue both hit session highs) but left
+Memory itself flat at ~13.2-13.4/20 across two independent runs. The most
+likely honest explanation, given everything observed this session: Memory's
+ceiling isn't an instruction-clarity problem (the rule is concrete and the
+model demonstrably CAN follow sharp, worked-example instructions — the
+`set-authoritative` fix proves that) — it's an evidence-density problem. Many
+fixtures' CONTEXT blocks simply don't carry enough distinctive personal
+data for any phrasing of "make it un-swappable" to produce more than one or
+two citable facts, and the judge scores un-swappability partly on breadth of
+personal detail woven through the WHOLE reply, not just the opening line.
+Closing this gap further needs richer context content (the deferred
+`CoachReasoningPass` typed-verdict evidence, or a larger BASELINE/CASE
+FORMULATION per fixture), not more prompt wording — that is the highest-value
 next lever, not further system-prompt wordsmithing.

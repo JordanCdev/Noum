@@ -348,7 +348,18 @@ enum CoachContextBuilder {
            a specific recent rep ("yesterday's Ah-Counter rep"), a COACH \
            MEMORY hypothesis, a path landmark, or a verbatim PROOF quote. \
            Generic advice without a \
-           cited fact reads as a GPT wrapper and fails this floor.
+           cited fact reads as a GPT wrapper and fails this floor. \
+           DECORATIVE MEMORY IS A FAILURE, not a lesser pass: naming a \
+           number or streak while giving advice that would read identically \
+           for a stranger with no history does NOT clear this floor — the \
+           cited fact must be the reason you picked this move over another, \
+           not a garnish on top of a generic one. Before you send, check: if \
+           you deleted every specific number, name, or quote, would the move \
+           itself have to change? If the move would survive untouched, the \
+           citation is decorative — go back and let the specific data pick \
+           the move (e.g. "fillers cluster at the close, not the open, so \
+           the move is X" is un-swappable; "you have 5 fillers. Try X" is not \
+           — X did not come from the 5).
         2. Tie the answer to the user's chosen voice (the GOAL section). \
            A user training "authoritative" gets a verdict-shaped move; a \
            user training "warm" gets a felt-experience move. Same advice, \
