@@ -98,64 +98,6 @@ function composeRequest(fixture, extracted) {
   return { system: fullSystem, contextBlock, messages, maxTokens: MAX_TOKENS[fixture.turnDepth] || 500 };
 }
 
-// Self-repair pass: mirrors AICoachChatService's real `repairLowQualityReply`
-// -- a SECOND genuine call to the same coach model, shown its own draft plus
-// the SAME generic, rule-based finding messages already used for scoring
-// (never the fixture's expectedCoachMove/excellentAnswerExample/disqualifiers
-// -- those would be leaking the answer key). This is a real architectural
-// lever (research finding 5: self-check/reflection), not fabricated data --
-// every token still comes from the real Haiku pipeline. The arena was
-// previously single-shot with none of production's retry/repair loop; this
-// closes that specific fidelity gap for the cheaply-detectable rule
-// violations (length, scaffold labels, banned phrases, one-move discipline)
-// the deterministic checker already catches.
-function repairPrompt(findings) {
-  const lines = findings
-    .map((f) => `- ${f.message}`)
-    .join('\n');
-  return [
-    'Your draft reply above violates the following rules from your system prompt:',
-    lines,
-    '',
-    'Rewrite the ENTIRE reply from scratch so it no longer violates any of them.',
-    'Follow all the same system instructions and the CONTEXT you were already given.',
-    'Output ONLY the corrected reply text -- no preamble, no explanation, no quotes around it.',
-  ].join('\n');
-}
-
-async function selfRepairIfNeeded(provider, fx, req, draftReply, draftDeterministic) {
-  if (!draftDeterministic.findings.length) {
-    return { reply: draftReply, deterministic: draftDeterministic, repairAttempted: false, repairUsed: false };
-  }
-  const repairMessages = [
-    ...req.messages,
-    { role: 'assistant', content: draftReply },
-    { role: 'user', content: repairPrompt(draftDeterministic.findings) },
-  ];
-  const repairGen = await provider.generate(
-    { id: fx.id + '__repair' },
-    { system: req.system, messages: repairMessages, maxTokens: req.maxTokens },
-  );
-  if (repairGen.missing || !repairGen.text || !repairGen.text.trim()) {
-    return { reply: draftReply, deterministic: draftDeterministic, repairAttempted: true, repairUsed: false };
-  }
-  const repairedReply = repairGen.text.trim();
-  const recentReplies = (fx.priorChatTurns || []).filter((t) => t.role === 'assistant').map((t) => t.text);
-  const repairedDeterministic = runChecks(repairedReply, fx, { contextBlock: req.contextBlock, recentReplies });
-
-  // Prefer the repair unless it's strictly worse (a higher-severity hard cap,
-  // or the same cap tier with a higher flag penalty). Ties go to the repair
-  // -- matches production's "once triggered, prefer the repair" posture.
-  const draftCap = draftDeterministic.hardCap ?? Infinity;
-  const repairCap = repairedDeterministic.hardCap ?? Infinity;
-  const repairIsWorse = repairCap < draftCap
-    || (repairCap === draftCap && repairedDeterministic.flagPenalty > draftDeterministic.flagPenalty);
-  if (repairIsWorse) {
-    return { reply: draftReply, deterministic: draftDeterministic, repairAttempted: true, repairUsed: false };
-  }
-  return { reply: repairedReply, deterministic: repairedDeterministic, repairAttempted: true, repairUsed: true };
-}
-
 function newRunId() {
   const iso = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
   return `run_${iso}`;
@@ -243,22 +185,11 @@ async function cmdRun() {
 
       // 2. deterministic checks
       const recentReplies = (fx.priorChatTurns || []).filter((t) => t.role === 'assistant').map((t) => t.text);
-      const draftDeterministic = runChecks(reply, fx, { contextBlock: req.contextBlock, recentReplies });
-
-      // 2.5. self-repair: a real second Haiku call shown its own draft plus
-      // the generic rule-violation messages already used for scoring (never
-      // the fixture's answer key). Mirrors production's actual repair loop.
-      const repairResult = await selfRepairIfNeeded(provider, fx, req, reply, draftDeterministic);
-      const finalReply = repairResult.reply;
-      const deterministic = repairResult.deterministic;
-      rec.reply = finalReply;
-      rec.draftReply = repairResult.repairUsed ? reply : undefined;
-      rec.repairAttempted = repairResult.repairAttempted;
-      rec.repairUsed = repairResult.repairUsed;
+      const deterministic = runChecks(reply, fx, { contextBlock: req.contextBlock, recentReplies });
       rec.deterministic = { findings: deterministic.findings, flagPenalty: deterministic.flagPenalty, hardCap: deterministic.hardCap, placeholderLeaks: deterministic.placeholderLeaks };
 
       // 3. judge
-      const payload = buildJudgeUserPayload(fx, finalReply, req.contextBlock, deterministic);
+      const payload = buildJudgeUserPayload(fx, reply, req.contextBlock, deterministic);
       const jr = await provider.judge({ id: fx.id }, { system: JUDGE_SYSTEM, messages: [{ role: 'user', content: payload }], maxTokens: 900 });
       if (jr.missing) {
         rec.status = 'missing-judge';
@@ -284,8 +215,7 @@ async function cmdRun() {
       // 4. combine
       rec.score = combineScore(deterministic, judge);
       rec.status = 'scored';
-      const repairTag = repairResult.repairUsed ? ' [repaired]' : repairResult.repairAttempted ? ' [repair-rejected]' : '';
-      process.stderr.write(`  [${i}/${fixtures.length}] ${fx.id}: ${rec.score.final}/100 (IQ${judge.dims.diagnosticIQ.score} EQ${judge.dims.eqAttunement.score} M${judge.dims.personalMemory.score})${rec.score.capsTriggered.length ? ' CAP:' + rec.score.capsTriggered.map((c) => c.key).join(',') : ''}${repairTag}\n`);
+      process.stderr.write(`  [${i}/${fixtures.length}] ${fx.id}: ${rec.score.final}/100 (IQ${judge.dims.diagnosticIQ.score} EQ${judge.dims.eqAttunement.score} M${judge.dims.personalMemory.score})${rec.score.capsTriggered.length ? ' CAP:' + rec.score.capsTriggered.map((c) => c.key).join(',') : ''}\n`);
     } catch (e) {
       rec.status = 'error';
       rec.note = String(e.message);
