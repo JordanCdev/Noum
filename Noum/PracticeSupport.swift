@@ -56,6 +56,12 @@ enum AppDestination: Hashable {
     /// taps a scenario row. Mirrors `suddenDeathDifficultyDetail`:
     /// renders the full rep list at that scenario + plain-text export.
     case imScenarioDetail(scenario: IMConversationScenario)
+    /// Scenario-roleplay pressure ladder: choose a scenario (interview,
+    /// leadership update, stakeholder pushback, difficult Q&A) and a
+    /// starting rung, then run the live turn loop. Reached from the new
+    /// Home "Practise a real conversation" entry card.
+    case roleplaySetup
+    case roleplayRun(scenario: RoleplayScenario, startingLevel: RoleplayPressureLevel)
 }
 
 /// Pure router for the Summary "Practice Again" CTA. Carved out of
