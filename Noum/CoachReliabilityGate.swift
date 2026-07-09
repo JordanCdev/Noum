@@ -660,7 +660,11 @@ enum CoachReliabilityGate {
                 replyText: trimmed
             )
         } else if issues.contains(.rambleStoppingRuleMiss) {
-            fallback = rambleStoppingRuleFallback(surface: surface)
+            fallback = rambleStoppingRuleFallback(
+                surface: surface,
+                latestUserTurn: latestUserTurn,
+                assessment: assessment
+            )
         } else if issues.contains(.leadershipStatusReportMiss) {
             fallback = leadershipStatusReportFallback(surface: surface)
         } else if issues.contains(.recurringCloseTrendDiluted) {
@@ -864,6 +868,42 @@ enum CoachReliabilityGate {
             : "Tiny test. All good. Send the moment you want to practice, and I'll give you one clean read."
     }
 
+    static func lowCapacityUserTurn(_ latestUserTurn: String?) -> Bool {
+        guard let latestUserTurn else { return false }
+        return containsAny(normalize(latestUserTurn), [
+            "i'm exhausted", "im exhausted", "i am exhausted",
+            "i'm tired", "im tired", "i am tired",
+            "i'm overwhelmed", "im overwhelmed", "i am overwhelmed",
+            "i feel defeated", "i'm defeated", "im defeated"
+        ])
+    }
+
+    /// Presence-first recovery for a user who has no capacity for another drill.
+    /// Rotate the copy if the same recovery was just shown; the invariant is no
+    /// pressure and no fabricated progress, not one canonical sentence.
+    static func lowCapacityFallback(
+        surface: CoachReplySurface,
+        previousCoachReply: String?,
+        recentCoachReplies: [String]
+    ) -> String {
+        let variants = surface == .live
+            ? [
+                "That sounds exhausting. Do not force another rep right now. Stop here, and come back when you have room for one small answer.",
+                "You sound spent. No drill now. Take the pressure off; we can use one small answer when you come back."
+            ]
+            : [
+                "That sounds exhausting. Do not force another rep right now. Stop here, and come back when you have enough room for one small answer.",
+                "You sound spent. No drill now. Take the pressure off; when you come back, we can use one small answer instead of a full session."
+            ]
+        return variants.first {
+            isCleanCandidate(
+                $0,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies
+            )
+        } ?? variants.first { normalize($0) != previousCoachReply.map(normalize) } ?? variants[0]
+    }
+
     /// Recovery for a genericness trust-repair complaint. The key is to stop
     /// sounding like a template: own the miss, name the concrete pattern, and
     /// give one behavioural move without raw counts or scaffold labels.
@@ -942,7 +982,33 @@ enum CoachReliabilityGate {
 
     /// Recovery for rambling turns. Preserve the useful mechanism, but say it
     /// with the same stop discipline we are asking the user to practise.
-    static func rambleStoppingRuleFallback(surface: CoachReplySurface) -> String {
+    static func rambleStoppingRuleFallback(
+        surface: CoachReplySurface,
+        latestUserTurn: String? = nil,
+        assessment: CoachAssessment? = nil
+    ) -> String {
+        let context = rambleStoppingRuleFallbackContext(
+            latestUserTurn: latestUserTurn,
+            assessment: assessment
+        )
+        if containsAny(context, [
+            "networking",
+            "introducing myself",
+            "introduce myself",
+            "introduction",
+            "intro"
+        ]) {
+            if surface == .live {
+                return "Start with a 20-second intro: who you help, what changes, one question. No full story yet."
+            }
+            return "Start with a 20-second test: who you help, what changes, and one question for them. No full story yet, because first we need to hear where the ramble starts."
+        }
+        if rambleStoppingRuleContextSuggestsConciseRecommendation(context) {
+            if surface == .live {
+                return "Use a two-sentence ceiling: recommendation first, one reason second, clean stop."
+            }
+            return "For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls."
+        }
         if surface == .live {
             return "You do not lose the thread; you reopen it. The tell is the weaker repeat after the side stories. Use a hard stop: point, one support line, silence."
         }
@@ -989,12 +1055,12 @@ enum CoachReliabilityGate {
         let frame = vulnerablePushbackDifficultyFrame(for: step)
         if let anchor = vulnerablePushbackEvidenceAnchor(from: assessment?.evidenceUsed ?? []) {
             return surface == .live
-                ? "No, it is not easy. \(anchor) \(frame) Keep it small: \(step)"
-                : "No, it is not easy. \(anchor) \(frame) Keep the next step small: \(step)"
+                ? "Fair push: no, it is not easy. \(anchor) \(frame) Keep it small: \(step)"
+                : "Fair push: no, it is not easy. \(anchor) \(frame) Keep the next step small: \(step)"
         }
         return surface == .live
-            ? "No, it is not easy. \(frame) Keep it small: \(step)"
-            : "No, it is not easy. \(frame) Keep the next step small: \(step)"
+            ? "Fair push: no, it is not easy. \(frame) Keep it small: \(step)"
+            : "Fair push: no, it is not easy. \(frame) Keep the next step small: \(step)"
     }
 
     /// Recovery for a voice/goal-change reply that tried to own the UI state
@@ -1060,6 +1126,13 @@ enum CoachReliabilityGate {
         if let latestUserTurn,
            TurnDepthClassifier.isGreetingOrSmallTalk(latestUserTurn) {
             return greetingFallback(surface: surface, assessment: assessment)
+        }
+        if lowCapacityUserTurn(latestUserTurn) {
+            return lowCapacityFallback(
+                surface: surface,
+                previousCoachReply: previousCoachReply,
+                recentCoachReplies: recentCoachReplies
+            )
         }
         if let latestUserTurn,
            TurnDepthClassifier.isLowSignalOffTopicTest(latestUserTurn) {
@@ -1518,7 +1591,35 @@ enum CoachReliabilityGate {
             "variation",
             "vary"
         ])
-        return !(ownsRepetition && marksOldTargetMet && advancesPlan)
+        // A repeated intervention does not always mean the target is complete.
+        // When the evidence is still unresolved, the honest course correction is
+        // to keep the target and change how it is tested. Requiring the coach to
+        // declare the old target "met" fabricated progress and forced a needless
+        // pivot whenever a user called out repetition.
+        let changesProofMethod = containsAny(normalized, [
+            "change the proof",
+            "change the test",
+            "change the check",
+            "different proof",
+            "different test",
+            "different check",
+            "changing the evidence",
+            "same target, different",
+            "keep the close as the target",
+            "keep the target"
+        ])
+        let namesConcreteComparison = containsAny(normalized, [
+            "compare whether",
+            "before or after",
+            "mark where",
+            "mark the first",
+            "listen for",
+            "track whether",
+            "check whether",
+            "find where"
+        ])
+        let advancesEvidence = changesProofMethod && namesConcreteComparison
+        return !(ownsRepetition && ((marksOldTargetMet && advancesPlan) || advancesEvidence))
     }
 
     static func repetitionCourseCorrectionLeaksReportVoice(_ normalized: String) -> Bool {
@@ -1562,7 +1663,6 @@ enum CoachReliabilityGate {
         "cant keep up",
         "people can't keep up",
         "people cant keep up",
-        "rushing",
         "i rush",
         "i'm rushing",
         "im rushing"
@@ -1602,7 +1702,24 @@ enum CoachReliabilityGate {
 
     static func paceSelfFrustrationUserTurn(_ latestUserTurn: String?) -> Bool {
         guard let latestUserTurn else { return false }
-        return containsAny(normalize(latestUserTurn), paceSelfFrustrationUserMarkers)
+        let normalized = normalize(latestUserTurn)
+        // A neutral diagnostic question ("Am I rushing?") needs a direct
+        // evidence read, not the empathy-heavy self-frustration recovery path.
+        if containsAny(normalized, [
+            "am i rushing",
+            "was i rushing",
+            "do i rush",
+            "did i rush"
+        ]),
+           !containsAny(normalized, [
+               "too fast",
+               "way too fast",
+               "can't keep up",
+               "cant keep up"
+           ]) {
+            return false
+        }
+        return containsAny(normalized, paceSelfFrustrationUserMarkers)
     }
 
     static func paceSelfFrustrationNeedsRepair(replyText: String) -> Bool {
@@ -1719,6 +1836,46 @@ enum CoachReliabilityGate {
         return containsAny(normalize(latestUserTurn), rambleStoppingRuleUserMarkers)
     }
 
+    static func rambleStoppingRuleFallbackContext(
+        latestUserTurn: String?,
+        assessment: CoachAssessment?
+    ) -> String {
+        normalize([
+            latestUserTurn ?? "",
+            assessment?.questionRestatement ?? "",
+            assessment?.directVerdict ?? "",
+            assessment?.nextProofTest ?? "",
+            assessment?.evidenceUsed.joined(separator: " ") ?? "",
+            assessment?.missingEvidence.joined(separator: " ") ?? ""
+        ].joined(separator: " "))
+    }
+
+    static func rambleStoppingRuleContextSuggestsConciseRecommendation(_ context: String) -> Bool {
+        guard containsAny(context, [
+            "concise",
+            "recommendation",
+            "client recommendation",
+            "one reason",
+            "second reason",
+            "two sentence",
+            "two-sentence",
+            "sentence ceiling",
+            "extra context",
+            "tighten"
+        ]) else {
+            return false
+        }
+        return containsAny(context, [
+            "concise",
+            "recommendation",
+            "client",
+            "one reason",
+            "second reason",
+            "sentence ceiling",
+            "extra context"
+        ])
+    }
+
     static func rambleStoppingRuleNeedsRepair(replyText: String) -> Bool {
         let normalized = normalize(replyText)
         if containsAny(normalized, rambleStoppingRuleScaffoldMarkers) {
@@ -1731,6 +1888,41 @@ enum CoachReliabilityGate {
             return true
         }
         return !containsAny(normalized, rambleStoppingRuleMechanismMarkers)
+            && !rambleStoppingRuleHasBoundedMechanism(normalized)
+    }
+
+    /// Accepts concrete answer shapes that bound the response even when they do
+    /// not use our preferred "hard stop" vocabulary. This keeps the gate focused
+    /// on the invariant (a usable stopping boundary), not one fixture's wording.
+    static func rambleStoppingRuleHasBoundedMechanism(_ normalized: String) -> Bool {
+        let hasBoundedUnit = containsAny(normalized, [
+            "one example",
+            "one reason",
+            "one question",
+            "one point",
+            "one support",
+            "one line",
+            "two-sentence",
+            "two sentence",
+            "sentence ceiling",
+            "second thread",
+            "second reason"
+        ]) || normalized.range(
+            of: #"\b[0-9]+[ -](?:second|sentence|example|reason|question|point|line)\b"#,
+            options: .regularExpression
+        ) != nil
+
+        let hasStopBoundary = containsAny(normalized, [
+            "then stop",
+            "clean stop",
+            "before adding",
+            "before a second",
+            "no full story",
+            "ceiling",
+            "then silence",
+            "and stop"
+        ])
+        return hasBoundedUnit && hasStopBoundary
     }
 
     static func firstRegexCapture(in text: String, patterns: [String]) -> String? {
@@ -2104,22 +2296,38 @@ enum CoachReliabilityGate {
     static func goalOrVoiceChangeUserTurn(_ latestUserTurn: String?) -> Bool {
         guard let latestUserTurn else { return false }
         let lowered = normalize(latestUserTurn)
-        return containsAny(lowered, [
-            "voice",
-            "authoritative",
-            "warm",
-            "concise",
-            "persuasive",
-            "executive",
-            "storytelling",
-            "engaging",
-            "more engaging",
+        if containsAny(lowered, [
+            "what voice",
+            "which voice",
+            "voice should",
+            "voice do i",
+            "voice to pick",
+            "pick a voice",
+            "choose a voice",
+            "choose my voice",
             "set me to",
             "change my goal",
             "change my voice",
-            "pick",
-            "choose"
-        ])
+            "switch my voice",
+            "sound more engaging",
+            "sound warmer",
+            "sound more warm",
+            "something warmer",
+            "warmer altogether",
+            "more authoritative",
+            "more persuasive",
+            "more executive",
+            "more concise",
+            "more storytelling"
+        ]) {
+            return true
+        }
+        let voiceNames = [
+            "authoritative", "warm", "concise", "persuasive",
+            "executive", "storytelling", "engaging"
+        ]
+        return containsAny(lowered, voiceNames)
+            && containsAny(lowered, ["set", "change", "switch", "pick", "choose"])
     }
 
     static let goalStateDirectiveMarkers: [String] = [

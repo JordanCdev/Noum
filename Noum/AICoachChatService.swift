@@ -2086,6 +2086,12 @@ actor AICoachChatService {
                 surface: surface,
                 assessment: assessment
             )
+        } else if CoachReliabilityGate.lowCapacityUserTurn(latestUserTurn) {
+            raw = CoachReliabilityGate.lowCapacityFallback(
+                surface: surface,
+                previousCoachReply: recentCoachReplies.last,
+                recentCoachReplies: recentCoachReplies
+            )
         } else if TurnDepthClassifier.isLowSignalOffTopicTest(lowerTurn) {
             raw = CoachReliabilityGate.offTopicTestFallback(surface: surface)
         } else if let coldStartShape = coldStartRepairReferenceShape(
@@ -4076,6 +4082,9 @@ actor AICoachChatService {
         if ["egg", "banana", "asdf", "test", "lol", "huh"].contains(normalized) {
             return true
         }
+        if turnLooksEmotionallyVulnerable(lowerTurn) {
+            return false
+        }
         guard normalized.count <= 18,
               wordCount(in: normalized) <= 2 else {
             return false
@@ -4388,6 +4397,32 @@ actor AICoachChatService {
         assessment: CoachAssessment
     ) -> Bool {
         if replyTouchesNonRepairEvidence(lower, assessment: assessment) {
+            return true
+        }
+        // On vulnerable pushback, the useful read can be the mechanism of the
+        // difficulty plus a deliberately smaller experiment. That is substantive
+        // coaching even when no historical metric is appropriate to cite.
+        let namesDifficultyMechanism = containsAny(lower, [
+            "the hard part",
+            "what makes this hard",
+            "the friction is",
+            "the pressure point",
+            "social risk",
+            "carries the risk",
+            "under pressure"
+        ])
+        let adjustsIntervention = containsAny(lower, [
+            "smaller version",
+            "smallest version",
+            "keep the next step small",
+            "say only",
+            "first hard sentence",
+            "one calm reason",
+            "reduce the ask"
+        ])
+        if namesDifficultyMechanism,
+           adjustsIntervention,
+           replyHasUserPracticeMove(lower) {
             return true
         }
         return containsAny(lower, [
@@ -6107,7 +6142,7 @@ actor AICoachChatService {
         } else if containsAny(lowerTurn, ["repeating yourself", "same thing again", "said that already", "already said that"]) {
             friction = "Fair push. I repeated the same move instead of advancing the coaching."
         } else if containsAny(lowerTurn, ["it's not easy", "its not easy", "not that easy", "easier said than done", "harder than that"]) {
-            friction = "Fair push. No, it is not easy."
+            friction = "Fair push: no, it is not easy."
         } else if containsAny(lowerTurn, ["not informative", "not helpful", "not useful", "missed the point", "doesn't answer", "does not answer"]) {
             friction = "Fair push. I answered around the useful read instead of giving it."
         } else if containsAny(lowerTurn, ["cold", "generic", "not human", "low eq", "not high eq"]) {
@@ -6144,7 +6179,7 @@ actor AICoachChatService {
             let step = "say only the first hard sentence, then stop."
             let frame = CoachReliabilityGate.vulnerablePushbackDifficultyFrame(for: step)
             if let anchor = CoachReliabilityGate.vulnerablePushbackEvidenceAnchor(from: [system]) {
-                return "No, it is not easy. \(anchor) \(frame) Keep the next step small: \(step)"
+                return "Fair push: no, it is not easy. \(anchor) \(frame) Keep the next step small: \(step)"
             }
             return CoachReliabilityGate.vulnerablePushbackFallback(
                 surface: .text,

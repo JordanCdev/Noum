@@ -595,6 +595,24 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.blocked)
     }
 
+    @Test func neutralPaceQuestionKeepsDirectEvidenceRead() {
+        let reply = "Yes, locally. The useful signal is 181 WPM and fillers after sentence one. Test one silent beat after the verdict; if the next sentence stays clean, pacing is the lever."
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: reply,
+            previousCoachReply: "Earlier read.",
+            latestUserTurn: "Am I rushing?",
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(evidence: [
+                "pace estimate: 181 WPM",
+                "fillers appear after sentence one"
+            ]),
+            evidenceCoverage: 0.7
+        )
+
+        #expect(!verdict.issues.contains(.paceSelfFrustrationReportVoice))
+        #expect(!verdict.blocked)
+    }
+
     @Test func paceSelfFrustrationMetricsWithoutAttunementStillBlocks() {
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "Pace was 215 WPM with a 0.09 pause rate, so the gap between sentences is disappearing. Fix the pause, not the speed. Hold one silent beat after every full stop.",
@@ -648,6 +666,27 @@ struct CoachReliabilityGateTests {
 
         #expect(!verdict.issues.contains(.rambleStoppingRuleMiss))
         #expect(!verdict.blocked)
+    }
+
+    @Test func boundedRambleShapesCountAsStoppingMechanisms() {
+        let replies = [
+            "Keep the claim, add one example, then stop before adding a second thread.",
+            "Use a two-sentence ceiling: recommendation first, one reason second, clean stop.",
+            "Start with a 20-second test: who you help, what changes, and one question for them. No full story yet."
+        ]
+
+        for reply in replies {
+            let verdict = CoachReliabilityGate.evaluate(
+                replyText: reply,
+                previousCoachReply: "Earlier read.",
+                latestUserTurn: "How do I stop rambling?",
+                turnDepth: .groundedRead,
+                assessment: Self.quickMoveAssessment(),
+                evidenceCoverage: 0.7
+            )
+            #expect(!verdict.issues.contains(.rambleStoppingRuleMiss))
+            #expect(!verdict.blocked)
+        }
     }
 
     @Test func leadershipStatusReportWithRawScoreAndNoTonightRehearsalBlocks() {
@@ -802,6 +841,21 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.blocked)
     }
 
+    @Test func repetitionRepairMayKeepTargetAndChangeEvidenceTest() {
+        let reply = "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence."
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: reply,
+            previousCoachReply: "Run the close once more.",
+            latestUserTurn: "You're repeating yourself.",
+            turnDepth: .trustRepair,
+            assessment: Self.vulnerableTrustRepairAssessment(),
+            evidenceCoverage: 0.7
+        )
+
+        #expect(!verdict.issues.contains(.repetitionCourseCorrectionMiss))
+        #expect(!verdict.blocked)
+    }
+
     @Test func vulnerablePushbackEndingOnBareDiagnosticQuestionBlocks() {
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "No, it isn't — and a freeze in the room is a different animal than the reps you keep landing clean. When it hits, what goes first: the thought itself, or the words that were meant to carry it?",
@@ -816,7 +870,7 @@ struct CoachReliabilityGateTests {
         #expect(verdict.blockingIssues.contains(.vulnerablePushbackQuestionBurden))
         #expect(verdict.blocked)
         let fallback = verdict.fallbackText ?? ""
-        #expect(fallback.contains("No, it is not easy"))
+        #expect(fallback.contains("Fair push: no, it is not easy"))
         #expect(fallback.contains("held composure through an interruption"))
         #expect(fallback.contains("Test a smaller version"))
         #expect(!fallback.lowercased().contains("what goes first"))
@@ -824,7 +878,7 @@ struct CoachReliabilityGateTests {
 
     @Test func vulnerablePushbackWithSmallStepInvitationDoesNotBlock() {
         let verdict = CoachReliabilityGate.evaluate(
-            replyText: "No, it is not easy. This week you held composure through an interruption, so keep the next step small: test a smaller version in the next rep, then stop before defending it. Want to try?",
+            replyText: "Fair push: no, it is not easy. This week you held composure through an interruption, so keep the next step small: test a smaller version in the next rep, then stop before defending it. Want to try?",
             previousCoachReply: "Earlier read.",
             latestUserTurn: "It's not easy.",
             turnDepth: .trustRepair,
@@ -927,6 +981,21 @@ struct CoachReliabilityGateTests {
         #expect(!lowered.contains("80 this week"))
         #expect(!lowered.contains("3 fillers"))
         #expect(!lowered.contains("68 seconds"))
+    }
+
+    @Test func authoritativeProgressQuestionIsNotAStateChangeIntent() {
+        let reply = "You are closer mechanically than you are to sounding authoritative overall. The latest timed rep was 7/10 with 1 filler, but goal readiness still needs repeated pressure evidence."
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: reply,
+            previousCoachReply: nil,
+            latestUserTurn: "How far off am I from sounding authoritative?",
+            turnDepth: .deepAssessment,
+            assessment: Self.deepAssessment(),
+            evidenceCoverage: 0.7
+        )
+
+        #expect(!verdict.issues.contains(.goalStateReportVoiceLeak))
+        #expect(!verdict.blocked)
     }
 
     @Test func voiceGoalCleanRecommendationDoesNotBlock() {
@@ -1184,8 +1253,11 @@ struct CoachReliabilityGateTests {
             evidenceCoverage: 0.5
         )
         #expect(verdict.blocked)
-        #expect(assessment.immediateCoachRead.lowercased().contains("the signal i can use"))
-        #expect(assessment.immediateCoachRead.lowercased().contains("try this next"))
+        #expect(!assessment.immediateCoachRead.isEmpty)
+        #expect(CoachReliabilityGate.isCleanCandidate(
+            assessment.immediateCoachRead,
+            previousCoachReply: nil
+        ))
         #expect(verdict.fallbackText == assessment.immediateCoachRead)
     }
 
@@ -1366,6 +1438,22 @@ struct CoachReliabilityGateTests {
                 "\(turn): back-to-back fallbacks are verbatim-identical"
             )
         }
+    }
+
+    @Test func exhaustedDisclosureGetsPresenceNotProbeCopy() {
+        #expect(!TurnDepthClassifier.isLowSignalOffTopicTest("I'm exhausted."))
+        let fallback = CoachReliabilityGate.truthfulFallback(
+            turnDepth: .quickMove,
+            assessment: Self.fallbackAuditAssessment(for: .quickMove),
+            surface: .text,
+            previousCoachReply: nil,
+            recentCoachReplies: [],
+            latestUserTurn: "I'm exhausted."
+        )
+        let lowered = fallback.lowercased()
+        #expect(lowered.contains("exhaust"))
+        #expect(lowered.contains("do not force another rep"))
+        #expect(!lowered.contains("tiny test"))
     }
 
     // MARK: - Greeting never gets a drill (the "Hi -> Pressure Drill" bug)

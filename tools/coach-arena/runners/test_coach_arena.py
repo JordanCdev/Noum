@@ -211,6 +211,58 @@ class AppPathBoundaryTests(unittest.TestCase):
         self.assertLessEqual(result["overall"], 30)
         self.assertIn("fallbackLeak", result["checkFailures"])
 
+    def test_target_matching_deterministic_assessment_fallback_still_exposes_pipeline_failure(self):
+        fixture = app_fixture({
+            "id": "not-easy-deterministic-repair",
+            "turnType": "trustRepair",
+            "userTurn": "It's not easy.",
+            "goal": "Handle pressure without flattening the user's frustration.",
+            "evidence": ["pressure disagreement drill"],
+            "memoryState": "Sentence one carries the social risk.",
+            "expectedCoachMove": "Validate the difficulty and prescribe a smaller disagreement rep.",
+            "badAnswerExample": "Try harder and run the drill again.",
+            "excellentAnswerExample": (
+                "Fair push: no, it is not easy. The hard part is that sentence one carries the social risk, "
+                "so test a smaller version in the next rep: say only the disagreement and one calm reason, "
+                "then stop before defending it."
+            ),
+            "disqualifiers": [],
+        })
+        trace = complete_app_path_trace()
+        trace["fallback"] = {
+            "qualityGateAcceptedFallback": True,
+            "deterministicAssessmentFallbackApplied": True,
+        }
+        trace["reasoning"]["qualityGateOutcome"] = "fallback:deterministicAssessmentAfterContentRejected"
+        reply = fixture["excellentAnswerExample"]
+
+        result = arena.local_judge(fixture, reply, trace)
+
+        self.assertIn("fallbackLeak", result["checkFailures"])
+        self.assertLessEqual(result["overall"], 30)
+        self.assertTrue(any(
+            cap["name"] == "placeholderOrBroken" and cap["applied"]
+            for cap in result["caps"]
+        ))
+
+    def test_generic_deterministic_assessment_fallback_still_counts_as_fallback_leak(self):
+        fixture = gold_fixture("filler-pressure-007")
+        trace = complete_app_path_trace()
+        trace["fallback"] = {
+            "qualityGateAcceptedFallback": True,
+            "deterministicAssessmentFallbackApplied": True,
+        }
+        trace["reasoning"]["qualityGateOutcome"] = "fallback:deterministicAssessmentAfterContentRejected"
+
+        result = arena.local_judge(
+            fixture,
+            "Your last rep gives one usable signal so far. Run one more rep and separate semantic words from filler words before cutting anything.",
+            trace,
+        )
+
+        self.assertLessEqual(result["overall"], 30)
+        self.assertIn("fallbackLeak", result["checkFailures"])
+
     def test_sensitive_raw_report_voice_is_capped(self):
         fixture = app_fixture({
             "id": "trust-repair-report-voice",

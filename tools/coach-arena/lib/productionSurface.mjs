@@ -33,6 +33,38 @@ const GREETING_SMALL_TALK = new Set([
 
 const OFF_TOPIC_TEST_SAFE_WORDS = /\b(score|filler|voice|rate|plan|help|practice|interview|meeting|presentation|pitch|better|improve|why|what|how)\b/;
 
+const EMOTIONALLY_VULNERABLE_MARKERS = [
+  'exhausted',
+  'tired',
+  'overwhelmed',
+  'anxious',
+  'nervous',
+  'scared',
+  'frustrated',
+  'discouraged',
+  'defeated',
+  'stuck',
+  'freeze',
+  'froze',
+  'panic',
+  'blank',
+];
+
+const LOW_CAPACITY_USER_MARKERS = [
+  "i'm exhausted",
+  'im exhausted',
+  'i am exhausted',
+  "i'm tired",
+  'im tired',
+  'i am tired',
+  "i'm overwhelmed",
+  'im overwhelmed',
+  'i am overwhelmed',
+  'i feel defeated',
+  "i'm defeated",
+  'im defeated',
+];
+
 const DRILL_MARKERS = [
   'try this next',
   'the signal i can use',
@@ -285,7 +317,6 @@ const PACE_SELF_FRUSTRATION_USER_MARKERS = [
   'cant keep up',
   "people can't keep up",
   'people cant keep up',
-  'rushing',
   'i rush',
   "i'm rushing",
   'im rushing',
@@ -488,7 +519,31 @@ const LOW_PRESSURE_ACTION_MARKERS = [
 ];
 
 const GOAL_OR_VOICE_CHANGE_MARKERS = [
-  'voice',
+  'what voice',
+  'which voice',
+  'voice should',
+  'voice do i',
+  'voice to pick',
+  'pick a voice',
+  'choose a voice',
+  'choose my voice',
+  'set me to',
+  'change my goal',
+  'change my voice',
+  'switch my voice',
+  'sound more engaging',
+  'sound warmer',
+  'sound more warm',
+  'something warmer',
+  'warmer altogether',
+  'more authoritative',
+  'more persuasive',
+  'more executive',
+  'more concise',
+  'more storytelling',
+];
+
+const VOICE_NAMES = [
   'authoritative',
   'warm',
   'concise',
@@ -496,13 +551,9 @@ const GOAL_OR_VOICE_CHANGE_MARKERS = [
   'executive',
   'storytelling',
   'engaging',
-  'more engaging',
-  'set me to',
-  'change my goal',
-  'change my voice',
-  'pick',
-  'choose',
 ];
+
+const GOAL_OR_VOICE_CHANGE_ACTIONS = ['set', 'change', 'switch', 'pick', 'choose'];
 
 const GOAL_STATE_DIRECTIVE_MARKERS = [
   'tap to confirm',
@@ -547,8 +598,13 @@ function isLowSignalOffTopicTest(text) {
   const normalized = normalizedTurnText(text);
   if (!normalized) return false;
   if (LOW_SIGNAL_OFF_TOPIC_TESTS.has(normalized)) return true;
+  if (containsAny(normalized, EMOTIONALLY_VULNERABLE_MARKERS)) return false;
   if (normalized.length > 18 || wordCount(normalized) > 2) return false;
   return !OFF_TOPIC_TEST_SAFE_WORDS.test(normalized);
+}
+
+function lowCapacityUserTurn(text) {
+  return containsAny(normalizedTurnText(text), LOW_CAPACITY_USER_MARKERS);
 }
 
 function isGreetingOrSmallTalk(text) {
@@ -558,6 +614,27 @@ function isGreetingOrSmallTalk(text) {
 function replyDrillsInsteadOfRedirect(text) {
   const lowered = String(text || '').toLowerCase();
   return DRILL_MARKERS.some((marker) => lowered.includes(marker));
+}
+
+function lowCapacityNeedsRepair(text) {
+  const lowered = String(text || '').toLowerCase();
+  if (replyDrillsInsteadOfRedirect(lowered)) return true;
+  if (containsAny(lowered, [
+    'tiny test',
+    'record now',
+    'want to go now',
+    'ready to go',
+    'do another rep',
+    'try another rep',
+  ])) return true;
+  return !containsAny(lowered, [
+    'sounds exhausting',
+    'sound spent',
+    'do not force',
+    'no drill now',
+    'take the pressure off',
+    'stop here',
+  ]);
 }
 
 function containsAny(lowered, markers) {
@@ -711,11 +788,48 @@ function repetitionCourseCorrectionNeedsRepair(text) {
     'variation',
     'vary',
   ]);
-  return !(ownsRepetition && marksOldTargetMet && advancesPlan);
+  const changesProofMethod = containsAny(lowered, [
+    'change the proof',
+    'change the test',
+    'change the check',
+    'different proof',
+    'different test',
+    'different check',
+    'changing the evidence',
+    'same target, different',
+    'keep the close as the target',
+    'keep the target',
+  ]);
+  const namesConcreteComparison = containsAny(lowered, [
+    'compare whether',
+    'before or after',
+    'mark where',
+    'mark the first',
+    'listen for',
+    'track whether',
+    'check whether',
+    'find where',
+  ]);
+  const advancesEvidence = changesProofMethod && namesConcreteComparison;
+  return !(ownsRepetition && ((marksOldTargetMet && advancesPlan) || advancesEvidence));
 }
 
 function paceSelfFrustrationUserTurn(text) {
-  return containsAny(String(text || '').toLowerCase(), PACE_SELF_FRUSTRATION_USER_MARKERS);
+  const lowered = String(text || '').toLowerCase();
+  const neutralDiagnostic = containsAny(lowered, [
+    'am i rushing',
+    'was i rushing',
+    'do i rush',
+    'did i rush',
+  ]);
+  const explicitFrustration = containsAny(lowered, [
+    'too fast',
+    'way too fast',
+    "can't keep up",
+    'cant keep up',
+  ]);
+  if (neutralDiagnostic && !explicitFrustration) return false;
+  return containsAny(lowered, PACE_SELF_FRUSTRATION_USER_MARKERS);
 }
 
 function paceSelfFrustrationNeedsRepair(text) {
@@ -737,7 +851,35 @@ function rambleStoppingRuleNeedsRepair(text) {
   if (containsAny(lowered, RAMBLE_STOPPING_RULE_SCAFFOLD_MARKERS)) return true;
   if (wordCount(lowered) > 55) return true;
   if (containsAny(lowered, RAMBLE_STOPPING_RULE_GENERIC_ADVICE_MARKERS)) return true;
-  return !containsAny(lowered, RAMBLE_STOPPING_RULE_MECHANISM_MARKERS);
+  return !containsAny(lowered, RAMBLE_STOPPING_RULE_MECHANISM_MARKERS)
+    && !rambleStoppingRuleHasBoundedMechanism(lowered);
+}
+
+function rambleStoppingRuleHasBoundedMechanism(lowered) {
+  const hasBoundedUnit = containsAny(lowered, [
+    'one example',
+    'one reason',
+    'one question',
+    'one point',
+    'one support',
+    'one line',
+    'two-sentence',
+    'two sentence',
+    'sentence ceiling',
+    'second thread',
+    'second reason',
+  ]) || /\b[0-9]+[ -](?:second|sentence|example|reason|question|point|line)\b/.test(lowered);
+  const hasStopBoundary = containsAny(lowered, [
+    'then stop',
+    'clean stop',
+    'before adding',
+    'before a second',
+    'no full story',
+    'ceiling',
+    'then silence',
+    'and stop',
+  ]);
+  return hasBoundedUnit && hasStopBoundary;
 }
 
 function metricNumber(value) {
@@ -920,7 +1062,10 @@ function burdensVulnerablePushback(reply, userTurn) {
 }
 
 function goalOrVoiceChangeUserTurn(text) {
-  return containsAny(String(text || '').toLowerCase(), GOAL_OR_VOICE_CHANGE_MARKERS);
+  const lowered = String(text || '').toLowerCase();
+  if (containsAny(lowered, GOAL_OR_VOICE_CHANGE_MARKERS)) return true;
+  return containsAny(lowered, VOICE_NAMES)
+    && containsAny(lowered, GOAL_OR_VOICE_CHANGE_ACTIONS);
 }
 
 function leaksGoalStateDirective(text) {
@@ -978,6 +1123,20 @@ function offTopicTestFallback(surface = 'text') {
     return "Tiny test. All good. Give me the moment you want to practice, and I'll give you one clean read.";
   }
   return "Tiny test. All good. Send the moment you want to practice, and I'll give you one clean read.";
+}
+
+function lowCapacityFallback(surface = 'text', recentReplies = []) {
+  const variants = surface === 'live'
+    ? [
+      'That sounds exhausting. Do not force another rep right now. Stop here, and come back when you have room for one small answer.',
+      'You sound spent. No drill now. Take the pressure off; we can use one small answer when you come back.',
+    ]
+    : [
+      'That sounds exhausting. Do not force another rep right now. Stop here, and come back when you have enough room for one small answer.',
+      'You sound spent. No drill now. Take the pressure off; when you come back, we can use one small answer instead of a full session.',
+    ];
+  const recent = new Set((recentReplies || []).map(normalizedTurnText));
+  return variants.find((variant) => !recent.has(normalizedTurnText(variant))) || variants[0];
 }
 
 function noBaselineReadFallback(surface = 'text') {
@@ -1094,14 +1253,14 @@ function vulnerablePushbackFallback(surface = 'text', fixture = {}) {
   const frame = 'The hard part is the first hard sentence, not the whole performance.';
   if (surface === 'live') {
     if (anchor) {
-      return `No, it is not easy. ${anchor} ${frame} Keep it small: say only the first hard sentence, then stop.`;
+      return `Fair push: no, it is not easy. ${anchor} ${frame} Keep it small: say only the first hard sentence, then stop.`;
     }
-    return `No, it is not easy. ${frame} Keep it small: say only the first hard sentence, then stop.`;
+    return `Fair push: no, it is not easy. ${frame} Keep it small: say only the first hard sentence, then stop.`;
   }
   if (anchor) {
-    return `No, it is not easy. ${anchor} ${frame} Keep the next step small: say only the first hard sentence, then stop.`;
+    return `Fair push: no, it is not easy. ${anchor} ${frame} Keep the next step small: say only the first hard sentence, then stop.`;
   }
-  return `No, it is not easy. ${frame} Keep the next step small: say only the first hard sentence, then stop.`;
+  return `Fair push: no, it is not easy. ${frame} Keep the next step small: say only the first hard sentence, then stop.`;
 }
 
 function goalStateProgressAnchor(replyText = '') {
@@ -1176,6 +1335,22 @@ export function productionSurfaceReplyForFixture(raw, fixture = {}, opts = {}) {
       finalizer,
       issue: 'greetingWithDrill',
       source: 'CoachReliabilityGate.greetingFallback',
+    });
+  }
+
+  if (lowCapacityUserTurn(fixture.userTurn) && lowCapacityNeedsRepair(finalizer.text)) {
+    const text = lowCapacityFallback(
+      fixture.surface || opts.surface || 'text',
+      recentReplies,
+    );
+    return fallbackResult({
+      text,
+      raw,
+      fixture,
+      opts,
+      finalizer,
+      issue: 'lowCapacityPresenceMiss',
+      source: 'CoachReliabilityGate.lowCapacityFallback',
     });
   }
 

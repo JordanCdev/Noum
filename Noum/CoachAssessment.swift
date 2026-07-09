@@ -79,7 +79,7 @@ struct CoachAssessment: Codable, Equatable {
             if let repairFocus,
                !repairFocus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 if Self.isPressureDifficultyRepair(repairFocus) {
-                    return "Fair push. No, it is not easy. The hard part is that sentence one carries the social risk, so test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it."
+                    return "Fair push: no, it is not easy. The hard part is that sentence one carries the social risk, so test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it."
                 }
                 return Self.trustRepairRead(
                     repairFocus: repairFocus,

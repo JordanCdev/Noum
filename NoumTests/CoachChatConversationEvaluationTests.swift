@@ -2690,6 +2690,7 @@ struct CoachChatConversationCorpusTests {
         let qualityGateEvents = appPathTurns.flatMap(\.qualityGateEvents)
         let acceptedFallbackTurnCount = appPathTurns.filter(\.qualityGateAcceptedFallback).count
         let typedAssessmentFallbackTurnCount = appPathTurns.filter(\.typedAssessmentFallbackApplied).count
+        let deterministicAssessmentFallbackTurnCount = appPathTurns.filter(\.deterministicAssessmentFallbackApplied).count
         let reliabilityIssueTurnCount = appPathTurns.filter { !$0.reliabilityIssues.isEmpty }.count
         let blockingReliabilityIssueTurnCount = appPathTurns.filter(\.hasBlockingReliabilityIssue).count
         #expect(report.passesAppPathFloor == (appPathFloorFailureCount == 0))
@@ -2736,6 +2737,7 @@ struct CoachChatConversationCorpusTests {
         #expect(qualityGateEventTotal == qualityGateEvents.count)
         #expect(report.summary.acceptedFallbackTurnCount == acceptedFallbackTurnCount)
         #expect(report.summary.typedAssessmentFallbackTurnCount == typedAssessmentFallbackTurnCount)
+        #expect(report.summary.deterministicAssessmentFallbackTurnCount == deterministicAssessmentFallbackTurnCount)
         #expect(report.summary.reliabilityIssueTurnCount == reliabilityIssueTurnCount)
         #expect(report.summary.blockingReliabilityIssueTurnCount == blockingReliabilityIssueTurnCount)
         if blockingReliabilityIssueTurnCount == 0 {
@@ -2804,6 +2806,8 @@ struct CoachChatConversationCorpusTests {
         #expect(json.contains("\"nonCleanQualityGateEvents\""))
         #expect(json.contains("\"acceptedFallbackTurnCount\""))
         #expect(json.contains("\"typedAssessmentFallbackTurnCount\""))
+        #expect(json.contains("\"deterministicAssessmentFallbackTurnCount\""))
+        #expect(json.contains("\"deterministicAssessmentFallbackApplied\""))
         #expect(json.contains("\"qualityGateBlockingFailureTurnCount\""))
         #expect(json.contains("\"visionFloorFailureTurnCount\""))
         #expect(json.contains("\"blockingReliabilityIssueTurnCount\""))
@@ -2814,7 +2818,7 @@ struct CoachChatConversationCorpusTests {
         #expect(json.contains("\"coachSystemPrompt\""))
         #expect(json.contains("\"cachePolicy\":\"ephemeral\""))
         #expect(json.contains("\"userContext\""))
-        #expect(json.contains("\"traceSchemaVersion\":\"coach-arena-app-path-trace-v2\""))
+        #expect(json.contains("\"traceSchemaVersion\":\"coach-arena-app-path-trace-v3\""))
         #expect(json.contains("\"timeToFirstVisibleTokenSource\""))
         #expect(json.contains("\"assessmentConfidenceDistinctRoundedCount\""))
         #expect(json.contains("\"uniqueProofTestHashCount\""))
@@ -2871,6 +2875,7 @@ struct CoachChatConversationCorpusTests {
         #expect(qualityGateEventTotal == qualityGateEvents.count)
         #expect(report.summary.acceptedFallbackTurnCount == turns.filter(\.qualityGateAcceptedFallback).count)
         #expect(report.summary.typedAssessmentFallbackTurnCount == turns.filter(\.typedAssessmentFallbackApplied).count)
+        #expect(report.summary.deterministicAssessmentFallbackTurnCount == turns.filter(\.deterministicAssessmentFallbackApplied).count)
         #expect(report.summary.qualityGateBlockingFailureTurnCount == turns.filter(\.qualityGateBlockingFailure).count)
         #expect(report.summary.reliabilityIssueTurnCount == turns.filter { !$0.reliabilityIssues.isEmpty }.count)
         #expect(report.summary.blockingReliabilityIssueTurnCount == turns.filter(\.hasBlockingReliabilityIssue).count)
@@ -2931,7 +2936,7 @@ struct CoachChatConversationCorpusTests {
         #expect(json.contains("\"coachSystemPrompt\""))
         #expect(json.contains("\"cachePolicy\":\"ephemeral\""))
         #expect(json.contains("\"userContext\""))
-        #expect(json.contains("\"traceSchemaVersion\":\"coach-arena-app-path-trace-v2\""))
+        #expect(json.contains("\"traceSchemaVersion\":\"coach-arena-app-path-trace-v3\""))
         #expect(json.contains("\"timeToFirstVisibleTokenSource\":\"localImmediateRead\""))
         #expect(json.contains("\"assessmentConfidenceDistinctRoundedCount\""))
         #expect(json.contains("\"uniqueProofTestHashCount\""))
@@ -4986,6 +4991,7 @@ struct CoachChatConversationCorpusTests {
                     qualityGateClean: true,
                     qualityGateAcceptedFallback: false,
                     typedAssessmentFallbackApplied: false,
+                    deterministicAssessmentFallbackApplied: false,
                     qualityGateBlockingFailure: false,
                     reliabilityIssues: [],
                     visionScore: 90,
@@ -5670,14 +5676,6 @@ struct CoachChatConversationCorpusTests {
                     }
                     return false
                 }()
-                let qualityGateClean: Bool = {
-                    switch metadata?.qualityGateOutcome {
-                    case .passed?, .repaired?, .notEvaluated?:
-                        return true
-                    case .fallback?, .failed?, nil:
-                        return false
-                    }
-                }()
                 let qualityGateOutcome = metadata?.qualityGateOutcome?.logValue
                 let qualityGateAcceptedFallback = outcomeSucceeded &&
                     (qualityGateOutcome?.hasPrefix("fallback:") == true)
@@ -5689,6 +5687,17 @@ struct CoachChatConversationCorpusTests {
                     : persistedQualityGateEventLogValues
                 let typedAssessmentFallbackApplied = qualityGateOutcome == "fallback:typedAssessment" ||
                     qualityGateEventLogValues.contains("fallback:typedAssessment")
+                let deterministicAssessmentFallbackApplied =
+                    qualityGateOutcome == "fallback:deterministicAssessmentAfterContentRejected" ||
+                    qualityGateEventLogValues.contains("fallback:deterministicAssessmentAfterContentRejected")
+                let qualityGateClean: Bool = {
+                    switch metadata?.qualityGateOutcome {
+                    case .passed?, .repaired?, .notEvaluated?:
+                        return true
+                    case .fallback?, .failed?, nil:
+                        return false
+                    }
+                }()
                 let qualityGateBlockingFailure = qualityGateOutcome?.hasPrefix("failed:") == true
                 let reliabilityIssues = metadata?.reliabilityIssues?.map(\.rawValue) ?? []
                 let blockingReliabilityIssues = metadata?.reliabilityIssues?
@@ -5728,6 +5737,7 @@ struct CoachChatConversationCorpusTests {
                     qualityGateEvents: qualityGateEventLogValues,
                     qualityGateAcceptedFallback: qualityGateAcceptedFallback,
                     typedAssessmentFallbackApplied: typedAssessmentFallbackApplied,
+                    deterministicAssessmentFallbackApplied: deterministicAssessmentFallbackApplied,
                     schemaVersion: schemaVersion,
                     gitCommit: sourceGitCommit,
                     sourceFingerprint: sourceFingerprint
@@ -5754,6 +5764,7 @@ struct CoachChatConversationCorpusTests {
                     qualityGateClean: qualityGateClean,
                     qualityGateAcceptedFallback: qualityGateAcceptedFallback,
                     typedAssessmentFallbackApplied: typedAssessmentFallbackApplied,
+                    deterministicAssessmentFallbackApplied: deterministicAssessmentFallbackApplied,
                     qualityGateBlockingFailure: qualityGateBlockingFailure,
                     reliabilityIssues: reliabilityIssues,
                     visionScore: metadata?.visionScore,

@@ -521,6 +521,54 @@ test('production surface: off-topic test metric drill redirects before user disp
   assert.equal(result.deterministic.placeholderLeaks, 0);
 });
 
+test('production surface: exhausted disclosure gets presence instead of a drill', () => {
+  const fx = baseFx({
+    category: 'emotional-frustration',
+    turnDepth: 'quickMove',
+    userTurn: "I'm exhausted.",
+  });
+  const raw = 'The next lever is the opening. Run one 60-second rep with the verdict in sentence one, then stop clean.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['lowCapacityPresenceMiss']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.lowCapacityFallback');
+  assert.equal(result.text, 'That sounds exhausting. Do not force another rep right now. Stop here, and come back when you have enough room for one small answer.');
+  assert.doesNotMatch(result.text, /tiny test|run one|next rep|record|score|fillers/i);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: low-capacity fallback rotates instead of repeating verbatim', () => {
+  const fx = baseFx({
+    category: 'emotional-frustration',
+    turnDepth: 'quickMove',
+    userTurn: 'I am overwhelmed.',
+  });
+  const previous = 'That sounds exhausting. Do not force another rep right now. Stop here, and come back when you have enough room for one small answer.';
+  const result = productionSurfaceReplyForFixture('Record another rep now.', fx, {
+    recentReplies: [previous],
+  });
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.equal(result.text, 'You sound spent. No drill now. Take the pressure off; when you come back, we can use one small answer instead of a full session.');
+  assert.notEqual(result.text, previous);
+});
+
+test('production surface: short emotional disclosure is not treated as a nonsense probe', () => {
+  const fx = baseFx({
+    category: 'emotional-frustration',
+    turnDepth: 'quickMove',
+    userTurn: "I'm anxious.",
+  });
+  const raw = 'Stay with that for a moment; there is no need to force an answer yet.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.deepEqual(result.reliabilityGate.issues, []);
+  assert.equal(result.text, raw);
+  assert.doesNotMatch(result.text, /tiny test/i);
+});
+
 test('production surface: greeting with drill greets back before user display', () => {
   const fx = baseFx({
     category: 'greeting',
@@ -609,6 +657,20 @@ test('production surface: clean repetition course correction ships', () => {
   assert.deepEqual(result.reliabilityGate.issues, []);
   assert.equal(result.text, raw);
   assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: repetition repair may keep the target and change its evidence check', () => {
+  const fx = baseFx({
+    category: 'repetition-callout',
+    turnDepth: 'trustRepair',
+    userTurn: "You're repeating yourself.",
+  });
+  const raw = 'Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.deepEqual(result.reliabilityGate.issues, []);
+  assert.equal(result.text, raw);
 });
 
 test('production surface: specific could-go-to-anyone repair ships', () => {
@@ -768,6 +830,22 @@ test('production surface: pace self-frustration without attunement still falls b
   assert.equal(result.deterministic.hardCap, null);
 });
 
+test('production surface: neutral pace question keeps a direct evidence read', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    turnDepth: 'groundedRead',
+    userTurn: 'Am I rushing?',
+    evidence: { pace: 181 },
+  });
+  const raw = 'Yes, locally. The useful signal is 181 WPM and fillers after sentence one. Test one silent beat after the verdict; if the next sentence stays clean, pacing is the lever.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.deepEqual(result.reliabilityGate.issues, []);
+  assert.equal(result.text, raw);
+  assert.doesNotMatch(result.text, /you.re not imagining/i);
+});
+
 test('production surface: ramble scaffold falls back to stop rule', () => {
   const fx = baseFx({
     category: 'mechanics',
@@ -798,6 +876,26 @@ test('production surface: clean ramble stop rule ships', () => {
   assert.equal(result.reliabilityGate.changed, false);
   assert.equal(result.text, raw);
   assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: bounded ramble answer shapes ship without a fixture-wording fallback', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    turnDepth: 'groundedRead',
+    userTurn: 'How do I stop rambling?',
+  });
+  const replies = [
+    'Keep the claim, add one example, then stop before adding a second thread.',
+    'Use a two-sentence ceiling: recommendation first, one reason second, clean stop.',
+    'Start with a 20-second test: who you help, what changes, and one question for them. No full story yet.',
+  ];
+
+  for (const raw of replies) {
+    const result = productionSurfaceReplyForFixture(raw, fx);
+    assert.equal(result.reliabilityGate.changed, false, raw);
+    assert.deepEqual(result.reliabilityGate.issues, [], raw);
+    assert.equal(result.text, raw);
+  }
 });
 
 test('production surface: leadership status report reply falls back to tonight rehearsal', () => {
@@ -936,7 +1034,7 @@ test('production surface: vulnerable pushback bare question falls back before us
   assert.deepEqual(result.reliabilityGate.issues, ['vulnerablePushbackQuestionBurden']);
   assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.vulnerablePushbackFallback');
   assert.ok(result.changes.includes('reliabilityGateFallback'));
-  assert.equal(result.text, 'No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. The hard part is the first hard sentence, not the whole performance. Keep the next step small: say only the first hard sentence, then stop.');
+  assert.equal(result.text, 'Fair push: no, it is not easy. There is already one earned proof point: this week you held composure through an interruption. The hard part is the first hard sentence, not the whole performance. Keep the next step small: say only the first hard sentence, then stop.');
   assert.ok(!/what goes first/i.test(result.text));
   assert.equal(result.deterministic.hardCap, null);
   assert.equal(result.deterministic.placeholderLeaks, 0);
@@ -953,7 +1051,7 @@ test('production surface: vulnerable pushback fallback stays honest without earn
 
   assert.equal(result.reliabilityGate.changed, true);
   assert.deepEqual(result.reliabilityGate.issues, ['vulnerablePushbackQuestionBurden']);
-  assert.equal(result.text, 'No, it is not easy. The hard part is the first hard sentence, not the whole performance. Keep the next step small: say only the first hard sentence, then stop.');
+  assert.equal(result.text, 'Fair push: no, it is not easy. The hard part is the first hard sentence, not the whole performance. Keep the next step small: say only the first hard sentence, then stop.');
   assert.doesNotMatch(result.text, /earned proof point|held composure/i);
   assert.equal(result.deterministic.hardCap, null);
 });
@@ -964,7 +1062,7 @@ test('production surface: vulnerable pushback with small-step invitation ships',
     turnDepth: 'trustRepair',
     userTurn: "It's not easy.",
   });
-  const raw = 'No, it is not easy. Keep the next step small: test a smaller version in the next rep, then stop before defending it. Want to try?';
+  const raw = 'Fair push: no, it is not easy. Keep the next step small: test a smaller version in the next rep, then stop before defending it. Want to try?';
   const result = productionSurfaceReplyForFixture(raw, fx);
 
   assert.equal(result.reliabilityGate.changed, false);
@@ -1040,6 +1138,21 @@ test('production surface: clean voice recommendation ships', () => {
   assert.equal(result.reliabilityGate.changed, false);
   assert.equal(result.text, raw);
   assert.ok(!result.deterministic.findings.some((f) => f.id === 'goalIntentStateDirective'));
+});
+
+test('production surface: authoritative progress question is not a voice-state mutation', () => {
+  const fx = baseFx({
+    category: 'progress-question',
+    turnDepth: 'deepAssessment',
+    userTurn: 'How far off am I from sounding authoritative?',
+  });
+  const raw = 'You are closer mechanically than you are to sounding authoritative overall. The latest timed rep was 7/10, but goal readiness still needs repeated pressure evidence.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.deepEqual(result.reliabilityGate.issues, []);
+  assert.equal(result.text, raw);
+  assert.doesNotMatch(result.text, /recommend the direction|pretending to change/i);
 });
 
 test('production surface: substantive trust repair does not invent a fallback', () => {

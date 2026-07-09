@@ -614,7 +614,8 @@ def trace_fallback_applied(trace):
     reasoning = trace.get("reasoning") or {}
     if any(fallback.get(key) is True for key in [
         "qualityGateAcceptedFallback",
-        "typedAssessmentFallbackApplied"
+        "typedAssessmentFallbackApplied",
+        "deterministicAssessmentFallbackApplied",
     ]):
         return True
     quality = str(reasoning.get("qualityGateOutcome") or "").lower()
@@ -630,6 +631,19 @@ def trace_typed_assessment_fallback(trace):
     quality = str(reasoning.get("qualityGateOutcome") or "").lower()
     events = " ".join(str(event).lower() for event in reasoning.get("qualityGateEvents") or [])
     return "fallback:typedassessment" in quality or "fallback:typedassessment" in events
+
+
+def trace_deterministic_assessment_fallback(trace):
+    fallback = trace.get("fallback") or {}
+    reasoning = trace.get("reasoning") or {}
+    if fallback.get("deterministicAssessmentFallbackApplied") is True:
+        return True
+    quality = str(reasoning.get("qualityGateOutcome") or "").lower()
+    events = " ".join(str(event).lower() for event in reasoning.get("qualityGateEvents") or [])
+    return (
+        "fallback:deterministicassessmentaftercontentrejected" in quality or
+        "fallback:deterministicassessmentaftercontentrejected" in events
+    )
 
 
 def scoreable_typed_assessment_fallback(fixture, reply, lower, trace):
@@ -1368,7 +1382,8 @@ def app_path_trace(row, turn, report, source_path, match_source):
         },
         "fallback": {
             "qualityGateAcceptedFallback": turn.get("qualityGateAcceptedFallback"),
-            "typedAssessmentFallbackApplied": turn.get("typedAssessmentFallbackApplied")
+            "typedAssessmentFallbackApplied": turn.get("typedAssessmentFallbackApplied"),
+            "deterministicAssessmentFallbackApplied": turn.get("deterministicAssessmentFallbackApplied")
         }
     }
 
@@ -1479,6 +1494,10 @@ def local_judge(fixture, reply, trace):
     if regex_any(reply, GRAMMAR_LEAK_PATTERNS):
         add_cap("placeholderOrBroken", 30, "grammar, markdown, JSON, or scaffold leak")
         check_failures.append("grammarLeak")
+    # A deterministic recovery after a rejected provider answer remains
+    # fallback evidence even when its wording matches a gold example. Only the
+    # independently typed assessment lane may score normally; otherwise a
+    # fixture-shaped recovery would conceal a real pipeline failure.
     if trace_fallback_applied(trace) and not scoreable_typed_assessment_fallback(fixture, reply, lower, trace):
         add_cap("placeholderOrBroken", 30, "quality/provider fallback output cannot score as normal coaching")
         check_failures.append("fallbackLeak")

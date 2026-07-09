@@ -112,6 +112,16 @@ enum TurnDepthClassifier {
         if ["egg", "banana", "asdf", "test", "lol", "huh"].contains(normalized) {
             return true
         }
+        // Short human-state disclosures are low word-count, not low signal.
+        // Treating "I'm exhausted" like a probe produces a dismissive
+        // "tiny test" response at exactly the moment the coach should soften.
+        if containsAny(normalized, [
+            "exhausted", "tired", "overwhelmed", "anxious", "nervous",
+            "scared", "frustrated", "discouraged", "defeated", "stuck",
+            "freeze", "froze", "panic", "blank"
+        ]) {
+            return false
+        }
         guard normalized.count <= 18,
               wordCount(normalized) <= 2 else {
             return false

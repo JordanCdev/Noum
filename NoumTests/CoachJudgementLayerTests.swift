@@ -1964,6 +1964,21 @@ struct CoachSemanticQualityGateAdversarialTests {
         #expect(issue == nil)
     }
 
+    @Test func vulnerableRepairMechanismAndSmallerExperimentIsAccepted() {
+        var assessment = Self.baseDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "this is not easy under pressure"
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push: no, it is not easy. The hard part is that sentence one carries the social risk, so test a smaller version: say only the disagreement and one calm reason, then stop.",
+            latestUserTurn: "It's not easy.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        #expect(issue == nil)
+    }
+
     @Test func trustRepairWithCaseEvidenceFailsWhenRepairIgnoresCaseAnchor() {
         var assessment = Self.caseAnchoredDeep
         assessment.turnDepth = .trustRepair
@@ -3679,7 +3694,7 @@ struct CoachProviderRoutingByDepthTests {
             Issue.record("typed fallback should be accepted, got \(outcome)")
             return
         }
-        #expect(text.contains("Fair push. No, it is not easy"))
+        #expect(text.contains("Fair push: no, it is not easy"))
         #expect(text.contains("sentence one carries the social risk"))
         #expect(text.contains("say only the disagreement and one calm reason"))
         #expect(text.contains("stop before defending it"))

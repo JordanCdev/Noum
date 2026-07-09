@@ -1515,6 +1515,7 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
     let nonCleanQualityGateEvents: [String]
     let acceptedFallbackTurnCount: Int
     let typedAssessmentFallbackTurnCount: Int
+    let deterministicAssessmentFallbackTurnCount: Int
     let qualityGateBlockingFailureTurnCount: Int
     let visionFloorFailureTurnCount: Int
     let reliabilityIssueTurnCount: Int
@@ -1546,6 +1547,7 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
         )
         let acceptedFallbackTurnCount = turns.filter(\.qualityGateAcceptedFallback).count
         let typedAssessmentFallbackTurnCount = turns.filter(\.typedAssessmentFallbackApplied).count
+        let deterministicAssessmentFallbackTurnCount = turns.filter(\.deterministicAssessmentFallbackApplied).count
         let qualityGateBlockingFailureTurnCount = turns.filter(\.qualityGateBlockingFailure).count
         let visionFloorFailureTurnCount = turns.filter { $0.visionPassesProductionFloor == false }.count
         let reliabilityIssueTurnCount = turns.filter { !$0.reliabilityIssues.isEmpty }.count
@@ -1596,6 +1598,7 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
             nonCleanQualityGateEvents: nonCleanQualityGateEvents,
             acceptedFallbackTurnCount: acceptedFallbackTurnCount,
             typedAssessmentFallbackTurnCount: typedAssessmentFallbackTurnCount,
+            deterministicAssessmentFallbackTurnCount: deterministicAssessmentFallbackTurnCount,
             qualityGateBlockingFailureTurnCount: qualityGateBlockingFailureTurnCount,
             visionFloorFailureTurnCount: visionFloorFailureTurnCount,
             reliabilityIssueTurnCount: reliabilityIssueTurnCount,
@@ -1761,6 +1764,7 @@ struct CoachChatConversationAppPathTurnRow: Codable, Equatable {
     let qualityGateClean: Bool
     let qualityGateAcceptedFallback: Bool
     let typedAssessmentFallbackApplied: Bool
+    let deterministicAssessmentFallbackApplied: Bool
     let qualityGateBlockingFailure: Bool
     let reliabilityIssues: [String]
     let visionScore: Int?
@@ -1868,6 +1872,7 @@ struct CoachArenaAppPathTrace: Codable, Equatable {
     struct Fallback: Codable, Equatable {
         let qualityGateAcceptedFallback: Bool
         let typedAssessmentFallbackApplied: Bool
+        let deterministicAssessmentFallbackApplied: Bool
         let reliabilityFallbackApplied: Bool?
     }
 
@@ -1889,6 +1894,7 @@ struct CoachArenaAppPathTrace: Codable, Equatable {
         qualityGateEvents: [String],
         qualityGateAcceptedFallback: Bool,
         typedAssessmentFallbackApplied: Bool,
+        deterministicAssessmentFallbackApplied: Bool,
         schemaVersion: String,
         gitCommit: String? = nil,
         sourceFingerprint: String? = nil
@@ -1961,11 +1967,12 @@ struct CoachArenaAppPathTrace: Codable, Equatable {
             fallback: Fallback(
                 qualityGateAcceptedFallback: qualityGateAcceptedFallback,
                 typedAssessmentFallbackApplied: typedAssessmentFallbackApplied,
+                deterministicAssessmentFallbackApplied: deterministicAssessmentFallbackApplied,
                 reliabilityFallbackApplied: metadata?.reliabilityFallbackApplied
             ),
             versions: Versions(
                 sourceSchemaVersion: schemaVersion,
-                traceSchemaVersion: "coach-arena-app-path-trace-v2",
+                traceSchemaVersion: "coach-arena-app-path-trace-v3",
                 promptTraceSchemaVersion: "coach-prompt-modules-v1"
             ),
             gitCommit: gitCommit,
@@ -4356,6 +4363,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
             qualityGateEvents: ["callback:only"],
             qualityGateAcceptedFallback: false,
             typedAssessmentFallbackApplied: false,
+            deterministicAssessmentFallbackApplied: false,
             schemaVersion: "test"
         )
 
@@ -4365,7 +4373,8 @@ struct CoachChatLatestLiveEvalRegressionTests {
         ])
         #expect(trace.latency.timeToFirstVisibleTokenMs == 220)
         #expect(trace.latency.timeToFirstVisibleTokenSource == "finalReplyCommit")
-        #expect(trace.versions.traceSchemaVersion == "coach-arena-app-path-trace-v2")
+        #expect(trace.fallback.deterministicAssessmentFallbackApplied == false)
+        #expect(trace.versions.traceSchemaVersion == "coach-arena-app-path-trace-v3")
     }
 
     @Test func qualityGateAggregationKeepsPassedOutcomeAfterRejectedDraft() {
