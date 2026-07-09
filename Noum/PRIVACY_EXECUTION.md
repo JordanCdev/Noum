@@ -423,8 +423,8 @@ Current text (SettingsView.swift:82): `"This removes the current account and its
 
 #### Problem
 `AIConfig.plist` contains live Google keys:
-- `GOOGLE_CLOUD_TTS_API_KEY: AIzaSyDWtZntoiOiu9AsaKfUdqAyDdQzZXEJ2u8`
-- `GEMINI_API_KEY: AIzaSyA9GfKHkiX-zYSCsonoN_nYDaBBMqD_UMo`
+- `GOOGLE_CLOUD_TTS_API_KEY: <REDACTED — credential exposed in git; rotate before release>`
+- `GEMINI_API_KEY: <REDACTED — credential exposed in git; rotate before release>`
 
 Unlike AWS credentials, Google API keys can be restricted to specific iOS bundle IDs, which significantly reduces risk. But they should still be restricted.
 
