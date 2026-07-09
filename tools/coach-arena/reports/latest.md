@@ -1,7 +1,7 @@
-# Coach Arena — run_2026-07-09_21-48-56
+# Coach Arena — run_2026-07-09_21-49-29
 
 Provider: `replay` · coach model: `claude-sonnet-4-6` · judge model: `claude-sonnet-4-6`
-Git: `93688290` on `integration/prod-readiness` · prompt: CoachContextBuilder.swift@5bf3266802ca17ea, AICoachChatService.swift@b7512bb409b2b4c2
+Git: `ab0f592c` on `integration/prod-readiness` · prompt: CoachContextBuilder.swift@5bf3266802ca17ea, AICoachChatService.swift@b7512bb409b2b4c2
 
 ## Headline
 
