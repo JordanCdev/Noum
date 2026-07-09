@@ -1,7 +1,7 @@
-# Coach Arena — run_2026-07-09_21-30-18
+# Coach Arena — run_2026-07-09_21-48-21
 
 Provider: `replay` · coach model: `claude-sonnet-4-6` · judge model: `claude-sonnet-4-6`
-Git: `5bef2d08` on `ux-overhaul` (+21 dirty) · prompt: CoachContextBuilder.swift@5bf3266802ca17ea, AICoachChatService.swift@b7512bb409b2b4c2
+Git: `4368fa62` on `integration/prod-readiness` · prompt: CoachContextBuilder.swift@5bf3266802ca17ea, AICoachChatService.swift@b7512bb409b2b4c2
 
 ## Headline
 
@@ -106,17 +106,19 @@ Diagnostic only: replay judge scores remain tied to raw captured replies, and re
 
 ## Worst 10
 
-| Score | Fixture | Turn | closerTo | Top issue |
-|---|---|---|---|---|
-| **22** | cold-start-no-data | groundedRead | between | coldStartProductJargon |
-| **26** | thats-not-informative | trustRepair | between | roboticPhrase |
-| **43** | what-voice-should-i-pick | groundedRead | between | roboticPhrase |
-| **45** | off-topic-egg | offTopic | between | sensitiveTurnReportVoice |
-| **50** | goal-change-engaging | groundedRead | excellent | roboticPhrase |
-| **50** | why-cant-straight-answer | trustRepair | excellent | trustRepairReportVoice |
-| **54** | i-ramble | groundedRead | excellent | scaffoldLabel |
-| **56** | its-not-easy | trustRepair | between | No next step or presence-close — ends on |
-| **56** | greeting-hi | greeting | between | Report-voice residue: recites 'close hel |
-| **57** | talk-too-fast | groundedRead | excellent | sensitiveTurnReportVoice |
+| Score | Fixture | Turn | closerTo | Class | Top issue |
+|---|---|---|---|---|---|
+| **22** | cold-start-no-data | groundedRead | between | substance | coldStartProductJargon |
+| **26** | thats-not-informative | trustRepair | between | substance | roboticPhrase |
+| **43** | what-voice-should-i-pick | groundedRead | between | substance | roboticPhrase |
+| **45** | off-topic-egg | offTopic | between | substance | sensitiveTurnReportVoice |
+| **50** | goal-change-engaging | groundedRead | excellent | substance | roboticPhrase |
+| **50** | why-cant-straight-answer | trustRepair | excellent | substance | trustRepairReportVoice |
+| **54** | i-ramble | groundedRead | excellent | residue | scaffoldLabel |
+| **56** | its-not-easy | trustRepair | between | substance | No next step or presence-close — ends on |
+| **56** | greeting-hi | greeting | between | substance | Report-voice residue: recites 'close hel |
+| **57** | talk-too-fast | groundedRead | excellent | residue | sensitiveTurnReportVoice |
+
+Class: `substance` = real coaching gap · `residue` = judge-excellent reply capped for voice/report-voice residue (cosmetic, ux/chat-owned).
 
 See `failures.md` for full replies + judge reasoning. Raw: `latest.json`.

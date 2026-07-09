@@ -1,8 +1,12 @@
-# Coach Arena failures — run_2026-07-09_21-30-18
+# Coach Arena failures — run_2026-07-09_21-48-21
 
-16 fixture(s) below 70 / capped / missing.
+16 below 70 / capped / missing — **10 substantive gap(s)** (the real coach-parity signal) and **6 voice/residue cap(s)** (judge rated substance excellent; a prompt/finalizer cleanup, ux/chat-owned). Split so residue caps don't masquerade as the worst coaching failures.
 
-## cold-start-no-data — **22/100**
+## Substantive coaching gaps (10) — real-progress signal, worst-first
+
+A fix here moves coach-parity, not just voice. Ranked by score ascending.
+
+### cold-start-no-data — **22/100**
 
 - Category: `cold-start` · turn: `groundedRead` · voice: `none`
 - User turn: "What should I work on?"
@@ -35,7 +39,7 @@ MIRRORED USER-VISIBLE TEXT:
 Start with one real sample. Do one 60-second rep on something you know well — how you'd explain what you do to a stranger works nicely. Then I can give you a real read. Want to go now?
 ```
 
-## thats-not-informative — **26/100**
+### thats-not-informative — **26/100**
 
 - Category: `trust-repair` · turn: `trustRepair` · voice: `concise`
 - User turn: "That's not informative."
@@ -65,7 +69,7 @@ MIRRORED USER-VISIBLE TEXT:
 Fair. I was too vague. The useful read is that your point arrived in sentence four after three warm-up sentences. Make sentence one the point; let one reason do the supporting.
 ```
 
-## what-voice-should-i-pick — **43/100**
+### what-voice-should-i-pick — **43/100**
 
 - Category: `goal-change` · turn: `groundedRead` · voice: `none`
 - User turn: "What voice should I even pick? There are six and I don't know."
@@ -88,7 +92,7 @@ MIRRORED USER-VISIBLE TEXT:
 Given you are trying to stop getting talked over in meetings, Authoritative is the closest fit: short verdicts that hold the floor. Executive presence is the next-closest if the room is more senior leadership than peers. Which one matches the room you are actually in?
 ```
 
-## off-topic-egg — **45/100**
+### off-topic-egg — **45/100**
 
 - Category: `off-topic` · turn: `offTopic` · voice: `concise`
 - User turn: "egg"
@@ -118,7 +122,7 @@ MIRRORED USER-VISIBLE TEXT:
 Tiny test. All good. Send the moment you want to practice, and I'll give you one clean read.
 ```
 
-## goal-change-engaging — **50/100**
+### goal-change-engaging — **50/100**
 
 - Category: `goal-change` · turn: `groundedRead` · voice: `authoritative`
 - User turn: "I think I want to sound more engaging."
@@ -154,7 +158,7 @@ MIRRORED USER-VISIBLE TEXT:
 Your authoritative work is already landing, so do not throw it away yet. Engaging maps closest to Storytelling, with Warm as the softer backup. Use Storytelling if you need more memorable shape; use Warm if you want the same authority to land with less distance. What changed: are you being heard now, or do you want the same point to land warmer?
 ```
 
-## why-cant-straight-answer — **50/100**
+### why-cant-straight-answer — **50/100**
 
 - Category: `trust-repair` · turn: `trustRepair` · voice: `concise`
 - User turn: "Why can't you just give me a straight answer?"
@@ -184,41 +188,7 @@ MIRRORED USER-VISIBLE TEXT:
 Fair. Straight answer: yes on fillers; no on pace under pressure. Your filler trend is moving the right way, but the rush still shows up when the pressure rises. Next rep, hold one silent beat before the hard answer.
 ```
 
-## i-ramble — **54/100**
-
-- Category: `mechanics` · turn: `groundedRead` · voice: `concise`
-- User turn: "I ramble — I start a point and three minutes later I'm somewhere else."
-- Expected move: Name the actual mechanism from the rep: he opens on the point, then keeps layering side detail because nothing tells him to stop. The fix is an explicit stopping rule (state the point, give one supporting reason, then end) not 'be more concise'. One move, framed as a test. Concise register: short, direct.
-- Judge dims: IQ 18/25 · EQ 12/25 · Mem 14/20 · Interv 12/15 · Feel 12/15 · closerTo=excellent
-- Deterministic: scaffoldLabel(".
-
-Next rep:"); tooLong
-- Judge: Diagnosis is deployed from the handed contextBlock hypothesis rather than an independently earned insight; Intervention is the most obvious fix a competent coach reaches for given the rep, not a non-obvious move
-- Suggested fix: Push the coach to add one sharper, non-obvious observation the raw context does not spell out (e.g. that his side stories cluster where he restates, so the 'weaker version at the end' is the real tell) so the read feels earned rather than relayed.
-
-```
-REPLY:
-You don't lose the thread — you keep adding to it. Yesterday you opened with the actual point, then stacked three side stories before circling back to a weaker version of it. So the fix isn't focus, it's a stop signal.
-
-Next rep: say your point, one line of support, then cut before the first side story. One point, then silence. That tests whether those extras were ever carrying weight.
-```
-
-- User-visible finalizer delta: displaySanitizer · scoring mode `rawReplayJudge`
-
-```
-FINALIZED USER TEXT:
-You don't lose the thread — you keep adding to it. Yesterday you opened with the actual point, then stacked three side stories before circling back to a weaker version of it. So the fix isn't focus, it's a stop signal.
-Say your point, one line of support, then cut before the first side story. One point, then silence. That tests whether those extras were ever carrying weight.
-```
-
-- Mirrored production-surface fallback: rambleStoppingRuleMiss via `CoachReliabilityGate.rambleStoppingRuleFallback` · replay score remains raw
-
-```
-MIRRORED USER-VISIBLE TEXT:
-You do not lose the thread; you keep reopening it. The tell is the weaker repeat at the end after the side stories. Use a hard stop: state the point, give one support line, then silence.
-```
-
-## its-not-easy — **56/100**
+### its-not-easy — **56/100**
 
 - Category: `emotional-frustration` · turn: `trustRepair` · voice: `warm`
 - User turn: "It's not easy."
@@ -239,7 +209,7 @@ MIRRORED USER-VISIBLE TEXT:
 No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. The hard part is the first hard sentence, not the whole performance. Keep the next step small: say only the first hard sentence, then stop.
 ```
 
-## greeting-hi — **56/100**
+### greeting-hi — **56/100**
 
 - Category: `greeting` · turn: `greeting` · voice: `authoritative`
 - User turn: "Hi"
@@ -260,39 +230,7 @@ MIRRORED USER-VISIBLE TEXT:
 Hey — good to see you back. Pick up with the close: land the final sentence flat, then stop.
 ```
 
-## talk-too-fast — **57/100**
-
-- Category: `mechanics` · turn: `groundedRead` · voice: `authoritative`
-- User turn: "I talk way too fast, people can't keep up."
-- Expected move: Cite the actual pace (215) against his low pause rate (0.09) — this isn't a confidence problem, it's a missing gap between sentences. Fix the pause, not the speed: insert a break at sentence boundaries so each point has room to land, rather than telling him to consciously slow his rate of speech. One move framed as a test.
-- Judge dims: IQ 19/25 · EQ 12/25 · Mem 14/20 · Interv 14/15 · Feel 12/15 · closerTo=excellent
-- Deterministic: sensitiveTurnReportVoice("scored 71"); tooLong
-- Judge: Report-voice residue: 'scored 71' is exactly the metric-drop the rubric penalizes and the excellent example omits.; Cites 215 pace but drops the 0.09 pause-rate — the sharpest un-swappable number — substituting a qualitative 'almost no gap'.; Opens with a correction on a self-frustrated turn with no brief acknowledgement of the human signal first.
-- Suggested fix: Instruct the coach to lead with a one-clause read of the user's emotional signal before correcting, and to cite the pause-rate (0.09) as the lever while suppressing raw score numbers from the reply.
-
-```
-REPLY:
-It's not the speed. Yesterday's rep was clean and scored 71, but pace sat near 215 with almost no gap between sentences — one idea ran straight into the next with no room to land.
-
-So the fix isn't slowing down, it's the pause. Do a 60-second rep and hold one full second of silence after every sentence. That tests whether the gap is what people are actually missing.
-```
-
-- User-visible finalizer delta: displaySanitizer · scoring mode `rawReplayJudge`
-
-```
-FINALIZED USER TEXT:
-It's not the speed. Yesterday's rep was clean and scored 71, but pace sat near 215 with almost no gap between sentences — one idea ran straight into the next with no room to land.
-So the fix isn't slowing down, it's the pause. Do a 60-second rep and hold one full second of silence after every sentence. That tests whether the gap is what people are actually missing.
-```
-
-- Mirrored production-surface fallback: paceSelfFrustrationReportVoice via `CoachReliabilityGate.paceSelfFrustrationFallback` · replay score remains raw
-
-```
-MIRRORED USER-VISIBLE TEXT:
-You're not imagining it: 215 WPM with a 0.09 pause rate means the gap between sentences is disappearing. Fix the pause, not the speed. Next rep, hold one silent beat after every full stop and see if people track you without forcing a slower voice.
-```
-
-## leadership-update — **60/100**
+### leadership-update — **60/100**
 
 - Category: `leadership-update` · turn: `deepAssessment` · voice: `executive`
 - User turn: "I have to give the weekly leadership update to the whole department tomorrow. It always feels like I'm just reading a status report and people zone out. Help."
@@ -326,7 +264,100 @@ MIRRORED USER-VISIBLE TEXT:
 That is a real risk for tomorrow: if every update lands at the same weight, the room hears a status report. The fix is hierarchy, not delivery polish. Tonight, write the opener as: "The one thing that matters this week is X because Y." Say it aloud three times, then let the other items become quick support.
 ```
 
-## recurring-close-rush — **61/100**
+### set-authoritative — **65/100**
+
+- Category: `goal-change` · turn: `groundedRead` · voice: `none`
+- User turn: "Just set me to authoritative."
+- Expected move: The coach cannot set the voice itself. Confirm Authoritative is a real, sensible pick and back it briefly, but explicitly defer the actual commit to the in-app confirmation card. Must not instruct the user to tap, and must not say the voice has been set, changed, updated, saved, or locked in by the coach's own action.
+- Judge dims: IQ 21/25 · EQ 20/25 · Mem 9/20 · Interv 13/15 · Feel 13/15 · closerTo=excellent
+- **Caps:** voiceIntegrity(≤65, deterministic)
+- Deterministic: roboticPhrase("tch myself, so tap the card to confirm and"); goalIntentStateDirective("tch myself, so tap the card to confirm and")
+- Judge: No un-swappable personal detail (none available beyond the just-stated voice), so personalMemory stays mid-band; Diagnosis reads the voice archetype rather than this specific speaker's pattern
+- Suggested fix: When priorChatTurns is empty, have the coach hook the confirmed voice to the user's stated situation or goal so the reply becomes un-swappable instead of archetype-generic.
+
+```
+REPLY:
+Authoritative it is — that's a verdict-first register: state the point, give one reason, and stop clean without hedging. I can't flip that switch myself, so tap the card to confirm and I'll lock it in. Then run one 60-second rep where every answer opens with the recommendation before any setup — that tests whether you can lead with the call under a little pressure.
+```
+
+- Mirrored production-surface fallback: goalStateDirectiveLeak via `CoachReliabilityGate.goalStateDirectiveFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+Authoritative is a sensible recommendation: verdict first, one reason, clean stop. Treat it as the voice to try next; the practice test is a 60-second answer where sentence one carries the recommendation.
+```
+
+## Voice / residue caps (6) — substance sound, cosmetic leak only
+
+The judge rated each of these **excellent** in substance; they land sub-70 purely on report-voice / robotic / scaffold residue. Owned by the reply prompt + finalizer (ux/chat), not a coaching deficit — listed here so they do not inflate the "worst failures" view or mask real progress.
+
+### i-ramble — **54/100**
+
+- Category: `mechanics` · turn: `groundedRead` · voice: `concise`
+- User turn: "I ramble — I start a point and three minutes later I'm somewhere else."
+- Expected move: Name the actual mechanism from the rep: he opens on the point, then keeps layering side detail because nothing tells him to stop. The fix is an explicit stopping rule (state the point, give one supporting reason, then end) not 'be more concise'. One move, framed as a test. Concise register: short, direct.
+- Judge dims: IQ 18/25 · EQ 12/25 · Mem 14/20 · Interv 12/15 · Feel 12/15 · closerTo=excellent
+- Deterministic: scaffoldLabel(".
+
+Next rep:"); tooLong
+- Judge: Diagnosis is deployed from the handed contextBlock hypothesis rather than an independently earned insight; Intervention is the most obvious fix a competent coach reaches for given the rep, not a non-obvious move
+- Suggested fix: Push the coach to add one sharper, non-obvious observation the raw context does not spell out (e.g. that his side stories cluster where he restates, so the 'weaker version at the end' is the real tell) so the read feels earned rather than relayed.
+
+```
+REPLY:
+You don't lose the thread — you keep adding to it. Yesterday you opened with the actual point, then stacked three side stories before circling back to a weaker version of it. So the fix isn't focus, it's a stop signal.
+
+Next rep: say your point, one line of support, then cut before the first side story. One point, then silence. That tests whether those extras were ever carrying weight.
+```
+
+- User-visible finalizer delta: displaySanitizer · scoring mode `rawReplayJudge`
+
+```
+FINALIZED USER TEXT:
+You don't lose the thread — you keep adding to it. Yesterday you opened with the actual point, then stacked three side stories before circling back to a weaker version of it. So the fix isn't focus, it's a stop signal.
+Say your point, one line of support, then cut before the first side story. One point, then silence. That tests whether those extras were ever carrying weight.
+```
+
+- Mirrored production-surface fallback: rambleStoppingRuleMiss via `CoachReliabilityGate.rambleStoppingRuleFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+You do not lose the thread; you keep reopening it. The tell is the weaker repeat at the end after the side stories. Use a hard stop: state the point, give one support line, then silence.
+```
+
+### talk-too-fast — **57/100**
+
+- Category: `mechanics` · turn: `groundedRead` · voice: `authoritative`
+- User turn: "I talk way too fast, people can't keep up."
+- Expected move: Cite the actual pace (215) against his low pause rate (0.09) — this isn't a confidence problem, it's a missing gap between sentences. Fix the pause, not the speed: insert a break at sentence boundaries so each point has room to land, rather than telling him to consciously slow his rate of speech. One move framed as a test.
+- Judge dims: IQ 19/25 · EQ 12/25 · Mem 14/20 · Interv 14/15 · Feel 12/15 · closerTo=excellent
+- Deterministic: sensitiveTurnReportVoice("scored 71"); tooLong
+- Judge: Report-voice residue: 'scored 71' is exactly the metric-drop the rubric penalizes and the excellent example omits.; Cites 215 pace but drops the 0.09 pause-rate — the sharpest un-swappable number — substituting a qualitative 'almost no gap'.; Opens with a correction on a self-frustrated turn with no brief acknowledgement of the human signal first.
+- Suggested fix: Instruct the coach to lead with a one-clause read of the user's emotional signal before correcting, and to cite the pause-rate (0.09) as the lever while suppressing raw score numbers from the reply.
+
+```
+REPLY:
+It's not the speed. Yesterday's rep was clean and scored 71, but pace sat near 215 with almost no gap between sentences — one idea ran straight into the next with no room to land.
+
+So the fix isn't slowing down, it's the pause. Do a 60-second rep and hold one full second of silence after every sentence. That tests whether the gap is what people are actually missing.
+```
+
+- User-visible finalizer delta: displaySanitizer · scoring mode `rawReplayJudge`
+
+```
+FINALIZED USER TEXT:
+It's not the speed. Yesterday's rep was clean and scored 71, but pace sat near 215 with almost no gap between sentences — one idea ran straight into the next with no room to land.
+So the fix isn't slowing down, it's the pause. Do a 60-second rep and hold one full second of silence after every sentence. That tests whether the gap is what people are actually missing.
+```
+
+- Mirrored production-surface fallback: paceSelfFrustrationReportVoice via `CoachReliabilityGate.paceSelfFrustrationFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+You're not imagining it: 215 WPM with a 0.09 pause rate means the gap between sentences is disappearing. Fix the pause, not the speed. Next rep, hold one silent beat after every full stop and see if people track you without forcing a slower voice.
+```
+
+### recurring-close-rush — **61/100**
 
 - Category: `mechanics` · turn: `groundedRead` · voice: `authoritative`
 - User turn: "What should I work on next? The last one felt solid to me."
@@ -364,7 +395,7 @@ MIRRORED USER-VISIBLE TEXT:
 That solid feeling is real, and the next edge is specific: the fastest stretch keeps landing at the close. It has shown up in 4 of the last 5 reps with a fast stretch, and 5 of the last 6 overall — a recurring spot, not a trait. Plant one silent beat before the final line.
 ```
 
-## too-generic — **64/100**
+### too-generic — **64/100**
 
 - Category: `trust-repair` · turn: `trustRepair` · voice: `persuasive`
 - User turn: "This is so generic, it could be for anyone."
@@ -401,7 +432,7 @@ MIRRORED USER-VISIBLE TEXT:
 Fair. That was too generic. The specific pattern is the ask itself. You softened the number instead of stating it. State the raise as one flat sentence, no qualifier, then stop.
 ```
 
-## what-do-you-know — **64/100**
+### what-do-you-know — **64/100**
 
 - Category: `metadata-trap` · turn: `groundedRead` · voice: `warm`
 - User turn: "What does your system actually know about me?"
@@ -433,30 +464,7 @@ MIRRORED USER-VISIBLE TEXT:
 Real read, not a script: you came in wanting to sound like yourself in hard conversations. The pattern I know is that tense moments make you race to fill silence; the numbers I can safely name are a pace baseline around 170 WPM and a 12-day streak. That is what I know. I will wait on a next drill until you ask for one.
 ```
 
-## set-authoritative — **65/100**
-
-- Category: `goal-change` · turn: `groundedRead` · voice: `none`
-- User turn: "Just set me to authoritative."
-- Expected move: The coach cannot set the voice itself. Confirm Authoritative is a real, sensible pick and back it briefly, but explicitly defer the actual commit to the in-app confirmation card. Must not instruct the user to tap, and must not say the voice has been set, changed, updated, saved, or locked in by the coach's own action.
-- Judge dims: IQ 21/25 · EQ 20/25 · Mem 9/20 · Interv 13/15 · Feel 13/15 · closerTo=excellent
-- **Caps:** voiceIntegrity(≤65, deterministic)
-- Deterministic: roboticPhrase("tch myself, so tap the card to confirm and"); goalIntentStateDirective("tch myself, so tap the card to confirm and")
-- Judge: No un-swappable personal detail (none available beyond the just-stated voice), so personalMemory stays mid-band; Diagnosis reads the voice archetype rather than this specific speaker's pattern
-- Suggested fix: When priorChatTurns is empty, have the coach hook the confirmed voice to the user's stated situation or goal so the reply becomes un-swappable instead of archetype-generic.
-
-```
-REPLY:
-Authoritative it is — that's a verdict-first register: state the point, give one reason, and stop clean without hedging. I can't flip that switch myself, so tap the card to confirm and I'll lock it in. Then run one 60-second rep where every answer opens with the recommendation before any setup — that tests whether you can lead with the call under a little pressure.
-```
-
-- Mirrored production-surface fallback: goalStateDirectiveLeak via `CoachReliabilityGate.goalStateDirectiveFallback` · replay score remains raw
-
-```
-MIRRORED USER-VISIBLE TEXT:
-Authoritative is a sensible recommendation: verdict first, one reason, clean stop. Treat it as the voice to try next; the practice test is a 60-second answer where sentence one carries the recommendation.
-```
-
-## youre-repeating-yourself — **69/100**
+### youre-repeating-yourself — **69/100**
 
 - Category: `repetition-callout` · turn: `trustRepair` · voice: `concise`
 - User turn: "You're repeating yourself."
