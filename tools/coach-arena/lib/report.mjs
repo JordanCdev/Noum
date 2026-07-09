@@ -555,73 +555,120 @@ function renderMarkdown(run, previous, reportsDir) {
   L.push(`## Worst 10`);
   L.push('');
   const worst = run.records.filter((r) => r.status === 'scored').sort((a, b) => a.score.final - b.score.final).slice(0, 10);
-  L.push(`| Score | Fixture | Turn | closerTo | Top issue |`);
-  L.push(`|---|---|---|---|---|`);
+  L.push(`| Score | Fixture | Turn | closerTo | Class | Top issue |`);
+  L.push(`|---|---|---|---|---|---|`);
   for (const r of worst) {
     const issue = r.deterministic.findings[0]?.id || r.judge?.failureReasons?.[0] || '—';
-    L.push(`| **${r.score.final}** | ${r.fixture.id} | ${r.fixture.turnDepth} | ${r.score.closerTo || '—'} | ${String(issue).slice(0, 40)} |`);
+    L.push(`| **${r.score.final}** | ${r.fixture.id} | ${r.fixture.turnDepth} | ${r.score.closerTo || '—'} | ${classifyFailure(r).cls} | ${String(issue).slice(0, 40)} |`);
   }
+  L.push('');
+  L.push(`Class: \`substance\` = real coaching gap · \`residue\` = judge-excellent reply capped for voice/report-voice residue (cosmetic, ux/chat-owned).`);
   L.push('');
   L.push(`See \`failures.md\` for full replies + judge reasoning. Raw: \`latest.json\`.`);
   return L.join('\n') + '\n';
+}
+
+// Failure taxonomy (eval honesty). A reply the judge calls EXCELLENT in substance
+// but that lands sub-70 PURELY on voice/report-voice/scaffold/placeholder residue
+// is a cosmetic, generation-owned leak — not a coaching deficit. Ranking those by
+// raw score next to genuinely-thin replies makes near-excellent coaching look like
+// the worst failures and MASKS real progress. Split them: substantive gaps (the
+// real coach-parity signal) surface first; residue caps are grouped as what they
+// are — prompt/finalizer cleanups owned by the reply pipeline (ux/chat).
+// Delivery/voice residue ids: report-voice, robotic phrasing, exposed scaffold
+// labels, placeholder leaks, cold-start jargon, and pure verbosity (`tooLong`).
+// `tooLong` only ever reclassifies a reply the judge ALREADY rated excellent (the
+// closerTo gate below), so it downgrades verbose-but-excellent coaching to cosmetic
+// without ever hiding a substantively-weak reply.
+const RESIDUE_FINDING = /(reportvoice|robotic|scaffold|coldstart|placeholderleak|metadataleak|residue|fakecalibration|fakescore|toolong)/i;
+function classifyFailure(r) {
+  if (r.status !== 'scored') return { cls: 'missing', label: 'missing capture', owner: 'capture/regen' };
+  const closer = r.score.closerTo;
+  const caps = r.score.capsTriggered || [];
+  const findings = r.deterministic.findings || [];
+  // A substance cap (ignoresIntent/fabricatesEvidence/unsafe) is never cosmetic.
+  const hasSubstanceCap = caps.some((c) => c.key === 'ignoresIntent' || c.key === 'fabricatesEvidence' || c.key === 'unsafe');
+  const allFindingsResidue = findings.length > 0 && findings.every((f) => RESIDUE_FINDING.test(f.id || ''));
+  // Only call it cosmetic when the judge AFFIRMATIVELY rates the substance excellent
+  // AND every deterministic finding is residue-class — conservative by design.
+  if (closer === 'excellent' && !hasSubstanceCap && allFindingsResidue) {
+    return { cls: 'residue', label: 'voice/report-voice residue — substance judged excellent', owner: 'ux/chat prompt+finalizer' };
+  }
+  return { cls: 'substance', label: `coaching-substance gap (closerTo=${closer || 'n/a'})`, owner: 'coaching prompt/design' };
+}
+
+function renderFailureEntry(L, r) {
+  L.push(`### ${r.fixture.id} — ${r.status === 'scored' ? `**${r.score.final}/100**` : `\`${r.status}\``}`);
+  L.push('');
+  L.push(`- Category: \`${r.fixture.category}\` · turn: \`${r.fixture.turnDepth}\` · voice: \`${r.fixture.voice || 'none'}\``);
+  L.push(`- User turn: ${JSON.stringify(r.fixture.userTurn)}`);
+  L.push(`- Expected move: ${r.fixture.expectedCoachMove}`);
+  if (r.status === 'scored') {
+    const d = r.judge?.dims || {};
+    L.push(`- Judge dims: IQ ${d.diagnosticIQ?.score}/25 · EQ ${d.eqAttunement?.score}/25 · Mem ${d.personalMemory?.score}/20 · Interv ${d.interventionQuality?.score}/15 · Feel ${d.dialogueFeel?.score}/15 · closerTo=${r.score.closerTo}`);
+    if (r.score.capsTriggered.length) L.push(`- **Caps:** ${r.score.capsTriggered.map((c) => `${c.key}(≤${c.max}, ${c.sources.join('+')})`).join(', ')}`);
+    if (r.deterministic.findings.length) L.push(`- Deterministic: ${r.deterministic.findings.map((f) => `${f.id}${f.evidence ? `("${f.evidence}")` : ''}`).join('; ')}`);
+    if (r.judge?.failureReasons?.length) L.push(`- Judge: ${r.judge.failureReasons.join('; ')}`);
+    if (r.judge?.suggestedFix) L.push(`- Suggested fix: ${r.judge.suggestedFix}`);
+    L.push('');
+    L.push('```');
+    L.push('REPLY:');
+    L.push(r.reply || '(empty)');
+    L.push('```');
+    if (r.finalizer?.changed) {
+      L.push('');
+      L.push(`- User-visible finalizer delta: ${r.finalizer.changes.join(', ')} · scoring mode \`${r.finalizer.scoringMode}\``);
+      L.push('');
+      L.push('```');
+      L.push('FINALIZED USER TEXT:');
+      L.push(r.finalizer.finalizedReply || '(empty)');
+      L.push('```');
+    }
+    if (r.userVisible?.reliabilityGate?.changed) {
+      const gate = r.userVisible.reliabilityGate;
+      const issues = (gate.issues || []).join(', ') || 'unknown';
+      L.push('');
+      L.push(`- Mirrored production-surface fallback: ${issues} via \`${gate.source || 'unknown'}\` · replay score remains raw`);
+      L.push('');
+      L.push('```');
+      L.push('MIRRORED USER-VISIBLE TEXT:');
+      L.push(r.userVisible.reply || '(empty)');
+      L.push('```');
+    }
+  } else {
+    L.push(`- ${r.note || 'missing capture'}`);
+  }
+  L.push('');
 }
 
 function renderFailures(run) {
   const L = [];
   L.push(`# Coach Arena failures — ${run.runId}`);
   L.push('');
+  const byScore = (a, b) => (a.score?.final ?? -1) - (b.score?.final ?? -1);
   const fails = run.records
     .filter((r) => r.status !== 'scored' || r.score.final < 70 || r.score.capsTriggered.length || r.score.placeholderLeaks)
-    .sort((a, b) => (a.score?.final ?? -1) - (b.score?.final ?? -1));
+    .sort(byScore);
   if (!fails.length) {
     L.push('No failures below threshold. 🎯');
     return L.join('\n') + '\n';
   }
-  L.push(`${fails.length} fixture(s) below 70 / capped / missing.`);
+  const substance = fails.filter((r) => classifyFailure(r).cls !== 'residue');
+  const residue = fails.filter((r) => classifyFailure(r).cls === 'residue');
+  L.push(`${fails.length} below 70 / capped / missing — **${substance.length} substantive gap(s)** (the real coach-parity signal) and **${residue.length} voice/residue cap(s)** (judge rated substance excellent; a prompt/finalizer cleanup, ux/chat-owned). Split so residue caps don't masquerade as the worst coaching failures.`);
   L.push('');
-  for (const r of fails) {
-    L.push(`## ${r.fixture.id} — ${r.status === 'scored' ? `**${r.score.final}/100**` : `\`${r.status}\``}`);
-    L.push('');
-    L.push(`- Category: \`${r.fixture.category}\` · turn: \`${r.fixture.turnDepth}\` · voice: \`${r.fixture.voice || 'none'}\``);
-    L.push(`- User turn: ${JSON.stringify(r.fixture.userTurn)}`);
-    L.push(`- Expected move: ${r.fixture.expectedCoachMove}`);
-    if (r.status === 'scored') {
-      const d = r.judge?.dims || {};
-      L.push(`- Judge dims: IQ ${d.diagnosticIQ?.score}/25 · EQ ${d.eqAttunement?.score}/25 · Mem ${d.personalMemory?.score}/20 · Interv ${d.interventionQuality?.score}/15 · Feel ${d.dialogueFeel?.score}/15 · closerTo=${r.score.closerTo}`);
-      if (r.score.capsTriggered.length) L.push(`- **Caps:** ${r.score.capsTriggered.map((c) => `${c.key}(≤${c.max}, ${c.sources.join('+')})`).join(', ')}`);
-      if (r.deterministic.findings.length) L.push(`- Deterministic: ${r.deterministic.findings.map((f) => `${f.id}${f.evidence ? `("${f.evidence}")` : ''}`).join('; ')}`);
-      if (r.judge?.failureReasons?.length) L.push(`- Judge: ${r.judge.failureReasons.join('; ')}`);
-      if (r.judge?.suggestedFix) L.push(`- Suggested fix: ${r.judge.suggestedFix}`);
-      L.push('');
-      L.push('```');
-      L.push('REPLY:');
-      L.push(r.reply || '(empty)');
-      L.push('```');
-      if (r.finalizer?.changed) {
-        L.push('');
-        L.push(`- User-visible finalizer delta: ${r.finalizer.changes.join(', ')} · scoring mode \`${r.finalizer.scoringMode}\``);
-        L.push('');
-        L.push('```');
-        L.push('FINALIZED USER TEXT:');
-        L.push(r.finalizer.finalizedReply || '(empty)');
-        L.push('```');
-      }
-      if (r.userVisible?.reliabilityGate?.changed) {
-        const gate = r.userVisible.reliabilityGate;
-        const issues = (gate.issues || []).join(', ') || 'unknown';
-        L.push('');
-        L.push(`- Mirrored production-surface fallback: ${issues} via \`${gate.source || 'unknown'}\` · replay score remains raw`);
-        L.push('');
-        L.push('```');
-        L.push('MIRRORED USER-VISIBLE TEXT:');
-        L.push(r.userVisible.reply || '(empty)');
-        L.push('```');
-      }
-    } else {
-      L.push(`- ${r.note || 'missing capture'}`);
-    }
-    L.push('');
-  }
+  L.push(`## Substantive coaching gaps (${substance.length}) — real-progress signal, worst-first`);
+  L.push('');
+  L.push('A fix here moves coach-parity, not just voice. Ranked by score ascending.');
+  L.push('');
+  if (!substance.length) L.push('_None — every remaining failure is cosmetic voice residue._\n');
+  for (const r of substance) renderFailureEntry(L, r);
+  L.push(`## Voice / residue caps (${residue.length}) — substance sound, cosmetic leak only`);
+  L.push('');
+  L.push('The judge rated each of these **excellent** in substance; they land sub-70 purely on report-voice / robotic / scaffold residue. Owned by the reply prompt + finalizer (ux/chat), not a coaching deficit — listed here so they do not inflate the "worst failures" view or mask real progress.');
+  L.push('');
+  if (!residue.length) L.push('_None this run._\n');
+  for (const r of residue) renderFailureEntry(L, r);
   return L.join('\n') + '\n';
 }
 
