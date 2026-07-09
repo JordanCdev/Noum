@@ -17,7 +17,6 @@ final class PremiumManager: ObservableObject {
     @Published private(set) var purchasedProductIDs: Set<String> = []
     @Published private(set) var videoAnalysisCreditsRemaining: Int
 
-    private let storageKey = "NoumPremiumEntitlement"
     private let creditsKey = "NoumVideoAnalysisCredits"
     private let creditsResetKey = "NoumVideoAnalysisResetDate"
     static let monthlyVideoAnalysisLimit = 5
@@ -28,9 +27,18 @@ final class PremiumManager: ObservableObject {
     private let productIDs: Set<String> = [monthlyID, annualID]
 
     private var transactionListener: Task<Void, Error>?
+    #if DEBUG
+    /// In-memory development/test override. This is intentionally separate
+    /// from StoreKit state and is never persisted or compiled into release
+    /// entitlement resolution.
+    private var debugEntitlementOverride: Bool?
+    #endif
 
     private init() {
-        isPremium = UserDefaults.standard.bool(forKey: storageKey)
+        // StoreKit's current verified entitlements are the only production
+        // authority. Start closed until that local StoreKit snapshot arrives
+        // rather than briefly granting access from a stale persisted flag.
+        isPremium = false
         videoAnalysisCreditsRemaining = UserDefaults.standard.object(forKey: creditsKey) as? Int ?? Self.monthlyVideoAnalysisLimit
         resetCreditsIfNeeded()
         // Defer StoreKit work so it doesn't block the first frame.
@@ -141,26 +149,56 @@ final class PremiumManager: ObservableObject {
             }
         }
 
-        await MainActor.run {
-            purchasedProductIDs = purchased
-            let entitled = !purchased.isEmpty || UserDefaults.standard.bool(forKey: storageKey)
-            if entitled != isPremium {
-                isPremium = entitled
-                UserDefaults.standard.set(entitled, forKey: storageKey)
-            }
+        purchasedProductIDs = purchased
+        #if DEBUG
+        let override = debugEntitlementOverride
+        #else
+        let override: Bool? = nil
+        #endif
+        let entitled = Self.resolvedEntitlement(
+            verifiedPurchasedProductIDs: purchased,
+            debugOverride: override
+        )
+        if entitled != isPremium {
+            isPremium = entitled
         }
     }
 
-    // MARK: - Manual Entitlement (for testing / promo codes)
-
-    func upgradeToPremium() {
-        isPremium = true
-        UserDefaults.standard.set(true, forKey: storageKey)
+    /// Pure entitlement contract used by the StoreKit refresh and focused
+    /// tests. There is deliberately no persisted-entitlement input: an empty
+    /// verified set resolves to free unless a DEBUG-only override is active.
+    nonisolated static func resolvedEntitlement(
+        verifiedPurchasedProductIDs: Set<String>,
+        debugOverride: Bool? = nil
+    ) -> Bool {
+        #if DEBUG
+        if let debugOverride {
+            return debugOverride
+        }
+        #else
+        _ = debugOverride
+        #endif
+        return !verifiedPurchasedProductIDs.isEmpty
     }
 
+    // MARK: - DEBUG Entitlement Override
+
+    /// Retained for existing previews and test fixtures. Release builds never
+    /// grant premium through this path.
+    func upgradeToPremium() {
+        #if DEBUG
+        debugEntitlementOverride = true
+        isPremium = true
+        #endif
+    }
+
+    /// Retained for existing previews and test fixtures. Release builds keep
+    /// StoreKit as the sole entitlement authority.
     func revokePremium() {
+        #if DEBUG
+        debugEntitlementOverride = false
         isPremium = false
-        UserDefaults.standard.set(false, forKey: storageKey)
+        #endif
     }
 
     // MARK: - Video Analysis Credits
@@ -231,6 +269,57 @@ final class PremiumManager: ObservableObject {
     }
 }
 
+// MARK: - Paywall Release Contracts
+
+enum PremiumPricing {
+    static let unavailablePrice = "Price unavailable"
+
+    /// StoreKit has already localized this value for the active storefront.
+    /// If it is absent, showing no numeric claim is safer than inventing a
+    /// currency-specific fallback.
+    static func displayPrice(_ storeKitDisplayPrice: String?) -> String {
+        guard let value = storeKitDisplayPrice?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return unavailablePrice
+        }
+        return value
+    }
+
+    /// Returns a conservative whole-number saving only when both StoreKit
+    /// prices make the comparison valid. Rounding down avoids overclaiming.
+    static func annualSavingsPercentage(
+        monthlyPrice: Decimal?,
+        annualPrice: Decimal?
+    ) -> Int? {
+        guard let monthlyPrice,
+              let annualPrice,
+              monthlyPrice > 0,
+              annualPrice > 0 else {
+            return nil
+        }
+
+        let twelveMonths = monthlyPrice * Decimal(12)
+        guard annualPrice < twelveMonths else { return nil }
+
+        var rawPercentage = ((twelveMonths - annualPrice) / twelveMonths) * Decimal(100)
+        var roundedPercentage = Decimal()
+        NSDecimalRound(&roundedPercentage, &rawPercentage, 0, .down)
+        let percentage = NSDecimalNumber(decimal: roundedPercentage).intValue
+        return percentage > 0 ? percentage : nil
+    }
+}
+
+enum PremiumLegalLinks {
+    /// Reuse the same hosted policy used by Settings and App Store Connect.
+    static let privacyPolicy = NoumWebURLs.privacy
+
+    /// Noum has no custom terms URL yet, so subscriptions use Apple's
+    /// standard licensed application end-user licence agreement.
+    static let termsOfUse = URL(
+        string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"
+    )!
+}
+
 // MARK: - Paywall View
 
 @available(iOS 17.0, *)
@@ -255,24 +344,10 @@ struct PaywallView: View {
             }
         }
 
-        var fallbackPrice: String {
+        var renewalText: String {
             switch self {
-            case .monthly: return "$4.99/mo"
-            case .annual: return "$29.99/yr"
-            }
-        }
-
-        var savings: String? {
-            switch self {
-            case .monthly: return nil
-            case .annual: return "Save 50%"
-            }
-        }
-
-        var fallbackPerMonth: String {
-            switch self {
-            case .monthly: return "$4.99/mo"
-            case .annual: return "$2.50/mo"
+            case .monthly: return "Renews monthly"
+            case .annual: return "Renews annually"
             }
         }
     }
@@ -282,10 +357,21 @@ struct PaywallView: View {
     private func priceText(for plan: PlanOption) -> String {
         switch plan {
         case .monthly:
-            return premium.monthlyProduct?.displayPrice ?? plan.fallbackPrice
+            return PremiumPricing.displayPrice(premium.monthlyProduct?.displayPrice)
         case .annual:
-            return premium.annualProduct?.displayPrice ?? plan.fallbackPrice
+            return PremiumPricing.displayPrice(premium.annualProduct?.displayPrice)
         }
+    }
+
+    private func savingsText(for plan: PlanOption) -> String? {
+        guard plan == .annual,
+              let percentage = PremiumPricing.annualSavingsPercentage(
+                monthlyPrice: premium.monthlyProduct?.price,
+                annualPrice: premium.annualProduct?.price
+              ) else {
+            return nil
+        }
+        return "Save \(percentage)%"
     }
 
     var body: some View {
@@ -433,7 +519,7 @@ struct PaywallView: View {
                             .foregroundStyle(.red.opacity(0.8))
                     }
 
-                    HStack(spacing: 16) {
+                    VStack(spacing: 8) {
                         Button("Restore") {
                             Task {
                                 await premium.restorePurchases()
@@ -445,12 +531,21 @@ struct PaywallView: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white.opacity(0.5))
 
-                        Text("·")
-                            .foregroundStyle(.white.opacity(0.2))
+                        Text("Payment is charged to your Apple Account at confirmation. Subscriptions renew automatically unless cancelled at least 24 hours before the current period ends.")
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.35))
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                        Text("Cancel anytime.")
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.3))
+                        HStack(spacing: 16) {
+                            Link("Privacy Policy", destination: PremiumLegalLinks.privacyPolicy)
+                                .accessibilityHint("Opens Noum's privacy policy.")
+
+                            Link("Terms of Use", destination: PremiumLegalLinks.termsOfUse)
+                                .accessibilityHint("Opens the subscription terms of use.")
+                        }
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.55))
                     }
                 }
                 .padding(.horizontal, 20)
@@ -531,7 +626,7 @@ struct PaywallView: View {
             }
         } label: {
             VStack(spacing: 8) {
-                if let savings = plan.savings {
+                if let savings = savingsText(for: plan) {
                     Text(savings)
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.white)
@@ -551,7 +646,7 @@ struct PaywallView: View {
                     .font(.title3.weight(.bold))
                     .foregroundStyle(isSelected ? proColor : .white.opacity(0.7))
 
-                Text(plan.fallbackPerMonth)
+                Text(plan.renewalText)
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.4))
             }

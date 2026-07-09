@@ -10768,6 +10768,14 @@ struct CoachContextBuilderTests {
     // MARK: - Day-0 coach door (rank 3, 2026-06-14 eval)
 
     @available(iOS 17.0, macOS 12.0, *)
+    @Test func askNoumEvidenceGateRequiresOneCompletedRep() {
+        #expect(!AskNoumStore.hasCompletedPracticeEvidence(sessionCount: -1))
+        #expect(!AskNoumStore.hasCompletedPracticeEvidence(sessionCount: 0))
+        #expect(AskNoumStore.hasCompletedPracticeEvidence(sessionCount: 1))
+        #expect(AskNoumStore.hasCompletedPracticeEvidence(sessionCount: 8))
+    }
+
+    @available(iOS 17.0, macOS 12.0, *)
     @Test func coachSessionRoutesToTypeWhenVoiceInaccessible() {
         // A live request is not honored when the call cannot actually hear the
         // user — land in the readable typed chat instead of a dead "Listening…".
@@ -10777,23 +10785,27 @@ struct CoachContextBuilderTests {
     }
 
     @available(iOS 17.0, macOS 12.0, *)
-    @Test func coachSessionRoutesToTypeForTrueColdStart() {
-        // Voice accessible, but a true cold start (no rep, no chosen voice) meets
-        // the coach in text first — the call is the wrong nervous-beginner door.
+    @Test func coachSessionRoutesToTypeUntilRepOneEvenWithChosenVoice() {
+        // A profile is stated intent, not observed speaking evidence. Choosing
+        // a voice must not reopen the live-call bypass before rep one.
         #expect(CoachSessionView.resolvedInitialMode(
             requested: .live, voiceAccessible: true,
             hasCompletedReps: false, hasVoiceProfile: false) == .type)
+        #expect(CoachSessionView.resolvedInitialMode(
+            requested: .live, voiceAccessible: true,
+            hasCompletedReps: false, hasVoiceProfile: true) == .type)
     }
 
     @available(iOS 17.0, macOS 12.0, *)
     @Test func coachSessionKeepsLiveForReturningUserWithVoiceAccess() {
-        // Any footing (a completed rep OR a chosen voice) + voice access = call.
+        // Once evidence exists, voice access keeps the requested call whether
+        // the user chose a coaching profile or kept the generic coach voice.
         #expect(CoachSessionView.resolvedInitialMode(
             requested: .live, voiceAccessible: true,
             hasCompletedReps: true, hasVoiceProfile: false) == .live)
         #expect(CoachSessionView.resolvedInitialMode(
             requested: .live, voiceAccessible: true,
-            hasCompletedReps: false, hasVoiceProfile: true) == .live)
+            hasCompletedReps: true, hasVoiceProfile: true) == .live)
     }
 
     @available(iOS 17.0, macOS 12.0, *)
@@ -23279,7 +23291,7 @@ struct PaywallFeatureAccuracyTests {
         // Snapshot without premium entitlement
         let wasPremium = manager.isPremium
         if wasPremium { manager.revokePremium() }
-        defer { if wasPremium { manager.upgradeToPremium() } }
+        defer { wasPremium ? manager.upgradeToPremium() : manager.revokePremium() }
 
         #expect(!manager.canUseCoachMode, "Coach mode must require Pro")
         #expect(!manager.canUseLiveTranscript, "Live transcript must require Pro")
@@ -23296,7 +23308,7 @@ struct PaywallFeatureAccuracyTests {
         let manager = PremiumManager.shared
         let wasPremium = manager.isPremium
         if wasPremium { manager.revokePremium() }
-        defer { if wasPremium { manager.upgradeToPremium() } }
+        defer { wasPremium ? manager.upgradeToPremium() : manager.revokePremium() }
 
         #expect(manager.canUseClassicMode, "Classic mode must be free")
         #expect(manager.canViewBasicScore, "Basic scoring must be free")
@@ -23310,7 +23322,7 @@ struct PaywallFeatureAccuracyTests {
         let manager = PremiumManager.shared
         let wasPremium = manager.isPremium
         if wasPremium { manager.revokePremium() }
-        defer { if wasPremium { manager.upgradeToPremium() } }
+        defer { wasPremium ? manager.upgradeToPremium() : manager.revokePremium() }
 
         #expect(!manager.canUseFillerTracking,
                 "Filler tracking is gated Pro — it must not be free, matching the paywall listing")
@@ -23327,11 +23339,77 @@ struct PaywallFeatureAccuracyTests {
         let manager = PremiumManager.shared
         let wasPremium = manager.isPremium
         if wasPremium { manager.revokePremium() }
-        defer { if wasPremium { manager.upgradeToPremium() } }
+        defer { wasPremium ? manager.upgradeToPremium() : manager.revokePremium() }
 
         #expect(manager.asyncChallengeLimit == 1, "Free tier gets 1 async challenge slot")
         manager.upgradeToPremium()
         #expect(manager.asyncChallengeLimit == .max, "Pro tier gets unlimited async challenge slots")
+    }
+}
+
+@Suite("PremiumReleaseContracts")
+@MainActor
+struct PremiumReleaseContractTests {
+    @Test func emptyVerifiedEntitlementsResolveToFree() {
+        // There is intentionally no persisted `true` input. Once StoreKit's
+        // verified snapshot is empty, a prior premium state cannot latch on.
+        #expect(!PremiumManager.resolvedEntitlement(
+            verifiedPurchasedProductIDs: []
+        ))
+    }
+
+    @Test func verifiedPremiumProductResolvesToPremium() {
+        #expect(PremiumManager.resolvedEntitlement(
+            verifiedPurchasedProductIDs: Set([PremiumManager.monthlyID])
+        ))
+    }
+
+    @Test func debugOverrideIsExplicitlySeparateFromStoreTruth() {
+        #if DEBUG
+        #expect(PremiumManager.resolvedEntitlement(
+            verifiedPurchasedProductIDs: [],
+            debugOverride: true
+        ))
+        #expect(!PremiumManager.resolvedEntitlement(
+            verifiedPurchasedProductIDs: Set([PremiumManager.annualID]),
+            debugOverride: false
+        ))
+        #else
+        #expect(!PremiumManager.resolvedEntitlement(
+            verifiedPurchasedProductIDs: [],
+            debugOverride: true
+        ))
+        #endif
+    }
+
+    @Test func localizedStoreKitDisplayPriceIsPreservedWithoutUSDFallback() {
+        #expect(PremiumPricing.displayPrice("  £4.99  ") == "£4.99")
+        #expect(PremiumPricing.displayPrice("29,99 €") == "29,99 €")
+        #expect(PremiumPricing.displayPrice(nil) == PremiumPricing.unavailablePrice)
+        #expect(PremiumPricing.displayPrice("   ") == PremiumPricing.unavailablePrice)
+    }
+
+    @Test func annualSavingsRequiresComparableStoreKitPrices() {
+        #expect(PremiumPricing.annualSavingsPercentage(
+            monthlyPrice: Decimal(10),
+            annualPrice: Decimal(90)
+        ) == 25)
+        #expect(PremiumPricing.annualSavingsPercentage(
+            monthlyPrice: Decimal(10),
+            annualPrice: Decimal(120)
+        ) == nil)
+        #expect(PremiumPricing.annualSavingsPercentage(
+            monthlyPrice: nil,
+            annualPrice: Decimal(90)
+        ) == nil)
+    }
+
+    @Test func legalLinksUseCanonicalPrivacyAndAppleStandardEULA() {
+        #expect(PremiumLegalLinks.privacyPolicy == NoumWebURLs.privacy)
+        #expect(PremiumLegalLinks.termsOfUse.scheme == "https")
+        #expect(PremiumLegalLinks.termsOfUse.host == "www.apple.com")
+        #expect(PremiumLegalLinks.termsOfUse.absoluteString ==
+                "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")
     }
 }
 
