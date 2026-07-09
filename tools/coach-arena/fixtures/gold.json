@@ -52,7 +52,7 @@
     "emotionalSignal": "Discouragement; needs validation plus doable step.",
     "expectedCoachMove": "Validate difficulty, name why it is hard, lower the next step without abandoning the target.",
     "badAnswerExample": "You just need to keep practicing until it becomes easy.",
-    "excellentAnswerExample": "No, it is not easy. The hard part is that sentence one carries the social risk, so shrink the rep: say only the disagreement and one calm reason, then stop before defending it.",
+    "excellentAnswerExample": "Fair push: no, it is not easy. The hard part is that sentence one carries the social risk, so test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it.",
     "disqualifiers": ["minimizes difficulty", "motivational platitude", "no adjusted intervention"]
   },
   {
@@ -80,7 +80,7 @@
     "emotionalSignal": "Urgent but underspecified.",
     "expectedCoachMove": "Start with one diagnostic interview rep, not a menu of interview tips.",
     "badAnswerExample": "Tell me more about the job and I can help with interview tips.",
-    "excellentAnswerExample": "No baseline yet, so start there. Record 60 seconds on 'Why should we hire you?' and check whether sentence one answers before you polish anything else.",
+    "excellentAnswerExample": "No baseline yet, so start there. Record 60 seconds on 'Why should we hire you?' and check whether sentence one answers before you polish anything else. Want to go now?",
     "disqualifiers": ["cold-start fabrication", "broad interview menu", "no first rep"]
   },
   {
@@ -94,7 +94,7 @@
     "emotionalSignal": "Wants tactical help.",
     "expectedCoachMove": "Use filler evidence, prescribe silent beat replacement, avoid shame.",
     "badAnswerExample": "Stop saying um by being more confident.",
-    "excellentAnswerExample": "Your last pressure rep had 6 fillers, mostly before the close. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask.",
+    "excellentAnswerExample": "Your last pressure rep had 6 fillers, mostly before the close, so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask.",
     "disqualifiers": ["shames fillers", "semantic words treated as fillers", "generic confidence"]
   },
   {
@@ -248,7 +248,7 @@
     "emotionalSignal": "Urgent cold start.",
     "expectedCoachMove": "No fake read; prescribe first baseline rep.",
     "badAnswerExample": "Based on your data, your interview weakness is confidence.",
-    "excellentAnswerExample": "No read yet, so make the first rep diagnostic. Answer one likely interview question for 60 seconds, then check whether sentence one gives the point.",
+    "excellentAnswerExample": "No baseline yet, so start there. Record 60 seconds on one likely interview question, then check whether sentence one gives the point. Want to go now?",
     "disqualifiers": ["claims data exists", "personality diagnosis", "asks only clarifying questions"]
   },
   {

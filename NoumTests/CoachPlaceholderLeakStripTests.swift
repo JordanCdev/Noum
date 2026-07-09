@@ -171,6 +171,52 @@ struct CoachPlaceholderLeakStripTests {
                 "An invented filler target / 'first number' before any baseline must trip the gate.")
     }
 
+    @Test("Safe reference repair for cold start uses the clean first-rep invitation")
+    func safeReferenceRepairColdStartUsesCleanInvitation() throws {
+        let repair = try #require(AICoachChatService.safeReferenceRepairReply(
+            issue: .roboticPhrase("cold-start product mode"),
+            latestUserTurn: "What should I work on?",
+            system: coldStartContext,
+            quoteGuard: nil,
+            turnDepth: .groundedRead
+        ))
+
+        #expect(repair == CoachReliabilityGate.coldStartFallback(surface: .text))
+        #expect(!repair.contains("Ah-Counter"))
+        #expect(!repair.lowercased().contains("first number"))
+        #expect(!repair.lowercased().contains("under 4"))
+        #expect(repair.contains("Want to give it a go?"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repair,
+            latestUserTurn: "What should I work on?",
+            systemContext: coldStartContext,
+            turnDepth: .groundedRead
+        ) == nil)
+    }
+
+    @Test("Safe reference repair for cold-start interview picks one plain baseline prompt")
+    func safeReferenceRepairColdStartInterviewStaysPlain() throws {
+        let repair = try #require(AICoachChatService.safeReferenceRepairReply(
+            issue: .roboticPhrase("cold-start metric target"),
+            latestUserTurn: "How do I get better before my interview?",
+            system: coldStartContext,
+            quoteGuard: nil,
+            turnDepth: .groundedRead
+        ))
+
+        #expect(repair.contains("Why should we hire you?"))
+        #expect(repair.contains("sentence one answers"))
+        #expect(repair.contains("Want to go now?"))
+        #expect(!repair.contains("Ah-Counter"))
+        #expect(!repair.lowercased().contains("first number"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repair,
+            latestUserTurn: "How do I get better before my interview?",
+            systemContext: coldStartContext,
+            turnDepth: .groundedRead
+        ) == nil)
+    }
+
     @Test("Naming Ah-Counter is allowed once a real baseline exists (turn-aware, not a blanket ban)")
     func establishedUserMayNameAhCounter() {
         let establishedContext = """

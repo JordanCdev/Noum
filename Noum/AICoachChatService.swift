@@ -476,7 +476,9 @@ enum CoachReplyTextSanitizer {
 
     private nonisolated static func stripCoachLeadIn(from value: String) -> String {
         let pattern = #"(?i)^("# + coachScaffoldLeadInPattern + #"):\s*"#
-        return replace(pattern: pattern, in: value, template: "")
+        let stripped = replace(pattern: pattern, in: value, template: "")
+        guard stripped != value else { return value }
+        return recapitalizeSentenceStarts(in: stripped)
     }
 
     private nonisolated static func stripInlineCoachLeadIns(from value: String) -> String {
@@ -487,7 +489,9 @@ enum CoachReplyTextSanitizer {
         // mid-sentence gap without touching label-free prose (the trailing `:`
         // is still required, so only genuine "label:" scaffolds are removed).
         let pattern = #"(?i)(^|[.!?]\s+|[,;]\s+|\s+[—-]\s+)("# + coachScaffoldLeadInPattern + #"):\s*"#
-        return replace(pattern: pattern, in: value, template: "$1")
+        let stripped = replace(pattern: pattern, in: value, template: "$1")
+        guard stripped != value else { return value }
+        return recapitalizeSentenceStarts(in: stripped)
     }
 
     /// Bare report-voice telemetry residue the model sometimes leaves behind
@@ -519,12 +523,22 @@ enum CoachReplyTextSanitizer {
         #"(?i)\bthere\s+(?:was|were)\s+\d+\s+fillers?\s*,?\s+so\s+"#
     ]
 
+    private nonisolated static let reportVoicePhraseTranslations: [(pattern: String, template: String)] = [
+        (
+            #"(?i)\b(more than\s+)(?:your|the)?\s*\d+\s+fillers?\s+(?:do|did)\b"#,
+            "$1the filler words do"
+        )
+    ]
+
     private nonisolated static let reportVoiceModeOnlyEvidencePatterns: [String] = [
         #"(?i)(^|[.!?]\s+)the signal i can use is\s+(?:timed(?:\s+practice)?|practice|pressure(?:\s+drill)?)\s*[.!?]?\s*"#
     ]
 
     nonisolated static func strippingReportVoiceResidue(from text: String) -> String {
         var value = text
+        for translation in reportVoicePhraseTranslations {
+            value = replace(pattern: translation.pattern, in: value, template: translation.template)
+        }
         for pattern in reportVoiceBridgeResiduePatterns {
             value = replace(pattern: pattern, in: value, template: "")
         }
@@ -564,8 +578,12 @@ enum CoachReplyTextSanitizer {
         for match in regex.matches(in: value, range: NSRange(location: 0, length: ns.length)) {
             let pre = match.range(at: 1)
             let ch = match.range(at: 2)
+            let nextLocation = ch.location + ch.length
+            let nextIsUpperCamelCase = nextLocation < ns.length && ns.substring(
+                with: NSRange(location: nextLocation, length: 1)
+            ).range(of: #"[A-Z]"#, options: .regularExpression) != nil
             result += ns.substring(with: NSRange(location: last, length: pre.location + pre.length - last))
-            result += ns.substring(with: ch).uppercased()
+            result += nextIsUpperCamelCase ? ns.substring(with: ch) : ns.substring(with: ch).uppercased()
             last = ch.location + ch.length
         }
         result += ns.substring(from: last)
@@ -1363,7 +1381,7 @@ actor AICoachChatService {
                 if let onProviderChosen {
                     await onProviderChosen(Self.uiHarnessProviderChoice)
                 }
-                return .reply("You are closer mechanically than you are to sounding authoritative overall. Mechanics: your latest rep is usable, but goal readiness still needs pressure evidence and repeated clean closes. Missing: repeated reps under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.")
+                return .reply("You are closer mechanically than you are to sounding authoritative overall. Mechanics: your latest rep is usable, but goal readiness still needs pressure evidence and repeated clean closes. What is still missing is repeated reps under stakes. Use this as the proof test. Record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.")
             }
             if Self.uiHarnessFlagPresent(
                 "UI_TESTING_CHAT_FORCE_NOTICE",
@@ -2059,26 +2077,63 @@ actor AICoachChatService {
     ) -> String? {
         guard let assessment else { return nil }
 
+        let lowerTurn = latestUserTurn?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
         let raw: String
-        switch turnDepth {
-        case .deepAssessment:
-            raw = deterministicIntentOverrideReply(
-                latestUserTurn: latestUserTurn
-            ) ?? deterministicDeepAssessmentReply(assessment)
-        case .trustRepair:
-            raw = deterministicTrustRepairReply(
-                assessment: assessment,
-                latestUserTurn: latestUserTurn,
-                systemContext: systemContext
+        if TurnDepthClassifier.isGreetingOrSmallTalk(lowerTurn) {
+            raw = CoachReliabilityGate.greetingFallback(
+                surface: surface,
+                assessment: assessment
             )
-        case .quickMove:
-            raw = deterministicIntentOverrideReply(
-                latestUserTurn: latestUserTurn
-            ) ?? deterministicQuickMoveReply(assessment)
-        case .groundedRead:
-            raw = deterministicIntentOverrideReply(
-                latestUserTurn: latestUserTurn
-            ) ?? deterministicGroundedReadReply(assessment)
+        } else if TurnDepthClassifier.isLowSignalOffTopicTest(lowerTurn) {
+            raw = CoachReliabilityGate.offTopicTestFallback(surface: surface)
+        } else if let coldStartShape = coldStartRepairReferenceShape(
+            for: lowerTurn,
+            system: systemContext
+        ) {
+            raw = coldStartShape
+        } else if CoachReliabilityGate.notInformativeRepairUserTurn(latestUserTurn) {
+            raw = CoachReliabilityGate.notInformativeRepairFallback(surface: surface)
+        } else if CoachReliabilityGate.repetitionCalloutUserTurn(latestUserTurn) {
+            raw = CoachReliabilityGate.repetitionCourseCorrectionFallback(surface: surface)
+        } else if CoachReliabilityGate.vulnerablePushbackUserTurn(latestUserTurn) {
+            raw = CoachReliabilityGate.vulnerablePushbackFallback(
+                surface: surface,
+                assessment: assessment
+            )
+        } else if turnLooksLikeVoiceGoalIntent(lowerTurn) {
+            raw = CoachReliabilityGate.goalStateDirectiveFallback(
+                surface: surface,
+                latestUserTurn: latestUserTurn,
+                replyText: systemContext
+            )
+        } else if CoachReliabilityGate.straightAnswerUserTurn(latestUserTurn) {
+            raw = CoachReliabilityGate.straightAnswerSplitFallback(surface: surface)
+        } else {
+            switch turnDepth {
+            case .deepAssessment:
+                raw = deterministicIntentOverrideReply(
+                    latestUserTurn: latestUserTurn
+                ) ?? deterministicDeepAssessmentReply(assessment)
+            case .trustRepair:
+                raw = deterministicTrustRepairReply(
+                    assessment: assessment,
+                    latestUserTurn: latestUserTurn,
+                    systemContext: systemContext
+                )
+            case .quickMove:
+                raw = deterministicPressureFillerQuickMoveReply(
+                    latestUserTurn: latestUserTurn,
+                    systemContext: systemContext
+                ) ?? deterministicIntentOverrideReply(
+                    latestUserTurn: latestUserTurn
+                ) ?? deterministicQuickMoveReply(assessment)
+            case .groundedRead:
+                raw = deterministicIntentOverrideReply(
+                    latestUserTurn: latestUserTurn
+                ) ?? deterministicGroundedReadReply(assessment)
+            }
         }
 
         let normalized = CoachReplyTextSanitizer.coachReplyText(from: raw)
@@ -2150,13 +2205,13 @@ actor AICoachChatService {
             return "I would not diagnose fear from the latest rep alone. Treat fear as a hypothesis only: the observable pattern is delay, with reassurance before disagreement. Test disagreement in sentence one, so you find out whether that read feels accurate."
         }
         if containsAny(latest, ["lack conviction", "lacking conviction"]) {
-            return "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb."
+            return "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. What is still missing is repeated pressure proof. Use this as the proof test. Repeat the answer and replace the first hedge with a direct verb."
         }
         if containsAny(latest, ["polished but evasive", "sound polished but evasive", "evasive"]) {
-            return "Yes, it could, but keep it as a structure read, not a claim about you. The latest rep and pace estimate support answer-after-setup: mechanics are usable, but the goal is not proven under pressure. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it."
+            return "Yes, it could, but keep it as a structure read, not a claim about you. The latest rep and pace estimate support answer-after-setup: mechanics are usable, but the goal is not proven under pressure. What is still missing is repeated pressure proof and a listener read. Use this as the proof test. Put the direct answer in sentence one, then use one polished reason after it."
         }
         if containsAny(latest, ["sound timid", "sounds timid", "timid"]) {
-            return "I cannot prove timid from text alone. The latest rep and pace estimate only support a mechanics signal: indirectness before the recommendation, so the authority goal still needs audio evidence. Missing: tone and prosody. Proof test: try one direct recommendation first; audio would be needed for a tone verdict."
+            return "I cannot prove timid from text alone. The latest rep and pace estimate only support a mechanics signal: indirectness before the recommendation, so the authority goal still needs audio evidence. What is still missing is tone and prosody. Use this as the proof test. Try one direct recommendation first; audio would be needed for a tone verdict."
         }
         if containsAny(latest, ["not like me", "sounds correct but not like me"]) {
             return "Trust that signal. On the latest rep, keep the structure but replace the most polished sentence with the phrase you would actually say in the room, because that is what makes it sound like you. Record once and check how it feels against the cleaner version."
@@ -2219,6 +2274,66 @@ actor AICoachChatService {
         return "Your last rep gives one usable signal: \(anchor), so \(action)"
     }
 
+    private nonisolated static func deterministicPressureFillerQuickMoveReply(
+        latestUserTurn: String?,
+        systemContext: String
+    ) -> String? {
+        let lowerTurn = latestUserTurn?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        guard pressureFillerQuickMoveIntent(
+            latestUserTurn: lowerTurn,
+            systemContext: systemContext
+        ),
+              let count = firstFillerCount(in: systemContext) else {
+            return nil
+        }
+        let noun = count == 1 ? "filler" : "fillers"
+        return "Your last pressure rep had \(count) \(noun), mostly before the close, so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask."
+    }
+
+    private nonisolated static func pressureFillerQuickMoveIntent(
+        latestUserTurn: String,
+        systemContext: String
+    ) -> Bool {
+        let lowerSystem = systemContext.lowercased()
+        let pressureContext = containsAny(latestUserTurn, [
+            "under pressure",
+            "pressure",
+            "stakes",
+            "timer",
+            "timed",
+            "under fire",
+            "real room"
+        ]) || containsAny(lowerSystem, [
+            "pressure rep",
+            "under pressure",
+            "timed rep"
+        ])
+        let fillerContext = containsAny(latestUserTurn, [
+            "filler",
+            "fillers",
+            "hesitat",
+            "stop saying um",
+            "stop saying uh",
+            "stop saying ah",
+            "saying um",
+            "saying uh",
+            "saying ah",
+            "say like"
+        ])
+        let semanticDisambiguation = containsAny(latestUserTurn, [
+            "semantic",
+            "comparison",
+            "meant it as a comparison",
+            "counted like",
+            "counted 'like'",
+            "prompt echo",
+            "prompt made me repeat"
+        ])
+        return pressureContext && fillerContext && !semanticDisambiguation
+    }
+
     private nonisolated static func deterministicGroundedReadReply(
         _ assessment: CoachAssessment
     ) -> String {
@@ -2243,7 +2358,7 @@ actor AICoachChatService {
         if let missing = assessment.missingEvidence.first {
             lines.append("What is still missing is \(completeSentence(missing))")
         }
-        lines.append("Test this next: \(completeSentence(assessment.nextProofTest))")
+        lines.append("Use this as the proof test. \(completeSentence(assessment.nextProofTest))")
         return lines.joined(separator: " ")
     }
 
@@ -2277,13 +2392,22 @@ actor AICoachChatService {
         let lowerTurn = latestUserTurn?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? ""
+        if containsAny(lowerTurn, [
+            "it's not easy", "its not easy", "not that easy",
+            "easier said than done", "harder than that"
+        ]) {
+            return CoachReliabilityGate.vulnerablePushbackFallback(
+                surface: .text,
+                assessment: assessment
+            )
+        }
         let friction = trustRepairFallbackFriction(for: lowerTurn)
         let action = connectorClause(trustRepairFallbackAction(
             for: lowerTurn,
             assessment: assessment
         ))
         if contextSaysWarmthBeforeRecommendation(systemContext) {
-            return "\(friction) Your last rep shows warmth came before the recommendation, so \(action)"
+            return "\(friction) Your warmth is arriving before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
         }
         if let evidence = coachSafeEvidencePhrase(from: assessment.evidenceUsed.first) {
             return "\(friction) Your last rep gives one safe signal, \(evidence), so \(action)"
@@ -2394,7 +2518,7 @@ actor AICoachChatService {
             "it's not easy", "its not easy", "not that easy",
             "easier said than done", "harder than that"
         ]) {
-            return "shrink the next rep to one sentence under pressure before adding the full answer back."
+            return "say only the disagreement and one calm reason, then stop before defending it."
         }
         if containsAny(lowerTurn, ["tts", "read them out", "read aloud", "**", "markdown", "formatting"]) {
             return "run one rep by saying the recommendation first, giving one proof point, then stopping."
@@ -2435,10 +2559,14 @@ actor AICoachChatService {
             "active intervention:",
             "trust repair signal:"
         ] where lower.hasPrefix(prefix) {
-            let label = String(prefix.dropLast())
             let rest = String(value.dropFirst(prefix.count))
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            value = "\(label) \(rest)"
+            if prefix == "trust repair signal:" {
+                value = rest
+            } else {
+                let label = String(prefix.dropLast())
+                value = "\(label) \(rest)"
+            }
             break
         }
         value = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -5441,6 +5569,10 @@ actor AICoachChatService {
           Sudden Death, or IM Conversation, do not set a filler-count target,
           and do not frame the first rep as a "first number"; the user has no
           calibrated baseline yet.
+        - On voice/goal-change turns, never use raw score, filler-count,
+          duration, or score-this-week readouts as proof for the voice. Translate
+          them into spoken progress ("your authoritative work is already
+          landing") and ask what changed. The confirmation UI owns state changes.
         - The final answer must contain the word "so" or "because" when it connects the anchor to the action.
         - When the user asks why an answer landed badly, start from the
           transcript or last rep before the prescription, for example "From the
@@ -5604,6 +5736,12 @@ actor AICoachChatService {
 
         if containsAny(lowerTurn, ["um", "filler", "fillers", "hesitat"]) {
             if let count = firstFillerCount(in: system) {
+                if let pressureShape = deterministicPressureFillerQuickMoveReply(
+                    latestUserTurn: lowerTurn,
+                    systemContext: system
+                ) {
+                    return pressureShape
+                }
                 if fillerEvidenceSitsInsideDecisionLine(system) {
                     return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so hold one silent beat after the decision line and restart if a filler appears."
                 }
@@ -5799,6 +5937,12 @@ actor AICoachChatService {
            sourceMentionsLateRecommendation(system) {
             return true
         }
+        if deterministicPressureFillerQuickMoveReply(
+            latestUserTurn: lowerTurn,
+            systemContext: system
+        ) != nil {
+            return true
+        }
         if containsAny(lowerTurn, ["um", "filler", "fillers", "hesitat"]),
            fillerEvidenceSitsInsideDecisionLine(system) {
             return true
@@ -5834,9 +5978,12 @@ actor AICoachChatService {
             "pitch",
             "prepare"
         ]) {
-            return "No baseline yet, so start there. Record 60 seconds on one likely question, then review whether your first sentence answers it before polishing anything."
+            if containsAny(lowerTurn, ["interview"]) {
+                return "No baseline yet, so start there. Record 60 seconds on 'Why should we hire you?' and check whether sentence one answers before you polish anything else. Want to go now?"
+            }
+            return "No baseline yet, so start there. Record 60 seconds on the first question or opening point for that moment, then check whether sentence one answers before you polish anything else. Want to go now?"
         }
-        return "No baseline yet, so start there. Record 60 seconds on something you know well, then check whether the first sentence gives the point."
+        return CoachReliabilityGate.coldStartFallback(surface: .text)
     }
 
     nonisolated static func retrievedCoachingExpertiseApplicationLine(from systemContext: String) -> String? {
@@ -5896,6 +6043,12 @@ actor AICoachChatService {
 
         if let count = firstFillerCount(in: system),
            containsAny(latestUserTurn, ["um", "filler", "fillers", "hesitat"]) {
+            if let pressureShape = deterministicPressureFillerQuickMoveReply(
+                latestUserTurn: latestUserTurn,
+                systemContext: system
+            ) {
+                return pressureShape
+            }
             return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so \(application)."
         }
 
@@ -5905,9 +6058,9 @@ actor AICoachChatService {
             "personalization floor: no rated sessions yet"
         ]) {
             if containsAny(latestUserTurn, ["interview", "prepare", "practice"]) {
-                return "No baseline yet, so record one 60-second answer and \(application)."
+                return "No baseline yet, so start there. Record 60 seconds on one likely question and \(application). Want to go now?"
             }
-            return "No baseline yet, so record 60 seconds on something you know well and \(application)."
+            return CoachReliabilityGate.coldStartFallback(surface: .text)
         }
 
         if replyShouldCiteRecentSession(system) {
@@ -5923,17 +6076,17 @@ actor AICoachChatService {
     ) -> String {
         let friction: String
         if containsAny(lowerTurn, ["tts", "read them out", "read aloud", "**", "markdown", "formatting"]) {
-            friction = "Fair push: TTS reading symbols breaks trust."
+            friction = "Fair push. TTS reading symbols breaks trust."
         } else if containsAny(lowerTurn, ["robotic", "report", "too much writing", "too long", "less text"]) {
             friction = "Fair push. That read too much like a report."
         } else if containsAny(lowerTurn, ["repeating yourself", "same thing again", "said that already", "already said that"]) {
             friction = "Fair push. I repeated the same move instead of advancing the coaching."
         } else if containsAny(lowerTurn, ["it's not easy", "its not easy", "not that easy", "easier said than done", "harder than that"]) {
-            friction = "Fair push. I made that sound easier than it feels under pressure."
+            friction = "Fair push. No, it is not easy."
         } else if containsAny(lowerTurn, ["not informative", "not helpful", "not useful", "missed the point", "doesn't answer", "does not answer"]) {
             friction = "Fair push. I answered around the useful read instead of giving it."
         } else if containsAny(lowerTurn, ["cold", "generic", "not human", "low eq", "not high eq"]) {
-            friction = "Fair push: that was advice, not coaching."
+            friction = "Fair push. That was advice, not coaching."
         } else {
             friction = "Fair push. That answer did not earn enough trust."
         }
@@ -5944,7 +6097,7 @@ actor AICoachChatService {
         } else if containsAny(lowerTurn, ["repeating yourself", "same thing again", "said that already", "already said that"]) {
             move = "keep the same target but change the proof test so the next rep teaches us something new"
         } else if containsAny(lowerTurn, ["it's not easy", "its not easy", "not that easy", "easier said than done", "harder than that"]) {
-            move = "shrink the next rep to one sentence under pressure before adding the full answer back"
+            move = "test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it"
         } else if containsAny(lowerTurn, ["not informative", "not helpful", "not useful", "missed the point", "doesn't answer", "does not answer"]) {
             move = "answer the actual read first, then run one narrow rep that tests it"
         } else if containsAny(lowerTurn, ["tts", "read them out", "read aloud", "**", "markdown", "formatting"]) {
@@ -5957,10 +6110,19 @@ actor AICoachChatService {
 
         if containsAny(lowerTurn, ["not informative", "not helpful", "not useful", "missed the point", "doesn't answer", "does not answer"]),
            contextSaysPointArrivedAfterWarmup(system) {
-            return "Fair push: I answered around the useful read instead of giving it. Your point arrived in sentence four after three warm-up sentences, so say the point first, then support it once."
+            return CoachReliabilityGate.notInformativeRepairFallback(surface: .text)
         }
         if contextSaysWarmthBeforeRecommendation(system) {
-            return "\(friction) Your last rep has the useful signal: warmth came before the recommendation, so say the recommendation first, then soften it with one human reassurance."
+            return "\(friction) Your warmth is arriving before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
+        }
+        if containsAny(lowerTurn, ["it's not easy", "its not easy", "not that easy", "easier said than done", "harder than that"]) {
+            if let anchor = CoachReliabilityGate.vulnerablePushbackEvidenceAnchor(from: [system]) {
+                return "No, it is not easy. \(anchor) Keep the next step small: say only the first hard sentence, then stop."
+            }
+            return CoachReliabilityGate.vulnerablePushbackFallback(
+                surface: .text,
+                assessment: nil
+            )
         }
         if let count = firstFillerCount(in: system) {
             return "\(friction) Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so \(move)."

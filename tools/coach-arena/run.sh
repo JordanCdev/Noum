@@ -14,10 +14,16 @@
 #   ./run.sh synth        (re)generate the 10 synthetic conversations
 #   ./run.sh extract [voice|--json]   print the extracted real system prompt
 #   ./run.sh test         run unit tests
-#   ./run.sh app-path [report.json]
-#                         score a real Swift app-path dump into reports/app-path
+#   ./run.sh app-path [report.json] [--allow-stale-source]
+#                         score a real Swift app-path dump into reports/app-path;
+#                         refuses stale canonical dumps before publishing latest
 #   ./run.sh app-path-source [dump-dir]
 #                         stamp source commit/fingerprint sidecars before XCTest
+#   ./run.sh app-path-preflight [dump-dir]
+#                         check whether the app-path dump is fresh enough to score
+#   ./run.sh readiness [report.json] [--dump-dir dir] [--repo-root dir] [--probe-live] [--no-fail]
+#                         evaluate the VISION production-readiness gate from
+#                         an app-path report; exits nonzero until launch evidence exists
 #   ./run.sh python ...   run the legacy Python engine directly (unsafe default:
 #                         without --app-path-report it grades gold examples)
 #
@@ -46,23 +52,75 @@ case "$cmd" in
   extract)  node lib/extractPrompt.mjs "$@" ;;
   test)
     node --test "$@"
-    python3 -m unittest discover -s runners -p 'test_*.py' ;;
+    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s runners -p 'test_*.py' ;;
   app-path)
-    report_path="${1:-${NOUM_COACH_EVAL_DUMP_DIR:-/private/tmp/noum-coach-eval}/coach-chat-conversation-app-path-eval-v1.json}"
+    allow_stale="${NOUM_COACH_ALLOW_STALE_APP_PATH:-0}"
+    report_path=""
+    reports_dir="reports/app-path"
+    synthetic_dir="synthetic/app-path"
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --allow-stale-source)
+          allow_stale=1
+          shift
+          ;;
+        --)
+          shift
+          break
+          ;;
+        -*)
+          break
+          ;;
+        *)
+          if [[ -z "$report_path" ]]; then
+            report_path="$1"
+            shift
+          else
+            break
+          fi
+          ;;
+      esac
+    done
+    report_path="${report_path:-${NOUM_COACH_EVAL_DUMP_DIR:-/private/tmp/noum-coach-eval}/coach-chat-conversation-app-path-eval-v1.json}"
     if [[ ! -f "$report_path" ]]; then
       echo "No real Swift app-path dump found at: $report_path" >&2
       echo "Generate it with the CoachChatConversationArtifactDumpXCTest bridge, or pass the report path explicitly." >&2
       exit 1
     fi
-    shift || true
+    report_file="${report_path##*/}"
+    dump_dir="${report_path%/*}"
+    if [[ "$dump_dir" == "$report_path" ]]; then
+      dump_dir="."
+    fi
+    if [[ "$report_file" == "coach-chat-conversation-app-path-eval-v1.json" && "$allow_stale" != "1" ]]; then
+      python3 runners/coach_arena.py --app-path-preflight "$dump_dir"
+    elif [[ "$allow_stale" == "1" ]]; then
+      reports_dir="reports/app-path-diagnostic"
+      synthetic_dir="synthetic/app-path-diagnostic"
+      echo "Warning: scoring app-path dump with stale-source guard disabled; default diagnostic reports dir is ${reports_dir} unless --reports-dir overrides it." >&2
+    fi
     python3 runners/coach_arena.py \
       --app-path-report "$report_path" \
-      --reports-dir reports/app-path \
-      --synthetic-dir synthetic/app-path \
+      --reports-dir "$reports_dir" \
+      --synthetic-dir "$synthetic_dir" \
       "$@" ;;
   app-path-source)
     dump_dir="${1:-${NOUM_COACH_EVAL_DUMP_DIR:-/private/tmp/noum-coach-eval}}"
     python3 runners/coach_arena.py --write-app-path-source-sidecars "$dump_dir" ;;
+  app-path-preflight)
+    dump_dir="${NOUM_COACH_EVAL_DUMP_DIR:-/private/tmp/noum-coach-eval}"
+    if [[ $# -gt 0 && "${1:0:1}" != "-" ]]; then
+      dump_dir="$1"
+      shift
+    fi
+    python3 runners/coach_arena.py --app-path-preflight "$dump_dir" "$@" ;;
+  readiness)
+    report_path="${NOUM_COACH_READINESS_REPORT:-reports/app-path/latest.json}"
+    if [[ $# -gt 0 && "${1:0:1}" != "-" ]]; then
+      report_path="$1"
+      shift
+    fi
+    python3 runners/readiness_gate.py --report "$report_path" "$@" ;;
   python)   python3 runners/coach_arena.py "$@" ;;
-  *)        echo "usage: ./run.sh {run|plan|prepare|report|validate|synth|extract|test|app-path|app-path-source|python}" >&2; exit 1 ;;
+  *)        echo "usage: ./run.sh {run|plan|prepare|report|validate|synth|extract|test|app-path|app-path-source|app-path-preflight|readiness|python}" >&2; exit 1 ;;
 esac

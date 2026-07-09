@@ -59,15 +59,24 @@ function isScaffoldOnlyDisplayLine(value) {
   return SCAFFOLD_ONLY.has(lower);
 }
 
+function recapitalizeSentenceStarts(value) {
+  return value.replace(/(^|[.!?]\s+)([a-z])/g, (match, prefix, char, offset, full) => {
+    const next = full[offset + prefix.length + char.length] || '';
+    return `${prefix}${/[A-Z]/.test(next) ? char : char.toUpperCase()}`;
+  });
+}
+
 function stripCoachLeadIn(value) {
-  return value.replace(new RegExp(`^(${SCAFFOLD_LABEL}):\\s*`, 'i'), '');
+  const stripped = value.replace(new RegExp(`^(${SCAFFOLD_LABEL}):\\s*`, 'i'), '');
+  return stripped === value ? value : recapitalizeSentenceStarts(stripped);
 }
 
 function stripInlineCoachLeadIns(value) {
-  return value.replace(
+  const stripped = value.replace(
     new RegExp(`(^|[.!?]\\s+|[,;]\\s+|\\s+[—-]\\s+)(${SCAFFOLD_LABEL}):\\s*`, 'gi'),
     '$1',
   );
+  return stripped === value ? value : recapitalizeSentenceStarts(stripped);
 }
 
 export function displayText(raw) {
@@ -128,6 +137,10 @@ const REPORT_VOICE_BRIDGE_PATTERNS = [
   /\bthere\s+(?:was|were)\s+\d+\s+fillers?\s*,?\s+so\s+/gi,
 ];
 
+const REPORT_VOICE_PHRASE_TRANSLATIONS = [
+  [/\b(more than\s+)(?:your|the)?\s*\d+\s+fillers?\s+(?:do|did)\b/gi, '$1the filler words do'],
+];
+
 const REPORT_VOICE_MODE_ONLY_PATTERNS = [
   /(^|[.!?]\s+)the signal i can use is\s+(?:timed(?:\s+practice)?|practice|pressure(?:\s+drill)?)\s*[.!?]?\s*/gi,
 ];
@@ -142,12 +155,11 @@ const REPORT_VOICE_PATTERNS = [
   /\b\d+\s+fillers?\b/gi,
 ];
 
-function recapitalizeSentenceStarts(value) {
-  return value.replace(/(^|[.!?]\s+)([a-z])/g, (_, prefix, char) => `${prefix}${char.toUpperCase()}`);
-}
-
 export function strippingReportVoiceResidue(text) {
   let value = String(text || '');
+  for (const [re, replacement] of REPORT_VOICE_PHRASE_TRANSLATIONS) {
+    value = value.replace(re, replacement);
+  }
   for (const re of REPORT_VOICE_BRIDGE_PATTERNS) value = value.replace(re, '');
   for (const re of REPORT_VOICE_MODE_ONLY_PATTERNS) value = value.replace(re, '$1');
   for (const re of REPORT_VOICE_PATTERNS) {

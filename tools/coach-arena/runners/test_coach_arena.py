@@ -170,6 +170,46 @@ class AppPathBoundaryTests(unittest.TestCase):
         self.assertLessEqual(result["overall"], 30)
         self.assertIn("fallbackLeak", result["checkFailures"])
 
+    def test_clean_typed_assessment_fallback_can_score_as_deterministic_coaching(self):
+        fixture = gold_fixture("filler-pressure-007")
+        trace = complete_app_path_trace()
+        trace["fallback"] = {
+            "qualityGateAcceptedFallback": True,
+            "typedAssessmentFallbackApplied": True,
+        }
+        trace["reasoning"]["qualityGateOutcome"] = "fallback:typedAssessment"
+        reply = (
+            "Your last pressure rep had 6 fillers, mostly before the close, "
+            "so the pressure leak is the final sentence. Next rep, replace the "
+            "urge with one silent beat before the final sentence, then finish the ask."
+        )
+
+        result = arena.local_judge(fixture, reply, trace)
+
+        self.assertNotIn("fallbackLeak", result["checkFailures"])
+        self.assertFalse(any(
+            cap["name"] == "placeholderOrBroken" and cap["applied"]
+            for cap in result["caps"]
+        ))
+
+    def test_generic_typed_assessment_fallback_still_counts_as_fallback_leak(self):
+        fixture = gold_fixture("filler-pressure-007")
+        trace = complete_app_path_trace()
+        trace["fallback"] = {
+            "qualityGateAcceptedFallback": True,
+            "typedAssessmentFallbackApplied": True,
+        }
+        trace["reasoning"]["qualityGateOutcome"] = "fallback:typedAssessment"
+
+        result = arena.local_judge(
+            fixture,
+            "Your last rep gives one usable signal so far, so run one answer and separate semantic words from filler words before cutting anything.",
+            trace,
+        )
+
+        self.assertLessEqual(result["overall"], 30)
+        self.assertIn("fallbackLeak", result["checkFailures"])
+
     def test_sensitive_raw_report_voice_is_capped(self):
         fixture = app_fixture({
             "id": "trust-repair-report-voice",
@@ -444,6 +484,82 @@ class AppPathBoundaryTests(unittest.TestCase):
         self.assertEqual(fields["currentCoachSourceFingerprint"], "sha256:fresh")
         self.assertEqual(fields["sourceFreshnessFailures"], [])
 
+    def test_app_path_regeneration_preflight_blocks_missing_dump(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = arena.app_path_regeneration_preflight(
+                temp_dir,
+                current_commit="abc1234",
+                dirty_source_files=[],
+                current_source_fingerprint="sha256:fresh",
+            )
+
+        self.assertFalse(result["passes"])
+        self.assertIn("missingAppPathDump", result["blockers"])
+        self.assertIn("missingSourceGitCommitSidecar", result["blockers"])
+        self.assertIn("missingSourceCoachFingerprintSidecar", result["blockers"])
+        self.assertEqual(result["traceCount"], 0)
+        self.assertTrue(any("CoachChatConversationArtifactDumpXCTest" in step for step in result["nextSteps"]))
+
+    def test_app_path_regeneration_preflight_blocks_stale_trace_fingerprint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / arena.SOURCE_GIT_COMMIT_SIDECAR).write_text("abc1234\n", encoding="utf-8")
+            (root / arena.SOURCE_FINGERPRINT_SIDECAR).write_text("sha256:fresh\n", encoding="utf-8")
+            (root / arena.APP_PATH_DUMP_NAME).write_text(json.dumps({
+                "passesAppPathFloor": True,
+                "rows": [{
+                    "turns": [{
+                        "arenaTrace": {
+                            "gitCommit": "abc1234",
+                            "sourceFingerprint": "sha256:old",
+                        }
+                    }]
+                }]
+            }), encoding="utf-8")
+
+            result = arena.app_path_regeneration_preflight(
+                temp_dir,
+                current_commit="abc1234",
+                dirty_source_files=["Noum/AICoachChatService.swift"],
+                current_source_fingerprint="sha256:fresh",
+            )
+
+        self.assertFalse(result["passes"])
+        self.assertIn("traceCoachFingerprintStale", result["blockers"])
+        self.assertIn("dirtyCoachSourceAfterDump", result["blockers"])
+        self.assertNotIn("sourceCoachFingerprintSidecarStale", result["blockers"])
+        self.assertEqual(result["traceCoachSourceFingerprints"], ["sha256:old"])
+        self.assertTrue(any("run.sh app-path-source" in step for step in result["nextSteps"]))
+
+    def test_app_path_regeneration_preflight_passes_current_dump(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / arena.SOURCE_GIT_COMMIT_SIDECAR).write_text("abc1234\n", encoding="utf-8")
+            (root / arena.SOURCE_FINGERPRINT_SIDECAR).write_text("sha256:fresh\n", encoding="utf-8")
+            (root / arena.APP_PATH_DUMP_NAME).write_text(json.dumps({
+                "passesAppPathFloor": True,
+                "rows": [{
+                    "turns": [{
+                        "arenaTrace": {
+                            "gitCommit": "abc1234",
+                            "sourceFingerprint": "sha256:fresh",
+                        }
+                    }]
+                }]
+            }), encoding="utf-8")
+
+            result = arena.app_path_regeneration_preflight(
+                temp_dir,
+                current_commit="abc1234",
+                dirty_source_files=[],
+                current_source_fingerprint="sha256:fresh",
+            )
+
+        self.assertTrue(result["passes"])
+        self.assertEqual(result["blockers"], [])
+        self.assertEqual(result["traceCount"], 1)
+        self.assertEqual(result["traceGitCommits"], ["abc1234"])
+
     def test_write_app_path_source_sidecars_stamps_commit_and_fingerprint(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             payload = arena.write_app_path_source_sidecars(temp_dir)
@@ -458,6 +574,50 @@ class AppPathBoundaryTests(unittest.TestCase):
                 payload["coachSourceFingerprint"],
             )
             self.assertTrue(payload["coachSourceFingerprint"].startswith("sha256:"))
+
+    def test_coach_source_fingerprint_covers_typed_brain_owners(self):
+        expected = {
+            "Noum/AICoachChatService.swift",
+            "Noum/CoachReplyPipeline.swift",
+            "Noum/CoachTurnDepth.swift",
+            "Noum/TurnDepthClassifier.swift",
+            "Noum/CoachAssessment.swift",
+            "Noum/CoachAssessmentCache.swift",
+            "Noum/CoachReasoningPass.swift",
+            "Noum/CoachPromptBundle.swift",
+            "Noum/CoachReliabilityGate.swift",
+            "Noum/GoalRubric.swift",
+            "Noum/GoalRubricStore.swift",
+            "Noum/UserTrajectoryCache.swift",
+            "Noum/UserTrajectorySnapshot.swift",
+            "Noum/KnowledgeRetriever.swift",
+            "Noum/KnowledgeSemanticReranker.swift",
+            "Noum/CoachingKnowledgeBase.swift",
+            "Noum/PrimaryFocusMemory.swift",
+        }
+
+        self.assertTrue(
+            expected.issubset(set(arena.COACH_SOURCE_STATUS_PATHS)),
+            expected.difference(set(arena.COACH_SOURCE_STATUS_PATHS)),
+        )
+
+    def test_coach_source_fingerprint_changes_when_brain_file_changes(self):
+        original_root = arena.ROOT
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_root = Path(temp_dir)
+                coach_file = temp_root / "Noum" / "CoachAssessment.swift"
+                coach_file.parent.mkdir(parents=True)
+                coach_file.write_text("struct CoachAssessment { let version = 1 }\n", encoding="utf-8")
+                arena.ROOT = temp_root
+
+                first = arena.coach_source_fingerprint(paths=["Noum/CoachAssessment.swift"])
+                coach_file.write_text("struct CoachAssessment { let version = 2 }\n", encoding="utf-8")
+                second = arena.coach_source_fingerprint(paths=["Noum/CoachAssessment.swift"])
+        finally:
+            arena.ROOT = original_root
+
+        self.assertNotEqual(first, second)
 
     def test_source_freshness_failures_block_real_pipeline_claim_without_hiding_scores(self):
         coverage = {
@@ -487,6 +647,118 @@ class AppPathBoundaryTests(unittest.TestCase):
             "source Swift app-path freshness: source app-path report has no source git commit",
             summary["productionEvidenceFailures"],
         )
+
+    def test_ten_conversation_sample_labels_stale_app_path_source(self):
+        coverage = {
+            "source": "appPathReport",
+            "coveragePasses": True,
+            "coverageFailures": [],
+            "sourcePassesAppPathFloor": True,
+            "sourceReadinessWarnings": [],
+            "sourceFreshnessPasses": True,
+            "sourceFreshnessFailures": [],
+            "currentGitCommit": "abc1234",
+            "sourceTraceGitCommits": ["abc1234"],
+            "currentCoachSourceFingerprint": "sha256:report",
+            "sourceTraceCoachSourceFingerprints": ["sha256:report"],
+            "sourceVisionProductionReadiness": {
+                "score": 18,
+                "maximumAllowedScore": 20,
+                "claim": "localEvaluationSubstrateOnly",
+                "blockers": ["noLiveProviderTranscriptSweep"],
+            },
+        }
+        result = scored_result()
+        result["fixture"] = app_fixture({
+            "id": "stale-source-sample",
+            "turnType": "groundedRead",
+            "userTurn": "What should I practice next?",
+            "goal": "Sound calmer in leadership updates.",
+        })
+        report = {
+            "coverage": coverage,
+            "summary": arena.summarize([result], coverage),
+            "results": [result],
+        }
+        source_audit = {
+            "passes": False,
+            "sidecarGitCommit": "abc1234",
+            "sidecarCoachFingerprint": "sha256:sidecar",
+            "reportGitCommits": ["abc1234"],
+            "reportCoachFingerprints": ["sha256:report"],
+            "mismatches": [
+                {
+                    "label": "sourceCoachFingerprint",
+                    "sidecar": "sha256:sidecar",
+                    "reportValues": ["sha256:report"],
+                }
+            ],
+        }
+
+        markdown = arena.render_ten_conversations(report, source_audit=source_audit)
+
+        self.assertIn("Evidence status: STALE APP-PATH SOURCE", markdown)
+        self.assertIn("Do not treat these conversations as current-source proof", markdown)
+        self.assertIn("Evidence: `stale app-path source`", markdown)
+        self.assertIn("diagnostic evidence only, not current-source proof", markdown)
+        self.assertIn("Current git commit: `abc1234`", markdown)
+        self.assertIn("Report-internal source freshness passes: `True`", markdown)
+        self.assertIn("Sidecar source freshness passes: `False`", markdown)
+        self.assertIn("Report trace git commit(s): `abc1234`", markdown)
+        self.assertIn("Current coach source fingerprint: `sha256:report`", markdown)
+        self.assertIn("Report trace coach source fingerprint(s): `sha256:report`", markdown)
+        self.assertIn("Sidecar coach source fingerprint: `sha256:sidecar`", markdown)
+        self.assertIn("Sidecar/report mismatch `sourceCoachFingerprint`", markdown)
+
+    def test_ten_conversation_sample_labels_current_app_path_source(self):
+        coverage = {
+            "source": "appPathReport",
+            "coveragePasses": True,
+            "coverageFailures": [],
+            "sourcePassesAppPathFloor": True,
+            "sourceReadinessWarnings": [],
+            "sourceFreshnessPasses": True,
+            "sourceFreshnessFailures": [],
+            "currentGitCommit": "abc1234",
+            "sourceTraceGitCommits": ["abc1234"],
+            "currentCoachSourceFingerprint": "sha256:fresh",
+            "sourceTraceCoachSourceFingerprints": ["sha256:fresh"],
+            "sourceVisionProductionReadiness": {
+                "score": 18,
+                "maximumAllowedScore": 20,
+                "claim": "localEvaluationSubstrateOnly",
+                "blockers": ["noLiveProviderTranscriptSweep"],
+            },
+        }
+        result = scored_result()
+        result["fixture"] = app_fixture({
+            "id": "fresh-source-sample",
+            "turnType": "groundedRead",
+            "userTurn": "What should I practice next?",
+            "goal": "Sound calmer in leadership updates.",
+        })
+        report = {
+            "coverage": coverage,
+            "summary": arena.summarize([result], coverage),
+            "results": [result],
+        }
+
+        markdown = arena.render_ten_conversations(
+            report,
+            source_audit={
+                "passes": True,
+                "sidecarGitCommit": "abc1234",
+                "sidecarCoachFingerprint": "sha256:fresh",
+                "reportGitCommits": ["abc1234"],
+                "reportCoachFingerprints": ["sha256:fresh"],
+                "mismatches": [],
+            },
+        )
+
+        self.assertIn("Evidence status: CURRENT APP-PATH SOURCE", markdown)
+        self.assertIn("Real-pipeline evidence passes: `True`", markdown)
+        self.assertIn("Evidence: `current app-path source`", markdown)
+        self.assertNotIn("Do not treat these conversations as current-source proof", markdown)
 
     def test_markdown_prints_vision_and_real_pipeline_boundaries(self):
         coverage = {
@@ -541,6 +813,7 @@ class AppPathBoundaryTests(unittest.TestCase):
         self.assertIn("Production ready: `False`", markdown)
         self.assertIn("Real-pipeline evidence passes: `False`", markdown)
         self.assertIn("### Source App-Path Failure Samples", markdown)
+        self.assertIn("Evidence status: `stale app-path source`", markdown)
         self.assertIn("`custom-source` / `c1` turn `0`", markdown)
         self.assertIn("Source freshness passes: `False`", markdown)
         self.assertIn("Source fingerprint matches current: `True`", markdown)

@@ -96,6 +96,33 @@ enum TurnDepthClassifier {
         return false
     }
 
+    /// A tiny non-sequitur / probe turn ("egg", "asdf", "test") rather than a
+    /// coaching ask. Kept deliberately narrow so odd wording inside a real
+    /// question still flows through normal coaching.
+    static func isLowSignalOffTopicTest(_ userText: String) -> Bool {
+        let normalized = normalized(userText)
+            .replacingOccurrences(
+                of: #"[^a-z0-9\s]"#,
+                with: "",
+                options: .regularExpression
+            )
+            .split { $0.isWhitespace }
+            .joined(separator: " ")
+        guard !normalized.isEmpty else { return false }
+        if ["egg", "banana", "asdf", "test", "lol", "huh"].contains(normalized) {
+            return true
+        }
+        guard normalized.count <= 18,
+              wordCount(normalized) <= 2 else {
+            return false
+        }
+        return !containsAny(normalized, [
+            "score", "filler", "voice", "rate", "plan", "help", "practice",
+            "interview", "meeting", "presentation", "pitch", "better",
+            "improve", "why", "what", "how"
+        ])
+    }
+
     static func isTrustRepair(_ lower: String) -> Bool {
         containsAny(lower, [
             "that wasn't helpful", "that wasnt helpful",

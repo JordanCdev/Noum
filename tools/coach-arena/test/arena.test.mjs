@@ -1,5 +1,7 @@
 // Unit tests for the Coach Arena core logic. Run: node --test  (or ./run.sh test)
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +12,8 @@ import { runChecks } from '../lib/checks.mjs';
 import { combineScore } from '../lib/score.mjs';
 import { parseJudge } from '../lib/judge.mjs';
 import { renderContext } from '../lib/context.mjs';
-import { summarize } from '../lib/report.mjs';
+import { depthRulesBlock } from '../lib/depthRules.mjs';
+import { renderFailures, summarize } from '../lib/report.mjs';
 import { finalizeReplyForFixture } from '../lib/finalizeReply.mjs';
 import { productionSurfaceReplyForFixture } from '../lib/productionSurface.mjs';
 
@@ -61,6 +64,46 @@ test('replay captures cover every gold fixture when local captures are present',
   }
 
   assert.deepEqual(missing, []);
+});
+
+test('depth rules mirror critical cold-start and voice-change guardrails', () => {
+  const text = depthRulesBlock(baseFx({
+    category: 'goal-change',
+    turnDepth: 'groundedRead',
+    userTurn: 'What voice should I even pick?',
+  }));
+
+  assert.match(text, /Cold start rule: when there is no baseline or no rated sessions/);
+  assert.match(text, /do not open with 'No baseline yet'/);
+  assert.match(text, /do not name internal practice modes/);
+  assert.match(text, /do not set filler or score targets/);
+  assert.match(text, /On voice or goal-change turns, do not use raw score, filler, or duration readouts as proof/);
+  assert.match(text, /let the confirmation card handle UI/);
+  assert.match(text, /do not tell them to tap, confirm, or lock it in/i);
+});
+
+test('run.sh app-path refuses stale canonical dump before scoring', () => {
+  const dumpDir = mkdtempSync(join(tmpdir(), 'noum-app-path-stale-'));
+  const reportPath = join(dumpDir, 'coach-chat-conversation-app-path-eval-v1.json');
+  writeFileSync(reportPath, JSON.stringify({ passesAppPathFloor: true, rows: [] }), 'utf8');
+
+  const result = spawnSync('bash', ['run.sh', 'app-path', reportPath], {
+    cwd: rootDir,
+    encoding: 'utf8',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /"passes": false/);
+  assert.match(result.stdout, /missingSourceGitCommitSidecar|missingSourceCoachFingerprintSidecar|noArenaTraceRows/);
+  assert.doesNotMatch(result.stderr, /Warning: scoring app-path dump with stale-source guard disabled/);
+});
+
+test('run.sh stale app-path override routes to diagnostic output dirs', () => {
+  const script = readFileSync(join(rootDir, 'run.sh'), 'utf8');
+
+  assert.match(script, /reports_dir="reports\/app-path-diagnostic"/);
+  assert.match(script, /synthetic_dir="synthetic\/app-path-diagnostic"/);
+  assert.match(script, /default diagnostic reports dir is \$\{reports_dir\} unless --reports-dir overrides it/);
 });
 
 test('checks: clean strong reply has no findings', () => {
@@ -382,6 +425,47 @@ test('finalizer: trust-repair scaffold and report voice are stripped before user
   assert.deepEqual(result.changes, ['displaySanitizer', 'reportVoiceResidue']);
 });
 
+test('finalizer: report voice stripping preserves filler-comparison grammar', () => {
+  const fx = baseFx({
+    category: 'trust-repair',
+    turnDepth: 'trustRepair',
+    userTurn: 'This is so generic, it could be for anyone.',
+  });
+  const result = finalizeReplyForFixture(
+    'For a persuasive pitch, that softens the one line the whole thing turns on, more than your 7 fillers do.',
+    fx,
+  );
+
+  assert.equal(result.text, 'For a persuasive pitch, that softens the one line the whole thing turns on, more than the filler words do.');
+  assert.deepEqual(result.changes, ['reportVoiceResidue']);
+  assert.doesNotMatch(result.text, /7 fillers|your do/i);
+});
+
+test('finalizer: display-only scaffold stripping recapitalizes new paragraph action', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    turnDepth: 'groundedRead',
+    userTurn: 'I ramble.',
+  });
+  const result = finalizeReplyForFixture(
+    "You don't lose the thread — you keep adding to it.\n\nNext rep: say your point, one line of support, then stop.",
+    fx,
+  );
+
+  assert.equal(result.text, "You don't lose the thread — you keep adding to it.\nSay your point, one line of support, then stop.");
+  assert.deepEqual(result.changes, ['displaySanitizer']);
+  assert.doesNotMatch(result.text, /\nsay/);
+});
+
+test('finalizer: stripped label does not break camel-case action starts', () => {
+  const result = finalizeReplyForFixture(
+    'Next rep: iOS launch answer, one reason, stop.',
+    baseFx({ userTurn: 'what next?' }),
+  );
+
+  assert.equal(result.text, 'iOS launch answer, one reason, stop.');
+});
+
 test('finalizer: requested metric answers keep their numbers', () => {
   const fx = baseFx({
     category: 'data-question',
@@ -412,8 +496,573 @@ test('production surface: cold-start product jargon falls back before user displ
   assert.ok(result.changes.includes('reliabilityGateFallback'));
   assert.ok(!result.text.includes('Ah-Counter'));
   assert.ok(!/under\s+4\s+fillers/i.test(result.text));
+  assert.ok(!/baseline/i.test(result.text));
+  assert.ok(result.text.startsWith('Start with one real sample.'));
   assert.equal(result.deterministic.hardCap, null);
   assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: off-topic test metric drill redirects before user display', () => {
+  const fx = baseFx({
+    category: 'off-topic',
+    turnDepth: 'quickMove',
+    userTurn: 'egg',
+  });
+  const raw = "Egg won't sharpen you. This will: today's rep hit 80, 3 fillers, tight and clean. Run one more Timed rep and hold a silent beat where those fillers landed — aim to beat 3.";
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['offTopicTestWithDrill']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.offTopicTestFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, "Tiny test. All good. Send the moment you want to practice, and I'll give you one clean read.");
+  assert.ok(!/score|fillers|timed|\/10|not a coaching ask|pretending/i.test(result.text));
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: greeting with drill greets back before user display', () => {
+  const fx = baseFx({
+    category: 'greeting',
+    turnDepth: 'greeting',
+    userTurn: 'Hi',
+  });
+  const raw = 'Good to have you back. Yesterday the close held once but softened once, so the target stands: land the final sentence flat and stop. Run one rep and make the whole point closing clean.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['greetingWithDrill']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.greetingFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, 'Hey — good to see you back. Pick up with the close: land the final sentence flat, then stop.');
+  assert.ok(!/run one|next rep|fillers|timed|\/10/i.test(result.text));
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: trust repair without attunement falls back before user display', () => {
+  const fx = baseFx({
+    category: 'trust-repair',
+    turnDepth: 'trustRepair',
+    userTurn: "That's not informative at all.",
+  });
+  const raw = 'Run one 60-second rep with the point in sentence one, then stop after one reason.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['noAttunementOnPushback']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.truthfulFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, "You're right to push me on that. I don't have a clean enough read to answer it well yet. Give me one 60-second rep on that exact scenario and I'll name the single biggest gap.");
+  assert.ok(!/^run one/i.test(result.text));
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: thin trust repair falls back before user display', () => {
+  const fx = baseFx({
+    category: 'trust-repair',
+    turnDepth: 'trustRepair',
+    userTurn: 'This sounds cold and generic, like AI tips.',
+  });
+  const raw = 'Fair push. Run one 60-second rep with the recommendation first, then stop cleanly.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['thinTrustRepair']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.truthfulFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, "You're right to push me on that. I don't have a clean enough read to answer it well yet. Give me one 60-second rep on that exact scenario and I'll name the single biggest gap.");
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: repetition callout falls back to course correction', () => {
+  const fx = baseFx({
+    category: 'repetition-callout',
+    turnDepth: 'trustRepair',
+    userTurn: "You're repeating yourself.",
+  });
+  const raw = 'Fair. I did. That rep hit 82 with a clean close — no reason to run it again.\n\nNew target: pace. Record 60 seconds and deliberately slow your three most important words, holding a silent beat before each.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['repetitionCourseCorrectionMiss']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.repetitionCourseCorrectionFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, 'Fair. I did repeat the same target. You led cleanly and the close held, so there is no reason to run that drill again. New target: pace. Slow the three words that carry the point, then hold one silent beat before the next sentence.');
+  assert.doesNotMatch(result.text, /hit 82|lead with the point|point up front/i);
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: clean repetition course correction ships', () => {
+  const fx = baseFx({
+    category: 'repetition-callout',
+    turnDepth: 'trustRepair',
+    userTurn: "You're repeating yourself.",
+  });
+  const raw = 'Fair. I did repeat the same target. You led cleanly and the close held, so there is no reason to run that drill again. New target: pace. Slow the three words that carry the point, then hold one silent beat before the next sentence.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.deepEqual(result.reliabilityGate.issues, []);
+  assert.equal(result.text, raw);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: specific could-go-to-anyone repair ships', () => {
+  const fx = baseFx({
+    category: 'trust-repair',
+    turnDepth: 'trustRepair',
+    userTurn: 'This is so generic, it could be for anyone.',
+  });
+  const raw = 'Fair. That read like it could go to anyone, and you deserve better this close to the investor call. The specific pattern is that you hedged the ask twice — "we\'re hoping to maybe raise around" instead of stating the number. State the raise as one flat sentence, then stop.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.deepEqual(result.reliabilityGate.issues, []);
+  assert.equal(result.text, raw);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: scaffolded too-generic repair falls back before display', () => {
+  const fx = baseFx({
+    category: 'trust-repair',
+    turnDepth: 'trustRepair',
+    userTurn: 'This is so generic, it could be for anyone.',
+  });
+  const raw = 'Fair. That read like it could go to anyone, and you deserve better this close to the investor call.\n\nThe specific thing: on that pitch rep you hedged the ask twice — "we\'re hoping to maybe raise around" instead of the number. For a persuasive pitch, that softens the one line the whole thing turns on, more than your 7 fillers do.\n\nNext rep: state the raise as one flat sentence, then stop.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['genericRepairScaffolded']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.genericRepairFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, 'Fair. That was too generic. The specific pattern is the ask itself. You softened the number instead of stating it. State the raise as one flat sentence, no qualifier, then stop.');
+  assert.ok(!/specific thing:|next rep:|fillers/i.test(result.text));
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: not-informative scaffolded repair falls back before user display', () => {
+  const fx = baseFx({
+    category: 'trust-repair',
+    turnDepth: 'trustRepair',
+    userTurn: "That's not informative.",
+  });
+  const raw = 'Fair. That was fluff, not coaching. Real read: score 74, but your point did not arrive until sentence four. Next rep: say the point in sentence one, then back it. Cut the throat-clearing.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['notInformativeRepairScaffold']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.notInformativeRepairFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, 'Fair. I was too vague. The useful read is that your point arrived in sentence four after three warm-up sentences. Make sentence one the point; let one reason do the supporting.');
+  assert.ok(!/real read:|score|cut the/i.test(result.text));
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: clean not-informative repair ships', () => {
+  const fx = baseFx({
+    category: 'trust-repair',
+    turnDepth: 'trustRepair',
+    userTurn: "That's not informative.",
+  });
+  const raw = 'Fair. I was too vague. The useful read is that your point arrived in sentence four after three warm-up sentences. Make sentence one the point; let one reason do the supporting.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: straight-answer reply missing split falls back before user display', () => {
+  const fx = baseFx({
+    category: 'trust-repair',
+    turnDepth: 'trustRepair',
+    userTurn: "Why can't you just give me a straight answer?",
+  });
+  const raw = "Fair. That was waffle. Straight answer: yes. Fillers dropped from 5.5 to 3.2 a minute over two weeks, and your last rep hit 3 in 60 seconds — your best on record. What's still moving is pace under pressure. Next rep, hold one silent beat before you answer a hard question.";
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['straightAnswerSplitMissing']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.straightAnswerSplitFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, 'Fair. Straight answer: yes on fillers; no on pace under pressure. Your filler trend is moving the right way, but the rush still shows up when the pressure rises. Next rep, hold one silent beat before the hard answer.');
+  assert.ok(!/hit 3|scored/i.test(result.text));
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: clean straight-answer split ships', () => {
+  const fx = baseFx({
+    category: 'trust-repair',
+    turnDepth: 'trustRepair',
+    userTurn: "Why can't you just give me a straight answer?",
+  });
+  const raw = 'Fair. Straight answer: yes on fillers; no on pace under pressure. Your filler trend is moving the right way, but the rush still shows up when the pressure rises. Next rep, hold one silent beat before the hard answer.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: pace self-frustration report voice falls back before user display', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    turnDepth: 'groundedRead',
+    userTurn: "I talk way too fast, people can't keep up.",
+    evidence: { pace: 215, pauseRate: 0.09 },
+    memoryState: { baseline: { pace: 215, pauseRate: 0.09 } },
+  });
+  const raw = "It's not the speed. Yesterday's rep was clean and scored 71, but pace sat near 215 with almost no gap between sentences — one idea ran straight into the next with no room to land.\n\nSo the fix isn't slowing down, it's the pause. Do a 60-second rep and hold one full second of silence after every sentence.";
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['paceSelfFrustrationReportVoice']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.paceSelfFrustrationFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, "You're not imagining it: 215 WPM with a 0.09 pause rate means the gap between sentences is disappearing. Fix the pause, not the speed. Next rep, hold one silent beat after every full stop and see if people track you without forcing a slower voice.");
+  assert.ok(!/scored 71/i.test(result.text));
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: clean pace self-frustration read ships', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    turnDepth: 'groundedRead',
+    userTurn: "I talk way too fast, people can't keep up.",
+    evidence: { pace: 215, pauseRate: 0.09 },
+  });
+  const raw = "You're not imagining it: 215 words a minute with a 0.09 pause rate means the gap between sentences is disappearing. Fix the pause, not the speed. Next rep, hold one silent beat after every full stop and see if people track you without forcing a slower voice.";
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: ramble scaffold falls back to stop rule', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    turnDepth: 'groundedRead',
+    userTurn: "I ramble — I start a point and three minutes later I'm somewhere else.",
+  });
+  const raw = "You don't lose the thread — you keep adding to it. Yesterday you opened with the actual point, then stacked three side stories before circling back to a weaker version of it. So the fix isn't focus, it's a stop signal.\n\nNext rep: say your point, one line of support, then cut before the first side story. One point, then silence.";
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['rambleStoppingRuleMiss']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.rambleStoppingRuleFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, 'You do not lose the thread; you keep reopening it. The tell is the weaker repeat at the end after the side stories. Use a hard stop: state the point, give one support line, then silence.');
+  assert.doesNotMatch(result.text, /next rep:|be more concise/i);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: clean ramble stop rule ships', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    turnDepth: 'groundedRead',
+    userTurn: "I ramble — I start a point and three minutes later I'm somewhere else.",
+  });
+  const raw = 'You do not lose the thread; you keep reopening it. The tell is the weaker repeat at the end after the side stories. Use a hard stop: state the point, give one support line, then silence.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: leadership status report reply falls back to tonight rehearsal', () => {
+  const fx = baseFx({
+    category: 'leadership-update',
+    turnDepth: 'deepAssessment',
+    userTurn: "I have to give the weekly leadership update to the whole department tomorrow. It always feels like I'm just reading a status report and people zone out. Help.",
+  });
+  const raw = 'The room zones out because nine updates all land at the same weight — your last rep was clean at 77, but with no through-line, nothing gets to matter more than anything else. For tomorrow: pick the one update that actually changes what they do this week, open on it, and say the "so what" in a sentence before any detail.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['leadershipStatusReportMiss']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.leadershipStatusReportFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, 'That is a real risk for tomorrow: if every update lands at the same weight, the room hears a status report. The fix is hierarchy, not delivery polish. Tonight, write the opener as: "The one thing that matters this week is X because Y." Say it aloud three times, then let the other items become quick support.');
+  assert.doesNotMatch(result.text, /77|score|clean at/i);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: clean leadership status report rehearsal ships', () => {
+  const fx = baseFx({
+    category: 'leadership-update',
+    turnDepth: 'deepAssessment',
+    userTurn: "I have to give the weekly leadership update to the whole department tomorrow. It always feels like I'm just reading a status report and people zone out. Help.",
+  });
+  const raw = 'That is a real risk for tomorrow: if every update lands at the same weight, the room hears a status report. The fix is hierarchy, not delivery polish. Tonight, write the opener as: "The one thing that matters this week is X because Y." Say it aloud three times, then let the other items become quick support.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: recurring close rush trend falls back to full trajectory read', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    turnDepth: 'groundedRead',
+    userTurn: 'What should I work on next? The last one felt solid to me.',
+    memoryState: {
+      positionalTrend: [
+        { kind: 'rushedBurst', zone: 'close', dominantCount: 4, repsWithSignal: 5, windowRepCount: 6 },
+      ],
+    },
+  });
+  const raw = "The open landed — that read came through in today's rep too.\n\nThe one thing to fix is the close. Your last 20 seconds sped up and the final line ran together, and that pattern has shown up in 4 of your last 5 reps. That's the gap between how it felt and how it lands for the room.\n\nNext rep: hit your second-to-last sentence, hold a silent beat, then say the final line at half the pace you think you need.";
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['recurringCloseTrendDiluted']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.recurringCloseRushFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, 'That solid feeling is real, and the next edge is specific: the fastest stretch keeps landing at the close. It has shown up in 4 of the last 5 reps with a fast stretch, and 5 of the last 6 overall — a recurring spot, not a trait. Plant one silent beat before the final line.');
+  assert.doesNotMatch(result.text, /second-to-last|half the pace/i);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: clean recurring close rush trajectory read ships', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    turnDepth: 'groundedRead',
+    userTurn: 'What should I work on next? The last one felt solid to me.',
+    memoryState: {
+      positionalTrend: [
+        { kind: 'rushedBurst', zone: 'close', dominantCount: 4, repsWithSignal: 5, windowRepCount: 6 },
+      ],
+    },
+  });
+  const raw = 'That solid feeling is real, and the next edge is specific: the fastest stretch keeps landing at the close. It has shown up in 4 of the last 5 reps with a fast stretch, and 5 of the last 6 overall — a recurring spot, not a trait. Plant one silent beat before the final line.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: metadata self-knowledge answer with prescription falls back', () => {
+  const fx = baseFx({
+    category: 'metadata-trap',
+    turnDepth: 'groundedRead',
+    userTurn: 'What does your system actually know about me?',
+    evidence: {
+      goal: 'sounding like yourself in hard conversations',
+      pressurePattern: 'race to fill silence when a moment turns tense',
+      baselinePace: '170 WPM',
+      streak: '12 days',
+    },
+  });
+  const raw = "Here's the shape of it: you came in five weeks ago wanting to sound like yourself in the hard conversations, and you've shown up twelve days running to get there. The thread I'm working is that when a moment turns tense you speed up to outrun the silence — your 170 pace reads more like nerves than a habit.\n\nSo the thing to test: next rep, hold one silent beat before you answer a hard question.";
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['metadataSelfKnowledgeMiss']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.metadataSelfKnowledgeFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, 'Real read, not a script: you came in wanting to sound like yourself in hard conversations. The pattern I know is that tense moments make you race to fill silence; the numbers I can safely name are a pace baseline around 170 WPM and a 12-day streak. That is what I know. I will wait on a next drill until you ask for one.');
+  assert.doesNotMatch(result.text, /next rep|system prompt|context block/i);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: clean metadata self-knowledge synthesis ships', () => {
+  const fx = baseFx({
+    category: 'metadata-trap',
+    turnDepth: 'groundedRead',
+    userTurn: 'What does your system actually know about me?',
+    evidence: {
+      goal: 'sounding like yourself in hard conversations',
+      pressurePattern: 'race to fill silence when a moment turns tense',
+      baselinePace: '170 WPM',
+      streak: '12 days',
+    },
+  });
+  const raw = 'Real read, not a script: you came in wanting to sound like yourself in hard conversations. The pattern I know is that tense moments make you race to fill silence; the numbers I can safely name are a pace baseline around 170 WPM and a 12-day streak. That is what I know. I will wait on a next drill until you ask for one.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: vulnerable pushback bare question falls back before user display', () => {
+  const fx = baseFx({
+    category: 'emotional-frustration',
+    turnDepth: 'trustRepair',
+    userTurn: "It's not easy.",
+    memoryState: {
+      recentReps: [
+        { when: 'this week', mode: 'IM Conversation', note: 'held composure through a simulated interruption' },
+      ],
+    },
+  });
+  const raw = "No, it isn't — and a freeze in the room is a different animal than the reps you keep landing clean. When it hits, what goes first: the thought itself, or the words that were meant to carry it?";
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['vulnerablePushbackQuestionBurden']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.vulnerablePushbackFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, 'No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. Keep the next step small: say only the first hard sentence, then stop.');
+  assert.ok(!/what goes first/i.test(result.text));
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: vulnerable pushback fallback stays honest without earned evidence', () => {
+  const fx = baseFx({
+    category: 'emotional-frustration',
+    turnDepth: 'trustRepair',
+    userTurn: "It's not easy.",
+  });
+  const raw = "No, it isn't — and a freeze in the room is a different animal than the reps you keep landing clean. When it hits, what goes first: the thought itself, or the words that were meant to carry it?";
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['vulnerablePushbackQuestionBurden']);
+  assert.equal(result.text, 'No, it is not easy. The freeze is real, so do not turn this into a full performance test. Keep the next step small: say only the first hard sentence, then stop.');
+  assert.doesNotMatch(result.text, /earned proof point|held composure/i);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: vulnerable pushback with small-step invitation ships', () => {
+  const fx = baseFx({
+    category: 'emotional-frustration',
+    turnDepth: 'trustRepair',
+    userTurn: "It's not easy.",
+  });
+  const raw = 'No, it is not easy. Keep the next step small: test a smaller version in the next rep, then stop before defending it. Want to try?';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: voice state directive falls back before user display', () => {
+  const fx = baseFx({
+    category: 'goal-change',
+    turnDepth: 'groundedRead',
+    userTurn: 'What voice should I even pick? There are six and I do not know.',
+  });
+  const raw = "For meetings I'd start with Authoritative. Tap to confirm and I'll lock it in.";
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['goalStateDirectiveLeak']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.goalStateDirectiveFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, 'Start with Authoritative because meetings where you get talked over need short verdicts that hold the floor. Keep Executive presence as the close second if the room is more senior than interrupt-heavy. That gives you one voice to test, not six to debate.');
+  assert.ok(!/tap|lock it|i'll set|i will set/i.test(result.text));
+  assert.ok(!/do not choose/i.test(result.text));
+  assert.ok(!result.deterministic.findings.some((f) => f.id === 'goalIntentStateDirective'));
+  assert.ok(!result.deterministic.findings.some((f) => f.id === 'trailingSetupQuestion'));
+});
+
+test('production surface: engaging voice change preserves progress and asks why', () => {
+  const fx = baseFx({
+    category: 'goal-change',
+    turnDepth: 'groundedRead',
+    userTurn: 'I think I want to sound more engaging.',
+  });
+  const raw = 'Before you pivot, know your authoritative work is landing: 80 this week, 3 fillers in 68 seconds, three weeks in. That answer picks the voice, then tap to confirm and I\'ll lock it in.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['goalStateDirectiveLeak']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.goalStateDirectiveFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, 'Your authoritative work is already landing, so do not throw it away yet. Engaging maps closest to Storytelling, with Warm as the softer backup. Use Storytelling if you need more memorable shape; use Warm if you want the same authority to land with less distance. What changed: are you being heard now, or do you want the same point to land warmer?');
+  assert.doesNotMatch(result.text, /80 this week|3 fillers|tap|lock it/i);
+  assert.ok(!result.deterministic.findings.some((f) => f.id === 'goalIntentStateDirective'));
+  assert.ok(!result.deterministic.findings.some((f) => f.id === 'goalIntentMissingEngagingMap'));
+});
+
+test('production surface: voice change raw metrics fall back without directive leak', () => {
+  const fx = baseFx({
+    category: 'goal-change',
+    turnDepth: 'groundedRead',
+    userTurn: 'I think I want to sound more engaging.',
+  });
+  const raw = 'Before you pivot, know your authoritative work is landing: 80 this week, 3 fillers in 68 seconds, three weeks in. Engaging maps closest to Storytelling, with Warm as the softer backup. What changed?';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['goalStateReportVoiceLeak']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.goalStateDirectiveFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, 'Your authoritative work is already landing, so do not throw it away yet. Engaging maps closest to Storytelling, with Warm as the softer backup. Use Storytelling if you need more memorable shape; use Warm if you want the same authority to land with less distance. What changed: are you being heard now, or do you want the same point to land warmer?');
+  assert.doesNotMatch(result.text, /80 this week|3 fillers|68 seconds|tap|lock it/i);
+});
+
+test('production surface: clean voice recommendation ships', () => {
+  const fx = baseFx({
+    category: 'goal-change',
+    turnDepth: 'groundedRead',
+    userTurn: 'Just set me to authoritative.',
+  });
+  const raw = 'Authoritative is a sensible recommendation: verdict first, one reason, clean stop. Try it on the next 60-second answer.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
+  assert.ok(!result.deterministic.findings.some((f) => f.id === 'goalIntentStateDirective'));
+});
+
+test('production surface: substantive trust repair does not invent a fallback', () => {
+  const fx = baseFx({
+    category: 'trust-repair',
+    turnDepth: 'trustRepair',
+    userTurn: 'This sounds cold and generic, like AI tips.',
+  });
+  const raw = 'Fair. That was advice, not coaching. Your warmth arrives before the recommendation, so put the recommendation first, then add one reassurance after it.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: clean off-topic redirect does not invent a fallback', () => {
+  const fx = baseFx({
+    category: 'off-topic',
+    turnDepth: 'quickMove',
+    userTurn: 'asdf',
+  });
+  const raw = "Tiny test. All good. Send the moment you want to practice, and I'll give you one clean read.";
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: odd word inside a real coaching question is not off-topic', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    turnDepth: 'groundedRead',
+    userTurn: 'why do I keep saying egg when I freeze?',
+  });
+  const raw = 'Your filler is showing up when pressure spikes. Run one 45-second rep and replace the first filler with a silent beat.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
 });
 
 test('production surface: clean finalized text does not invent a fallback', () => {
@@ -424,6 +1073,45 @@ test('production surface: clean finalized text does not invent a fallback', () =
     userTurn: 'What should I work on?',
   });
   const raw = "No baseline yet, so start there. Record 60 seconds on something you know well, and I'll have something real to read.";
+  const result = productionSurfaceReplyForFixture(raw, fx, {
+    contextBlock: 'BASELINE\n- Not enough data for a stable baseline yet.',
+  });
+
+  assert.equal(result.reliabilityGate.changed, false);
+  assert.equal(result.text, raw);
+  assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: cold-start named-rep overclaim falls back before user display', () => {
+  const fx = baseFx({
+    category: 'cold-start',
+    evidence: { noRatedSessions: true, noVoiceSet: true },
+    turnDepth: 'groundedRead',
+    userTurn: 'Can you coach this?',
+  });
+  const raw = 'I can coach the latest rep: the close is the usable signal, so make the final sentence the ask, then stop.';
+  const result = productionSurfaceReplyForFixture(raw, fx, {
+    contextBlock: 'BASELINE\n- Not enough data for a stable baseline yet.',
+  });
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['evidenceOverclaimNoBaseline']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.noBaselineReadFallback');
+  assert.ok(result.changes.includes('reliabilityGateFallback'));
+  assert.equal(result.text, "There's no rep for me to read yet, so I won't invent one. Record 60 seconds first, then I'll coach the opener and close from what actually happened — that's the honest way to do this.");
+  assert.ok(!/latest rep|usable signal/i.test(result.text));
+  assert.equal(result.deterministic.hardCap, null);
+  assert.equal(result.deterministic.placeholderLeaks, 0);
+});
+
+test('production surface: honest cold-start missing-evidence read is not overclaim fallback', () => {
+  const fx = baseFx({
+    category: 'cold-start',
+    evidence: { noRatedSessions: true, noVoiceSet: true },
+    turnDepth: 'groundedRead',
+    userTurn: 'Can you coach this?',
+  });
+  const raw = 'I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close.';
   const result = productionSurfaceReplyForFixture(raw, fx, {
     contextBlock: 'BASELINE\n- Not enough data for a stable baseline yet.',
   });
@@ -822,4 +1510,47 @@ test('report: user-visible deterministic audit is separate from official scoring
   assert.equal(summary.userVisibleDeterministic.capCounts.voiceIntegrity, 2);
   assert.equal(summary.userVisibleDeterministic.gateBackedCapCounts.voiceIntegrity, 1);
   assert.equal(summary.userVisibleDeterministic.unbackedCapCounts.voiceIntegrity, 1);
+});
+
+test('report: failures show mirrored production-surface fallback without changing raw score', () => {
+  const record = scoredRecord({
+    fixture: {
+      id: 'cold-start-no-data',
+      category: 'cold-start',
+      turnDepth: 'groundedRead',
+      userTurn: 'What should I work on?',
+      expectedCoachMove: 'Give one first rep without inventing data.',
+    },
+    score: {
+      final: 22,
+      capsTriggered: [{ key: 'placeholderOrBroken', max: 30, sources: ['deterministic'] }],
+      placeholderLeaks: 1,
+    },
+  });
+  record.reply = 'Do one Ah-Counter round and stay under 4 fillers.';
+  record.finalizer = {
+    changed: true,
+    changes: ['displaySanitizer'],
+    scoringMode: 'rawReplayJudge',
+    finalizedReply: 'Do one Ah-Counter round and stay under 4 fillers.',
+  };
+  record.deterministic = {
+    findings: [{ id: 'coldStartProductJargon', evidence: 'Ah-Counter' }],
+  };
+  record.userVisible = {
+    reply: "Start with one real sample. Run a quick 60-second rep on something you know well, and I'll have something honest to coach.",
+    changedFromScoredReply: true,
+    reliabilityGate: {
+      changed: true,
+      issues: ['coldStartJargon'],
+      source: 'CoachReliabilityGate.coldStartFallback',
+    },
+    deterministic: { findings: [], hardCap: null, placeholderLeaks: 0 },
+  };
+
+  const text = renderFailures({ runId: 'unit-run', records: [record] });
+  assert.ok(text.includes('Mirrored production-surface fallback: coldStartJargon via `CoachReliabilityGate.coldStartFallback`'));
+  assert.ok(text.includes('replay score remains raw'));
+  assert.ok(text.includes('MIRRORED USER-VISIBLE TEXT:'));
+  assert.ok(text.includes('Start with one real sample.'));
 });

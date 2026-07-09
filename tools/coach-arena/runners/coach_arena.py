@@ -19,6 +19,7 @@ CANONICAL_APP_PATH_REPORTS = DEFAULT_REPORTS / "app-path"
 DUPLICATE_APP_PATH_REPORTS = ARENA / "tools" / "coach-arena" / "reports" / "app-path"
 SOURCE_GIT_COMMIT_SIDECAR = "source-git-commit.txt"
 SOURCE_FINGERPRINT_SIDECAR = "source-coach-fingerprint.txt"
+APP_PATH_DUMP_NAME = "coach-chat-conversation-app-path-eval-v1.json"
 
 DIMENSION_MAX = {
     "diagnosticIQ": 25,
@@ -46,16 +47,35 @@ REAL_PIPELINE_TRACE_SOURCES = {"appPathReport", "replayCommand"}
 COACH_SOURCE_STATUS_PATHS = [
     "Noum/AICoachChatService.swift",
     "Noum/AskNoumStore.swift",
+    "Noum/CoachAssessment.swift",
+    "Noum/CoachAssessmentCache.swift",
     "Noum/CoachContextBuilder.swift",
     "Noum/CoachPromptBundle.swift",
+    "Noum/CoachReasoningPass.swift",
     "Noum/CoachReplyPipeline.swift",
     "Noum/CoachReliabilityGate.swift",
+    "Noum/CoachTurnDepth.swift",
+    "Noum/CoachingKnowledgeBase.swift",
+    "Noum/GoalRubric.swift",
+    "Noum/GoalRubricStore.swift",
+    "Noum/KnowledgeRetriever.swift",
+    "Noum/KnowledgeSemanticReranker.swift",
+    "Noum/PrimaryFocusMemory.swift",
     "Noum/TurnDepthClassifier.swift",
+    "Noum/UserTrajectoryCache.swift",
+    "Noum/UserTrajectorySnapshot.swift",
+    "NoumTests/CoachBrainRerankTests.swift",
+    "NoumTests/CoachBrainTests.swift",
     "NoumTests/CoachChatEvaluationFixtures.swift",
     "NoumTests/CoachChatConversationEvaluationTests.swift",
+    "NoumTests/CoachProviderChainTests.swift",
+    "NoumTests/CoachReadCalibrationBaselineTests.swift",
     "NoumTests/CoachLiveEvaluationTests.swift",
     "NoumTests/CoachJudgementLayerTests.swift",
+    "NoumTests/CoachPlaceholderLeakStripTests.swift",
+    "NoumTests/CoachReportVoiceRegenerationProofTests.swift",
     "NoumTests/CoachReliabilityGateTests.swift",
+    "NoumTests/GoalRubricVoiceRoutingTests.swift",
     "NoumTests/NoumTests.swift",
 ]
 
@@ -602,6 +622,28 @@ def trace_fallback_applied(trace):
     return "fallback" in quality or "fallback" in events
 
 
+def trace_typed_assessment_fallback(trace):
+    fallback = trace.get("fallback") or {}
+    reasoning = trace.get("reasoning") or {}
+    if fallback.get("typedAssessmentFallbackApplied") is True:
+        return True
+    quality = str(reasoning.get("qualityGateOutcome") or "").lower()
+    events = " ".join(str(event).lower() for event in reasoning.get("qualityGateEvents") or [])
+    return "fallback:typedassessment" in quality or "fallback:typedassessment" in events
+
+
+def scoreable_typed_assessment_fallback(fixture, reply, lower, trace):
+    if not trace_typed_assessment_fallback(trace):
+        return False
+    if generic_grounded_fallback_reply(lower):
+        return False
+    if fixture_is_fallback_trap(fixture) and not honest_failure_notice(lower):
+        return False
+    excellent_similarity = similarity(reply, fixture.get("excellentAnswerExample", ""))
+    semantic_hits = semantic_expected_hits(fixture, lower)
+    return excellent_similarity >= 0.58 or semantic_hits >= 3
+
+
 def fixture_is_fallback_trap(fixture):
     memory_state = fixture.get("memoryState", "")
     if not isinstance(memory_state, str):
@@ -983,6 +1025,122 @@ def write_app_path_source_sidecars(dump_dir):
     }
 
 
+def read_sidecar_value(path):
+    try:
+        return Path(path).read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+
+
+def app_path_regeneration_preflight(
+    dump_dir,
+    report_name=APP_PATH_DUMP_NAME,
+    current_commit=None,
+    dirty_source_files=None,
+    current_source_fingerprint=None,
+):
+    dump_path = Path(dump_dir)
+    report_path = dump_path / report_name
+    current_commit = current_commit if current_commit is not None else current_git_commit(short=True)
+    dirty_source_files = (
+        dirty_source_files if dirty_source_files is not None
+        else current_dirty_coach_source_files()
+    )
+    current_source_fingerprint = (
+        current_source_fingerprint if current_source_fingerprint is not None
+        else coach_source_fingerprint()
+    )
+    sidecar_commit = read_sidecar_value(dump_path / SOURCE_GIT_COMMIT_SIDECAR)
+    sidecar_fingerprint = read_sidecar_value(dump_path / SOURCE_FINGERPRINT_SIDECAR)
+
+    blockers = []
+    warnings = []
+    next_steps = []
+    report = None
+    source_commits = []
+    source_fingerprints = []
+    missing_commit_count = 0
+    missing_fingerprint_count = 0
+    trace_count = 0
+
+    if not dump_path.is_dir():
+        blockers.append("missingDumpDir")
+        next_steps.append(f"Create the dump directory and rerun app-path-source: {dump_path}")
+    if not report_path.is_file():
+        blockers.append("missingAppPathDump")
+        next_steps.append(
+            "Run the CoachChatConversationArtifactDumpXCTest bridge to emit "
+            f"{report_name}, then rerun ./tools/coach-arena/run.sh app-path."
+        )
+    else:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        source_commits, missing_commit_count, trace_count = source_app_path_trace_git_commits(report)
+        source_fingerprints, missing_fingerprint_count, _ = source_app_path_trace_fingerprints(report)
+        if report.get("passesAppPathFloor") is False:
+            blockers.append("appPathFloorFailed")
+        if (report.get("summary") or {}).get("appPathFloorFailureCount", 0):
+            warnings.append("appPathFloorFailuresPresent")
+
+    if sidecar_commit is None:
+        blockers.append("missingSourceGitCommitSidecar")
+    elif current_commit and sidecar_commit != current_commit:
+        blockers.append("sourceGitCommitSidecarStale")
+    if sidecar_fingerprint is None:
+        blockers.append("missingSourceCoachFingerprintSidecar")
+    elif current_source_fingerprint and sidecar_fingerprint != current_source_fingerprint:
+        blockers.append("sourceCoachFingerprintSidecarStale")
+
+    if trace_count == 0 and report_path.is_file():
+        blockers.append("noArenaTraceRows")
+    if missing_commit_count:
+        blockers.append("traceGitCommitMissing")
+    if missing_fingerprint_count:
+        blockers.append("traceCoachFingerprintMissing")
+    if source_commits and current_commit and any(commit != current_commit for commit in source_commits):
+        blockers.append("traceGitCommitStale")
+    if (
+        source_fingerprints and
+        current_source_fingerprint and
+        any(fingerprint != current_source_fingerprint for fingerprint in source_fingerprints)
+    ):
+        blockers.append("traceCoachFingerprintStale")
+    if dirty_source_files and (
+        not source_fingerprints or
+        any(fingerprint != current_source_fingerprint for fingerprint in source_fingerprints)
+    ):
+        blockers.append("dirtyCoachSourceAfterDump")
+
+    if blockers and report_path.is_file():
+        next_steps.append("./tools/coach-arena/run.sh app-path-source")
+        next_steps.append(
+            "Run xcodebuild for NoumTests/CoachChatConversationArtifactDumpXCTest "
+            "with NOUM_COACH_EVAL_DUMP_DIR pointing at the same dump directory."
+        )
+        next_steps.append("./tools/coach-arena/run.sh app-path")
+        next_steps.append("./tools/coach-arena/run.sh readiness --dump-dir " + str(dump_path))
+
+    return {
+        "dumpDir": str(dump_path),
+        "appPathDump": str(report_path),
+        "passes": not blockers,
+        "blockers": sorted(set(blockers)),
+        "warnings": sorted(set(warnings)),
+        "nextSteps": list(dict.fromkeys(next_steps)),
+        "currentGitCommit": current_commit,
+        "currentCoachSourceFingerprint": current_source_fingerprint,
+        "dirtyCoachSourceFiles": dirty_source_files,
+        "sourceSidecars": {
+            SOURCE_GIT_COMMIT_SIDECAR: sidecar_commit,
+            SOURCE_FINGERPRINT_SIDECAR: sidecar_fingerprint,
+        },
+        "traceGitCommits": source_commits,
+        "traceMissingGitCommitCount": missing_commit_count,
+        "traceCoachSourceFingerprints": source_fingerprints,
+        "traceMissingCoachSourceFingerprintCount": missing_fingerprint_count,
+        "traceCount": trace_count,
+    }
+
+
 def app_path_source_freshness_fields(
     coverage,
     current_git_commit,
@@ -1320,7 +1478,7 @@ def local_judge(fixture, reply, trace):
     if regex_any(reply, GRAMMAR_LEAK_PATTERNS):
         add_cap("placeholderOrBroken", 30, "grammar, markdown, JSON, or scaffold leak")
         check_failures.append("grammarLeak")
-    if trace_fallback_applied(trace):
+    if trace_fallback_applied(trace) and not scoreable_typed_assessment_fallback(fixture, reply, lower, trace):
         add_cap("placeholderOrBroken", 30, "quality/provider fallback output cannot score as normal coaching")
         check_failures.append("fallbackLeak")
     if fixture_is_fallback_trap(fixture) and generic_grounded_fallback_reply(lower) and not honest_failure_notice(lower):
@@ -2097,6 +2255,12 @@ def render_source_app_path_failure_samples(coverage, include_replies=False):
     if not samples:
         return []
     lines = []
+    if coverage.get("source") == "appPathReport" and coverage.get("sourceFreshnessPasses") is False:
+        lines.append(
+            "- Evidence status: `stale app-path source`; failure replies below "
+            "may reflect an older Swift app-path dump until the dump is "
+            "regenerated and rescored."
+        )
     omitted = coverage.get("sourceAppPathFailureOmittedCount") or 0
     for sample in samples:
         fixture_id = sample.get("sourceFixtureID") or "unknown-fixture"
@@ -2376,18 +2540,214 @@ def render_failures(report):
     return "\n".join(lines)
 
 
-def render_ten_conversations(report):
+def markdown_code_list(values, empty="none", limit=4):
+    compact = [str(value) for value in values or [] if str(value).strip()]
+    if not compact:
+        return f"`{empty}`"
+    shown = compact[:limit]
+    rendered = ", ".join(f"`{value}`" for value in shown)
+    omitted = len(compact) - len(shown)
+    if omitted > 0:
+        rendered += f", `+{omitted} more`"
+    return rendered
+
+
+def synthetic_source_freshness_audit(report):
+    try:
+        import readiness_gate
+    except ImportError:
+        return None
+    readiness = report.get("visionProductionReadiness")
+    if not isinstance(readiness, dict):
+        summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+        readiness = summary.get("visionProductionReadiness")
+    artifact_audit = readiness_gate.evidence_artifact_audit(
+        readiness_gate.DEFAULT_DUMP_DIR,
+        readiness if isinstance(readiness, dict) else None,
+    )
+    return readiness_gate.source_freshness_audit(report, artifact_audit)
+
+
+def synthetic_evidence_status(report, source_audit=None):
+    coverage = report.get("coverage") or {}
+    if coverage.get("source") != "appPathReport":
+        return None
+
+    summary = report.get("summary") or {}
+    evidence_passes = summary.get(
+        "realPipelineEvidencePasses",
+        summary.get("productionEvidencePasses"),
+    )
+    report_freshness_passes = coverage.get("sourceFreshnessPasses")
+    if source_audit is None:
+        source_audit = synthetic_source_freshness_audit(report)
+    sidecar_freshness_passes = (
+        source_audit.get("passes")
+        if isinstance(source_audit, dict) else None
+    )
+    source_freshness_passes = report_freshness_passes
+    if sidecar_freshness_passes is False or report_freshness_passes is False:
+        source_freshness_passes = False
+
+    if source_freshness_passes is False:
+        status = "STALE APP-PATH SOURCE"
+        instruction = (
+            "Do not treat these conversations as current-source proof until "
+            "the Swift app-path dump is regenerated and rescored."
+        )
+        sample_label = "stale app-path source"
+        sample_instruction = (
+            "this reply is from a stale Swift app-path dump; use it as "
+            "diagnostic evidence only, not current-source proof."
+        )
+    elif evidence_passes is False:
+        status = "LOCAL APP-PATH EVALUATION ONLY"
+        instruction = (
+            "Use these conversations for debugging shape, not as production "
+            "readiness evidence."
+        )
+        sample_label = "local app-path evaluation only"
+        sample_instruction = (
+            "this reply is from the Swift app-path evaluator, but the real "
+            "pipeline evidence gate is still red."
+        )
+    else:
+        status = "CURRENT APP-PATH SOURCE"
+        instruction = (
+            "These conversations are backed by the current scored Swift "
+            "app-path report."
+        )
+        sample_label = "current app-path source"
+        sample_instruction = (
+            "this reply is backed by the current scored Swift app-path report."
+        )
+
+    return {
+        "coverage": coverage,
+        "summary": summary,
+        "sourceAudit": source_audit,
+        "status": status,
+        "instruction": instruction,
+        "sampleLabel": sample_label,
+        "sampleInstruction": sample_instruction,
+        "sourceFreshnessPasses": source_freshness_passes,
+        "reportFreshnessPasses": report_freshness_passes,
+        "sidecarFreshnessPasses": sidecar_freshness_passes,
+        "evidencePasses": evidence_passes,
+    }
+
+
+def render_synthetic_evidence_notice(report, source_audit=None):
+    status = synthetic_evidence_status(report, source_audit=source_audit)
+    if not status:
+        return []
+
+    coverage = status["coverage"]
+    summary = status["summary"]
+    source_audit = status["sourceAudit"]
+    source_freshness_passes = status["sourceFreshnessPasses"]
+    report_freshness_passes = status["reportFreshnessPasses"]
+    sidecar_freshness_passes = status["sidecarFreshnessPasses"]
+    evidence_passes = status["evidencePasses"]
+
+    lines = [
+        f"> Evidence status: {status['status']}.",
+        f"> {status['instruction']}",
+        f"> Source freshness passes: `{source_freshness_passes}`.",
+        f"> Real-pipeline evidence passes: `{evidence_passes}`.",
+    ]
+    if report_freshness_passes is not None:
+        lines.append(
+            f"> Report-internal source freshness passes: `{report_freshness_passes}`."
+        )
+    if sidecar_freshness_passes is not None:
+        lines.append(
+            f"> Sidecar source freshness passes: `{sidecar_freshness_passes}`."
+        )
+
+    current_commit = coverage.get("currentGitCommit")
+    if current_commit:
+        lines.append(f"> Current git commit: `{current_commit}`.")
+    trace_commits = coverage.get("sourceTraceGitCommits") or []
+    if trace_commits or source_freshness_passes is False:
+        lines.append(
+            f"> Report trace git commit(s): {markdown_code_list(trace_commits)}."
+        )
+
+    current_fingerprint = coverage.get("currentCoachSourceFingerprint")
+    if current_fingerprint:
+        lines.append(f"> Current coach source fingerprint: `{current_fingerprint}`.")
+    trace_fingerprints = coverage.get("sourceTraceCoachSourceFingerprints") or []
+    if trace_fingerprints or source_freshness_passes is False:
+        lines.append(
+            "> Report trace coach source fingerprint(s): " +
+            f"{markdown_code_list(trace_fingerprints)}."
+        )
+    if isinstance(source_audit, dict):
+        sidecar_commit = source_audit.get("sidecarGitCommit")
+        sidecar_fingerprint = source_audit.get("sidecarCoachFingerprint")
+        if sidecar_commit:
+            lines.append(f"> Sidecar git commit: `{sidecar_commit}`.")
+        if sidecar_fingerprint:
+            lines.append(
+                f"> Sidecar coach source fingerprint: `{sidecar_fingerprint}`."
+            )
+        report_commits = source_audit.get("reportGitCommits") or []
+        if report_commits and not trace_commits:
+            lines.append(
+                f"> Report trace git commit(s): {markdown_code_list(report_commits)}."
+            )
+        report_fingerprints = source_audit.get("reportCoachFingerprints") or []
+        if report_fingerprints and not trace_fingerprints:
+            lines.append(
+                "> Report trace coach source fingerprint(s): " +
+                f"{markdown_code_list(report_fingerprints)}."
+            )
+        for mismatch in source_audit.get("mismatches") or []:
+            lines.append(
+                f"> Sidecar/report mismatch `{mismatch.get('label')}`: "
+                f"sidecar `{mismatch.get('sidecar')}`, report "
+                f"{markdown_code_list(mismatch.get('reportValues') or [])}."
+            )
+
+    freshness_failures = coverage.get("sourceFreshnessFailures") or []
+    if freshness_failures:
+        lines.append(
+            f"> Source freshness failures: {markdown_code_list(freshness_failures, limit=6)}."
+        )
+    production_failures = summary.get("productionEvidenceFailures") or []
+    if production_failures:
+        lines.append(
+            f"> Production evidence failures: {markdown_code_list(production_failures, limit=6)}."
+        )
+
+    return lines
+
+
+def render_ten_conversations(report, source_audit=None):
     lines = [
         "# Coach Arena Synthetic 10-Conversation Sample",
         "",
         "These are fixture-backed synthetic conversations for done-state review.",
         ""
     ]
+    notice = render_synthetic_evidence_notice(report, source_audit=source_audit)
+    if notice:
+        lines.extend(notice)
+        lines.append("")
+    sample_status = synthetic_evidence_status(report, source_audit=source_audit)
     for item in report["results"][:10]:
         fixture = item["fixture"]
         lines.extend([
             f"## {fixture['id']}",
             "",
+        ])
+        if sample_status:
+            lines.extend([
+                f"Evidence: `{sample_status['sampleLabel']}` - {sample_status['sampleInstruction']}",
+                "",
+            ])
+        lines.extend([
             f"Goal: {fixture['goal']}",
             "",
             "Prior chat:"
@@ -2419,6 +2779,7 @@ def main():
     parser.add_argument("--reports-dir", default=str(DEFAULT_REPORTS))
     parser.add_argument("--synthetic-dir", default=str(DEFAULT_SYNTHETIC))
     parser.add_argument("--write-app-path-source-sidecars")
+    parser.add_argument("--app-path-preflight")
     parser.add_argument("--no-fail", action="store_true")
     args = parser.parse_args()
 
@@ -2426,6 +2787,12 @@ def main():
         payload = write_app_path_source_sidecars(args.write_app_path_source_sidecars)
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
+    if args.app_path_preflight:
+        payload = app_path_regeneration_preflight(args.app_path_preflight)
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        if payload["passes"] or args.no_fail:
+            return 0
+        return 1
 
     fixtures = load_fixtures(args.fixtures)
     candidate_modes = [

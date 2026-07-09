@@ -60,7 +60,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "How do I get better before my interview?",
-                    coachReply: "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything."
+                    coachReply: "No baseline yet, so start there. Record 60 seconds on 'Why should we hire you?' and check whether sentence one answers before you polish anything else. Want to go now?"
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should I listen for in the replay?",
@@ -78,7 +78,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "How do I stop saying um under pressure?",
-                    coachReply: "Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and check whether fillers drop after that point."
+                    coachReply: "Your last pressure rep had 6 fillers, mostly before the close, so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Do I pause before every sentence?",
@@ -150,7 +150,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "This still sounds cold and overexplained, like generic AI tips.",
-                    coachReply: "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance."
+                    coachReply: "Fair push: that was advice, not coaching. Your warmth is arriving before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Does that make me sound less warm?",
@@ -276,7 +276,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "Okay, that's cool. However, I don't feel like that answered what I meant.",
-                    coachReply: "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The actual read is warmth came before the recommendation, so the listener waits for the point. Next rep, say the recommendation first, then one reassurance."
+                    coachReply: "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The specific read is order: warmth is arriving before the recommendation, so the listener waits for the point. Next rep, put the recommendation first, add one reassurance, then stop."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What did you miss?",
@@ -294,7 +294,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "That's not informative at all.",
-                    coachReply: "Fair push: I missed the actual question and answered around the useful read. Your last rep shows warmth came before the recommendation, so next rep say the recommendation first, then one reassurance."
+                    coachReply: "Fair push: I missed the actual question and answered around the useful read. The specific read is order: warmth is arriving before the recommendation, so the point lands late. Next rep, put the recommendation first, add one reassurance, then stop."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What was the useful read?",
@@ -312,7 +312,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "It's not easy.",
-                    coachReply: "Fair push: I made that sound easier than it feels under pressure. The actual read is verdict-first structure gets harder under pressure, so shrink the next rep to one sentence before adding the full answer back."
+                    coachReply: "Fair push: no, it is not easy. The hard part is that sentence one carries the social risk, so test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Is it the pause or the close?",
@@ -348,7 +348,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "Okay that's cool, however I still don't feel like that answers what I meant.",
-                    coachReply: "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The actual read is warmth came before the recommendation, so the listener waits for the point. Next rep, say the recommendation first, then one reassurance."
+                    coachReply: "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The specific read is order: warmth is arriving before the recommendation, so the listener waits for the point. Next rep, put the recommendation first, add one reassurance, then stop."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "So what was the question underneath it?",
@@ -438,7 +438,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "Am I rushing?",
-                    coachReply: "Yes, locally: the latest rep is 181 WPM, and the fillers rise after sentence one, so test one silent beat after the first sentence, not a slower whole answer."
+                    coachReply: "Yes, locally. The useful signal is 181 WPM and fillers after sentence one. Test one silent beat after the verdict; if the next sentence stays clean, pacing is the lever."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Why not slow all of it down?",
@@ -546,7 +546,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "How do I sound more confident at the end?",
-                    coachReply: "Cut the softener after the ask. The close keeps adding maybe or just after the decision, so make the ask and stop before the confidence leaks."
+                    coachReply: "The confidence leak is after the ask: maybe or just reopens the decision, so the fix is a clean stop. Make the ask, stop, and listen for whether the final sentence still sounds clean without the qualifier."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What if I sound too direct?",
@@ -5673,14 +5673,19 @@ struct CoachChatConversationCorpusTests {
                 let qualityGateOutcome = metadata?.qualityGateOutcome?.logValue
                 let qualityGateAcceptedFallback = outcomeSucceeded &&
                     (qualityGateOutcome?.hasPrefix("fallback:") == true)
+                let callbackQualityGateEventLogValues = qualityGateEvents
+                    .map(CoachReplyPipeline.qualityGateEventLogValue)
+                let persistedQualityGateEventLogValues = metadata?.qualityGateEvents ?? []
+                let qualityGateEventLogValues = persistedQualityGateEventLogValues.isEmpty
+                    ? callbackQualityGateEventLogValues
+                    : persistedQualityGateEventLogValues
                 let typedAssessmentFallbackApplied = qualityGateOutcome == "fallback:typedAssessment" ||
-                    qualityGateEvents.contains(.fallback("typedAssessment"))
+                    qualityGateEventLogValues.contains("fallback:typedAssessment")
                 let qualityGateBlockingFailure = qualityGateOutcome?.hasPrefix("failed:") == true
                 let reliabilityIssues = metadata?.reliabilityIssues?.map(\.rawValue) ?? []
                 let blockingReliabilityIssues = metadata?.reliabilityIssues?
                     .filter(\.isBlocking)
                     .map(\.rawValue) ?? []
-                let qualityGateEventLogValues = qualityGateEvents.map(CoachReplyPipeline.qualityGateEventLogValue)
                 let immediateCoachReadExpected: Bool = {
                     guard let depth = metadata?.turnDepth,
                           let responseMode = metadata?.assessment?.responseMode else {

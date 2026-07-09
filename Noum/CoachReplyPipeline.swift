@@ -598,6 +598,9 @@ enum CoachReplyPipeline {
             ),
             qualityGateFailureCount: Self.qualityGateFailureCount(qualityGateEvents),
             qualityGateRepairCount: Self.qualityGateRepairCount(qualityGateEvents),
+            qualityGateEvents: qualityGateEvents.isEmpty
+                ? nil
+                : qualityGateEvents.map(Self.qualityGateEventLogValue),
             assessmentCacheHit: assessmentResult?.cacheHit,
             assessmentCacheAgeMs: assessmentCacheAgeMsAt(completionAt),
             immediateCoachReadShown: immediateCoachReadShown,

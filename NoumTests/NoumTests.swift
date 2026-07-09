@@ -9452,11 +9452,35 @@ struct CoachReplyTextSanitizerTests {
         #expect(display == """
         You want it straight.
         - Give one 30-second update and stop.
-        2. recommendation in the first sentence.
+        2. Recommendation in the first sentence.
         """)
         #expect(!display.lowercased().contains("read:"))
         #expect(!display.lowercased().contains("move:"))
         #expect(!display.lowercased().contains("target:"))
+    }
+
+    @Test func coachReplyTextRecapitalizesAfterStrippedScaffoldLabels() {
+        let raw = """
+        You do not lose the thread; you keep adding to it.
+
+        Next rep: say your point, one line of support, then stop.
+        """
+        let display = CoachReplyTextSanitizer.coachReplyText(from: raw)
+
+        #expect(display == """
+        You do not lose the thread; you keep adding to it.
+        Say your point, one line of support, then stop.
+        """)
+        #expect(!display.contains("\nsay"))
+        #expect(!display.lowercased().contains("next rep:"))
+    }
+
+    @Test func coachReplyTextDoesNotRecapitalizeCamelCaseAfterStrippedLabel() {
+        let display = CoachReplyTextSanitizer.coachReplyText(
+            from: "Next rep: iOS launch answer, one reason, stop."
+        )
+
+        #expect(display == "iOS launch answer, one reason, stop.")
     }
 
     @Test func spokenTextDropsFormattingAndScaffoldLabels() {
@@ -9467,7 +9491,7 @@ struct CoachReplyTextSanitizerTests {
         """
         let spoken = CoachReplyTextSanitizer.spokenText(from: raw)
 
-        #expect(spoken == "You want it straight. Hit record and give a 30-second update. that tests the rushed close.")
+        #expect(spoken == "You want it straight. Hit record and give a 30-second update. That tests the rushed close.")
         #expect(!spoken.contains("**"))
         #expect(!spoken.lowercased().contains("read:"))
         #expect(!spoken.lowercased().contains("move:"))
@@ -9548,7 +9572,7 @@ struct CoachReplyTextSanitizerTests {
         """
         let display = CoachReplyTextSanitizer.liveDisplayText(from: raw)
 
-        #expect(display == "stop after the recommendation.")
+        #expect(display == "Stop after the recommendation.")
         #expect(!display.lowercased().contains("coach read"))
         #expect(!display.lowercased().contains("move:"))
     }
@@ -9592,7 +9616,7 @@ struct CoachReplyTextSanitizerTests {
         """
         let spoken = CoachReplyTextSanitizer.spokenText(from: raw)
 
-        #expect(spoken == "Use one sentence. Say recommendation, reason, stop. it keeps the close clean.")
+        #expect(spoken == "Use one sentence. Say recommendation, reason, stop. It keeps the close clean.")
         let value = spoken
         for marker in ["**", "*", "`", "[", "](", "https://", "focus:", "move:", "why:"] {
             #expect(!value.lowercased().contains(marker), "spoken text should not expose \(marker)")
@@ -9604,7 +9628,7 @@ struct CoachReplyTextSanitizerTests {
             from: "Read: your close is rushed. Move: stop after the recommendation. Why: it tests control."
         )
 
-        #expect(spoken == "your close is rushed. stop after the recommendation. it tests control.")
+        #expect(spoken == "Your close is rushed. Stop after the recommendation. It tests control.")
         #expect(!spoken.lowercased().contains("read:"))
         #expect(!spoken.lowercased().contains("move:"))
         #expect(!spoken.lowercased().contains("why:"))
@@ -9618,7 +9642,7 @@ struct CoachReplyTextSanitizerTests {
         """
         let spoken = CoachReplyTextSanitizer.spokenText(from: raw)
 
-        #expect(spoken == "Fair. I’ll keep it direct. answer first, proof second. 30-second update, so the recommendation lands before the explanation: recommendation, one proof point, stop.")
+        #expect(spoken == "Fair. I’ll keep it direct. Answer first, proof second. 30-second update, so the recommendation lands before the explanation: recommendation, one proof point, stop.")
         #expect(!spoken.lowercased().contains("target:"))
         #expect(!spoken.lowercased().contains("next rep:"))
         #expect(!spoken.contains("**"))
@@ -9631,7 +9655,7 @@ struct CoachReplyTextSanitizerTests {
 
         #expect(display.contains("🎯"))
         #expect(display.contains("✅"))
-        #expect(spoken == "fair push. one clean close, then stop")
+        #expect(spoken == "Fair push. One clean close, then stop")
         #expect(!spoken.contains("🎯"))
         #expect(!spoken.contains("✅"))
         #expect(!spoken.lowercased().contains("move:"))
@@ -9646,6 +9670,17 @@ struct CoachReplyTextSanitizerTests {
         #expect(!lower.contains("4 fillers"))
         #expect(!lower.contains("had for"))
         #expect(cleaned.contains("For the next rep, state the recommendation first"))
+    }
+
+    @Test func reportVoiceStripPreservesGrammarForFillerComparisons() {
+        let cleaned = CoachReplyTextSanitizer.strippingReportVoiceResidue(
+            from: "For a persuasive pitch, that softens the one line the whole thing turns on, more than your 7 fillers do."
+        )
+        let lower = cleaned.lowercased()
+
+        #expect(!lower.contains("7 fillers"))
+        #expect(!lower.contains("your do"))
+        #expect(cleaned.contains("more than the filler words do"))
     }
 
     @Test func finalizedCoachReplyStripsCompactMetricClusterFromNonMetricTurn() {
@@ -12030,6 +12065,10 @@ struct AskNoumStoreTests {
             providerTierChosen: .claudeReasoning,
             semanticGateOutcome: .passed,
             evidenceCoverage: 0.42,
+            qualityGateOutcome: .passed,
+            qualityGateFailureCount: 0,
+            qualityGateRepairCount: 0,
+            qualityGateEvents: ["passed"],
             ttftMs: 180,
             fullLatencyMs: 940,
             timeToFirstVisibleTokenMs: 180,
@@ -12271,6 +12310,10 @@ struct AskNoumStoreTests {
         #expect(decoded.metadata?.providerTierChosen == .claudeReasoning)
         #expect(decoded.metadata?.semanticGateOutcome == .passed)
         #expect(decoded.metadata?.evidenceCoverage == 0.42)
+        #expect(decoded.metadata?.qualityGateOutcome == .passed)
+        #expect(decoded.metadata?.qualityGateFailureCount == 0)
+        #expect(decoded.metadata?.qualityGateRepairCount == 0)
+        #expect(decoded.metadata?.qualityGateEvents == ["passed"])
         #expect(decoded.metadata?.ttftMs == 180)
         #expect(decoded.metadata?.fullLatencyMs == 940)
         #expect(decoded.metadata?.timeToFirstVisibleTokenMs == 180)
@@ -12302,6 +12345,10 @@ struct AskNoumStoreTests {
         #expect(coach?.metadata?.providerTierChosen == .claudeReasoning)
         #expect(coach?.metadata?.semanticGateOutcome == .passed)
         #expect(coach?.metadata?.evidenceCoverage == 0.42)
+        #expect(coach?.metadata?.qualityGateOutcome == .passed)
+        #expect(coach?.metadata?.qualityGateFailureCount == 0)
+        #expect(coach?.metadata?.qualityGateRepairCount == 0)
+        #expect(coach?.metadata?.qualityGateEvents == ["passed"])
         #expect(coach?.metadata?.ttftMs == 180)
         #expect(coach?.metadata?.fullLatencyMs == 940)
         #expect(coach?.metadata?.timeToFirstVisibleTokenMs == 180)

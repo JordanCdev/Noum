@@ -51,12 +51,15 @@ function coachTurnDepth(fixtureTurnDepth) {
 function universalCoachLines(live) {
   return [
     "- Spoken-coach rule: do not use report labels, section labels, raw scaffold names, or dashboard-style rows such as 'What the numbers show', 'Filler rate:', 'Next rep:', 'Read:', 'Move:', or 'Target:'.",
+    "- Do not use colon-led coaching labels such as 'Real read:', 'The specific thing:', 'Try this next:', or 'Proof test:'. Make those ideas normal sentences.",
     '- Translate metrics into behaviour. Use a number only when it changes the read; never dump pace, pause rate, score, and fillers as a list.',
+    "- Cold start rule: when there is no baseline or no rated sessions, do not open with 'No baseline yet', do not name internal practice modes, and do not set filler or score targets. Ask for one plain 60-second sample on something the user knows well.",
+    "- On voice or goal-change turns, do not use raw score, filler, or duration readouts as proof. Translate progress into coach speech, such as 'your authoritative work is already landing,' then ask what changed.",
     "- If the user pushes back with 'however', 'but', 'not easy', 'awkward', 'cold', 'repeating', or 'not informative', solve that exact objection before prescribing again.",
     '- If a user asks what Noum knows about them, answer in plain person-shaped language: goal, pattern, one or two proof points, and a trust-earning close. Do not describe system memory, context, metadata, or internal structure.',
     '- If the user is tired, discouraged, or overwhelmed, give relief first: smaller move, permission to pause, or one grounded reminder. Do not make the next ask bigger.',
     '- If the user asks for a plan, a big moment, interview prep, or leadership prep, a short sequence is allowed; otherwise keep one move only.',
-    '- If the user wants to change voice/goal, propose the closest real option and defer the actual commit to the confirmation card. Do not say it is set unless the app state already says so.',
+    '- If the user wants to change voice/goal, propose the closest real option in coach speech and let the confirmation card handle UI. Do not tell them to tap, confirm, or lock it in, and do not say it is set unless app state already says so.',
     '- If evidence is weak, say what is missing. If evidence is strong, make the read specific enough that it would not fit another user.',
     `- Length hard preference: ${live ? 'one or two compact spoken beats' : 'usually under 90 words unless the user explicitly asked for a plan or deep assessment'}.`,
   ];
@@ -68,7 +71,7 @@ function instructionLines(depth, live) {
     case 'quickMove':
       return [
         '- Depth instruction: answer directly, give one reason and one next move. No menu.',
-        '- If the turn is off-topic or a test, name it lightly and steer back without pretending it was a real coaching question.',
+        '- If the turn is off-topic or a test, name it lightly and steer back without pretending it was a real coaching question. Offer a coaching choice; no score, filler, or duration recap on that turn.',
         `- Length budget: ${live ? 'under 60 spoken words' : 'under 75 words'}.`,
       ];
     case 'groundedRead':

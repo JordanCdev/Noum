@@ -67,19 +67,41 @@ ARENA_INCLUDE_SYNTHETIC=1 ./tools/coach-arena/run.sh run
 
 # Real Swift app-path evidence from the XCTest artifact dump
 ./tools/coach-arena/run.sh app-path-source
+./tools/coach-arena/run.sh app-path-preflight --no-fail
 ./tools/coach-arena/run.sh app-path
+# Diagnostic scoring of a known-stale dump; writes to reports/app-path-diagnostic
+./tools/coach-arena/run.sh app-path --allow-stale-source --no-fail
+
+# Launch-readiness gate from the latest app-path report
+./tools/coach-arena/run.sh readiness
+./tools/coach-arena/run.sh readiness --dump-dir /private/tmp/noum-coach-eval --no-fail
+./tools/coach-arena/run.sh readiness --repo-root /path/to/Noum --no-fail
+./tools/coach-arena/run.sh readiness --probe-live --no-fail
 ```
 
 `app-path` reads
 `$NOUM_COACH_EVAL_DUMP_DIR/coach-chat-conversation-app-path-eval-v1.json`, defaulting
 to `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`,
 and writes the scored report to `reports/app-path/`. Pass an explicit report path
-as the first argument when scoring another dump. Before refreshing the dump, run
-`app-path-source` for the same dump directory. It writes
+as the first argument when scoring another dump. Before trusting or rescoring a
+dump, run `app-path-preflight` for the same dump directory. It fails closed when
+the dump, source sidecars, trace commit/fingerprint, or app-path floor are stale
+or missing, and prints the refresh sequence needed to make the evidence current.
+For the canonical XCTest dump, `app-path` runs the same preflight before writing
+`reports/app-path/latest.*`; use `--allow-stale-source` only when intentionally
+scoring an old dump for diagnostics, not for readiness claims. That diagnostic
+mode writes to `reports/app-path-diagnostic/` and
+`synthetic/app-path-diagnostic/` by default so it cannot refresh the canonical
+readiness input by accident. Pass explicit `--reports-dir` / `--synthetic-dir`
+only when you deliberately want another output location.
+Before refreshing the dump, run `app-path-source` for the same dump directory. It writes
 `source-git-commit.txt` and `source-coach-fingerprint.txt`, letting the XCTest
 bridge stamp every trace with the exact source commit and coach-source byte
 fingerprint used for that run. Then use the XCTest bridge
 `NoumTests/CoachChatConversationArtifactDumpXCTest` to refresh the app-path JSON.
+The coach-source fingerprint covers the reply pipeline, provider wrapper,
+typed assessment/reasoning layer, prompt bundles, reliability gate, rubrics,
+trajectory cache/snapshot, retrieval knowledge, and their coach-eval tests.
 The same source sidecars now gate `coach-live-eval-v1.json`: a live-provider
 sweep only clears `.noLiveProviderTranscriptSweep` when its `sourceGitCommit`
 and `sourceCoachFingerprint` match the sidecars in the dump directory.
@@ -88,9 +110,16 @@ Other commands: `plan` (compose real prompts/context to `runs/<id>/requests.json
 `prepare [n]` (per-voice prompts + per-fixture reqs + n agent batches),
 `report` (re-render), `validate` (fixture integrity), `synth` (rebuild
 conversations), `extract <voice|--json>` (print the extracted system prompt),
-`test`, `app-path-source` (stamp real app-path source sidecars), and `python`
-(direct access to the legacy engine; do not use it for app-path readiness unless
-you pass `--app-path-report`, otherwise it grades reference examples).
+`test`, `app-path-source` (stamp real app-path source sidecars),
+`app-path-preflight` (verify the app-path dump is fresh enough to trust), `readiness`
+(fail the launch gate until local app-path gates, Swift `localTargetShapeScore`
+>= 85, and external evidence artifacts are present; also audits required
+sidecar presence in `NOUM_COACH_EVAL_DUMP_DIR` or `--dump-dir`, plus static
+Firebase/privacy/TestFlight-QA repo wiring via `--repo-root`; pass
+`--probe-live` to hard-block on public privacy URL reachability/content), and
+`python` (direct access to the legacy engine; do not use it for app-path
+readiness unless you pass `--app-path-report`, otherwise it grades reference
+examples).
 
 ### Providers
 

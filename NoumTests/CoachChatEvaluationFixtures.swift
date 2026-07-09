@@ -1901,6 +1901,10 @@ struct CoachArenaAppPathTrace: Codable, Equatable {
             issues.append("qualityGateBlockingFailure")
         }
 
+        let durableQualityGateEvents = {
+            let persisted = metadata?.qualityGateEvents ?? []
+            return persisted.isEmpty ? qualityGateEvents : persisted
+        }()
         let promptTrace = metadata?.promptTrace
         return CoachArenaAppPathTrace(
             candidateSource: "appPathReport",
@@ -1924,7 +1928,7 @@ struct CoachArenaAppPathTrace: Codable, Equatable {
                 visionPassesProductionFloor: metadata?.visionPassesProductionFloor,
                 semanticGateOutcome: metadata?.semanticGateOutcome?.logValue,
                 qualityGateOutcome: metadata?.qualityGateOutcome?.logValue,
-                qualityGateEvents: qualityGateEvents
+                qualityGateEvents: durableQualityGateEvents
             ),
             prompt: Prompt(
                 source: "CoachReplyPipeline real Swift app-path harness",
@@ -3076,7 +3080,7 @@ enum CoachChatEvaluationCorpus {
                 "first useful coaching move is one usable rep",
                 "do not ask a discovery question"
             ],
-            referenceReply: "No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.",
+            referenceReply: "No baseline yet, so start there. Record 60 seconds on 'Why should we hire you?' and check whether sentence one answers before you polish anything else. Want to go now?",
             knownBadReply: "Keep practicing and try to sound more confident.",
             expectedBadIssue: .roboticPhrase("keep practicing")
         ),
@@ -3116,7 +3120,7 @@ enum CoachChatEvaluationCorpus {
                 "COACH FORMULATION",
                 "silence as the replacement behavior"
             ],
-            referenceReply: "Last rep had 6 fillers; the pressure cue is showing up before the close. Next rep, hold one beat before the final sentence and cut every filler after that point.",
+            referenceReply: "Your last pressure rep had 6 fillers, mostly before the close, so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask.",
             knownBadReply: "Based on your data, the key insight is reducing fillers.",
             expectedBadIssue: .roboticPhrase("based on your data")
         ),
@@ -3239,7 +3243,7 @@ enum CoachChatEvaluationCorpus {
                 "COACH FORMULATION",
                 "ordering signal"
             ],
-            referenceReply: "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance.",
+            referenceReply: "Fair push: that was advice, not coaching. Your warmth is arriving before the recommendation, so put the recommendation first, add one reassurance after it, then stop.",
             knownBadReply: "I understand your frustration. Here are some tips to communicate more clearly: be clear and concise, structure your thoughts, and practice confidence.",
             expectedBadIssue: .roboticPhrase("i understand your frustration")
         ),
@@ -4022,7 +4026,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
         let samples: [(fixtureID: String, reply: String)] = [
             (
                 "cold-start-interview-baseline",
-                "No baseline yet, so start there. Record 60 seconds on one likely interview question, then review whether the first sentence answers it before polishing anything."
+                "No baseline yet, so start there. Record 60 seconds on one likely interview question, then check whether sentence one answers before polishing anything. Want to go now?"
             ),
             (
                 "filler-pressure-prescription",
@@ -4034,7 +4038,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
             ),
             (
                 "assistant-explainer-register",
-                "Fair push: that was advice, not coaching. Your last rep has the useful signal: warmth came before the recommendation, so next rep say the recommendation first, then soften it with one reassurance."
+                "Fair push: that was advice, not coaching. Your warmth is arriving before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
             ),
             (
                 "what-next-single-move",
@@ -4084,6 +4088,129 @@ struct CoachChatLatestLiveEvalRegressionTests {
         #expect(!shape.contains("before sentence two"))
     }
 
+    @Test func pressureFillerRepairShapeUsesPressureCloseTarget() throws {
+        let fixture = try Self.fixture("filler-pressure-prescription")
+        let shape = try #require(AICoachChatService.repairReferenceShape(
+            issue: .missingInsightBridge,
+            latestUserTurn: fixture.latestUserTurn,
+            system: CoachChatEvaluationCorpus.renderedContext(for: fixture)
+        ))
+
+        #expect(shape.contains("Your last pressure rep had 6 fillers"))
+        #expect(shape.contains("before the final sentence"))
+        #expect(shape.contains("finish the ask"))
+        #expect(!shape.contains("before sentence two"))
+        #expect(!shape.lowercased().contains("semantic words"))
+    }
+
+    @Test func pressureFillerAssessmentUsesCloseSpecificProofTest() throws {
+        let fixture = try Self.fixture("filler-pressure-prescription")
+        let trajectory = UserTrajectoryCache.shared.snapshot(
+            profile: fixture.profile,
+            baseline: .empty,
+            rating: .initial,
+            sessions: fixture.sessions,
+            coachMemory: nil
+        ).snapshot
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: TurnDepthClassifier.classify(userText: fixture.latestUserTurn),
+            userQuestion: fixture.latestUserTurn,
+            trajectory: trajectory,
+            rubric: GoalRubricStore.activeRubric(for: fixture.profile),
+            surface: .live
+        )
+        let read = assessment.immediateCoachRead
+
+        #expect(assessment.directVerdict.contains("Pressure is the next lever"))
+        #expect(assessment.directVerdict.contains("where it leaks"))
+        #expect(assessment.nextProofTest.contains("6 fillers"))
+        #expect(assessment.nextProofTest.contains("one silent beat before the final sentence"))
+        #expect(assessment.nextProofTest.contains("finish the ask"))
+        #expect(!assessment.nextProofTest.lowercased().contains("semantic words"))
+        #expect(read.contains("Your last pressure rep had 6 fillers"))
+        #expect(read.contains("pressure leak is the final sentence"))
+        #expect(!read.contains("mostly before the close"))
+        #expect(!read.lowercased().contains("protect sentence one"))
+        #expect(!read.lowercased().contains("the signal i can use"))
+        #expect(read.contains("one silent beat before the final sentence"))
+    }
+
+    @Test func semanticFillerQuestionDoesNotBecomePressureCloseDrill() throws {
+        let fixture = try Self.fixture("filler-pressure-prescription")
+        let userTurn = "I meant like as a comparison under pressure. Should I cut it?"
+        let trajectory = UserTrajectoryCache.shared.snapshot(
+            profile: fixture.profile,
+            baseline: .empty,
+            rating: .initial,
+            sessions: fixture.sessions,
+            coachMemory: nil
+        ).snapshot
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: TurnDepthClassifier.classify(userText: userTurn),
+            userQuestion: userTurn,
+            trajectory: trajectory,
+            rubric: GoalRubricStore.activeRubric(for: fixture.profile),
+            surface: .live
+        )
+
+        #expect(assessment.nextProofTest.contains("keep the word only if it adds meaning"))
+        #expect(!assessment.nextProofTest.contains("before the final sentence"))
+        #expect(!assessment.nextProofTest.contains("finish the ask"))
+    }
+
+    @Test func notEasyAssessmentUsesAttunedSmallerStepRepair() throws {
+        let fixture = try Self.fixture("filler-pressure-prescription")
+        let userTurn = "It's not easy."
+        let trajectory = UserTrajectoryCache.shared.snapshot(
+            profile: fixture.profile,
+            baseline: .empty,
+            rating: .initial,
+            sessions: fixture.sessions,
+            coachMemory: nil
+        ).snapshot
+        let assessment = CoachReasoningPass.assess(
+            turnDepth: TurnDepthClassifier.classify(userText: userTurn),
+            userQuestion: userTurn,
+            trajectory: trajectory,
+            rubric: GoalRubricStore.activeRubric(for: fixture.profile),
+            surface: .live
+        )
+        let read = assessment.immediateCoachRead
+
+        #expect(assessment.turnDepth == .trustRepair)
+        #expect(assessment.repairFocus == "I made the move sound easier than it feels under pressure")
+        #expect(assessment.nextProofTest.contains("smaller version"))
+        #expect(assessment.nextProofTest.contains("one calm reason"))
+        #expect(read.contains("Fair push: no, it is not easy"))
+        #expect(read.contains("sentence one carries the social risk"))
+        #expect(read.contains("test a smaller version"))
+        #expect(read.contains("stop before defending it"))
+        #expect(!read.contains("I made the move sound easier"))
+        #expect(!read.contains("Proof test:"))
+    }
+
+    @Test func safeReferenceRepairAcceptsPressureFillerBridgeIssue() throws {
+        let fixture = try Self.fixture("filler-pressure-prescription")
+        let context = CoachChatEvaluationCorpus.renderedContext(for: fixture)
+        let repair = try #require(AICoachChatService.safeReferenceRepairReply(
+            issue: .missingInsightBridge,
+            latestUserTurn: fixture.latestUserTurn,
+            system: context,
+            quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+            turnDepth: .quickMove
+        ))
+
+        #expect(repair.contains("Your last pressure rep had 6 fillers"))
+        #expect(repair.contains("one silent beat before the final sentence"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repair,
+            latestUserTurn: fixture.latestUserTurn,
+            quoteGuard: CoachChatEvaluationCorpus.quoteGuard(for: fixture),
+            systemContext: context,
+            turnDepth: .quickMove
+        ) == nil)
+    }
+
     @Test func trustRepairShapePrefersWarmthSignalOverFillerCount() throws {
         let fixture = try Self.fixture("assistant-explainer-register")
         let shape = try #require(AICoachChatService.repairReferenceShape(
@@ -4092,8 +4219,8 @@ struct CoachChatLatestLiveEvalRegressionTests {
             system: CoachChatEvaluationCorpus.renderedContext(for: fixture)
         ))
 
-        #expect(shape.contains("warmth came before the recommendation"))
-        #expect(shape.contains("say the recommendation first"))
+        #expect(shape.contains("warmth is arriving before the recommendation"))
+        #expect(shape.contains("put the recommendation first"))
         #expect(!shape.contains("1 filler"))
     }
 
@@ -4144,6 +4271,11 @@ struct CoachChatLatestLiveEvalRegressionTests {
             qualityGateOutcome: .repaired("vision:32:directAnswer,observableAnchor"),
             qualityGateFailureCount: 1,
             qualityGateRepairCount: 1,
+            qualityGateEvents: [
+                "rejected:vision:32:directAnswer,observableAnchor",
+                "repaired:vision:72:transferProof",
+                "passed"
+            ],
             assessmentCacheHit: true,
             assessmentCacheAgeMs: 240,
             immediateCoachReadShown: true,
@@ -4173,6 +4305,11 @@ struct CoachChatLatestLiveEvalRegressionTests {
         #expect(decoded.qualityGateOutcome == .repaired("vision:32:directAnswer,observableAnchor"))
         #expect(decoded.qualityGateFailureCount == 1)
         #expect(decoded.qualityGateRepairCount == 1)
+        #expect(decoded.qualityGateEvents == [
+            "rejected:vision:32:directAnswer,observableAnchor",
+            "repaired:vision:72:transferProof",
+            "passed"
+        ])
         #expect(decoded.retrievalTrace?.strategy == "BM25")
         #expect(decoded.retrievalTrace?.retrievedCardIDs == ["verdict-first", "clean-stop"])
         #expect(decoded.assessmentCacheHit == true)
@@ -4188,6 +4325,36 @@ struct CoachChatLatestLiveEvalRegressionTests {
         #expect(decoded.coldnessComplaintFlag == true)
         #expect(decoded.softPushbackFlag == true)
         #expect(decoded.voiceBargeInOccurred == true)
+    }
+
+    @Test func appPathTracePrefersPersistedQualityGateTrail() {
+        let metadata = CoachTurnMetadata(
+            qualityGateOutcome: .repaired("stored:final"),
+            qualityGateEvents: [
+                "rejected:stored:first",
+                "repaired:stored:final"
+            ]
+        )
+
+        let trace = CoachArenaAppPathTrace.make(
+            conversationID: "quality-gate-trail",
+            sourceFixtureID: "fixture",
+            turnIndex: 0,
+            userTurn: "What changed?",
+            surface: .text,
+            targetCoachReply: "Lead with the verdict.",
+            finalCoachReply: "Lead with the verdict.",
+            metadata: metadata,
+            qualityGateEvents: ["callback:only"],
+            qualityGateAcceptedFallback: false,
+            typedAssessmentFallbackApplied: false,
+            schemaVersion: "test"
+        )
+
+        #expect(trace.reasoning.qualityGateEvents == [
+            "rejected:stored:first",
+            "repaired:stored:final"
+        ])
     }
 
     @Test func qualityGateAggregationKeepsPassedOutcomeAfterRejectedDraft() {

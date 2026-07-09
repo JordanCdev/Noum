@@ -47,7 +47,8 @@ enum CoachReasoningPass {
                 rubricName: rubric.rubric.displayName,
                 focusDimensionID: preferredDimensionID,
                 focusLabel: focusLabel,
-                repairFocus: repairFocus
+                repairFocus: repairFocus,
+                trajectory: trajectory
             )
         let evidence = evidenceLines(
             from: trajectory,
@@ -169,14 +170,16 @@ enum CoachReasoningPass {
         rubricName: String,
         focusDimensionID: String?,
         focusLabel: String?,
-        repairFocus: String?
+        repairFocus: String?,
+        trajectory: UserTrajectorySnapshot
     ) -> String {
         switch depth {
         case .quickMove:
-            if let focusDimensionID {
-                return quickMoveVerdict(for: focusDimensionID, focusLabel: focusLabel)
-            }
-            return "The next useful move is narrow: test one observable change, not a new plan."
+            return quickMoveVerdict(
+                for: focusDimensionID,
+                focusLabel: focusLabel,
+                trajectory: trajectory
+            )
         case .groundedRead:
             if let focusLabel {
                 return "The grounded read should stay local to \(focusLabel.lowercased()) in the latest evidence."
@@ -202,9 +205,13 @@ enum CoachReasoningPass {
     }
 
     private static func quickMoveVerdict(
-        for dimensionID: String,
-        focusLabel: String?
+        for dimensionID: String?,
+        focusLabel: String?,
+        trajectory: UserTrajectorySnapshot
     ) -> String {
+        guard let dimensionID else {
+            return trajectorySpecificQuickMoveVerdict(focusLabel: focusLabel, trajectory: trajectory)
+        }
         switch dimensionID {
         case "controlled_pacing":
             return "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer."
@@ -215,15 +222,54 @@ enum CoachReasoningPass {
         case "hedge_control":
             return "Directness is the next lever: replace one hedge with a plain recommendation."
         case "pressure_stability":
-            return "Pressure is the next lever: repeat the same answer under a timer and protect sentence one."
+            return "Pressure is the next lever: repeat the same answer under a timer and protect the sentence where it leaks."
         case "salience":
             return "Salience is the next lever: add one concrete detail, then return to the ask."
         default:
-            if let focusLabel {
-                return "The next useful move is \(focusLabel.lowercased()): test one observable change, not a new plan."
-            }
-            return "The next useful move is narrow: test one observable change, not a new plan."
+            return trajectorySpecificQuickMoveVerdict(focusLabel: focusLabel, trajectory: trajectory)
         }
+    }
+
+    private static func trajectorySpecificQuickMoveVerdict(
+        focusLabel: String?,
+        trajectory: UserTrajectorySnapshot
+    ) -> String {
+        if let intervention = trajectory.activeInterventionState,
+           let target = nonEmpty(intervention.target) ?? nonEmpty(intervention.title) {
+            let targetPhrase = statementFragment(target)
+            if intervention.followedRepCount > 0 {
+                return "Stay with the active intervention: \(targetPhrase), then judge that same target again."
+            }
+            return "Start with the active intervention: \(targetPhrase), then judge that one target."
+        }
+
+        if let summary = trajectory.coachCaseSummary,
+           let nextMove = nonEmpty(summary.nextCoachMove) {
+            return "Use the case file's next move: \(statementFragment(nextMove))."
+        }
+
+        if let summary = trajectory.coachCaseSummary,
+           let focus = nonEmpty(summary.focus) {
+            return "The next useful move should stay on \(focus.lowercased()): change one observable sentence, then compare it."
+        }
+
+        if let pack = trajectory.latestRepEvidencePack {
+            let mode = shortModeName(pack.mode)
+            if pack.fillerCount > 0 {
+                let noun = pack.fillerCount == 1 ? "filler" : "fillers"
+                return "Use the latest \(mode) rep: replace one of the \(pack.fillerCount) \(noun) with a silent beat, then compare the sentence."
+            }
+            if let excerpt = pack.transcriptExcerpt?.lowercased(),
+               containsAny(excerpt, ["recommend", "recommendation", "decision", "my answer", "i would"]) {
+                return "Use the latest \(mode) rep: keep the verdict first and change only the close."
+            }
+            return "Use the latest \(mode) rep as the sample: change one sentence, then compare it with the original."
+        }
+
+        if let focusLabel {
+            return "The next useful move is \(focusLabel.lowercased()): test one observable change, not a new plan."
+        }
+        return "The next useful move is narrow: test one observable change, not a new plan."
     }
 
     private static func evidenceLines(
@@ -302,6 +348,22 @@ enum CoachReasoningPass {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         parts.append("\(label): \(trimmed)")
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func nonEmpty(_ value: String) -> String? {
+        nonEmpty(Optional(value))
+    }
+
+    private static func statementFragment(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".!?"))
     }
 
     private static func memoryHandoffVerdict(previousCoachReply: String?) -> String {
@@ -434,10 +496,6 @@ enum CoachReasoningPass {
         var candidates: [String] = []
 
         if turnDepth == .trustRepair {
-            if let repairFocus,
-               !repairFocus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                candidates.append("Repair this turn first: name that \(repairFocus), then give one signal and one move.")
-            }
             if containsAny(lower, ["not informative", "not helpful", "missed the point", "doesn't answer", "does not answer"]) {
                 candidates.append("Answer the actual question in sentence one, then give one grounded next move.")
             }
@@ -449,6 +507,10 @@ enum CoachReasoningPass {
             }
             if containsAny(lower, ["it's not easy", "its not easy", "not that easy", "harder than that", "easier said"]) {
                 candidates.append("Make the pressure visible: run the same answer once with a timer and name where it breaks.")
+            }
+            if let repairFocus,
+               !repairFocus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                candidates.append("Repair this turn first: name that \(repairFocus), then give one signal and one move.")
             }
         }
 
@@ -463,6 +525,9 @@ enum CoachReasoningPass {
         }
         if containsAny(lower, ["outcome", "cause", "caused", "landed better", "room seemed", "audience"]) {
             candidates.append("Log the outcome as a field note, then repeat one pressure rep and check the same observable target.")
+        }
+        if isPressureFillerQuestion(lower) {
+            candidates.append(pressureFillerProofTest(from: trajectory))
         }
         if containsAny(lower, ["interview", "answer questions", "tell me about yourself"]) {
             candidates.append("Answer one interview prompt with the recommendation first, one example, then a clean stop.")
@@ -744,6 +809,9 @@ enum CoachReasoningPass {
         if containsAny(lower, ["cold", "robotic", "not human", "low eq", "not high eq"]) {
             return "Rewrite the read with one human acknowledgement and one user-specific signal."
         }
+        if containsAny(lower, ["it's not easy", "its not easy", "not that easy", "harder than that", "easier said"]) {
+            return "Test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it."
+        }
         return nil
     }
 
@@ -777,6 +845,9 @@ enum CoachReasoningPass {
             "how far", "ready", "readiness", "overall", "stand overall",
             "authoritative", "authority", "board", "executive"
            ]) {
+            return "pressure_stability"
+        }
+        if isPressureFillerQuestion(lower) {
             return "pressure_stability"
         }
         if containsAny(lower, ["slow", "pace", "rushing", "too fast", "unsure", "pause", "breath"]) {
@@ -845,6 +916,33 @@ enum CoachReasoningPass {
             if $0.score != $1.score { return $0.score < $1.score }
             return $0.dimensionID < $1.dimensionID
         }.first?.dimensionID
+    }
+
+    private static func isPressureFillerQuestion(_ lower: String) -> Bool {
+        let pressureContext = containsAny(lower, [
+            "pressure", "stakes", "timer", "timed", "under fire", "real room"
+        ])
+        let fillerContext = containsAny(lower, [
+            "filler", "fillers", " um", " uh", " ah",
+            "saying um", "saying uh", "saying ah", "say like"
+        ])
+        let semanticDisambiguation = containsAny(lower, [
+            "semantic", "comparison", "meant it as a comparison",
+            "prompt echo", "prompt made me repeat"
+        ])
+        return pressureContext && fillerContext && !semanticDisambiguation
+    }
+
+    private static func pressureFillerProofTest(from trajectory: UserTrajectorySnapshot) -> String {
+        let fillerCount = trajectory.latestRepEvidencePack?.fillerCount
+        let countPhrase: String
+        if let fillerCount, fillerCount > 0 {
+            let noun = fillerCount == 1 ? "filler" : "fillers"
+            countPhrase = " with \(fillerCount) \(noun)"
+        } else {
+            countPhrase = ""
+        }
+        return "Repeat the latest pressure rep\(countPhrase): replace the filler urge with one silent beat before the final sentence, then finish the ask."
     }
 
     private static func weakestTacticalEvidenceDimensionID(from scores: [RubricScore]) -> String? {

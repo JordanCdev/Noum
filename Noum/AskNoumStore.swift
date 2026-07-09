@@ -261,6 +261,11 @@ struct CoachTurnMetadata: Codable, Equatable {
     var qualityGateOutcome: CoachTurnQualityGateOutcome?
     var qualityGateFailureCount: Int?
     var qualityGateRepairCount: Int?
+    /// Ordered hidden-gate trail as compact log values (for example
+    /// `rejected:semantic:trustRepairMissed`, `repaired:vision:72:bridge`).
+    /// Kept as strings so persisted rows remain independent of draft text and
+    /// of any future in-memory event enum changes.
+    var qualityGateEvents: [String]?
     var assessmentCacheHit: Bool?
     var assessmentCacheAgeMs: Int?
     var immediateCoachReadShown: Bool?
@@ -307,6 +312,7 @@ struct CoachTurnMetadata: Codable, Equatable {
         qualityGateOutcome: CoachTurnQualityGateOutcome? = nil,
         qualityGateFailureCount: Int? = nil,
         qualityGateRepairCount: Int? = nil,
+        qualityGateEvents: [String]? = nil,
         assessmentCacheHit: Bool? = nil,
         assessmentCacheAgeMs: Int? = nil,
         immediateCoachReadShown: Bool? = nil,
@@ -348,6 +354,7 @@ struct CoachTurnMetadata: Codable, Equatable {
         self.qualityGateOutcome = qualityGateOutcome
         self.qualityGateFailureCount = qualityGateFailureCount
         self.qualityGateRepairCount = qualityGateRepairCount
+        self.qualityGateEvents = qualityGateEvents
         self.assessmentCacheHit = assessmentCacheHit
         self.assessmentCacheAgeMs = assessmentCacheAgeMs
         self.immediateCoachReadShown = immediateCoachReadShown

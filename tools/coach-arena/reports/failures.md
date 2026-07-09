@@ -1,4 +1,4 @@
-# Coach Arena failures — run_2026-07-08_22-04-39
+# Coach Arena failures — run_2026-07-09_20-37-41
 
 16 fixture(s) below 70 / capped / missing.
 
@@ -28,6 +28,13 @@ No baseline yet, so start there. Everything else I say sharpens once I've heard 
 Do one Ah-Counter round: 60 seconds on a topic you know cold, aiming to stay under 4 fillers. That gives you a first number and me your starting point.
 ```
 
+- Mirrored production-surface fallback: coldStartJargon via `CoachReliabilityGate.coldStartFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+Start with one real sample. Run a quick 60-second rep on something you know well — how you'd explain what you do to a stranger works nicely. That gives me your real pace, rhythm, and first useful pattern. Want to give it a go?
+```
+
 ## thats-not-informative — **26/100**
 
 - Category: `trust-repair` · turn: `trustRepair` · voice: `concise`
@@ -51,6 +58,13 @@ FINALIZED USER TEXT:
 Fair. That was fluff, not coaching. Your point didn't arrive until sentence four — the first three were warm-up. That's the buried lede. Say the point in sentence one, then back it. Cut the throat-clearing.
 ```
 
+- Mirrored production-surface fallback: notInformativeRepairScaffold via `CoachReliabilityGate.notInformativeRepairFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+Fair. I was too vague. The useful read is that your point arrived in sentence four after three warm-up sentences. Make sentence one the point; let one reason do the supporting.
+```
+
 ## what-voice-should-i-pick — **43/100**
 
 - Category: `goal-change` · turn: `groundedRead` · voice: `none`
@@ -65,6 +79,13 @@ Fair. That was fluff, not coaching. Your point didn't arrive until sentence four
 ```
 REPLY:
 Not being talked over is about presence, so two of the six fit: Authoritative (plain verdicts, hard to interrupt) and Executive presence (calm command in the room). For meetings I'd start with Authoritative — it trains the short, flat line that holds the floor. Tap to confirm and I'll lock it in, or say the word if the room reads more senior and Executive presence fits better.
+```
+
+- Mirrored production-surface fallback: goalStateDirectiveLeak via `CoachReliabilityGate.goalStateDirectiveFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+Start with Authoritative because meetings where you get talked over need short verdicts that hold the floor. Keep Executive presence as the close second if the room is more senior than interrupt-heavy. That gives you one voice to test, not six to debate.
 ```
 
 ## off-topic-egg — **45/100**
@@ -88,6 +109,13 @@ Egg won't sharpen you. This will: today's rep hit 80, 3 fillers, tight and clean
 ```
 FINALIZED USER TEXT:
 Egg won't sharpen you. This will: today's rep, tight and clean. Run one more Timed rep and hold a silent beat where those fillers landed — aim to beat 3.
+```
+
+- Mirrored production-surface fallback: offTopicTestWithDrill via `CoachReliabilityGate.offTopicTestFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+Tiny test. All good. Send the moment you want to practice, and I'll give you one clean read.
 ```
 
 ## goal-change-engaging — **50/100**
@@ -119,6 +147,13 @@ Before you pivot, know your authoritative work is landing: 80 this week, three w
 You started this to stop getting talked over. Tell me what shifted — is that problem solved, or is engaging a way to make authoritative land warmer? That answer picks the voice, then tap to confirm and I'll lock it in.
 ```
 
+- Mirrored production-surface fallback: goalStateDirectiveLeak via `CoachReliabilityGate.goalStateDirectiveFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+Your authoritative work is already landing, so do not throw it away yet. Engaging maps closest to Storytelling, with Warm as the softer backup. Use Storytelling if you need more memorable shape; use Warm if you want the same authority to land with less distance. What changed: are you being heard now, or do you want the same point to land warmer?
+```
+
 ## why-cant-straight-answer — **50/100**
 
 - Category: `trust-repair` · turn: `trustRepair` · voice: `concise`
@@ -140,6 +175,13 @@ Fair. That was waffle. Straight answer: yes. Fillers dropped from 5.5 to 3.2 a m
 ```
 FINALIZED USER TEXT:
 Fair. That was waffle. Straight answer: yes. Fillers dropped from 5.5 to 3.2 a minute over two weeks, and your last rep in 60 seconds — your best on record. What's still moving is pace under pressure. Next rep, hold one silent beat before you answer a hard question and see if the rush eases.
+```
+
+- Mirrored production-surface fallback: straightAnswerSplitMissing via `CoachReliabilityGate.straightAnswerSplitFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+Fair. Straight answer: yes on fillers; no on pace under pressure. Your filler trend is moving the right way, but the rush still shows up when the pressure rises. Next rep, hold one silent beat before the hard answer.
 ```
 
 ## i-ramble — **54/100**
@@ -166,7 +208,14 @@ Next rep: say your point, one line of support, then cut before the first side st
 ```
 FINALIZED USER TEXT:
 You don't lose the thread — you keep adding to it. Yesterday you opened with the actual point, then stacked three side stories before circling back to a weaker version of it. So the fix isn't focus, it's a stop signal.
-say your point, one line of support, then cut before the first side story. One point, then silence. That tests whether those extras were ever carrying weight.
+Say your point, one line of support, then cut before the first side story. One point, then silence. That tests whether those extras were ever carrying weight.
+```
+
+- Mirrored production-surface fallback: rambleStoppingRuleMiss via `CoachReliabilityGate.rambleStoppingRuleFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+You do not lose the thread; you keep reopening it. The tell is the weaker repeat at the end after the side stories. Use a hard stop: state the point, give one support line, then silence.
 ```
 
 ## its-not-easy — **56/100**
@@ -183,6 +232,13 @@ REPLY:
 No, it isn't — and a freeze in the room is a different animal than the reps you keep landing clean. When it hits, what goes first: the thought itself, or the words that were meant to carry it?
 ```
 
+- Mirrored production-surface fallback: vulnerablePushbackQuestionBurden via `CoachReliabilityGate.vulnerablePushbackFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. Keep the next step small: say only the first hard sentence, then stop.
+```
+
 ## greeting-hi — **56/100**
 
 - Category: `greeting` · turn: `greeting` · voice: `authoritative`
@@ -195,6 +251,13 @@ No, it isn't — and a freeze in the room is a different animal than the reps yo
 ```
 REPLY:
 Good to have you back. Yesterday the close held once but softened once, so the target stands: land the final sentence flat and stop, no softener. Run one rep and make the whole point closing clean.
+```
+
+- Mirrored production-surface fallback: greetingWithDrill via `CoachReliabilityGate.greetingFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+Hey — good to see you back. Pick up with the close: land the final sentence flat, then stop.
 ```
 
 ## talk-too-fast — **57/100**
@@ -222,6 +285,13 @@ It's not the speed. Yesterday's rep was clean and scored 71, but pace sat near 2
 So the fix isn't slowing down, it's the pause. Do a 60-second rep and hold one full second of silence after every sentence. That tests whether the gap is what people are actually missing.
 ```
 
+- Mirrored production-surface fallback: paceSelfFrustrationReportVoice via `CoachReliabilityGate.paceSelfFrustrationFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+You're not imagining it: 215 WPM with a 0.09 pause rate means the gap between sentences is disappearing. Fix the pause, not the speed. Next rep, hold one silent beat after every full stop and see if people track you without forcing a slower voice.
+```
+
 ## leadership-update — **60/100**
 
 - Category: `leadership-update` · turn: `deepAssessment` · voice: `executive`
@@ -247,6 +317,13 @@ FINALIZED USER TEXT:
 The room zones out because nine updates all land at the same weight — your last rep was clean at 77, but with no through-line, nothing gets to matter more than anything else.
 For tomorrow: pick the one update that actually changes what they do this week, open on it, and say the "so what" in a sentence before any detail. Let the other eight be a fast list underneath it. One thing leads; everything else supports.
 That tests whether hierarchy is what's been missing.
+```
+
+- Mirrored production-surface fallback: leadershipStatusReportMiss via `CoachReliabilityGate.leadershipStatusReportFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+That is a real risk for tomorrow: if every update lands at the same weight, the room hears a status report. The fix is hierarchy, not delivery polish. Tonight, write the opener as: "The one thing that matters this week is X because Y." Say it aloud three times, then let the other items become quick support.
 ```
 
 ## recurring-close-rush — **61/100**
@@ -277,7 +354,14 @@ Next rep: hit your second-to-last sentence, hold a silent beat, then say the fin
 FINALIZED USER TEXT:
 The open landed — that read came through in today's rep too.
 The one thing to fix is the close. Your last 20 seconds sped up and the final line ran together, and that pattern has shown up in 4 of your last 5 reps. That's the gap between how it felt and how it lands for the room.
-hit your second-to-last sentence, hold a silent beat, then say the final line at half the pace you think you need. That tests whether slowing the exit is enough to make the close stick.
+Hit your second-to-last sentence, hold a silent beat, then say the final line at half the pace you think you need. That tests whether slowing the exit is enough to make the close stick.
+```
+
+- Mirrored production-surface fallback: recurringCloseTrendDiluted via `CoachReliabilityGate.recurringCloseRushFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+That solid feeling is real, and the next edge is specific: the fastest stretch keeps landing at the close. It has shown up in 4 of the last 5 reps with a fast stretch, and 5 of the last 6 overall — a recurring spot, not a trait. Plant one silent beat before the final line.
 ```
 
 ## too-generic — **64/100**
@@ -306,8 +390,15 @@ Next rep: state the raise as one flat sentence — "We're raising X to do Y" —
 ```
 FINALIZED USER TEXT:
 Fair. That read like it could go to anyone, and you deserve better this close to the investor call.
-The specific thing: on that pitch rep you hedged the ask twice — "we're hoping to maybe raise around" instead of the number. For a persuasive pitch, that softens the one line the whole thing turns on, more than your do.
+The specific thing: on that pitch rep you hedged the ask twice — "we're hoping to maybe raise around" instead of the number. For a persuasive pitch, that softens the one line the whole thing turns on, more than the filler words do.
 State the raise as one flat sentence — "We're raising X to do Y" — then stop. That tests whether the ask lands harder when you commit to it.
+```
+
+- Mirrored production-surface fallback: genericRepairScaffolded via `CoachReliabilityGate.genericRepairFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+Fair. That was too generic. The specific pattern is the ask itself. You softened the number instead of stating it. State the raise as one flat sentence, no qualifier, then stop.
 ```
 
 ## what-do-you-know — **64/100**
@@ -335,6 +426,13 @@ Here's the shape of it: you came in five weeks ago wanting to sound like yoursel
 So the thing to test: next rep, hold one silent beat before you answer a hard question. If the words come out steadier after it, that tells us the rush really is the anxiety talking.
 ```
 
+- Mirrored production-surface fallback: metadataSelfKnowledgeMiss via `CoachReliabilityGate.metadataSelfKnowledgeFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+Real read, not a script: you came in wanting to sound like yourself in hard conversations. The pattern I know is that tense moments make you race to fill silence; the numbers I can safely name are a pace baseline around 170 WPM and a 12-day streak. That is what I know. I will wait on a next drill until you ask for one.
+```
+
 ## set-authoritative — **65/100**
 
 - Category: `goal-change` · turn: `groundedRead` · voice: `none`
@@ -349,6 +447,13 @@ So the thing to test: next rep, hold one silent beat before you answer a hard qu
 ```
 REPLY:
 Authoritative it is — that's a verdict-first register: state the point, give one reason, and stop clean without hedging. I can't flip that switch myself, so tap the card to confirm and I'll lock it in. Then run one 60-second rep where every answer opens with the recommendation before any setup — that tests whether you can lead with the call under a little pressure.
+```
+
+- Mirrored production-surface fallback: goalStateDirectiveLeak via `CoachReliabilityGate.goalStateDirectiveFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+Authoritative is a sensible recommendation: verdict first, one reason, clean stop. Treat it as the voice to try next; the practice test is a 60-second answer where sentence one carries the recommendation.
 ```
 
 ## youre-repeating-yourself — **69/100**
@@ -374,5 +479,12 @@ New target: pace. Record 60 seconds and deliberately slow your three most import
 FINALIZED USER TEXT:
 Fair. I did. That rep with a clean close — no reason to run it again.
 New target: pace. Record 60 seconds and deliberately slow your three most important words, holding a silent beat before each. That tests whether the weight lands harder than speed did.
+```
+
+- Mirrored production-surface fallback: repetitionCourseCorrectionMiss via `CoachReliabilityGate.repetitionCourseCorrectionFallback` · replay score remains raw
+
+```
+MIRRORED USER-VISIBLE TEXT:
+Fair. I did repeat the same target. You led cleanly and the close held, so there is no reason to run that drill again. New target: pace. Slow the three words that carry the point, then hold one silent beat before the next sentence.
 ```
 

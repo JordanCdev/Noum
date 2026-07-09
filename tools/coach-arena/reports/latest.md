@@ -1,7 +1,7 @@
-# Coach Arena — run_2026-07-08_22-04-39
+# Coach Arena — run_2026-07-09_20-37-41
 
 Provider: `replay` · coach model: `claude-sonnet-4-6` · judge model: `claude-sonnet-4-6`
-Git: `da978b2f` on `ux-overhaul` (+19 dirty) · prompt: CoachContextBuilder.swift@08e780cddc2e2106, AICoachChatService.swift@ce7da401a3545fb8
+Git: `a556f772` on `ux-overhaul` (+82 dirty) · prompt: CoachContextBuilder.swift@08e780cddc2e2106, AICoachChatService.swift@7dfe96d234d1c588
 
 ## Headline
 
@@ -16,7 +16,7 @@ Git: `da978b2f` on `ux-overhaul` (+19 dirty) · prompt: CoachContextBuilder.swif
 | Placeholder leaks | 2 | 0 | ❌ |
 
 Scored 51/51 fixtures · range 22–88 · median 74.
-Finalizer changed 40 generated replies before user display (displaySanitizer 36, reportVoiceResidue 16). 40 replay judge(s) remain scored against raw captured text.
+Finalizer changed 40 generated replies before user display (displaySanitizer 36, reportVoiceResidue 14). 40 replay judge(s) remain scored against raw captured text.
 
 ## Report lens and canonical paths
 
@@ -27,11 +27,11 @@ Finalizer changed 40 generated replies before user display (displaySanitizer 36,
 | Comparable app-path report | `tools/coach-arena/reports/app-path/latest.md` |
 | App-path source of truth | canonical `tools/coach-arena/reports/app-path/` only |
 | Nested duplicate app-path path | stale duplicate present at tools/coach-arena/tools/coach-arena/reports/app-path/latest.json (generated 2026-07-05T23:09:49+00:00); ignore this path |
-| Latest canonical app-path generated | `2026-07-08T22:04:17+00:00` |
-| Latest canonical app-path average | `78.56/100` |
+| Latest canonical app-path generated | `2026-07-09T04:35:19+00:00` |
+| Latest canonical app-path average | `77.92/100` |
 | App-path evidence gate (incl. source freshness) | `false` · claim `localEvaluationOnly` |
-| App-path trace-level quality (traces real/complete/unique) | `false` |
-| Latest canonical app-path leaks/failures | leaks `0` · failures `0` |
+| App-path trace-level quality (traces real/complete/unique) | `true` |
+| Latest canonical app-path leaks/failures | leaks `1` · failures `2` |
 | Latest canonical app-path VISION boundary | score `18` · claim `localEvaluationSubstrateOnly` |
 
 ## Prompt-cache usage (this run)
@@ -45,13 +45,13 @@ Diagnostic only: replay judge scores remain tied to raw captured replies, and re
 | Metric | Value |
 |---|---|
 | Replies checked | 51 |
-| Changed from scored reply | 40 |
-| Reliability fallback mirrored | 1 |
-| Replies with deterministic hard caps | 4 |
-| Likely blocked/repaired by live gate | 4 |
+| Changed from scored reply | 47 |
+| Reliability fallback mirrored | 28 |
+| Replies with deterministic hard caps | 0 |
+| Likely blocked/repaired by live gate | 0 |
 | No production backstop identified | 0 |
 | Placeholder/fallback leaks after surface mirror | 0 |
-| Cap breakdown | voiceIntegrity 4 |
+| Cap breakdown | none |
 | Unbacked capped fixture IDs | none |
 
 ## App-path evidence

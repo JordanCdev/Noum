@@ -606,6 +606,17 @@ function renderFailures(run) {
         L.push(r.finalizer.finalizedReply || '(empty)');
         L.push('```');
       }
+      if (r.userVisible?.reliabilityGate?.changed) {
+        const gate = r.userVisible.reliabilityGate;
+        const issues = (gate.issues || []).join(', ') || 'unknown';
+        L.push('');
+        L.push(`- Mirrored production-surface fallback: ${issues} via \`${gate.source || 'unknown'}\` · replay score remains raw`);
+        L.push('');
+        L.push('```');
+        L.push('MIRRORED USER-VISIBLE TEXT:');
+        L.push(r.userVisible.reply || '(empty)');
+        L.push('```');
+      }
     } else {
       L.push(`- ${r.note || 'missing capture'}`);
     }
@@ -614,4 +625,4 @@ function renderFailures(run) {
   return L.join('\n') + '\n';
 }
 
-export { THRESH };
+export { THRESH, renderFailures };
