@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import plistlib
 import re
 import subprocess
 import sys
@@ -925,6 +926,60 @@ def operational_static_preflight(repo_root=REPO_ROOT):
             "Keep Noum/AIConfig.plist in .gitignore, keep "
             "Noum/AIConfig.plist.example checked in, and remove any tracked "
             "AIConfig.plist from the repository index."
+        ),
+    )
+
+    privacy_manifest_path = root / "Noum/PrivacyInfo.xcprivacy"
+    privacy_manifest = None
+    privacy_manifest_error = None
+    if privacy_manifest_path.is_file():
+        try:
+            with privacy_manifest_path.open("rb") as manifest_file:
+                privacy_manifest = plistlib.load(manifest_file)
+        except (OSError, plistlib.InvalidFileException) as exc:
+            privacy_manifest_error = type(exc).__name__
+    if privacy_manifest is not None and not isinstance(privacy_manifest, dict):
+        privacy_manifest_error = "invalidTopLevelType"
+        privacy_manifest = None
+    collected_data = {
+        item.get("NSPrivacyCollectedDataType"): item
+        for item in (privacy_manifest or {}).get("NSPrivacyCollectedDataTypes", [])
+        if isinstance(item, dict) and item.get("NSPrivacyCollectedDataType")
+    }
+    required_user_content_types = {
+        "NSPrivacyCollectedDataTypeOtherUserContent",
+        "NSPrivacyCollectedDataTypePhotosorVideos",
+    }
+    invalid_user_content_types = []
+    for data_type in sorted(required_user_content_types):
+        item = collected_data.get(data_type) or {}
+        purposes = item.get("NSPrivacyCollectedDataTypePurposes") or []
+        if (
+            item.get("NSPrivacyCollectedDataTypeLinked") is not True
+            or item.get("NSPrivacyCollectedDataTypeTracking") is not False
+            or "NSPrivacyCollectedDataTypePurposeAppFunctionality" not in purposes
+        ):
+            invalid_user_content_types.append(data_type)
+    privacy_user_content_disclosed = (
+        privacy_manifest is not None and not invalid_user_content_types
+    )
+    add(
+        "privacyManifestUserContentDisclosure",
+        "privacyManifestUserContentDisclosure",
+        privacy_user_content_disclosed,
+        (
+            "linkedNonTrackingAppFunctionality"
+            if privacy_user_content_disclosed
+            else privacy_manifest_error
+            or "missingOrInvalid:" + ",".join(invalid_user_content_types)
+        ),
+        (
+            "The app privacy manifest must disclose user-authored coaching content "
+            "and optional video frames as linked, non-tracking app-functionality data."
+        ),
+        (
+            "Declare Other User Content and Photos or Videos in "
+            "Noum/PrivacyInfo.xcprivacy with the shipping linkage and purpose."
         ),
     )
 

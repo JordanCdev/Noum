@@ -1,4 +1,5 @@
 import json
+import plistlib
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -108,6 +109,29 @@ service cloud.firestore {
     )
     (root / "public/index.html").write_text("<title>Noum</title>", encoding="utf-8")
     (root / "Noum/PrivacyPolicy.md").write_text("# Privacy Policy\n", encoding="utf-8")
+    (root / "Noum/PrivacyInfo.xcprivacy").write_bytes(plistlib.dumps({
+        "NSPrivacyTracking": False,
+        "NSPrivacyTrackingDomains": [],
+        "NSPrivacyCollectedDataTypes": [
+            {
+                "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeOtherUserContent",
+                "NSPrivacyCollectedDataTypeLinked": True,
+                "NSPrivacyCollectedDataTypeTracking": False,
+                "NSPrivacyCollectedDataTypePurposes": [
+                    "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+                ],
+            },
+            {
+                "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePhotosorVideos",
+                "NSPrivacyCollectedDataTypeLinked": True,
+                "NSPrivacyCollectedDataTypeTracking": False,
+                "NSPrivacyCollectedDataTypePurposes": [
+                    "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+                ],
+            },
+        ],
+        "NSPrivacyAccessedAPITypes": [],
+    }))
     (root / "Noum/NoumWebURLs.swift").write_text(
         'static let privacy = URL(string: "https://noum-d0b6f.web.app/privacy")!',
         encoding="utf-8",
@@ -660,6 +684,46 @@ class ReadinessGateTests(unittest.TestCase):
                     "aiConfigRepositorySecretBoundary",
                     [item["key"] for item in preflight["failures"]],
                 )
+
+    def test_operational_static_preflight_requires_user_content_privacy_disclosures(self):
+        required_types = {
+            "NSPrivacyCollectedDataTypeOtherUserContent",
+            "NSPrivacyCollectedDataTypePhotosorVideos",
+        }
+        for missing_type in required_types:
+            with self.subTest(missing_type=missing_type), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                write_static_ops_repo(root)
+                manifest_path = root / "Noum/PrivacyInfo.xcprivacy"
+                with manifest_path.open("rb") as manifest_file:
+                    manifest = plistlib.load(manifest_file)
+                manifest["NSPrivacyCollectedDataTypes"] = [
+                    item for item in manifest["NSPrivacyCollectedDataTypes"]
+                    if item["NSPrivacyCollectedDataType"] != missing_type
+                ]
+                manifest_path.write_bytes(plistlib.dumps(manifest))
+
+                preflight = gate.operational_static_preflight(root)
+
+                self.assertIn(
+                    "privacyManifestUserContentDisclosure",
+                    [item["key"] for item in preflight["failures"]],
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            (root / "Noum/PrivacyInfo.xcprivacy").write_bytes(
+                plistlib.dumps(["not", "a", "dictionary"])
+            )
+
+            preflight = gate.operational_static_preflight(root)
+
+            failure = next(
+                item for item in preflight["failures"]
+                if item["key"] == "privacyManifestUserContentDisclosure"
+            )
+            self.assertEqual(failure["observed"], "invalidTopLevelType")
 
     def test_operational_static_preflight_flags_missing_privacy_rewrite(self):
         with tempfile.TemporaryDirectory() as temp_dir:
