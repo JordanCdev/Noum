@@ -536,6 +536,13 @@ struct SummaryView: View {
         return Array(messages.prefix(3))
     }
 
+    /// Parent-level choreography delay. Child celebration views already
+    /// collapse their own motion; this also removes the otherwise invisible
+    /// waits between them when Reduce Motion is enabled.
+    private func motionDelay(_ fullMotionDuration: Double) -> Double {
+        reduceMotion ? 0 : fullMotionDuration
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -554,18 +561,18 @@ struct SummaryView: View {
                     achievementProgress: progressionDeltas,
                     newUnlocks: progressionNewUnlocks,
                     onContinue: {
-                        withAnimation(.easeInOut(duration: 0.4)) {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
                             showProgressionScreen = false
                             // Chain: level-up → personal best → pre-summary → summary
                             if levelUpPreviousLevel != levelUpNewLevel && !levelUpNewLevel.isEmpty {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                    withAnimation(.easeInOut(duration: 0.4)) {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + motionDelay(0.5)) {
+                                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
                                         showLevelUpScreen = true
                                     }
                                 }
                             } else if personalBestMilestone != nil {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                    withAnimation(.easeInOut(duration: 0.4)) {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + motionDelay(0.5)) {
+                                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
                                         showPersonalBestScreen = true
                                     }
                                 }
@@ -575,7 +582,7 @@ struct SummaryView: View {
                         }
                     }
                 )
-                .transition(.opacity)
+                .transition(reduceMotion ? .identity : .opacity)
             } else if showLevelUpScreen {
                 // Full-screen practice-volume milestone. Detection still keys
                 // off the legacy levelUpPreviousLevel/levelUpNewLevel strings;
@@ -587,14 +594,14 @@ struct SummaryView: View {
                     xp: profile.xp,
                     xpProgress: progress,
                     onContinue: {
-                        withAnimation(.easeInOut(duration: 0.4)) {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
                             showLevelUpScreen = false
                             // Chain to personal best if needed, otherwise
                             // fall through to the skill-level-up sequence
                             // before the summary content lands.
                             if personalBestMilestone != nil {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                    withAnimation(.easeInOut(duration: 0.4)) {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + motionDelay(0.5)) {
+                                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
                                         showPersonalBestScreen = true
                                     }
                                 }
@@ -604,11 +611,11 @@ struct SummaryView: View {
                         }
                     }
                 )
-                .transition(.opacity)
+                .transition(reduceMotion ? .identity : .opacity)
             } else if showPersonalBestScreen, let milestone = personalBestMilestone {
                 // Full-screen personal best celebration (intermediary before summary)
                 personalBestCelebration(milestone: milestone)
-                    .transition(.opacity)
+                    .transition(reduceMotion ? .identity : .opacity)
             } else if showPreSummaryCelebration, !preSummaryEvents.isEmpty {
                 // Skill level-up celebration sequence — plays each
                 // pending SkillLevelUpEvent one at a time before the
@@ -616,11 +623,11 @@ struct SummaryView: View {
                 // stack inside the hero (which competed with the score
                 // and added visual noise on multi-event reps).
                 PreSummaryCelebration(events: preSummaryEvents) {
-                    withAnimation(.easeInOut(duration: 0.4)) {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
                         showPreSummaryCelebration = false
                     }
                 }
-                .transition(.opacity)
+                .transition(reduceMotion ? .identity : .opacity)
             } else {
                 // Normal summary content — redesigned hierarchy
                 ScrollView(showsIndicators: false) {
@@ -758,6 +765,19 @@ struct SummaryView: View {
                                 )
                                 .cardEntrance(3)
                             }
+                            // The prescribed action belongs directly after
+                            // FIX FIRST, while the user's read is still in
+                            // working memory. It reuses the same recommendation
+                            // and routing callbacks the former bottom panel did.
+                            SummaryDrillActionCard(
+                                drill: drillRecommendationV2,
+                                legacyDrill: drillRecommendation,
+                                onStartMiniDrill: { drill in
+                                    activeMiniDrill = drill
+                                },
+                                onStartDrill: onStartDrill
+                            )
+                            .cardEntrance(4)
                             // Slot 4.5 — exactly ONE Ask/Pro surface:
                             // premium gets the quiet Ask-Noum row, free
                             // gets the single merged Pro card (upsell
@@ -773,26 +793,19 @@ struct SummaryView: View {
                                         showPaywall = true
                                     }
                                 )
-                                .cardEntrance(4)
+                                .cardEntrance(5)
                             } else {
-                                proPreviewCard.cardEntrance(4)
+                                proPreviewCard.cardEntrance(5)
                             }
-                            expandableDetailsSection.cardEntrance(5)
-                            // Slot 5 — bottom exit panel: the prescribed
-                            // drill is the primary action, Done the ghost
-                            // secondary. Replaces the pinned action bar so
-                            // leaving means scrolling through the feedback.
+                            expandableDetailsSection.cardEntrance(6)
+                            // Slot 5 — the single bottom exit. The prescribed
+                            // drill now sits beside FIX FIRST above; Done stays
+                            // last and is never duplicated.
                             SummaryExitPanel(
-                                drill: drillRecommendationV2,
-                                legacyDrill: drillRecommendation,
-                                onStartMiniDrill: { drill in
-                                    activeMiniDrill = drill
-                                },
-                                onStartDrill: onStartDrill,
                                 onDone: onHome,
                                 onPracticeAgain: onPracticeAgain
                             )
-                            .cardEntrance(6)
+                            .cardEntrance(7)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -854,7 +867,7 @@ struct SummaryView: View {
                 .accessibilityAction(named: Text("Done")) {
                     onHome()
                 }
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .bottom)))
 
                 if celebrationVisible && !reduceMotion {
                     celebrationOverlay
@@ -872,7 +885,7 @@ struct SummaryView: View {
                         detail: milestone.detail,
                         onDismiss: { activeMilestone = nil }
                     )
-                    .transition(.opacity)
+                    .transition(reduceMotion ? .identity : .opacity)
                     .zIndex(10)
                 }
             }
@@ -1968,7 +1981,7 @@ struct SummaryView: View {
             modeName: currentMode.displayLabel,
             previousBest: milestone.detail,
             onContinue: {
-                withAnimation(.easeInOut(duration: 0.4)) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
                     showPersonalBestScreen = false
                 }
                 advanceToPreSummaryIfNeeded()
@@ -1988,8 +2001,8 @@ struct SummaryView: View {
     /// drained the snapshot.
     private func advanceToPreSummaryIfNeeded() {
         guard !preSummaryEvents.isEmpty, !showPreSummaryCelebration else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-            withAnimation(.easeInOut(duration: 0.4)) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + motionDelay(0.45)) {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
                 showPreSummaryCelebration = true
             }
         }
@@ -2049,7 +2062,7 @@ struct SummaryView: View {
         }
         let proof = await ProofMomentService.shared.proof(for: input)
         await MainActor.run {
-            withAnimation(.standardSpring) {
+            withAnimation(reduceMotion ? nil : .standardSpring) {
                 personalBestProof = proof
             }
         }
@@ -2215,23 +2228,27 @@ struct SummaryView: View {
                     showLevelUpScreen = true
                 }
             } else {
+                let milestoneDelay = motionDelay(showProgressionScreen ? 0.5 : 2.2)
                 Task {
-                    try? await Task.sleep(for: .seconds(showProgressionScreen ? 0.5 : 2.2))
+                    if milestoneDelay > 0 {
+                        try? await Task.sleep(for: .seconds(milestoneDelay))
+                    }
                     await MainActor.run {
-                        withAnimation(.standardSpring) { activeMilestone = milestone }
+                        withAnimation(reduceMotion ? nil : .standardSpring) { activeMilestone = milestone }
                     }
                 }
             }
         }
 
         // Score celebration + coach note reveal (delayed if progression screen is showing)
-        let celebrationDelay: Double = showProgressionScreen ? 0.5 : 0
+        let celebrationDelay = motionDelay(showProgressionScreen ? 0.5 : 0)
+        let revealDelay = motionDelay(0.8)
         Task {
             if celebrationDelay > 0 {
                 try? await Task.sleep(for: .seconds(celebrationDelay))
             }
             await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.35)) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.35)) {
                     // Reward ownership (Iteration 1): the full celebration fires
                     // ONLY on a real crossing detected by SessionFinalizer (personal
                     // best / level-up / streak / count milestone) — never on a score
@@ -2245,13 +2262,17 @@ struct SummaryView: View {
                     )
                 }
             }
-            try? await Task.sleep(for: .seconds(0.8))
-            await MainActor.run {
-                withAnimation(.easeOut(duration: 0.4)) { coachNoteRevealed = true }
+            if revealDelay > 0 {
+                try? await Task.sleep(for: .seconds(revealDelay))
             }
-            try? await Task.sleep(for: .seconds(0.8))
             await MainActor.run {
-                withAnimation(.easeOut(duration: 0.35)) { celebrationVisible = false }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.4)) { coachNoteRevealed = true }
+            }
+            if revealDelay > 0 {
+                try? await Task.sleep(for: .seconds(revealDelay))
+            }
+            await MainActor.run {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.35)) { celebrationVisible = false }
             }
         }
 
@@ -2411,7 +2432,20 @@ struct SummaryView: View {
     }
 
     private func animateXP(to endXP: Int) {
+        let shouldReduceMotion = reduceMotion
         Task {
+            if shouldReduceMotion {
+                await MainActor.run {
+                    displayedXP = endXP
+                    progress = ProfileManager.progressTowardsNextLevel(forXP: endXP)
+                    currentLevel = ProfileManager.levelTitle(forXP: endXP)
+                    nextLevel = ProfileManager.levelTitle(forXP: ((endXP / 1000) + 1) * 1000)
+                    xpToNext = ProfileManager.xpNeededToNextLevel(forXP: endXP)
+                    CoachHaptic.xpEarned()
+                }
+                return
+            }
+
             let startXP = displayedXP
             for xp in stride(from: startXP, through: endXP, by: 1) {
                 await MainActor.run {

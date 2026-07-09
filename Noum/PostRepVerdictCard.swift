@@ -511,18 +511,15 @@ struct PostRepFixCard: View {
     }
 }
 
-// MARK: - Slot 5 — Bottom exit panel
+// MARK: - Bottom exit panel
 
 /// The ONE in-scroll exit, rendered as the LAST element of the summary
 /// content (owner decision, docs/UX_VISUAL_DIRECTION.md: exit lives at
 /// the BOTTOM — the user scrolls through the feedback before leaving).
-/// Re-homes the old `PostRepVerdictCard.drillCTA` verbatim: same
-/// miniDrill / full-retry format split, same closures, and the SAME
-/// button accessibility ids (`summary.postRepVerdict.startMiniDrill` /
-/// `startFullRetry` / `fullRetry`) pinned by NoumUITests. The primary
-/// pill is the approved blue; "Done" stays a ghost/outline secondary.
-/// IM reps pass no drill (IMOneMoveCard already carries Try Again /
-/// New Chat) and render Done only.
+/// "Done" stays a ghost/outline action. Its optional drill inputs remain
+/// source-compatible for other call sites and compose the same shared
+/// `SummaryDrillActionCard`; SummaryView now mounts that card beside
+/// FIX FIRST and passes no drill here so Done remains the final action.
 @available(iOS 17.0, *)
 struct SummaryExitPanel: View {
     var drill: DrillRecommendationV2? = nil
@@ -548,55 +545,68 @@ struct SummaryExitPanel: View {
     var body: some View {
         VStack(spacing: 14) {
             if let drill {
-                drillBlock(drill)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier(AccessibilityID.drill)
+                SummaryDrillActionCard(
+                    drill: drill,
+                    legacyDrill: legacyDrill,
+                    onStartMiniDrill: onStartMiniDrill,
+                    onStartDrill: onStartDrill
+                )
             }
 
-            Button(action: onDone) {
-                Text("Done")
-                    .font(Typography.body.weight(.semibold))
-                    .foregroundStyle(AppColor.textPrimary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                            .stroke(AppColor.textSecondary.opacity(0.35), lineWidth: 1)
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-            }
-            .buttonStyle(.pressable)
-            .accessibilityIdentifier(AccessibilityID.done)
-            .accessibilityLabel("Done")
-            .accessibilityHint("Finishes the review and returns home.")
-
-            if let onPracticeAgain {
-                Button(action: onPracticeAgain) {
-                    Text("Practice again")
-                        .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(AppColor.textSecondary)
+            VStack(spacing: 14) {
+                Button(action: onDone) {
+                    Text("Done")
+                        .font(Typography.body.weight(.semibold))
+                        .foregroundStyle(AppColor.textPrimary)
                         .frame(maxWidth: .infinity)
-                        .frame(minHeight: 32)
-                        .contentShape(Rectangle())
+                        .padding(.vertical, 13)
+                        .background(
+                            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                                .stroke(AppColor.textSecondary.opacity(0.35), lineWidth: 1)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier(AccessibilityID.practiceAgain)
-                .accessibilityLabel("Practice again")
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier(AccessibilityID.done)
+                .accessibilityLabel("Done")
+                .accessibilityHint("Finishes the review and returns home.")
+
+                if let onPracticeAgain {
+                    Button(action: onPracticeAgain) {
+                        Text("Practice again")
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(AppColor.textSecondary)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier(AccessibilityID.practiceAgain)
+                    .accessibilityLabel("Practice again")
+                }
             }
+            .padding(18)
+            .frame(maxWidth: .infinity)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
         }
-        .padding(18)
         .frame(maxWidth: .infinity)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.root)
     }
+}
 
-    // The old drillCTA, re-homed. Format split + closures unchanged;
-    // the primary pill takes the approved blue (UX_VISUAL_DIRECTION:
-    // "primary Start 45-second drill (blue pill)").
-    @ViewBuilder
-    private func drillBlock(_ drill: DrillRecommendationV2) -> some View {
+/// The shared prescribed-drill renderer used beside FIX FIRST and by the
+/// backwards-compatible `SummaryExitPanel` drill API. It is deliberately
+/// presentation-only: recommendation ownership and routing stay with callers.
+@available(iOS 17.0, *)
+struct SummaryDrillActionCard: View {
+    let drill: DrillRecommendationV2
+    var legacyDrill: DrillRecommendation? = nil
+    var onStartMiniDrill: ((DrillRecommendationV2) -> Void)? = nil
+    var onStartDrill: ((DrillRecommendation) -> Void)? = nil
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(drill.title)
                 .font(Typography.body.weight(.semibold))
@@ -614,7 +624,7 @@ struct SummaryExitPanel: View {
                     ctaLabel("Start 45s drill", systemImage: "bolt.fill")
                 }
                 .buttonStyle(.pressable)
-                .accessibilityIdentifier(AccessibilityID.startMiniDrill)
+                .accessibilityIdentifier(SummaryExitPanel.AccessibilityID.startMiniDrill)
                 .accessibilityHint("Starts the short drill Noum prescribed from this rep.")
 
                 if let onStartDrill, let legacyDrill {
@@ -629,7 +639,7 @@ struct SummaryExitPanel: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityIdentifier(AccessibilityID.fullRetry)
+                    .accessibilityIdentifier(SummaryExitPanel.AccessibilityID.fullRetry)
                     .accessibilityHint("Starts a full retry of the recommended practice.")
                 }
             } else if drill.format != .miniDrill, let onStartDrill, let legacyDrill {
@@ -639,7 +649,7 @@ struct SummaryExitPanel: View {
                     ctaLabel("Start full retry", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.pressable)
-                .accessibilityIdentifier(AccessibilityID.startFullRetry)
+                .accessibilityIdentifier(SummaryExitPanel.AccessibilityID.startFullRetry)
                 .accessibilityHint("Starts a full retry of the recommended practice.")
 
                 if let onStartMiniDrill {
@@ -654,7 +664,7 @@ struct SummaryExitPanel: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityIdentifier(AccessibilityID.secondaryMiniDrill)
+                    .accessibilityIdentifier(SummaryExitPanel.AccessibilityID.secondaryMiniDrill)
                     .accessibilityHint("Starts the short drill Noum prescribed from this rep.")
                 }
             } else if let onStartMiniDrill {
@@ -664,10 +674,16 @@ struct SummaryExitPanel: View {
                     ctaLabel("Start 45s drill", systemImage: "bolt.fill")
                 }
                 .buttonStyle(.pressable)
-                .accessibilityIdentifier(AccessibilityID.startMiniDrill)
+                .accessibilityIdentifier(SummaryExitPanel.AccessibilityID.startMiniDrill)
                 .accessibilityHint("Starts the short drill Noum prescribed from this rep.")
             }
         }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(SummaryExitPanel.AccessibilityID.drill)
     }
 
     private func ctaLabel(_ text: String, systemImage: String) -> some View {
