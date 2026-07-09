@@ -126,7 +126,7 @@
 
   <div class="card">
     <h1>Privacy Policy</h1>
-    <p class="muted"><strong>Last updated:</strong> April 14, 2026</p>
+    <p class="muted"><strong>Last updated:</strong> July 9, 2026</p>
     <p>Noum ("we", "us", "our") is a speaking practice app that helps you improve your communication skills through guided exercises, AI coaching, and conversation simulations. This policy explains what data we collect, why, who processes it, and how you can control it.</p>
 
     <hr>
@@ -154,19 +154,26 @@
     <h3>Speech Transcripts and Session Data</h3>
     <p>When you use a practice mode, the app:</p>
     <ul>
-      <li>Streams your audio to <strong>Amazon Web Services (AWS) Transcribe</strong> for real-time speech-to-text conversion</li>
+      <li>Streams your audio to the configured speech-to-text provider for real-time transcription. The shipping providers are <strong>Deepgram</strong> (the default), <strong>Amazon Web Services (AWS) Transcribe</strong>, and <strong>Google Cloud Speech-to-Text</strong></li>
       <li>Stores the resulting text transcript, filler-word count, session duration, score, and practice mode on your device</li>
-      <li>Optionally sends the transcript to an AI provider for coaching feedback (only when you tap "Generate Coach Read")</li>
+      <li>May send the transcript and relevant session evidence to a generative-AI provider when you use a cloud coaching feature, such as Coach Read, conversation simulation, or Ask Noum</li>
     </ul>
-    <p>Audio is streamed in real time and is <strong>not stored</strong> on your device or our servers as audio files.</p>
+    <p>For short Ask Noum voice questions, the app first uses the configured cloud transcription provider and may fall back to Apple Speech Recognition. Apple determines whether that fallback is processed on-device or by Apple for the device, language, and system configuration.</p>
+    <p>Noum does not save the streamed microphone audio as an audio file on your device or Noum's servers. Speech-to-text providers process the stream under their own terms and retention practices.</p>
 
     <h3>AI Coaching Feedback</h3>
-    <p>When you request AI coaching analysis, your speech transcript (and optionally video frames for nonverbal feedback) is sent to one of the following AI providers:</p>
+    <p>When you use a cloud AI coaching feature, Noum sends the information needed to answer that request. Depending on the feature, configuration, and fallback routing, a request may be processed by one or more of the following providers:</p>
     <ul>
       <li><strong>Google Gemini</strong></li>
+      <li><strong>Anthropic Claude</strong></li>
       <li><strong>OpenAI</strong></li>
+      <li><strong>DeepSeek</strong></li>
     </ul>
-    <p>These providers process your transcript under their respective API data terms. Under their API terms, your data is <strong>not used to train their AI models</strong>.</p>
+    <p>For <strong>Ask Noum</strong>, this includes your current message, a bounded number of recent conversation turns, and bounded coaching context and session evidence. When available and relevant, that context may include your coaching profile and goals, recent session metrics or transcript evidence, saved proof quotes, coaching memory, plans, reflections, or an upcoming speaking moment. Noum limits the context assembled for each request; it does not send an unbounded copy of your on-device history.</p>
+    <p>Other AI features may send a speech transcript and related coaching context, and may send selected video frames when you explicitly request nonverbal feedback. Providers process data under their own API terms, privacy policies, account settings, and retention practices. Those practices vary and can include temporary or longer retention for service operation, safety, abuse prevention, or legal compliance; Noum does not promise zero provider-side retention.</p>
+
+    <h3>Spoken AI Replies</h3>
+    <p>When spoken replies or prompt readout are enabled, the text to be spoken may be sent to <strong>Google Cloud Text-to-Speech</strong>. If that service is unavailable or not configured, <strong>OpenAI Text-to-Speech</strong> may be used as the cloud fallback. An Apple on-device voice may be used as a terminal fallback on supported devices; that fallback does not send the text to Google Cloud or OpenAI for synthesis.</p>
 
     <h3>Video Recordings</h3>
     <ul>
@@ -197,7 +204,7 @@
       <li><strong>Camera</strong> — optional, for video recording during practice</li>
       <li><strong>Contacts</strong> — optional, only if you choose to add friends from your contacts (only names are imported; phone numbers are not stored)</li>
       <li><strong>Notifications</strong> — optional, for practice reminders</li>
-      <li><strong>Speech Recognition</strong> — for on-device speech processing</li>
+      <li><strong>Speech Recognition</strong> — for optional Ask Noum voice input and Apple transcription fallback; Apple may process recognition on-device or through its service depending on system availability</li>
     </ul>
 
     <hr>
@@ -206,11 +213,12 @@
     <table>
       <thead><tr><th>Purpose</th><th>Data Used</th></tr></thead>
       <tbody>
-        <tr><td>Real-time speech-to-text</td><td>Audio stream (sent to AWS Transcribe)</td></tr>
-        <tr><td>AI coaching feedback</td><td>Speech transcript, coaching profile, optionally video frames (sent to Google Gemini or OpenAI)</td></tr>
+        <tr><td>Real-time speech-to-text</td><td>Audio stream (sent to Deepgram, AWS Transcribe, or Google Cloud Speech-to-Text; Ask Noum voice input may use Apple Speech Recognition as a fallback)</td></tr>
+        <tr><td>AI coaching feedback</td><td>Speech transcript or Ask Noum message, recent conversation turns, bounded coaching context and session evidence, and optionally selected video frames (sent to configured Google, Anthropic, OpenAI, or DeepSeek services)</td></tr>
         <tr><td>Personalised coaching</td><td>Coaching profile, session history</td></tr>
         <tr><td>Progress tracking</td><td>Session scores, XP, streaks, challenge completion</td></tr>
-        <tr><td>Conversation simulation</td><td>IM conversation turns, relationship profiles</td></tr>
+        <tr><td>Conversation simulation</td><td>IM conversation turns and relevant relationship/context fields sent to the configured AI provider</td></tr>
+        <tr><td>Spoken replies and prompt readout</td><td>Text to be spoken (sent to Google Cloud Text-to-Speech or OpenAI Text-to-Speech when cloud speech is used)</td></tr>
         <tr><td>Practice reminders</td><td>Notification preferences, coaching context (not user-authored text)</td></tr>
         <tr><td>Account management</td><td>Account ID, auth provider</td></tr>
       </tbody>
@@ -223,11 +231,16 @@
     <table>
       <thead><tr><th>Service</th><th>Data Shared</th><th>Purpose</th></tr></thead>
       <tbody>
-        <tr><td><strong>AWS Transcribe</strong> (Amazon)</td><td>Real-time audio stream</td><td>Speech-to-text transcription. Audio is not stored after processing.</td></tr>
-        <tr><td><strong>Google Gemini</strong> (Google)</td><td>Speech transcript, coaching profile, optionally video frames</td><td>AI coaching feedback. API data is not used for model training.</td></tr>
-        <tr><td><strong>OpenAI</strong></td><td>Speech transcript, coaching profile, optionally video frames</td><td>AI coaching feedback. API data is not used for model training.</td></tr>
-        <tr><td><strong>Google Cloud Text-to-Speech</strong></td><td>Text prompts for voice synthesis</td><td>AI character voices in conversation mode.</td></tr>
-        <tr><td><strong>Firebase</strong> (Google)</td><td>Account ID, display name, optionally synced profile/session data</td><td>Authentication and optional cloud sync.</td></tr>
+        <tr><td><strong>Deepgram</strong></td><td>Real-time audio stream</td><td>Default speech-to-text transcription. <a href="https://deepgram.com/terms">Deepgram Terms</a>.</td></tr>
+        <tr><td><strong>AWS Transcribe</strong> (Amazon)</td><td>Real-time audio stream</td><td>Speech-to-text transcription. <a href="https://aws.amazon.com/service-terms/">AWS Service Terms</a>.</td></tr>
+        <tr><td><strong>Google Cloud Speech-to-Text</strong></td><td>Real-time audio stream</td><td>Speech-to-text transcription. <a href="https://cloud.google.com/terms/data-processing-terms">Google Cloud Data Processing and Security Terms</a>.</td></tr>
+        <tr><td><strong>Apple Speech Recognition</strong></td><td>Short voice-question audio when the Apple fallback is used</td><td>Ask Noum voice transcription; processing location depends on Apple's service/device availability. <a href="https://www.apple.com/legal/privacy/">Apple Privacy Policy</a>.</td></tr>
+        <tr><td><strong>Google Gemini / Google Cloud Agent Platform</strong></td><td>Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence, optionally selected video frames</td><td>AI coaching feedback and conversation generation. <a href="https://ai.google.dev/gemini-api/terms">Gemini API Terms</a>.</td></tr>
+        <tr><td><strong>Anthropic Claude</strong></td><td>Ask Noum message, recent turns, bounded coaching context/session evidence</td><td>Ask Noum coaching replies and fallback processing. <a href="https://privacy.anthropic.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data">Anthropic API Retention</a>.</td></tr>
+        <tr><td><strong>OpenAI</strong></td><td>Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence, optionally selected video frames; text for speech synthesis</td><td>AI coaching feedback, conversation generation, and fallback text-to-speech. <a href="https://platform.openai.com/docs/models/default-usage-policies-by-endpoint">OpenAI API Data Controls</a>.</td></tr>
+        <tr><td><strong>DeepSeek</strong></td><td>Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence</td><td>AI coaching feedback and fallback conversation generation. <a href="https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html">DeepSeek Privacy Policy</a>.</td></tr>
+        <tr><td><strong>Google Cloud Text-to-Speech</strong></td><td>Text prompts for voice synthesis</td><td>AI character voices and spoken coach replies. <a href="https://cloud.google.com/terms">Google Cloud Terms</a>.</td></tr>
+        <tr><td><strong>Firebase</strong> (Google)</td><td>Account ID, display name, optionally synced profile/session data</td><td>Authentication and optional cloud sync. <a href="https://firebase.google.com/terms">Firebase Terms</a>.</td></tr>
         <tr><td><strong>Open-Meteo</strong></td><td>Approximate location (via IP, not GPS)</td><td>Weather context for conversation topics. Public API, no authentication, no personal data sent.</td></tr>
       </tbody>
     </table>
@@ -255,16 +268,16 @@
     <p>Cloud-synced data is stored in Firebase Firestore and is associated with your account ID.</p>
 
     <h3>Temporary Credentials</h3>
-    <p>The app obtains short-lived AWS credentials (valid for 15 minutes) from our backend to access speech-to-text services. These credentials are held in memory only and are not persisted to disk.</p>
+    <p>Some speech-to-text paths use short-lived provider credentials obtained from Noum's backend. Their lifetime and scope depend on the selected provider. The app keeps these temporary credentials in memory for the active service window and does not intentionally persist them to disk.</p>
 
     <hr>
 
     <h2>5. Data Retention</h2>
     <ul>
       <li><strong>On-device data</strong> is retained until you delete it (via session deletion, account deletion, or app uninstall).</li>
-      <li><strong>Firebase data</strong> is retained until you delete your account.</li>
-      <li><strong>AWS Transcribe</strong> does not retain audio after real-time processing.</li>
-      <li><strong>AI providers</strong> (Gemini, OpenAI) process data under their API terms and do not retain it for training.</li>
+      <li><strong>Noum-controlled Firebase data</strong> is retained while your account is active and is submitted for deletion when you delete your account. Shared records and operational backups may follow different deletion windows.</li>
+      <li><strong>Streamed audio</strong> is not retained by Noum as an audio file. Speech-to-text providers handle the stream under their own service terms and retention practices.</li>
+      <li><strong>AI-provider inputs and outputs</strong> are handled under the selected provider's terms, privacy policy, service tier, and account settings. Retention and model-improvement practices differ across Google, Anthropic, OpenAI, and DeepSeek and may change; review the links above for current details.</li>
     </ul>
 
     <hr>
@@ -283,12 +296,12 @@
     <h3>Delete Your Account</h3>
     <p>Go to <strong>Settings → Delete Account</strong>. This will:</p>
     <ul>
-      <li>Delete all your data from our backend and Firebase</li>
+      <li>Delete account-scoped data that Noum controls from our backend and Firebase</li>
       <li>Remove all per-account data from your device (coaching profile, sessions, XP, friends, AI settings)</li>
       <li>Delete your Firebase Authentication account</li>
       <li>Sign you out</li>
     </ul>
-    <p>Account deletion is immediate and irreversible. We do not retain any personal data after account deletion.</p>
+    <p>Account deletion is irreversible. Noum removes per-account data from the device and starts deletion of account-scoped backend records it controls. Third-party processors may retain request data for their published retention periods, safety or abuse-prevention needs, legal obligations, or configured service features. Shared challenge or league records and backups may also require separate cleanup or retention windows.</p>
 
     <h3>Notification Privacy</h3>
     <p>Practice reminder notifications reference your coaching context (e.g., "Your conversation practice is waiting") but never display your personal text (goals, coaching brief, etc.) on the lock screen.</p>
@@ -303,7 +316,7 @@
     <h2>8. Security</h2>
     <ul>
       <li>Authentication is handled by Apple and Google Sign-In via Firebase, using industry-standard OAuth flows.</li>
-      <li>AWS credentials are short-lived (15 minutes) and vended through a secure backend — no long-lived keys are stored in the app.</li>
+      <li>Cloud-speech credentials intended for client use are short-lived and are not intentionally persisted; broader provider secrets are not intended to be distributed in the app.</li>
       <li>All network communication uses HTTPS/TLS.</li>
       <li>On-device credentials are stored in the iOS Keychain (hardware-encrypted).</li>
     </ul>

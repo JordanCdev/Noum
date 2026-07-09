@@ -4,50 +4,56 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ─── Per-user private data ────────────────────────────────────────
+    // Owners only — already covered by the existing rules. Listed here
+    // for completeness so reviewers see the full picture.
     match /users/{accountID}/{document=**} {
       allow read, write: if request.auth != null
                          && request.auth.uid == accountID;
     }
 
     // ─── Public profile (peer-readable subset) ─────────────────────────
+    // Any signed-in user can read; only the owner can write or delete their
+    // own doc. Delete is separate because request.resource is absent then.
+    // Schema enforced on write — fields kept tight so a rogue client can't
+    // dump arbitrary data into the public surface.
     match /profiles_public/{accountID} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null
-                   && request.auth.uid == accountID
-                   && request.resource.data.accountID == accountID
-                   && request.resource.data.keys().hasOnly([
-                        'accountID', 'displayName',
-                        'rating', 'peakRating',
-                        'currentStreak', 'weeklyReps', 'weeklyDelta',
-                        'leagueTier', 'updatedAt'
-                      ])
-                   && request.resource.data.displayName.size() <= 60
-                   && request.resource.data.rating is int
-                   && request.resource.data.rating >= 100
-                   && request.resource.data.rating <= 1000;
+      allow create, update: if request.auth != null
+                            && request.auth.uid == accountID
+                            && validPublicProfile(accountID);
+      allow delete: if request.auth != null
+                    && request.auth.uid == accountID;
     }
 
     // ─── League membership ────────────────────────────────────────────
     // Bucket key shape: `{tier}_{ISO-year}-W{week}` e.g. `silver_2026-W19`.
+    // Any signed-in user can read all members of a bucket (peer ranking).
+    // Only the owning user can write their own member doc, and only with
+    // the same shape as profiles_public.
     match /leagues/{bucket}/members/{accountID} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null
-                   && request.auth.uid == accountID
-                   && request.resource.data.accountID == accountID;
+      allow create, update: if request.auth != null
+                            && request.auth.uid == accountID
+                            && validPublicProfile(accountID);
+      allow delete: if request.auth != null
+                    && request.auth.uid == accountID;
     }
 
     // ─── Async challenges (two-participant docs) ──────────────────────
+    // Both participants can read the whole doc. Each can only write the
+    // fields that belong to "their" side of the challenge.
     match /challenges/{challengeID} {
       allow read: if request.auth != null
                   && resource != null
                   && request.auth.uid in resource.data.participantIDs;
 
+      // Creator: full write while the doc is being created (initial sync).
+      // After creation, only their own slice.
       allow create: if request.auth != null
-                    && request.resource.data.creatorID == request.auth.uid
-                    && request.resource.data.participantIDs.hasAll([
-                         request.resource.data.creatorID,
-                         request.resource.data.opponentID
-                       ]);
+                    && request.resource.data.id == challengeID
+                    && request.resource.data.creatorAccountID == request.auth.uid
+                    && validChallengeCreateShape()
+                    && validChallengeParticipants();
 
       allow update: if request.auth != null
                     && resource != null
@@ -55,25 +61,92 @@ service cloud.firestore {
                     && updateOnlyOwnSlice();
     }
 
+    function validPublicProfile(accountID) {
+      return request.resource.data.accountID == accountID
+             && request.resource.data.keys().hasOnly([
+                  'accountID', 'displayName',
+                  'rating', 'peakRating',
+                  'currentStreak', 'weeklyReps', 'weeklyDelta',
+                  'leagueTier', 'updatedAt'
+                ])
+             && request.resource.data.displayName is string
+             && request.resource.data.displayName.size() <= 60
+             && request.resource.data.rating is int
+             && request.resource.data.rating >= 100
+             && request.resource.data.rating <= 1000;
+    }
+
+    // The app indexes each challenge under both durable Firebase account IDs
+    // and its legacy local UUIDs. Require exactly those identities so a creator
+    // cannot grant an unrelated account read access through participantIDs.
+    function validChallengeParticipants() {
+      let participantIDs = request.resource.data.participantIDs;
+      let expectedIDs = [
+        request.resource.data.creatorAccountID,
+        request.resource.data.opponentAccountID,
+        request.resource.data.creatorID,
+        request.resource.data.opponentID
+      ];
+      return request.resource.data.creatorAccountID is string
+             && request.resource.data.opponentAccountID is string
+             && request.resource.data.creatorID is string
+             && request.resource.data.opponentID is string
+             && request.resource.data.creatorAccountID
+                != request.resource.data.opponentAccountID
+             && participantIDs is list
+             && participantIDs.hasAll(expectedIDs)
+             && participantIDs.hasOnly(expectedIDs);
+    }
+
+    function validChallengeCreateShape() {
+      let keys = request.resource.data.keys();
+      return keys.hasOnly([
+               'id', 'prompt', 'createdAt', 'expiresAt',
+               'creatorID', 'creatorName', 'creatorAccountID',
+               'opponentID', 'opponentName', 'opponentAccountID',
+               'participantIDs',
+               'creatorScore', 'creatorDuration', 'creatorSummary',
+               'creatorReaction'
+             ])
+             && request.resource.data.prompt is string
+             && request.resource.data.prompt.size() > 0
+             && request.resource.data.prompt.size() <= 500
+             && request.resource.data.creatorName is string
+             && request.resource.data.creatorName.size() <= 60
+             && request.resource.data.opponentName is string
+             && request.resource.data.opponentName.size() <= 60;
+    }
+
+    // An update from the creator may only touch the creator-* result fields,
+    // and an update from the opponent may only touch the opponent-* result
+    // fields. The sole identity-field exception lets account deletion replace
+    // the departing participant's own display name with "Removed user".
     function updateOnlyOwnSlice() {
-      let isCreator = request.auth.uid == resource.data.creatorID;
-      let opponentFields = [
+      let isCreator = request.auth.uid == resource.data.creatorAccountID;
+      let isOpponent = request.auth.uid == resource.data.opponentAccountID;
+      let opponentResultFields = [
         'opponentScore', 'opponentDuration',
-        'opponentSummary', 'opponentReaction', 'opponentName'
+        'opponentSummary', 'opponentReaction'
       ];
-      let creatorFields = [
+      let creatorResultFields = [
         'creatorScore', 'creatorDuration',
-        'creatorSummary', 'creatorReaction', 'creatorName'
+        'creatorSummary', 'creatorReaction'
       ];
-      let allowedFields = isCreator ? creatorFields : opponentFields;
+      let resultFields = isCreator ? creatorResultFields : opponentResultFields;
+      let nameFields = isCreator ? ['creatorName'] : ['opponentName'];
+      let allowedFields = resultFields.concat(nameFields);
       let immutableFields = ['id', 'prompt', 'createdAt', 'expiresAt',
-                             'creatorID', 'opponentID', 'participantIDs'];
-      return request.resource.data.diff(resource.data)
-        .affectedKeys()
-        .hasOnly(allowedFields)
-        || request.resource.data.diff(resource.data)
-        .affectedKeys()
-        .hasOnly(allowedFields.concat(immutableFields));
+                             'creatorID', 'creatorAccountID',
+                             'opponentID', 'opponentAccountID',
+                             'participantIDs'];
+      let changedFields = request.resource.data.diff(resource.data).affectedKeys();
+      let nameRedactionIsValid = !changedFields.hasAny(nameFields)
+        || (isCreator && request.resource.data.creatorName == 'Removed user')
+        || (isOpponent && request.resource.data.opponentName == 'Removed user');
+      return (isCreator || isOpponent)
+             && changedFields.hasOnly(allowedFields)
+             && !changedFields.hasAny(immutableFields)
+             && nameRedactionIsValid;
     }
   }
 }
