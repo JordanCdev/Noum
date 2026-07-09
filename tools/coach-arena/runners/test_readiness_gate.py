@@ -42,7 +42,28 @@ def write_static_ops_repo(root):
     root = Path(root)
     (root / "public").mkdir(parents=True, exist_ok=True)
     (root / "Noum").mkdir(parents=True, exist_ok=True)
+    (root / "Noum.xcodeproj").mkdir(parents=True, exist_ok=True)
     (root / "docs").mkdir(parents=True, exist_ok=True)
+    (root / ".gitignore").write_text("Noum/AIConfig.plist\n", encoding="utf-8")
+    (root / "Noum/AIConfig.plist.example").write_text(
+        "<plist><dict><key>OPENAI_API_KEY</key><string>REPLACE_ME</string></dict></plist>",
+        encoding="utf-8",
+    )
+    (root / "Noum.xcodeproj/project.pbxproj").write_text(
+        """
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+    TEST /* Exceptions for "Noum" folder in "Noum" target */ = {
+        isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+        membershipExceptions = (
+            AIConfig.plist,
+            Info.plist,
+        );
+        target = TEST_TARGET /* Noum */;
+    };
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+""",
+        encoding="utf-8",
+    )
     (root / "firebase.json").write_text(
         json.dumps({
             "firestore": {"rules": "firestore.rules"},
@@ -591,6 +612,54 @@ class ReadinessGateTests(unittest.TestCase):
         self.assertEqual(preflight["failureCount"], 0)
         self.assertEqual(preflight["passCount"], preflight["checkCount"])
         self.assertIn("Static ops preflight", preflight["validationBoundary"])
+
+    def test_operational_static_preflight_rejects_unsafe_client_config_membership(self):
+        mutations = {
+            "AIConfigBundled": ("            AIConfig.plist,\n", ""),
+            "GoogleConfigExcluded": (
+                "            AIConfig.plist,\n",
+                "            AIConfig.plist,\n            GoogleService-Info.plist,\n",
+            ),
+            "BackendConfigExcluded": (
+                "            AIConfig.plist,\n",
+                "            AIConfig.plist,\n            BackendConfig.plist,\n",
+            ),
+        }
+        for case, (old, new) in mutations.items():
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                write_static_ops_repo(root)
+                project_path = root / "Noum.xcodeproj/project.pbxproj"
+                project = project_path.read_text(encoding="utf-8")
+                project_path.write_text(project.replace(old, new), encoding="utf-8")
+
+                preflight = gate.operational_static_preflight(root)
+
+                self.assertIn(
+                    "mainTargetClientSecretBoundary",
+                    [item["key"] for item in preflight["failures"]],
+                )
+
+    def test_operational_static_preflight_rejects_unsafe_ai_config_repository_boundary(self):
+        mutations = {
+            "missingGitignoreEntry": lambda root: (root / ".gitignore").write_text(
+                "# local config missing\n",
+                encoding="utf-8",
+            ),
+            "missingExample": lambda root: (root / "Noum/AIConfig.plist.example").unlink(),
+        }
+        for case, mutate in mutations.items():
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                write_static_ops_repo(root)
+                mutate(root)
+
+                preflight = gate.operational_static_preflight(root)
+
+                self.assertIn(
+                    "aiConfigRepositorySecretBoundary",
+                    [item["key"] for item in preflight["failures"]],
+                )
 
     def test_operational_static_preflight_flags_missing_privacy_rewrite(self):
         with tempfile.TemporaryDirectory() as temp_dir:

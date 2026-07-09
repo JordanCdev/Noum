@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -656,6 +657,61 @@ def file_text(root, relative_path):
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def gitignore_mentions(root, relative_path):
+    text = file_text(root, ".gitignore") or ""
+    normalized = relative_path.strip().replace("\\", "/").lstrip("/")
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        candidate = stripped.lstrip("/").rstrip("/")
+        if candidate == normalized:
+            return True
+    return False
+
+
+def git_path_tracked(root, relative_path):
+    root = Path(root)
+    if not (root / ".git").exists():
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", relative_path],
+            cwd=root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except (OSError, ValueError):
+        return None
+    return result.returncode == 0
+
+
+def noum_target_membership_exceptions(repo_root=REPO_ROOT):
+    project = file_text(repo_root, "Noum.xcodeproj/project.pbxproj")
+    if project is None:
+        return None
+    exception_set = re.search(
+        r'/\* Exceptions for "Noum" folder in "Noum" target \*/ = \{(.*?)\n\s*\};',
+        project,
+        flags=re.DOTALL,
+    )
+    if not exception_set:
+        return None
+    membership = re.search(
+        r"membershipExceptions\s*=\s*\((.*?)\);",
+        exception_set.group(1),
+        flags=re.DOTALL,
+    )
+    if not membership:
+        return None
+    return {
+        entry.partition("/*")[0].strip().strip('"')
+        for entry in membership.group(1).split(",")
+        if entry.partition("/*")[0].strip()
+    }
+
+
 def privacy_url_from_repo(repo_root=REPO_ROOT):
     web_urls = file_text(repo_root, "Noum/NoumWebURLs.swift") or ""
     match = re.search(r"static\s+let\s+privacy\s*=\s*URL\(string:\s*\"([^\"]+)\"\)", web_urls)
@@ -813,6 +869,64 @@ def operational_static_preflight(repo_root=REPO_ROOT):
             "gate": gate,
             "nextStep": next_step,
         })
+
+    membership_exceptions = noum_target_membership_exceptions(root)
+    protected_client_config = (
+        membership_exceptions is not None
+        and "AIConfig.plist" in membership_exceptions
+        and "GoogleService-Info.plist" not in membership_exceptions
+        and "BackendConfig.plist" not in membership_exceptions
+    )
+    add(
+        "mainTargetClientSecretBoundary",
+        "mainTargetClientSecretBoundary",
+        protected_client_config,
+        (
+            "AIConfigExcluded;runtimeConfigRetained"
+            if protected_client_config
+            else "targetMembershipUnsafeOrUnparseable"
+        ),
+        (
+            "The main app target must exclude AIConfig.plist while retaining "
+            "GoogleService-Info.plist and BackendConfig.plist."
+        ),
+        (
+            "Restore AIConfig.plist in the Noum target membership exceptions "
+            "without excluding GoogleService-Info.plist or BackendConfig.plist."
+        ),
+    )
+
+    ai_config_ignored = gitignore_mentions(root, "Noum/AIConfig.plist")
+    ai_config_tracked = git_path_tracked(root, "Noum/AIConfig.plist")
+    ai_config_example_present = (root / "Noum/AIConfig.plist.example").is_file()
+    repo_secret_boundary = (
+        ai_config_ignored
+        and ai_config_tracked is not True
+        and ai_config_example_present
+    )
+    tracked_state = (
+        "tracked" if ai_config_tracked is True
+        else "untracked" if ai_config_tracked is False
+        else "trackingUnknown"
+    )
+    add(
+        "aiConfigRepositorySecretBoundary",
+        "aiConfigRepositorySecretBoundary",
+        repo_secret_boundary,
+        (
+            f"ignored={ai_config_ignored};{tracked_state};"
+            f"examplePresent={ai_config_example_present}"
+        ),
+        (
+            "AIConfig.plist must remain a local-only config with a checked-in "
+            "placeholder example, never a tracked source of AI provider keys."
+        ),
+        (
+            "Keep Noum/AIConfig.plist in .gitignore, keep "
+            "Noum/AIConfig.plist.example checked in, and remove any tracked "
+            "AIConfig.plist from the repository index."
+        ),
+    )
 
     firebase_json_path = root / "firebase.json"
     firebase_config = None

@@ -156,6 +156,7 @@
 		0B2EB1672F7350820093625F /* Exceptions for "Noum" folder in "Noum" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				AIConfig.plist,
 				Info.plist,
 			);
 			target = 0B981F6B2D44610E008F4158 /* Noum */;
