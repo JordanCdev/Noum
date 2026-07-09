@@ -97,6 +97,38 @@ def app_fixture(overrides=None):
 
 
 class AppPathBoundaryTests(unittest.TestCase):
+    def test_thin_evidence_empty_retrieval_is_intentional(self):
+        result = scored_result()
+        result["trace"]["memory"]["assessmentConfidence"] = 0.20
+        result["trace"]["retrieval"] = {
+            "retrievedCardIDs": [],
+            "queryPresent": True,
+            "hasDiagnosis": False,
+            "diagnosticReason": "No cards matched turn",
+        }
+
+        audit = arena.trace_quality_audit([result])
+
+        self.assertTrue(audit["passes"])
+        self.assertEqual(audit["retrieval"]["emptyRetrievedCardsCount"], 0)
+        self.assertEqual(audit["retrieval"]["allowedEmptyRetrievedCardsCount"], 1)
+
+    def test_evidence_bearing_empty_retrieval_still_fails_trace_quality(self):
+        result = scored_result()
+        result["trace"]["memory"]["assessmentConfidence"] = 0.21
+        result["trace"]["retrieval"] = {
+            "retrievedCardIDs": [],
+            "queryPresent": True,
+            "hasDiagnosis": False,
+            "diagnosticReason": "No cards matched turn",
+        }
+
+        audit = arena.trace_quality_audit([result])
+
+        self.assertFalse(audit["passes"])
+        self.assertEqual(audit["retrieval"]["emptyRetrievedCardsCount"], 1)
+        self.assertEqual(audit["retrieval"]["allowedEmptyRetrievedCardsCount"], 0)
+
     def test_direct_python_app_path_defaults_to_canonical_app_path_reports(self):
         args = type("Args", (), {
             "app_path_report": "/tmp/app-path.json",

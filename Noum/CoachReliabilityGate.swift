@@ -1851,29 +1851,19 @@ enum CoachReliabilityGate {
     }
 
     static func rambleStoppingRuleContextSuggestsConciseRecommendation(_ context: String) -> Bool {
-        guard containsAny(context, [
-            "concise",
+        let hasRecommendationFrame = containsAny(context, [
             "recommendation",
-            "client recommendation",
-            "one reason",
+            "client"
+        ])
+        let hasSpecificRambleBoundary = containsAny(context, [
             "second reason",
             "two sentence",
             "two-sentence",
             "sentence ceiling",
             "extra context",
             "tighten"
-        ]) else {
-            return false
-        }
-        return containsAny(context, [
-            "concise",
-            "recommendation",
-            "client",
-            "one reason",
-            "second reason",
-            "sentence ceiling",
-            "extra context"
         ])
+        return hasRecommendationFrame || hasSpecificRambleBoundary
     }
 
     static func rambleStoppingRuleNeedsRepair(replyText: String) -> Bool {

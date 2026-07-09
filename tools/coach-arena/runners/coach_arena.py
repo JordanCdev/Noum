@@ -1968,6 +1968,18 @@ def empty_retrieval_is_intentional(trace, retrieval):
         return True
     if "empty user turn" in diagnostic:
         return True
+    # The shipping retriever deliberately prefers silence to a random technique
+    # when both the case and the evidence are at the assessment floor. Treat
+    # that precise state as an honest empty retrieval, but keep failing empty
+    # retrieval once evidence rises above the floor or a diagnosis exists.
+    assessment_confidence = memory.get("assessmentConfidence")
+    if (
+        "no cards matched turn" in diagnostic and
+        retrieval.get("hasDiagnosis") is False and
+        isinstance(assessment_confidence, (int, float)) and
+        float(assessment_confidence) <= 0.20
+    ):
+        return True
     if context.get("surface") == "live" and "no cards" in diagnostic:
         return True
     return False

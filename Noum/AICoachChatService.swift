@@ -2115,7 +2115,11 @@ actor AICoachChatService {
                 replyText: systemContext
             )
         } else if CoachReliabilityGate.rambleStoppingRuleUserTurn(latestUserTurn) {
-            raw = CoachReliabilityGate.rambleStoppingRuleFallback(surface: surface)
+            raw = CoachReliabilityGate.rambleStoppingRuleFallback(
+                surface: surface,
+                latestUserTurn: latestUserTurn,
+                assessment: assessment
+            )
         } else if CoachReliabilityGate.leadershipStatusReportUserTurn(latestUserTurn) {
             raw = CoachReliabilityGate.leadershipStatusReportFallback(surface: surface)
         } else if CoachReliabilityGate.recurringCloseRushUserTurn(latestUserTurn),

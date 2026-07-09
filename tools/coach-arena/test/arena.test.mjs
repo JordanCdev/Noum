@@ -851,6 +851,8 @@ test('production surface: ramble scaffold falls back to stop rule', () => {
     category: 'mechanics',
     turnDepth: 'groundedRead',
     userTurn: "I ramble — I start a point and three minutes later I'm somewhere else.",
+    voice: 'concise',
+    memoryState: 'Concise voice selected.',
   });
   const raw = "You don't lose the thread — you keep adding to it. Yesterday you opened with the actual point, then stacked three side stories before circling back to a weaker version of it. So the fix isn't focus, it's a stop signal.\n\nNext rep: say your point, one line of support, then cut before the first side story. One point, then silence.";
   const result = productionSurfaceReplyForFixture(raw, fx);
@@ -862,6 +864,44 @@ test('production surface: ramble scaffold falls back to stop rule', () => {
   assert.equal(result.text, 'You do not lose the thread; you keep reopening it. The tell is the weaker repeat at the end after the side stories. Use a hard stop: state the point, give one support line, then silence.');
   assert.doesNotMatch(result.text, /next rep:|be more concise/i);
   assert.equal(result.deterministic.hardCap, null);
+});
+
+test('production surface: concise ramble fallback uses recommendation ceiling', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    turnDepth: 'quickMove',
+    userTurn: 'How do I stop rambling?',
+    voice: 'concise',
+    memoryState: 'Concise voice selected; recent answers carry extra context.',
+  });
+  const raw = 'Try this next: be more concise and structure your thoughts.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['rambleStoppingRuleMiss']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.rambleStoppingRuleFallback');
+  assert.match(result.text, /two-sentence ceiling/i);
+  assert.match(result.text, /45-second client recommendation/i);
+  assert.match(result.text, /second reason/i);
+  assert.doesNotMatch(result.text, /hard stop|structure your thoughts/i);
+});
+
+test('production surface: networking ramble fallback uses intro test', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    turnDepth: 'quickMove',
+    userTurn: 'I ramble when introducing myself at networking events.',
+  });
+  const raw = 'Try this next: focus more and keep it brief.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['rambleStoppingRuleMiss']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.rambleStoppingRuleFallback');
+  assert.match(result.text, /20-second test/i);
+  assert.match(result.text, /who you help/i);
+  assert.match(result.text, /No full story yet/i);
+  assert.doesNotMatch(result.text, /weaker repeat|keep it brief/i);
 });
 
 test('production surface: clean ramble stop rule ships', () => {

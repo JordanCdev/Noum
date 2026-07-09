@@ -638,7 +638,7 @@ struct CoachReliabilityGateTests {
             previousCoachReply: "Earlier read.",
             latestUserTurn: "I ramble — I start a point and three minutes later I'm somewhere else.",
             turnDepth: .groundedRead,
-            assessment: Self.quickMoveAssessment(),
+            assessment: Self.quickMoveAssessment(evidence: ["Concise voice selected."]),
             evidenceCoverage: 0.7
         )
 
@@ -652,6 +652,48 @@ struct CoachReliabilityGateTests {
         #expect(fallback.contains("Use a hard stop"))
         #expect(!lowered.contains("next rep:"))
         #expect(CoachReliabilityGate.wordCount(CoachReliabilityGate.normalize(fallback)) <= 45)
+    }
+
+    @Test func conciseRambleFallbackUsesRecommendationCeilingWhenAssessmentNamesThatContext() {
+        let assessment = Self.quickMoveAssessment(
+            proofTest: "For the concise client recommendation, use recommendation first, one reason second, clean stop.",
+            evidence: ["Concise voice selected; recent answers are carrying extra context."]
+        )
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Try this next: be more concise and structure your thoughts.",
+            previousCoachReply: "Earlier read.",
+            latestUserTurn: "How do I stop rambling?",
+            turnDepth: .quickMove,
+            assessment: assessment,
+            evidenceCoverage: 0.7
+        )
+
+        #expect(verdict.issues.contains(.rambleStoppingRuleMiss))
+        #expect(verdict.blocked)
+        let fallback = verdict.fallbackText ?? ""
+        #expect(fallback.contains("two-sentence ceiling"))
+        #expect(fallback.contains("45-second client recommendation"))
+        #expect(fallback.contains("second reason"))
+        #expect(!fallback.lowercased().contains("hard stop"))
+    }
+
+    @Test func networkingRambleFallbackUsesIntroTestFromUserTurn() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Try this next: focus more and keep it brief.",
+            previousCoachReply: "Earlier read.",
+            latestUserTurn: "I ramble when introducing myself at networking events.",
+            turnDepth: .quickMove,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.7
+        )
+
+        #expect(verdict.issues.contains(.rambleStoppingRuleMiss))
+        #expect(verdict.blocked)
+        let fallback = verdict.fallbackText ?? ""
+        #expect(fallback.contains("20-second test"))
+        #expect(fallback.contains("who you help"))
+        #expect(fallback.contains("No full story yet"))
+        #expect(!fallback.lowercased().contains("weaker repeat"))
     }
 
     @Test func cleanRambleStopRuleReadDoesNotBlock() {

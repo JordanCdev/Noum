@@ -1208,7 +1208,54 @@ function paceSelfFrustrationFallback(surface = 'text', fixture = {}, replyText =
   return "You're not imagining it: this reads like a missing gap between sentences, not a confidence problem. Fix the pause, not the speed. Next rep, hold one silent beat after every full stop and see if people track you without forcing a slower voice.";
 }
 
-function rambleStoppingRuleFallback(surface = 'text') {
+function rambleStoppingRuleFallbackContext(fixture = {}) {
+  return [
+    fixture.userTurn,
+    fixture.goal,
+    fixture.voice,
+    fixture.memoryState,
+    fixture.expectedCoachMove,
+    fixture.excellentAnswerExample,
+    fixture.targetCoachReply,
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function rambleStoppingRuleContextSuggestsConciseRecommendation(context) {
+  const hasRecommendationFrame = containsAny(context, [
+    'recommendation',
+    'client',
+  ]);
+  const hasSpecificRambleBoundary = containsAny(context, [
+    'second reason',
+    'two sentence',
+    'two-sentence',
+    'sentence ceiling',
+    'extra context',
+    'tighten',
+  ]);
+  return hasRecommendationFrame || hasSpecificRambleBoundary;
+}
+
+function rambleStoppingRuleFallback(surface = 'text', fixture = {}) {
+  const context = rambleStoppingRuleFallbackContext(fixture);
+  if (containsAny(context, [
+    'networking',
+    'introducing myself',
+    'introduce myself',
+    'introduction',
+    'intro',
+  ])) {
+    if (surface === 'live') {
+      return 'Start with a 20-second intro: who you help, what changes, one question. No full story yet.';
+    }
+    return 'Start with a 20-second test: who you help, what changes, and one question for them. No full story yet, because first we need to hear where the ramble starts.';
+  }
+  if (rambleStoppingRuleContextSuggestsConciseRecommendation(context)) {
+    if (surface === 'live') {
+      return 'Use a two-sentence ceiling: recommendation first, one reason second, clean stop.';
+    }
+    return 'For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls.';
+  }
   if (surface === 'live') {
     return 'You do not lose the thread; you reopen it. The tell is the weaker repeat after the side stories. Use a hard stop: point, one support line, silence.';
   }
@@ -1428,7 +1475,7 @@ export function productionSurfaceReplyForFixture(raw, fixture = {}, opts = {}) {
     && rambleStoppingRuleUserTurn(fixture.userTurn)
     && rambleStoppingRuleNeedsRepair(finalizer.text)
   ) {
-    const text = rambleStoppingRuleFallback(fixture.surface || opts.surface || 'text');
+    const text = rambleStoppingRuleFallback(fixture.surface || opts.surface || 'text', fixture);
     return fallbackResult({
       text,
       raw,

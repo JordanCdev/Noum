@@ -42,13 +42,13 @@ enum CoachReplyPipeline {
 
     nonisolated static func retrievalTrace(
         cards: [CoachKnowledgeCard],
-        latestUserTurn: String?,
+        retrievalQuery: String?,
         activeLever: SkillArea?,
         voice: SpeakingStyleGoal?,
         hasDiagnosis: Bool,
         semanticRerankAllowed: Bool
     ) -> CoachRetrievalTrace {
-        let trimmedTurn = latestUserTurn?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let trimmedTurn = retrievalQuery?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return CoachRetrievalTrace(
             strategy: semanticRerankAllowed ? "BM25 + semantic rerank" : "BM25",
             queryPresent: !trimmedTurn.isEmpty,
@@ -61,10 +61,57 @@ enum CoachReplyPipeline {
             retrievedCardIDs: cards.map(\.id),
             diagnosticReason: brainDiagnosticReason(
                 cards: cards,
-                latestUserTurn: latestUserTurn,
+                latestUserTurn: retrievalQuery,
                 hasDiagnosis: hasDiagnosis
             )
         )
+    }
+
+    /// Resolve short follow-ups against the user's own recent turns before
+    /// asking the local knowledge retriever for a technique. Retrieval used to
+    /// see only text such as "What should I check after?", which discarded the
+    /// leadership/interview context already present in the shared chat history.
+    /// Keep this bounded and user-authored: two prior user turns, 240 characters
+    /// each, only when the current turn is genuinely elliptical.
+    nonisolated static func knowledgeRetrievalQuery(
+        latestUserTurn: String?,
+        history: [CoachMessage],
+        maxPriorUserTurns: Int = 2
+    ) -> String {
+        let current = latestUserTurn?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !current.isEmpty,
+              maxPriorUserTurns > 0,
+              wordCount(in: current) <= 12 else {
+            return current
+        }
+
+        let normalized = " \(current.lowercased()) "
+        let continuationPhrases = [
+            "what should i check", "what should i listen for",
+            "what do i do next", "what next", "after?", " after ",
+            " that ", " this ", " it ", " same ", " again ",
+            "how do i make that", "how do i do that"
+        ]
+        guard continuationPhrases.contains(where: { normalized.contains($0) }),
+              let latestUserIndex = history.lastIndex(where: { $0.role == .user }),
+              latestUserIndex > history.startIndex else {
+            return current
+        }
+
+        let priorTurns = history[..<latestUserIndex]
+            .reversed()
+            .filter { $0.role == .user }
+            .prefix(maxPriorUserTurns)
+            .reversed()
+            .map { message in
+                String(message.text.prefix(240))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            .filter { !$0.isEmpty }
+        guard !priorTurns.isEmpty else { return current }
+        return ([current] + priorTurns.map { "Earlier user context: \($0)" })
+            .joined(separator: "\n")
     }
 
     nonisolated static func shouldShowProvisionalCoachRead(
@@ -175,6 +222,10 @@ enum CoachReplyPipeline {
         // path inside a spoken-response budget.
         let activeLever = coachMemoryStore.currentMemory?.currentLever
         let hasDiagnosis = activeLever != nil
+        let retrievalQuery = knowledgeRetrievalQuery(
+            latestUserTurn: latestUserTurn,
+            history: history
+        )
         let semanticRerankAllowed = Self.shouldUseSemanticKnowledgeRerank(surface: surface)
         if semanticRerankAllowed {
             Task { await KnowledgeSemanticReranker.shared.warmUpIfNeeded() }
@@ -182,14 +233,14 @@ enum CoachReplyPipeline {
         let coachingExpertise: [CoachKnowledgeCard]
         if semanticRerankAllowed {
             coachingExpertise = await KnowledgeRetriever.retrieveReranked(
-                query: latestUserTurn ?? "",
+                query: retrievalQuery,
                 lever: activeLever,
                 voice: profileStore.profile?.speakingStyleGoal,
                 hasDiagnosis: hasDiagnosis
             )
         } else {
             coachingExpertise = KnowledgeRetriever.retrieve(
-                query: latestUserTurn ?? "",
+                query: retrievalQuery,
                 lever: activeLever,
                 voice: profileStore.profile?.speakingStyleGoal,
                 hasDiagnosis: hasDiagnosis
@@ -202,13 +253,13 @@ enum CoachReplyPipeline {
             outcome: coachingExpertise.isEmpty ? .skipped : .success,
             reason: Self.brainDiagnosticReason(
                 cards: coachingExpertise,
-                latestUserTurn: latestUserTurn,
+                latestUserTurn: retrievalQuery,
                 hasDiagnosis: hasDiagnosis
             )
         )
         let retrievalTrace = Self.retrievalTrace(
             cards: coachingExpertise,
-            latestUserTurn: latestUserTurn,
+            retrievalQuery: retrievalQuery,
             activeLever: activeLever,
             voice: profileStore.profile?.speakingStyleGoal,
             hasDiagnosis: hasDiagnosis,

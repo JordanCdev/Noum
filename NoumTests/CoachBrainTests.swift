@@ -175,6 +175,16 @@ struct KnowledgeRetrieverTests {
         #expect(result.contains { $0.leverTags.contains(.conciseSpeaking) || $0.id == "voice-concise" })
     }
 
+    @Test func openerWordingSurfacesOpeningTechnique() {
+        let result = KnowledgeRetriever.retrieve(query: "How do I make the opener stronger?")
+        #expect(result.contains { $0.id == "structure-frame-the-open" })
+    }
+
+    @Test func panicBeforeAnsweringSurfacesComposurePause() {
+        let result = KnowledgeRetriever.retrieve(query: "I panic before answering. What do I do?")
+        #expect(result.contains { $0.id == "composure-tactical-pause" })
+    }
+
     @Test func retrievalIsDeterministic() {
         let a = KnowledgeRetriever.retrieve(query: "how do i handle a hard question under pressure")
         let b = KnowledgeRetriever.retrieve(query: "how do i handle a hard question under pressure")
@@ -404,5 +414,41 @@ struct CoachReplyPipelineBrainDiagnosticTests {
         )
 
         #expect(reason == "No cards: empty user turn")
+    }
+
+    @Test func ellipticalFollowUpCarriesBoundedPriorUserContextIntoRetrieval() {
+        let history = [
+            CoachMessage(role: .user, text: "I have a leadership update tomorrow. What should I practice?"),
+            CoachMessage(role: .coach, text: "Make the final sentence the ask."),
+            CoachMessage(role: .user, text: "I do not know the ask yet."),
+            CoachMessage(role: .coach, text: "Use a placeholder ask for the rehearsal."),
+            CoachMessage(role: .user, text: "What should I check after?")
+        ]
+
+        let query = CoachReplyPipeline.knowledgeRetrievalQuery(
+            latestUserTurn: "What should I check after?",
+            history: history
+        )
+
+        #expect(query.contains("What should I check after?"))
+        #expect(query.contains("leadership update tomorrow"))
+        #expect(query.contains("I do not know the ask yet"))
+        #expect(!query.contains("placeholder ask"))
+        let cards = KnowledgeRetriever.retrieve(query: query)
+        #expect(cards.contains { $0.domain == .transferLeadership })
+    }
+
+    @Test func directTurnDoesNotPullUnrelatedEarlierConversationIntoRetrieval() {
+        let current = "How do I stop saying um under pressure?"
+        let history = [
+            CoachMessage(role: .user, text: "I have a leadership update tomorrow."),
+            CoachMessage(role: .coach, text: "Practice the close."),
+            CoachMessage(role: .user, text: current)
+        ]
+
+        #expect(CoachReplyPipeline.knowledgeRetrievalQuery(
+            latestUserTurn: current,
+            history: history
+        ) == current)
     }
 }

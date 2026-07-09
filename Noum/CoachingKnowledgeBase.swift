@@ -268,7 +268,11 @@ enum CoachKnowledgeBase {
             voiceAlignment: [.authoritative, .executive],
             leverTags: [.pauseUsage, .confidence],
             evidenceTier: .practitioner,
-            keywords: ["pressure", "hard question", "challenge", "interrupted", "put on the spot", "panel"]
+            keywords: [
+                "pressure", "hard question", "challenge", "interrupted",
+                "put on the spot", "panel", "panic", "before answering",
+                "freeze before answering"
+            ]
         ),
         CoachKnowledgeCard(
             id: "composure-recover-no-apology",
@@ -446,7 +450,10 @@ enum CoachKnowledgeBase {
             voiceAlignment: [.executive, .authoritative],
             leverTags: [.openingStrength, .structure],
             evidenceTier: .practitioner,
-            keywords: ["opening", "frame", "set up", "roadmap", "orient", "preview"]
+            keywords: [
+                "opening", "opener", "stronger opening", "frame", "set up",
+                "roadmap", "orient", "preview", "sentence one", "verdict first"
+            ]
         ),
         CoachKnowledgeCard(
             id: "structure-land-the-close",
