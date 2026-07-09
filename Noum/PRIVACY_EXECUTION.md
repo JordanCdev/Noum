@@ -47,8 +47,8 @@ This document converts the remediation plan into paste-ready implementation tick
 #### Problem
 `Info.plist` lines 5–8 contain live AWS IAM credentials:
 ```
-AWS_ACCESS_KEY_ID: AKIAXYKJUU5SNXAK2YNZ
-AWS_SECRET_ACCESS_KEY: A4ixexGaLd7HtXJcW8LqQ1jkjzkIwG/JrTDoAZxk
+AWS_ACCESS_KEY_ID: <REDACTED — credential exposed in git; rotate before release>
+AWS_SECRET_ACCESS_KEY: <REDACTED — credential exposed in git; rotate before release>
 ```
 These are readable from any `.ipa` extract or jailbroken device.
 
@@ -72,7 +72,7 @@ These are readable from any `.ipa` extract or jailbroken device.
 - Verifying the build still compiles
 
 #### Jordan Must Do Manually
-- [ ] Go to AWS IAM Console → rotate/revoke access key `AKIAXYKJUU5SNXAK2YNZ`
+- [ ] Go to AWS IAM Console → rotate/revoke access key `<REDACTED — credential exposed in git; rotate before release>`
 - [ ] Create new IAM credentials (or switch to STS temporary credentials)
 - [ ] Decide long-term credential strategy: Xcode env vars, `Transcribe.plist` (gitignored), or backend-proxied transcription
 - [ ] If repo is/was public: treat the current key as compromised and audit CloudTrail logs
@@ -519,7 +519,7 @@ No code changes needed — this is cloud console work.
 ### Cloud Console Tasks
 | Task | Service | When | Ticket |
 |------|---------|------|--------|
-| Rotate/revoke AWS access key `AKIAXYKJUU5SNXAK2YNZ` | AWS IAM | Immediately | EXEC-01 |
+| Rotate/revoke AWS access key `<REDACTED — credential exposed in git; rotate before release>` | AWS IAM | Immediately | EXEC-01 |
 | Create new IAM credentials or switch to STS | AWS IAM | Before next build | EXEC-01 |
 | Audit CloudTrail for unauthorized usage of exposed key | AWS CloudTrail | Immediately | EXEC-01 |
 | Restrict Google TTS API key to iOS bundle ID | Google Cloud | Before launch | EXEC-10 |

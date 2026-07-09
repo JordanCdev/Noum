@@ -93,7 +93,7 @@ These are structured as implementable tickets.
 Remove `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` entries from `Noum/Noum/Info.plist`. Rotate the exposed key in AWS IAM Console immediately.
 
 **Acceptance criteria:**
-- [ ] AWS key `AKIAXYKJUU5SNXAK2YNZ` is deactivated in IAM
+- [ ] AWS key `<REDACTED — credential exposed in git; rotate before release>` is deactivated in IAM
 - [ ] New key issued with minimal permissions (TranscribeStreaming only)
 - [ ] Info.plist no longer contains any `AWS_*` keys
 - [ ] Credentials loaded only from `Transcribe.plist` (local dev) or environment variables (CI/release)
