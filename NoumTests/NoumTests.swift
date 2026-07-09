@@ -13813,6 +13813,8 @@ struct HomeBottomShortcutContractTests {
     @Test func shortcutDockReservesReadableBottomBand() {
         #expect(HomeShortcutDockLayout.scrollBottomPadding >= 144)
         #expect(HomeShortcutDockLayout.backdropTopPadding >= 16)
+        #expect(HomeShortcutDockLayout.contentClearance >= 16)
+        #expect(HomeShortcutDockLayout.backdropTopOpacity >= 0.9)
     }
 }
 

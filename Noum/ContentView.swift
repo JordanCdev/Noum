@@ -287,6 +287,8 @@ struct HomeBottomShortcut: Identifiable, Equatable {
 enum HomeShortcutDockLayout {
     static let scrollBottomPadding: CGFloat = 152
     static let backdropTopPadding: CGFloat = 18
+    static let contentClearance: CGFloat = 16
+    static let backdropTopOpacity: Double = 0.92
 }
 
 struct HomeAccessibilityModalGate: Equatable {
@@ -420,7 +422,7 @@ struct ContentView: View {
             .onPreferenceChange(HomeScrollOffsetKey.self) { value in
                 homeScrollOffset = value
             }
-            .safeAreaInset(edge: .bottom) {
+            .safeAreaInset(edge: .bottom, spacing: HomeShortcutDockLayout.contentClearance) {
                 bottomShortcutDock
             }
             .navigationDestination(for: AppDestination.self) { destination in
@@ -1326,7 +1328,7 @@ struct ContentView: View {
         .background(alignment: .bottom) {
             LinearGradient(
                 colors: [
-                    AppColor.lightGradientEnd.opacity(0),
+                    AppColor.lightGradientEnd.opacity(HomeShortcutDockLayout.backdropTopOpacity),
                     AppColor.lightGradientEnd.opacity(0.96)
                 ],
                 startPoint: .top,
