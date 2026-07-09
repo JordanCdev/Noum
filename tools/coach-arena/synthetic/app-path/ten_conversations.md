@@ -2,25 +2,22 @@
 
 These are fixture-backed synthetic conversations for done-state review.
 
-> Evidence status: STALE APP-PATH SOURCE.
-> Do not treat these conversations as current-source proof until the Swift app-path dump is regenerated and rescored.
-> Source freshness passes: `False`.
-> Real-pipeline evidence passes: `False`.
-> Report-internal source freshness passes: `False`.
-> Sidecar source freshness passes: `False`.
-> Current git commit: `a556f772`.
-> Report trace git commit(s): `a556f772`.
-> Current coach source fingerprint: `sha256:65d7408540c824a7bd953c6ce0d611d7735732fc72206e2775414c1eb6361fa6`.
-> Report trace coach source fingerprint(s): `sha256:d8662f3feef2bed08afc861b6d41edbfecc7c3b1471bacef2863a6a42aee5e0a`.
-> Sidecar git commit: `a556f772`.
-> Sidecar coach source fingerprint: `sha256:65d7408540c824a7bd953c6ce0d611d7735732fc72206e2775414c1eb6361fa6`.
-> Sidecar/report mismatch `sourceCoachFingerprint`: sidecar `sha256:65d7408540c824a7bd953c6ce0d611d7735732fc72206e2775414c1eb6361fa6`, report `sha256:d8662f3feef2bed08afc861b6d41edbfecc7c3b1471bacef2863a6a42aee5e0a`.
-> Source freshness failures: `dirty coach source files after app-path dump: Noum/AICoachChatService.swift,Noum/AskNoumStore.swift,Noum/CoachAssessment.swift,Noum/CoachReasoningPass.swift,Noum/CoachReliabilityGate.swift,Noum/CoachReplyPipeline.swift,Noum/TurnDepthClassifier.swift,NoumTests/CoachChatConversationEvaluationTests.swift,+5 more`.
-> Production evidence failures: `2 app-path fixture(s) below local quality floor 70: filler-pressure-007,not-easy-empathy-004`, `source Swift app-path freshness: dirty coach source files after app-path dump: Noum/AICoachChatService.swift,Noum/AskNoumStore.swift,Noum/CoachAssessment.swift,Noum/CoachReasoningPass.swift,Noum/CoachReliabilityGate.swift,Noum/CoachReplyPipeline.swift,Noum/TurnDepthClassifier.swift,NoumTests/CoachChatConversationEvaluationTests.swift,+5 more`, `source Swift app-path readiness warnings: appPathFloorFailures,targetReplyMismatch`, `source Swift app-path report did not pass its app-path floor`.
+> Evidence status: CURRENT APP-PATH SOURCE.
+> These conversations are backed by the current scored Swift app-path report.
+> Source freshness passes: `True`.
+> Real-pipeline evidence passes: `True`.
+> Report-internal source freshness passes: `True`.
+> Sidecar source freshness passes: `True`.
+> Current git commit: `1cd32331`.
+> Report trace git commit(s): `1cd32331`.
+> Current coach source fingerprint: `sha256:af101abff73847d45a865779d3c5ed64a04b19359c45ba8a1006d1c35a3ad403`.
+> Report trace coach source fingerprint(s): `sha256:af101abff73847d45a865779d3c5ed64a04b19359c45ba8a1006d1c35a3ad403`.
+> Sidecar git commit: `1cd32331`.
+> Sidecar coach source fingerprint: `sha256:af101abff73847d45a865779d3c5ed64a04b19359c45ba8a1006d1c35a3ad403`.
 
 ## authoritative-distance-001
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Sound authoritative in high-stakes updates.
 
@@ -35,7 +32,7 @@ Arena score: 87/100
 
 ## not-informative-trust-repair-002
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Get useful coaching, not generic advice.
 
@@ -50,7 +47,7 @@ Arena score: 71/100
 
 ## polite-however-pushback-003
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Feel understood before being prescribed another drill.
 
@@ -65,7 +62,7 @@ Arena score: 77/100
 
 ## not-easy-empathy-004
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Practice disagreement without sounding defensive.
 
@@ -74,13 +71,13 @@ Prior chat:
 
 User: It's not easy.
 
-Noum: Fair push. I made the move sound easier than it feels under pressure. Your last rep gives one safe signal, I made the move sound easier than it feels under pressure, so say only the disagreement and one calm reason, then stop before defending it.
+Noum: Fair push: no, it is not easy. The hard part is that sentence one carries the social risk, so test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it.
 
-Arena score: 60/100
+Arena score: 85/100
 
 ## repeating-yourself-005
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Avoid repetitive coaching loops.
 
@@ -96,7 +93,7 @@ Arena score: 80/100
 
 ## interview-prep-006
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Prepare for an interview.
 
@@ -105,13 +102,13 @@ Prior chat:
 
 User: How do I get better before my interview?
 
-Noum: No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.
+Noum: No baseline yet, so start there. Record 60 seconds on 'Why should we hire you?' and check whether sentence one answers before you polish anything else. Want to go now?
 
-Arena score: 72/100
+Arena score: 87/100
 
 ## filler-pressure-007
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Reduce fillers when pressure rises.
 
@@ -120,13 +117,13 @@ Prior chat:
 
 User: How do I stop saying um under pressure?
 
-Noum: Your last rep gives one usable signal so far, so run one answer and separate semantic words from filler words before cutting anything.
+Noum: Your last pressure rep had 6 fillers, mostly before the close, so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask.
 
-Arena score: 30/100
+Arena score: 83/100
 
 ## leadership-update-008
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Sound executive in leadership updates.
 
@@ -141,7 +138,7 @@ Arena score: 74/100
 
 ## confidence-ending-009
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: End answers with confidence.
 
@@ -156,7 +153,7 @@ Arena score: 73/100
 
 ## examples-from-sessions-010
 
-Evidence: `stale app-path source` - this reply is from a stale Swift app-path dump; use it as diagnostic evidence only, not current-source proof.
+Evidence: `current app-path source` - this reply is backed by the current scored Swift app-path report.
 
 Goal: Understand own pattern with proof.
 

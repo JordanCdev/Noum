@@ -1,4 +1,4 @@
-# Coach Arena failures — run_2026-07-09_21-51-26
+# Coach Arena failures — run_2026-07-09_22-54-24
 
 16 below 70 / capped / missing — **10 substantive gap(s)** (the real coach-parity signal) and **6 voice/residue cap(s)** (judge rated substance excellent; a prompt/finalizer cleanup, ux/chat-owned). Split so residue caps don't masquerade as the worst coaching failures.
 
@@ -206,7 +206,7 @@ No, it isn't — and a freeze in the room is a different animal than the reps yo
 
 ```
 MIRRORED USER-VISIBLE TEXT:
-No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. The hard part is the first hard sentence, not the whole performance. Keep the next step small: say only the first hard sentence, then stop.
+Fair push: no, it is not easy. There is already one earned proof point: this week you held composure through an interruption. The hard part is the first hard sentence, not the whole performance. Keep the next step small: say only the first hard sentence, then stop.
 ```
 
 ### greeting-hi — **56/100**
