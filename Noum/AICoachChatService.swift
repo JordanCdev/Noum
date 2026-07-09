@@ -2102,6 +2102,28 @@ actor AICoachChatService {
                 surface: surface,
                 assessment: assessment
             )
+        } else if CoachReliabilityGate.paceSelfFrustrationUserTurn(latestUserTurn) {
+            raw = CoachReliabilityGate.paceSelfFrustrationFallback(
+                surface: surface,
+                assessment: assessment,
+                replyText: systemContext
+            )
+        } else if CoachReliabilityGate.rambleStoppingRuleUserTurn(latestUserTurn) {
+            raw = CoachReliabilityGate.rambleStoppingRuleFallback(surface: surface)
+        } else if CoachReliabilityGate.leadershipStatusReportUserTurn(latestUserTurn) {
+            raw = CoachReliabilityGate.leadershipStatusReportFallback(surface: surface)
+        } else if CoachReliabilityGate.recurringCloseRushUserTurn(latestUserTurn),
+                  CoachReliabilityGate.recurringCloseRushTrendAvailable(
+                    assessment: assessment,
+                    replyText: systemContext
+                  ) {
+            raw = CoachReliabilityGate.recurringCloseRushFallback(surface: surface)
+        } else if CoachReliabilityGate.metadataSelfKnowledgeUserTurn(latestUserTurn),
+                  CoachReliabilityGate.metadataSelfKnowledgeSourceAvailable(
+                    assessment: assessment,
+                    replyText: systemContext
+                  ) {
+            raw = CoachReliabilityGate.metadataSelfKnowledgeFallback(surface: surface)
         } else if turnLooksLikeVoiceGoalIntent(lowerTurn) {
             raw = CoachReliabilityGate.goalStateDirectiveFallback(
                 surface: surface,
@@ -2284,9 +2306,11 @@ actor AICoachChatService {
         guard pressureFillerQuickMoveIntent(
             latestUserTurn: lowerTurn,
             systemContext: systemContext
-        ),
-              let count = firstFillerCount(in: systemContext) else {
+        ) else {
             return nil
+        }
+        guard let count = firstFillerCount(in: systemContext) else {
+            return "Under pressure, do not fight the urge directly. Replace it with one silent beat before the final sentence, then finish the ask."
         }
         let noun = count == 1 ? "filler" : "fillers"
         return "Your last pressure rep had \(count) \(noun), mostly before the close, so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask."
@@ -5735,13 +5759,13 @@ actor AICoachChatService {
         }
 
         if containsAny(lowerTurn, ["um", "filler", "fillers", "hesitat"]) {
+            if let pressureShape = deterministicPressureFillerQuickMoveReply(
+                latestUserTurn: lowerTurn,
+                systemContext: system
+            ) {
+                return pressureShape
+            }
             if let count = firstFillerCount(in: system) {
-                if let pressureShape = deterministicPressureFillerQuickMoveReply(
-                    latestUserTurn: lowerTurn,
-                    systemContext: system
-                ) {
-                    return pressureShape
-                }
                 if fillerEvidenceSitsInsideDecisionLine(system) {
                     return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so hold one silent beat after the decision line and restart if a filler appears."
                 }
@@ -6041,15 +6065,16 @@ actor AICoachChatService {
             return nil
         }
 
-        if let count = firstFillerCount(in: system),
-           containsAny(latestUserTurn, ["um", "filler", "fillers", "hesitat"]) {
+        if containsAny(latestUserTurn, ["um", "filler", "fillers", "hesitat"]) {
             if let pressureShape = deterministicPressureFillerQuickMoveReply(
                 latestUserTurn: latestUserTurn,
                 systemContext: system
             ) {
                 return pressureShape
             }
-            return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so \(application)."
+            if let count = firstFillerCount(in: system) {
+                return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so \(application)."
+            }
         }
 
         if containsAny(system.lowercased(), [
@@ -6116,8 +6141,10 @@ actor AICoachChatService {
             return "\(friction) Your warmth is arriving before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
         }
         if containsAny(lowerTurn, ["it's not easy", "its not easy", "not that easy", "easier said than done", "harder than that"]) {
+            let step = "say only the first hard sentence, then stop."
+            let frame = CoachReliabilityGate.vulnerablePushbackDifficultyFrame(for: step)
             if let anchor = CoachReliabilityGate.vulnerablePushbackEvidenceAnchor(from: [system]) {
-                return "No, it is not easy. \(anchor) Keep the next step small: say only the first hard sentence, then stop."
+                return "No, it is not easy. \(anchor) \(frame) Keep the next step small: \(step)"
             }
             return CoachReliabilityGate.vulnerablePushbackFallback(
                 surface: .text,
@@ -6150,7 +6177,7 @@ actor AICoachChatService {
                 "talked over", "interrupted", "running meetings",
                 "run meetings", "meeting", "meetings"
             ]) {
-                return "Start with Authoritative because meetings where you get talked over need short verdicts that hold the floor. Executive presence is the close second if the real pressure is senior-room calm; which room are you walking into?"
+                return "Given you are trying to stop getting talked over in meetings, Authoritative is the closest fit: short verdicts that hold the floor. Executive presence is the next-closest if the room is more senior leadership than peers. Which one matches the room you are actually in?"
             }
             return "Start with Authoritative because getting talked over is best trained with short verdicts that hold the floor. If the real pressure is senior-room calm, Executive presence is the comparison to test."
         }

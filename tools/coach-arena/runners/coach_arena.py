@@ -1360,6 +1360,7 @@ def app_path_trace(row, turn, report, source_path, match_source):
         "issues": issues,
         "latency": {
             "timeToFirstVisibleTokenMs": turn.get("timeToFirstVisibleTokenMs"),
+            "timeToFirstVisibleTokenSource": turn.get("timeToFirstVisibleTokenSource"),
             "timeToCompleteReplyMs": turn.get("timeToCompleteReplyMs")
         },
         "cache": {
@@ -1796,6 +1797,7 @@ def trace_quality_audit(results):
     empty_retrieval_fixture_ids = []
     allowed_empty_retrieval_fixture_ids = []
     missing_latency_fixture_ids = []
+    missing_latency_source_fixture_ids = []
     slow_first_token_fixture_ids = []
     slow_completion_fixture_ids = []
 
@@ -1831,10 +1833,13 @@ def trace_quality_audit(results):
                     empty_retrieval_fixture_ids.append(fixture_id)
 
         first_token_ms = latency.get("timeToFirstVisibleTokenMs")
+        first_token_source = latency.get("timeToFirstVisibleTokenSource")
         complete_ms = latency.get("timeToCompleteReplyMs")
         if not isinstance(first_token_ms, (int, float)):
             missing_latency_fixture_ids.append(fixture_id)
         else:
+            if not isinstance(first_token_source, str) or not first_token_source.strip():
+                missing_latency_source_fixture_ids.append(fixture_id)
             first_token_target_ms = 2000 if surface == "live" else 3000
             if first_token_ms > first_token_target_ms:
                 slow_first_token_fixture_ids.append(fixture_id)
@@ -1873,6 +1878,8 @@ def trace_quality_audit(results):
         failures.append(f"{len(empty_retrieval_fixture_ids)} real-pipeline trace(s) returned no retrieved cards")
     if missing_latency_fixture_ids:
         failures.append(f"{len(missing_latency_fixture_ids)} real-pipeline trace(s) missing first-token latency")
+    if missing_latency_source_fixture_ids:
+        failures.append(f"{len(missing_latency_source_fixture_ids)} real-pipeline trace(s) missing first-token source")
     if slow_first_token_fixture_ids:
         failures.append(f"{len(slow_first_token_fixture_ids)} real-pipeline trace(s) exceeded first-token latency target")
     if slow_completion_fixture_ids:
@@ -1915,6 +1922,8 @@ def trace_quality_audit(results):
         "latency": {
             "missingFirstTokenCount": len(missing_latency_fixture_ids),
             "missingFirstTokenFixtureIDs": missing_latency_fixture_ids[:10],
+            "missingFirstTokenSourceCount": len(missing_latency_source_fixture_ids),
+            "missingFirstTokenSourceFixtureIDs": missing_latency_source_fixture_ids[:10],
             "slowFirstTokenCount": len(slow_first_token_fixture_ids),
             "slowFirstTokenFixtureIDs": slow_first_token_fixture_ids[:10],
             "slowCompletionCount": len(slow_completion_fixture_ids),

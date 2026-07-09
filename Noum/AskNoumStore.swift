@@ -236,6 +236,12 @@ struct CoachPromptTrace: Codable, Equatable {
     }
 }
 
+enum CoachFirstVisibleTokenSource: String, Codable, Equatable {
+    case localImmediateRead
+    case streamedProviderPartial
+    case finalReplyCommit
+}
+
 /// Persisted per-turn observability for the Ask Noum coach thread.
 ///
 /// Optional fields keep old persisted rows decodable and let non-pipeline
@@ -276,6 +282,7 @@ struct CoachTurnMetadata: Codable, Equatable {
     var ttftMs: Int?
     var fullLatencyMs: Int?
     var timeToFirstVisibleTokenMs: Int?
+    var timeToFirstVisibleTokenSource: CoachFirstVisibleTokenSource?
     var timeToCompleteReplyMs: Int?
     var providerName: String?
     var providerModel: String?
@@ -323,6 +330,7 @@ struct CoachTurnMetadata: Codable, Equatable {
         ttftMs: Int? = nil,
         fullLatencyMs: Int? = nil,
         timeToFirstVisibleTokenMs: Int? = nil,
+        timeToFirstVisibleTokenSource: CoachFirstVisibleTokenSource? = nil,
         timeToCompleteReplyMs: Int? = nil,
         providerName: String? = nil,
         providerModel: String? = nil,
@@ -365,6 +373,7 @@ struct CoachTurnMetadata: Codable, Equatable {
         self.ttftMs = ttftMs
         self.fullLatencyMs = fullLatencyMs
         self.timeToFirstVisibleTokenMs = timeToFirstVisibleTokenMs ?? ttftMs
+        self.timeToFirstVisibleTokenSource = timeToFirstVisibleTokenSource
         self.timeToCompleteReplyMs = timeToCompleteReplyMs ?? fullLatencyMs
         self.providerName = providerName
         self.providerModel = providerModel

@@ -1,7 +1,7 @@
 {
-  "runId": "run_2026-07-09_21-30-18",
+  "runId": "run_2026-07-09_21-00-35",
   "meta": {
-    "runId": "run_2026-07-09_21-30-18",
+    "runId": "run_2026-07-09_21-00-35",
     "provider": "replay",
     "coachModel": "claude-sonnet-4-6",
     "judgeModel": "claude-sonnet-4-6",
@@ -10,7 +10,7 @@
       "commit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf",
       "shortCommit": "5bef2d08",
       "branch": "ux-overhaul",
-      "dirty": 21
+      "dirty": 2
     },
     "versions": {
       "node": "v26.0.0",
@@ -20,17 +20,17 @@
     "promptProvenance": [
       {
         "path": "Noum/CoachContextBuilder.swift",
-        "sha256": "5bf3266802ca17ea",
-        "bytes": 363301
+        "sha256": "08e780cddc2e2106",
+        "bytes": 363243
       },
       {
         "path": "Noum/AICoachChatService.swift",
-        "sha256": "b7512bb409b2b4c2",
-        "bytes": 318638
+        "sha256": "bdb0251f577d4029",
+        "bytes": 318296
       }
     ],
-    "startedAt": "2026-07-09T21:30:18.944Z",
-    "finishedAt": "2026-07-09T21:30:19.020Z"
+    "startedAt": "2026-07-09T21:00:36.080Z",
+    "finishedAt": "2026-07-09T21:00:36.152Z"
   },
   "records": [
     {
@@ -76,17 +76,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1897,
-        "systemChars": 33324,
+        "systemChars": 33276,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -239,17 +239,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 401,
-        "systemChars": 31815,
+        "systemChars": 31767,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -438,17 +438,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1347,
-        "systemChars": 32786,
+        "systemChars": 32738,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -591,7 +591,7 @@
         },
         "rawReply": "No, it isn't — and a freeze in the room is a different animal than the reps you keep landing clean. When it hits, what goes first: the thought itself, or the words that were meant to carry it?",
         "finalizedReply": "No, it isn't — and a freeze in the room is a different animal than the reps you keep landing clean. When it hits, what goes first: the thought itself, or the words that were meant to carry it?",
-        "surfaceReply": "No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. The hard part is the first hard sentence, not the whole performance. Keep the next step small: say only the first hard sentence, then stop."
+        "surfaceReply": "No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. Keep the next step small: say only the first hard sentence, then stop."
       },
       "trace": {
         "provider": "replay",
@@ -600,17 +600,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 705,
-        "systemChars": 32144,
+        "systemChars": 32096,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -622,7 +622,7 @@
         "placeholderLeaks": 0
       },
       "userVisible": {
-        "reply": "No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. The hard part is the first hard sentence, not the whole performance. Keep the next step small: say only the first hard sentence, then stop.",
+        "reply": "No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. Keep the next step small: say only the first hard sentence, then stop.",
         "changedFromScoredReply": true,
         "reliabilityGate": {
           "changed": true,
@@ -765,17 +765,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1202,
-        "systemChars": 32616,
+        "systemChars": 32568,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -914,17 +914,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1617,
-        "systemChars": 33158,
+        "systemChars": 33110,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -1070,17 +1070,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1335,
-        "systemChars": 32762,
+        "systemChars": 32714,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -1245,17 +1245,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1420,
-        "systemChars": 32961,
+        "systemChars": 32913,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -1384,17 +1384,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1613,
-        "systemChars": 33040,
+        "systemChars": 32992,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -1547,17 +1547,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 313,
-        "systemChars": 31740,
+        "systemChars": 31692,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -1698,17 +1698,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 143,
-        "systemChars": 31557,
+        "systemChars": 31509,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -1889,17 +1889,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 295,
-        "systemChars": 31722,
+        "systemChars": 31674,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -2097,7 +2097,7 @@
         },
         "rawReply": "No baseline yet, so start there. Everything else I say sharpens once I've heard you speak once.\n\nDo one Ah-Counter round: 60 seconds on a topic you know cold, aiming to stay under 4 fillers. That gives you a first number and me your starting point.",
         "finalizedReply": "No baseline yet, so start there. Everything else I say sharpens once I've heard you speak once.\nDo one Ah-Counter round: 60 seconds on a topic you know cold, aiming to stay under 4 fillers. That gives you a first number and me your starting point.",
-        "surfaceReply": "Start with one real sample. Do one 60-second rep on something you know well — how you'd explain what you do to a stranger works nicely. Then I can give you a real read. Want to go now?"
+        "surfaceReply": "Start with one real sample. Run a quick 60-second rep on something you know well — how you'd explain what you do to a stranger works nicely. That gives me your real pace, rhythm, and first useful pattern. Want to give it a go?"
       },
       "trace": {
         "provider": "replay",
@@ -2106,17 +2106,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 43,
-        "systemChars": 31329,
+        "systemChars": 31281,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -2165,7 +2165,7 @@
         "placeholderLeaks": 1
       },
       "userVisible": {
-        "reply": "Start with one real sample. Do one 60-second rep on something you know well — how you'd explain what you do to a stranger works nicely. Then I can give you a real read. Want to go now?",
+        "reply": "Start with one real sample. Run a quick 60-second rep on something you know well — how you'd explain what you do to a stranger works nicely. That gives me your real pace, rhythm, and first useful pattern. Want to give it a go?",
         "changedFromScoredReply": true,
         "reliabilityGate": {
           "changed": true,
@@ -2296,17 +2296,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 898,
-        "systemChars": 32335,
+        "systemChars": 32287,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -2449,17 +2449,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 885,
-        "systemChars": 32324,
+        "systemChars": 32276,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -2588,17 +2588,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 755,
-        "systemChars": 32194,
+        "systemChars": 32146,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -2743,17 +2743,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1348,
-        "systemChars": 32759,
+        "systemChars": 32711,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -2899,17 +2899,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 439,
-        "systemChars": 31878,
+        "systemChars": 31830,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -3036,17 +3036,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 349,
-        "systemChars": 31763,
+        "systemChars": 31715,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -3198,17 +3198,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1400,
-        "systemChars": 32941,
+        "systemChars": 32893,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -3352,17 +3352,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 396,
-        "systemChars": 31833,
+        "systemChars": 31785,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -3517,17 +3517,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1432,
-        "systemChars": 32846,
+        "systemChars": 32798,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -3679,17 +3679,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 409,
-        "systemChars": 31820,
+        "systemChars": 31772,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -3830,17 +3830,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 643,
-        "systemChars": 32082,
+        "systemChars": 32034,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -3988,17 +3988,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1285,
-        "systemChars": 32712,
+        "systemChars": 32664,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -4136,17 +4136,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 749,
-        "systemChars": 32188,
+        "systemChars": 32140,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -4292,17 +4292,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 804,
-        "systemChars": 32218,
+        "systemChars": 32170,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -4440,17 +4440,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1614,
-        "systemChars": 33053,
+        "systemChars": 33005,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -4584,17 +4584,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 791,
-        "systemChars": 32230,
+        "systemChars": 32182,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -4722,17 +4722,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1747,
-        "systemChars": 33161,
+        "systemChars": 33113,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -4866,17 +4866,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1411,
-        "systemChars": 32838,
+        "systemChars": 32790,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -5017,17 +5017,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 878,
-        "systemChars": 32305,
+        "systemChars": 32257,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -5152,17 +5152,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 973,
-        "systemChars": 32410,
+        "systemChars": 32362,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -5315,17 +5315,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1533,
-        "systemChars": 32960,
+        "systemChars": 32912,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -5464,17 +5464,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 576,
-        "systemChars": 32003,
+        "systemChars": 31955,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -5618,17 +5618,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1640,
-        "systemChars": 33079,
+        "systemChars": 33031,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -5792,17 +5792,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1378,
-        "systemChars": 32792,
+        "systemChars": 32744,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -5948,17 +5948,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1196,
-        "systemChars": 32607,
+        "systemChars": 32559,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -6122,17 +6122,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1743,
-        "systemChars": 33182,
+        "systemChars": 33134,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -6250,17 +6250,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1573,
-        "systemChars": 33000,
+        "systemChars": 32952,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -6424,17 +6424,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1504,
-        "systemChars": 32943,
+        "systemChars": 32895,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -6582,17 +6582,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1647,
-        "systemChars": 33188,
+        "systemChars": 33140,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -6713,17 +6713,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1451,
-        "systemChars": 32862,
+        "systemChars": 32814,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -6870,17 +6870,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 576,
-        "systemChars": 32003,
+        "systemChars": 31955,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -7004,7 +7004,7 @@
         },
         "rawReply": "Not being talked over is about presence, so two of the six fit: Authoritative (plain verdicts, hard to interrupt) and Executive presence (calm command in the room). For meetings I'd start with Authoritative — it trains the short, flat line that holds the floor. Tap to confirm and I'll lock it in, or say the word if the room reads more senior and Executive presence fits better.",
         "finalizedReply": "Not being talked over is about presence, so two of the six fit: Authoritative (plain verdicts, hard to interrupt) and Executive presence (calm command in the room). For meetings I'd start with Authoritative — it trains the short, flat line that holds the floor. Tap to confirm and I'll lock it in, or say the word if the room reads more senior and Executive presence fits better.",
-        "surfaceReply": "Given you are trying to stop getting talked over in meetings, Authoritative is the closest fit: short verdicts that hold the floor. Executive presence is the next-closest if the room is more senior leadership than peers. Which one matches the room you are actually in?"
+        "surfaceReply": "Start with Authoritative because meetings where you get talked over need short verdicts that hold the floor. Keep Executive presence as the close second if the room is more senior than interrupt-heavy. That gives you one voice to test, not six to debate."
       },
       "trace": {
         "provider": "replay",
@@ -7013,17 +7013,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 92,
-        "systemChars": 31378,
+        "systemChars": 31330,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -7054,7 +7054,7 @@
         "placeholderLeaks": 0
       },
       "userVisible": {
-        "reply": "Given you are trying to stop getting talked over in meetings, Authoritative is the closest fit: short verdicts that hold the floor. Executive presence is the next-closest if the room is more senior leadership than peers. Which one matches the room you are actually in?",
+        "reply": "Start with Authoritative because meetings where you get talked over need short verdicts that hold the floor. Keep Executive presence as the close second if the room is more senior than interrupt-heavy. That gives you one voice to test, not six to debate.",
         "changedFromScoredReply": true,
         "reliabilityGate": {
           "changed": true,
@@ -7194,17 +7194,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 51,
-        "systemChars": 31337,
+        "systemChars": 31289,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -7360,17 +7360,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1269,
-        "systemChars": 32683,
+        "systemChars": 32635,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -7495,17 +7495,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1599,
-        "systemChars": 33036,
+        "systemChars": 32988,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -7635,17 +7635,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 367,
-        "systemChars": 31908,
+        "systemChars": 31860,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -7790,17 +7790,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1347,
-        "systemChars": 32786,
+        "systemChars": 32738,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -7962,17 +7962,17 @@
         "usage": null,
         "stopReason": "replay",
         "contextChars": 1633,
-        "systemChars": 33060,
+        "systemChars": 33012,
         "promptProvenance": [
           {
             "path": "Noum/CoachContextBuilder.swift",
-            "sha256": "5bf3266802ca17ea",
-            "bytes": 363301
+            "sha256": "08e780cddc2e2106",
+            "bytes": 363243
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "bdb0251f577d4029",
+            "bytes": 318296
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -8278,7 +8278,7 @@
     }
   },
   "previous": {
-    "runId": "run_2026-07-09_21-19-11",
+    "runId": "run_2026-07-09_20-37-41",
     "summary": {
       "n": 51,
       "scored": 51,

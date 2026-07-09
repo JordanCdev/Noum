@@ -24,6 +24,7 @@ def complete_app_path_trace():
         "issues": [],
         "latency": {
             "timeToFirstVisibleTokenMs": 120,
+            "timeToFirstVisibleTokenSource": "finalReplyCommit",
             "timeToCompleteReplyMs": 400,
         },
         "cache": {"sourcePath": "/tmp/source.json"},

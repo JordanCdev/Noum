@@ -750,6 +750,24 @@ test('production surface: clean pace self-frustration read ships', () => {
   assert.equal(result.deterministic.placeholderLeaks, 0);
 });
 
+test('production surface: pace self-frustration without attunement still falls back', () => {
+  const fx = baseFx({
+    category: 'mechanics',
+    turnDepth: 'groundedRead',
+    userTurn: "I talk way too fast, people can't keep up.",
+    evidence: { pace: 215, pauseRate: 0.09 },
+  });
+  const raw = 'Pace was 215 WPM with a 0.09 pause rate, so the gap between sentences is disappearing. Fix the pause, not the speed. Hold one silent beat after every full stop.';
+  const result = productionSurfaceReplyForFixture(raw, fx);
+
+  assert.equal(result.reliabilityGate.changed, true);
+  assert.deepEqual(result.reliabilityGate.issues, ['paceSelfFrustrationReportVoice']);
+  assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.paceSelfFrustrationFallback');
+  assert.ok(result.text.startsWith("You're not imagining it"));
+  assert.ok(result.text.includes('0.09 pause rate'));
+  assert.equal(result.deterministic.hardCap, null);
+});
+
 test('production surface: ramble scaffold falls back to stop rule', () => {
   const fx = baseFx({
     category: 'mechanics',
@@ -918,7 +936,7 @@ test('production surface: vulnerable pushback bare question falls back before us
   assert.deepEqual(result.reliabilityGate.issues, ['vulnerablePushbackQuestionBurden']);
   assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.vulnerablePushbackFallback');
   assert.ok(result.changes.includes('reliabilityGateFallback'));
-  assert.equal(result.text, 'No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. Keep the next step small: say only the first hard sentence, then stop.');
+  assert.equal(result.text, 'No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. The hard part is the first hard sentence, not the whole performance. Keep the next step small: say only the first hard sentence, then stop.');
   assert.ok(!/what goes first/i.test(result.text));
   assert.equal(result.deterministic.hardCap, null);
   assert.equal(result.deterministic.placeholderLeaks, 0);
@@ -935,7 +953,7 @@ test('production surface: vulnerable pushback fallback stays honest without earn
 
   assert.equal(result.reliabilityGate.changed, true);
   assert.deepEqual(result.reliabilityGate.issues, ['vulnerablePushbackQuestionBurden']);
-  assert.equal(result.text, 'No, it is not easy. The freeze is real, so do not turn this into a full performance test. Keep the next step small: say only the first hard sentence, then stop.');
+  assert.equal(result.text, 'No, it is not easy. The hard part is the first hard sentence, not the whole performance. Keep the next step small: say only the first hard sentence, then stop.');
   assert.doesNotMatch(result.text, /earned proof point|held composure/i);
   assert.equal(result.deterministic.hardCap, null);
 });
@@ -967,7 +985,7 @@ test('production surface: voice state directive falls back before user display',
   assert.deepEqual(result.reliabilityGate.issues, ['goalStateDirectiveLeak']);
   assert.equal(result.reliabilityGate.source, 'CoachReliabilityGate.goalStateDirectiveFallback');
   assert.ok(result.changes.includes('reliabilityGateFallback'));
-  assert.equal(result.text, 'Start with Authoritative because meetings where you get talked over need short verdicts that hold the floor. Keep Executive presence as the close second if the room is more senior than interrupt-heavy. That gives you one voice to test, not six to debate.');
+  assert.equal(result.text, 'Given you are trying to stop getting talked over in meetings, Authoritative is the closest fit: short verdicts that hold the floor. Executive presence is the next-closest if the room is more senior leadership than peers. Which one matches the room you are actually in?');
   assert.ok(!/tap|lock it|i'll set|i will set/i.test(result.text));
   assert.ok(!/do not choose/i.test(result.text));
   assert.ok(!result.deterministic.findings.some((f) => f.id === 'goalIntentStateDirective'));
@@ -1224,7 +1242,7 @@ test('checks: goal-change turn flags UI/state directive', () => {
   const bad = runChecks('Start with Authoritative. Tap to confirm and I’ll lock it in.', fx, {});
   assert.ok(bad.findings.some((f) => f.id === 'goalIntentStateDirective'));
 
-  const good = runChecks('Start with Authoritative because meetings where you get talked over need short verdicts that hold the floor. Executive presence is the close second if the room is more senior than interrupt-heavy.', fx, {});
+  const good = runChecks('Given you are trying to stop getting talked over in meetings, Authoritative is the closest fit: short verdicts that hold the floor. Executive presence is the next-closest if the room is more senior leadership than peers. Which one matches the room you are actually in?', fx, {});
   assert.ok(!good.findings.some((f) => f.id === 'goalIntentStateDirective'));
 });
 
@@ -1538,7 +1556,7 @@ test('report: failures show mirrored production-surface fallback without changin
     findings: [{ id: 'coldStartProductJargon', evidence: 'Ah-Counter' }],
   };
   record.userVisible = {
-    reply: "Start with one real sample. Run a quick 60-second rep on something you know well, and I'll have something honest to coach.",
+    reply: "Start with one real sample. Do one 60-second rep on something you know well, and I'll have something honest to coach.",
     changedFromScoredReply: true,
     reliabilityGate: {
       changed: true,

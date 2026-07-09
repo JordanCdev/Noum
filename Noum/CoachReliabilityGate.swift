@@ -807,7 +807,7 @@ enum CoachReliabilityGate {
     static func coldStartFallback(surface: CoachReplySurface) -> String {
         surface == .live
             ? "Start with one real sample. Give me 60 seconds on something you know well, like how you'd explain what you do to a stranger. Then I'll have something honest to coach. Want to go now?"
-            : "Start with one real sample. Run a quick 60-second rep on something you know well — how you'd explain what you do to a stranger works nicely. That gives me your real pace, rhythm, and first useful pattern. Want to give it a go?"
+            : "Start with one real sample. Do one 60-second rep on something you know well — how you'd explain what you do to a stranger works nicely. Then I can give you a real read. Want to go now?"
     }
 
     /// A warm, brief greeting to render when the turn was a hello but the reply
@@ -986,14 +986,15 @@ enum CoachReliabilityGate {
         assessment: CoachAssessment?
     ) -> String {
         let step = vulnerablePushbackSmallStep(from: assessment)
+        let frame = vulnerablePushbackDifficultyFrame(for: step)
         if let anchor = vulnerablePushbackEvidenceAnchor(from: assessment?.evidenceUsed ?? []) {
             return surface == .live
-                ? "No, it is not easy. \(anchor) Keep it small: \(step)"
-                : "No, it is not easy. \(anchor) Keep the next step small: \(step)"
+                ? "No, it is not easy. \(anchor) \(frame) Keep it small: \(step)"
+                : "No, it is not easy. \(anchor) \(frame) Keep the next step small: \(step)"
         }
         return surface == .live
-            ? "No, it is not easy. Do not turn the freeze into a full performance test. Keep it small: \(step)"
-            : "No, it is not easy. The freeze is real, so do not turn this into a full performance test. Keep the next step small: \(step)"
+            ? "No, it is not easy. \(frame) Keep it small: \(step)"
+            : "No, it is not easy. \(frame) Keep the next step small: \(step)"
     }
 
     /// Recovery for a voice/goal-change reply that tried to own the UI state
@@ -1015,7 +1016,7 @@ enum CoachReliabilityGate {
         if containsAny(lowered, ["what voice", "which voice", "voice should", "six", "dont know", "don't know"]) {
             return surface == .live
                 ? "Start with Authoritative: short verdicts hold the floor when people talk over you. Executive presence is the backup if the room is more senior than interrupt-heavy."
-                : "Start with Authoritative because meetings where you get talked over need short verdicts that hold the floor. Keep Executive presence as the close second if the room is more senior than interrupt-heavy. That gives you one voice to test, not six to debate."
+                : "Given you are trying to stop getting talked over in meetings, Authoritative is the closest fit: short verdicts that hold the floor. Executive presence is the next-closest if the room is more senior leadership than peers. Which one matches the room you are actually in?"
         }
         if containsAny(lowered, ["authoritative", "verdict-first", "verdict first"]) {
             return surface == .live
@@ -1576,6 +1577,17 @@ enum CoachReliabilityGate {
         "speak slower"
     ]
 
+    static let paceSelfFrustrationAttunementMarkers: [String] = [
+        "you're not imagining",
+        "you are not imagining",
+        "makes sense",
+        "that makes sense",
+        "people can't keep up",
+        "people cant keep up",
+        "not a confidence problem",
+        "not confidence"
+    ]
+
     static let paceSelfFrustrationGapMarkers: [String] = [
         "gap between sentences",
         "gap between points",
@@ -1599,6 +1611,9 @@ enum CoachReliabilityGate {
             return true
         }
         if containsAny(normalized, paceSelfFrustrationGenericAdviceMarkers) {
+            return true
+        }
+        if !containsAny(normalized, paceSelfFrustrationAttunementMarkers) {
             return true
         }
         let namesPace = containsAny(normalized, [
@@ -2067,6 +2082,14 @@ enum CoachReliabilityGate {
             return "say only the first hard sentence, then stop."
         }
         return sentence(proof)
+    }
+
+    static func vulnerablePushbackDifficultyFrame(for step: String) -> String {
+        let lowered = normalize(step)
+        if containsAny(lowered, ["disagreement", "calm reason", "defending", "defend it"]) {
+            return "The hard part is that sentence one carries the social risk."
+        }
+        return "The hard part is the first hard sentence, not the whole performance."
     }
 
     static func sentence(_ value: String) -> String {

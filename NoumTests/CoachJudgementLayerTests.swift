@@ -2449,7 +2449,7 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "What voice should I even pick? There are six and I don't know.",
                 depth: .groundedRead,
-                expectedFragments: ["start with authoritative", "executive presence", "one voice to test"],
+                expectedFragments: ["authoritative is the closest fit", "executive presence", "which one matches"],
                 rejectedFragments: ["tap to confirm", "lock it in"]
             ),
             Spec(
@@ -2752,7 +2752,7 @@ struct CoachTypedFallbackTests {
 
     @Test func referenceRepairForNotInformativeUsesSpecificReadWithoutScaffold() throws {
         let shape = try #require(AICoachChatService.repairReferenceShape(
-            issue: .notInformativeRepairScaffold,
+            issue: .missedTrustRepair,
             latestUserTurn: "That's not informative.",
             system: "RECENT: the point arrived in sentence four after three warm-up sentences."
         ))
@@ -2764,6 +2764,266 @@ struct CoachTypedFallbackTests {
         #expect(!lower.contains("real read:"))
         #expect(!lower.contains("score"))
         #expect(!lower.contains("cut the"))
+    }
+
+    @Test func providerQualityFailureFallsBackToPaceSelfFrustrationRead() async throws {
+        let service = try Self.serviceThatAlwaysReturnsBadReply(
+            "You scored 71. Just slow down and be more confident."
+        )
+        let userTurn = "I talk way too fast, people can't keep up."
+        let context = "RECENT: latest rep scored 71, pace 215 WPM, pause rate 0.09."
+        let assessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: userTurn,
+            directVerdict: "The issue is the missing gap between sentences, not confidence.",
+            confidence: 0.64,
+            evidenceUsed: [
+                "latest rep: pace 215 WPM, pause rate 0.09"
+            ],
+            rubricScores: [],
+            missingEvidence: [],
+            nextProofTest: "Hold one silent beat after every full stop.",
+            responseMode: .immediateOnly
+        )
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: userTurn)],
+            systemPrompt: "You are Noum.",
+            userContext: context,
+            turnDepth: .groundedRead,
+            assessment: assessment,
+            surface: .text,
+            preferredTier: .claudeReasoning
+        )
+
+        switch outcome {
+        case .reply(let text):
+            let lower = text.lowercased()
+            #expect(lower.contains("you're not imagining it"))
+            #expect(lower.contains("215 wpm"))
+            #expect(lower.contains("0.09 pause rate"))
+            #expect(lower.contains("fix the pause"))
+            #expect(!lower.contains("scored 71"))
+            #expect(!lower.contains("just slow down"))
+            #expect(AICoachChatService.replyQualityIssue(
+                in: text,
+                latestUserTurn: userTurn,
+                systemContext: context,
+                turnDepth: .groundedRead,
+                surface: .text
+            ) == nil, "pace fallback should pass reply quality: \(text)")
+        case .failure(let failure):
+            #expect(Bool(false), "pace typed fallback should prevent content rejection, got \(failure)")
+        }
+    }
+
+    @Test func providerQualityFailureFallsBackToRambleStoppingRule() async throws {
+        let service = try Self.serviceThatAlwaysReturnsBadReply(
+            "Next rep: be more concise and structure your thoughts."
+        )
+        let userTurn = "I ramble — I start a point and three minutes later I'm somewhere else."
+        let context = "RECENT: opened with the point, then stacked side stories before a weaker repeat."
+        let assessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: userTurn,
+            directVerdict: "The mechanism is reopening the point after side stories.",
+            confidence: 0.60,
+            evidenceUsed: [
+                "latest rep: side stories clustered before a weaker repeat at the end"
+            ],
+            rubricScores: [],
+            missingEvidence: [],
+            nextProofTest: "State the point, give one support line, then silence.",
+            responseMode: .immediateOnly
+        )
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: userTurn)],
+            systemPrompt: "You are Noum.",
+            userContext: context,
+            turnDepth: .groundedRead,
+            assessment: assessment,
+            surface: .text,
+            preferredTier: .claudeReasoning
+        )
+
+        switch outcome {
+        case .reply(let text):
+            let lower = text.lowercased()
+            #expect(lower.contains("you do not lose the thread"))
+            #expect(lower.contains("weaker repeat"))
+            #expect(lower.contains("hard stop"))
+            #expect(!lower.contains("next rep:"))
+            #expect(!lower.contains("be more concise"))
+            #expect(AICoachChatService.replyQualityIssue(
+                in: text,
+                latestUserTurn: userTurn,
+                systemContext: context,
+                turnDepth: .groundedRead,
+                surface: .text
+            ) == nil, "ramble fallback should pass reply quality: \(text)")
+        case .failure(let failure):
+            #expect(Bool(false), "ramble typed fallback should prevent content rejection, got \(failure)")
+        }
+    }
+
+    @Test func providerQualityFailureFallsBackToLeadershipRehearsal() async throws {
+        let service = try Self.serviceThatAlwaysReturnsBadReply(
+            "Your last rep was clean at 77. Add structure and people will listen."
+        )
+        let userTurn = "I have to give the weekly leadership update to the whole department tomorrow. It always feels like I'm just reading a status report and people zone out. Help."
+        let context = "RECENT: nine equal-weight updates, no through-line, last rep clean at 77."
+        let assessment = CoachAssessment(
+            turnDepth: .deepAssessment,
+            surface: .text,
+            questionRestatement: userTurn,
+            directVerdict: "The status-report risk is hierarchy: every update lands at the same weight.",
+            confidence: 0.66,
+            evidenceUsed: [
+                "latest rep: nine equal-weight updates with no through-line"
+            ],
+            rubricScores: [],
+            missingEvidence: [],
+            nextProofTest: "Tonight, write the opener as the one thing that matters this week and why.",
+            responseMode: .expandable
+        )
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: userTurn)],
+            systemPrompt: "You are Noum.",
+            userContext: context,
+            turnDepth: .deepAssessment,
+            assessment: assessment,
+            surface: .text,
+            preferredTier: .claudeReasoning
+        )
+
+        switch outcome {
+        case .reply(let text):
+            let lower = text.lowercased()
+            #expect(lower.contains("real risk for tomorrow"))
+            #expect(lower.contains("hierarchy"))
+            #expect(lower.contains("tonight"))
+            #expect(lower.contains("the one thing that matters this week"))
+            #expect(!lower.contains("clean at 77"))
+            #expect(AICoachChatService.replyQualityIssue(
+                in: text,
+                latestUserTurn: userTurn,
+                systemContext: context,
+                turnDepth: .deepAssessment,
+                surface: .text
+            ) == nil, "leadership fallback should pass reply quality: \(text)")
+        case .failure(let failure):
+            #expect(Bool(false), "leadership typed fallback should prevent content rejection, got \(failure)")
+        }
+    }
+
+    @Test func providerQualityFailureFallsBackToRecurringCloseTrend() async throws {
+        let service = try Self.serviceThatAlwaysReturnsBadReply(
+            "Next rep: hit your second-to-last sentence, hold a beat, then say the final line slowly."
+        )
+        let userTurn = "What should I work on next? The last one felt solid to me."
+        let context = "POSITIONAL TREND: fastest stretch keeps landing at the close: 4 of the last 5 reps with a fast stretch, 5 of the last 6 overall."
+        let assessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: userTurn,
+            directVerdict: "The solid feeling is real, and the recurring edge is the close.",
+            confidence: 0.70,
+            evidenceUsed: [
+                "close rush: 4 of the last 5 reps with a fast stretch and 5 of the last 6 overall"
+            ],
+            rubricScores: [],
+            missingEvidence: [],
+            nextProofTest: "Plant one silent beat before the final line.",
+            responseMode: .immediateOnly
+        )
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: userTurn)],
+            systemPrompt: "You are Noum.",
+            userContext: context,
+            turnDepth: .groundedRead,
+            assessment: assessment,
+            surface: .text,
+            preferredTier: .claudeReasoning
+        )
+
+        switch outcome {
+        case .reply(let text):
+            let lower = text.lowercased()
+            #expect(lower.contains("solid feeling is real"))
+            #expect(lower.contains("4 of the last 5"))
+            #expect(lower.contains("5 of the last 6"))
+            #expect(lower.contains("plant one silent beat"))
+            #expect(!lower.contains("next rep:"))
+            #expect(AICoachChatService.replyQualityIssue(
+                in: text,
+                latestUserTurn: userTurn,
+                systemContext: context,
+                turnDepth: .groundedRead,
+                surface: .text
+            ) == nil, "recurring-close fallback should pass reply quality: \(text)")
+        case .failure(let failure):
+            #expect(Bool(false), "recurring-close typed fallback should prevent content rejection, got \(failure)")
+        }
+    }
+
+    @Test func providerQualityFailureFallsBackToMetadataSelfKnowledgeRead() async throws {
+        let service = try Self.serviceThatAlwaysReturnsBadReply(
+            "So the thing to test: next rep, hold one silent beat before you answer."
+        )
+        let userTurn = "What does your system actually know about me?"
+        let context = "GOAL: sound like yourself in hard conversations. PATTERN: tense moments make you race to fill silence. BASELINE: 170 WPM pace. STREAK: 12-day streak."
+        let assessment = CoachAssessment(
+            turnDepth: .groundedRead,
+            surface: .text,
+            questionRestatement: userTurn,
+            directVerdict: "The bounded read is goal, pressure pattern, pace baseline, and streak.",
+            confidence: 0.68,
+            evidenceUsed: [
+                "goal: sound like yourself in hard conversations",
+                "pattern: race to fill silence under pressure",
+                "numbers: 170 WPM pace baseline and 12-day streak"
+            ],
+            rubricScores: [],
+            missingEvidence: [],
+            nextProofTest: "Wait on a next drill until the user asks for one.",
+            responseMode: .immediateOnly
+        )
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: userTurn)],
+            systemPrompt: "You are Noum.",
+            userContext: context,
+            turnDepth: .groundedRead,
+            assessment: assessment,
+            surface: .text,
+            preferredTier: .claudeReasoning
+        )
+
+        switch outcome {
+        case .reply(let text):
+            let lower = text.lowercased()
+            #expect(lower.contains("real read, not a script"))
+            #expect(lower.contains("sound like yourself"))
+            #expect(lower.contains("pace baseline around 170 wpm"))
+            #expect(lower.contains("12-day streak"))
+            #expect(lower.contains("wait on a next drill"))
+            #expect(!lower.contains("so the thing to test"))
+            #expect(!lower.contains("next rep"))
+            #expect(AICoachChatService.replyQualityIssue(
+                in: text,
+                latestUserTurn: userTurn,
+                systemContext: context,
+                turnDepth: .groundedRead,
+                surface: .text
+            ) == nil, "metadata fallback should pass reply quality: \(text)")
+        case .failure(let failure):
+            #expect(Bool(false), "metadata typed fallback should prevent content rejection, got \(failure)")
+        }
     }
 
     @Test func lackConvictionTypedFallbackPassesCaseAnchorGate() async throws {
@@ -3325,6 +3585,39 @@ struct CoachProviderRoutingByDepthTests {
     }
 
     @MainActor
+    @Test func typedFallbackPressureFillerIntentDoesNotNeedExactCount() async throws {
+        let payload = try Self.anthropicPayload(
+            "Separate semantic words from filler words before cutting anything."
+        )
+        let service = AICoachChatService(
+            keyedProviders: { [.anthropic] },
+            keyLookup: { _ in "test-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { _, _, _, _ in .success(payload) }
+        )
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: "How do I stop saying um under pressure?")],
+            systemPrompt: "You are Noum.",
+            userContext: "RECENT\n- Latest pressure rep: fillers clustered before the close.",
+            turnDepth: .quickMove,
+            assessment: Self.pressureFillerAssessment,
+            surface: .text,
+            preferredTier: .claudeReasoning
+        )
+
+        guard case .reply(let text) = outcome else {
+            Issue.record("typed fallback should be accepted, got \(outcome)")
+            return
+        }
+        #expect(text.contains("Under pressure, do not fight the urge directly"))
+        #expect(text.contains("one silent beat before the final sentence"))
+        #expect(text.contains("finish the ask"))
+        #expect(!text.lowercased().contains("semantic words"))
+        #expect(!text.contains("Your last pressure rep had 6 fillers"))
+    }
+
+    @MainActor
     @Test func typedFallbackPressureFillerIntentDoesNotSwallowSemanticCorrection() async throws {
         let payload = try Self.anthropicPayload(
             "Cut every like under pressure. It is all filler."
@@ -3628,12 +3921,14 @@ struct CoachReplyPipelineProvisionalReadTests {
         #expect(callbackSawPendingCoachRow)
         #expect(callbackMetadata?.immediateCoachReadShown == true)
         #expect(callbackMetadata?.timeToFirstVisibleTokenMs != nil)
+        #expect(callbackMetadata?.timeToFirstVisibleTokenSource == .localImmediateRead)
         #expect(callbackMetadata?.surface == .live)
 
         let final = store.messages.first { $0.id == ids.coachID }
         #expect(final?.role == .systemNotice)
         #expect(final?.isPending == false)
         #expect(final?.metadata?.immediateCoachReadShown == true)
+        #expect(final?.metadata?.timeToFirstVisibleTokenSource == .localImmediateRead)
         #expect(final?.metadata?.assessment != nil)
         #expect(final?.metadata?.providerAttemptCount == 0)
         #expect(final?.metadata?.surface == .live)
@@ -3689,6 +3984,7 @@ struct CoachReplyPipelineProvisionalReadTests {
         #expect(firstCoach?.role == .coach)
         #expect(firstCoach?.metadata?.turnDepth == .quickMove)
         #expect(firstCoach?.metadata?.assessmentCacheHit == false)
+        #expect(firstCoach?.metadata?.timeToFirstVisibleTokenSource == .finalReplyCommit)
         #expect(firstCoach?.metadata?.qualityGateEvents?.isEmpty == false)
         #expect(firstProof?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
 
@@ -3711,6 +4007,7 @@ struct CoachReplyPipelineProvisionalReadTests {
         #expect(secondCoach?.role == .coach)
         #expect(secondCoach?.metadata?.turnDepth == .quickMove)
         #expect(secondCoach?.metadata?.assessmentCacheHit == false)
+        #expect(secondCoach?.metadata?.timeToFirstVisibleTokenSource == .finalReplyCommit)
         #expect(secondCoach?.metadata?.proofTestRecentlyRepeated == false)
         #expect(secondCoach?.metadata?.qualityGateEvents?.isEmpty == false)
         #expect(secondProof?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)

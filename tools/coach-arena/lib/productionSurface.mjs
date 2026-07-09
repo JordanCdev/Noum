@@ -300,6 +300,17 @@ const PACE_SELF_FRUSTRATION_GENERIC_ADVICE_MARKERS = [
   'speak slower',
 ];
 
+const PACE_SELF_FRUSTRATION_ATTUNEMENT_MARKERS = [
+  "you're not imagining",
+  'you are not imagining',
+  'makes sense',
+  'that makes sense',
+  "people can't keep up",
+  'people cant keep up',
+  'not a confidence problem',
+  'not confidence',
+];
+
 const PACE_SELF_FRUSTRATION_GAP_MARKERS = [
   'gap between sentences',
   'gap between points',
@@ -711,6 +722,7 @@ function paceSelfFrustrationNeedsRepair(text) {
   const lowered = String(text || '').toLowerCase();
   if (straightAnswerLeaksReportVoice(lowered)) return true;
   if (containsAny(lowered, PACE_SELF_FRUSTRATION_GENERIC_ADVICE_MARKERS)) return true;
+  if (!containsAny(lowered, PACE_SELF_FRUSTRATION_ATTUNEMENT_MARKERS)) return true;
   const namesPace = containsAny(lowered, ['pace', 'speed', 'fast', 'slow', 'rush', 'rushing']);
   if (!namesPace) return false;
   return !containsAny(lowered, PACE_SELF_FRUSTRATION_GAP_MARKERS);
@@ -958,7 +970,7 @@ function coldStartFallback(surface = 'text') {
   if (surface === 'live') {
     return "Start with one real sample. Give me 60 seconds on something you know well, like how you'd explain what you do to a stranger. Then I'll have something honest to coach. Want to go now?";
   }
-  return "Start with one real sample. Run a quick 60-second rep on something you know well — how you'd explain what you do to a stranger works nicely. That gives me your real pace, rhythm, and first useful pattern. Want to give it a go?";
+  return "Start with one real sample. Do one 60-second rep on something you know well — how you'd explain what you do to a stranger works nicely. Then I can give you a real read. Want to go now?";
 }
 
 function offTopicTestFallback(surface = 'text') {
@@ -1079,16 +1091,17 @@ function vulnerablePushbackEvidenceAnchor(fixture = {}) {
 
 function vulnerablePushbackFallback(surface = 'text', fixture = {}) {
   const anchor = vulnerablePushbackEvidenceAnchor(fixture);
+  const frame = 'The hard part is the first hard sentence, not the whole performance.';
   if (surface === 'live') {
     if (anchor) {
-      return `No, it is not easy. ${anchor} Keep it small: say only the first hard sentence, then stop.`;
+      return `No, it is not easy. ${anchor} ${frame} Keep it small: say only the first hard sentence, then stop.`;
     }
-    return 'No, it is not easy. Do not turn the freeze into a full performance test. Keep it small: say only the first hard sentence, then stop.';
+    return `No, it is not easy. ${frame} Keep it small: say only the first hard sentence, then stop.`;
   }
   if (anchor) {
-    return `No, it is not easy. ${anchor} Keep the next step small: say only the first hard sentence, then stop.`;
+    return `No, it is not easy. ${anchor} ${frame} Keep the next step small: say only the first hard sentence, then stop.`;
   }
-  return 'No, it is not easy. The freeze is real, so do not turn this into a full performance test. Keep the next step small: say only the first hard sentence, then stop.';
+  return `No, it is not easy. ${frame} Keep the next step small: say only the first hard sentence, then stop.`;
 }
 
 function goalStateProgressAnchor(replyText = '') {
@@ -1112,7 +1125,7 @@ function goalStateDirectiveFallback(surface = 'text', userTurn = '', replyText =
     if (surface === 'live') {
       return 'Start with Authoritative: short verdicts hold the floor when people talk over you. Executive presence is the backup if the room is more senior than interrupt-heavy.';
     }
-    return 'Start with Authoritative because meetings where you get talked over need short verdicts that hold the floor. Keep Executive presence as the close second if the room is more senior than interrupt-heavy. That gives you one voice to test, not six to debate.';
+    return 'Given you are trying to stop getting talked over in meetings, Authoritative is the closest fit: short verdicts that hold the floor. Executive presence is the next-closest if the room is more senior leadership than peers. Which one matches the room you are actually in?';
   }
   if (containsAny(lowered, ['authoritative', 'verdict-first', 'verdict first'])) {
     if (surface === 'live') {

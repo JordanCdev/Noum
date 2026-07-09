@@ -258,6 +258,7 @@ enum CoachReplyPipeline {
         }
         let assessmentCacheAgeAtReasoning = assessmentCacheAgeMsAt(Date())
         var firstVisibleAt: Date?
+        var firstVisibleSource: CoachFirstVisibleTokenSource?
         var immediateCoachReadShown = false
         if let assessment {
             AICallDiagnostics.record(
@@ -293,6 +294,7 @@ enum CoachReplyPipeline {
                     immediateCoachReadShown: true,
                     ttftMs: Self.latencyMs(from: turnStartedAt, to: provisionalVisibleAt),
                     timeToFirstVisibleTokenMs: Self.latencyMs(from: turnStartedAt, to: provisionalVisibleAt),
+                    timeToFirstVisibleTokenSource: .localImmediateRead,
                     trajectoryCacheHit: trajectoryResult.cacheHit,
                     surface: surface
                 )
@@ -302,6 +304,7 @@ enum CoachReplyPipeline {
                     metadata: provisionalMetadata
                 ) {
                     firstVisibleAt = provisionalVisibleAt
+                    firstVisibleSource = .localImmediateRead
                     immediateCoachReadShown = true
                     onProvisionalCoachReadVisible?(immediateCoachRead)
                 }
@@ -401,6 +404,7 @@ enum CoachReplyPipeline {
                 guard CoachBrainFlags.streamRawPartialsToUI else { return }
                 let streamedVisibleAt = Date()
                 let streamedTTFT = Self.latencyMs(from: turnStartedAt, to: firstVisibleAt ?? streamedVisibleAt)
+                let streamedFirstVisibleSource = firstVisibleSource ?? CoachFirstVisibleTokenSource.streamedProviderPartial
                 let streamedMetadata = CoachTurnMetadata(
                     turnDepth: turnDepth,
                     providerTier: preferredTier,
@@ -417,6 +421,7 @@ enum CoachReplyPipeline {
                     immediateCoachReadShown: immediateCoachReadShown,
                     ttftMs: streamedTTFT,
                     timeToFirstVisibleTokenMs: streamedTTFT,
+                    timeToFirstVisibleTokenSource: streamedFirstVisibleSource,
                     trajectoryCacheHit: trajectoryResult.cacheHit,
                     surface: surface
                 )
@@ -427,6 +432,7 @@ enum CoachReplyPipeline {
                 ) {
                     if firstVisibleAt == nil {
                         firstVisibleAt = streamedVisibleAt
+                        firstVisibleSource = .streamedProviderPartial
                         FlowLog.log(
                             correlationId: coachID,
                             flow: .chatTurn,
@@ -570,6 +576,15 @@ enum CoachReplyPipeline {
         )
         let finalTTFT = Self.latencyMs(from: turnStartedAt, to: firstVisibleAt ?? completionAt)
         let finalLatency = Self.latencyMs(from: turnStartedAt, to: completionAt)
+        let finalFirstVisibleSource: CoachFirstVisibleTokenSource? = {
+            if let firstVisibleSource {
+                return firstVisibleSource
+            }
+            if case .reply = finalizedOutcome {
+                return .finalReplyCommit
+            }
+            return nil
+        }()
         let finalMetadata = CoachTurnMetadata(
             turnDepth: turnDepth,
             providerTier: preferredTier,
@@ -611,6 +626,7 @@ enum CoachReplyPipeline {
             ttftMs: finalTTFT,
             fullLatencyMs: finalLatency,
             timeToFirstVisibleTokenMs: finalTTFT,
+            timeToFirstVisibleTokenSource: finalFirstVisibleSource,
             timeToCompleteReplyMs: finalLatency,
             providerName: providerChoice?.providerName,
             providerModel: providerChoice?.model,
@@ -638,6 +654,7 @@ enum CoachReplyPipeline {
                 "ttftMs=\(finalMetadata.ttftMs ?? -1)",
                 "fullLatencyMs=\(finalMetadata.fullLatencyMs ?? -1)",
                 "timeToFirstVisibleTokenMs=\(finalMetadata.timeToFirstVisibleTokenMs ?? -1)",
+                "timeToFirstVisibleTokenSource=\(finalMetadata.timeToFirstVisibleTokenSource?.rawValue ?? "none")",
                 "timeToCompleteReplyMs=\(finalMetadata.timeToCompleteReplyMs ?? -1)",
                 "assessmentCacheHit=\(assessmentResult.map { "\($0.cacheHit)" } ?? "unknown")",
                 "assessmentConfidence=\(assessment.map { String(format: "%.2f", $0.confidence) } ?? "none")",

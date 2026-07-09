@@ -1,7 +1,7 @@
-# Coach Arena — run_2026-07-09_20-37-41
+# Coach Arena — run_2026-07-09_21-30-18
 
 Provider: `replay` · coach model: `claude-sonnet-4-6` · judge model: `claude-sonnet-4-6`
-Git: `a556f772` on `ux-overhaul` (+82 dirty) · prompt: CoachContextBuilder.swift@08e780cddc2e2106, AICoachChatService.swift@7dfe96d234d1c588
+Git: `5bef2d08` on `ux-overhaul` (+21 dirty) · prompt: CoachContextBuilder.swift@5bf3266802ca17ea, AICoachChatService.swift@b7512bb409b2b4c2
 
 ## Headline
 

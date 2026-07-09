@@ -595,6 +595,25 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.blocked)
     }
 
+    @Test func paceSelfFrustrationMetricsWithoutAttunementStillBlocks() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Pace was 215 WPM with a 0.09 pause rate, so the gap between sentences is disappearing. Fix the pause, not the speed. Hold one silent beat after every full stop.",
+            previousCoachReply: "Earlier read.",
+            latestUserTurn: "I talk way too fast, people can't keep up.",
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(evidence: [
+                "pace estimate: 215 WPM",
+                "pause rate: 0.09"
+            ]),
+            evidenceCoverage: 0.7
+        )
+
+        #expect(verdict.issues.contains(.paceSelfFrustrationReportVoice))
+        #expect(verdict.blockingIssues.contains(.paceSelfFrustrationReportVoice))
+        #expect(verdict.blocked)
+        #expect(verdict.fallbackText?.contains("You're not imagining it") == true)
+    }
+
     @Test func rambleScaffoldedReplyBlocksWithStopRuleFallback() {
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "You don't lose the thread — you keep adding to it. Yesterday you opened with the actual point, then stacked three side stories before circling back to a weaker version of it. So the fix isn't focus, it's a stop signal. Next rep: say your point, one line of support, then cut before the first side story. One point, then silence.",
@@ -852,10 +871,10 @@ struct CoachReliabilityGateTests {
         #expect(verdict.blocked)
         let fallback = verdict.fallbackText ?? ""
         let lowered = fallback.lowercased()
-        #expect(fallback.contains("Start with Authoritative"))
+        #expect(fallback.contains("Authoritative is the closest fit"))
         #expect(fallback.contains("short verdicts that hold the floor"))
-        #expect(fallback.contains("Executive presence as the close second"))
-        #expect(fallback.contains("one voice to test"))
+        #expect(fallback.contains("Executive presence is the next-closest"))
+        #expect(fallback.contains("Which one matches"))
         #expect(!lowered.contains("do not choose"))
         #expect(!lowered.contains("tap"))
         #expect(!lowered.contains("lock it"))

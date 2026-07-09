@@ -12072,6 +12072,7 @@ struct AskNoumStoreTests {
             ttftMs: 180,
             fullLatencyMs: 940,
             timeToFirstVisibleTokenMs: 180,
+            timeToFirstVisibleTokenSource: .localImmediateRead,
             timeToCompleteReplyMs: 940,
             providerName: "Claude",
             providerModel: "claude-sonnet-4-6",
@@ -12317,6 +12318,7 @@ struct AskNoumStoreTests {
         #expect(decoded.metadata?.ttftMs == 180)
         #expect(decoded.metadata?.fullLatencyMs == 940)
         #expect(decoded.metadata?.timeToFirstVisibleTokenMs == 180)
+        #expect(decoded.metadata?.timeToFirstVisibleTokenSource == .localImmediateRead)
         #expect(decoded.metadata?.timeToCompleteReplyMs == 940)
         #expect(decoded.metadata?.providerName == "Claude")
         #expect(decoded.metadata?.providerModel == "claude-sonnet-4-6")
@@ -12352,6 +12354,7 @@ struct AskNoumStoreTests {
         #expect(coach?.metadata?.ttftMs == 180)
         #expect(coach?.metadata?.fullLatencyMs == 940)
         #expect(coach?.metadata?.timeToFirstVisibleTokenMs == 180)
+        #expect(coach?.metadata?.timeToFirstVisibleTokenSource == .localImmediateRead)
         #expect(coach?.metadata?.timeToCompleteReplyMs == 940)
         #expect(coach?.metadata?.providerName == "Claude")
         #expect(coach?.metadata?.providerModel == "claude-sonnet-4-6")
@@ -26615,7 +26618,7 @@ struct AICoachChatReplyQualityGateTests {
     }
 
     @Test func acceptsVoiceChoiceRecommendationWithoutCommitDirective() {
-        let reply = "Start with Authoritative because meetings where you get talked over need short verdicts that hold the floor. Executive presence is the close second if the real pressure is senior-room calm; which room are you walking into?"
+        let reply = "Given you are trying to stop getting talked over in meetings, Authoritative is the closest fit: short verdicts that hold the floor. Executive presence is the next-closest if the room is more senior leadership than peers. Which one matches the room you are actually in?"
         #expect(AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "What voice should I even pick? There are six and I don't know."

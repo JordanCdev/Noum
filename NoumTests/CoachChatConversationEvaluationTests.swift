@@ -2814,7 +2814,8 @@ struct CoachChatConversationCorpusTests {
         #expect(json.contains("\"coachSystemPrompt\""))
         #expect(json.contains("\"cachePolicy\":\"ephemeral\""))
         #expect(json.contains("\"userContext\""))
-        #expect(json.contains("\"traceSchemaVersion\":\"coach-arena-app-path-trace-v1\""))
+        #expect(json.contains("\"traceSchemaVersion\":\"coach-arena-app-path-trace-v2\""))
+        #expect(json.contains("\"timeToFirstVisibleTokenSource\""))
         #expect(json.contains("\"assessmentConfidenceDistinctRoundedCount\""))
         #expect(json.contains("\"uniqueProofTestHashCount\""))
         #expect(json.contains("\"repeatedProofTestHashCount\""))
@@ -2856,6 +2857,9 @@ struct CoachChatConversationCorpusTests {
         #expect(turns.allSatisfy { $0.immediateCoachReadExpected })
         #expect(turns.allSatisfy { $0.immediateCoachReadShown })
         #expect(turns.allSatisfy { ($0.timeToFirstVisibleTokenMs ?? Int.max) < 500 })
+        #expect(turns.allSatisfy {
+            $0.timeToFirstVisibleTokenSource == CoachFirstVisibleTokenSource.localImmediateRead.rawValue
+        })
         let targetReplyMismatchCount = turns.filter { !$0.targetReplyMatched }.count
         let missingMetadataTurnCount = turns.filter { !$0.metadataPresent }.count
         let semanticGateFailureTurnCount = turns.filter { !$0.semanticGatePassed }.count
@@ -2927,7 +2931,8 @@ struct CoachChatConversationCorpusTests {
         #expect(json.contains("\"coachSystemPrompt\""))
         #expect(json.contains("\"cachePolicy\":\"ephemeral\""))
         #expect(json.contains("\"userContext\""))
-        #expect(json.contains("\"traceSchemaVersion\":\"coach-arena-app-path-trace-v1\""))
+        #expect(json.contains("\"traceSchemaVersion\":\"coach-arena-app-path-trace-v2\""))
+        #expect(json.contains("\"timeToFirstVisibleTokenSource\":\"localImmediateRead\""))
         #expect(json.contains("\"assessmentConfidenceDistinctRoundedCount\""))
         #expect(json.contains("\"uniqueProofTestHashCount\""))
         #expect(json.contains("\"repeatedProofTestHashCount\""))
@@ -5004,6 +5009,9 @@ struct CoachChatConversationCorpusTests {
                     ),
                     arenaTrace: nil,
                     timeToFirstVisibleTokenMs: surface == .live ? 1 : nil,
+                    timeToFirstVisibleTokenSource: surface == .live
+                        ? CoachFirstVisibleTokenSource.localImmediateRead.rawValue
+                        : nil,
                     timeToCompleteReplyMs: 1,
                     trajectoryCacheHit: nil,
                     assessmentCacheHit: nil,
@@ -5758,6 +5766,7 @@ struct CoachChatConversationCorpusTests {
                     retrievalTrace: metadata?.retrievalTrace,
                     arenaTrace: arenaTrace,
                     timeToFirstVisibleTokenMs: metadata?.timeToFirstVisibleTokenMs,
+                    timeToFirstVisibleTokenSource: metadata?.timeToFirstVisibleTokenSource?.rawValue,
                     timeToCompleteReplyMs: metadata?.timeToCompleteReplyMs,
                     trajectoryCacheHit: metadata?.trajectoryCacheHit,
                     assessmentCacheHit: metadata?.assessmentCacheHit,

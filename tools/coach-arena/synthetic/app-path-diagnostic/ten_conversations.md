@@ -8,15 +8,16 @@ These are fixture-backed synthetic conversations for done-state review.
 > Real-pipeline evidence passes: `False`.
 > Report-internal source freshness passes: `False`.
 > Sidecar source freshness passes: `False`.
-> Current git commit: `a556f772`.
+> Current git commit: `5bef2d08`.
 > Report trace git commit(s): `a556f772`.
-> Current coach source fingerprint: `sha256:60075d7283323e711474a57730c263318fa3f102b673125f61a3e22001c247cf`.
+> Current coach source fingerprint: `sha256:10bbf2c3aa86cece99f2cce118756078e594165d31e3b0d74b8e45d7ef809894`.
 > Report trace coach source fingerprint(s): `sha256:d8662f3feef2bed08afc861b6d41edbfecc7c3b1471bacef2863a6a42aee5e0a`.
-> Sidecar git commit: `a556f772`.
-> Sidecar coach source fingerprint: `sha256:65d7408540c824a7bd953c6ce0d611d7735732fc72206e2775414c1eb6361fa6`.
-> Sidecar/report mismatch `sourceCoachFingerprint`: sidecar `sha256:65d7408540c824a7bd953c6ce0d611d7735732fc72206e2775414c1eb6361fa6`, report `sha256:d8662f3feef2bed08afc861b6d41edbfecc7c3b1471bacef2863a6a42aee5e0a`.
-> Source freshness failures: `dirty coach source files after app-path dump: Noum/AICoachChatService.swift,Noum/AskNoumStore.swift,Noum/CoachAssessment.swift,Noum/CoachReasoningPass.swift,Noum/CoachReliabilityGate.swift,Noum/CoachReplyPipeline.swift,Noum/TurnDepthClassifier.swift,NoumTests/CoachChatConversationEvaluationTests.swift,+5 more`.
-> Production evidence failures: `2 app-path fixture(s) below local quality floor 70: filler-pressure-007,not-easy-empathy-004`, `source Swift app-path freshness: dirty coach source files after app-path dump: Noum/AICoachChatService.swift,Noum/AskNoumStore.swift,Noum/CoachAssessment.swift,Noum/CoachReasoningPass.swift,Noum/CoachReliabilityGate.swift,Noum/CoachReplyPipeline.swift,Noum/TurnDepthClassifier.swift,NoumTests/CoachChatConversationEvaluationTests.swift,+5 more`, `source Swift app-path readiness warnings: appPathFloorFailures,targetReplyMismatch`, `source Swift app-path report did not pass its app-path floor`.
+> Sidecar git commit: `5bef2d08`.
+> Sidecar coach source fingerprint: `sha256:10bbf2c3aa86cece99f2cce118756078e594165d31e3b0d74b8e45d7ef809894`.
+> Sidecar/report mismatch `sourceCoachFingerprint`: sidecar `sha256:10bbf2c3aa86cece99f2cce118756078e594165d31e3b0d74b8e45d7ef809894`, report `sha256:d8662f3feef2bed08afc861b6d41edbfecc7c3b1471bacef2863a6a42aee5e0a`.
+> Sidecar/report mismatch `sourceGitCommit`: sidecar `5bef2d08`, report `a556f772`.
+> Source freshness failures: `dirty coach source files after app-path dump: Noum/AICoachChatService.swift,Noum/AskNoumStore.swift,Noum/CoachContextBuilder.swift,Noum/CoachReliabilityGate.swift,Noum/CoachReplyPipeline.swift,NoumTests/CoachChatConversationEvaluationTests.swift,NoumTests/CoachChatEvaluationFixtures.swift,NoumTests/CoachJudgementLayerTests.swift,+3 more`, `source app-path git commit(s) do not match current HEAD: a556f772`.
+> Production evidence failures: `2 app-path fixture(s) below local quality floor 70: filler-pressure-007,not-easy-empathy-004`, `50 real-pipeline trace(s) missing first-token source`, `source Swift app-path freshness: dirty coach source files after app-path dump: Noum/AICoachChatService.swift,Noum/AskNoumStore.swift,Noum/CoachContextBuilder.swift,Noum/CoachReliabilityGate.swift,Noum/CoachReplyPipeline.swift,NoumTests/CoachChatConversationEvaluationTests.swift,NoumTests/CoachChatEvaluationFixtures.swift,NoumTests/CoachJudgementLayerTests.swift,+3 more`, `source Swift app-path freshness: source app-path git commit(s) do not match current HEAD: a556f772`, `source Swift app-path readiness warnings: appPathFloorFailures,targetReplyMismatch`, `source Swift app-path report did not pass its app-path floor`.
 
 ## authoritative-distance-001
 

@@ -185,7 +185,7 @@ struct CoachPlaceholderLeakStripTests {
         #expect(!repair.contains("Ah-Counter"))
         #expect(!repair.lowercased().contains("first number"))
         #expect(!repair.lowercased().contains("under 4"))
-        #expect(repair.contains("Want to give it a go?"))
+        #expect(repair.contains("Want to go now?"))
         #expect(AICoachChatService.replyQualityIssue(
             in: repair,
             latestUserTurn: "What should I work on?",

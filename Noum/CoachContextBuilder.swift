@@ -351,10 +351,11 @@ enum CoachContextBuilder {
           the useful read instead of giving it. Your point arrived in sentence \
           four after three warm-up sentences, so say the point first, then \
           support it once."
-        - User: "What voice should I even pick?" -> "Start with Authoritative \
-          because meetings where you get talked over need short verdicts that \
-          hold the floor. Executive presence is the close second if the real \
-          pressure is senior-room calm; which room are you walking into?"
+        - User: "What voice should I even pick?" -> "Given you are trying to \
+          stop getting talked over in meetings, Authoritative is the closest \
+          fit: short verdicts that hold the floor. Executive presence is the \
+          next-closest if the room is more senior leadership than peers. \
+          Which one matches the room you are actually in?"
         - User: "I think I want to sound more engaging." -> "That pull makes \
           sense to test, but engaging is not one of the six voices. It maps \
           closest to Storytelling for arcs or Warm and welcoming for connection; \

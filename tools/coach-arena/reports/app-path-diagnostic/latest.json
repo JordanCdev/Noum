@@ -1,22 +1,37 @@
 {
   "candidate": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
   "comparison": {
-    "status": "noPreviousReport",
-    "summary": "No previous latest.json existed in this report directory."
+    "averageDelta": 0.0,
+    "candidateChanged": false,
+    "changedScoreCount": 0,
+    "clearedFailureFixtureIDs": [],
+    "failureCountDelta": 0,
+    "fixtureCountChanged": false,
+    "largestScoreChanges": [],
+    "newlyFailingFixtureIDs": [],
+    "passesChanged": false,
+    "placeholderLeaksDelta": 0,
+    "previousCandidate": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
+    "previousGeneratedAt": "2026-07-09T06:36:25+00:00",
+    "status": "compared",
+    "typeAverageDeltas": {
+      "deepAssessment": 0.0,
+      "groundedRead": 0.0,
+      "quickMove": 0.0,
+      "trustRepair": 0.0
+    }
   },
   "coverage": {
     "ambiguousFixtureIDs": [],
     "coverageFailures": [],
     "coveragePasses": true,
-    "currentCoachSourceFingerprint": "sha256:60075d7283323e711474a57730c263318fa3f102b673125f61a3e22001c247cf",
+    "currentCoachSourceFingerprint": "sha256:10bbf2c3aa86cece99f2cce118756078e594165d31e3b0d74b8e45d7ef809894",
     "currentDirtyCoachSourceFiles": [
       "Noum/AICoachChatService.swift",
       "Noum/AskNoumStore.swift",
-      "Noum/CoachAssessment.swift",
-      "Noum/CoachReasoningPass.swift",
+      "Noum/CoachContextBuilder.swift",
       "Noum/CoachReliabilityGate.swift",
       "Noum/CoachReplyPipeline.swift",
-      "Noum/TurnDepthClassifier.swift",
       "NoumTests/CoachChatConversationEvaluationTests.swift",
       "NoumTests/CoachChatEvaluationFixtures.swift",
       "NoumTests/CoachJudgementLayerTests.swift",
@@ -24,7 +39,7 @@
       "NoumTests/CoachReliabilityGateTests.swift",
       "NoumTests/NoumTests.swift"
     ],
-    "currentGitCommit": "a556f772",
+    "currentGitCommit": "5bef2d08",
     "matchedFixtureCount": 50,
     "matchedFixtureIDs": [
       "authoritative-distance-001",
@@ -130,7 +145,8 @@
     "sourceConversationCount": 53,
     "sourceFingerprintMatchesCurrent": false,
     "sourceFreshnessFailures": [
-      "dirty coach source files after app-path dump: Noum/AICoachChatService.swift,Noum/AskNoumStore.swift,Noum/CoachAssessment.swift,Noum/CoachReasoningPass.swift,Noum/CoachReliabilityGate.swift,Noum/CoachReplyPipeline.swift,Noum/TurnDepthClassifier.swift,NoumTests/CoachChatConversationEvaluationTests.swift,+5 more"
+      "dirty coach source files after app-path dump: Noum/AICoachChatService.swift,Noum/AskNoumStore.swift,Noum/CoachContextBuilder.swift,Noum/CoachReliabilityGate.swift,Noum/CoachReplyPipeline.swift,NoumTests/CoachChatConversationEvaluationTests.swift,NoumTests/CoachChatEvaluationFixtures.swift,NoumTests/CoachJudgementLayerTests.swift,+3 more",
+      "source app-path git commit(s) do not match current HEAD: a556f772"
     ],
     "sourceFreshnessPasses": false,
     "sourcePassesAppPathFloor": false,
@@ -170,7 +186,7 @@
     "unmatchedFixtureCount": 0,
     "unmatchedFixtureIDs": []
   },
-  "generatedAt": "2026-07-09T06:36:25+00:00",
+  "generatedAt": "2026-07-09T21:31:51+00:00",
   "reportFamily": "app-path",
   "reportPathWarnings": [],
   "reportPaths": {
@@ -8347,7 +8363,9 @@
     "placeholderLeaks": 1,
     "productionEvidenceFailures": [
       "2 app-path fixture(s) below local quality floor 70: filler-pressure-007,not-easy-empathy-004",
-      "source Swift app-path freshness: dirty coach source files after app-path dump: Noum/AICoachChatService.swift,Noum/AskNoumStore.swift,Noum/CoachAssessment.swift,Noum/CoachReasoningPass.swift,Noum/CoachReliabilityGate.swift,Noum/CoachReplyPipeline.swift,Noum/TurnDepthClassifier.swift,NoumTests/CoachChatConversationEvaluationTests.swift,+5 more",
+      "50 real-pipeline trace(s) missing first-token source",
+      "source Swift app-path freshness: dirty coach source files after app-path dump: Noum/AICoachChatService.swift,Noum/AskNoumStore.swift,Noum/CoachContextBuilder.swift,Noum/CoachReliabilityGate.swift,Noum/CoachReplyPipeline.swift,NoumTests/CoachChatConversationEvaluationTests.swift,NoumTests/CoachChatEvaluationFixtures.swift,NoumTests/CoachJudgementLayerTests.swift,+3 more",
+      "source Swift app-path freshness: source app-path git commit(s) do not match current HEAD: a556f772",
       "source Swift app-path readiness warnings: appPathFloorFailures,targetReplyMismatch",
       "source Swift app-path report did not pass its app-path floor"
     ],
@@ -8507,16 +8525,31 @@
         "missingFixtureIDs": []
       },
       "eligibleTraceCount": 50,
-      "failures": [],
+      "failures": [
+        "50 real-pipeline trace(s) missing first-token source"
+      ],
       "latency": {
         "missingFirstTokenCount": 0,
         "missingFirstTokenFixtureIDs": [],
+        "missingFirstTokenSourceCount": 50,
+        "missingFirstTokenSourceFixtureIDs": [
+          "authoritative-distance-001",
+          "not-informative-trust-repair-002",
+          "polite-however-pushback-003",
+          "not-easy-empathy-004",
+          "repeating-yourself-005",
+          "interview-prep-006",
+          "filler-pressure-007",
+          "leadership-update-008",
+          "confidence-ending-009",
+          "examples-from-sessions-010"
+        ],
         "slowCompletionCount": 0,
         "slowCompletionFixtureIDs": [],
         "slowFirstTokenCount": 0,
         "slowFirstTokenFixtureIDs": []
       },
-      "passes": true,
+      "passes": false,
       "proofTest": {
         "maxHashReuse": 5,
         "maxHashReuseAllowed": 10,
@@ -8587,8 +8620,10 @@
         "missingTraceFixtureIDs": []
       }
     },
-    "traceQualityFailures": [],
-    "traceQualityPasses": true,
+    "traceQualityFailures": [
+      "50 real-pipeline trace(s) missing first-token source"
+    ],
+    "traceQualityPasses": false,
     "typeAverages": {
       "deepAssessment": 80.67,
       "groundedRead": 80.5,

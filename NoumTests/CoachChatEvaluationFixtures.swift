@@ -1773,6 +1773,7 @@ struct CoachChatConversationAppPathTurnRow: Codable, Equatable {
     let retrievalTrace: CoachRetrievalTrace?
     let arenaTrace: CoachArenaAppPathTrace?
     let timeToFirstVisibleTokenMs: Int?
+    let timeToFirstVisibleTokenSource: String?
     let timeToCompleteReplyMs: Int?
     // Cache state captured from the real pipeline: whether this turn reused a cached
     // UserTrajectory snapshot / CoachAssessment (true) or recomputed it (false/nil).
@@ -1854,6 +1855,7 @@ struct CoachArenaAppPathTrace: Codable, Equatable {
 
     struct Latency: Codable, Equatable {
         let timeToFirstVisibleTokenMs: Int?
+        let timeToFirstVisibleTokenSource: String?
         let timeToCompleteReplyMs: Int?
     }
 
@@ -1948,6 +1950,7 @@ struct CoachArenaAppPathTrace: Codable, Equatable {
             issues: issues,
             latency: Latency(
                 timeToFirstVisibleTokenMs: metadata?.timeToFirstVisibleTokenMs,
+                timeToFirstVisibleTokenSource: metadata?.timeToFirstVisibleTokenSource?.rawValue,
                 timeToCompleteReplyMs: metadata?.timeToCompleteReplyMs
             ),
             cache: Cache(
@@ -1962,7 +1965,7 @@ struct CoachArenaAppPathTrace: Codable, Equatable {
             ),
             versions: Versions(
                 sourceSchemaVersion: schemaVersion,
-                traceSchemaVersion: "coach-arena-app-path-trace-v1",
+                traceSchemaVersion: "coach-arena-app-path-trace-v2",
                 promptTraceSchemaVersion: "coach-prompt-modules-v1"
             ),
             gitCommit: gitCommit,
@@ -4286,6 +4289,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
             ttftMs: 180,
             fullLatencyMs: 940,
             timeToFirstVisibleTokenMs: 180,
+            timeToFirstVisibleTokenSource: .localImmediateRead,
             timeToCompleteReplyMs: 940,
             userPushbackWithinTwoTurns: true,
             coldnessComplaintFlag: true,
@@ -4320,6 +4324,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
         #expect(decoded.providerAttemptCount == 2)
         #expect(decoded.providerRefusalCount == 1)
         #expect(decoded.timeToFirstVisibleTokenMs == 180)
+        #expect(decoded.timeToFirstVisibleTokenSource == .localImmediateRead)
         #expect(decoded.timeToCompleteReplyMs == 940)
         #expect(decoded.userPushbackWithinTwoTurns == true)
         #expect(decoded.coldnessComplaintFlag == true)
@@ -4333,7 +4338,10 @@ struct CoachChatLatestLiveEvalRegressionTests {
             qualityGateEvents: [
                 "rejected:stored:first",
                 "repaired:stored:final"
-            ]
+            ],
+            timeToFirstVisibleTokenMs: 220,
+            timeToFirstVisibleTokenSource: .finalReplyCommit,
+            timeToCompleteReplyMs: 880
         )
 
         let trace = CoachArenaAppPathTrace.make(
@@ -4355,6 +4363,9 @@ struct CoachChatLatestLiveEvalRegressionTests {
             "rejected:stored:first",
             "repaired:stored:final"
         ])
+        #expect(trace.latency.timeToFirstVisibleTokenMs == 220)
+        #expect(trace.latency.timeToFirstVisibleTokenSource == "finalReplyCommit")
+        #expect(trace.versions.traceSchemaVersion == "coach-arena-app-path-trace-v2")
     }
 
     @Test func qualityGateAggregationKeepsPassedOutcomeAfterRejectedDraft() {

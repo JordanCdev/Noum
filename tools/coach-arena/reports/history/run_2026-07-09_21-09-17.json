@@ -1,7 +1,7 @@
 {
-  "runId": "run_2026-07-09_21-30-18",
+  "runId": "run_2026-07-09_21-09-17",
   "meta": {
-    "runId": "run_2026-07-09_21-30-18",
+    "runId": "run_2026-07-09_21-09-17",
     "provider": "replay",
     "coachModel": "claude-sonnet-4-6",
     "judgeModel": "claude-sonnet-4-6",
@@ -10,7 +10,7 @@
       "commit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf",
       "shortCommit": "5bef2d08",
       "branch": "ux-overhaul",
-      "dirty": 21
+      "dirty": 13
     },
     "versions": {
       "node": "v26.0.0",
@@ -25,12 +25,12 @@
       },
       {
         "path": "Noum/AICoachChatService.swift",
-        "sha256": "b7512bb409b2b4c2",
-        "bytes": 318638
+        "sha256": "ec31e0880e42d407",
+        "bytes": 318342
       }
     ],
-    "startedAt": "2026-07-09T21:30:18.944Z",
-    "finishedAt": "2026-07-09T21:30:19.020Z"
+    "startedAt": "2026-07-09T21:09:17.767Z",
+    "finishedAt": "2026-07-09T21:09:17.857Z"
   },
   "records": [
     {
@@ -85,8 +85,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -248,8 +248,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -447,8 +447,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -591,7 +591,7 @@
         },
         "rawReply": "No, it isn't — and a freeze in the room is a different animal than the reps you keep landing clean. When it hits, what goes first: the thought itself, or the words that were meant to carry it?",
         "finalizedReply": "No, it isn't — and a freeze in the room is a different animal than the reps you keep landing clean. When it hits, what goes first: the thought itself, or the words that were meant to carry it?",
-        "surfaceReply": "No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. The hard part is the first hard sentence, not the whole performance. Keep the next step small: say only the first hard sentence, then stop."
+        "surfaceReply": "No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. Keep the next step small: say only the first hard sentence, then stop."
       },
       "trace": {
         "provider": "replay",
@@ -609,8 +609,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -622,7 +622,7 @@
         "placeholderLeaks": 0
       },
       "userVisible": {
-        "reply": "No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. The hard part is the first hard sentence, not the whole performance. Keep the next step small: say only the first hard sentence, then stop.",
+        "reply": "No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. Keep the next step small: say only the first hard sentence, then stop.",
         "changedFromScoredReply": true,
         "reliabilityGate": {
           "changed": true,
@@ -774,8 +774,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -923,8 +923,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -1079,8 +1079,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -1254,8 +1254,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -1393,8 +1393,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -1556,8 +1556,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -1707,8 +1707,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -1898,8 +1898,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -2115,8 +2115,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -2305,8 +2305,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -2458,8 +2458,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -2597,8 +2597,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -2752,8 +2752,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -2908,8 +2908,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -3045,8 +3045,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -3207,8 +3207,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -3361,8 +3361,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -3526,8 +3526,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -3688,8 +3688,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -3839,8 +3839,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -3997,8 +3997,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -4145,8 +4145,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -4301,8 +4301,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -4449,8 +4449,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -4593,8 +4593,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -4731,8 +4731,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -4875,8 +4875,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -5026,8 +5026,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -5161,8 +5161,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -5324,8 +5324,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -5473,8 +5473,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -5627,8 +5627,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -5801,8 +5801,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -5957,8 +5957,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -6131,8 +6131,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -6259,8 +6259,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -6433,8 +6433,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -6591,8 +6591,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -6722,8 +6722,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -6879,8 +6879,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -7022,8 +7022,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -7203,8 +7203,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -7369,8 +7369,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -7504,8 +7504,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -7644,8 +7644,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -7799,8 +7799,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -7971,8 +7971,8 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "b7512bb409b2b4c2",
-            "bytes": 318638
+            "sha256": "ec31e0880e42d407",
+            "bytes": 318342
           }
         ],
         "gitCommit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf"
@@ -8278,7 +8278,7 @@
     }
   },
   "previous": {
-    "runId": "run_2026-07-09_21-19-11",
+    "runId": "run_2026-07-09_21-00-35",
     "summary": {
       "n": 51,
       "scored": 51,

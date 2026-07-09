@@ -1,7 +1,7 @@
 {
-  "runId": "run_2026-07-09_21-30-18",
+  "runId": "run_2026-07-09_21-19-11",
   "meta": {
-    "runId": "run_2026-07-09_21-30-18",
+    "runId": "run_2026-07-09_21-19-11",
     "provider": "replay",
     "coachModel": "claude-sonnet-4-6",
     "judgeModel": "claude-sonnet-4-6",
@@ -10,7 +10,7 @@
       "commit": "5bef2d087008d07b4e00a70366ebd38c225cf7cf",
       "shortCommit": "5bef2d08",
       "branch": "ux-overhaul",
-      "dirty": 21
+      "dirty": 14
     },
     "versions": {
       "node": "v26.0.0",
@@ -29,8 +29,8 @@
         "bytes": 318638
       }
     ],
-    "startedAt": "2026-07-09T21:30:18.944Z",
-    "finishedAt": "2026-07-09T21:30:19.020Z"
+    "startedAt": "2026-07-09T21:19:11.332Z",
+    "finishedAt": "2026-07-09T21:19:11.411Z"
   },
   "records": [
     {
@@ -8278,7 +8278,7 @@
     }
   },
   "previous": {
-    "runId": "run_2026-07-09_21-19-11",
+    "runId": "run_2026-07-09_21-09-17",
     "summary": {
       "n": 51,
       "scored": 51,

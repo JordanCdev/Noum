@@ -1,4 +1,4 @@
-# Coach Arena failures — run_2026-07-09_20-37-41
+# Coach Arena failures — run_2026-07-09_21-30-18
 
 16 fixture(s) below 70 / capped / missing.
 
@@ -32,7 +32,7 @@ Do one Ah-Counter round: 60 seconds on a topic you know cold, aiming to stay und
 
 ```
 MIRRORED USER-VISIBLE TEXT:
-Start with one real sample. Run a quick 60-second rep on something you know well — how you'd explain what you do to a stranger works nicely. That gives me your real pace, rhythm, and first useful pattern. Want to give it a go?
+Start with one real sample. Do one 60-second rep on something you know well — how you'd explain what you do to a stranger works nicely. Then I can give you a real read. Want to go now?
 ```
 
 ## thats-not-informative — **26/100**
@@ -85,7 +85,7 @@ Not being talked over is about presence, so two of the six fit: Authoritative (p
 
 ```
 MIRRORED USER-VISIBLE TEXT:
-Start with Authoritative because meetings where you get talked over need short verdicts that hold the floor. Keep Executive presence as the close second if the room is more senior than interrupt-heavy. That gives you one voice to test, not six to debate.
+Given you are trying to stop getting talked over in meetings, Authoritative is the closest fit: short verdicts that hold the floor. Executive presence is the next-closest if the room is more senior leadership than peers. Which one matches the room you are actually in?
 ```
 
 ## off-topic-egg — **45/100**
@@ -236,7 +236,7 @@ No, it isn't — and a freeze in the room is a different animal than the reps yo
 
 ```
 MIRRORED USER-VISIBLE TEXT:
-No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. Keep the next step small: say only the first hard sentence, then stop.
+No, it is not easy. There is already one earned proof point: this week you held composure through an interruption. The hard part is the first hard sentence, not the whole performance. Keep the next step small: say only the first hard sentence, then stop.
 ```
 
 ## greeting-hi — **56/100**
