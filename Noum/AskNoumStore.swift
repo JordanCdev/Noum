@@ -458,6 +458,21 @@ final class AskNoumStore: ObservableObject {
     static let shared = AskNoumStore()
     private static let log = Logger(subsystem: "com.jordancoaten.noum", category: "AskNoumStore")
 
+    // MARK: - Conversation evidence gate
+    //
+    // PracticeSessionStore remains the owner of completed reps. Ask Noum only
+    // owns the policy those reps unlock: until one completed rep exists, both
+    // typed and live coaching stay on the same read-only first-rep door. Keep
+    // this pure so routing and direct-entry defenses cannot drift apart.
+
+    /// Whether Ask Noum has enough real practice evidence to open an
+    /// interactive coaching surface. A chosen profile shapes the eventual
+    /// coach voice, but is stated intent rather than observed evidence and
+    /// therefore never satisfies this gate by itself.
+    nonisolated static func hasCompletedPracticeEvidence(sessionCount: Int) -> Bool {
+        sessionCount > 0
+    }
+
     /// Cap on the number of messages held on disk. Older messages drop
     /// off the front when the cap is exceeded. 40 covers ~20 turns of
     /// conversation, which is plenty for coaching continuity without

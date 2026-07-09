@@ -60,6 +60,12 @@ enum LiveCallMicWatchdog {
 struct LiveCoachCallView: View {
     private static let speechLog = Logger(subsystem: "com.jordancoaten.noum", category: "AskNoumSpeech")
 
+    /// Defensive copy of the shared Ask Noum evidence gate. The container does
+    /// not construct this view before rep one, but the live surface also checks
+    /// at its microphone and dispatch boundaries so a stale SwiftUI action can
+    /// never open the recognizer or append an unevidenced coach turn.
+    let hasCompletedPracticeEvidence: Bool
+
     /// Switch to the typed chat view (the "Type instead" affordance).
     var onSwitchToType: () -> Void
     /// Leave the coach surface entirely.
@@ -252,6 +258,10 @@ struct LiveCoachCallView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
+            guard hasCompletedPracticeEvidence else {
+                onSwitchToType()
+                return
+            }
             voiceInput.onFinalTranscript = { text in handleUtterance(text) }
             seedDebugCaptionIfNeeded()
         }
@@ -627,6 +637,11 @@ struct LiveCoachCallView: View {
     // MARK: - Hands-free loop
 
     private func micTapped() {
+        guard hasCompletedPracticeEvidence else {
+            endLoop()
+            onSwitchToType()
+            return
+        }
         deadMicNotice = nil
         if loopActive {
             if speaker.isSpeaking {
@@ -722,6 +737,11 @@ struct LiveCoachCallView: View {
     }
 
     private func handleUtterance(_ text: String) {
+        guard hasCompletedPracticeEvidence else {
+            endLoop()
+            onSwitchToType()
+            return
+        }
         // Single-in-flight: a turn already awaiting a reply must not be
         // superseded by a second dispatch (barge-in / Talk / late silence
         // send all route here). Without this, two pending rows + two
