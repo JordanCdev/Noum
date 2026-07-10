@@ -495,6 +495,10 @@ enum CoachReliabilityGate {
             if isRepetitionCallout,
                repetitionCourseCorrectionNeedsRepair(replyText: trimmed) {
                 issues.append(.repetitionCourseCorrectionMiss)
+                if openingAcknowledges(trimmed),
+                   lacksTrustRepairMove(trimmed) {
+                    issues.append(.thinTrustRepair)
+                }
             } else if !isRepetitionCallout,
                       genericRepairUserTurn(latestUserTurn),
                       genericRepairNeedsSpecificPattern(trimmed) {
@@ -1052,6 +1056,12 @@ enum CoachReliabilityGate {
         assessment: CoachAssessment?
     ) -> String {
         let step = vulnerablePushbackSmallStep(from: assessment)
+        if vulnerablePushbackHasPressureCloseAnchor(
+            evidence: assessment?.evidenceUsed ?? [],
+            step: step
+        ) {
+            return "Fair push: no, it is not easy. The hard part is holding the silent beat at the pressure point before the final sentence. Keep the next rep smaller: say only the close — one silent beat, the final sentence, then stop."
+        }
         let frame = vulnerablePushbackDifficultyFrame(for: step)
         if let anchor = vulnerablePushbackEvidenceAnchor(from: assessment?.evidenceUsed ?? []) {
             return surface == .live
@@ -1378,12 +1388,16 @@ enum CoachReliabilityGate {
         "flat sentence",
         "recommendation arrived",
         "recommendation first",
+        "recommendation-first",
         "sentence one",
         "opener",
         "opening",
         "close",
         "point arrived",
         "warmth arrives",
+        "warmth before",
+        "warmth comes after",
+        "ordering signal",
         "one safe signal",
         "safe signal"
     ]
@@ -2250,6 +2264,20 @@ enum CoachReliabilityGate {
             return "There is already one earned proof point: you have landed clean reps before."
         }
         return nil
+    }
+
+    static func vulnerablePushbackHasPressureCloseAnchor(
+        evidence: [String],
+        step: String
+    ) -> Bool {
+        let lowered = normalize((evidence + [step]).joined(separator: " "))
+        let namesClose = containsAny(lowered, [
+            "close", "final sentence", "final line", "ending", "ask"
+        ])
+        let namesPressureBeat = containsAny(lowered, [
+            "silent beat", "silence", "pause", "pressure", "filler"
+        ])
+        return namesClose && namesPressureBeat
     }
 
     static func vulnerablePushbackSmallStep(from assessment: CoachAssessment?) -> String {

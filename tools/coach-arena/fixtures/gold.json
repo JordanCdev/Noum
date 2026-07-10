@@ -220,7 +220,7 @@
     "emotionalSignal": "Disappointed; wants human coach presence.",
     "expectedCoachMove": "Repair register and give a specific read tied to user evidence.",
     "badAnswerExample": "I am sorry you feel that way. Try being more specific.",
-    "excellentAnswerExample": "Fair. That was advice, not coaching. Your warmth is arriving before the recommendation, so put the recommendation first, then add one reassurance after it.",
+    "excellentAnswerExample": "Fair. That was advice, not coaching. The ordering signal is warmth before the recommendation, so put the recommendation first, then add one reassurance after it.",
     "disqualifiers": ["generic apology", "no evidence", "same cold register"]
   },
   {

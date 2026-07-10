@@ -354,6 +354,13 @@ def normalize(text):
     return re.sub(r"\s+", " ", (text or "").lower()).strip()
 
 
+def normalized_reply_hash(text):
+    normalized = normalize(text)
+    if not normalized:
+        return None
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+
 def normalized_match_key(text):
     folded = (text or "").lower()
     folded = folded.replace("\u2019", "'").replace("\u2018", "'")
@@ -1325,6 +1332,9 @@ def app_path_trace(row, turn, report, source_path, match_source):
         trace.setdefault("retrieval", turn.get("retrievalTrace"))
         cache = dict(trace.get("cache") or {})
         cache.setdefault("sourcePath", str(source_path))
+        cache.setdefault("assessmentCacheHit", turn.get("assessmentCacheHit"))
+        cache.setdefault("assessmentCacheAgeMs", turn.get("assessmentCacheAgeMs"))
+        cache.setdefault("trajectoryCacheHit", turn.get("trajectoryCacheHit"))
         trace["cache"] = cache
         return trace
 
@@ -1378,7 +1388,10 @@ def app_path_trace(row, turn, report, source_path, match_source):
             "timeToCompleteReplyMs": turn.get("timeToCompleteReplyMs")
         },
         "cache": {
-            "sourcePath": str(source_path)
+            "sourcePath": str(source_path),
+            "assessmentCacheHit": turn.get("assessmentCacheHit"),
+            "assessmentCacheAgeMs": turn.get("assessmentCacheAgeMs"),
+            "trajectoryCacheHit": turn.get("trajectoryCacheHit")
         },
         "fallback": {
             "qualityGateAcceptedFallback": turn.get("qualityGateAcceptedFallback"),
@@ -1809,9 +1822,14 @@ def trace_quality_audit(results):
         if (item.get("trace") or {}).get("candidateSource") in REAL_PIPELINE_TRACE_SOURCES
     ]
     proof_hash_counts = {}
+    reply_hash_counts = {}
     missing_proof_fixture_ids = []
+    missing_final_reply_fixture_ids = []
     confidence_values = []
     missing_confidence_fixture_ids = []
+    trajectory_cache_hit_fixture_ids = []
+    trajectory_cache_miss_fixture_ids = []
+    missing_trajectory_cache_fixture_ids = []
     missing_retrieval_fixture_ids = []
     empty_retrieval_fixture_ids = []
     allowed_empty_retrieval_fixture_ids = []
@@ -1827,6 +1845,7 @@ def trace_quality_audit(results):
         retrieval = trace.get("retrieval")
         latency = trace.get("latency") or {}
         context = trace.get("context") or {}
+        cache = trace.get("cache") or {}
         surface = context.get("surface")
 
         proof_hash = memory.get("proofTestHash")
@@ -1835,11 +1854,26 @@ def trace_quality_audit(results):
         else:
             missing_proof_fixture_ids.append(fixture_id)
 
+        reply_hash = normalized_reply_hash(trace.get("finalReply") or item.get("reply"))
+        if reply_hash:
+            reply_hash_counts.setdefault(reply_hash, []).append(fixture_id)
+        else:
+            missing_final_reply_fixture_ids.append(fixture_id)
+
         confidence = memory.get("assessmentConfidence")
         if isinstance(confidence, (int, float)):
             confidence_values.append(round(float(confidence), 2))
         else:
             missing_confidence_fixture_ids.append(fixture_id)
+
+        trajectory_cache_hit = cache.get("trajectoryCacheHit")
+        if isinstance(trajectory_cache_hit, bool):
+            if trajectory_cache_hit:
+                trajectory_cache_hit_fixture_ids.append(fixture_id)
+            else:
+                trajectory_cache_miss_fixture_ids.append(fixture_id)
+        else:
+            missing_trajectory_cache_fixture_ids.append(fixture_id)
 
         if retrieval is None:
             missing_retrieval_fixture_ids.append(fixture_id)
@@ -1875,15 +1909,36 @@ def trace_quality_audit(results):
         default=0
     )
     max_proof_hash_reuse_allowed = max(3, (len(real_pipeline_items) + 4) // 5)
+    repeated_reply_hashes = {
+        reply_hash: fixture_ids
+        for reply_hash, fixture_ids in reply_hash_counts.items()
+        if len(fixture_ids) > 1
+    }
+    max_reply_hash_reuse = max(
+        [len(fixture_ids) for fixture_ids in reply_hash_counts.values()],
+        default=0
+    )
+    # The fixture-matched trace set is a representative slice, usually the first
+    # turn of each conversation. Require proof that the cache is exercised here,
+    # but leave proportional coverage to the complete Swift report summary, which
+    # audits every turn and emits weakTrajectoryCacheCoverage when it falls short.
+    min_trajectory_cache_hits = 1 if real_pipeline_items else 0
     confidence_distinct_count = len(set(confidence_values))
     failures = []
     if missing_proof_fixture_ids:
         failures.append(f"{len(missing_proof_fixture_ids)} real-pipeline trace(s) missing proofTestHash")
+    if missing_final_reply_fixture_ids:
+        failures.append(f"{len(missing_final_reply_fixture_ids)} real-pipeline trace(s) missing finalReply")
     if max_proof_hash_reuse > max_proof_hash_reuse_allowed:
         failures.append(
             "proofTestHash reused across "
             f"{max_proof_hash_reuse} real-pipeline fixtures "
             f"(limit {max_proof_hash_reuse_allowed})"
+        )
+    if max_reply_hash_reuse > 1:
+        failures.append(
+            "finalReply reused exactly across "
+            f"{max_reply_hash_reuse} real-pipeline fixtures"
         )
     if real_pipeline_items and confidence_distinct_count < min(3, len(real_pipeline_items)):
         failures.append(
@@ -1891,6 +1946,14 @@ def trace_quality_audit(results):
         )
     if missing_confidence_fixture_ids:
         failures.append(f"{len(missing_confidence_fixture_ids)} real-pipeline trace(s) missing assessmentConfidence")
+    if missing_trajectory_cache_fixture_ids:
+        failures.append(f"{len(missing_trajectory_cache_fixture_ids)} real-pipeline trace(s) missing trajectoryCacheHit")
+    if real_pipeline_items and len(trajectory_cache_hit_fixture_ids) < min_trajectory_cache_hits:
+        failures.append(
+            "trajectoryCacheHit true for "
+            f"{len(trajectory_cache_hit_fixture_ids)} real-pipeline fixtures "
+            f"(required {min_trajectory_cache_hits})"
+        )
     if missing_retrieval_fixture_ids:
         failures.append(f"{len(missing_retrieval_fixture_ids)} real-pipeline trace(s) missing retrieval trace")
     if empty_retrieval_fixture_ids:
@@ -1923,12 +1986,35 @@ def trace_quality_audit(results):
                 )[:10]
             }
         },
+        "finalReply": {
+            "missingCount": len(missing_final_reply_fixture_ids),
+            "missingFixtureIDs": missing_final_reply_fixture_ids[:10],
+            "uniqueHashCount": len(reply_hash_counts),
+            "maxHashReuse": max_reply_hash_reuse,
+            "repeatedHashCount": len(repeated_reply_hashes),
+            "repeatedHashes": {
+                reply_hash: fixture_ids
+                for reply_hash, fixture_ids in sorted(
+                    repeated_reply_hashes.items(),
+                    key=lambda item: (-len(item[1]), item[0])
+                )[:10]
+            }
+        },
         "assessmentConfidence": {
             "missingCount": len(missing_confidence_fixture_ids),
             "missingFixtureIDs": missing_confidence_fixture_ids[:10],
             "distinctRoundedCount": confidence_distinct_count,
             "min": min(confidence_values) if confidence_values else None,
             "max": max(confidence_values) if confidence_values else None
+        },
+        "trajectoryCache": {
+            "missingCount": len(missing_trajectory_cache_fixture_ids),
+            "missingFixtureIDs": missing_trajectory_cache_fixture_ids[:10],
+            "hitCount": len(trajectory_cache_hit_fixture_ids),
+            "hitFixtureIDs": trajectory_cache_hit_fixture_ids[:10],
+            "missCount": len(trajectory_cache_miss_fixture_ids),
+            "missFixtureIDs": trajectory_cache_miss_fixture_ids[:10],
+            "minHitCount": min_trajectory_cache_hits
         },
         "retrieval": {
             "missingTraceCount": len(missing_retrieval_fixture_ids),
@@ -2411,7 +2497,9 @@ def render_markdown(report):
     trace_quality = summary.get("traceQualityAudit") or {}
     if trace_quality:
         proof_test = trace_quality.get("proofTest") or {}
+        final_reply = trace_quality.get("finalReply") or {}
         confidence = trace_quality.get("assessmentConfidence") or {}
+        trajectory_cache = trace_quality.get("trajectoryCache") or {}
         retrieval = trace_quality.get("retrieval") or {}
         latency = trace_quality.get("latency") or {}
         lines.extend([
@@ -2423,7 +2511,12 @@ def render_markdown(report):
             f"- Unique proof-test hashes: `{proof_test.get('uniqueHashCount')}`",
             f"- Max proof-test hash reuse: `{proof_test.get('maxHashReuse')}`",
             f"- Max proof-test hash reuse allowed: `{proof_test.get('maxHashReuseAllowed')}`",
+            f"- Unique final-reply hashes: `{final_reply.get('uniqueHashCount')}`",
+            f"- Max final-reply hash reuse: `{final_reply.get('maxHashReuse')}`",
             f"- Distinct rounded confidence values: `{confidence.get('distinctRoundedCount')}`",
+            f"- Trajectory-cache hits: `{trajectory_cache.get('hitCount')}`",
+            f"- Trajectory-cache hits required: `{trajectory_cache.get('minHitCount')}`",
+            f"- Missing trajectory-cache telemetry: `{trajectory_cache.get('missingCount')}`",
             f"- Empty retrieval-card traces: `{retrieval.get('emptyRetrievedCardsCount')}`",
             f"- Allowed empty retrieval-card traces: `{retrieval.get('allowedEmptyRetrievedCardsCount')}`",
             f"- Slow first-token traces: `{latency.get('slowFirstTokenCount')}`"
@@ -2540,6 +2633,12 @@ def render_failures(report):
             lines.append("Repeated proof-test hashes:")
             for proof_hash, fixture_ids in repeated_hashes.items():
                 lines.append(f"- `{proof_hash}`: " + ", ".join(f"`{fixture_id}`" for fixture_id in fixture_ids))
+        repeated_replies = ((trace_quality.get("finalReply") or {}).get("repeatedHashes") or {})
+        if repeated_replies:
+            lines.append("")
+            lines.append("Repeated final-reply hashes:")
+            for reply_hash, fixture_ids in repeated_replies.items():
+                lines.append(f"- `{reply_hash}`: " + ", ".join(f"`{fixture_id}`" for fixture_id in fixture_ids))
         lines.append("")
     coverage_failures = (report.get("summary") or {}).get("coverageFailures") or []
     if coverage_failures:

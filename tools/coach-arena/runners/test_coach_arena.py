@@ -27,7 +27,12 @@ def complete_app_path_trace():
             "timeToFirstVisibleTokenSource": "finalReplyCommit",
             "timeToCompleteReplyMs": 400,
         },
-        "cache": {"sourcePath": "/tmp/source.json"},
+        "cache": {
+            "sourcePath": "/tmp/source.json",
+            "assessmentCacheHit": True,
+            "assessmentCacheAgeMs": 200,
+            "trajectoryCacheHit": True,
+        },
         "fallback": {"qualityGateAcceptedFallback": False},
         "versions": {"runner": "test"},
         "gitCommit": "test",
@@ -57,7 +62,10 @@ def weak_app_path_result():
         "id": "weak-app-path",
         "turnType": "groundedRead",
     }
+    result["reply"] = "Name the opener first, then run one quieter close."
     result["trace"] = complete_app_path_trace()
+    result["trace"]["rawReply"] = result["reply"]
+    result["trace"]["finalReply"] = result["reply"]
     result["trace"]["memory"]["assessmentConfidence"] = 0.58
     result["trace"]["memory"]["proofTestHash"] = "proof-2"
     result["judge"] = {
@@ -65,6 +73,23 @@ def weak_app_path_result():
         "checkFailures": [],
         "failureReasons": ["missing practical intervention"],
     }
+    return result
+
+
+def scored_trace_result(index, *, reply=None, trajectory_cache_hit=True):
+    result = scored_result()
+    rendered = reply or f"Run one 60-second rep for case {index}."
+    result["fixture"] = {
+        "id": f"fixture-{index}",
+        "turnType": "groundedRead",
+    }
+    result["reply"] = rendered
+    result["trace"] = complete_app_path_trace()
+    result["trace"]["rawReply"] = rendered
+    result["trace"]["finalReply"] = rendered
+    result["trace"]["memory"]["assessmentConfidence"] = 0.42 + ((index % 4) * 0.04)
+    result["trace"]["memory"]["proofTestHash"] = f"proof-{index}"
+    result["trace"]["cache"]["trajectoryCacheHit"] = trajectory_cache_hit
     return result
 
 
@@ -128,6 +153,50 @@ class AppPathBoundaryTests(unittest.TestCase):
         self.assertFalse(audit["passes"])
         self.assertEqual(audit["retrieval"]["emptyRetrievedCardsCount"], 1)
         self.assertEqual(audit["retrieval"]["allowedEmptyRetrievedCardsCount"], 0)
+
+    def test_trace_quality_requires_trajectory_cache_telemetry(self):
+        result = scored_result()
+        del result["trace"]["cache"]["trajectoryCacheHit"]
+
+        audit = arena.trace_quality_audit([result])
+
+        self.assertFalse(audit["passes"])
+        self.assertEqual(audit["trajectoryCache"]["missingCount"], 1)
+        self.assertTrue(any(
+            "missing trajectoryCacheHit" in failure
+            for failure in audit["failures"]
+        ))
+
+    def test_trace_quality_rejects_all_cold_trajectory_cache(self):
+        results = [
+            scored_trace_result(index, trajectory_cache_hit=False)
+            for index in range(10)
+        ]
+
+        audit = arena.trace_quality_audit(results)
+
+        self.assertFalse(audit["passes"])
+        self.assertEqual(audit["trajectoryCache"]["hitCount"], 0)
+        self.assertEqual(audit["trajectoryCache"]["minHitCount"], 1)
+        self.assertTrue(any(
+            "trajectoryCacheHit true for 0 real-pipeline fixtures" in failure
+            for failure in audit["failures"]
+        ))
+
+    def test_trace_quality_rejects_reused_final_reply_hash(self):
+        results = [
+            scored_trace_result(1, reply="Make the final sentence the ask, then stop."),
+            scored_trace_result(2, reply="Make the final sentence the ask, then stop."),
+        ]
+
+        audit = arena.trace_quality_audit(results)
+
+        self.assertFalse(audit["passes"])
+        self.assertEqual(audit["finalReply"]["maxHashReuse"], 2)
+        self.assertTrue(any(
+            "finalReply reused exactly across 2 real-pipeline fixtures" in failure
+            for failure in audit["failures"]
+        ))
 
     def test_direct_python_app_path_defaults_to_canonical_app_path_reports(self):
         args = type("Args", (), {

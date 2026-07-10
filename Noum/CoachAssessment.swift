@@ -79,7 +79,10 @@ struct CoachAssessment: Codable, Equatable {
             if let repairFocus,
                !repairFocus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 if Self.isPressureDifficultyRepair(repairFocus) {
-                    return "Fair push: no, it is not easy. The hard part is that sentence one carries the social risk, so test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it."
+                    return Self.pressureDifficultyRepairRead(
+                        evidence: evidenceUsed,
+                        proofTest: nextProofTest
+                    )
                 }
                 return Self.trustRepairRead(
                     repairFocus: repairFocus,
@@ -157,6 +160,19 @@ struct CoachAssessment: Codable, Equatable {
         return lower.contains("easier than it feels under pressure") ||
             lower.contains("not easy") ||
             lower.contains("harder than")
+    }
+
+    private static func pressureDifficultyRepairRead(
+        evidence: [String],
+        proofTest: String
+    ) -> String {
+        let combined = ([proofTest] + evidence)
+            .joined(separator: " ")
+            .lowercased()
+        if ["silent beat", "silence", "close", "final sentence", "ask"].contains(where: { combined.contains($0) }) {
+            return "Fair push: no, it is not easy. The hard part is holding the silent beat at the pressure point before the final sentence. Keep the next rep smaller: say only the close — one silent beat, the final sentence, then stop."
+        }
+        return "Fair push: no, it is not easy. The hard part is that sentence one carries the social risk, so test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it."
     }
 
     private static func compactRead(

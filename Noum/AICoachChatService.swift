@@ -2441,7 +2441,7 @@ actor AICoachChatService {
             assessment: assessment
         ))
         if contextSaysWarmthBeforeRecommendation(systemContext) {
-            return "\(friction) Your warmth is arriving before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
+            return "\(friction) The ordering signal is warmth before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
         }
         if let evidence = coachSafeEvidencePhrase(from: assessment.evidenceUsed.first) {
             return "\(friction) Your last rep gives one safe signal, \(evidence), so \(action)"
@@ -5798,6 +5798,10 @@ actor AICoachChatService {
         }
 
         if containsAny(lowerTurn, ["um", "filler", "fillers", "hesitat"]) {
+            if let count = firstFillerCount(in: system),
+               fillerEvidenceSitsInsideDecisionLine(system) {
+                return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so hold one silent beat after the decision line and restart if a filler appears."
+            }
             if let pressureShape = deterministicPressureFillerQuickMoveReply(
                 latestUserTurn: lowerTurn,
                 systemContext: system
@@ -5805,9 +5809,6 @@ actor AICoachChatService {
                 return pressureShape
             }
             if let count = firstFillerCount(in: system) {
-                if fillerEvidenceSitsInsideDecisionLine(system) {
-                    return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so hold one silent beat after the decision line and restart if a filler appears."
-                }
                 return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"), so hold one silent beat before sentence two and check whether the next rep lowers the count."
             }
             return "No stable filler pattern yet, so record one short rep and mark every filler before changing the drill."
@@ -6177,7 +6178,7 @@ actor AICoachChatService {
             return CoachReliabilityGate.notInformativeRepairFallback(surface: .text)
         }
         if contextSaysWarmthBeforeRecommendation(system) {
-            return "\(friction) Your warmth is arriving before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
+            return "\(friction) The ordering signal is warmth before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
         }
         if containsAny(lowerTurn, ["it's not easy", "its not easy", "not that easy", "easier said than done", "harder than that"]) {
             let step = "say only the first hard sentence, then stop."

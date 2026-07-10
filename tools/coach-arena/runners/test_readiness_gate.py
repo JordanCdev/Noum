@@ -157,28 +157,200 @@ Paywall
     )
 
 
+def write_coach_source(root, contents="final reply pipeline"):
+    path = Path(root) / "Noum/CoachReplyPipeline.swift"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(contents, encoding="utf-8")
+    return path
+
+
+def live_provider_row(row_id, index, turn_depth=None, immediate_expected=True, reply=None):
+    return {
+        "fixtureID": row_id,
+        "turnDepth": turn_depth or gate.LIVE_REQUIRED_TURN_DEPTHS[index % len(gate.LIVE_REQUIRED_TURN_DEPTHS)],
+        "providerChosen": "Gemini",
+        "providerModel": "gemini-test",
+        "timeToFirstVisibleTokenMs": 420 + index,
+        "assessmentConfidence": 0.62 + ((index % 4) * 0.04),
+        "trajectoryCacheHit": index % 5 == 0,
+        "assessmentProofTestHash": f"{row_id}-proof-{index}",
+        "immediateCoachReadExpected": immediate_expected,
+        "immediateCoachReadShown": immediate_expected,
+        "liveProductionFloor": True,
+        "reply": reply or (
+            f"{row_id} names the current evidence, answers the user's ask, "
+            "and gives one proof test."
+        ),
+        "passesRubric": True,
+        "visionPassesProductionFloor": True,
+        "qualityIssue": "none",
+        "semanticGateIssue": "none",
+        "reliabilityIssues": [],
+    }
+
+
+def live_long_form_conversation(conversation_id, index):
+    rows = [
+        live_provider_row(
+            f"{conversation_id}#turn-{turn_index + 1}",
+            index + turn_index,
+            immediate_expected=False,
+            reply=(
+                f"{conversation_id} turn {turn_index + 1} carries evidence, "
+                "keeps the plan continuous, and ends with a proof test."
+            ),
+        )
+        for turn_index in range(5)
+    ]
+    return {
+        "conversationID": conversation_id,
+        "sourceFixtureID": gate.LIVE_REQUIRED_FIXTURE_IDS[index % len(gate.LIVE_REQUIRED_FIXTURE_IDS)],
+        "expectedTurnCount": len(rows),
+        "observedTurnCount": len(rows),
+        "liveProductionFloor": True,
+        "failure": None,
+        "rows": rows,
+    }
+
+
+def complete_live_provider_evidence(source_fingerprint="sha256:test-source", git_commit="abc123"):
+    rows = [
+        live_provider_row(fixture_id, index)
+        for index, fixture_id in enumerate(gate.LIVE_REQUIRED_FIXTURE_IDS)
+    ]
+    long_form = [
+        live_long_form_conversation(conversation_id, index)
+        for index, conversation_id in enumerate(gate.LIVE_REQUIRED_LONG_FORM_IDS)
+    ]
+    return {
+        "schemaVersion": "coach-live-eval-v1",
+        "sourceGitCommit": git_commit,
+        "sourceCoachFingerprint": source_fingerprint,
+        "fixtureCount": len(rows),
+        "longFormConversationCount": len(long_form),
+        "longFormConversationIDsPassingProductionFloor": list(gate.LIVE_REQUIRED_LONG_FORM_IDS),
+        "longFormConversationFailureIDs": [],
+        "longFormConversations": long_form,
+        "providerChain": ["Gemini (gemini-test)"],
+        "passesProductionFloor": True,
+        "passesRunReadinessFloor": True,
+        "summary": {
+            "rowCount": len(rows),
+            "productionFloorFailureCount": 0,
+            "readinessWarnings": [],
+            "immediateCoachReadExpectedCount": len(rows),
+            "immediateCoachReadMissingCount": 0,
+            "assessmentConfidenceDistinctRoundedCount": 4,
+            "uniqueProofTestHashCount": len(rows),
+            "repeatedProofTestHashCount": 0,
+            "maxProviderRetryCount": 1,
+            "totalProviderRefusalCount": 0,
+            "firstVisibleTokenMaxMs": 520,
+        },
+        "rows": rows,
+    }
+
+
+CALIBRATION_CONVERSATION_IDS = [
+    f"calibration-conversation-{index:02d}"
+    for index in range(gate.PROFESSIONAL_CALIBRATION_MIN_CONVERSATION_COUNT)
+]
+CALIBRATION_PACKET_FINGERPRINT = "fnv1a64:test-calibration-packet"
+
+
+def calibration_packet_payload(
+    conversation_ids=CALIBRATION_CONVERSATION_IDS,
+    source_packet_fingerprint=CALIBRATION_PACKET_FINGERPRINT,
+):
+    return {
+        "schemaVersion": gate.PROFESSIONAL_CALIBRATION_PACKET_SCHEMA,
+        "rubricVersion": gate.PROFESSIONAL_CALIBRATION_RUBRIC,
+        "sourceCorpusFingerprint": source_packet_fingerprint,
+        "conversationCount": len(conversation_ids),
+        "requiredIndependentReviewsPerConversation": gate.PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION,
+        "requiredReviewCount": len(conversation_ids) * gate.PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION,
+        "rows": [
+            {
+                "conversationID": conversation_id,
+                "sourceFixtureID": f"fixture-{index:02d}",
+                "turns": [],
+            }
+            for index, conversation_id in enumerate(conversation_ids)
+        ],
+    }
+
+
+def professional_calibration_row(conversation_id, reviewer_index, row_index):
+    return {
+        "conversationID": conversation_id,
+        "reviewerID": f"coach-reviewer-{reviewer_index + 1}",
+        "calibrationDecision": "roughTie",
+        "wouldUseWithClient": True,
+        "ratings": {
+            "diagnosis": 4,
+            "caseFormulation": 4,
+            "intervention": 4,
+            "adaptation": 4,
+            "perceptionHonesty": 4,
+            "transferSetup": 4,
+            "trustRepair": 4,
+            "overallUsefulness": 4,
+        },
+        "humanCoachReferenceCount": 2,
+        "overclaimNotes": [],
+        "revisionNotes": [],
+    }
+
+
+def complete_professional_calibration_evidence(
+    conversation_ids=CALIBRATION_CONVERSATION_IDS,
+    source_packet_fingerprint=CALIBRATION_PACKET_FINGERPRINT,
+):
+    rows = [
+        professional_calibration_row(conversation_id, reviewer_index, row_index)
+        for row_index, (conversation_id, reviewer_index) in enumerate(
+            (conversation_id, reviewer_index)
+            for conversation_id in conversation_ids
+            for reviewer_index in range(gate.PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION)
+        )
+    ]
+    reviewer_ids = {row["reviewerID"] for row in rows}
+    return {
+        "schemaVersion": gate.PROFESSIONAL_CALIBRATION_RESULTS_SCHEMA,
+        "sourcePacketSchemaVersion": gate.PROFESSIONAL_CALIBRATION_PACKET_SCHEMA,
+        "sourcePacketFingerprint": source_packet_fingerprint,
+        "rubricVersion": gate.PROFESSIONAL_CALIBRATION_RUBRIC,
+        "reviewerRole": "professionalCommunicationCoach",
+        "reviewCount": len(rows),
+        "summary": {
+            "rowCount": len(rows),
+            "reviewerCount": len(reviewer_ids),
+            "completedReviewCount": len(rows),
+            "passingCalibrationCount": len(rows),
+            "wouldUseWithClientCount": len(rows),
+            "unsafeOrUnreadyCount": 0,
+            "averageOverallUsefulness": 4.0,
+            "minimumOverallUsefulness": 4,
+            "readinessWarnings": [],
+        },
+        "rows": rows,
+    }
+
+
 def write_complete_evidence(root, source_fingerprint="sha256:test-source", git_commit="abc123"):
     root = Path(root)
+    (root / gate.PROFESSIONAL_CALIBRATION_PACKET_FILE).write_text(
+        json.dumps(calibration_packet_payload()),
+        encoding="utf-8",
+    )
     payloads = {
-        "coach-live-eval-v1.json": {
-            "schemaVersion": "coach-live-eval-v1",
-            "sourceGitCommit": git_commit,
-            "sourceCoachFingerprint": source_fingerprint,
-            "fixtureCount": 10,
-            "longFormConversationCount": 10,
-            "summary": {},
-            "rows": [],
-        },
-        "coach-chat-conversation-expert-calibration-results-v2.json": {
-            "schemaVersion": "coach-chat-conversation-expert-calibration-results-v2",
-            "sourcePacketSchemaVersion": "coach-chat-conversation-expert-calibration-v2",
-            "sourcePacketFingerprint": "fnv1a64:test",
-            "rubricVersion": "coach-parity-conversation-calibration-v2",
-            "reviewerRole": "professionalCommunicationCoach",
-            "reviewCount": 2,
-            "summary": {},
-            "rows": [],
-        },
+        "coach-live-eval-v1.json": complete_live_provider_evidence(
+            source_fingerprint,
+            git_commit,
+        ),
+        "coach-chat-conversation-expert-calibration-results-v2.json": (
+            complete_professional_calibration_evidence()
+        ),
         "coach-real-user-transfer-outcomes-v2.json": {
             "schemaVersion": "coach-real-user-transfer-outcomes-v2",
             "studyProtocolVersion": "coach-transfer-outcome-ledger-v2",
@@ -286,7 +458,17 @@ class ReadinessGateTests(unittest.TestCase):
             traceQualityPasses=False,
         )
 
-        status = gate.build_readiness_status(report, canonical_report_path())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_complete_evidence(root)
+
+            status = gate.build_readiness_status(
+                report,
+                canonical_report_path(),
+                root,
+                root,
+            )
 
         self.assertTrue(status["vision"]["productionReady"])
         self.assertFalse(status["launchReady"])
@@ -304,10 +486,17 @@ class ReadinessGateTests(unittest.TestCase):
             "blockers": [],
         }
 
-        status = gate.build_readiness_status(
-            report_with_readiness(readiness),
-            canonical_report_path(),
-        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_complete_evidence(root)
+
+            status = gate.build_readiness_status(
+                report_with_readiness(readiness),
+                canonical_report_path(),
+                root,
+                root,
+            )
 
         self.assertTrue(status["vision"]["productionReady"])
         self.assertFalse(status["launchReady"])
@@ -464,6 +653,457 @@ class ReadinessGateTests(unittest.TestCase):
             status["artifactBlockingRequirements"][0]["observed"],
         )
 
+    def test_launch_ready_rejects_live_sweep_with_stale_source_sidecars(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_complete_evidence(
+                root,
+                source_fingerprint="sha256:old-source",
+                git_commit="old123",
+            )
+            (root / "source-coach-fingerprint.txt").write_text(
+                "sha256:fresh-source",
+                encoding="utf-8",
+            )
+            (root / "source-git-commit.txt").write_text("fresh123", encoding="utf-8")
+
+            status = gate.build_readiness_status(
+                report_with_readiness(readiness),
+                canonical_report_path(),
+                root,
+                root,
+            )
+
+        self.assertFalse(status["launchReady"])
+        live_artifact = next(
+            item for item in status["artifactAudit"]["invalidArtifacts"]
+            if item["artifact"] == "coach-live-eval-v1.json"
+        )
+        self.assertIn("sourceGitCommitMismatch", live_artifact["contractFailures"])
+        self.assertIn("sourceCoachFingerprintMismatch", live_artifact["contractFailures"])
+
+    def test_launch_ready_rejects_live_sweep_with_thin_latest_coverage(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_complete_evidence(root)
+            live_path = root / "coach-live-eval-v1.json"
+            payload = json.loads(live_path.read_text(encoding="utf-8"))
+            payload["rows"] = payload["rows"][:10]
+            payload["fixtureCount"] = 10
+            payload["summary"]["rowCount"] = 10
+            live_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            status = gate.build_readiness_status(
+                report_with_readiness(readiness),
+                canonical_report_path(),
+                root,
+                root,
+            )
+
+        self.assertFalse(status["launchReady"])
+        live_artifact = next(
+            item for item in status["artifactAudit"]["invalidArtifacts"]
+            if item["artifact"] == "coach-live-eval-v1.json"
+        )
+        self.assertIn("missingLatestTranscriptCoverage", live_artifact["contractFailures"])
+        self.assertTrue(
+            any(
+                reason.startswith("missingRequiredFixtures=")
+                for reason in live_artifact["contractFailures"]
+            )
+        )
+
+    def test_launch_ready_rejects_live_sweep_with_flat_or_repeated_telemetry(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_complete_evidence(root)
+            live_path = root / "coach-live-eval-v1.json"
+            payload = json.loads(live_path.read_text(encoding="utf-8"))
+            payload["summary"]["assessmentConfidenceDistinctRoundedCount"] = 1
+            payload["summary"]["trajectoryCacheHitCount"] = 0
+            payload["summary"]["uniqueProofTestHashCount"] = 1
+            payload["summary"]["repeatedProofTestHashCount"] = 7
+            for row in payload["rows"]:
+                row["trajectoryCacheHit"] = False
+            live_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            status = gate.build_readiness_status(
+                report_with_readiness(readiness),
+                canonical_report_path(),
+                root,
+                root,
+            )
+
+        self.assertFalse(status["launchReady"])
+        live_artifact = next(
+            item for item in status["artifactAudit"]["invalidArtifacts"]
+            if item["artifact"] == "coach-live-eval-v1.json"
+        )
+        self.assertIn("flatAssessmentConfidence", live_artifact["contractFailures"])
+        self.assertIn("weakProofTestVariety", live_artifact["contractFailures"])
+        self.assertTrue(
+            any(
+                reason.startswith("weakTrajectoryCacheCoverage=")
+                for reason in live_artifact["contractFailures"]
+            )
+        )
+
+    def test_launch_ready_rejects_live_sweep_placeholder_replies(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_complete_evidence(root)
+            live_path = root / "coach-live-eval-v1.json"
+            payload = json.loads(live_path.read_text(encoding="utf-8"))
+            payload["rows"][0]["reply"] = "generic coach reply with concrete evidence"
+            live_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            status = gate.build_readiness_status(
+                report_with_readiness(readiness),
+                canonical_report_path(),
+                root,
+                root,
+            )
+
+        self.assertFalse(status["launchReady"])
+        live_artifact = next(
+            item for item in status["artifactAudit"]["invalidArtifacts"]
+            if item["artifact"] == "coach-live-eval-v1.json"
+        )
+        self.assertTrue(
+            any(
+                reason.startswith("genericLatestTurnReplies=")
+                for reason in live_artifact["contractFailures"]
+            )
+        )
+
+    def test_live_sweep_contract_accepts_real_swift_producer_shape(self):
+        payload = complete_live_provider_evidence()
+
+        failures = gate.live_provider_sweep_contract_failures(payload)
+
+        self.assertEqual(failures, [])
+        self.assertNotIn(
+            "sourceFreshnessFailures",
+            gate.EVIDENCE_REQUIREMENTS["noLiveProviderTranscriptSweep"]["requiredTopLevelKeys"],
+        )
+
+    def test_live_sweep_contract_rejects_boolean_numeric_telemetry(self):
+        payload = complete_live_provider_evidence()
+        payload["rows"][0]["timeToFirstVisibleTokenMs"] = True
+        payload["rows"][0]["assessmentConfidence"] = True
+
+        failures = gate.live_provider_sweep_contract_failures(payload)
+
+        self.assertTrue(any(
+            reason.startswith("latestTurnReadinessTelemetryFailures=")
+            for reason in failures
+        ))
+
+    def test_live_sweep_contract_rejects_forged_one_turn_long_forms(self):
+        payload = complete_live_provider_evidence()
+        for conversation in payload["longFormConversations"]:
+            conversation["rows"] = conversation["rows"][:1]
+            conversation["expectedTurnCount"] = 1
+            conversation["observedTurnCount"] = 1
+
+        failures = gate.live_provider_sweep_contract_failures(payload)
+
+        self.assertTrue(any(
+            reason.startswith("malformedDetailedLongFormConversations=")
+            for reason in failures
+        ))
+
+    def test_live_sweep_contract_rejects_unexpected_long_form_ids(self):
+        payload = complete_live_provider_evidence()
+        extra_id = "unexpected-long-form-conversation"
+        payload["longFormConversations"].append(
+            live_long_form_conversation(extra_id, 0)
+        )
+        payload["longFormConversationIDsPassingProductionFloor"].append(extra_id)
+        payload["longFormConversationCount"] += 1
+
+        failures = gate.live_provider_sweep_contract_failures(payload)
+
+        self.assertTrue(any(
+            reason.startswith("unexpectedLongFormConversationIDs=")
+            for reason in failures
+        ))
+        self.assertTrue(any(
+            reason.startswith("unexpectedDetailedLongFormConversations=")
+            for reason in failures
+        ))
+
+    def test_live_sweep_contract_fails_closed_on_malformed_summary_numbers(self):
+        payload = complete_live_provider_evidence()
+        payload["summary"]["productionFloorFailureCount"] = "0"
+        payload["summary"]["assessmentConfidenceDistinctRoundedCount"] = True
+
+        failures = gate.live_provider_sweep_contract_failures(payload)
+
+        self.assertTrue(any(
+            reason.startswith("invalidSummaryTelemetry=")
+            for reason in failures
+        ))
+        self.assertIn("productionFloorFailures", failures)
+        self.assertIn("flatAssessmentConfidence", failures)
+
+    def test_professional_calibration_fails_closed_on_malformed_numbers(self):
+        payload = complete_professional_calibration_evidence()
+        payload["summary"]["minimumOverallUsefulness"] = "4"
+        payload["summary"]["passingCalibrationCount"] = True
+        payload["rows"][0]["humanCoachReferenceCount"] = True
+        context = {
+            "requiredConversationIDs": CALIBRATION_CONVERSATION_IDS,
+            "requiredReviewsPerConversation": gate.PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION,
+            "requiredReviewCount": gate.PROFESSIONAL_CALIBRATION_MIN_REVIEW_COUNT,
+            "sourcePacketFingerprint": CALIBRATION_PACKET_FINGERPRINT,
+            "packetFailures": [],
+        }
+
+        failures = gate.professional_calibration_contract_failures(payload, context)
+
+        self.assertTrue(any(
+            reason.startswith("invalidSummaryTelemetry=")
+            for reason in failures
+        ))
+        self.assertIn("rowCalibrationFloorFailures", failures)
+        self.assertIn("overallUsefulnessBelowFloor", failures)
+
+    def test_artifact_gate_rejects_empty_source_sidecars(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_complete_evidence(root)
+            (root / "source-git-commit.txt").write_text("", encoding="utf-8")
+            (root / "source-coach-fingerprint.txt").write_text("", encoding="utf-8")
+
+            audit = gate.evidence_artifact_audit(root, {"blockers": []})
+            failures = gate.artifact_gate_failures(audit)
+
+        self.assertEqual(
+            sorted(item["label"] for item in failures),
+            ["source-coach-fingerprint.txt", "source-git-commit.txt"],
+        )
+        self.assertTrue(all(item["observed"] == "empty" for item in failures))
+
+    def test_launch_ready_rejects_professional_calibration_stale_packet_fingerprint(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_complete_evidence(root)
+            calibration_path = root / "coach-chat-conversation-expert-calibration-results-v2.json"
+            payload = json.loads(calibration_path.read_text(encoding="utf-8"))
+            payload["sourcePacketFingerprint"] = "fnv1a64:stale"
+            calibration_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            status = gate.build_readiness_status(
+                report_with_readiness(readiness),
+                canonical_report_path(),
+                root,
+                root,
+            )
+
+        self.assertFalse(status["launchReady"])
+        calibration = next(
+            item for item in status["artifactAudit"]["invalidArtifacts"]
+            if item["artifact"] == "coach-chat-conversation-expert-calibration-results-v2.json"
+        )
+        self.assertIn("sourcePacketFingerprintMismatch", calibration["contractFailures"])
+
+    def test_launch_ready_rejects_professional_calibration_with_single_review_coverage(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_complete_evidence(root)
+            calibration_path = root / "coach-chat-conversation-expert-calibration-results-v2.json"
+            payload = json.loads(calibration_path.read_text(encoding="utf-8"))
+            payload["rows"] = payload["rows"][::2]
+            payload["reviewCount"] = len(payload["rows"])
+            payload["summary"]["rowCount"] = len(payload["rows"])
+            payload["summary"]["completedReviewCount"] = len(payload["rows"])
+            payload["summary"]["passingCalibrationCount"] = len(payload["rows"])
+            payload["summary"]["wouldUseWithClientCount"] = len(payload["rows"])
+            calibration_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            status = gate.build_readiness_status(
+                report_with_readiness(readiness),
+                canonical_report_path(),
+                root,
+                root,
+            )
+
+        self.assertFalse(status["launchReady"])
+        calibration = next(
+            item for item in status["artifactAudit"]["invalidArtifacts"]
+            if item["artifact"] == "coach-chat-conversation-expert-calibration-results-v2.json"
+        )
+        self.assertIn("fewerThanRequiredReviews", calibration["contractFailures"])
+        self.assertIn("missingFullConversationCoverage", calibration["contractFailures"])
+        self.assertTrue(
+            any(
+                reason.startswith("insufficientReviewsPerConversation=")
+                for reason in calibration["contractFailures"]
+            )
+        )
+
+    def test_launch_ready_rejects_professional_calibration_with_single_reviewer(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_complete_evidence(root)
+            calibration_path = root / "coach-chat-conversation-expert-calibration-results-v2.json"
+            payload = json.loads(calibration_path.read_text(encoding="utf-8"))
+            for row in payload["rows"]:
+                row["reviewerID"] = "coach-reviewer-1"
+            payload["summary"]["reviewerCount"] = 1
+            calibration_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            status = gate.build_readiness_status(
+                report_with_readiness(readiness),
+                canonical_report_path(),
+                root,
+                root,
+            )
+
+        self.assertFalse(status["launchReady"])
+        calibration = next(
+            item for item in status["artifactAudit"]["invalidArtifacts"]
+            if item["artifact"] == "coach-chat-conversation-expert-calibration-results-v2.json"
+        )
+        self.assertIn("duplicateConversationReviewerPairs", calibration["contractFailures"])
+        self.assertIn("missingProfessionalReviewer", calibration["contractFailures"])
+        self.assertTrue(
+            any(
+                reason.startswith("insufficientReviewerDiversity=")
+                for reason in calibration["contractFailures"]
+            )
+        )
+
+    def test_launch_ready_rejects_professional_calibration_unsafe_or_low_rows(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_complete_evidence(root)
+            calibration_path = root / "coach-chat-conversation-expert-calibration-results-v2.json"
+            payload = json.loads(calibration_path.read_text(encoding="utf-8"))
+            payload["rows"][0]["calibrationDecision"] = "unsafeOrUnready"
+            payload["rows"][0]["wouldUseWithClient"] = False
+            payload["rows"][0]["ratings"]["overallUsefulness"] = 3
+            payload["rows"][0]["humanCoachReferenceCount"] = 0
+            payload["rows"][0]["overclaimNotes"] = ["Too certain."]
+            payload["summary"]["passingCalibrationCount"] = len(payload["rows"]) - 1
+            payload["summary"]["wouldUseWithClientCount"] = len(payload["rows"]) - 1
+            payload["summary"]["unsafeOrUnreadyCount"] = 1
+            payload["summary"]["minimumOverallUsefulness"] = 3
+            payload["summary"]["averageOverallUsefulness"] = 3.99
+            calibration_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            status = gate.build_readiness_status(
+                report_with_readiness(readiness),
+                canonical_report_path(),
+                root,
+                root,
+            )
+
+        self.assertFalse(status["launchReady"])
+        calibration = next(
+            item for item in status["artifactAudit"]["invalidArtifacts"]
+            if item["artifact"] == "coach-chat-conversation-expert-calibration-results-v2.json"
+        )
+        self.assertIn("unsafeOrUnreadyRows", calibration["contractFailures"])
+        self.assertIn("rowCalibrationFloorFailures", calibration["contractFailures"])
+        self.assertIn("insufficientPassingCalibrationRows", calibration["contractFailures"])
+        self.assertIn("overallUsefulnessBelowFloor", calibration["contractFailures"])
+
+    def test_launch_ready_rejects_forged_small_professional_calibration_packet(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_complete_evidence(root)
+            small_ids = CALIBRATION_CONVERSATION_IDS[:3]
+            (root / gate.PROFESSIONAL_CALIBRATION_PACKET_FILE).write_text(
+                json.dumps(calibration_packet_payload(conversation_ids=small_ids)),
+                encoding="utf-8",
+            )
+            calibration_path = root / "coach-chat-conversation-expert-calibration-results-v2.json"
+            calibration_path.write_text(
+                json.dumps(complete_professional_calibration_evidence(conversation_ids=small_ids)),
+                encoding="utf-8",
+            )
+
+            status = gate.build_readiness_status(
+                report_with_readiness(readiness),
+                canonical_report_path(),
+                root,
+                root,
+            )
+
+        self.assertFalse(status["launchReady"])
+        calibration = next(
+            item for item in status["artifactAudit"]["invalidArtifacts"]
+            if item["artifact"] == "coach-chat-conversation-expert-calibration-results-v2.json"
+        )
+        self.assertIn("sourcePacketBelowConversationFloor", calibration["contractFailures"])
+        self.assertIn("sourcePacketBelowReviewFloor", calibration["contractFailures"])
+        self.assertIn("fewerThanRequiredReviews", calibration["contractFailures"])
+
     def test_launch_ready_requires_report_source_freshness_when_trace_values_exist(self):
         readiness = {
             "score": 85,
@@ -535,6 +1175,90 @@ class ReadinessGateTests(unittest.TestCase):
         self.assertTrue(status["sourceFreshnessAudit"]["passes"])
         self.assertEqual(status["localBlockingRequirements"], [])
 
+    def test_launch_ready_requires_report_source_to_match_current_checkout(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        report = report_with_readiness(readiness)
+        report["results"] = [{
+            "trace": {
+                "sourceFingerprint": "sha256:old-source",
+                "gitCommit": "abc123",
+            }
+        }]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_coach_source(root, "current coach source")
+            current_fingerprint = gate.coach_source_fingerprint(root)
+            write_complete_evidence(
+                root,
+                source_fingerprint="sha256:old-source",
+                git_commit="abc123",
+            )
+
+            status = gate.build_readiness_status(
+                report,
+                canonical_report_path(),
+                root,
+                root,
+            )
+
+        self.assertFalse(status["launchReady"])
+        self.assertFalse(status["sourceFreshnessAudit"]["passes"])
+        self.assertEqual(
+            [item["label"] for item in status["localBlockingRequirements"]],
+            ["currentCoachFingerprint"],
+        )
+        self.assertEqual(
+            status["localBlockingRequirements"][0]["current"],
+            current_fingerprint,
+        )
+        self.assertEqual(
+            status["localBlockingRequirements"][0]["mismatchedAgainst"],
+            ["sidecar", "report"],
+        )
+
+    def test_source_freshness_passes_when_current_checkout_matches_report(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_coach_source(root, "current coach source")
+            current_fingerprint = gate.coach_source_fingerprint(root)
+            write_complete_evidence(
+                root,
+                source_fingerprint=current_fingerprint,
+                git_commit="abc123",
+            )
+            report = report_with_readiness(readiness)
+            report["results"] = [{
+                "trace": {
+                    "sourceFingerprint": current_fingerprint,
+                    "gitCommit": "abc123",
+                }
+            }]
+
+            status = gate.build_readiness_status(
+                report,
+                canonical_report_path(),
+                root,
+                root,
+            )
+
+        self.assertTrue(status["launchReady"])
+        self.assertTrue(status["sourceFreshnessAudit"]["passes"])
+        self.assertEqual(status["sourceFreshnessAudit"]["currentGitCommit"], None)
+        self.assertEqual(status["localBlockingRequirements"], [])
+
     def test_launch_ready_requires_operational_static_preflight(self):
         readiness = {
             "score": 85,
@@ -603,7 +1327,7 @@ class ReadinessGateTests(unittest.TestCase):
         )
         self.assertTrue(live_artifact["present"])
         self.assertTrue(live_artifact["presentButStillBlocked"])
-        self.assertIn("lightweight JSON/schema-version", audit["validationBoundary"])
+        self.assertIn("structured JSON/schema", audit["validationBoundary"])
 
     def test_status_includes_evidence_directory_audit(self):
         readiness = {
@@ -843,7 +1567,7 @@ class ReadinessGateTests(unittest.TestCase):
         self.assertIn("## Artifact Gate Failures", markdown)
         self.assertIn("## Evidence Directory", markdown)
         self.assertIn("## Operational Static Preflight", markdown)
-        self.assertIn("Python performs a lightweight JSON/schema-version staging check", markdown)
+        self.assertIn("Python performs structured JSON/schema", markdown)
 
     def test_markdown_includes_live_probe_when_enabled(self):
         readiness = {

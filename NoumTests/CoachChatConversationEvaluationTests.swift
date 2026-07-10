@@ -150,7 +150,7 @@ enum CoachChatConversationCorpus {
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "This still sounds cold and overexplained, like generic AI tips.",
-                    coachReply: "Fair push: that was advice, not coaching. Your warmth is arriving before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
+                    coachReply: "Fair push: that was advice, not coaching. The ordering signal is warmth before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "Does that make me sound less warm?",
@@ -308,19 +308,19 @@ enum CoachChatConversationCorpus {
         ),
         CoachChatConversationFixture(
             id: "not-easy-empathy-conversation",
-            sourceFixtureID: "filler-pressure-prescription",
+            sourceFixtureID: "personal-pattern-hypothesis-confirmation",
             turns: [
                 CoachChatConversationTurn(
                     userTurn: "It's not easy.",
                     coachReply: "Fair push: no, it is not easy. The hard part is that sentence one carries the social risk, so test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it."
                 ),
                 CoachChatConversationTurn(
-                    userTurn: "Is it the pause or the close?",
-                    coachReply: "Your last rep gives one usable signal: under pressure, the close needs one silent beat after the verdict. Use that beat, then finish the answer without speeding up."
+                    userTurn: "Is it the disagreement or the setup?",
+                    coachReply: "The setup is carrying the pressure: reassurance arrives before the disagreement, so the point feels harder to say. Keep the disagreement in sentence one, add one calm reason, then stop."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What is the smallest rep?",
-                    coachReply: "Use a 20-second close only because it isolates the pressure cue: decision, one reason, stop. If a filler appears before the close, restart with one silent beat first."
+                    coachReply: "Use a 20-second disagreement because it isolates the social risk: say no in sentence one, give one calm reason, then stop before you prove you are reasonable. Check whether the disagreement lands before reassurance."
                 )
             ]
         ),
@@ -2767,11 +2767,17 @@ struct CoachChatConversationCorpusTests {
             }
         })
         #expect(report.summary.retrievalTracePresentCount == expectedTurnCount)
+        let trajectoryCacheHitCount = appPathTurns.filter { $0.trajectoryCacheHit == true }.count
+        #expect(report.summary.trajectoryCacheHitCount == trajectoryCacheHitCount)
+        #expect(report.summary.trajectoryCacheMissingTelemetryCount == 0)
+        #expect(report.summary.minimumTrajectoryCacheHitCount ==
+            CoachChatConversationAppPathSummary.minimumTrajectoryCacheHitCount(for: expectedTurnCount))
         // Cache state is captured from the real pipeline and proves the caching layer is
         // exercised end-to-end: the first turn of a conversation computes the trajectory
         // (cold miss) and later turns reuse the cached UserTrajectory snapshot (warm hit).
         #expect(appPathTurns.contains { $0.trajectoryCacheHit == false })
         #expect(appPathTurns.contains { $0.trajectoryCacheHit == true })
+        #expect(report.summary.trajectoryCacheHitCount >= report.summary.minimumTrajectoryCacheHitCount)
         // The harness injects each conversation's real source-fixture practice
         // sessions (scriptedConversationAppPathRows -> sessionsOverride), so
         // UserTrajectory.evidenceCoverage varies per conversation and
@@ -2786,6 +2792,12 @@ struct CoachChatConversationCorpusTests {
         #expect(report.summary.repeatedProofTestHashCount == 0)
         #expect(!report.summary.readinessWarnings.contains(
             CoachChatConversationAppPathWarning.missingRetrievalTrace.rawValue
+        ))
+        #expect(!report.summary.readinessWarnings.contains(
+            CoachChatConversationAppPathWarning.missingTrajectoryCacheTelemetry.rawValue
+        ))
+        #expect(!report.summary.readinessWarnings.contains(
+            CoachChatConversationAppPathWarning.weakTrajectoryCacheCoverage.rawValue
         ))
         #expect(!report.summary.readinessWarnings.contains(
             CoachChatConversationAppPathWarning.flatAssessmentConfidence.rawValue
@@ -2814,6 +2826,9 @@ struct CoachChatConversationCorpusTests {
         #expect(json.contains("\"retrievalTracePresentCount\""))
         #expect(json.contains("\"retrievalTrace\""))
         #expect(json.contains("\"retrievedCardIDs\""))
+        #expect(json.contains("\"trajectoryCacheHitCount\""))
+        #expect(json.contains("\"trajectoryCacheMissingTelemetryCount\":0"))
+        #expect(json.contains("\"minimumTrajectoryCacheHitCount\""))
         #expect(json.contains("\"arenaTrace\""))
         #expect(json.contains("\"coachSystemPrompt\""))
         #expect(json.contains("\"cachePolicy\":\"ephemeral\""))
@@ -2904,6 +2919,12 @@ struct CoachChatConversationCorpusTests {
             }
         })
         #expect(report.summary.retrievalTracePresentCount == expectedTurnCount)
+        let trajectoryCacheHitCount = turns.filter { $0.trajectoryCacheHit == true }.count
+        #expect(report.summary.trajectoryCacheHitCount == trajectoryCacheHitCount)
+        #expect(report.summary.trajectoryCacheMissingTelemetryCount == 0)
+        #expect(report.summary.minimumTrajectoryCacheHitCount ==
+            CoachChatConversationAppPathSummary.minimumTrajectoryCacheHitCount(for: expectedTurnCount))
+        #expect(report.summary.trajectoryCacheHitCount >= report.summary.minimumTrajectoryCacheHitCount)
         // Injected source-fixture sessions (see the text-surface test above) give the
         // trajectory real, per-conversation evidence coverage, so assessmentConfidence
         // rises above the 0.20 thin-evidence floor legitimately and the distinct-value
@@ -2913,6 +2934,12 @@ struct CoachChatConversationCorpusTests {
         #expect(report.summary.repeatedProofTestHashCount == 0)
         #expect(!report.summary.readinessWarnings.contains(
             CoachChatConversationAppPathWarning.missingRetrievalTrace.rawValue
+        ))
+        #expect(!report.summary.readinessWarnings.contains(
+            CoachChatConversationAppPathWarning.missingTrajectoryCacheTelemetry.rawValue
+        ))
+        #expect(!report.summary.readinessWarnings.contains(
+            CoachChatConversationAppPathWarning.weakTrajectoryCacheCoverage.rawValue
         ))
         #expect(!report.summary.readinessWarnings.contains(
             CoachChatConversationAppPathWarning.flatAssessmentConfidence.rawValue
@@ -2932,6 +2959,9 @@ struct CoachChatConversationCorpusTests {
         #expect(json.contains("\"retrievalTracePresentCount\""))
         #expect(json.contains("\"retrievalTrace\""))
         #expect(json.contains("\"retrievedCardIDs\""))
+        #expect(json.contains("\"trajectoryCacheHitCount\""))
+        #expect(json.contains("\"trajectoryCacheMissingTelemetryCount\":0"))
+        #expect(json.contains("\"minimumTrajectoryCacheHitCount\""))
         #expect(json.contains("\"arenaTrace\""))
         #expect(json.contains("\"coachSystemPrompt\""))
         #expect(json.contains("\"cachePolicy\":\"ephemeral\""))
@@ -2943,6 +2973,41 @@ struct CoachChatConversationCorpusTests {
         #expect(json.contains("\"repeatedProofTestHashCount\""))
         #expect(json.contains("\"assessmentConfidence\""))
         #expect(json.contains("\"visionProductionReadiness\""))
+    }
+
+    @Test func appPathReportRequiresTrajectoryCacheTelemetryAndCoverage() throws {
+        let allColdReport = Self.cleanAppPathReport(
+            surface: .text,
+            schemaVersion: CoachChatConversationCorpus.appPathReportSchemaVersion,
+            localTargetShapeScore: 85,
+            trajectoryCacheHitForTurn: { _, _ in false }
+        )
+
+        #expect(!allColdReport.passesAppPathFloor)
+        #expect(allColdReport.summary.trajectoryCacheHitCount == 0)
+        #expect(allColdReport.summary.trajectoryCacheMissingTelemetryCount == 0)
+        #expect(allColdReport.summary.minimumTrajectoryCacheHitCount > 0)
+        #expect(allColdReport.summary.readinessWarnings.contains(
+            CoachChatConversationAppPathWarning.weakTrajectoryCacheCoverage.rawValue
+        ))
+
+        let missingTelemetryReport = Self.cleanAppPathReport(
+            surface: .text,
+            schemaVersion: CoachChatConversationCorpus.appPathReportSchemaVersion,
+            localTargetShapeScore: 85,
+            trajectoryCacheHitForTurn: { _, _ in nil }
+        )
+
+        #expect(!missingTelemetryReport.passesAppPathFloor)
+        #expect(missingTelemetryReport.summary.trajectoryCacheHitCount == 0)
+        #expect(missingTelemetryReport.summary.trajectoryCacheMissingTelemetryCount ==
+            missingTelemetryReport.turnCount)
+        #expect(missingTelemetryReport.summary.readinessWarnings.contains(
+            CoachChatConversationAppPathWarning.missingTrajectoryCacheTelemetry.rawValue
+        ))
+        #expect(missingTelemetryReport.summary.readinessWarnings.contains(
+            CoachChatConversationAppPathWarning.weakTrajectoryCacheCoverage.rawValue
+        ))
     }
 
     @MainActor
@@ -3454,6 +3519,7 @@ struct CoachChatConversationCorpusTests {
             providerChosen: telemetryRow.providerChosen,
             providerModel: nil,
             timeToFirstVisibleTokenMs: nil,
+            trajectoryCacheHit: nil,
             assessmentConfidence: telemetryRow.assessmentConfidence,
             assessmentProofTestHash: "",
             immediateCoachReadExpected: telemetryRow.immediateCoachReadExpected,
@@ -3515,6 +3581,21 @@ struct CoachChatConversationCorpusTests {
         #expect(decoded.rejectionReasons.contains("weakProofTestVariety"))
     }
 
+    @Test func liveProviderSweepEvidenceRequiresTrajectoryCacheCoverage() throws {
+        let coldSweep = Self.liveProviderSweepEvidence(
+            trajectoryCacheHitIndices: []
+        )
+        let decoded = try CoachLiveProviderSweepEvidence.decode(
+            from: coldSweep.encodedSortedJSON()
+        )
+
+        #expect(!decoded.qualifiesForReadiness)
+        #expect(decoded.rowsPassingReadinessFloor == 0)
+        #expect(decoded.rejectionReasons.contains { reason in
+            reason.hasPrefix("weakTrajectoryCacheCoverage=")
+        })
+    }
+
     @Test func liveProviderSweepEvidenceRejectsContradictoryGateTelemetry() throws {
         let cleanSweep = Self.liveProviderSweepEvidence()
         var latestRows = cleanSweep.rows
@@ -3525,6 +3606,7 @@ struct CoachChatConversationCorpusTests {
             providerChosen: latest.providerChosen,
             providerModel: latest.providerModel,
             timeToFirstVisibleTokenMs: latest.timeToFirstVisibleTokenMs,
+            trajectoryCacheHit: latest.trajectoryCacheHit,
             assessmentConfidence: latest.assessmentConfidence,
             assessmentProofTestHash: latest.assessmentProofTestHash,
             immediateCoachReadExpected: latest.immediateCoachReadExpected,
@@ -3560,6 +3642,7 @@ struct CoachChatConversationCorpusTests {
             providerChosen: firstLongFormRow.providerChosen,
             providerModel: firstLongFormRow.providerModel,
             timeToFirstVisibleTokenMs: firstLongFormRow.timeToFirstVisibleTokenMs,
+            trajectoryCacheHit: firstLongFormRow.trajectoryCacheHit,
             assessmentConfidence: firstLongFormRow.assessmentConfidence,
             assessmentProofTestHash: firstLongFormRow.assessmentProofTestHash,
             immediateCoachReadExpected: firstLongFormRow.immediateCoachReadExpected,
@@ -3606,6 +3689,7 @@ struct CoachChatConversationCorpusTests {
             providerChosen: second.providerChosen,
             providerModel: second.providerModel,
             timeToFirstVisibleTokenMs: second.timeToFirstVisibleTokenMs,
+            trajectoryCacheHit: second.trajectoryCacheHit,
             assessmentConfidence: second.assessmentConfidence,
             assessmentProofTestHash: second.assessmentProofTestHash,
             immediateCoachReadExpected: second.immediateCoachReadExpected,
@@ -3638,6 +3722,7 @@ struct CoachChatConversationCorpusTests {
             providerChosen: generic.providerChosen,
             providerModel: generic.providerModel,
             timeToFirstVisibleTokenMs: generic.timeToFirstVisibleTokenMs,
+            trajectoryCacheHit: generic.trajectoryCacheHit,
             assessmentConfidence: generic.assessmentConfidence,
             assessmentProofTestHash: generic.assessmentProofTestHash,
             immediateCoachReadExpected: generic.immediateCoachReadExpected,
@@ -4950,7 +5035,10 @@ struct CoachChatConversationCorpusTests {
     private static func cleanAppPathReport(
         surface: CoachReplySurface,
         schemaVersion: String,
-        localTargetShapeScore: Int
+        localTargetShapeScore: Int,
+        trajectoryCacheHitForTurn: (_ conversationID: String, _ turnIndex: Int) -> Bool? = { _, turnIndex in
+            turnIndex > 0
+        }
     ) -> CoachChatConversationAppPathReport {
         let rows = CoachChatConversationCorpus.appPathConversationScripts.map { script in
             let conversation = script.conversation
@@ -5019,7 +5107,7 @@ struct CoachChatConversationCorpusTests {
                         ? CoachFirstVisibleTokenSource.localImmediateRead.rawValue
                         : nil,
                     timeToCompleteReplyMs: 1,
-                    trajectoryCacheHit: nil,
+                    trajectoryCacheHit: trajectoryCacheHitForTurn(conversation.id, index),
                     assessmentCacheHit: nil,
                     passesAppPathFloor: true
                 )
@@ -5046,6 +5134,7 @@ struct CoachChatConversationCorpusTests {
         passesRunReadinessFloor: Bool = true,
         readinessWarnings: [String] = [],
         failingRowIndices: Set<Int> = [],
+        trajectoryCacheHitIndices: Set<Int>? = nil,
         confidenceDistinctRoundedCount: Int = 3,
         uniqueProofTestHashCount: Int? = nil,
         repeatedProofTestHashCount: Int = 0,
@@ -5063,6 +5152,9 @@ struct CoachChatConversationCorpusTests {
         let depths = turnDepths ?? fixtureIDs.indices.map { index in
             requiredDepths[index % requiredDepths.count]
         }
+        let cacheHitIndices = trajectoryCacheHitIndices ?? Set(
+            fixtureIDs.indices.filter { $0 % 5 == 0 }
+        )
         let rows = fixtureIDs.enumerated().map { index, fixtureID in
             CoachLiveProviderSweepEvidence.Row(
                 fixtureID: fixtureID,
@@ -5070,6 +5162,7 @@ struct CoachChatConversationCorpusTests {
                 providerChosen: "Gemini",
                 providerModel: "gemini-test",
                 timeToFirstVisibleTokenMs: 420 + index,
+                trajectoryCacheHit: cacheHitIndices.contains(index),
                 assessmentConfidence: 0.70 + (Double(index % max(confidenceDistinctRoundedCount, 1)) * 0.03),
                 assessmentProofTestHash: "proof-\(index % (uniqueProofTestHashCount ?? rowCount))",
                 immediateCoachReadExpected: true,
@@ -5156,36 +5249,40 @@ struct CoachChatConversationCorpusTests {
     ) -> [CoachLiveProviderSweepEvidence.LongFormConversation] {
         let ids = passingIDs + failureIDs
         let failureIDSet = Set(failureIDs)
-        return ids.map { conversationID in
+        var conversations: [CoachLiveProviderSweepEvidence.LongFormConversation] = []
+        for conversationID in ids {
             let source = CoachChatConversationCorpus.longFormConversations.first {
                 $0.id == conversationID
             }
             let expectedTurnCount = source?.turns.count ?? 5
             let liveProductionFloor = !failureIDSet.contains(conversationID)
-            let rows = (0..<expectedTurnCount).map { index in
-                CoachLiveProviderSweepEvidence.Row(
+            var rows: [CoachLiveProviderSweepEvidence.Row] = []
+            for index in 0..<expectedTurnCount {
+                let reply: String? = liveProductionFloor
+                    ? "\(conversationID) turn \(index + 1) names the current evidence, answers the user's ask, and gives one proof test."
+                    : nil
+                rows.append(CoachLiveProviderSweepEvidence.Row(
                     fixtureID: "\(conversationID)#turn-\(index + 1)",
                     turnDepth: CoachLiveProviderSweepEvidence
                         .requiredTurnDepths[index % CoachLiveProviderSweepEvidence.requiredTurnDepths.count],
                     providerChosen: "Gemini",
                     providerModel: "gemini-test",
                     timeToFirstVisibleTokenMs: 520 + index,
+                    trajectoryCacheHit: index == 0,
                     assessmentConfidence: 0.64 + (Double(index % 4) * 0.04),
                     assessmentProofTestHash: "\(conversationID)-proof-\(index)",
                     immediateCoachReadExpected: false,
                     immediateCoachReadShown: false,
                     liveProductionFloor: liveProductionFloor,
-                    reply: liveProductionFloor
-                        ? "\(conversationID) turn \(index + 1) names the current evidence, answers the user's ask, and gives one proof test."
-                        : nil,
+                    reply: reply,
                     passesRubric: liveProductionFloor,
                     visionPassesProductionFloor: liveProductionFloor,
                     qualityIssue: "none",
                     semanticGateIssue: "none",
                     reliabilityIssues: []
-                )
+                ))
             }
-            return CoachLiveProviderSweepEvidence.LongFormConversation(
+            conversations.append(CoachLiveProviderSweepEvidence.LongFormConversation(
                 conversationID: conversationID,
                 sourceFixtureID: source?.sourceFixtureID ?? "unknown-source",
                 expectedTurnCount: expectedTurnCount,
@@ -5193,8 +5290,9 @@ struct CoachChatConversationCorpusTests {
                 liveProductionFloor: liveProductionFloor,
                 failure: liveProductionFloor ? nil : "failed live production floor",
                 rows: rows
-            )
+            ))
         }
+        return conversations
     }
 
     private static func professionalCalibrationEvidence(

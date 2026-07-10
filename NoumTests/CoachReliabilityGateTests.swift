@@ -427,6 +427,21 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.blocked)
     }
 
+    @Test func genericRepairWithOrderingContrastPasses() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Fair push: I leaned on generic advice instead of evidence. The ordering signal is warmth before the recommendation. Test recommendation-first, then check whether warmth comes after the point.",
+            previousCoachReply: "Try another communication drill.",
+            latestUserTurn: "This still feels too generic.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+
+        #expect(!verdict.issues.contains(.genericRepairScaffolded))
+        #expect(!verdict.issues.contains(.thinTrustRepair))
+        #expect(!verdict.blocked)
+    }
+
     @Test func trustRepairCouldGoToAnyoneSpecificRepairPasses() {
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "Fair. That read like it could go to anyone, and you deserve better this close to the investor call. The specific pattern is that you hedged the ask twice — \"we're hoping to maybe raise around\" instead of stating the number. State the raise as one flat sentence, then stop.",

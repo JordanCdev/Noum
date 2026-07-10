@@ -102,9 +102,32 @@ fingerprint used for that run. Then use the XCTest bridge
 The coach-source fingerprint covers the reply pipeline, provider wrapper,
 typed assessment/reasoning layer, prompt bundles, reliability gate, rubrics,
 trajectory cache/snapshot, retrieval knowledge, and their coach-eval tests.
+The readiness gate compares the canonical app-path report and dump sidecars
+against the current checkout's coach-source fingerprint and git commit when
+available, so a stale but internally consistent report remains blocked until
+the Swift dump and app-path report are regenerated from the current source.
 The same source sidecars now gate `coach-live-eval-v1.json`: a live-provider
 sweep only clears `.noLiveProviderTranscriptSweep` when its `sourceGitCommit`
-and `sourceCoachFingerprint` match the sidecars in the dump directory.
+and `sourceCoachFingerprint` match the sidecars in the dump directory, and the
+staged artifact carries the required latest-fixture coverage, long-form
+conversation coverage, provider evidence, immediate-read telemetry, confidence
+variety, proof-test variety, trajectory-cache coverage, and clean
+production-floor rows. A placeholder or stale JSON file stays blocked even if
+the filename is present.
+The app-path trace-quality gate also treats missing or all-cold
+`trajectoryCacheHit` telemetry and exact repeated `finalReply` hashes as
+production evidence failures: the launch report has to prove differentiated,
+trajectory-aware coach reads, not merely high fixture averages.
+The XCTest app-path report now exports `trajectoryCacheHitCount`,
+`trajectoryCacheMissingTelemetryCount`, and `minimumTrajectoryCacheHitCount`
+too, so weak trajectory-cache coverage is visible before the Python scorer
+turns it into a launch-blocking trace-quality failure.
+The calibration result sidecar is similarly staged against the exported
+`coach-chat-conversation-expert-calibration-v2.json` packet: Python checks the
+packet fingerprint, the 39-conversation / 78-review floor, two independent
+professional reviewers per conversation, passing usefulness ratings, no
+unsafe/unready rows, and no unresolved revision notes before the sidecar can
+pass staging.
 
 Other commands: `plan` (compose real prompts/context to `runs/<id>/requests.json`),
 `prepare [n]` (per-voice prompts + per-fixture reqs + n agent batches),

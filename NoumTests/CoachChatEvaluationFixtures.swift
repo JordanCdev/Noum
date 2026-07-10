@@ -1503,6 +1503,8 @@ struct CoachChatConversationAppPathReport: Codable, Equatable {
 }
 
 struct CoachChatConversationAppPathSummary: Codable, Equatable {
+    static let minimumTrajectoryCacheHitRatio = 0.10
+
     let conversationCount: Int
     let turnCount: Int
     let appPathFloorFailureCount: Int
@@ -1523,6 +1525,9 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
     let immediateCoachReadExpectedCount: Int
     let immediateCoachReadMissingCount: Int
     let retrievalTracePresentCount: Int
+    let trajectoryCacheHitCount: Int
+    let trajectoryCacheMissingTelemetryCount: Int
+    let minimumTrajectoryCacheHitCount: Int
     let assessmentConfidenceDistinctRoundedCount: Int
     let uniqueProofTestHashCount: Int
     let repeatedProofTestHashCount: Int
@@ -1555,6 +1560,9 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
         let immediateExpected = turns.filter(\.immediateCoachReadExpected)
         let immediateMissing = immediateExpected.filter { !$0.immediateCoachReadShown }
         let retrievalTracePresentCount = turns.filter { $0.retrievalTrace != nil }.count
+        let trajectoryCacheHitCount = turns.filter { $0.trajectoryCacheHit == true }.count
+        let trajectoryCacheMissingTelemetryCount = turns.filter { $0.trajectoryCacheHit == nil }.count
+        let minimumTrajectoryCacheHitCount = minimumTrajectoryCacheHitCount(for: turns.count)
         let assessmentConfidenceDistinctRoundedCount = Set(
             turns
                 .compactMap(\.assessmentConfidence)
@@ -1580,6 +1588,9 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
             blockingReliabilityIssueTurnCount: blockingReliabilityIssueTurnCount,
             immediateCoachReadMissingCount: immediateMissing.count,
             retrievalTraceMissingCount: turns.count - retrievalTracePresentCount,
+            trajectoryCacheHitCount: trajectoryCacheHitCount,
+            trajectoryCacheMissingTelemetryCount: trajectoryCacheMissingTelemetryCount,
+            minimumTrajectoryCacheHitCount: minimumTrajectoryCacheHitCount,
             assessmentConfidenceDistinctRoundedCount: assessmentConfidenceDistinctRoundedCount,
             uniqueProofTestHashCount: uniqueProofTestHashCount,
             repeatedProofTestHashCount: repeatedProofTestHashCount
@@ -1606,11 +1617,19 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
             immediateCoachReadExpectedCount: immediateExpected.count,
             immediateCoachReadMissingCount: immediateMissing.count,
             retrievalTracePresentCount: retrievalTracePresentCount,
+            trajectoryCacheHitCount: trajectoryCacheHitCount,
+            trajectoryCacheMissingTelemetryCount: trajectoryCacheMissingTelemetryCount,
+            minimumTrajectoryCacheHitCount: minimumTrajectoryCacheHitCount,
             assessmentConfidenceDistinctRoundedCount: assessmentConfidenceDistinctRoundedCount,
             uniqueProofTestHashCount: uniqueProofTestHashCount,
             repeatedProofTestHashCount: repeatedProofTestHashCount,
             readinessWarnings: warnings
         )
+    }
+
+    static func minimumTrajectoryCacheHitCount(for turnCount: Int) -> Int {
+        guard turnCount > 0 else { return 0 }
+        return max(1, Int(ceil(Double(turnCount) * minimumTrajectoryCacheHitRatio)))
     }
 
     private static func eventCounts(_ events: [String]) -> [String: Int] {
@@ -1657,6 +1676,9 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
         blockingReliabilityIssueTurnCount: Int,
         immediateCoachReadMissingCount: Int,
         retrievalTraceMissingCount: Int,
+        trajectoryCacheHitCount: Int,
+        trajectoryCacheMissingTelemetryCount: Int,
+        minimumTrajectoryCacheHitCount: Int,
         assessmentConfidenceDistinctRoundedCount: Int,
         uniqueProofTestHashCount: Int,
         repeatedProofTestHashCount: Int
@@ -1689,6 +1711,12 @@ struct CoachChatConversationAppPathSummary: Codable, Equatable {
         if retrievalTraceMissingCount > 0 {
             warnings.append(.missingRetrievalTrace)
         }
+        if trajectoryCacheMissingTelemetryCount > 0 {
+            warnings.append(.missingTrajectoryCacheTelemetry)
+        }
+        if trajectoryCacheHitCount < minimumTrajectoryCacheHitCount {
+            warnings.append(.weakTrajectoryCacheCoverage)
+        }
         if assessmentConfidenceDistinctRoundedCount < 3 {
             warnings.append(.flatAssessmentConfidence)
         }
@@ -1709,6 +1737,8 @@ enum CoachChatConversationAppPathWarning: String, Codable, Equatable {
     case reliabilityIssues
     case missingImmediateCoachRead
     case missingRetrievalTrace
+    case missingTrajectoryCacheTelemetry
+    case weakTrajectoryCacheCoverage
     case flatAssessmentConfidence
     case weakProofTestVariety
 }
@@ -1996,6 +2026,7 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
         CoachTurnDepth.deepAssessment.rawValue,
         CoachTurnDepth.trustRepair.rawValue
     ]
+    static let minimumTrajectoryCacheHitRatio = 0.10
 
     let schemaVersion: String
     let sourceGitCommit: String?
@@ -2179,6 +2210,21 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
         if !missingDetailedTelemetryIDs.isEmpty {
             reasons.append(
                 "missingDetailedLongFormTelemetry=\(missingDetailedTelemetryIDs.joined(separator: ","))"
+            )
+        }
+        let latestReadinessTelemetryFailureIDs = rows.compactMap { row -> String? in
+            row.hasReadinessTelemetry ? nil : row.fixtureID
+        }
+        if !latestReadinessTelemetryFailureIDs.isEmpty {
+            reasons.append(
+                "latestTurnReadinessTelemetryFailures=\(latestReadinessTelemetryFailureIDs.joined(separator: ","))"
+            )
+        }
+        let trajectoryCacheHitCount = rows.filter { $0.trajectoryCacheHit == true }.count
+        let minimumTrajectoryCacheHitCount = Self.minimumTrajectoryCacheHitCount(for: rows.count)
+        if trajectoryCacheHitCount < minimumTrajectoryCacheHitCount {
+            reasons.append(
+                "weakTrajectoryCacheCoverage=\(trajectoryCacheHitCount)/\(minimumTrajectoryCacheHitCount)"
             )
         }
         let latestGateTelemetryFailureIDs = rows.compactMap { row -> String? in
@@ -2419,6 +2465,7 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
         let providerChosen: String?
         let providerModel: String?
         let timeToFirstVisibleTokenMs: Int?
+        let trajectoryCacheHit: Bool?
         let assessmentConfidence: Double?
         let assessmentProofTestHash: String?
         let immediateCoachReadExpected: Bool?
@@ -2443,6 +2490,7 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
             let semantic = (semanticGateIssue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return !(turnDepth ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 timeToFirstVisibleTokenMs != nil &&
+                trajectoryCacheHit != nil &&
                 assessmentConfidence != nil &&
                 !proofHash.isEmpty &&
                 !replyText.isEmpty &&
@@ -2488,6 +2536,11 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
                 ($0.id, $0.turns.count)
             }
         )
+
+    private static func minimumTrajectoryCacheHitCount(for rowCount: Int) -> Int {
+        guard rowCount > 0 else { return 0 }
+        return max(1, Int(ceil(Double(rowCount) * minimumTrajectoryCacheHitRatio)))
+    }
 }
 
 struct CoachVisionProductionReadinessAudit: Codable, Equatable {
@@ -3253,7 +3306,7 @@ enum CoachChatEvaluationCorpus {
                 "COACH FORMULATION",
                 "ordering signal"
             ],
-            referenceReply: "Fair push: that was advice, not coaching. Your warmth is arriving before the recommendation, so put the recommendation first, add one reassurance after it, then stop.",
+            referenceReply: "Fair push: that was advice, not coaching. The ordering signal is warmth before the recommendation, so put the recommendation first, add one reassurance after it, then stop.",
             knownBadReply: "I understand your frustration. Here are some tips to communicate more clearly: be clear and concise, structure your thoughts, and practice confidence.",
             expectedBadIssue: .roboticPhrase("i understand your frustration")
         ),
@@ -4048,7 +4101,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
             ),
             (
                 "assistant-explainer-register",
-                "Fair push: that was advice, not coaching. Your warmth is arriving before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
+                "Fair push: that was advice, not coaching. The ordering signal is warmth before the recommendation, so put the recommendation first, add one reassurance after it, then stop."
             ),
             (
                 "what-next-single-move",
@@ -4195,6 +4248,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
         #expect(read.contains("sentence one carries the social risk"))
         #expect(read.contains("test a smaller version"))
         #expect(read.contains("stop before defending it"))
+        #expect(!read.contains("silent beat"))
         #expect(!read.contains("I made the move sound easier"))
         #expect(!read.contains("Proof test:"))
     }
@@ -4229,7 +4283,7 @@ struct CoachChatLatestLiveEvalRegressionTests {
             system: CoachChatEvaluationCorpus.renderedContext(for: fixture)
         ))
 
-        #expect(shape.contains("warmth is arriving before the recommendation"))
+        #expect(shape.contains("ordering signal is warmth before the recommendation"))
         #expect(shape.contains("put the recommendation first"))
         #expect(!shape.contains("1 filler"))
     }

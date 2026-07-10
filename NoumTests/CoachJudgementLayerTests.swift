@@ -2021,6 +2021,44 @@ struct CoachSemanticQualityGateAdversarialTests {
         #expect(issue == nil)
     }
 
+    @Test func vulnerableRepairWithPressureCloseCaseAnchorIsAccepted() {
+        var assessment = Self.baseDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "I made the move sound easier than it feels under pressure"
+        assessment.evidenceUsed.append(contentsOf: [
+            "case summary: focus: pressure close; evidence: fillers cluster before the close; next move: use silence before the final sentence",
+            "active intervention: Silent beat close reps; target: one silent beat before the final sentence.; followed reps: 1; review: review due"
+        ])
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push: no, it is not easy. The hard part is holding the silent beat at the pressure point before the final sentence. Keep the next rep smaller: say only the close — one silent beat, the final sentence, then stop.",
+            latestUserTurn: "It's not easy.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        #expect(issue == nil)
+    }
+
+    @Test func trustRepairWithOrderingCaseAnchorIsAccepted() {
+        var assessment = Self.baseDeep
+        assessment.turnDepth = .trustRepair
+        assessment.repairFocus = "I sounded cold instead of giving a human coach read"
+        assessment.evidenceUsed.append(contentsOf: [
+            "case summary: focus: ordering signal; evidence: warmth arrives before the recommendation; next move: recommendation first then reassurance",
+            "active intervention: Recommendation first reps; target: recommendation first, reassurance after.; followed reps: 1; review: review due"
+        ])
+
+        let issue = AICoachChatService.semanticQualityIssue(
+            in: "Fair push: that was advice, not coaching. The ordering signal is warmth before the recommendation. Test this once: put the recommendation first, add one reassurance after it, then stop.",
+            latestUserTurn: "This still sounds cold and overexplained, like generic AI tips.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        #expect(issue == nil)
+    }
+
     // MARK: Quick-move gate
 
     @Test func quickMoveBlocksThinConfidenceClosenessClaim() {

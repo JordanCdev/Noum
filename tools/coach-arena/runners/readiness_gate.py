@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import json
+import math
 import os
 import plistlib
 import re
@@ -22,6 +24,41 @@ READY_LOCAL_TARGET_SHAPE_SCORE = 85
 SOURCE_SIDECARS = [
     "source-git-commit.txt",
     "source-coach-fingerprint.txt",
+]
+
+COACH_SOURCE_STATUS_PATHS = [
+    "Noum/AICoachChatService.swift",
+    "Noum/AskNoumStore.swift",
+    "Noum/CoachAssessment.swift",
+    "Noum/CoachAssessmentCache.swift",
+    "Noum/CoachContextBuilder.swift",
+    "Noum/CoachPromptBundle.swift",
+    "Noum/CoachReasoningPass.swift",
+    "Noum/CoachReplyPipeline.swift",
+    "Noum/CoachReliabilityGate.swift",
+    "Noum/CoachTurnDepth.swift",
+    "Noum/CoachingKnowledgeBase.swift",
+    "Noum/GoalRubric.swift",
+    "Noum/GoalRubricStore.swift",
+    "Noum/KnowledgeRetriever.swift",
+    "Noum/KnowledgeSemanticReranker.swift",
+    "Noum/PrimaryFocusMemory.swift",
+    "Noum/TurnDepthClassifier.swift",
+    "Noum/UserTrajectoryCache.swift",
+    "Noum/UserTrajectorySnapshot.swift",
+    "NoumTests/CoachBrainRerankTests.swift",
+    "NoumTests/CoachBrainTests.swift",
+    "NoumTests/CoachChatEvaluationFixtures.swift",
+    "NoumTests/CoachChatConversationEvaluationTests.swift",
+    "NoumTests/CoachProviderChainTests.swift",
+    "NoumTests/CoachReadCalibrationBaselineTests.swift",
+    "NoumTests/CoachLiveEvaluationTests.swift",
+    "NoumTests/CoachJudgementLayerTests.swift",
+    "NoumTests/CoachPlaceholderLeakStripTests.swift",
+    "NoumTests/CoachReportVoiceRegenerationProofTests.swift",
+    "NoumTests/CoachReliabilityGateTests.swift",
+    "NoumTests/GoalRubricVoiceRoutingTests.swift",
+    "NoumTests/NoumTests.swift",
 ]
 
 
@@ -76,6 +113,12 @@ EVIDENCE_REQUIREMENTS = {
             "sourceCoachFingerprint",
             "fixtureCount",
             "longFormConversationCount",
+            "longFormConversationIDsPassingProductionFloor",
+            "longFormConversationFailureIDs",
+            "longFormConversations",
+            "providerChain",
+            "passesProductionFloor",
+            "passesRunReadinessFloor",
             "summary",
             "rows",
         ],
@@ -184,6 +227,77 @@ EVIDENCE_REQUIREMENTS = {
         ),
     },
 }
+
+
+LIVE_REQUIRED_FIXTURE_IDS = [
+    "cold-start-interview-baseline",
+    "filler-pressure-prescription",
+    "metric-action-without-read",
+    "critique-trust-repair",
+    "markdown-tts-trust-repair",
+    "assistant-explainer-register",
+    "authoritative-distance-deep-assessment",
+    "what-next-single-move",
+    "overclaim-hypothesis-boundary",
+    "personal-pattern-hypothesis-confirmation",
+    "leadership-transfer-setup",
+    "pace-control-next-rep",
+    "closing-ask-proof-test",
+    "opening-verdict-next-rep",
+    "pause-before-answer-drill",
+    "concise-answer-next-rep",
+    "structure-one-reason-proof",
+    "confidence-clean-stop",
+    "answer-depth-one-example",
+    "closing-stop-no-summary",
+]
+
+LIVE_REQUIRED_LONG_FORM_IDS = [
+    "long-form-cold-start-interview-baseline-conversation",
+    "long-form-filler-pressure-prescription-conversation",
+    "long-form-metric-action-without-read-conversation",
+    "long-form-critique-trust-repair-conversation",
+    "long-form-markdown-tts-trust-repair-conversation",
+    "long-form-assistant-explainer-register-conversation",
+    "long-form-authoritative-distance-deep-assessment-conversation",
+    "long-form-what-next-single-move-conversation",
+    "long-form-overclaim-hypothesis-boundary-conversation",
+    "long-form-leadership-transfer-setup-conversation",
+    "long-form-polite-pushback-attunement-conversation",
+]
+
+LIVE_REQUIRED_LONG_FORM_TURN_COUNTS = {
+    conversation_id: 5 for conversation_id in LIVE_REQUIRED_LONG_FORM_IDS
+}
+
+LIVE_REQUIRED_TURN_DEPTHS = [
+    "quickMove",
+    "groundedRead",
+    "deepAssessment",
+    "trustRepair",
+]
+
+GENERIC_PLACEHOLDER_REPLY_FRAGMENTS = [
+    "focused coach reply with concrete evidence",
+    "grounded coach reply with a proof test",
+    "generic coach reply",
+    "placeholder",
+    "practice more and communicate clearly",
+    "based on your data",
+    "keep practicing and track your progress",
+]
+
+PROFESSIONAL_CALIBRATION_PACKET_FILE = "coach-chat-conversation-expert-calibration-v2.json"
+PROFESSIONAL_CALIBRATION_PACKET_SCHEMA = "coach-chat-conversation-expert-calibration-v2"
+PROFESSIONAL_CALIBRATION_RESULTS_SCHEMA = "coach-chat-conversation-expert-calibration-results-v2"
+PROFESSIONAL_CALIBRATION_RUBRIC = "coach-parity-conversation-calibration-v2"
+PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION = 2
+PROFESSIONAL_CALIBRATION_MIN_CONVERSATION_COUNT = 39
+PROFESSIONAL_CALIBRATION_MIN_REVIEW_COUNT = (
+    PROFESSIONAL_CALIBRATION_MIN_CONVERSATION_COUNT
+    * PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION
+)
+MIN_TRAJECTORY_CACHE_HIT_RATIO = 0.10
 
 
 UI_FLOW_BOUNDARY = {
@@ -374,7 +488,55 @@ def _sidecar_value(artifact_audit, file_name):
     return None
 
 
-def source_freshness_audit(report, artifact_audit):
+def current_git_commit(repo_root):
+    proc = subprocess.run(
+        ["git", "-C", str(Path(repo_root)), "rev-parse", "--short", "HEAD"],
+        text=True,
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip() or None
+
+
+def coach_source_fingerprint(repo_root, paths=COACH_SOURCE_STATUS_PATHS):
+    root = Path(repo_root)
+    if not any((root / rel_path).exists() for rel_path in paths):
+        return None
+
+    digest = hashlib.sha256()
+    for rel_path in sorted(paths):
+        path = root / rel_path
+        digest.update(rel_path.encode("utf-8"))
+        digest.update(b"\0")
+        if path.exists():
+            digest.update(path.read_bytes())
+        else:
+            digest.update(b"<missing>")
+        digest.update(b"\0")
+    return "sha256:" + digest.hexdigest()
+
+
+def _current_source_mismatch(label, current_value, sidecar_value, report_values):
+    if not current_value:
+        return None
+    mismatched_against = []
+    if sidecar_value and sidecar_value != current_value:
+        mismatched_against.append("sidecar")
+    if report_values and current_value not in report_values:
+        mismatched_against.append("report")
+    if not mismatched_against:
+        return None
+    return {
+        "label": label,
+        "current": current_value,
+        "sidecar": sidecar_value,
+        "reportValues": report_values,
+        "mismatchedAgainst": mismatched_against,
+    }
+
+
+def source_freshness_audit(report, artifact_audit, repo_root=None):
     report_fingerprints = sorted(set(
         _collect_source_values(report, "sourceFingerprint") +
         _collect_source_values(report, "sourceCoachFingerprint")
@@ -385,6 +547,8 @@ def source_freshness_audit(report, artifact_audit):
     ))
     sidecar_fingerprint = _sidecar_value(artifact_audit, "source-coach-fingerprint.txt")
     sidecar_commit = _sidecar_value(artifact_audit, "source-git-commit.txt")
+    current_fingerprint = coach_source_fingerprint(repo_root) if repo_root else None
+    current_commit = current_git_commit(repo_root) if repo_root else None
 
     mismatches = []
     if sidecar_fingerprint and report_fingerprints and sidecar_fingerprint not in report_fingerprints:
@@ -400,18 +564,39 @@ def source_freshness_audit(report, artifact_audit):
             "reportValues": report_commits,
         })
 
+    current_mismatches = [
+        mismatch for mismatch in [
+            _current_source_mismatch(
+                "currentCoachFingerprint",
+                current_fingerprint,
+                sidecar_fingerprint,
+                report_fingerprints,
+            ),
+            _current_source_mismatch(
+                "currentGitCommit",
+                current_commit,
+                sidecar_commit,
+                report_commits,
+            ),
+        ]
+        if mismatch
+    ]
+
     return {
         "validationBoundary": (
-            "Source freshness compares staged source sidecars against embedded "
-            "report trace metadata when both are available; missing sidecars "
-            "are handled by the artifact gate."
+            "Source freshness compares staged source sidecars, embedded report "
+            "trace metadata, and the current checkout's coach-source fingerprint "
+            "when available; missing sidecars are handled by the artifact gate."
         ),
+        "currentCoachFingerprint": current_fingerprint,
+        "currentGitCommit": current_commit,
         "sidecarCoachFingerprint": sidecar_fingerprint,
         "sidecarGitCommit": sidecar_commit,
         "reportCoachFingerprints": report_fingerprints,
         "reportGitCommits": report_commits,
         "mismatches": mismatches,
-        "passes": not mismatches,
+        "currentMismatches": current_mismatches,
+        "passes": not mismatches and not current_mismatches,
     }
 
 
@@ -434,6 +619,26 @@ def source_freshness_gate_failures(source_audit):
             ),
             "sidecar": mismatch.get("sidecar"),
             "reportValues": mismatch.get("reportValues", []),
+        })
+    for mismatch in source_audit.get("currentMismatches") or []:
+        failures.append({
+            "key": mismatch["label"],
+            "label": mismatch["label"],
+            "observed": "staleCurrentSource",
+            "gate": (
+                "The readiness report and dump sidecars must describe the "
+                "current checkout's Swift coach source fingerprint and git "
+                "commit before local evidence can support launch readiness."
+            ),
+            "nextStep": (
+                "Run `./tools/coach-arena/run.sh app-path-source`, regenerate "
+                "the XCTest app-path artifact dump from the current checkout, "
+                "then rerun app-path scoring and readiness."
+            ),
+            "current": mismatch.get("current"),
+            "sidecar": mismatch.get("sidecar"),
+            "reportValues": mismatch.get("reportValues", []),
+            "mismatchedAgainst": mismatch.get("mismatchedAgainst", []),
         })
     return failures
 
@@ -487,7 +692,700 @@ def blocking_requirements(readiness):
     return requirements
 
 
-def evidence_artifact_contract_status(path, requirement):
+def trimmed_non_empty(value):
+    if not isinstance(value, str):
+        return None
+    trimmed = value.strip()
+    return trimmed or None
+
+
+def strict_int(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def finite_number(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value if math.isfinite(value) else None
+
+
+def normalized_string_list(value):
+    if not isinstance(value, list):
+        return [], True
+    normalized = [
+        item.strip() for item in value
+        if isinstance(item, str) and item.strip()
+    ]
+    return normalized, len(normalized) != len(value)
+
+
+def normalized_reply_key(value):
+    return re.sub(r"\s+", " ", value or "").strip().lower()
+
+
+def clean_issue_value(value):
+    return normalized_reply_key(value) in {"none", "passed", "clean", "no issue", "no issues"}
+
+
+def generic_placeholder_reply(value):
+    normalized = normalized_reply_key(value)
+    if not normalized:
+        return False
+    return any(fragment in normalized for fragment in GENERIC_PLACEHOLDER_REPLY_FRAGMENTS)
+
+
+def row_identifier(row):
+    if not isinstance(row, dict):
+        return None
+    value = row.get("fixtureID")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def row_has_provider_evidence(row):
+    return bool(
+        isinstance(row, dict)
+        and trimmed_non_empty(row.get("providerChosen"))
+        and trimmed_non_empty(row.get("providerModel"))
+    )
+
+
+def row_has_readiness_telemetry(row):
+    if not isinstance(row, dict):
+        return False
+    proof_hash = trimmed_non_empty(row.get("assessmentProofTestHash"))
+    reply = trimmed_non_empty(row.get("reply"))
+    quality = trimmed_non_empty(row.get("qualityIssue"))
+    semantic = trimmed_non_empty(row.get("semanticGateIssue"))
+    immediate_expected = row.get("immediateCoachReadExpected") is True
+    immediate_satisfied = not immediate_expected or row.get("immediateCoachReadShown") is True
+    return (
+        trimmed_non_empty(row.get("turnDepth")) is not None
+        and finite_number(row.get("timeToFirstVisibleTokenMs")) is not None
+        and finite_number(row.get("assessmentConfidence")) is not None
+        and isinstance(row.get("trajectoryCacheHit"), bool)
+        and proof_hash is not None
+        and reply is not None
+        and isinstance(row.get("passesRubric"), bool)
+        and isinstance(row.get("visionPassesProductionFloor"), bool)
+        and quality is not None
+        and semantic is not None
+        and isinstance(row.get("reliabilityIssues"), list)
+        and immediate_satisfied
+    )
+
+
+def row_has_clean_production_telemetry(row):
+    return (
+        isinstance(row, dict)
+        and row.get("liveProductionFloor") is True
+        and row.get("passesRubric") is True
+        and row.get("visionPassesProductionFloor") is True
+        and clean_issue_value(row.get("qualityIssue"))
+        and clean_issue_value(row.get("semanticGateIssue"))
+        and row.get("reliabilityIssues") == []
+    )
+
+
+def duplicated_reply_ids(rows):
+    first_id_by_reply = {}
+    duplicate_ids_by_reply = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        key = normalized_reply_key(row.get("reply"))
+        if not key:
+            continue
+        row_id = row_identifier(row) or "unknown"
+        if key in first_id_by_reply:
+            duplicate_ids_by_reply.add(first_id_by_reply[key])
+            duplicate_ids_by_reply.add(row_id)
+        else:
+            first_id_by_reply[key] = row_id
+    return sorted(duplicate_ids_by_reply)
+
+
+def min_trajectory_cache_hits(row_count):
+    if row_count <= 0:
+        return 0
+    return max(1, math.ceil(row_count * MIN_TRAJECTORY_CACHE_HIT_RATIO))
+
+
+def append_ids_failure(failures, label, ids):
+    if ids:
+        failures.append(f"{label}={','.join(ids)}")
+
+
+def rating_minimum(ratings):
+    if not isinstance(ratings, dict):
+        return 0
+    expected = [
+        "diagnosis",
+        "caseFormulation",
+        "intervention",
+        "adaptation",
+        "perceptionHonesty",
+        "transferSetup",
+        "trustRepair",
+        "overallUsefulness",
+    ]
+    values = []
+    for key in expected:
+        value = finite_number(ratings.get(key))
+        values.append(value if value is not None else 0)
+    return min(values) if values else 0
+
+
+def professional_row_passes_calibration_floor(row):
+    if not isinstance(row, dict):
+        return False
+    return (
+        row.get("calibrationDecision") in {"roughTie", "noumBetter"}
+        and row.get("wouldUseWithClient") is True
+        and rating_minimum(row.get("ratings")) >= 4
+        and strict_int(row.get("humanCoachReferenceCount")) is not None
+        and strict_int(row.get("humanCoachReferenceCount")) > 0
+        and row.get("overclaimNotes") == []
+    )
+
+
+def calibration_packet_context(root):
+    packet_path = Path(root) / PROFESSIONAL_CALIBRATION_PACKET_FILE
+    context = {
+        "packetPath": str(packet_path),
+        "packetPresent": packet_path.is_file(),
+        "packetFailures": [],
+        "requiredConversationIDs": [],
+        "requiredReviewCount": None,
+        "requiredReviewsPerConversation": PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION,
+        "sourcePacketFingerprint": None,
+        "sourcePacketSchemaVersion": PROFESSIONAL_CALIBRATION_PACKET_SCHEMA,
+    }
+    if not packet_path.is_file():
+        context["packetFailures"].append("sourcePacketMissing")
+        return context
+    try:
+        payload = json.loads(packet_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        context["packetFailures"].append(f"sourcePacketInvalidJSON:{exc.msg}")
+        return context
+    if not isinstance(payload, dict):
+        context["packetFailures"].append("sourcePacketInvalidTopLevelType")
+        return context
+
+    schema = payload.get("schemaVersion")
+    if schema != PROFESSIONAL_CALIBRATION_PACKET_SCHEMA:
+        context["packetFailures"].append(f"sourcePacketSchemaVersion={schema}")
+    fingerprint = trimmed_non_empty(payload.get("sourceCorpusFingerprint"))
+    if fingerprint is None:
+        context["packetFailures"].append("sourcePacketFingerprintMissing")
+    context["sourcePacketFingerprint"] = fingerprint
+    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    conversation_ids = [
+        item.get("conversationID").strip()
+        for item in rows
+        if isinstance(item, dict)
+        and isinstance(item.get("conversationID"), str)
+        and item.get("conversationID").strip()
+    ]
+    context["requiredConversationIDs"] = conversation_ids
+    reviews_per_conversation = payload.get("requiredIndependentReviewsPerConversation")
+    if strict_int(reviews_per_conversation) is not None and reviews_per_conversation > 0:
+        context["requiredReviewsPerConversation"] = reviews_per_conversation
+    required_count = payload.get("requiredReviewCount")
+    if strict_int(required_count) is not None and required_count > 0:
+        context["requiredReviewCount"] = required_count
+    else:
+        context["requiredReviewCount"] = len(conversation_ids) * context["requiredReviewsPerConversation"]
+    if payload.get("conversationCount") != len(conversation_ids):
+        context["packetFailures"].append("sourcePacketConversationCountMismatch")
+    if len(set(conversation_ids)) != len(conversation_ids):
+        context["packetFailures"].append("sourcePacketDuplicateConversationIDs")
+    if context["requiredReviewCount"] != len(conversation_ids) * context["requiredReviewsPerConversation"]:
+        context["packetFailures"].append("sourcePacketReviewCountMismatch")
+    if len(conversation_ids) < PROFESSIONAL_CALIBRATION_MIN_CONVERSATION_COUNT:
+        context["packetFailures"].append("sourcePacketBelowConversationFloor")
+    if context["requiredReviewCount"] < PROFESSIONAL_CALIBRATION_MIN_REVIEW_COUNT:
+        context["packetFailures"].append("sourcePacketBelowReviewFloor")
+    return context
+
+
+def professional_calibration_contract_failures(payload, context=None):
+    failures = []
+    context = context or {}
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    required_ids = context.get("requiredConversationIDs") or []
+    required_reviews_per_conversation = (
+        context.get("requiredReviewsPerConversation")
+        or PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION
+    )
+    required_count = context.get("requiredReviewCount")
+    if strict_int(required_count) is None or required_count <= 0:
+        required_count = len(required_ids) * required_reviews_per_conversation
+    required_count = max(required_count, PROFESSIONAL_CALIBRATION_MIN_REVIEW_COUNT)
+
+    for packet_failure in context.get("packetFailures") or []:
+        if packet_failure not in failures:
+            failures.append(packet_failure)
+
+    if payload.get("sourcePacketSchemaVersion") != PROFESSIONAL_CALIBRATION_PACKET_SCHEMA:
+        failures.append(f"sourcePacketSchemaVersion={payload.get('sourcePacketSchemaVersion')}")
+    source_fingerprint = trimmed_non_empty(payload.get("sourcePacketFingerprint"))
+    expected_fingerprint = trimmed_non_empty(context.get("sourcePacketFingerprint"))
+    if source_fingerprint is None:
+        failures.append("sourcePacketFingerprintMissing")
+    elif expected_fingerprint and source_fingerprint != expected_fingerprint:
+        failures.append("sourcePacketFingerprintMismatch")
+    elif expected_fingerprint is None:
+        failures.append("sourcePacketFingerprintUnavailable")
+    if payload.get("rubricVersion") != PROFESSIONAL_CALIBRATION_RUBRIC:
+        failures.append(f"rubricVersion={payload.get('rubricVersion')}")
+
+    review_count = payload.get("reviewCount")
+    review_count = strict_int(review_count)
+    if review_count is None or review_count < required_count or len(rows) < required_count:
+        failures.append("fewerThanRequiredReviews")
+        failures.append("missingFullConversationCoverage")
+    if review_count is not None and review_count != len(rows):
+        failures.append("rowCountMismatch")
+    if summary.get("rowCount") != len(rows):
+        failures.append("rowCountMismatch")
+
+    review_slots = []
+    rows_by_conversation = {}
+    passing_rows_by_conversation = {}
+    reviewer_ids = []
+    passing_rows = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        conversation_id = trimmed_non_empty(row.get("conversationID")) or ""
+        reviewer_id = trimmed_non_empty(row.get("reviewerID")) or ""
+        review_slots.append(f"{conversation_id}|{reviewer_id}")
+        rows_by_conversation.setdefault(conversation_id, []).append(row)
+        if reviewer_id:
+            reviewer_ids.append(reviewer_id)
+        if professional_row_passes_calibration_floor(row):
+            passing_rows.append(row)
+            passing_rows_by_conversation.setdefault(conversation_id, []).append(row)
+
+    if len(set(review_slots)) != len(review_slots):
+        failures.append("duplicateConversationReviewerPairs")
+
+    observed_ids = set(rows_by_conversation)
+    if required_ids:
+        missing_ids = [
+            conversation_id for conversation_id in required_ids
+            if conversation_id not in observed_ids
+        ]
+        append_ids_failure(failures, "missingRequiredConversations", missing_ids)
+        unexpected_ids = sorted([
+            conversation_id for conversation_id in observed_ids
+            if conversation_id and conversation_id not in set(required_ids)
+        ])
+        append_ids_failure(failures, "unexpectedConversationIDs", unexpected_ids)
+        insufficient_review_ids = [
+            conversation_id for conversation_id in required_ids
+            if len(rows_by_conversation.get(conversation_id, [])) < required_reviews_per_conversation
+        ]
+        append_ids_failure(
+            failures,
+            "insufficientReviewsPerConversation",
+            insufficient_review_ids,
+        )
+        insufficient_passing_ids = [
+            conversation_id for conversation_id in required_ids
+            if len(passing_rows_by_conversation.get(conversation_id, [])) < required_reviews_per_conversation
+        ]
+        append_ids_failure(
+            failures,
+            "insufficientPassingReviewsPerConversation",
+            insufficient_passing_ids,
+        )
+        insufficient_diversity_ids = []
+        for conversation_id in required_ids:
+            reviewers = {
+                trimmed_non_empty(row.get("reviewerID"))
+                for row in rows_by_conversation.get(conversation_id, [])
+                if isinstance(row, dict)
+            }
+            reviewers.discard(None)
+            if len(reviewers) < required_reviews_per_conversation:
+                insufficient_diversity_ids.append(conversation_id)
+        append_ids_failure(
+            failures,
+            "insufficientReviewerDiversity",
+            insufficient_diversity_ids,
+        )
+
+    unique_reviewer_ids = set(reviewer_ids)
+    reviewer_count = strict_int(summary.get("reviewerCount"))
+    completed_review_count = strict_int(summary.get("completedReviewCount"))
+    passing_calibration_count = strict_int(summary.get("passingCalibrationCount"))
+    would_use_count = strict_int(summary.get("wouldUseWithClientCount"))
+    unsafe_count = strict_int(summary.get("unsafeOrUnreadyCount"))
+    minimum_usefulness = finite_number(summary.get("minimumOverallUsefulness"))
+    average_usefulness = finite_number(summary.get("averageOverallUsefulness"))
+    invalid_summary_fields = [
+        key for key, value in [
+            ("reviewerCount", reviewer_count),
+            ("completedReviewCount", completed_review_count),
+            ("passingCalibrationCount", passing_calibration_count),
+            ("wouldUseWithClientCount", would_use_count),
+            ("unsafeOrUnreadyCount", unsafe_count),
+            ("minimumOverallUsefulness", minimum_usefulness),
+            ("averageOverallUsefulness", average_usefulness),
+        ]
+        if value is None
+    ]
+    append_ids_failure(failures, "invalidSummaryTelemetry", invalid_summary_fields)
+
+    if (
+        reviewer_count != len(unique_reviewer_ids)
+        or reviewer_count is None
+        or reviewer_count < required_reviews_per_conversation
+        or trimmed_non_empty(payload.get("reviewerRole")) is None
+        or any(trimmed_non_empty(row.get("reviewerID")) is None for row in rows if isinstance(row, dict))
+    ):
+        failures.append("missingProfessionalReviewer")
+    if completed_review_count != len(rows):
+        failures.append("incompleteReviews")
+    if (
+        passing_calibration_count != len(passing_rows)
+        or passing_calibration_count is None
+        or passing_calibration_count < required_count
+    ):
+        failures.append("insufficientPassingCalibrationRows")
+    if would_use_count is None or would_use_count < required_count:
+        failures.append("insufficientWouldUseWithClientRows")
+    if unsafe_count is None or unsafe_count > 0 or any(
+        isinstance(row, dict) and row.get("calibrationDecision") == "unsafeOrUnready"
+        for row in rows
+    ):
+        failures.append("unsafeOrUnreadyRows")
+    if any(not professional_row_passes_calibration_floor(row) for row in rows):
+        failures.append("rowCalibrationFloorFailures")
+    if any(
+        isinstance(row, dict)
+        and professional_row_passes_calibration_floor(row)
+        and row.get("revisionNotes") not in ([], None)
+        for row in rows
+    ):
+        failures.append("unresolvedRevisionNotes")
+    if (
+        minimum_usefulness is None
+        or average_usefulness is None
+        or minimum_usefulness < 4
+        or average_usefulness < 4.0
+    ):
+        failures.append("overallUsefulnessBelowFloor")
+    readiness_warnings = summary.get("readinessWarnings")
+    readiness_warnings = readiness_warnings if isinstance(readiness_warnings, list) else []
+    append_ids_failure(failures, "readinessWarnings", [
+        item for item in readiness_warnings if isinstance(item, str) and item.strip()
+    ])
+
+    deduped = []
+    for failure in failures:
+        if failure not in deduped:
+            deduped.append(failure)
+    return deduped
+
+
+def live_provider_sweep_contract_failures(payload, source_expectations=None):
+    failures = []
+    source_expectations = source_expectations or {}
+    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    long_form_passing, malformed_passing_ids = normalized_string_list(
+        payload.get("longFormConversationIDsPassingProductionFloor")
+    )
+    long_form_failures, malformed_failure_ids = normalized_string_list(
+        payload.get("longFormConversationFailureIDs")
+    )
+    long_form_details = payload.get("longFormConversations")
+    long_form_details = long_form_details if isinstance(long_form_details, list) else []
+    if malformed_passing_ids:
+        failures.append("invalidLongFormPassingIDs")
+    if malformed_failure_ids:
+        failures.append("invalidLongFormFailureIDs")
+    if any(not isinstance(item, dict) for item in long_form_details):
+        failures.append("invalidDetailedLongFormConversationRows")
+
+    source_git_commit = trimmed_non_empty(payload.get("sourceGitCommit"))
+    source_coach_fingerprint = trimmed_non_empty(payload.get("sourceCoachFingerprint"))
+    if source_git_commit is None:
+        failures.append("sourceGitCommitMissing")
+    if source_coach_fingerprint is None:
+        failures.append("sourceCoachFingerprintMissing")
+
+    expected_commit = trimmed_non_empty(source_expectations.get("source-git-commit.txt"))
+    expected_fingerprint = trimmed_non_empty(source_expectations.get("source-coach-fingerprint.txt"))
+    if expected_commit and source_git_commit and source_git_commit != expected_commit:
+        failures.append("sourceGitCommitMismatch")
+    if expected_fingerprint and source_coach_fingerprint and source_coach_fingerprint != expected_fingerprint:
+        failures.append("sourceCoachFingerprintMismatch")
+
+    freshness_failures = payload.get("sourceFreshnessFailures")
+    if freshness_failures is not None:
+        if not isinstance(freshness_failures, list):
+            failures.append("invalidSourceFreshnessFailures")
+        else:
+            for freshness_failure in freshness_failures:
+                reason = trimmed_non_empty(freshness_failure)
+                if reason and reason not in failures:
+                    failures.append(reason)
+
+    fixture_count = payload.get("fixtureCount")
+    fixture_count = strict_int(fixture_count)
+    if fixture_count is None or fixture_count < 10 or len(rows) < 10:
+        failures.append("fewerThanTenRows")
+    if fixture_count is None or fixture_count < len(LIVE_REQUIRED_FIXTURE_IDS) or len(rows) < len(LIVE_REQUIRED_FIXTURE_IDS):
+        failures.append("missingLatestTranscriptCoverage")
+
+    if fixture_count is not None and fixture_count != len(rows):
+        failures.append("rowCountMismatch")
+    if summary.get("rowCount") != len(rows):
+        failures.append("rowCountMismatch")
+
+    fixture_ids = [row_identifier(row) for row in rows]
+    fixture_ids = [item for item in fixture_ids if item]
+    if len(set(fixture_ids)) != len(fixture_ids):
+        failures.append("duplicateFixtureIDs")
+    missing_fixture_ids = [
+        fixture_id for fixture_id in LIVE_REQUIRED_FIXTURE_IDS
+        if fixture_id not in set(fixture_ids)
+    ]
+    append_ids_failure(failures, "missingRequiredFixtures", missing_fixture_ids)
+
+    long_form_count = strict_int(payload.get("longFormConversationCount"))
+    if (
+        long_form_count is None
+        or long_form_count < len(LIVE_REQUIRED_LONG_FORM_IDS)
+        or len(long_form_passing) < len(LIVE_REQUIRED_LONG_FORM_IDS)
+    ):
+        failures.append("missingLiveLongFormConversationCoverage")
+    if long_form_count is not None and long_form_count != len(long_form_passing) + len(long_form_failures):
+        failures.append("longFormConversationCountMismatch")
+
+    long_form_passing_ids = long_form_passing
+    if len(set(long_form_passing_ids)) != len(long_form_passing_ids):
+        failures.append("duplicateLongFormConversationIDs")
+    missing_long_form_ids = [
+        conversation_id for conversation_id in LIVE_REQUIRED_LONG_FORM_IDS
+        if conversation_id not in set(long_form_passing_ids)
+    ]
+    append_ids_failure(failures, "missingRequiredLongFormConversations", missing_long_form_ids)
+    unexpected_long_form_ids = sorted([
+        conversation_id for conversation_id in set(long_form_passing_ids + long_form_failures)
+        if conversation_id not in set(LIVE_REQUIRED_LONG_FORM_IDS)
+    ])
+    append_ids_failure(
+        failures,
+        "unexpectedLongFormConversationIDs",
+        unexpected_long_form_ids,
+    )
+
+    detailed_ids = [
+        item.get("conversationID", "").strip()
+        for item in long_form_details
+        if isinstance(item, dict) and isinstance(item.get("conversationID"), str)
+    ]
+    if not long_form_details:
+        failures.append("missingDetailedLongFormConversations")
+    if len(set(detailed_ids)) != len(detailed_ids):
+        failures.append("duplicateDetailedLongFormConversationIDs")
+    if long_form_count is not None and long_form_details and len(long_form_details) != long_form_count:
+        failures.append("detailedLongFormConversationCountMismatch")
+    missing_detailed_ids = [
+        conversation_id for conversation_id in LIVE_REQUIRED_LONG_FORM_IDS
+        if conversation_id not in set(detailed_ids)
+    ]
+    append_ids_failure(
+        failures,
+        "missingDetailedLongFormConversations",
+        missing_detailed_ids,
+    )
+    unexpected_detailed_ids = sorted([
+        conversation_id for conversation_id in set(detailed_ids)
+        if conversation_id not in set(LIVE_REQUIRED_LONG_FORM_IDS)
+    ])
+    append_ids_failure(
+        failures,
+        "unexpectedDetailedLongFormConversations",
+        unexpected_detailed_ids,
+    )
+
+    detailed_passing_ids = {
+        item.get("conversationID")
+        for item in long_form_details
+        if isinstance(item, dict) and item.get("liveProductionFloor") is True
+    }
+    detailed_failure_ids = {
+        item.get("conversationID")
+        for item in long_form_details
+        if isinstance(item, dict) and item.get("liveProductionFloor") is not True
+    }
+    if long_form_details and set(long_form_passing_ids) != detailed_passing_ids:
+        failures.append("longFormConversationPassingSummaryMismatch")
+    if long_form_details and set(long_form_failures) != detailed_failure_ids:
+        failures.append("longFormConversationFailureSummaryMismatch")
+
+    malformed_long_form = []
+    failed_long_form = []
+    missing_detailed_provider = []
+    missing_detailed_telemetry = []
+    detailed_gate_failures = []
+    duplicated_detailed_replies = []
+    generic_detailed_replies = []
+    for conversation in long_form_details:
+        if not isinstance(conversation, dict):
+            continue
+        conversation_id = conversation.get("conversationID") or "unknown"
+        nested_rows = conversation.get("rows") if isinstance(conversation.get("rows"), list) else []
+        observed = strict_int(conversation.get("observedTurnCount"))
+        expected = strict_int(conversation.get("expectedTurnCount"))
+        required_expected = LIVE_REQUIRED_LONG_FORM_TURN_COUNTS.get(conversation_id)
+        if (
+            not nested_rows
+            or observed != len(nested_rows)
+            or observed != expected
+            or expected != required_expected
+        ):
+            malformed_long_form.append(conversation_id)
+        if (
+            conversation.get("liveProductionFloor") is not True
+            or conversation.get("failure") is not None
+            or any(row.get("liveProductionFloor") is not True for row in nested_rows if isinstance(row, dict))
+        ):
+            failed_long_form.append(conversation_id)
+        if any(not row_has_provider_evidence(row) for row in nested_rows):
+            missing_detailed_provider.append(conversation_id)
+        if any(not row_has_readiness_telemetry(row) for row in nested_rows):
+            missing_detailed_telemetry.append(conversation_id)
+        if any(not row_has_clean_production_telemetry(row) for row in nested_rows):
+            detailed_gate_failures.append(conversation_id)
+        if duplicated_reply_ids(nested_rows):
+            duplicated_detailed_replies.append(conversation_id)
+        if any(generic_placeholder_reply(row.get("reply")) for row in nested_rows if isinstance(row, dict)):
+            generic_detailed_replies.append(conversation_id)
+
+    append_ids_failure(failures, "malformedDetailedLongFormConversations", malformed_long_form)
+    append_ids_failure(failures, "detailedLongFormProductionFloorFailures", failed_long_form)
+    append_ids_failure(failures, "missingDetailedLongFormProviderEvidence", missing_detailed_provider)
+    append_ids_failure(failures, "missingDetailedLongFormTelemetry", missing_detailed_telemetry)
+    append_ids_failure(failures, "detailedLongFormGateTelemetryFailures", detailed_gate_failures)
+    append_ids_failure(failures, "duplicatedDetailedLongFormReplies", duplicated_detailed_replies)
+    append_ids_failure(failures, "genericDetailedLongFormReplies", generic_detailed_replies)
+
+    latest_provider_failures = [
+        row_identifier(row) or "unknown" for row in rows
+        if not row_has_provider_evidence(row)
+    ]
+    latest_telemetry_failures = [
+        row_identifier(row) or "unknown" for row in rows
+        if not row_has_readiness_telemetry(row)
+    ]
+    latest_gate_failures = [
+        row_identifier(row) or "unknown" for row in rows
+        if not row_has_clean_production_telemetry(row)
+    ]
+    append_ids_failure(failures, "latestTurnProviderEvidenceFailures", latest_provider_failures)
+    append_ids_failure(failures, "latestTurnReadinessTelemetryFailures", latest_telemetry_failures)
+    append_ids_failure(failures, "latestTurnGateTelemetryFailures", latest_gate_failures)
+
+    trajectory_cache_hit_rows = [
+        row_identifier(row) or "unknown" for row in rows
+        if isinstance(row, dict) and row.get("trajectoryCacheHit") is True
+    ]
+    required_trajectory_hits = min_trajectory_cache_hits(len(rows))
+    summary_trajectory_hits = strict_int(summary.get("trajectoryCacheHitCount"))
+    if (
+        "trajectoryCacheHitCount" in summary
+        and summary_trajectory_hits != len(trajectory_cache_hit_rows)
+    ):
+        failures.append("trajectoryCacheHitSummaryMismatch")
+    if len(trajectory_cache_hit_rows) < required_trajectory_hits:
+        failures.append(
+            "weakTrajectoryCacheCoverage="
+            f"{len(trajectory_cache_hit_rows)}/{required_trajectory_hits}"
+        )
+
+    duplicated_latest_replies = duplicated_reply_ids(rows)
+    append_ids_failure(failures, "duplicatedLatestTurnReplies", duplicated_latest_replies)
+    generic_latest_replies = [
+        row_identifier(row) or "unknown" for row in rows
+        if isinstance(row, dict) and generic_placeholder_reply(row.get("reply"))
+    ]
+    append_ids_failure(failures, "genericLatestTurnReplies", generic_latest_replies)
+
+    observed_depths = {
+        row.get("turnDepth") for row in rows
+        if isinstance(row, dict) and isinstance(row.get("turnDepth"), str)
+    }
+    missing_depths = [
+        depth for depth in LIVE_REQUIRED_TURN_DEPTHS
+        if depth not in observed_depths
+    ]
+    append_ids_failure(failures, "missingTurnDepthCoverage", missing_depths)
+
+    provider_chain = payload.get("providerChain")
+    if not isinstance(provider_chain, list) or not provider_chain or latest_provider_failures:
+        failures.append("missingProviderEvidence")
+    if payload.get("passesProductionFloor") is not True:
+        failures.append("passesProductionFloor=false")
+    if payload.get("passesRunReadinessFloor") is not True:
+        failures.append("passesRunReadinessFloor=false")
+    production_failure_count = strict_int(summary.get("productionFloorFailureCount"))
+    immediate_missing_count = strict_int(summary.get("immediateCoachReadMissingCount"))
+    confidence_distinct_count = strict_int(summary.get("assessmentConfidenceDistinctRoundedCount"))
+    unique_proof_count = strict_int(summary.get("uniqueProofTestHashCount"))
+    repeated_proof_count = strict_int(summary.get("repeatedProofTestHashCount"))
+    invalid_summary_fields = [
+        key for key, value in [
+            ("productionFloorFailureCount", production_failure_count),
+            ("immediateCoachReadMissingCount", immediate_missing_count),
+            ("assessmentConfidenceDistinctRoundedCount", confidence_distinct_count),
+            ("uniqueProofTestHashCount", unique_proof_count),
+            ("repeatedProofTestHashCount", repeated_proof_count),
+        ]
+        if value is None
+    ]
+    append_ids_failure(failures, "invalidSummaryTelemetry", invalid_summary_fields)
+
+    if production_failure_count is None or production_failure_count > 0 or any(
+        isinstance(row, dict) and row.get("liveProductionFloor") is not True
+        for row in rows
+    ):
+        failures.append("productionFloorFailures")
+    append_ids_failure(failures, "longFormConversationFailures", [
+        item for item in long_form_failures if isinstance(item, str) and item.strip()
+    ])
+    readiness_warnings = summary.get("readinessWarnings")
+    readiness_warnings = readiness_warnings if isinstance(readiness_warnings, list) else []
+    append_ids_failure(failures, "readinessWarnings", [
+        item for item in readiness_warnings if isinstance(item, str) and item.strip()
+    ])
+    if immediate_missing_count is None or immediate_missing_count > 0:
+        failures.append("missingImmediateCoachRead")
+    if confidence_distinct_count is None or confidence_distinct_count < 3:
+        failures.append("flatAssessmentConfidence")
+    if (
+        unique_proof_count is None
+        or repeated_proof_count is None
+        or unique_proof_count < 3
+        or repeated_proof_count > 0
+    ):
+        failures.append("weakProofTestVariety")
+
+    deduped = []
+    for failure in failures:
+        if failure not in deduped:
+            deduped.append(failure)
+    return deduped
+
+
+def evidence_artifact_contract_status(path, requirement, source_expectations=None):
     if not path.is_file():
         return {
             "parseStatus": "missing",
@@ -536,6 +1434,18 @@ def evidence_artifact_contract_status(path, requirement):
     if missing_keys:
         failures.append("missingRequiredKeys:" + ",".join(missing_keys))
 
+    if expected_schema == "coach-live-eval-v1":
+        failures.extend(
+            live_provider_sweep_contract_failures(payload, source_expectations)
+        )
+    if expected_schema == PROFESSIONAL_CALIBRATION_RESULTS_SCHEMA:
+        failures.extend(
+            professional_calibration_contract_failures(
+                payload,
+                (source_expectations or {}).get("professionalCalibrationPacket"),
+            )
+        )
+
     return {
         "parseStatus": "ok",
         "schemaVersion": schema_version if isinstance(schema_version, str) else None,
@@ -550,12 +1460,39 @@ def evidence_artifact_contract_status(path, requirement):
 def evidence_artifact_audit(dump_dir, readiness=None):
     root = Path(dump_dir)
     blockers = set(readiness.get("blockers") or []) if readiness else set(EVIDENCE_REQUIREMENTS)
+
+    source_sidecars = []
+    source_expectations = {}
+    source_expectations["professionalCalibrationPacket"] = calibration_packet_context(root)
+    for file_name in SOURCE_SIDECARS:
+        path = root / file_name
+        present = path.is_file()
+        value_preview = None
+        usable = False
+        if present:
+            raw_value = path.read_text(encoding="utf-8", errors="replace").strip()
+            value_preview = raw_value[:80]
+            usable = trimmed_non_empty(raw_value) is not None
+            if usable:
+                source_expectations[file_name] = raw_value
+        source_sidecars.append({
+            "fileName": file_name,
+            "path": str(path),
+            "present": present,
+            "usable": usable,
+            "valuePreview": value_preview,
+        })
+
     required = []
     for blocker, requirement in EVIDENCE_REQUIREMENTS.items():
         artifact = requirement["artifact"]
         path = root / artifact
         present = path.is_file()
-        contract = evidence_artifact_contract_status(path, requirement)
+        contract = evidence_artifact_contract_status(
+            path,
+            requirement,
+            source_expectations,
+        )
         required.append({
             "blocker": blocker,
             "rowKey": requirement["rowKey"],
@@ -567,29 +1504,15 @@ def evidence_artifact_audit(dump_dir, readiness=None):
             **contract,
         })
 
-    source_sidecars = []
-    for file_name in SOURCE_SIDECARS:
-        path = root / file_name
-        present = path.is_file()
-        value_preview = None
-        if present:
-            value_preview = path.read_text(encoding="utf-8", errors="replace").strip()[:80]
-        source_sidecars.append({
-            "fileName": file_name,
-            "path": str(path),
-            "present": present,
-            "valuePreview": value_preview,
-        })
-
     missing = [item for item in required if not item["present"]]
     present_but_blocked = [item for item in required if item["presentButStillBlocked"]]
     return {
         "dumpDir": str(root),
         "dumpDirExists": root.is_dir(),
         "validationBoundary": (
-            "Python performs a lightweight JSON/schema-version staging check; "
-            "Swift manifest loaders still validate source freshness, counts, "
-            "warnings, and evidence floors."
+            "Python performs structured JSON/schema, source-freshness, coverage, "
+            "and telemetry staging checks; Swift manifest loaders remain the "
+            "authoritative launch evidence gate."
         ),
         "requiredArtifactCount": len(required),
         "presentArtifactCount": len(required) - len(missing),
@@ -646,6 +1569,13 @@ def artifact_gate_failures(artifact_audit):
                 "label": item["fileName"],
                 "observed": "missing",
                 "gate": "Source freshness sidecar must be staged with the evidence artifacts.",
+                "nextStep": "Run `./tools/coach-arena/run.sh app-path-source` for the same dump directory.",
+            })
+        elif not item.get("usable"):
+            failures.append({
+                "label": item["fileName"],
+                "observed": "empty",
+                "gate": "Source freshness sidecar must contain a non-empty source identity.",
                 "nextStep": "Run `./tools/coach-arena/run.sh app-path-source` for the same dump directory.",
             })
     return failures
@@ -1195,7 +2125,7 @@ def build_readiness_status(
     computed_ready = computed_production_ready(readiness)
     local_failures = report_source_failures + local_readiness_failures(local_gates, readiness)
     artifact_audit = evidence_artifact_audit(dump_dir, readiness)
-    source_audit = source_freshness_audit(report, artifact_audit)
+    source_audit = source_freshness_audit(report, artifact_audit, repo_root)
     source_failures = source_freshness_gate_failures(source_audit)
     local_failures = local_failures + source_failures
     artifact_failures = artifact_gate_failures(artifact_audit)
@@ -1362,7 +2292,7 @@ def render_markdown(status):
         f"- Dump dir: `{artifact_audit.get('dumpDir')}`",
         f"- Dump dir exists: `{artifact_audit.get('dumpDirExists')}`",
         f"- Required sidecars present: `{artifact_audit.get('presentArtifactCount')}/{artifact_audit.get('requiredArtifactCount')}`",
-        f"- Required sidecars passing lightweight contract: `{artifact_audit.get('validArtifactContractCount')}/{artifact_audit.get('requiredArtifactCount')}`",
+        f"- Required sidecars passing staging contract: `{artifact_audit.get('validArtifactContractCount')}/{artifact_audit.get('requiredArtifactCount')}`",
         f"- Source sidecars present: `{artifact_audit.get('presentSourceSidecarCount')}/{artifact_audit.get('sourceSidecarCount')}`",
     ])
     if artifact_audit.get("validationBoundary"):
@@ -1399,6 +2329,8 @@ def render_markdown(status):
         "## Source Freshness",
         "",
         f"- Passes: `{source_audit.get('passes')}`",
+        f"- Current coach fingerprint: `{source_audit.get('currentCoachFingerprint')}`",
+        f"- Current git commit: `{source_audit.get('currentGitCommit')}`",
         f"- Sidecar coach fingerprint: `{source_audit.get('sidecarCoachFingerprint')}`",
         f"- Sidecar git commit: `{source_audit.get('sidecarGitCommit')}`",
     ])
@@ -1418,6 +2350,19 @@ def render_markdown(status):
         lines.append("- Report git commits: `none found`")
     if source_audit.get("validationBoundary"):
         lines.append(f"- Boundary: {source_audit['validationBoundary']}")
+    freshness_mismatches = (
+        (source_audit.get("mismatches") or []) +
+        (source_audit.get("currentMismatches") or [])
+    )
+    if freshness_mismatches:
+        lines.append("- Source mismatches:")
+        for item in freshness_mismatches:
+            observed = item.get("current") or item.get("sidecar")
+            against = item.get("mismatchedAgainst") or ["report"]
+            lines.append(
+                f"  - `{item.get('label')}` observed `{observed}` vs "
+                f"`{', '.join(against)}`"
+            )
     lines.append("")
 
     ops_preflight = status.get("operationalStaticPreflight") or {}
