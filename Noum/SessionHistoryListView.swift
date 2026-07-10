@@ -135,7 +135,7 @@ enum SessionHistoryListModel {
         case .timed: return "Timed"
         case .suddenDeath: return "Pressure Drill"
         case .ahCounter: return "Ah-Counter"
-        case .imConversation: return "IM Mode"
+        case .imConversation: return "Conversation practice"
         }
     }
 }
@@ -184,13 +184,13 @@ struct SessionHistoryListView: View {
 
     private var leadSummary: String {
         let total = sessions.count
-        var parts = ["\(total) session\(total == 1 ? "" : "s") saved"]
+        var line = "\(total) session\(total == 1 ? "" : "s") saved"
         let scores = sessions.compactMap(\.score)
         if !scores.isEmpty {
             let average = Double(scores.reduce(0, +)) / Double(scores.count)
-            parts.append("\(String(format: "%.1f", average)) avg score")
+            line += ". Average score \(String(format: "%.1f", average))"
         }
-        return parts.joined(separator: " · ")
+        return line + "."
     }
 
     // MARK: - Body

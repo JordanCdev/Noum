@@ -325,11 +325,13 @@ enum PremiumLegalLinks {
 @available(iOS 17.0, *)
 struct PaywallView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var premium = PremiumManager.shared
     @State private var selectedPlan: PlanOption = .annual
     @State private var isPurchasing = false
     @State private var showSuccess = false
     @State private var errorMessage: String?
+    @State private var showFeatureDetails = false
 
     private enum PlanOption: String, CaseIterable, Identifiable {
         case monthly
@@ -376,21 +378,12 @@ struct PaywallView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.04, green: 0.02, blue: 0.10),
-                    Color(red: 0.10, green: 0.04, blue: 0.18)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            AppColor.screenBackground
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Scrollable content — hero + feature lists
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 28) {
-                        // Close button
+                    VStack(spacing: Spacing.lg) {
                         HStack {
                             Spacer()
                             Button {
@@ -398,90 +391,117 @@ struct PaywallView: View {
                             } label: {
                                 Image(systemName: "xmark")
                                     .font(.headline.weight(.semibold))
-                                    .foregroundStyle(.white.opacity(0.5))
-                                    .frame(width: 36, height: 36)
-                                    .background(Color.white.opacity(0.1), in: Circle())
+                                    .foregroundStyle(AppColor.textSecondary)
+                                    .frame(width: 44, height: 44)
+                                    .background(AppColor.cardBackground, in: Circle())
                             }
+                            .buttonStyle(.pressable)
                             .accessibilityLabel("Close")
                         }
-                        .padding(.top, 8)
+                        .padding(.top, Spacing.xs)
 
-                        // Hero
-                        VStack(spacing: 16) {
-                            Image(systemName: "crown.fill")
-                                .font(.system(size: 48))
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [proColor, AppColor.proLight],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .shadow(color: proColor.opacity(0.4), radius: 20, y: 8)
+                        VStack(spacing: Spacing.sm) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                                    .fill(proColor.opacity(0.10))
+                                    .frame(width: 56, height: 56)
+
+                                Image(systemName: "crown.fill")
+                                    .font(.title2.weight(.semibold))
+                                    .foregroundStyle(proColor)
+                            }
 
                             Text("Upgrade to Pro")
                                 .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(AppColor.textPrimary)
 
-                            Text("Unlock the full coaching experience")
+                            Text("Add deeper coaching when you want more than the core rep.")
                                 .font(Typography.body)
-                                .foregroundStyle(.white.opacity(0.6))
+                                .foregroundStyle(AppColor.textSecondary)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
 
-                        // Already included — free
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Already included — free")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.5))
+                        CardView(cornerRadius: CornerRadius.xl, padding: Spacing.lg) {
+                            VStack(alignment: .leading, spacing: Spacing.md) {
+                                Text("Choose a plan")
+                                    .font(Typography.headline.weight(.semibold))
+                                    .foregroundStyle(AppColor.textPrimary)
 
-                            VStack(alignment: .leading, spacing: 8) {
-                                freeFeatureRow(icon: "mic.fill", text: "Classic practice mode")
-                                freeFeatureRow(icon: "brain.head.profile", text: "AI-powered scoring")
-                                freeFeatureRow(icon: "clock.arrow.circlepath", text: "Session history")
-                                freeFeatureRow(icon: "flame.fill", text: "Streaks & daily challenges")
-                                freeFeatureRow(icon: "person.fill.checkmark", text: "Coaching onboarding")
+                                ViewThatFits(in: .horizontal) {
+                                    HStack(spacing: Spacing.sm) {
+                                        ForEach(PlanOption.allCases) { plan in
+                                            planCard(plan)
+                                        }
+                                    }
+
+                                    VStack(spacing: Spacing.sm) {
+                                        ForEach(PlanOption.allCases) { plan in
+                                            planCard(plan)
+                                        }
+                                    }
+                                }
+
+                                Text("Cancel anytime in your Apple Account settings.")
+                                    .font(.caption)
+                                    .foregroundStyle(AppColor.textSecondary)
                             }
                         }
-                        .padding(Spacing.lg)
-                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                                .stroke(proColor.opacity(0.12), lineWidth: 1)
                         )
 
-                        // Pro features
-                        VStack(spacing: 0) {
-                            featureRow(icon: "text.magnifyingglass", title: "Coach mode", description: "Full transcript-led practice with deeper feedback")
-                            featureRow(icon: "text.quote", title: "Live transcript", description: "See your words in real time as you speak")
-                            featureRow(icon: "video.fill", title: "Video recording", description: "Record yourself and review your delivery")
-                            featureRow(icon: "waveform.badge.magnifyingglass", title: "Filler tracking", description: "Detect and reduce verbal crutches")
-                            featureRow(icon: "chart.line.uptrend.xyaxis", title: "Trend analytics", description: "Track improvement across sessions")
-                            featureRow(icon: "person.2.wave.2.fill", title: "Unlimited async challenges", description: "Challenge friends to the same prompt")
-                            featureRow(icon: "sparkles.rectangle.stack.fill", title: "AI video analysis", description: "Nonverbal coaching — 5 analyses/month")
-                            featureRow(icon: "tray.full.fill", title: "Saved transcripts", description: "Review and compare past sessions")
+                        CardView(cornerRadius: CornerRadius.large, padding: Spacing.lg) {
+                            DisclosureGroup(isExpanded: $showFeatureDetails) {
+                                VStack(spacing: 0) {
+                                    featureRow(icon: "text.magnifyingglass", title: "Ask Noum", description: "A coaching thread grounded in your recent reps")
+                                    featureRow(icon: "text.quote", title: "Live transcript", description: "See your words while you speak")
+                                    featureRow(icon: "video.fill", title: "Video recording", description: "Review your delivery after a rep")
+                                    featureRow(icon: "waveform.badge.magnifyingglass", title: "Filler tracking", description: "Spot recurring verbal crutches")
+                                    featureRow(icon: "chart.line.uptrend.xyaxis", title: "Trend analysis", description: "Follow meaningful change across reps")
+                                    featureRow(icon: "person.2.wave.2.fill", title: "Unlimited friend challenges", description: "Practice the same prompt with a friend")
+                                    featureRow(icon: "sparkles.rectangle.stack.fill", title: "Delivery analysis", description: "Five video-based reads each month")
+                                    featureRow(icon: "tray.full.fill", title: "Saved transcripts", description: "Review and compare past sessions")
+
+                                    Divider()
+                                        .padding(.vertical, Spacing.sm)
+
+                                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                                        Text("Core practice stays free")
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(AppColor.textPrimary)
+                                        freeFeatureRow(icon: "mic.fill", text: "Timed practice")
+                                        freeFeatureRow(icon: "brain.head.profile", text: "Session scoring")
+                                        freeFeatureRow(icon: "clock.arrow.circlepath", text: "Session history")
+                                        freeFeatureRow(icon: "person.fill.checkmark", text: "Coaching profile")
+                                    }
+                                }
+                                .padding(.top, Spacing.sm)
+                            } label: {
+                                HStack(spacing: Spacing.sm) {
+                                    Image(systemName: "checkmark.seal.fill")
+                                        .foregroundStyle(proColor)
+                                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                                        Text("What Pro adds")
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(AppColor.textPrimary)
+                                        Text("Coaching depth, review, and continuity")
+                                            .font(.caption)
+                                            .foregroundStyle(AppColor.textSecondary)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            }
+                            .tint(AppColor.textSecondary)
                         }
-                        .padding(4)
-                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                        )
 
-                        Spacer(minLength: 16)
+                        Spacer(minLength: Spacing.md)
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, Spacing.screenH)
                 }
 
-                // Sticky footer — plan selector + CTA always visible
-                VStack(spacing: 16) {
-                    // Plan selector
-                    HStack(spacing: 12) {
-                        ForEach(PlanOption.allCases) { plan in
-                            planCard(plan)
-                        }
-                    }
-
-                    // Subscribe button
+                VStack(spacing: Spacing.sm) {
                     Button {
                         purchasePremium()
                     } label: {
@@ -507,7 +527,7 @@ struct PaywallView: View {
                             in: Capsule()
                         )
                         .foregroundStyle(.white)
-                        .shadow(color: proColor.opacity(0.4), radius: 16, y: 6)
+                        .shadow(color: proColor.opacity(0.18), radius: 12, y: 6)
                     }
                     .buttonStyle(.pressable)
                     .disabled(isPurchasing)
@@ -516,7 +536,7 @@ struct PaywallView: View {
                     if let errorMessage {
                         Text(errorMessage)
                             .font(.caption)
-                            .foregroundStyle(.red.opacity(0.8))
+                            .foregroundStyle(AppColor.warning)
                     }
 
                     VStack(spacing: 8) {
@@ -529,38 +549,33 @@ struct PaywallView: View {
                             }
                         }
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .frame(minHeight: 44)
 
                         Text("Payment is charged to your Apple Account at confirmation. Subscriptions renew automatically unless cancelled at least 24 hours before the current period ends.")
                             .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.35))
+                            .foregroundStyle(AppColor.textSecondary)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
 
                         HStack(spacing: 16) {
                             Link("Privacy Policy", destination: PremiumLegalLinks.privacyPolicy)
                                 .accessibilityHint("Opens Noum's privacy policy.")
+                                .frame(minHeight: 44)
 
                             Link("Terms of Use", destination: PremiumLegalLinks.termsOfUse)
                                 .accessibilityHint("Opens the subscription terms of use.")
+                                .frame(minHeight: 44)
                         }
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(AppColor.textSecondary)
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
-                .background(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.04, green: 0.02, blue: 0.10).opacity(0),
-                            Color(red: 0.07, green: 0.03, blue: 0.14)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.md)
+                .padding(.bottom, Spacing.lg)
+                .background(.regularMaterial)
+                .overlay(alignment: .top) { Divider() }
             }
 
             if showSuccess {
@@ -580,7 +595,7 @@ struct PaywallView: View {
     }
 
     private func featureRow(icon: String, title: String, description: String) -> some View {
-        HStack(spacing: 14) {
+        HStack(spacing: Spacing.sm) {
             Image(systemName: icon)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(proColor)
@@ -590,10 +605,10 @@ struct PaywallView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppColor.textPrimary)
                 Text(description)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(AppColor.textSecondary)
             }
 
             Spacer()
@@ -602,7 +617,7 @@ struct PaywallView: View {
                 .font(.caption.weight(.bold))
                 .foregroundStyle(proColor)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.xxs)
         .padding(.vertical, Spacing.md)
     }
 
@@ -614,14 +629,14 @@ struct PaywallView: View {
                 .frame(width: 20)
             Text(text)
                 .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(AppColor.textSecondary)
         }
     }
 
     private func planCard(_ plan: PlanOption) -> some View {
         let isSelected = selectedPlan == plan
         return Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(reduceMotion ? nil : .snappySpring) {
                 selectedPlan = plan
             }
         } label: {
@@ -640,28 +655,28 @@ struct PaywallView: View {
 
                 Text(plan.title)
                     .font(.headline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppColor.textPrimary)
 
                 Text(priceText(for: plan))
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(isSelected ? proColor : .white.opacity(0.7))
+                    .foregroundStyle(isSelected ? proColor : AppColor.textPrimary)
 
                 Text(plan.renewalText)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(AppColor.textSecondary)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .background(
-                isSelected ? Color.white.opacity(0.12) : Color.white.opacity(0.04),
+                isSelected ? proColor.opacity(0.08) : AppColor.innerSurface,
                 in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                    .stroke(isSelected ? proColor : Color.white.opacity(0.08), lineWidth: isSelected ? 2 : 1)
+                    .stroke(isSelected ? proColor : AppColor.subtleBorder, lineWidth: isSelected ? 2 : 1)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     private func purchasePremium() {
@@ -710,16 +725,16 @@ struct PaywallView: View {
         VStack(spacing: 16) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 56))
-                .foregroundStyle(.green)
-            Text("Welcome to Pro")
+                .foregroundStyle(AppColor.positive)
+            Text("Pro is active")
                 .font(.title2.weight(.bold))
-                .foregroundStyle(.white)
-            Text("All premium features are now unlocked.")
+                .foregroundStyle(AppColor.textPrimary)
+            Text("Your premium coaching tools are ready.")
                 .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(AppColor.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.85))
+        .background(AppColor.screenBackground.opacity(0.98))
         .transition(.opacity)
     }
 }

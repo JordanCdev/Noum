@@ -548,12 +548,12 @@ actor AIInsightsService {
             action = "Run one rep today to keep the streak open."
         } else if input.weeklyDelta > 5 {
             headline = "Strong upward week"
-            body = "Your rating moved up notably and the reps came in steady. Pace and structure look like the likely levers."
+            body = "Your rating moved up notably across a steady week of reps."
             action = "Push one harder rep — Pressure Drill or a longer Timed answer."
         } else if input.weeklyDelta < -5 {
-            headline = "Pressure caught you"
-            body = "Rating slipped this week. Fillers under pressure are the clearest suspect. Reset the pace before adding more reps."
-            action = "Run a Land the Pause drill to reset filler control."
+            headline = "Rating moved down"
+            body = "Your rating moved down this week. A controlled pressure rep can help isolate what needs attention."
+            action = "Run one controlled pressure rep and keep the opening steady."
         } else if input.weeklyReps >= 4 {
             headline = "Consistent week"
             body = "Reps came in steady and the rating held. That's the platform improvement gets built on."

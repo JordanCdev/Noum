@@ -5,6 +5,9 @@ import FirebaseCore
 #if canImport(FirebaseFirestore)
 import FirebaseFirestore
 #endif
+#if canImport(FirebaseAuth)
+import FirebaseAuth
+#endif
 
 struct BackendBootstrap: Codable {
     let xp: Int?
@@ -23,6 +26,14 @@ actor BackendSyncManager {
     static let shared = BackendSyncManager()
 
     private init() {}
+
+    nonisolated static func authorizedChallengeParticipantID(
+        requestedID: String,
+        firebaseUID: String?
+    ) -> String? {
+        guard let firebaseUID, requestedID == firebaseUID else { return nil }
+        return firebaseUID
+    }
 
     var isConfigured: Bool {
         firebaseIsConfigured || baseURL != nil
@@ -582,6 +593,15 @@ private extension BackendSyncManager {
     }
 
     func fetchFirebaseAsyncChallenges(forParticipant participantID: String) async -> [AsyncChallenge] {
+        #if canImport(FirebaseAuth)
+        // Firestore rules prove query safety from `request.auth.uid in
+        // participantIDs`. Refuse a legacy local UUID here rather than issuing
+        // a query that can never satisfy that authorization contract.
+        guard Self.authorizedChallengeParticipantID(
+            requestedID: participantID,
+            firebaseUID: Auth.auth().currentUser?.uid
+        ) != nil else { return [] }
+        #endif
         do {
             let documents = try await getDocuments(
                 Firestore.firestore().collection("challenges")

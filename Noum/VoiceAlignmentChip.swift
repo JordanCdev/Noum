@@ -72,6 +72,17 @@ extension SpeakingStyleGoal {
         case .storytelling:  return Color(red: 0.74, green: 0.46, blue: 0.14)
         }
     }
+
+    var trainingObjectiveLabel: String {
+        switch self {
+        case .authoritative: return "Authority under pressure"
+        case .warm: return "Warmth without drift"
+        case .concise: return "Clarity without excess"
+        case .persuasive: return "Evidence that moves"
+        case .executive: return "Decisive and brief"
+        case .storytelling: return "A clear narrative turn"
+        }
+    }
 }
 
 @available(iOS 17.0, macOS 12.0, *)
@@ -98,7 +109,7 @@ struct VoiceAlignmentChip: View {
             if shouldShow, let goal = styleGoal {
                 HStack(spacing: 4) {
                     VoiceGoalIcon(goal: goal, size: 9, tint: tint)
-                    Text("Toward your \(goal.shortVoiceLabel)")
+                    Text(goal.trainingObjectiveLabel)
                         .font(.caption2.weight(.semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
@@ -107,7 +118,7 @@ struct VoiceAlignmentChip: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(tint.opacity(0.10), in: Capsule())
-                .accessibilityLabel("Aligned with your \(goal.shortVoiceLabel).")
+                .accessibilityLabel("Coaching objective: \(goal.trainingObjectiveLabel).")
             }
         }
     }

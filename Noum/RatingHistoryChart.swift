@@ -6,6 +6,18 @@ import Charts
 
 // MARK: - Rating History Chart
 
+enum RatingTrendCopy {
+    static func label(for trend: TrendDirection) -> String {
+        switch trend {
+        case .improving: return "Trending up"
+        case .stable: return "Holding steady"
+        case .declining: return "Needs another read"
+        case .newIssue: return "New pattern detected"
+        case .resolved: return "Recent issue resolved"
+        }
+    }
+}
+
 /// Renders the user's last-30-days rating history as a smoothed `SwiftUI Chart`,
 /// with a peak-rating marker and an inline trend label below.
 ///
@@ -200,13 +212,7 @@ struct RatingHistoryChart: View {
     }
 
     private var trendLabel: String {
-        switch trend {
-        case .improving: return "Trending up"
-        case .stable: return "Holding steady"
-        case .declining: return "Dipping — more reps will help"
-        case .newIssue: return "New pattern detected"
-        case .resolved: return "Recent issue resolved"
-        }
+        RatingTrendCopy.label(for: trend)
     }
 
     // MARK: - Accessibility

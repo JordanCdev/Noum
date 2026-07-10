@@ -312,7 +312,7 @@ struct VoiceMetricsRead: Equatable {
             // shame.
             switch trend {
             case .above:
-                copy = "Pauses are landing cleanly across your recent reps. Above your baseline."
+                copy = "Your overall pause pattern is cleaner than your usual range."
             case .below:
                 copy = "Pauses ran filled this week. Re-anchor on the next rep."
             case .steady:

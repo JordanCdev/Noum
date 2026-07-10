@@ -42,7 +42,7 @@ struct BigMomentOutcomeInlineCard: View {
                     label: \.chipLabel
                 ) { selectedResponse = $0 }
                 choices(
-                    title: "Did your prep transfer?",
+                    title: "Did your rehearsal carry over?",
                     values: ReportedDrillTransfer.allCases,
                     selected: selectedTransfer,
                     label: \.chipLabel

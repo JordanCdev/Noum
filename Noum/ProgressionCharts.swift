@@ -23,6 +23,7 @@ struct ProgressionChartsCard: View {
     @State private var hasAppeared = false
     @State private var selectedSeries: ChartSeries = .score
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var shouldReduceMotion: Bool {
         reduceMotion || ProcessInfo.processInfo.arguments.contains("UI_TESTING")
@@ -104,7 +105,10 @@ struct ProgressionChartsCard: View {
     }
 
     private var seriesPickerColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
+        Array(
+            repeating: GridItem(.flexible(), spacing: 6),
+            count: dynamicTypeSize.isAccessibilitySize ? 2 : 3
+        )
     }
 
     private var shouldShowStatsRow: Bool {
@@ -282,14 +286,18 @@ struct ProgressionChartsCard: View {
                 AppColor.caution
             }
 
-            HStack(spacing: 10) {
-                statColumn(label: "30d avg", value: series.formatValue(avg), tint: .primary)
-                statColumn(
-                    label: "7d shift",
-                    value: deltaText,
-                    tint: deltaTint
-                )
-                statColumn(label: "Latest", value: series.formatValue(values.last ?? 0), tint: series.tint)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 8) {
+                    statColumn(label: "30d avg", value: series.formatValue(avg), tint: .primary)
+                    statColumn(label: "7d shift", value: deltaText, tint: deltaTint)
+                    statColumn(label: "Latest", value: series.formatValue(values.last ?? 0), tint: series.tint)
+                }
+            } else {
+                HStack(spacing: 10) {
+                    statColumn(label: "30d avg", value: series.formatValue(avg), tint: .primary)
+                    statColumn(label: "7d shift", value: deltaText, tint: deltaTint)
+                    statColumn(label: "Latest", value: series.formatValue(values.last ?? 0), tint: series.tint)
+                }
             }
         }
     }
@@ -596,7 +604,7 @@ extension ProgressionChartsCard {
         func formatDelta(_ delta: Double) -> String {
             switch self {
             case .score:
-                if abs(delta) < 0.05 { return "Even" }
+                if abs(delta) < 0.15 { return "Even" }
                 return String(format: "%+.1f", delta)
             case .fillerRate:
                 if abs(delta) < 0.05 { return "Even" }
@@ -616,7 +624,7 @@ extension ProgressionChartsCard {
 
         func isFlat(delta: Double) -> Bool {
             switch self {
-            case .score:      return abs(delta) < 0.05
+            case .score:      return abs(delta) < 0.15
             case .fillerRate: return abs(delta) < 0.05
             case .pace:       return abs(delta) < 5
             case .pauseRate:  return abs(delta) < 0.10

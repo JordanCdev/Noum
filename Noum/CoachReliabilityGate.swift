@@ -807,15 +807,13 @@ enum CoachReliabilityGate {
             : "There's no rep for me to read yet, so I won't invent one. Record 60 seconds first, then I'll coach the opener and close from what actually happened — that's the honest way to do this."
     }
 
-    /// A clean, warm cold-start line: honest that the coach needs one real
-    /// sample, one plain 60-second first rep on something the user knows well,
-    /// and a low-friction invitation — no mode names, no invented metric, no
-    /// internal "baseline" framing. Used when a draft leaked jargon on a
-    /// no-baseline turn.
+    /// A clean, warm cold-start line: honest that there is no baseline, asks for
+    /// one plain 60-second sample on something the user knows well, and avoids
+    /// mode names, invented metrics, and a redundant closing question.
     static func coldStartFallback(surface: CoachReplySurface) -> String {
         surface == .live
-            ? "Start with one real sample. Give me 60 seconds on something you know well, like how you'd explain what you do to a stranger. Then I'll have something honest to coach. Want to go now?"
-            : "Start with one real sample. Do one 60-second rep on something you know well — how you'd explain what you do to a stranger works nicely. Then I can give you a real read. Want to go now?"
+            ? "No baseline yet, so start with one real sample. Record 60 seconds on something you know well at your real pace."
+            : "No baseline yet, so start with one real sample. Record 60 seconds on something you know well at your real pace, with sentence one as the point."
     }
 
     /// A warm, brief greeting to render when the turn was a hello but the reply
@@ -937,16 +935,16 @@ enum CoachReliabilityGate {
     /// specific read and one plain behavioural move.
     static func notInformativeRepairFallback(surface: CoachReplySurface) -> String {
         surface == .live
-            ? "Fair. I was too vague. Your point arrived after three warm-up sentences. Make sentence one the point; let one reason do the supporting."
-            : "Fair. I was too vague. The useful read is that your point arrived in sentence four after three warm-up sentences. Make sentence one the point; let one reason do the supporting."
+            ? "Fair. I was too vague. Your point arrived after three warm-up sentences, so say the point first and support it once."
+            : "Fair. I was too vague. The useful read is that your point arrived in sentence four after three warm-up sentences, so say the point first and support it once."
     }
 
     /// Recovery for a direct trust-repair ask. Preserve the user's requested
     /// directness: state both sides of the verdict, then give one bounded test.
     static func straightAnswerSplitFallback(surface: CoachReplySurface) -> String {
         surface == .live
-            ? "Fair. Straight answer: yes on fillers; no on pace under pressure. The next test is one silent beat before the hard answer."
-            : "Fair. Straight answer: yes on fillers; no on pace under pressure. Your filler trend is moving the right way, but the rush still shows up when the pressure rises. Next rep, hold one silent beat before the hard answer."
+            ? "Fair. Straight answer: yes on fillers; no on pace under pressure. The rush still shows up when pressure rises, so hold one silent beat before the hard answer."
+            : "Fair. Straight answer: yes on fillers; no on pace under pressure. The rush still shows up when pressure rises, so next rep, hold one silent beat before the hard answer."
     }
 
     /// Recovery for "you're repeating yourself." Keep the trust repair concrete:
@@ -1014,18 +1012,18 @@ enum CoachReliabilityGate {
             return "For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls."
         }
         if surface == .live {
-            return "You do not lose the thread; you reopen it. The tell is the weaker repeat after the side stories. Use a hard stop: point, one support line, silence."
+            return "In your last rep, you kept the thread but reopened it after the side stories. The weaker repeat is the signal, so use a hard stop: point, one support line, silence."
         }
-        return "You do not lose the thread; you keep reopening it. The tell is the weaker repeat at the end after the side stories. Use a hard stop: state the point, give one support line, then silence."
+        return "In your last rep, you kept the thread but reopened it after the side stories. The weaker repeat is the signal, so use a hard stop: state the point, give one support line, then silence."
     }
 
     /// Recovery for high-stakes status-report leadership updates. The user needs
     /// a top-line hierarchy move they can rehearse tonight, not raw score proof.
     static func leadershipStatusReportFallback(surface: CoachReplySurface) -> String {
         if surface == .live {
-            return "That is a real risk for tomorrow: equal-weight updates make people stop tracking. Make hierarchy the fix. Say the opener aloud tonight: \"The one thing that matters this week is X because Y.\""
+            return "The status-report risk is hierarchy: equal-weight structure hides the leadership goal. Tonight, say one opener aloud: \"The one thing that matters this week is X because Y.\""
         }
-        return "That is a real risk for tomorrow: if every update lands at the same weight, the room hears a status report. The fix is hierarchy, not delivery polish. Tonight, write the opener as: \"The one thing that matters this week is X because Y.\" Say it aloud three times, then let the other items become quick support."
+        return "The status-report risk is hierarchy: equal-weight structure hides the leadership goal. Tonight, write one opener — \"The one thing that matters this week is X because Y\" — and say it aloud once."
     }
 
     /// Recovery for the recurring close-rush trend. This is trajectory-backed
@@ -1033,9 +1031,9 @@ enum CoachReliabilityGate {
     /// the overall prevalence while turning the move into one atomic test.
     static func recurringCloseRushFallback(surface: CoachReplySurface) -> String {
         if surface == .live {
-            return "The solid feeling is real; the next edge is the close. It has rushed in 4 of the last 5 fast-stretch reps and 5 of the last 6 overall. Plant one silent beat before the final line."
+            return "The solid feeling is real; the next edge is the close. It has rushed in 4 of the last 5 fast-stretch reps and 5 of the last 6 overall, so plant one silent beat before the final line."
         }
-        return "That solid feeling is real, and the next edge is specific: the fastest stretch keeps landing at the close. It has shown up in 4 of the last 5 reps with a fast stretch, and 5 of the last 6 overall — a recurring spot, not a trait. Plant one silent beat before the final line."
+        return "That solid feeling is real, and the next edge is specific: the fastest stretch keeps landing at the close. It has shown up in 4 of the last 5 reps with a fast stretch, and 5 of the last 6 overall — a recurring spot, not a trait — so plant one silent beat before the final line."
     }
 
     /// Recovery for "what do you actually know about me?" turns. This closes
@@ -1085,14 +1083,12 @@ enum CoachReliabilityGate {
         if containsAny(lowered, ["engaging", "more engaging", "engage"]) {
             let progress = goalStateProgressAnchor(replyText)
             if surface == .live {
-                return "\(progress)Engaging maps closest to Storytelling, with Warm as the softer backup. What changed: do you need more memorable shape, or the same authority to land warmer?"
+                return "\(progress)Engaging maps closest to Storytelling because the goal is more memorable shape; Warm is the comparison only if the gap is connection. What changed: does the room need more energy, or does the current voice feel too distant?"
             }
-            return "\(progress)Engaging maps closest to Storytelling, with Warm as the softer backup. Use Storytelling if you need more memorable shape; use Warm if you want the same authority to land with less distance. What changed: are you being heard now, or do you want the same point to land warmer?"
+            return "\(progress)Engaging maps closest to Storytelling because the goal is more memorable shape; Warm is the comparison only if the gap is connection. What changed: does the room need more energy, or does the current voice feel too distant?"
         }
         if containsAny(lowered, ["what voice", "which voice", "voice should", "six", "dont know", "don't know"]) {
-            return surface == .live
-                ? "Start with Authoritative: short verdicts hold the floor when people talk over you. Executive presence is the backup if the room is more senior than interrupt-heavy."
-                : "Given you are trying to stop getting talked over in meetings, Authoritative is the closest fit: short verdicts that hold the floor. Executive presence is the next-closest if the room is more senior leadership than peers. Which one matches the room you are actually in?"
+            return "Start with Authoritative because short verdicts can hold the floor in meetings where you get talked over; Executive presence is the comparison only if the real pressure is a senior room."
         }
         if containsAny(lowered, ["authoritative", "verdict-first", "verdict first"]) {
             return surface == .live
@@ -2272,7 +2268,7 @@ enum CoachReliabilityGate {
     ) -> Bool {
         let lowered = normalize((evidence + [step]).joined(separator: " "))
         let namesClose = containsAny(lowered, [
-            "close", "final sentence", "final line", "ending", "ask"
+            "close", "final sentence", "final line", "the ending", "your ending", "the ask"
         ])
         let namesPressureBeat = containsAny(lowered, [
             "silent beat", "silence", "pause", "pressure", "filler"

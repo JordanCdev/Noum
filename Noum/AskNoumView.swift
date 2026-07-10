@@ -450,6 +450,8 @@ struct AskNoumView: View {
 
     @State private var draft: String = ""
     @State private var didLandFirstAppear = false
+    @State private var liveCoachAvailability: CoachChatTransportAvailability = .checking
+    @State private var isPreparingSend = false
     @FocusState private var inputFocused: Bool
 
     // S3 — the in-chat goal set/change intent detected on the most-recent user
@@ -486,6 +488,8 @@ struct AskNoumView: View {
     @State private var revealingMessageID: UUID? = nil
     @State private var revealedText: String = ""
     @State private var revealTask: Task<Void, Never>? = nil
+    @State private var replyTask: Task<Void, Never>? = nil
+    @State private var pendingReplyCoachID: UUID? = nil
 
     // Voice input wrapper — shipped in `AskNoumVoiceInput.swift`. Single
     // instance per view so the tap-to-toggle lifecycle owns the audio
@@ -768,11 +772,12 @@ struct AskNoumView: View {
             voiceInput.onFinalTranscript = { transcript in
                 let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
-                // Clear any half-typed draft so the dictated turn doesn't leave
-                // stale text in the composer after it sends.
-                draft = ""
                 inputFocused = false
-                send(trimmed)
+                send(
+                    trimmed,
+                    preserveAsDraftWhenUnavailable: true,
+                    clearDraftWhenSent: true
+                )
             }
             // Pick up any cross-surface inject (e.g. Summary's "Talk to
             // your coach about this rep" bridge dropped a seed message
@@ -781,8 +786,12 @@ struct AskNoumView: View {
             // and clears its own signal — so re-mounts of this view
             // won't fire a second reply for the same opener.
             if let coachID = store.consumePendingInjectedCoachID() {
-                Task { await runReply(coachID: coachID) }
+                replyTask?.cancel()
+                replyTask = Task { await runInjectedReplyAfterPreflight(coachID: coachID) }
             }
+        }
+        .task {
+            await refreshAvailability()
         }
         .onDisappear {
             // S5 — barge-in/teardown: never let the coach's voice bleed across
@@ -799,6 +808,11 @@ struct AskNoumView: View {
             voiceInput.cancelRecording()
             // Never let a half-written reveal mutate state after we've left.
             revealTask?.cancel()
+            replyTask?.cancel()
+            if let pendingReplyCoachID {
+                store.cancelPendingCoachTurn(id: pendingReplyCoachID)
+                self.pendingReplyCoachID = nil
+            }
         }
     }
 
@@ -972,7 +986,7 @@ struct AskNoumView: View {
         if let target = caseFile.observableTarget?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !target.isEmpty {
-            return "Working on: \(Self.shortCaseLine(target, maxLength: 64))"
+            return "Current focus: \(Self.shortCaseLine(target, maxLength: 64))"
         }
         if let focus = caseFile.focus {
             return "Current focus: \(focus.displayName)"
@@ -1614,7 +1628,7 @@ struct AskNoumView: View {
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                     .tracking(0.8)
-                    .accessibilityLabel("Quick verdict on the working hypothesis")
+                    .accessibilityLabel("Does this coaching read match?")
 
                 FlowLayout(spacing: 8, runSpacing: 6) {
                     ForEach(hypothesisAckChips, id: \.confidence) { chip in
@@ -1751,7 +1765,7 @@ struct AskNoumView: View {
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                     .tracking(0.8)
-                    .accessibilityLabel("Quick verdict on the rebuilt working hypothesis")
+                    .accessibilityLabel("Does the revised coaching read match?")
 
                 FlowLayout(spacing: 8, runSpacing: 6) {
                     ForEach(revisedReadFollowUpChips, id: \.confidence) { chip in
@@ -2450,6 +2464,7 @@ struct AskNoumView: View {
 
     private var inputBar: some View {
         VStack(spacing: 0) {
+            coachStatusRow
             micNoticeRow
             voiceNoticeRow
             partialTranscriptPreview
@@ -2458,6 +2473,90 @@ struct AskNoumView: View {
         .background(.ultraThinMaterial)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: voiceInput.state == .recording)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: voiceInput.partialTranscript)
+    }
+
+    @ViewBuilder
+    private var coachStatusRow: some View {
+        if let message = store.transientFailureMessage {
+            HStack(alignment: .center, spacing: Spacing.xs) {
+                Image(systemName: "arrow.clockwise.circle")
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.caution)
+                Text(message)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: Spacing.xs)
+                Button("Try again") { retryLastTurn() }
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.top, Spacing.xs)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("askNoum.transientFailure")
+        } else if liveCoachAvailability == .checking {
+            HStack(spacing: Spacing.xs) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Connecting to Noum…")
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.top, Spacing.xs)
+            .accessibilityIdentifier("askNoum.availabilityChecking")
+        } else if case .unavailable(let reason) = liveCoachAvailability {
+            HStack(alignment: .center, spacing: Spacing.xs) {
+                Image(systemName: "bolt.slash")
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                Text(unavailableCoachCopy(for: reason))
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: Spacing.xs)
+                Button("Check again") {
+                    Task { await refreshAvailability() }
+                }
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(AppColor.brandBlue)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.top, Spacing.xs)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("askNoum.availability")
+        }
+    }
+
+    private func unavailableCoachCopy(for reason: CoachChatUnavailableReason) -> String {
+        switch reason {
+        case .authenticationPending:
+            return "Noum is temporarily unavailable. Your message is still here."
+        case .debugProviderMissing:
+            return "Live coaching isn’t connected in this build."
+        case .service:
+            return "Noum is temporarily unavailable. Your message is still here."
+        }
+    }
+
+    private func retryLastTurn() {
+        guard !isPreparingSend else { return }
+        isPreparingSend = true
+        replyTask?.cancel()
+        replyTask = Task { @MainActor in
+            defer { isPreparingSend = false }
+            liveCoachAvailability = .checking
+            let availability = await AICoachChatService.shared.availability()
+            guard !Task.isCancelled else { return }
+            liveCoachAvailability = availability
+            guard availability == .available,
+                  let coachID = store.prepareRetry() else { return }
+            pendingReplyCoachID = coachID
+            await runReply(coachID: coachID)
+            if pendingReplyCoachID == coachID { pendingReplyCoachID = nil }
+        }
     }
 
     /// A2: surfaces a brief reason when voice can't proceed (permission /
@@ -2666,7 +2765,10 @@ struct AskNoumView: View {
         switch mode {
         case .send: return !canSend
         case .sendOnly: return true
-        case .mic, .recording: return store.isAwaitingReply
+        case .mic:
+            return store.isAwaitingReply || !isCoachAvailable
+        case .recording:
+            return store.isAwaitingReply
         case .processing: return true
         // Always tappable — the whole point is barge-in.
         case .speaking: return false
@@ -2757,6 +2859,8 @@ struct AskNoumView: View {
         (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
          || voiceInput.state == .recording)
         && !store.isAwaitingReply
+        && !isPreparingSend
+        && isCoachAvailable
     }
 
     // MARK: - Send + scroll
@@ -2771,9 +2875,12 @@ struct AskNoumView: View {
         }
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !store.isAwaitingReply else { return }
-        draft = ""
         inputFocused = false
-        send(trimmed)
+        send(
+            trimmed,
+            preserveAsDraftWhenUnavailable: true,
+            clearDraftWhenSent: true
+        )
     }
 
     /// Dispatch a user turn into the thread and request the coach reply.
@@ -2792,7 +2899,12 @@ struct AskNoumView: View {
     /// so the coach PROPOSES (the model still never writes — only a card tap
     /// commits). A nil result clears any stale pending intent so a non-goal
     /// turn collapses a card the user neither confirmed nor declined.
-    private func send(_ text: String, detectIntent: Bool = true) {
+    private func send(
+        _ text: String,
+        detectIntent: Bool = true,
+        preserveAsDraftWhenUnavailable: Bool = false,
+        clearDraftWhenSent: Bool = false
+    ) {
         // Day-0 invariant: full replies stay gated on rep 1. The UI never
         // offers a dispatch path while `isDayZero` (no composer, no starter
         // chips), so this guard is belt-and-braces — it keeps the invariant
@@ -2804,20 +2916,57 @@ struct AskNoumView: View {
         // paths call send() directly, so a rapid second chip or an already-open
         // menu could mint a second pending row + a second CoachReplyPipeline run
         // (double Gemini spend, racing replies). Guard once at the funnel.
-        guard !store.isAwaitingReply else { return }
-        // S5 — barge-in: a new user turn supersedes the prior coach reply, so
-        // stop any audio still playing from it before we dispatch. The reply
-        // that lands for THIS turn will start its own clip via `runReply`. This
-        // is the single dispatch funnel (typed / voice transcript / chip /
-        // cross-surface inject all flow through here), so one stop covers them.
-        speaker.stop()
-        if detectIntent {
-            pendingGoalIntent = CoachContextBuilder.detectGoalIntent(text, currentVoice: voice)
-        }
-        let ids = store.appendUserTurn(text)
-        Task {
+        guard !store.isAwaitingReply, !isPreparingSend else { return }
+        isPreparingSend = true
+        replyTask?.cancel()
+        replyTask = Task { @MainActor in
+            defer { isPreparingSend = false }
+            liveCoachAvailability = .checking
+            let availability = await AICoachChatService.shared.availability()
+            guard !Task.isCancelled else { return }
+            liveCoachAvailability = availability
+            guard availability == .available else {
+                if preserveAsDraftWhenUnavailable { draft = text }
+                return
+            }
+            guard !store.isAwaitingReply else { return }
+            speaker.stop()
+            if clearDraftWhenSent { draft = "" }
+            if detectIntent {
+                pendingGoalIntent = CoachContextBuilder.detectGoalIntent(text, currentVoice: voice)
+            }
+            let ids = store.appendUserTurn(text)
+            pendingReplyCoachID = ids.coachID
             await runReply(coachID: ids.coachID)
+            if pendingReplyCoachID == ids.coachID { pendingReplyCoachID = nil }
         }
+    }
+
+    @MainActor
+    private func refreshAvailability() async {
+        liveCoachAvailability = .checking
+        liveCoachAvailability = await AICoachChatService.shared.availability()
+    }
+
+    private var isCoachAvailable: Bool {
+        liveCoachAvailability == .available
+    }
+
+    @MainActor
+    private func runInjectedReplyAfterPreflight(coachID: UUID) async {
+        pendingReplyCoachID = coachID
+        await refreshAvailability()
+        guard !Task.isCancelled else {
+            store.cancelPendingCoachTurn(id: coachID)
+            return
+        }
+        guard isCoachAvailable else {
+            store.completeCoachTurn(id: coachID, outcome: .failure(.network))
+            if pendingReplyCoachID == coachID { pendingReplyCoachID = nil }
+            return
+        }
+        await runReply(coachID: coachID)
+        if pendingReplyCoachID == coachID { pendingReplyCoachID = nil }
     }
 
     private func runReply(coachID: UUID) async {

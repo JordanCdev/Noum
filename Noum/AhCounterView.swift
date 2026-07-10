@@ -44,6 +44,7 @@ struct AhCounterView: View {
     @State private var bestStreakSeconds: Int = 0
     @State private var fillerFlash: Bool = false
     @State private var showExitConfirmation = false
+    @State private var showSetupAdjustments = false
 
     // MARK: - Milestone Toast
 
@@ -120,8 +121,14 @@ struct AhCounterView: View {
 
     var body: some View {
         ZStack {
-            AppColor.screenBackground
-                .ignoresSafeArea()
+            if isPristineSetup {
+                focusedSetupScreen
+            } else {
+            if speechVM.isRecording || launchCountdown != nil || showGoCue {
+                FocusedPracticeBackground(style: .clarity)
+            } else {
+                AppColor.screenBackground.ignoresSafeArea()
+            }
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: Spacing.lg) {
@@ -132,6 +139,7 @@ struct AhCounterView: View {
                         // streak) becomes the single focal object. The
                         // dashboard returns when recording stops.
                         focusedRepSurface
+                            .environment(\.colorScheme, .dark)
                             .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
                     } else {
                     // MARK: Header Card — mode hero treatment matching
@@ -181,13 +189,7 @@ struct AhCounterView: View {
                                     .foregroundStyle(.secondary)
                                 Spacer()
                                 Button {
-                                    withAnimation(.standardSpring) {
-                                        var next = currentPrompt
-                                        while next == currentPrompt && Self.prompts.count > 1 {
-                                            next = Self.prompts.randomElement() ?? currentPrompt
-                                        }
-                                        currentPrompt = next
-                                    }
+                                    chooseAnotherPrompt()
                                 } label: {
                                     Image(systemName: "shuffle")
                                         .font(.subheadline.weight(.medium))
@@ -222,8 +224,8 @@ struct AhCounterView: View {
                         (fillerFlash ? Color.orange.opacity(0.08) : AppColor.modeAhCounter.opacity(speechVM.isRecording ? 0.08 : 0.04)),
                         in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                     )
-                    .animation(.easeInOut(duration: 0.3), value: encouragementMessage)
-                    .animation(.easeInOut(duration: 0.3), value: fillerFlash)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: encouragementMessage)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: fillerFlash)
 
                     // MARK: Stats Row
                     HStack(spacing: Spacing.sm) {
@@ -249,7 +251,7 @@ struct AhCounterView: View {
                             .frame(maxWidth: .infinity)
                             .padding(Spacing.md)
                         }
-                        .animation(.easeInOut(duration: 0.3), value: fillerFlash)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: fillerFlash)
 
                         if speechVM.isRecording || elapsedSeconds > 0 {
                             // Elapsed timer
@@ -325,6 +327,7 @@ struct AhCounterView: View {
                 countdownOverlay(value: "GO", subtitle: "Start speaking")
                     .transition(.opacity.combined(with: .scale))
             }
+            }
 
             // MARK: Milestone Toast Overlay
             if let message = toastMessage {
@@ -393,6 +396,9 @@ struct AhCounterView: View {
             Text("Your current session will be lost.")
         }
         .accessibilityIdentifier("ahCounter.screen")
+        .sheet(isPresented: $showSetupAdjustments) {
+            setupAdjustmentsSheet
+        }
         .task {
             speechVM.prepareForInteractiveUse()
 
@@ -419,6 +425,144 @@ struct AhCounterView: View {
             checkTimeMilestones(elapsed: newElapsed)
         }
         // Summary navigation is handled by path-based .navigationDestination(for:) in ContentView
+    }
+
+    private var isPristineSetup: Bool {
+        !speechVM.isRecording
+            && elapsedSeconds == 0
+            && speechVM.fillerWordCount == 0
+            && launchCountdown == nil
+            && !showGoCue
+    }
+
+    private var focusedSetupScreen: some View {
+        FocusedPracticeScaffold(
+            style: .clarity,
+            status: "Ah-Counter",
+            title: "Keep the thought. Lose the filler.",
+            subtitle: "Speak naturally while Noum listens live."
+        ) {
+            Button {
+                CoachHaptic.selectionTap()
+                showSetupAdjustments = true
+            } label: {
+                Label("Adjust", systemImage: "slider.horizontal.3")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 44)
+                    .background(.white.opacity(0.14), in: Capsule())
+                    .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("ahCounter.adjust")
+            .accessibilityLabel("Adjust Ah-Counter")
+        } content: {
+            VStack(spacing: Spacing.lg) {
+                HStack(alignment: .top, spacing: Spacing.md) {
+                    Image(systemName: "lightbulb.fill")
+                        .font(Typography.headline)
+                        .foregroundStyle(.white)
+                        .frame(width: 40, height: 40)
+                        .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Prompt ready")
+                            .font(Typography.caption)
+                            .foregroundStyle(AppColor.focusedTextSecondary)
+                        Text(currentPrompt)
+                            .font(Typography.body.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.90))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(Spacing.md)
+                .focusedGlassSurface()
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Speaking prompt: \(currentPrompt)")
+
+                if let error = speechVM.connectionError {
+                    ErrorCard(message: error)
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            Button("Start Ah-Counter") {
+                beginLaunchCountdown()
+            }
+            .font(.headline.weight(.bold))
+            .foregroundStyle(AppColor.modeAhCounter)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.md)
+            .background(.white, in: Capsule())
+            .buttonStyle(.pressable)
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.vertical, Spacing.sm)
+            .background(Color.black.opacity(0.10).ignoresSafeArea())
+            .accessibilityIdentifier("ahCounter.start")
+        }
+    }
+
+    private var setupAdjustmentsSheet: some View {
+        NavigationStack {
+            List {
+                Section("Speaking prompt") {
+                    Text(currentPrompt)
+                        .font(Typography.body.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button {
+                        chooseAnotherPrompt()
+                    } label: {
+                        Label("Choose another prompt", systemImage: "shuffle")
+                    }
+                    .accessibilityIdentifier("ahCounter.adjust.prompt")
+                }
+
+                Section("Live feedback") {
+                    Label {
+                        Text("Fillers, clean time, and your transcript appear while you speak.")
+                            .font(Typography.subheadline)
+                    } icon: {
+                        Image(systemName: "ear.and.waveform")
+                            .foregroundStyle(AppColor.modeAhCounter)
+                    }
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(AppColor.screenBackground)
+            .navigationTitle("Adjust Ah-Counter")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showSetupAdjustments = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func chooseAnotherPrompt() {
+        var next = currentPrompt
+        while next == currentPrompt && Self.prompts.count > 1 {
+            next = Self.prompts.randomElement() ?? currentPrompt
+        }
+
+        updateWithMotion(.standardSpring) { currentPrompt = next }
+    }
+
+    private func updateWithMotion(_ animation: Animation, _ changes: () -> Void) {
+        if reduceMotion {
+            changes()
+        } else {
+            withAnimation(animation) {
+                changes()
+            }
+        }
     }
 
     private var shouldShowTranscriptCard: Bool {
@@ -528,14 +672,14 @@ struct AhCounterView: View {
                         .fill(glowColor.opacity(fillerFlash ? 0.16 : 0.08))
                         .frame(width: 220, height: 220)
                         .blur(radius: 40)
-                        .animation(.easeInOut(duration: 0.3), value: fillerFlash)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: fillerFlash)
 
                     VStack(spacing: Spacing.xxs) {
                         Text("\(speechVM.fillerWordCount)")
                             .font(.system(size: 92, weight: .bold, design: .rounded))
                             .foregroundStyle(fillerFlash ? Color.orange : AppColor.textPrimary)
                             .contentTransition(.numericText())
-                            .animation(.standardSpring, value: speechVM.fillerWordCount)
+                            .animation(reduceMotion ? nil : .standardSpring, value: speechVM.fillerWordCount)
                         Text("FILLER WORDS")
                             .font(.caption.weight(.bold))
                             .tracking(1.2)
@@ -549,7 +693,7 @@ struct AhCounterView: View {
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(currentStreakSeconds >= 15 ? AppColor.positive : AppColor.textPrimary)
                         .contentTransition(.numericText())
-                        .animation(.easeInOut(duration: 0.3), value: currentStreakSeconds)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: currentStreakSeconds)
 
                     HStack(spacing: 6) {
                         Image(systemName: encouragementIcon)
@@ -558,7 +702,7 @@ struct AhCounterView: View {
                             .font(.subheadline.weight(.medium))
                     }
                     .foregroundStyle(fillerFlash ? Color.orange : Color.secondary)
-                    .animation(.easeInOut(duration: 0.3), value: encouragementMessage)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: encouragementMessage)
                 }
             }
             .accessibilityElement(children: .combine)
@@ -610,7 +754,7 @@ struct AhCounterView: View {
                 }
                 // Gentle session cap — nudge at 9 min, auto-stop at 10 min
                 if elapsedSeconds == 540 {
-                    toastMessage = "9 minutes — great session. Wrapping up soon."
+                    toastMessage = "9 minutes recorded. This rep will stop in one minute."
                 } else if elapsedSeconds >= 600 {
                     stopSession()
                 }
@@ -644,14 +788,14 @@ struct AhCounterView: View {
         currentStreakSeconds = 0
 
         // Flash the filler indicator
-        withAnimation(.easeInOut(duration: 0.2)) {
+        updateWithMotion(.easeInOut(duration: 0.2)) {
             fillerFlash = true
         }
 
         // Clear the flash after a short duration
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2))
-            withAnimation(.easeInOut(duration: 0.3)) {
+            updateWithMotion(.easeInOut(duration: 0.3)) {
                 fillerFlash = false
             }
         }
@@ -660,13 +804,13 @@ struct AhCounterView: View {
     // MARK: - Milestone Toast
 
     private func showToast(_ message: String, isCoaching: Bool = false) {
-        withAnimation(.standardSpring) {
+        updateWithMotion(.standardSpring) {
             toastMessage = message
             toastIsCoaching = isCoaching
         }
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2.5))
-            withAnimation(.standardSpring) {
+            updateWithMotion(.standardSpring) {
                 if toastMessage == message {
                     toastMessage = nil
                 }
@@ -689,7 +833,7 @@ struct AhCounterView: View {
         guard speechVM.isRecording else { return }
         if elapsed == 120, !firedMilestones.contains("elapsed120") {
             firedMilestones.insert("elapsed120")
-            showToast("2 minutes strong")
+            showToast("2 minutes recorded")
         }
     }
 
@@ -715,13 +859,13 @@ struct AhCounterView: View {
         Task {
             for count in stride(from: 3, through: 1, by: -1) {
                 await MainActor.run {
-                    withAnimation(.snappy(duration: 0.25)) { launchCountdown = count }
+                    updateWithMotion(.snappy(duration: 0.25)) { launchCountdown = count }
                     CoachHaptic.countdownBeat()
                 }
                 try? await Task.sleep(for: .seconds(1))
             }
             await MainActor.run {
-                withAnimation(.snappy(duration: 0.25)) { launchCountdown = nil }
+                updateWithMotion(.snappy(duration: 0.25)) { launchCountdown = nil }
                 showGoCue = true
             }
             try? await Task.sleep(for: .milliseconds(700))

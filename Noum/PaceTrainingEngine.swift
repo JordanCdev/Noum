@@ -178,6 +178,7 @@ final class PaceTrainingEngine: ObservableObject {
     private var peakWPM: Double = 0
     private var lowestWPM: Double = 999
     private var fillerCount: Int = 0
+    private var countdownTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
     private var activeStart: Date?
     private var wasInZone: Bool = false
@@ -194,20 +195,26 @@ final class PaceTrainingEngine: ObservableObject {
 
     func beginCountdown() {
         guard case .setup = phase else { return }
-        Task {
+        countdownTask?.cancel()
+        countdownTask = Task {
             for n in [3, 2, 1] {
+                guard !Task.isCancelled else { return }
                 phase = .countdown(n)
                 CoachHaptic.countdownBeat()
                 try? await Task.sleep(for: .seconds(1))
             }
+            guard !Task.isCancelled else { return }
             phase = .go
             CoachHaptic.drillSuccess()
             try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
             startActive()
         }
     }
 
     func reset() {
+        countdownTask?.cancel()
+        countdownTask = nil
         tickTask?.cancel()
         wordTimestamps = []
         wpmSamples = []
@@ -225,6 +232,16 @@ final class PaceTrainingEngine: ObservableObject {
         prompt = Self.randomPrompt()
         passage = Self.passages.randomElement() ?? Self.passages[0]
         phase = .setup
+    }
+
+    /// Stops any in-flight countdown/live loop when the immersive screen is
+    /// dismissed. Cancellation is intentionally not a result and therefore
+    /// does not mutate progression or session history.
+    func cancel() {
+        countdownTask?.cancel()
+        countdownTask = nil
+        tickTask?.cancel()
+        tickTask = nil
     }
 
     // MARK: Transcript Ingestion

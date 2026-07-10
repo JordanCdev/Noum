@@ -178,9 +178,12 @@ private struct BackgroundLayerView: View {
     let timingState: ImpromptuTimingState
     let isFullScreenCameraActive: Bool
     let showLiveTranscript: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        if phase == .speaking && isFullScreenCameraActive {
+        if phase == .setup {
+            FocusedPracticeBackground(style: .timed)
+        } else if phase == .speaking && isFullScreenCameraActive {
             Color.black.ignoresSafeArea()
         } else if phase == .speaking && !showLiveTranscript {
             ZStack {
@@ -190,7 +193,7 @@ private struct BackgroundLayerView: View {
                     endPoint: .bottom
                 )
                 .ignoresSafeArea()
-                .animation(.easeInOut(duration: 1.8), value: timingState)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 1.8), value: timingState)
 
                 RadialGradient(
                     colors: [timingState.vividColor.opacity(timingState.glowOpacity * 0.3), .clear],
@@ -199,7 +202,7 @@ private struct BackgroundLayerView: View {
                     endRadius: 360
                 )
                 .ignoresSafeArea()
-                .animation(.easeInOut(duration: 1.4), value: timingState)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 1.4), value: timingState)
             }
         } else if phase == .thinking {
             LinearGradient(
@@ -276,7 +279,7 @@ private struct SpotlightOrbView: View {
                 .blur(radius: 28)
                 .opacity(0.12 + voiceLevel * 0.38)
                 .scaleEffect(reduceMotion ? 1.0 : 0.92 + CGFloat(voiceLevel) * 0.30)
-                .animation(.easeOut(duration: 0.18), value: voiceLevel)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: voiceLevel)
                 .allowsHitTesting(false)
 
             // Track ring
@@ -302,7 +305,7 @@ private struct SpotlightOrbView: View {
                 .frame(width: orbSize, height: orbSize)
                 .rotationEffect(.degrees(-90))
                 .shadow(color: timingState.vividColor.opacity(timingState == .neutral ? 0 : 0.5), radius: 12)
-                .animation(.linear(duration: 0.9), value: elapsedSeconds)
+                .animation(reduceMotion ? nil : .linear(duration: 0.9), value: elapsedSeconds)
 
             // Center content
             centerContent
@@ -327,7 +330,7 @@ private struct SpotlightOrbView: View {
                     x: (orbSize / 2) * cos(angle.radians),
                     y: (orbSize / 2) * sin(angle.radians)
                 )
-                .animation(.bouncySpring, value: reached)
+                .animation(reduceMotion ? nil : .bouncySpring, value: reached)
         }
     }
 
@@ -343,7 +346,7 @@ private struct SpotlightOrbView: View {
                 .foregroundStyle(timingState == .neutral ? .white.opacity(0.35) : timingState.vividColor)
                 .contentTransition(.interpolate)
         }
-        .animation(.easeInOut(duration: 0.4), value: timingState)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: timingState)
     }
 
     private func formattedTime(_ seconds: Int) -> String {
@@ -798,9 +801,11 @@ struct TimedPracticeView: View {
                     }
                 }
                 .frame(maxHeight: .infinity)
-                .animation(.easeInOut(duration: 0.4), value: phase)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: phase)
 
-                bottomBar
+                if phase != .setup {
+                    bottomBar
+                }
             }
         }
         .overlay {
@@ -925,6 +930,32 @@ struct TimedPracticeView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
+        .sheet(isPresented: $showSetupSettings) {
+            NavigationStack {
+                ZStack {
+                    AppColor.screenBackground.ignoresSafeArea()
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: Spacing.lg) {
+                            promptPoolRow
+                            settingsCard
+                            if enableVideoRecording, let session = videoManager.captureSession {
+                                cameraSetupPreview(session: session)
+                            }
+                        }
+                        .padding(Spacing.screenH)
+                    }
+                }
+                .navigationTitle("Adjust impromptu")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { showSetupSettings = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         // Summary navigation is handled by path-based .navigationDestination(for:) in ContentView
     }
 
@@ -947,7 +978,7 @@ struct TimedPracticeView: View {
     private func refreshTimingState() {
         let newState = ImpromptuTimingState.state(forElapsedSeconds: elapsedSeconds)
         if newState != currentTimingState {
-            withAnimation(.easeInOut(duration: 0.6)) {
+            updateWithMotion(.easeInOut(duration: 0.6)) {
                 currentTimingState = newState
             }
         }
@@ -993,46 +1024,92 @@ struct TimedPracticeView: View {
     // MARK: - Setup Phase
 
     private var setupContent: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: Spacing.lg) {
-                if !showSetupSettings {
-                    setupHeader
-                        .padding(.top, 8)
-                } else {
-                    Color.clear
-                        .frame(height: 112)
+        FocusedPracticeScaffold(
+            style: .timed,
+            status: enableThinkingTime ? "Ready with 15-second prep" : "Ready for instant start",
+            title: "Impromptu",
+            subtitle: "One prompt. One take. A clear landing."
+        ) {
+            Button {
+                CoachHaptic.selectionTap()
+                showSetupSettings = true
+            } label: {
+                Label("Adjust", systemImage: "slider.horizontal.3")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 44)
+                    .background(.white.opacity(0.14), in: Capsule())
+                    .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("timedPractice.settings.toggle")
+            .accessibilityLabel("Adjust Impromptu")
+        } content: {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Think fast. Land one clear answer.")
+                        .font(Typography.figtree(size: 30, weight: .bold, relativeTo: .title))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("The prompt appears when the rep starts.")
+                        .font(Typography.subheadline)
+                        .foregroundStyle(AppColor.focusedTextSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if let wordOfTheDayTarget {
-                    wordOfTheDaySetupCue(wordOfTheDayTarget)
-                }
-
-                impromptuLaunchCard
+                impromptuSetupCue
 
                 microphoneReadinessCard
-
-                promptPoolRow
-
-                if showSetupSettings {
-                    settingsCard
-                }
-
-                // M14: live camera preview during setup so the user can
-                // see themselves and adjust framing BEFORE the rep starts.
-                // Real-device feedback: the preview was only rendering during
-                // the speaking phase, so users had no visibility while
-                // they were prepping. Tap the toggle in settings → preview
-                // appears here.
-                if enableVideoRecording, let session = videoManager.captureSession {
-                    cameraSetupPreview(session: session)
-                }
-
-                Spacer(minLength: 100)
             }
-            .padding(.horizontal, Spacing.screenH)
-            .id(showSetupSettings ? "timed-setup-settings" : "timed-setup-launch")
         }
         .accessibilityIdentifier("timedPractice.screen")
+        .safeAreaInset(edge: .bottom) {
+            setupBottomBar
+        }
+    }
+
+    private var impromptuSetupCue: some View {
+        HStack(spacing: Spacing.md) {
+            Image(systemName: selectedTheme.icon)
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(wordOfTheDayTarget == nil ? "Prompt pool" : "Today's word")
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.focusedTextSecondary)
+
+                Text(wordOfTheDayTarget ?? selectedTheme.rawValue)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: Spacing.sm)
+
+            Text(enableThinkingTime ? "15s prep" : "Instant start")
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(AppColor.focusedTextSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(.white.opacity(0.12), in: Capsule())
+        }
+        .padding(Spacing.md)
+        .focusedGlassSurface()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(impromptuSetupCueAccessibilityLabel)
+    }
+
+    private var impromptuSetupCueAccessibilityLabel: String {
+        let promptContext = wordOfTheDayTarget.map { "Today's word, \($0)" }
+            ?? "Prompt pool, \(selectedTheme.rawValue)"
+        let startStyle = enableThinkingTime ? "15 seconds to prepare" : "instant start"
+        return "\(promptContext). \(startStyle)."
     }
 
     private var setupHeader: some View {
@@ -1149,6 +1226,7 @@ struct TimedPracticeView: View {
                     .foregroundStyle(AppColor.modeTimed)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
+                    .frame(minHeight: 44)
                     .background(AppColor.modeTimed.opacity(0.10), in: Capsule())
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("timedPractice.microphoneReadiness.action")
@@ -1162,6 +1240,7 @@ struct TimedPracticeView: View {
                 .stroke(AppColor.modeTimed.opacity(0.16), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.04), radius: 12, y: 5)
+        .environment(\.colorScheme, .light)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("timedPractice.microphoneReadiness")
     }
@@ -1231,11 +1310,10 @@ struct TimedPracticeView: View {
                     .font(Typography.figtree(size: 20, weight: .bold, relativeTo: .title3))
                     .foregroundStyle(.white)
 
-                Text("\(enableThinkingTime ? "15s prep" : "Instant start") · \(selectedTheme.rawValue) · \(keepPromptVisible ? "Prompt on" : "Prompt hidden")")
+                Text("\(enableThinkingTime ? "You have 15 seconds to prepare" : "Starts immediately") with \(selectedTheme.rawValue.lowercased()) prompts. \(keepPromptVisible ? "The prompt stays visible." : "The prompt hides when you start.")")
                     .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.76))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 8)
@@ -1287,7 +1365,7 @@ struct TimedPracticeView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Think fast. Land one answer.")
+                Text("Think fast. Land one clear answer.")
                     .font(Typography.figtree(size: 28, weight: .bold, relativeTo: .title))
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1305,12 +1383,7 @@ struct TimedPracticeView: View {
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(impromptuCardBackground)
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .stroke(Color.white.opacity(0.18), lineWidth: 1)
-        )
-        .shadow(color: AppColor.modeTimed.opacity(0.24), radius: 24, y: 12)
+        .focusedGlassSurface()
     }
 
     private var impromptuCardBackground: some View {
@@ -1538,10 +1611,14 @@ struct TimedPracticeView: View {
     }
 
     private func animateSetupChange(_ changes: () -> Void) {
+        updateWithMotion(.snappySpring, changes)
+    }
+
+    private func updateWithMotion(_ animation: Animation, _ changes: () -> Void) {
         if reduceMotion {
             changes()
         } else {
-            withAnimation(.snappySpring) {
+            withAnimation(animation) {
                 changes()
             }
         }
@@ -1648,7 +1725,7 @@ struct TimedPracticeView: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white.opacity(0.4))
                         .contentTransition(.interpolate)
-                        .animation(.easeInOut(duration: 0.3), value: thinkingCountdown)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: thinkingCountdown)
                 }
             }
 
@@ -1786,11 +1863,9 @@ struct TimedPracticeView: View {
             Image(systemName: "bolt.fill")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.orange)
-            Text("Pressure Mode")
+            Text("Pressure on")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.primary)
-            Text("·")
-                .foregroundStyle(.secondary)
             Text("One take — stay committed")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -1871,7 +1946,7 @@ struct TimedPracticeView: View {
                     RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                         .fill(timingState == .neutral ? .white.opacity(0.4) : timingState.vividColor)
                         .frame(width: geo.size.width * CGFloat(min(elapsedSeconds, totalDuration)) / CGFloat(max(totalDuration, 1)))
-                        .animation(.easeInOut(duration: 0.5), value: elapsedSeconds)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.5), value: elapsedSeconds)
                 }
             }
             .frame(height: 2)
@@ -2027,7 +2102,7 @@ struct TimedPracticeView: View {
                             )
                         )
                         .frame(width: geo.size.width * CGFloat(min(elapsedSeconds, totalDuration)) / CGFloat(max(totalDuration, 1)))
-                        .animation(.easeInOut(duration: 0.5), value: elapsedSeconds)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.5), value: elapsedSeconds)
                 }
             }
             .frame(height: 3)
@@ -2069,8 +2144,12 @@ struct TimedPracticeView: View {
                         .id("transcriptEnd")
                 }
                 .onChange(of: speechVM.highlightedText) {
-                    withAnimation(.easeOut(duration: 0.15)) {
+                    if reduceMotion {
                         proxy.scrollTo("transcriptEnd", anchor: .bottom)
+                    } else {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            proxy.scrollTo("transcriptEnd", anchor: .bottom)
+                        }
                     }
                 }
             }
@@ -2139,7 +2218,7 @@ struct TimedPracticeView: View {
                         .foregroundStyle(.white.opacity(0.4))
                         .contentTransition(.interpolate)
                 }
-                .animation(.easeInOut(duration: 0.5), value: timingState)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.5), value: timingState)
 
                 Spacer(minLength: 16)
 
@@ -2377,7 +2456,7 @@ struct TimedPracticeView: View {
                 Text(timingState.label)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(timingState == .neutral ? .secondary : timingState.color)
-                    .animation(.easeInOut(duration: 0.3), value: timingState)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: timingState)
             }
         }
     }
@@ -2387,7 +2466,7 @@ struct TimedPracticeView: View {
             RoundedRectangle(cornerRadius: 3)
                 .fill(active ? state.color : Color(.systemGray5))
                 .frame(height: 6)
-                .animation(.easeInOut(duration: 0.4), value: active)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: active)
             Text(label)
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .foregroundStyle(active ? .primary : .tertiary)
@@ -2482,29 +2561,22 @@ struct TimedPracticeView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "bolt.fill")
                         .font(.headline)
-                    Text("Start Impromptu")
+                    Text("Start impromptu")
                         .font(.headline.weight(.semibold))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
             }
-            .background(
-                LinearGradient(
-                    colors: [AppColor.modeTimed, AppColor.modePace],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                ),
-                in: Capsule()
-            )
-            .foregroundStyle(.white)
-            .shadow(color: AppColor.modeTimed.opacity(0.30), radius: 14, y: 5)
+            .background(.white, in: Capsule())
+            .foregroundStyle(AppColor.modeTimed)
+            .shadow(color: Color.black.opacity(0.18), radius: 18, y: 8)
             .buttonStyle(.pressable)
             .accessibilityIdentifier("timedPractice.begin")
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 16)
-        .background(.regularMaterial)
+        .background(.ultraThinMaterial)
     }
 
     private var thinkingBottomBar: some View {
@@ -2676,10 +2748,10 @@ struct TimedPracticeView: View {
 
             if useThinkingTime {
                 thinkingCountdown = thinkingDuration
-                withAnimation(.easeInOut(duration: 0.3)) { phase = .thinking }
+                updateWithMotion(.easeInOut(duration: 0.3)) { phase = .thinking }
                 startThinkingCountdown(thinkingDuration: thinkingDuration)
             } else if !effectiveKeepPromptVisible {
-                withAnimation(.easeInOut(duration: 0.3)) { phase = .briefReveal }
+                updateWithMotion(.easeInOut(duration: 0.3)) { phase = .briefReveal }
                 Task {
                     try? await Task.sleep(for: .seconds(3))
                     if phase == .briefReveal {
@@ -2698,13 +2770,13 @@ struct TimedPracticeView: View {
             for i in stride(from: thinkingDuration, through: 1, by: -1) {
                 if Task.isCancelled { return }
                 await MainActor.run {
-                    withAnimation(.snappy(duration: 0.25)) { thinkingCountdown = i }
+                    updateWithMotion(.snappy(duration: 0.25)) { thinkingCountdown = i }
                 }
                 try? await Task.sleep(for: .seconds(1))
             }
             if Task.isCancelled { return }
             await MainActor.run {
-                withAnimation(.snappy(duration: 0.25)) { thinkingCountdown = 0 }
+                updateWithMotion(.snappy(duration: 0.25)) { thinkingCountdown = 0 }
                 startSpeaking()
             }
         }
@@ -2730,7 +2802,7 @@ struct TimedPracticeView: View {
                     SoundscapeEngine.shared.stop()
                     thinkingTask?.cancel()
                     thinkingTask = nil
-                    withAnimation(.easeInOut(duration: 0.25)) { phase = .setup }
+                    updateWithMotion(.easeInOut(duration: 0.25)) { phase = .setup }
                 }
             }
             return
@@ -2740,7 +2812,7 @@ struct TimedPracticeView: View {
             SoundscapeEngine.shared.stop()
             thinkingTask?.cancel()
             thinkingTask = nil
-            withAnimation(.easeInOut(duration: 0.25)) { phase = .setup }
+            updateWithMotion(.easeInOut(duration: 0.25)) { phase = .setup }
             return
         }
 
@@ -2748,7 +2820,7 @@ struct TimedPracticeView: View {
         // is for prep only, never for the rep itself.
         SoundscapeEngine.shared.stop()
 
-        withAnimation(.easeInOut(duration: 0.3)) { phase = .speaking }
+        updateWithMotion(.easeInOut(duration: 0.3)) { phase = .speaking }
 
         elapsedSeconds = 0
         isStopping = false
@@ -2956,12 +3028,12 @@ struct TimedPracticeView: View {
                     let gen = UINotificationFeedbackGenerator()
                     gen.prepare()
                     gen.notificationOccurred(.success)
-                    withAnimation(.bouncySpring) {
+                    updateWithMotion(.bouncySpring) {
                         showCelebration = true
                     }
                     // Auto-dismiss celebration
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-                        withAnimation(.easeOut(duration: 0.5)) { showCelebration = false }
+                        updateWithMotion(.easeOut(duration: 0.5)) { showCelebration = false }
                     }
                 }
 
@@ -3027,7 +3099,7 @@ struct TimedPracticeView: View {
         let thinkingDuration = practiceSettings.pressureModeEnabled ? 8 : 15
         if useThinkingTime {
             thinkingCountdown = thinkingDuration
-            withAnimation(.easeInOut(duration: 0.3)) { phase = .thinking }
+            updateWithMotion(.easeInOut(duration: 0.3)) { phase = .thinking }
             // Pre-rep ambience runs through the thinking window — long
             // enough for the user to feel it, cuts the moment recording
             // starts inside `startSpeaking()` so it never bleeds onto the
@@ -3035,7 +3107,7 @@ struct TimedPracticeView: View {
             SoundscapeEngine.shared.startPreferredMode()
             startThinkingCountdown(thinkingDuration: thinkingDuration)
         } else if !effectiveKeepPromptVisible {
-            withAnimation(.easeInOut(duration: 0.3)) { phase = .briefReveal }
+            updateWithMotion(.easeInOut(duration: 0.3)) { phase = .briefReveal }
             SoundscapeEngine.shared.startPreferredMode()
             Task {
                 try? await Task.sleep(for: .seconds(3))

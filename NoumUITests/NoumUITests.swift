@@ -59,6 +59,43 @@ final class NoumUITests: XCTestCase {
     }
 
     @MainActor
+    func testSignedOutSettingsPresentsAccountOptions() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_SIGNED_OUT"]
+        app.launch()
+
+        XCTAssertTrue(app.otherElements["home.screen"].waitForExistence(timeout: 10))
+        let settingsTab = app.buttons["nav.settings"]
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 5))
+        settingsTab.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["settings.screen"].waitForExistence(timeout: 5))
+
+        let openLogin = app.buttons["settings.account.openLogin"]
+        for _ in 0..<10 where !openLogin.isHittable {
+            app.swipeUp(velocity: .slow)
+        }
+        XCTAssertTrue(openLogin.waitForExistence(timeout: 3))
+        XCTAssertTrue(openLogin.isHittable)
+        openLogin.tap()
+
+        let loginScreen = app.descendants(matching: .any)["login.screen"]
+        XCTAssertTrue(loginScreen.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["login.apple"].waitForExistence(timeout: 3))
+
+        let otherOptions = app.descendants(matching: .any)["login.otherOptions"]
+        XCTAssertTrue(otherOptions.waitForExistence(timeout: 3))
+        otherOptions.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["login.google"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["login.guest"].waitForExistence(timeout: 3))
+
+        let close = app.buttons["login.close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 3))
+        close.tap()
+        XCTAssertFalse(loginScreen.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["settings.screen"].exists)
+    }
+
+    @MainActor
     func testProfileEvidenceDisclosureStaysCoachEvidenceOnly() throws {
         let app = launchSeededAt("noum://profile")
         XCTAssertTrue(app.descendants(matching: .any)["profile.screen"].waitForExistence(timeout: 10))

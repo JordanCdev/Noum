@@ -40,6 +40,9 @@ enum Spacing {
     static let screenH: CGFloat = 20
     /// Inter-card spacing (14pt)
     static let cardGap: CGFloat = 14
+
+    /// Reserved scroll clearance for an immersive screen's safe-area action.
+    static let focusedActionClearance: CGFloat = 112
 }
 
 // MARK: - App Colors
@@ -86,6 +89,42 @@ enum AppColor {
     static let modeCrutch = Color(red: 0.78, green: 0.32, blue: 0.50)
     /// Pace Training mode — teal, distinct from modeAhCounter's green
     static let modePace = Color(red: 0.15, green: 0.72, blue: 0.78)
+
+    // MARK: Focused Practice Canvas
+
+    /// Semantic gradient stops for the full-screen practice canvas. Keeping
+    /// these beside the mode tints prevents individual modes from inventing
+    /// a second palette while still giving each drill a distinct register.
+    static let focusedTimedGradient = [
+        Color(red: 0.07, green: 0.12, blue: 0.28), modeTimed, modePace
+    ]
+    static let focusedPressureGradient = [
+        Color(red: 0.17, green: 0.10, blue: 0.12),
+        Color(red: 0.68, green: 0.24, blue: 0.16),
+        modeSuddenDeath
+    ]
+    static let focusedClarityGradient = [
+        Color(red: 0.05, green: 0.17, blue: 0.19),
+        modeAhCounter,
+        Color(red: 0.22, green: 0.70, blue: 0.58)
+    ]
+    static let focusedConversationGradient = [
+        Color(red: 0.10, green: 0.10, blue: 0.28), modeIM, pro
+    ]
+    static let focusedCrutchGradient = [
+        Color(red: 0.19, green: 0.08, blue: 0.17),
+        modeCrutch,
+        Color(red: 0.91, green: 0.44, blue: 0.45)
+    ]
+    static let focusedPaceGradient = [
+        Color(red: 0.04, green: 0.16, blue: 0.22), modePace, modeTimed
+    ]
+    /// A uniform contrast layer keeps the semantic mode colour visible while
+    /// ensuring white practice copy remains readable over every bright stop.
+    static let focusedContrastScrim = Color.black.opacity(0.48)
+    static let focusedGlassFill = Color.white.opacity(0.13)
+    static let focusedGlassBorder = Color.white.opacity(0.18)
+    static let focusedTextSecondary = Color.white.opacity(0.90)
 
     // MARK: Semantic Feedback
 
@@ -484,7 +523,7 @@ extension PracticeMode {
         case .timed: return "Timed"
         case .suddenDeath: return "Pressure Drill"
         case .ahCounter: return "Ah-Counter"
-        case .imConversation: return "IM Mode"
+        case .imConversation: return "Conversation practice"
         }
     }
 

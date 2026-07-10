@@ -12,17 +12,46 @@ struct PaceTrainingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var didAwardXP = false
+    @State private var showAdjustments = false
 
     private let tint = AppColor.modePace
 
+    private var isResultPhase: Bool {
+        if case .ended = engine.phase { return true }
+        return false
+    }
+
+    private var isSetupPhase: Bool { engine.phase == .setup }
+
     var body: some View {
         ZStack {
-            AppColor.screenBackground
-                .ignoresSafeArea()
+            if case .ended = engine.phase {
+                AppColor.screenBackground
+                    .ignoresSafeArea()
+            } else {
+                FocusedPracticeBackground(style: .pace)
+            }
 
             content
         }
         .navigationBarBackButtonHidden(!(engine.phase == .setup))
+        .tint(isResultPhase ? tint : .white)
+        .toolbar {
+            if !isSetupPhase && !isResultPhase {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        speechVM.stopRecording()
+                        engine.cancel()
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.white)
+                    }
+                    .accessibilityLabel("End pace training")
+                }
+            }
+        }
         .onChange(of: speechVM.transcribedText) { _, newValue in
             engine.ingestTranscript(newValue)
         }
@@ -38,6 +67,10 @@ struct PaceTrainingView: View {
         }
         .onDisappear {
             speechVM.stopRecording()
+            engine.cancel()
+        }
+        .sheet(isPresented: $showAdjustments) {
+            paceAdjustSheet
         }
     }
 
@@ -57,6 +90,7 @@ struct PaceTrainingView: View {
                 .transition(.opacity)
         case .active:
             activeSurface
+                .environment(\.colorScheme, .dark)
                 .transition(.opacity)
         case .ended(let result):
             resultSurface(result)
@@ -87,29 +121,61 @@ struct PaceTrainingView: View {
     // MARK: - Setup Surface
 
     private var setupSurface: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                // Title
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    HStack(spacing: Spacing.sm) {
-                        Image(systemName: "metronome")
-                            .font(.title2.weight(.bold))
-                            .foregroundStyle(tint)
-                        Text("Pace Training")
-                            .font(Typography.bigStat)
-                    }
-                    Text("Match the target speaking pace for 75 seconds.")
-                        .font(Typography.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+        FocusedPracticeScaffold(
+            style: .pace,
+            status: "Ready for 75 seconds",
+            title: "Pace Training",
+            subtitle: "Find a clear rhythm and keep it inside the target zone."
+        ) {
+            Button {
+                CoachHaptic.selectionTap()
+                showAdjustments = true
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 48, height: 48)
+                    .background(.white.opacity(0.14), in: Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("paceTraining.adjust")
+            .accessibilityLabel("Adjust pace training")
+        } content: {
+            paceSetupCue
+        }
+        .accessibilityIdentifier("paceTraining.screen")
+        .safeAreaInset(edge: .bottom) {
+            beginButton
+        }
+    }
 
-                // Sub-mode picker
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Mode")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
+    private var paceSetupCue: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Label(engine.subMode.label, systemImage: "metronome.fill")
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(AppColor.focusedTextSecondary)
 
-                    Picker("Sub-mode", selection: $engine.subMode) {
+            Text(engine.subMode == .freestyle ? engine.prompt : engine.passage.title)
+                .font(Typography.figtree(size: 24, weight: .semibold, relativeTo: .title3))
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Aim for \(Int(engine.zoneMin))–\(Int(engine.zoneMax)) words per minute.")
+                .font(Typography.subheadline)
+                .foregroundStyle(AppColor.focusedTextSecondary)
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .focusedGlassSurface()
+        .accessibilityElement(children: .combine)
+    }
+
+    private var paceAdjustSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Format") {
+                    Picker("Practice format", selection: $engine.subMode) {
                         ForEach(PaceSubMode.allCases) { mode in
                             Text(mode.label).tag(mode)
                         }
@@ -117,69 +183,36 @@ struct PaceTrainingView: View {
                     .pickerStyle(.segmented)
                 }
 
-                // Target info
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Target: \(Int(engine.targetWPM)) WPM")
-                        .font(.headline)
-                    Text("Zone: \(Int(engine.zoneMin))–\(Int(engine.zoneMax)) WPM")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(Spacing.lg)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                        .stroke(tint.opacity(0.20), lineWidth: 1)
-                )
-
-                // Preview card
-                if engine.subMode == .freestyle {
-                    promptPreviewCard
-                } else {
-                    passagePreviewCard
+                Section("Target") {
+                    LabeledContent("Target", value: "\(Int(engine.targetWPM)) WPM")
+                    LabeledContent("Clear zone", value: "\(Int(engine.zoneMin))–\(Int(engine.zoneMax)) WPM")
                 }
 
-                Spacer(minLength: 80)
+                Section(engine.subMode == .freestyle ? "Topic" : "Passage") {
+                    if engine.subMode == .freestyle {
+                        Text(engine.prompt)
+                        Button("Choose another topic") {
+                            engine.prompt = PaceTrainingEngine.randomPrompt()
+                            CoachHaptic.selectionTap()
+                        }
+                    } else {
+                        Text(engine.passage.title)
+                            .font(Typography.cardLabel)
+                        Text(engine.passage.text)
+                            .font(Typography.body)
+                    }
+                }
             }
-            .padding(.horizontal, Spacing.screenH)
-            .padding(.top, Spacing.sm)
+            .navigationTitle("Adjust pace training")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showAdjustments = false }
+                }
+            }
         }
-        .safeAreaInset(edge: .bottom) {
-            beginButton
-        }
-    }
-
-    private var promptPreviewCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Label("Your Topic", systemImage: "text.bubble")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(tint)
-
-            Text(engine.prompt)
-                .font(.body)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-    }
-
-    private var passagePreviewCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Label(engine.passage.title, systemImage: "text.alignleft")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(tint)
-
-            Text(engine.passage.text)
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .lineLimit(4)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private var beginButton: some View {
@@ -187,16 +220,17 @@ struct PaceTrainingView: View {
             CoachHaptic.selectionTap()
             engine.beginCountdown()
         } label: {
-            Text("Begin")
+            Text("Start pace training")
                 .font(.headline.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(tint)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Spacing.md)
-                .background(tint, in: Capsule())
+                .background(.white, in: Capsule())
         }
         .buttonStyle(.pressable)
         .padding(.horizontal, Spacing.screenH)
         .padding(.bottom, Spacing.sm)
+        .accessibilityIdentifier("paceTraining.start")
     }
 
     // MARK: - Countdown
@@ -239,7 +273,7 @@ struct PaceTrainingView: View {
                     .font(.system(size: 72, weight: .bold, design: .rounded))
                     .foregroundStyle(zoneColor)
                     .contentTransition(.numericText())
-                    .animation(.easeInOut(duration: 0.3), value: Int(engine.currentWPM))
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: Int(engine.currentWPM))
 
                 Text("WPM")
                     .font(.caption.weight(.semibold))
@@ -284,7 +318,8 @@ struct PaceTrainingView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .background(.white.opacity(0.13), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .focusedGlassSurface()
         .padding(.horizontal, Spacing.screenH)
         .padding(.bottom, Spacing.md)
     }
@@ -314,12 +349,17 @@ struct PaceTrainingView: View {
                 .padding(Spacing.md)
             }
             .frame(maxHeight: 160)
-            .background(AppColor.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .background(.white.opacity(0.13), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .focusedGlassSurface()
             .padding(.horizontal, Spacing.screenH)
             .padding(.bottom, Spacing.md)
             .onChange(of: engine.highlightWordIndex) { _, newIdx in
-                withAnimation(.easeInOut(duration: 0.3)) {
+                if reduceMotion {
                     proxy.scrollTo(newIdx, anchor: .center)
+                } else {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        proxy.scrollTo(newIdx, anchor: .center)
+                    }
                 }
             }
         }
@@ -498,7 +538,7 @@ struct PaceTrainingView: View {
         if result.zonePercentage >= 0.70 {
             return "You spent \(zonePct)% of the session in the target zone at \(avgWPM) WPM. Strong pace control."
         } else if result.zonePercentage >= 0.40 {
-            return "You averaged \(avgWPM) WPM against a target of \(targetWPM). \(zonePct)% time in zone — keep working on steadying your rhythm."
+            return "You averaged \(avgWPM) WPM against a \(targetWPM) target and spent \(zonePct)% of the rep in the clear zone."
         } else {
             return "Your average was \(avgWPM) WPM with \(zonePct)% time in zone. Focus on matching the target pace of \(targetWPM) WPM."
         }

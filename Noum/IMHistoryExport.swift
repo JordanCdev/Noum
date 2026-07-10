@@ -39,10 +39,10 @@ enum IMHistoryExport {
                       && $0.imConversationDetails?.setup.scenario == scenario }
             .sorted { $0.date > $1.date }
         guard !filtered.isEmpty else {
-            return "Noum · IM · \(scenario.title)\nNo reps in this scenario yet."
+            return "Noum — Conversation practice — \(scenario.title)\nNo reps in this scenario yet."
         }
         var lines: [String] = []
-        lines.append("Noum · IM · \(scenario.title)")
+        lines.append("Noum — Conversation practice — \(scenario.title)")
         lines.append(headerSummaryLine(filtered))
         lines.append("")
         lines.append(headerRow())
@@ -60,10 +60,10 @@ enum IMHistoryExport {
             $0.mode == .imConversation && $0.imConversationDetails != nil
         }
         guard !imSessions.isEmpty else {
-            return "Noum · IM history\nNo reps yet."
+            return "Noum — Conversation practice history\nNo reps yet."
         }
         var lines: [String] = []
-        lines.append("Noum · IM history")
+        lines.append("Noum — Conversation practice history")
         lines.append("\(imSessions.count) total rep\(imSessions.count == 1 ? "" : "s")")
 
         let grouped = Dictionary(grouping: imSessions) {

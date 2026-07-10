@@ -60,7 +60,7 @@ struct PracticeModePrescriptionCopy {
     static let cutTheCrutchSubtitle = "Avoid one specific word for 60 seconds. Three slips ends the rep."
 
     static func beginLabel(for title: String) -> String {
-        "Begin \u{00B7} \(title)"
+        "Start \(title)"
     }
 
     static func prescriptionLine(focus: String?, target: String?) -> String? {
@@ -71,7 +71,7 @@ struct PracticeModePrescriptionCopy {
 
         switch (targetValue, focusValue) {
         case let (target?, focus?) where target.localizedCaseInsensitiveCompare(focus) != .orderedSame:
-            return "\(target) \u{00B7} \(focus)"
+            return "\(target) — \(focus)"
         case let (target?, _):
             return target
         case let (nil, focus?):
@@ -223,7 +223,7 @@ struct PracticeModeSelectionView: View {
         ] + (IMModeAvailability.isAvailable ? [
             ModeOption(
                 mode: .imConversation,
-                title: "IM Mode",
+                title: "Conversation practice",
                 subtitle: "Live conversation reps with tone and pressure control.",
                 systemImage: "message.badge.waveform.fill",
                 tint: AppColor.modeIM,
@@ -790,7 +790,7 @@ struct PracticeModeSelectionView: View {
         .buttonStyle(.pressable)
         .accessibilityIdentifier("practiceMode.\(option.mode.rawValue).quickStart")
         .accessibilityLabel(title)
-        .accessibilityHint("Begins a \(option.title) rep with default settings, no setup screen.")
+        .accessibilityHint("Starts \(option.title) immediately with your saved defaults.")
     }
 
     private func lockedQuickStartHint(tint: Color) -> some View {
@@ -811,15 +811,15 @@ struct PracticeModeSelectionView: View {
         .accessibilityIdentifier("practiceMode.suddenDeath.lockedHint")
     }
 
-    /// Per-mode CTA copy. "Start now" is the shared verb; the mode
+    /// Per-mode CTA copy. "Start" is the shared verb; the mode
     /// name is appended so accessibility users hear which rep they're
     /// about to launch when scanning the picker linearly.
     private func quickStartLabel(for mode: PracticeMode) -> String {
         switch mode {
-        case .timed: return "Start now \u{00B7} Timed"
-        case .suddenDeath: return "Start now \u{00B7} \(PracticeMode.suddenDeath.displayLabel)"
-        case .ahCounter: return "Start now \u{00B7} Ah-Counter"
-        case .imConversation: return "Start now \u{00B7} IM Mode"
+        case .timed: return "Start timed practice"
+        case .suddenDeath: return "Start \(PracticeMode.suddenDeath.displayLabel)"
+        case .ahCounter: return "Start Ah-Counter"
+        case .imConversation: return "Start conversation practice"
         }
     }
 
@@ -1015,7 +1015,7 @@ struct PracticeModeSelectionView: View {
             HStack(spacing: 6) {
                 Image(systemName: "bolt.fill")
                     .font(.footnote.weight(.bold))
-                Text("Start now \u{00B7} Cut the Crutch")
+                Text("Start Cut the Crutch")
                     .font(.subheadline.weight(.semibold))
             }
             .foregroundStyle(tint)
@@ -1030,7 +1030,7 @@ struct PracticeModeSelectionView: View {
         .buttonStyle(.pressable)
         .accessibilityIdentifier("practiceMode.cutTheCrutch.quickStart")
         .accessibilityLabel("Start now, Cut the Crutch")
-        .accessibilityHint("Begins a Cut the Crutch drill with default settings, no setup screen.")
+        .accessibilityHint("Starts Cut the Crutch immediately with your saved defaults.")
     }
 
     // MARK: - Pace Training Card
@@ -1121,7 +1121,7 @@ struct PracticeModeSelectionView: View {
             HStack(spacing: 6) {
                 Image(systemName: "bolt.fill")
                     .font(.footnote.weight(.bold))
-                Text("Start now \u{00B7} Pace Training")
+                Text("Start Pace Training")
                     .font(.subheadline.weight(.semibold))
             }
             .foregroundStyle(tint)
@@ -1135,7 +1135,7 @@ struct PracticeModeSelectionView: View {
         }
         .buttonStyle(.pressable)
         .accessibilityIdentifier("practiceMode.paceTraining.quickStart")
-        .accessibilityLabel("Start now, Pace Training")
+        .accessibilityLabel("Start Pace Training")
         .accessibilityHint("Begins a Pace Training drill.")
     }
 
@@ -1144,11 +1144,7 @@ struct PracticeModeSelectionView: View {
     private var startCTA: some View {
         let title = activeStartTitle
         let tint = activeStartTint
-        // Match the Coach Card's Begin pattern — "Begin · Pressure Drill"
-        // reads as a calm, premium action and keeps the mode name in
-        // Title Case rather than mashing it into a lowercase sentence.
-        // U+00B7 (middle dot) is the same separator the Coach Card uses.
-        let ctaLabel = "Begin \u{00B7} \(title)"
+        let ctaLabel = "Start \(title)"
         return Button {
             // Commitment haptic (A2 register map) — same beat as the
             // Home coach card's Begin: medium impact on committing to a

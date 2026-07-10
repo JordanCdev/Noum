@@ -50,29 +50,17 @@ final class M17VerificationTour: XCTestCase {
         attach(sd, name: "01_sudden_death_setup")
 
         // Start the session: picker → setup → live. The picker uses
-        // `practiceModes.start`; the SuddenDeath setup screen's Begin
-        // button has no a11y identifier so we match by label below.
+        // `practiceModes.start`; the setup CTA uses `suddenDeath.begin`.
         let pickerStartCTA = sd.buttons["practiceModes.start"]
         if pickerStartCTA.waitForExistence(timeout: 4) {
             pickerStartCTA.tap()
             Thread.sleep(forTimeInterval: 0.8)
             attach(sd, name: "01b_sudden_death_setup_screen")
 
-            // Setup-screen Begin button — no a11y identifier. The button
-            // is a Button(HStack { bolt icon + Text("Begin") }) so it
-            // matches both the bare "Begin" label and any descendant
-            // text. Try a few selectors in case the label is composed
-            // differently (icon + text → composed label).
-            let candidates: [XCUIElement] = [
-                sd.buttons["Begin"],
-                sd.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Begin'")).element(boundBy: 0),
-                sd.buttons.containing(NSPredicate(format: "label CONTAINS[c] 'Begin'")).element(boundBy: 0)
-            ]
-            var beginBtn: XCUIElement?
-            for c in candidates {
-                if c.waitForExistence(timeout: 1.5) { beginBtn = c; break }
-            }
-            if let beginBtn {
+            // Setup-screen CTA has a stable identifier so copy changes do not
+            // strand this live-phase verification tour.
+            let beginBtn = sd.buttons["suddenDeath.begin"]
+            if beginBtn.waitForExistence(timeout: 4) {
                 beginBtn.tap()
                 // Engine fetches the first prompt async; allow the .npcTurn
                 // text + auto-speak path to land. Speaker icon pulses while

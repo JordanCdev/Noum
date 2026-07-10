@@ -331,7 +331,7 @@ final class AchievementStore: ObservableObject {
             id: "modes_im_5",
             tierIndex: 3,
             title: "Connection Builder",
-            description: "Complete 5 IM conversation sessions.",
+            description: "Complete five conversation practice sessions.",
             symbolName: "bubble.left.and.bubble.right.fill",
             track: .modes,
             evaluate: { sessions, _ in

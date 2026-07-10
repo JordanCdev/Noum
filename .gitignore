@@ -10,6 +10,7 @@ xcuserdata/
 .DS_Store
 **/.DS_Store
 firebase-debug.log
+firestore-debug.log
 functions/firebase-debug.log
 
 # Local configuration files

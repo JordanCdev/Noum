@@ -98,10 +98,10 @@ enum CoachPromptBundle {
             ]
         case .deepAssessment:
             return [
-                "- Depth instruction: answer the distance-to-goal question first. Separate mechanics/score from true goal readiness. Use concrete evidence, name missing evidence, and end with one proof test. Never infer overall closeness from one score.",
+                "- Depth instruction: answer the distance-to-goal question first. Separate what improved in the answer from what remains unproven under pressure. Use concrete evidence, name missing evidence, and end with one concrete validation rep. Never infer overall closeness from one score.",
                 "- Prep rule: for interviews, leadership updates, speeches, or big moments, give a time-boxed sequence tied to the date and one observable target.",
                 "- Length budget: \(live ? "compact spoken verdict, under 110 words" : "up to 220 words if needed").",
-                "- Required terms of judgement: verdict first, mechanics versus goal distinction, evidence, missing evidence, one proof test."
+                "- Required judgement shape: verdict first, observed answer control versus consistent authority, evidence, missing evidence, and one concrete validation rep."
             ]
         case .trustRepair:
             return [

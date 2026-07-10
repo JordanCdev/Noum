@@ -47,7 +47,7 @@ struct PrepSessionView: View {
             .padding(.bottom, Spacing.lg)
         }
         .background(AppColor.screenBackground.ignoresSafeArea())
-        .navigationTitle("Prep")
+        .navigationTitle("Rehearsal")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("prepSession.screen")
     }
@@ -79,7 +79,7 @@ struct PrepSessionView: View {
                 Image(systemName: moment.category.sfSymbol)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AppColor.brandBlue)
-                Text("PREP · \(days) day\(days == 1 ? "" : "s") OUT")
+                Text(days == 1 ? "REHEARSAL IN 1 DAY" : "REHEARSAL IN \(days) DAYS")
                     .font(Typography.micro)
                     .foregroundStyle(AppColor.brandBlue)
                     .tracking(0.8)
@@ -109,7 +109,7 @@ struct PrepSessionView: View {
 
     private func stepsCard(plan: PrepSessionPlan) -> some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("YOUR PREP SEQUENCE")
+            Text("REHEARSAL PLAN")
                 .font(Typography.micro)
                 .foregroundStyle(.secondary)
                 .tracking(0.8)
@@ -148,7 +148,7 @@ struct PrepSessionView: View {
                 launch(step: step)
             } label: {
                 HStack(spacing: 4) {
-                    Text("Begin")
+                    Text("Start this rep")
                         .font(.footnote.weight(.semibold))
                     Image(systemName: "arrow.right")
                         .font(.caption2.weight(.bold))
@@ -166,7 +166,7 @@ struct PrepSessionView: View {
     }
 
     private func footerNote(moment: BigMoment) -> some View {
-        Text("Tap a step to start. You can come back here between reps; partial completion is a valid prep session.")
+        Text("Choose a step to start. You can return between reps; partial completion still counts.")
             .font(.footnote)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.leading)
@@ -217,7 +217,7 @@ struct PrepSessionView: View {
                 .foregroundStyle(.secondary)
             Text("No upcoming moment set.")
                 .font(Typography.body.weight(.semibold))
-            Text("Set a Big Moment in Settings → Coaching Direction. Prep mode lights up when one is within 14 days.")
+            Text("Set an upcoming moment in Settings. Rehearsal appears when the date is within 14 days.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

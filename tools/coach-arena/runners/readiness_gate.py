@@ -1861,28 +1861,34 @@ def operational_static_preflight(repo_root=REPO_ROOT):
         })
 
     membership_exceptions = noum_target_membership_exceptions(root)
+    local_secret_plists = {
+        "AIConfig.plist",
+        "BackendConfig.plist",
+        "Transcribe.plist",
+        "TranscriptionProviders.plist",
+    }
     protected_client_config = (
         membership_exceptions is not None
-        and "AIConfig.plist" in membership_exceptions
+        and local_secret_plists.issubset(membership_exceptions)
         and "GoogleService-Info.plist" not in membership_exceptions
-        and "BackendConfig.plist" not in membership_exceptions
     )
     add(
         "mainTargetClientSecretBoundary",
         "mainTargetClientSecretBoundary",
         protected_client_config,
         (
-            "AIConfigExcluded;runtimeConfigRetained"
+            "localSecretPlistsExcluded;firebaseClientConfigRetained"
             if protected_client_config
             else "targetMembershipUnsafeOrUnparseable"
         ),
         (
-            "The main app target must exclude AIConfig.plist while retaining "
-            "GoogleService-Info.plist and BackendConfig.plist."
+            "The main app target must exclude local provider and backend secret "
+            "plists while retaining Firebase's public client configuration."
         ),
         (
-            "Restore AIConfig.plist in the Noum target membership exceptions "
-            "without excluding GoogleService-Info.plist or BackendConfig.plist."
+            "Restore AIConfig.plist, BackendConfig.plist, Transcribe.plist, and "
+            "TranscriptionProviders.plist in the Noum target membership exceptions "
+            "without excluding GoogleService-Info.plist."
         ),
     )
 

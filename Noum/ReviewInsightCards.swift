@@ -44,7 +44,7 @@ enum ReviewCoachRead {
     static func focusLine(for trend: SkillTrend) -> String {
         switch trend.direction {
         case .newIssue:
-            return "\(trend.skillArea.displayName) has started slipping — catch it early"
+            return "\(trend.skillArea.displayName) appeared in the newest measured reps — worth one confirming rep"
         default:
             return "\(trend.skillArea.displayName) is where the next gain is — worth one focused rep"
         }

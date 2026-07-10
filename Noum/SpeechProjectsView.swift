@@ -53,55 +53,16 @@ struct SpeechProjectsView: View {
     }
 
     private var headerCopy: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                        .fill(AppColor.brandBlue.opacity(0.18))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: "rectangle.stack.fill")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(AppColor.brandBlue)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Speech projects")
-                        .font(Typography.screenTitle)
-                        .foregroundStyle(.primary)
-                    Text("\(SpeechProjects.all.count) projects")
-                        .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(AppColor.brandBlue)
-                }
-                Spacer(minLength: 0)
-            }
-            Text("Structured prepared speeches with concrete objectives, target length, and a clear coaching focus.")
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text("Speech projects")
+                .font(Typography.screenTitle)
+                .foregroundStyle(.primary)
+            Text("\(SpeechProjects.all.count) guided speeches with a clear purpose, target length, and coaching focus.")
                 .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(headerHeroBackground)
-        .shadow(color: AppColor.brandBlue.opacity(0.16), radius: 22, x: 0, y: 10)
-    }
-
-    /// Hero chrome for the Speech Projects header — radial brand-blue wash
-    /// (learning register) + tint border. Matches the M14 hero treatment
-    /// used on Profile / Settings / League / Coach Card so the picker
-    /// surface stops reading iOS-stock.
-    private var headerHeroBackground: some View {
-        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-        return ZStack {
-            shape.fill(AppColor.cardBackground)
-            shape.fill(
-                RadialGradient(
-                    colors: [AppColor.brandBlue.opacity(0.42), AppColor.brandBlueLight.opacity(0.22), AppColor.brandBlue.opacity(0.04), Color.clear],
-                    center: UnitPoint(x: 0.5, y: 0.0),
-                    startRadius: 0,
-                    endRadius: 320
-                )
-            )
-            shape.strokeBorder(AppColor.brandBlue.opacity(0.40), lineWidth: 1)
-        }
     }
 
     // MARK: - First-time empty state
@@ -116,10 +77,10 @@ struct SpeechProjectsView: View {
     private var firstTimeEmptyState: some View {
         EmptyStateView(
             symbol: "rectangle.stack.fill",
-            title: "Pick a project to anchor your week",
-            body: "Each project gives you objectives, a target length, and a coach line to aim at.",
+            title: "Prepare one complete speech",
+            body: "Start with a guided brief, then rehearse it in a focused timed rep.",
             tint: AppColor.brandBlue,
-            cta: EmptyStateView.CTA(label: "Start with Ice Breaker", icon: "play.fill") {
+            cta: EmptyStateView.CTA(label: "Open first project", icon: "arrow.right") {
                 selectedProject = SpeechProjects.iceBreaker
             }
         )
@@ -132,8 +93,8 @@ struct SpeechProjectsView: View {
     }
 
     private var projectGrid: some View {
-        VStack(spacing: Spacing.cardGap) {
-            ForEach(SpeechProjects.all) { project in
+        VStack(spacing: 0) {
+            ForEach(Array(SpeechProjects.all.enumerated()), id: \.element.id) { index, project in
                 Button {
                     selectedProject = project
                 } label: {
@@ -141,8 +102,18 @@ struct SpeechProjectsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("speechProjects.row.\(project.id)")
+
+                if index < SpeechProjects.all.count - 1 {
+                    Divider()
+                        .padding(.leading, 76)
+                }
             }
         }
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+        )
     }
 
     private func projectRow(project: SpeechProject) -> some View {
@@ -177,13 +148,10 @@ struct SpeechProjectsView: View {
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.tertiary)
         }
-        .padding(Spacing.md)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(Color.white.opacity(0.72), lineWidth: 1)
-        )
+        .contentShape(Rectangle())
     }
 
     private func pillTag(text: String) -> some View {
@@ -224,7 +192,6 @@ struct SpeechProjectDetailSheet: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Spacing.lg) {
                 header
-                durationCard
                 objectivesCard
                 coachLine
                 Spacer(minLength: Spacing.lg)
@@ -236,7 +203,7 @@ struct SpeechProjectDetailSheet: View {
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 8) {
                 Button(action: onStart) {
-                    Text("Start project")
+                    Text("Start speech")
                         .font(Typography.headline)
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -245,7 +212,7 @@ struct SpeechProjectDetailSheet: View {
                 }
                 .accessibilityIdentifier("speechProjects.detail.start")
                 Button(action: onDismiss) {
-                    Text("Cancel")
+                    Text("Not now")
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -258,7 +225,7 @@ struct SpeechProjectDetailSheet: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack(spacing: 10) {
                 ZStack {
                     Circle()
@@ -272,7 +239,7 @@ struct SpeechProjectDetailSheet: View {
                     Text(project.title)
                         .font(Typography.cardTitle)
                         .foregroundStyle(.primary)
-                    Text(project.focus.label)
+                    Text("\(project.focus.label) focus")
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -282,36 +249,20 @@ struct SpeechProjectDetailSheet: View {
                 .font(Typography.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-        }
-    }
 
-    private var durationCard: some View {
-        HStack(spacing: 16) {
-            durationStat(label: "Target", value: minutesLabel(project.durationTarget))
-            Divider().frame(height: 28)
-            durationStat(label: "Minimum", value: minutesLabel(project.durationMinimum))
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Spacing.md) {
+                    Label(minutesLabel(project.durationTarget), systemImage: "scope")
+                    Label("\(minutesLabel(project.durationMinimum)) minimum", systemImage: "clock")
+                }
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Label(minutesLabel(project.durationTarget), systemImage: "scope")
+                    Label("\(minutesLabel(project.durationMinimum)) minimum", systemImage: "clock")
+                }
+            }
+            .font(Typography.caption.weight(.semibold))
+            .foregroundStyle(AppColor.brandBlue)
         }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .stroke(Color.white.opacity(0.72), lineWidth: 1)
-        )
-    }
-
-    private func durationStat(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(Typography.micro)
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.8)
-            Text(value)
-                .font(Typography.cardTitle)
-                .foregroundStyle(.primary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func minutesLabel(_ seconds: TimeInterval) -> String {
@@ -323,11 +274,9 @@ struct SpeechProjectDetailSheet: View {
 
     private var objectivesCard: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("Objectives")
-                .font(Typography.micro)
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.8)
+            Text("Your brief")
+                .font(Typography.headline)
+                .foregroundStyle(.primary)
 
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(Array(project.objectives.enumerated()), id: \.offset) { index, objective in
@@ -355,13 +304,13 @@ struct SpeechProjectDetailSheet: View {
     }
 
     private var coachLine: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "quote.opening")
-                .font(.caption.weight(.bold))
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text("Coaching focus")
+                .font(Typography.caption.weight(.semibold))
                 .foregroundStyle(AppColor.brandBlue)
             Text(project.coachLine)
                 .font(Typography.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(Spacing.md)

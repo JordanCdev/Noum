@@ -194,7 +194,7 @@ struct CoachAssessment: Codable, Equatable {
             parts.append("What is still missing is \(missingRequirementPhrase(missing))")
         }
         if hasMissing {
-            parts.append("Use this as the proof test. \(completeSentence(proofTest))")
+            parts.append("For the next check, \(completeSentence(lowercaseFirst(proofTest)))")
         } else {
             parts.append(completeSentence(proofTest))
         }

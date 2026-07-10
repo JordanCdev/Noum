@@ -116,7 +116,7 @@ struct AIWeeklyInsightCard: View {
             // AI narrative. Only shown within the first 7 days of detection.
             if let shift = focusShift,
                Calendar.current.dateComponents([.day], from: shift.detectedAt, to: Date()).day ?? 8 <= 7 {
-                Text("Your \(shift.from.displayName.lowercased()) is now stable. This week's focus shifts to \(shift.to.displayName.lowercased()).")
+                Text("This week's focus has moved from \(shift.from.displayName.lowercased()) to \(shift.to.displayName.lowercased()).")
                     .font(Typography.caption.weight(.medium))
                     .foregroundStyle(AppColor.pro)
                     .fixedSize(horizontal: false, vertical: true)

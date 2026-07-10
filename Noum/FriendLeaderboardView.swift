@@ -71,11 +71,11 @@ struct FriendLeaderboardView: View {
 
     private var headerCopy: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("This week's leaderboard")
+            Text("Practice partners")
                 .font(Typography.bigStat)
                 .foregroundStyle(.primary)
 
-            Text("Sorted by speaking rating when ratings are available. Reps shown alongside.")
+            Text("A quiet weekly view of rating evidence and recent practice.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -88,7 +88,7 @@ struct FriendLeaderboardView: View {
 
     private var leaderboardCard: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            SettingsSectionLabel(title: "Standings")
+            SettingsSectionLabel(title: "This week")
 
             VStack(spacing: 0) {
                 ForEach(Array(rankedRows.enumerated()), id: \.element.id) { index, row in
@@ -117,11 +117,11 @@ struct FriendLeaderboardView: View {
 
     private var emptyFriendsHint: some View {
         EmptyStateView(
-            symbol: "person.2.wave.2",
-            title: "Find your first speaking partner",
-            body: "Add a friend to see how your week stacks up against theirs.",
+            symbol: "person.crop.circle.badge.plus",
+            title: "Save a practice contact",
+            body: "Keep someone in mind for future reps. Shared stats appear when their Noum account is connected.",
             tint: AppColor.brandBlue,
-            cta: EmptyStateView.CTA(label: "Add a friend", icon: "plus") {
+            cta: EmptyStateView.CTA(label: "Add contact", icon: "plus") {
                 showAddFriendSheet = true
             }
         )
@@ -219,13 +219,11 @@ struct FriendLeaderboardView: View {
                 Image(systemName: "person.crop.circle.badge.questionmark")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
-                Text("Some friends are awaiting sync")
+                Text("Shared stats unavailable")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
             }
-            Text("Friends without a linked account stay as local practice contacts. Their stats appear only after linked invites are available.")
+            Text("Saved contacts remain available for practice planning. Their scores stay private until account linking is available.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

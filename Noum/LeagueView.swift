@@ -9,6 +9,7 @@ struct LeagueView: View {
     @StateObject private var streakFreeze = StreakFreezeManager.shared
     @StateObject private var authManager = AuthManager.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         ZStack {
@@ -19,9 +20,6 @@ struct LeagueView: View {
                     headerCopy
                     tierCard
                     membersCard
-                    if league.members.isEmpty && !league.isLoading {
-                        emptyLeagueExplainer
-                    }
                     Spacer(minLength: Spacing.lg)
                 }
                 .padding(.horizontal, Spacing.screenH)
@@ -44,23 +42,35 @@ struct LeagueView: View {
 
     private var headerCopy: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
-                Text("Your league")
-                    .font(Typography.bigStat)
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 0)
-                seePeaksLink
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        leagueTitle
+                        seePeaksLink
+                    }
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                        leagueTitle
+                        Spacer(minLength: 0)
+                        seePeaksLink
+                    }
+                }
             }
 
             Text(ratingStore.rating.hasRatedEvidence
-                 ? "Speakers in your rating range, this week. Climbing rating moves you up a tier."
-                 : "One rated rep creates a fair weekly placement.")
+                 ? "A weekly comparison with speakers at a similar rating."
+                 : "Complete one rated rep to create a fair weekly comparison.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+    }
+
+    private var leagueTitle: some View {
+        Text("League")
+            .font(Typography.bigStat)
+            .foregroundStyle(.primary)
     }
 
     /// M16: opens the full peak-rating wall. Surfaces the same bucket
@@ -69,15 +79,13 @@ struct LeagueView: View {
     private var seePeaksLink: some View {
         NavigationLink(destination: PeakRatingWallView()) {
             HStack(spacing: 4) {
-                Text("See peaks")
+                Text("Personal bests")
                     .font(.caption.weight(.semibold))
                 Image(systemName: "chevron.right")
                     .font(.caption2.weight(.bold))
             }
             .foregroundStyle(AppColor.brandBlue)
-            .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("league.peakRatingWall.link")
@@ -121,20 +129,14 @@ struct LeagueView: View {
 
             Divider()
 
-            HStack(spacing: 16) {
-                metricColumn(label: "Reset", value: league.resetCopy, icon: "calendar")
-                Divider().frame(height: 28)
-                metricColumn(label: "Streak", value: streakValue, icon: "flame.fill")
-                Divider().frame(height: 28)
-                metricColumn(label: "This week", value: weeklyActivityCopy, icon: "chart.line.uptrend.xyaxis")
-            }
+            tierMetrics
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         // Tier wash — earned placements carry their tier tint; unrated
         // users get the neutral brand-blue diagnostic register.
         .background(tierCardBackground)
-        .shadow(color: tierTint.opacity(0.14), radius: 14, x: 0, y: 6)
+        .shadow(color: tierTint.opacity(0.08), radius: 12, x: 0, y: 6)
     }
 
     private var tierCardBackground: some View {
@@ -143,13 +145,13 @@ struct LeagueView: View {
             shape.fill(AppColor.cardBackground)
             shape.fill(
                 RadialGradient(
-                    colors: [tierTint.opacity(0.20), tierTint.opacity(0.0)],
+                    colors: [tierTint.opacity(0.12), tierTint.opacity(0.0)],
                     center: UnitPoint(x: 0.15, y: 0.15),
                     startRadius: 0,
                     endRadius: 280
                 )
             )
-            shape.strokeBorder(tierTint.opacity(0.22), lineWidth: 1)
+            shape.strokeBorder(tierTint.opacity(0.14), lineWidth: 1)
         }
     }
 
@@ -160,10 +162,8 @@ struct LeagueView: View {
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
                 Text(label)
-                    .font(.caption2.weight(.bold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
             }
             Text(value)
                 .font(.subheadline.weight(.semibold))
@@ -172,6 +172,27 @@ struct LeagueView: View {
                 .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var tierMetrics: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                metricColumn(label: "Reset", value: league.resetCopy, icon: "calendar")
+                Divider()
+                metricColumn(label: "Streak", value: streakValue, icon: "flame.fill")
+                Divider()
+                metricColumn(label: "This week", value: weeklyActivityCopy, icon: "chart.line.uptrend.xyaxis")
+            }
+        } else {
+            HStack(spacing: 16) {
+                metricColumn(label: "Reset", value: league.resetCopy, icon: "calendar")
+                Divider().frame(height: 28)
+                metricColumn(label: "Streak", value: streakValue, icon: "flame.fill")
+                Divider().frame(height: 28)
+                metricColumn(label: "This week", value: weeklyActivityCopy, icon: "chart.line.uptrend.xyaxis")
+            }
+        }
     }
 
     private var tierSubtitle: String {
@@ -295,7 +316,7 @@ struct LeagueView: View {
 
     private var emptyMembersRow: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Your league forms over the week.")
+            Text("Your weekly group is still forming.")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
             Text("Other \(league.tier.title.lowercased())-tier speakers will appear here as they practice.")
@@ -309,42 +330,29 @@ struct LeagueView: View {
     }
 
     private var placementPendingMembersRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Placement starts after one rated rep.")
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("One rated rep creates your placement.")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
-            Text("Noum will place you in a weekly bucket only after there is rating evidence to compare.")
+            Text("Noum waits for real rating evidence before comparing your week with other speakers.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            NavigationLink(value: AppDestination.practiceSelection) {
+                Label("Start a rated rep", systemImage: "arrow.right")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(AppColor.brandBlue, in: Capsule(style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("league.startRatedRep")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
-    }
-
-    private var emptyLeagueExplainer: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "questionmark.circle")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-                Text("How leagues work")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
-            }
-            Text(ratingStore.rating.hasRatedEvidence
-                 ? "You're matched with speakers in your rating range each ISO week. Climbing rating moves you up a tier; the leaderboard resets every Monday."
-                 : "League placement starts after your first rated rep, so the comparison is based on real speaking evidence.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.md)
-        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
     // MARK: - Helpers

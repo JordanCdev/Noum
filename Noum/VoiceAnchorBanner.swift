@@ -62,7 +62,7 @@ struct VoiceAnchorBanner: View {
             if visible {
                 HStack(spacing: 8) {
                     VoiceGoalIcon(goal: styleGoal, size: 12)
-                    Text("Toward your \(styleGoal.shortVoiceLabel)")
+                    Text(styleGoal.trainingObjectiveLabel)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
@@ -80,7 +80,7 @@ struct VoiceAnchorBanner: View {
                 .padding(.top, 4)
                 .transition(reduceMotion ? .identity : .opacity)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("Working toward your \(styleGoal.shortVoiceLabel).")
+                .accessibilityLabel("Current coaching objective: \(styleGoal.trainingObjectiveLabel).")
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: Self.fadeDuration), value: visible)

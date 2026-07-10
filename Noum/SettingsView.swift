@@ -18,6 +18,7 @@ import AVFAudio
 @available(iOS 17.0, macOS 12.0, *)
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.isAppTabRoot) private var isAppTabRoot
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
@@ -63,6 +64,7 @@ struct SettingsView: View {
     @State private var showYourData = false
     @State private var showPrivacyPolicy = false
     @State private var showSoundscape = false
+    @State private var showLogin = false
     @State private var showSignOutAlert = false
     @State private var showDeleteSheet = false
     @State private var debugMessage: String?
@@ -80,8 +82,7 @@ struct SettingsView: View {
             AppColor.screenBackground
                 .ignoresSafeArea()
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: Spacing.lg) {
+            List {
                     // M16 settings trim — first-open overwhelm was real
                     // (20+ control rows packed across 10 cards). Top level
                     // now surfaces 1 hero + 4 cluster zones + 1 advanced
@@ -108,45 +109,52 @@ struct SettingsView: View {
                     //
                     //   Advanced (collapsed) — escape hatch + dev tools
                     //     for `isDeveloper` only
-                    profileHero
+                    if !isAppTabRoot {
+                        Section {
+                            profileHero
+                                .listRowInsets(EdgeInsets())
+                                .listRowBackground(Color.clear)
+                        }
+                    }
 
-                    clusterHeader("Practice")
-                    section(label: "Defaults") { practiceCard }
-                    section(label: "Daily goal") { dailyGoalCard }
-                    section(label: "Coaching profile") { coachingProfileCard }
-                    section(label: "Language") { localeCard }
-                    section(label: "Pre-rep ambience") { soundscapeCard }
+                    Section("Practice") {
+                        section(label: "Defaults") { practiceCard }
+                        section(label: "Daily goal") { dailyGoalCard }
+                        section(label: "Coaching profile") { coachingProfileCard }
+                        section(label: "Language") { localeCard }
+                        section(label: "Pre-rep ambience") { soundscapeCard }
+                    }
 
-                    clusterHeader("Notifications")
-                    section(label: "Reminders") { feedbackCard }
+                    Section("Notifications") {
+                        section(label: "Reminders") { feedbackCard }
+                    }
 
-                    clusterHeader("Account")
-                    section(label: "Subscription") { subscriptionCard }
-                    section(label: "Privacy & data") { privacyCard }
-                    section(label: "Sign-in") { accountCard }
+                    Section("Account") {
+                        section(label: "Subscription") { subscriptionCard }
+                        section(label: "Privacy & data") { privacyCard }
+                        section(label: "Sign-in") { accountCard }
+                    }
 
-                    section(label: "About") { aboutCard }
-
-                    advancedDisclosure
-
-                    Spacer(minLength: 8)
+                    Section("About") { aboutCard }
+                    Section { advancedDisclosure }
                 }
-                .padding(.horizontal, Spacing.screenH)
-                .padding(.top, Spacing.sm)
-                .padding(.bottom, Spacing.lg)
-            }
+            .listStyle(.insetGrouped)
+            .listSectionSpacing(.compact)
+            .scrollContentBackground(.hidden)
         }
-        .navigationTitle("")
+        .navigationTitle(isAppTabRoot ? "Settings" : "")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("settings.screen")
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Done") { dismiss() }
-                    .accessibilityHint("Close settings")
+            if !isAppTabRoot {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .accessibilityHint("Close settings")
+                }
             }
         }
         .onChange(of: authManager.isSignedIn) { _, signedIn in
-            if !signedIn { dismiss() }
+            if !signedIn && !isAppTabRoot { dismiss() }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
@@ -185,6 +193,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showLocalePicker) {
             PracticeLocalePickerSheet()
+        }
+        .fullScreenCover(isPresented: $showLogin) {
+            LoginView()
         }
         .sheet(isPresented: $showDeleteSheet) {
             DeleteAccountConfirmationSheet(
@@ -486,19 +497,36 @@ struct SettingsView: View {
 
     private var practiceCard: some View {
         cardContainer(spacing: Spacing.md) {
-            VStack(spacing: Spacing.xs) {
-                ForEach(TimedPracticeDifficulty.allCases) { difficulty in
-                    difficultyOption(difficulty)
+            HStack(alignment: .center, spacing: Spacing.md) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Practice difficulty")
+                        .font(.subheadline.weight(.semibold))
+                    Text(practiceSettings.timedDifficulty.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                Spacer(minLength: Spacing.sm)
+                Picker("Practice difficulty", selection: $practiceSettings.timedDifficulty) {
+                    ForEach(TimedPracticeDifficulty.allCases) { difficulty in
+                        Text(difficulty.title).tag(difficulty)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .accessibilityLabel("Practice difficulty")
+                .tint(AppColor.brandBlue)
             }
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("settings.practiceDifficulty")
 
             Divider()
 
             SettingsToggleRow(
                 title: "Voice cues",
-                subtitle: "Read replies aloud during IM practice.",
+                subtitle: "Read replies aloud during conversation practice.",
                 isOn: $imVoicePlaybackSettings.isEnabled,
-                accessibilityHint: "Enables spoken responses in IM mode."
+                accessibilityHint: "Enables spoken responses in conversation practice."
             )
 
             Divider()
@@ -560,41 +588,6 @@ struct SettingsView: View {
 
     private var micDisabledForFillerHighlight: Bool {
         microphonePermission == .denied
-    }
-
-    private func difficultyOption(_ difficulty: TimedPracticeDifficulty) -> some View {
-        let isSelected = practiceSettings.timedDifficulty == difficulty
-        return Button {
-            practiceSettings.timedDifficulty = difficulty
-        } label: {
-            HStack(spacing: Spacing.sm) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(difficulty.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    Text(difficulty.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: Spacing.xs)
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(isSelected ? AppColor.brandBlue : .secondary)
-            }
-            .frame(minHeight: 44)
-            .padding(.horizontal, Spacing.sm)
-            .padding(.vertical, Spacing.sm)
-            .background(
-                AppColor.brandBlue.opacity(isSelected ? 0.10 : 0.04),
-                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-            )
-        }
-        .buttonStyle(.pressable)
-        .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
-        .accessibilityLabel("\(difficulty.title) difficulty")
-        .accessibilityHint(difficulty.subtitle)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Soundscape Card
@@ -1014,7 +1007,7 @@ struct SettingsView: View {
         let debriefUsed = max(0, debriefCap - debriefRemaining)
 
         return cardContainer(spacing: Spacing.md) {
-            Text("Your coach note keeps coming after every rep. When the AI polish layer hits its budget for the day, the coach reads rule-based for the rest of the day — same content shape, just less personalised wording.")
+            Text("A coach note is still available after every rep. When personalized wording reaches its daily limit, Noum keeps the same coaching structure with simpler wording.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1026,7 +1019,7 @@ struct SettingsView: View {
                 remaining: coachNotesRemaining,
                 reachedLimit: coachNotesHasReachedLimit,
                 resetCopy: "Resets at midnight",
-                accessibilityHint: "Daily budget for AI-polished coach notes."
+                accessibilityHint: "Daily budget for personalized coach notes."
             )
 
             Divider()
@@ -1038,7 +1031,7 @@ struct SettingsView: View {
                 remaining: debriefRemaining,
                 reachedLimit: aiSettings.hasReachedLimit,
                 resetCopy: "Resets \(aiSettings.resetDateFormatted)",
-                accessibilityHint: "Monthly budget for AI session debriefs."
+                accessibilityHint: "Monthly budget for personalized session debriefs."
             )
 
             if !premium.isPremium {
@@ -1049,7 +1042,7 @@ struct SettingsView: View {
                     HStack(spacing: Spacing.xs) {
                         Image(systemName: "crown.fill")
                             .font(.subheadline.weight(.semibold))
-                        Text("Pro gets \(AIRateLimiter.premiumDailyCap)/day · \(AISettingsManager.premiumMonthlyDebriefLimit)/month")
+                        Text("Pro includes \(AIRateLimiter.premiumDailyCap) coach notes a day and \(AISettingsManager.premiumMonthlyDebriefLimit) debriefs a month")
                             .font(.subheadline.weight(.semibold))
                     }
                     .foregroundStyle(AppColor.pro)
@@ -1203,6 +1196,22 @@ struct SettingsView: View {
                     value: "Signed out",
                     valueTint: .secondary
                 )
+
+                Divider()
+
+                Button {
+                    showLogin = true
+                } label: {
+                    accountActionLabel(
+                        title: "Sign in",
+                        tint: AppColor.brandBlue,
+                        icon: "person.crop.circle.badge.plus"
+                    )
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Sign in")
+                .accessibilityHint("Opens account options.")
+                .accessibilityIdentifier("settings.account.openLogin")
             }
         }
     }
@@ -1385,12 +1394,6 @@ struct SettingsView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: spacing, content: content)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Spacing.lg)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
-            )
     }
 
     // MARK: - Developer Cards (preserved from prior implementation)
@@ -1438,7 +1441,7 @@ struct SettingsView: View {
 
             if imVoicePlaybackSettings.isEnabled {
                 Divider()
-                Text("IM voice quality")
+                Text("Conversation voice quality")
                     .font(.subheadline.weight(.semibold))
                 Text("Noum prioritizes Google Cloud first and quietly falls back to OpenAI if needed.")
                     .font(.caption)
@@ -1491,18 +1494,18 @@ struct SettingsView: View {
     private var aiCallDiagnosticsCard: some View {
         let latest = aiCallDiagnostics.latest
         return cardContainer(spacing: Spacing.md) {
-            Text("Recent model-call and coach-brain health for internal QA. Prompts, transcripts, API keys, and raw responses are never stored.")
+            Text("Recent live-coaching health checks. Message content is never stored.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("Provider setup: \(AIProviderCredential.configurationSummary())")
+            Text("AI service: \(AIProviderCredential.configurationSummary())")
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("settings.aiCallDiagnostics.providerSetup")
 
-            Text("Ask Noum setup: \(CoachChatProvider.configurationSummary())")
+            Text("Live coaching: \(CoachChatProvider.configurationSummary())")
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

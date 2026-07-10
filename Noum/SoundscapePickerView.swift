@@ -35,7 +35,7 @@ struct SoundscapePickerView: View {
                 .padding(.vertical, Spacing.lg)
             }
             .background(AppColor.screenBackground.ignoresSafeArea())
-            .navigationTitle("Pre-rep prep")
+            .navigationTitle("Before your rep")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -56,7 +56,7 @@ struct SoundscapePickerView: View {
 
     private var headerCopy: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Pre-rep prep")
+            Text("Before your rep")
                 .font(Typography.screenTitle)
                 .foregroundStyle(.primary)
             Text("A short ambient texture during the seconds before recording. Fades out the moment your rep starts.")

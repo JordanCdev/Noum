@@ -523,7 +523,7 @@ struct PathNodeCelebration: View {
         case .timed:          return "Timed"
         case .suddenDeath:    return "Pressure Drill"
         case .ahCounter:      return "Ah-Counter"
-        case .imConversation: return "IM Mode"
+        case .imConversation: return "Conversation Practice"
         }
     }
 

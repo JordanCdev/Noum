@@ -46,7 +46,15 @@ def write_static_ops_repo(root):
     (root / "Noum").mkdir(parents=True, exist_ok=True)
     (root / "Noum.xcodeproj").mkdir(parents=True, exist_ok=True)
     (root / "docs").mkdir(parents=True, exist_ok=True)
-    (root / ".gitignore").write_text("Noum/AIConfig.plist\n", encoding="utf-8")
+    (root / ".gitignore").write_text(
+        (
+            "Noum/AIConfig.plist\n"
+            "Noum/BackendConfig.plist\n"
+            "Noum/Transcribe.plist\n"
+            "Noum/TranscriptionProviders.plist\n"
+        ),
+        encoding="utf-8",
+    )
     (root / "Noum/AIConfig.plist.example").write_text(
         "<plist><dict><key>OPENAI_API_KEY</key><string>REPLACE_ME</string></dict></plist>",
         encoding="utf-8",
@@ -58,7 +66,10 @@ def write_static_ops_repo(root):
         isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
         membershipExceptions = (
             AIConfig.plist,
+            BackendConfig.plist,
             Info.plist,
+            Transcribe.plist,
+            TranscriptionProviders.plist,
         );
         target = TEST_TARGET /* Noum */;
     };
@@ -1453,13 +1464,15 @@ class ReadinessGateTests(unittest.TestCase):
     def test_operational_static_preflight_rejects_unsafe_client_config_membership(self):
         mutations = {
             "AIConfigBundled": ("            AIConfig.plist,\n", ""),
+            "BackendConfigBundled": ("            BackendConfig.plist,\n", ""),
+            "TranscribeBundled": ("            Transcribe.plist,\n", ""),
+            "TranscriptionProvidersBundled": (
+                "            TranscriptionProviders.plist,\n",
+                "",
+            ),
             "GoogleConfigExcluded": (
                 "            AIConfig.plist,\n",
                 "            AIConfig.plist,\n            GoogleService-Info.plist,\n",
-            ),
-            "BackendConfigExcluded": (
-                "            AIConfig.plist,\n",
-                "            AIConfig.plist,\n            BackendConfig.plist,\n",
             ),
         }
         for case, (old, new) in mutations.items():

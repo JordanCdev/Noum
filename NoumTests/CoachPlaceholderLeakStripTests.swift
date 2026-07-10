@@ -185,7 +185,8 @@ struct CoachPlaceholderLeakStripTests {
         #expect(!repair.contains("Ah-Counter"))
         #expect(!repair.lowercased().contains("first number"))
         #expect(!repair.lowercased().contains("under 4"))
-        #expect(repair.contains("Want to go now?"))
+        #expect(repair.contains("Record 60 seconds"))
+        #expect(!repair.contains("?"))
         #expect(AICoachChatService.replyQualityIssue(
             in: repair,
             latestUserTurn: "What should I work on?",
@@ -204,9 +205,9 @@ struct CoachPlaceholderLeakStripTests {
             turnDepth: .groundedRead
         ))
 
-        #expect(repair.contains("Why should we hire you?"))
-        #expect(repair.contains("sentence one answers"))
-        #expect(repair.contains("Want to go now?"))
+        #expect(repair.contains("one likely question"))
+        #expect(repair.contains("sentence one as the answer"))
+        #expect(!repair.contains("?"))
         #expect(!repair.contains("Ah-Counter"))
         #expect(!repair.lowercased().contains("first number"))
         #expect(AICoachChatService.replyQualityIssue(

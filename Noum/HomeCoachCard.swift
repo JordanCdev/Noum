@@ -1,6 +1,12 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
+enum HomeMomentCopy {
+    static func title(momentTitle: String, days: Int) -> String {
+        "\(momentTitle) · \(days) day\(days == 1 ? "" : "s")"
+    }
+}
+
 // MARK: - Home Coach Card (M14)
 //
 // One composed hero that replaces the populated home's split greeting
@@ -16,7 +22,7 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct HomeAskNoumShortcut: Equatable {
     static let title = "Ask Noum"
-    static let actionTitle = "Open the thread"
+    static let actionTitle = "Ask Noum"
     // The Ask Noum door now renders as its own quiet white row on Home
     // (below the Path/Journey card), not nested inside the coach hero —
     // so the identifier is location-neutral. See `homeAskNoumRow` in
@@ -119,23 +125,22 @@ struct HomeCoachCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: Spacing.sm) {
+        VStack(spacing: Spacing.xs) {
             ZStack {
                 emanationRay
                 NoumCharacter(
                     mood: displayedMood,
                     tint: .white,
-                    size: 90
+                    size: 64
                 )
                 .accessibilityHidden(true)
             }
-            .padding(.top, Spacing.xs)
 
             // Title — punchy, 1-3 words usually. Drives the visual
             // hierarchy. The earlier "one long coach sentence" pattern
             // read as a paragraph; this reads as a coach speaking.
             Text(coachTitle)
-                .font(Typography.figtree(size: 24, weight: .bold, relativeTo: .title2))
+                .font(Typography.figtree(size: 22, weight: .bold, relativeTo: .title2))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -171,24 +176,26 @@ struct HomeCoachCard: View {
                let days = bigMomentStore.daysUntil(moment),
                days >= 0 && days <= 14 {
                 prepSessionCTA(moment: moment, days: days)
+                Button("Run \(recommendedMode.displayLabel.lowercased()) instead") {
+                    beginRecommendedRep()
+                }
+                .font(Typography.captionSmall.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.86))
+                .frame(minHeight: 44)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("home.coachCard.begin")
+            } else {
+                PrimaryCTA(beginCTAText, tint: .white, labelTint: AppColor.coachHeroStart) {
+                    beginRecommendedRep()
+                }
+                .accessibilityIdentifier("home.coachCard.begin")
             }
-
-            // Begin button carries the mode name so the micro-label
-            // "SUDDEN DEATH · ONE BREATH · ONE COMPLETE REP" row can go
-            // away — three text rows became one button label.
-            // Inverted register on the gradient hero: white capsule,
-            // gradient-blue label. The mode info rides the label text.
-            PrimaryCTA(beginCTAText, tint: .white, labelTint: AppColor.coachHeroStart) {
-                beginRecommendedRep()
-            }
-            .accessibilityIdentifier("home.coachCard.begin")
 
             if showsPlanArc {
                 planArcRow
             }
         }
-        .padding(.horizontal, Spacing.lg)
-        .padding(.vertical, Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity)
         .background(coachCardBackground)
         // Tinted elevation in the hero's own gradient family — the ONE
@@ -200,9 +207,8 @@ struct HomeCoachCard: View {
         .accessibilityIdentifier("home.coachCard")
     }
 
-    /// Label for the Begin CTA — "Begin · Pressure Drill" pattern carries
-    /// the mode info that used to live in the micro-label row. One row
-    /// fewer on Home; user still knows exactly what they're starting.
+    /// Label for the primary CTA. Keep it verb-led and natural rather than
+    /// joining implementation labels with punctuation.
     /// Maps live scroll offset (±120pt) to a ±5pt opposite-direction
     /// gradient shift. Capped + zeroed under reduce-motion. The card
     /// itself doesn't move — only the interior wash anchors do.
@@ -214,19 +220,18 @@ struct HomeCoachCard: View {
 
     private var beginCTAText: String {
         // No-signal (empty-state, brand-new user): name the moment, not
-        // the mode. "Begin · Timed" is a stranger's instruction; "Begin ·
-        // First rep" is the door the user just walked up to.
+        // the mode. This is the simplest door into the product.
         guard hasSignal else {
-            return "Begin \u{00B7} First rep"
+            return "Start your first rep"
         }
         let modeName: String
         switch recommendedMode {
-        case .timed:          modeName = "Timed"
+        case .timed:          modeName = "timed rep"
         case .suddenDeath:    modeName = PracticeMode.suddenDeath.displayLabel
         case .ahCounter:      modeName = "Ah-Counter"
-        case .imConversation: modeName = "IM"
+        case .imConversation: modeName = "conversation"
         }
-        return "Begin \u{00B7} \(modeName)"
+        return "Start \(modeName)"
     }
 
     /// Hero card chrome — replaces the standard `CardView` so the Coach
@@ -362,8 +367,14 @@ struct HomeCoachCard: View {
             return "Start clean."
         }
 
+        if let moment = bigMomentStore.activeMoment,
+           let days = bigMomentStore.daysUntil(moment),
+           days >= 0 && days <= 30 {
+            return HomeMomentCopy.title(momentTitle: moment.title, days: days)
+        }
+
         if recommendationBlueprint.source == .caseIntervention {
-            return "Stay with the case."
+            return "Keep building the case."
         }
 
         // Consecutive clean reps — trajectory signal. "Three in a row"
@@ -410,8 +421,7 @@ struct HomeCoachCard: View {
         if let moment = bigMomentStore.activeMoment,
            let days = bigMomentStore.daysUntil(moment),
            days >= 0 && days <= 30 {
-            let label = bigMomentCountdownCopy(moment: moment, days: days)
-            return label
+            return "Three focused reps before the real conversation."
         }
 
         guard hasSignal else {
@@ -510,10 +520,10 @@ struct HomeCoachCard: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Prepare for your \(moment.category.displayName)")
+                    Text("Open rehearsal plan")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
-                    Text("\(days) day\(days == 1 ? "" : "s") out · three-rep rehearsal")
+                    Text("Three focused reps")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.78))
                 }
@@ -525,14 +535,7 @@ struct HomeCoachCard: View {
             .padding(.vertical, 10)
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                .white.opacity(0.14),
-                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                    .stroke(.white.opacity(0.22), lineWidth: 1)
-            )
+            .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         }
         .buttonStyle(.plain)
         .padding(.top, Spacing.xs)
@@ -593,19 +596,6 @@ struct HomeCoachCard: View {
         }
     }
 
-    /// Countdown copy for the Big Moment subtitle.
-    /// Uses the title when it fits within ~40 chars, otherwise falls back
-    /// to the category displayName to keep the line compact on home.
-    private func bigMomentCountdownCopy(moment: BigMoment, days: Int) -> String {
-        let titleLabel: String
-        if moment.title.count <= 40 {
-            titleLabel = moment.title
-        } else {
-            titleLabel = moment.category.displayName
-        }
-        return "\(days) day\(days == 1 ? "" : "s") to your \(titleLabel)."
-    }
-
     /// True when the current path node is honestly one step from unlocked.
     ///
     /// Two-arm predicate — uses public state only:
@@ -649,7 +639,7 @@ struct HomeCoachCard: View {
         case .timed:          return "TIMED"
         case .suddenDeath:    return "PRESSURE DRILL"
         case .ahCounter:      return "AH-COUNTER"
-        case .imConversation: return "IM"
+        case .imConversation: return "CONVERSATION"
         }
     }
 

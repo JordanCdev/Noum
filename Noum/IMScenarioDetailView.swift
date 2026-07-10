@@ -110,7 +110,7 @@ struct IMScenarioDetailView: View {
                 }
             }
         }
-        .navigationTitle("IM · \(scenario.title)")
+        .navigationTitle("Conversation: \(scenario.title)")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("history.im.scenarioDetail")
         .toolbar {
@@ -144,7 +144,7 @@ struct IMScenarioDetailView: View {
             Text("No \(scenario.title) reps yet")
                 .font(.headline)
                 .foregroundStyle(.primary)
-            Text("Finish an IM rep in this scenario to start a track record.")
+            Text("Finish a conversation rep in this scenario to start a track record.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

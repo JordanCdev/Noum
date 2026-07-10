@@ -11,17 +11,17 @@ private enum OnboardingStage: Int, CaseIterable {
 
     var title: String {
         switch self {
-        case .context: return "Where do you want the most help?"
-        case .challenge: return "Where do you want the most growth?"
-        case .style: return "How should you come across?"
+        case .context: return "Where should training help first?"
+        case .challenge: return "What should feel easier?"
+        case .style: return "How do you want to sound?"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .context: return "Pick the situation Noum should coach first."
-        case .challenge: return "Pick the area you'd most like to strengthen."
-        case .style: return "Pick the voice you want to reinforce."
+        case .context: return "Choose the situation Noum should prepare you for."
+        case .challenge: return "Choose one speaking pattern to work on first."
+        case .style: return "Choose the quality you want your delivery to hold."
         }
     }
 }
@@ -136,22 +136,8 @@ struct CoachingOnboardingView: View {
     }
 
     private var backgroundLayer: some View {
-        ZStack {
-            AppColor.screenBackground
+        AppColor.screenBackground
             .ignoresSafeArea()
-
-            Circle()
-                .fill(Color(red: 0.20, green: 0.55, blue: 0.98).opacity(0.11))
-                .frame(width: 260, height: 260)
-                .blur(radius: 36)
-                .offset(x: 130, y: 230)
-
-            Circle()
-                .fill(Color(red: 1.00, green: 0.77, blue: 0.45).opacity(0.12))
-                .frame(width: 220, height: 220)
-                .blur(radius: 32)
-                .offset(x: -120, y: -220)
-        }
     }
 
     private var topBar: some View {
@@ -159,23 +145,23 @@ struct CoachingOnboardingView: View {
             if screen == .intro {
                 Text(isEditingExistingProfile ? "Settings" : "Noum")
                     .font(.headline.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.35, green: 0.32, blue: 0.27))
+                    .foregroundStyle(AppColor.textPrimary)
             } else if screen != .summary {
                 Button {
                     goBack()
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.headline.weight(.bold))
-                        .foregroundStyle(Color(red: 0.23, green: 0.24, blue: 0.28))
-                        .frame(width: 38, height: 38)
-                        .background(Color.white.opacity(0.78), in: Circle())
+                        .foregroundStyle(AppColor.textPrimary)
+                        .frame(width: 44, height: 44)
+                        .background(AppColor.cardBackground, in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
 
             Spacer()
         }
-        .frame(height: 40)
+        .frame(height: 44)
     }
 
     private func introScreen(size: CGSize) -> some View {
@@ -194,29 +180,29 @@ struct CoachingOnboardingView: View {
         VStack(alignment: .leading, spacing: 24) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(isEditingExistingProfile ? "Coaching Profile" : "First, a few bearings")
+                    Text(isEditingExistingProfile ? "Coaching profile" : "Your coaching")
                         .font(Typography.caption)
-                        .foregroundStyle(Color.white.opacity(0.74))
+                        .foregroundStyle(AppColor.brandBlue)
                         .textCase(.uppercase)
 
                     Text(isEditingExistingProfile
-                        ? "Tune the coaching profile behind your practice."
-                        : "Let Noum learn what kind of speaker you are becoming.")
+                        ? "Refine how Noum guides your practice."
+                        : "Choose what Noum should listen for.")
                         .font(Typography.figtree(size: 31, weight: .bold, relativeTo: .title))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppColor.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text(isEditingExistingProfile
-                        ? "These choices shape drills, prompts, and reminders across the app."
-                        : "Three choices are enough to make the first rep feel personal. The deeper context can come after you have spoken.")
+                        ? "These choices shape drills, prompts, and coaching language."
+                        : "Three choices set the first rep. Noum will learn the rest from what you actually say.")
                         .font(Typography.headline.weight(.medium))
-                        .foregroundStyle(Color.white.opacity(0.84))
+                        .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 12)
 
-                progressRing(step: 1, total: OnboardingStage.allCases.count, compact: false)
+                progressRing(step: 0, total: OnboardingStage.allCases.count, compact: false)
                     .matchedGeometryEffect(id: "progressRing", in: headerNamespace)
             }
 
@@ -231,7 +217,7 @@ struct CoachingOnboardingView: View {
                     }
                 } label: {
                     HStack(spacing: 12) {
-                        Text(isEditingExistingProfile ? "Review profile" : "Start setup")
+                        Text(isEditingExistingProfile ? "Review profile" : "Begin")
                             .font(.headline.weight(.semibold))
 
                         Spacer()
@@ -263,7 +249,7 @@ struct CoachingOnboardingView: View {
                             .stroke(Color.white.opacity(0.10), lineWidth: 1)
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityIdentifier("coaching.start")
             }
         }
@@ -285,13 +271,13 @@ struct CoachingOnboardingView: View {
     private var compactHeader: some View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Building your coaching profile")
+                Text("Your coaching profile")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppColor.textPrimary)
 
-                Text("\(progressStep) of \(OnboardingStage.allCases.count) answered")
+                Text("Step \(progressStep) of \(OnboardingStage.allCases.count)")
                     .font(.caption)
-                    .foregroundStyle(Color.white.opacity(0.72))
+                    .foregroundStyle(AppColor.textSecondary)
 
                 progressPills(activeCount: progressStep)
             }
@@ -385,7 +371,7 @@ struct CoachingOnboardingView: View {
                     )
                     .shadow(color: Color(red: 0.18, green: 0.53, blue: 0.98).opacity(canAdvance(from: stage) ? 0.18 : 0), radius: 14, y: 8)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .disabled(!canAdvance(from: stage))
                 .accessibilityIdentifier("coaching.continue")
             }
@@ -401,7 +387,7 @@ struct CoachingOnboardingView: View {
             RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                 .stroke(Color.white.opacity(0.90), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.08), radius: 18, y: 10)
+        .shadow(color: Color.black.opacity(0.04), radius: 12, y: 6)
     }
 
     private func summaryScreen(size: CGSize) -> some View {
@@ -432,33 +418,23 @@ struct CoachingOnboardingView: View {
         VStack(spacing: 24) {
             ZStack {
                 Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                AppColor.brandBlue,
-                                Color(red: 0.33, green: 0.70, blue: 1.00)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 120, height: 120)
-                    .shadow(color: AppColor.brandBlue.opacity(0.3), radius: 30, y: 10)
+                    .fill(AppColor.brandBlue.opacity(0.10))
+                    .frame(width: 72, height: 72)
 
                 Image(systemName: "checkmark")
-                    .font(.system(size: 44, weight: .bold))
-                    .foregroundStyle(.white)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue)
             }
             .transition(.scale(scale: 0.5).combined(with: .opacity))
 
             VStack(spacing: 8) {
-                Text(isEditingExistingProfile ? "Profile updated." : "Welcome to Noum.")
+                Text(isEditingExistingProfile ? "Profile updated" : "Ready for your first rep")
                     .font(Typography.screenTitle)
                     .foregroundStyle(AppColor.textPrimary)
 
                 Text(isEditingExistingProfile
-                    ? "Your coaching is now recalibrated."
-                    : "Your coaching journey starts now.")
+                    ? "Your next recommendation will use these choices."
+                    : "Noum will start with this direction and adapt from your evidence.")
                     .font(.headline.weight(.medium))
                     .foregroundStyle(AppColor.textSecondary)
             }
@@ -474,30 +450,20 @@ struct CoachingOnboardingView: View {
                     VStack(spacing: Spacing.xs) {
                         ZStack {
                             Circle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            AppColor.brandBlue,
-                                            Color(red: 0.33, green: 0.70, blue: 1.00)
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 64, height: 64)
-                                .shadow(color: AppColor.brandBlue.opacity(0.25), radius: 16, y: 6)
+                                .fill(AppColor.brandBlue.opacity(0.10))
+                                .frame(width: 56, height: 56)
 
                             Image(systemName: "person.text.rectangle.fill")
-                                .font(.system(size: 26, weight: .semibold))
-                                .foregroundStyle(.white)
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(AppColor.brandBlue)
                         }
                         .padding(.bottom, Spacing.xxs)
 
-                        Text("Your Coaching Profile")
+                        Text("Your coaching direction")
                             .font(Typography.bigStat)
                             .foregroundStyle(AppColor.textPrimary)
 
-                        Text("Here's how Noum will coach you.")
+                        Text("A starting point that adapts as you practice.")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(AppColor.textSecondary)
                     }
@@ -579,7 +545,7 @@ struct CoachingOnboardingView: View {
                     dismiss()
                 } label: {
                     HStack(spacing: Spacing.sm) {
-                        Text(isEditingExistingProfile ? "Save Changes" : "Start Practicing")
+                        Text(isEditingExistingProfile ? "Save changes" : "Start first rep")
                             .font(.headline.weight(.semibold))
 
                         Spacer()
@@ -614,7 +580,7 @@ struct CoachingOnboardingView: View {
                     )
                     .shadow(color: AppColor.brandBlue.opacity(0.22), radius: 16, y: 8)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityIdentifier("coaching.startPracticing")
                 .padding(.horizontal, Spacing.lg)
                 .padding(.top, Spacing.md)
@@ -655,11 +621,7 @@ struct CoachingOnboardingView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .fill(Color.white.opacity(0.95))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .stroke(Color(red: 0.90, green: 0.92, blue: 0.96), lineWidth: 1)
+                .fill(AppColor.innerSurface)
         )
     }
 
@@ -739,16 +701,16 @@ struct CoachingOnboardingView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                            .fill(isSelected ? Color(red: 0.92, green: 0.96, blue: 1.00) : Color(red: 0.97, green: 0.98, blue: 1.00))
+                            .fill(isSelected ? AppColor.brandBlue.opacity(0.08) : AppColor.innerSurface)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                             .stroke(
-                                isSelected ? Color(red: 0.57, green: 0.76, blue: 0.98) : Color(red: 0.89, green: 0.92, blue: 0.96),
+                                isSelected ? AppColor.brandBlue.opacity(0.28) : AppColor.subtleBorder,
                                 lineWidth: isSelected ? 2 : 1
                             )
                     )
-                    .shadow(color: isSelected ? Color(red: 0.18, green: 0.53, blue: 0.98).opacity(0.08) : .clear, radius: 10, y: 5)
+                    .shadow(color: isSelected ? AppColor.brandBlue.opacity(0.08) : .clear, radius: 10, y: 5)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("coaching.option.\(option.id)")
@@ -950,11 +912,11 @@ struct CoachingOnboardingView: View {
                 .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
                 .background(
                     RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                        .fill(Color(red: 0.97, green: 0.98, blue: 1.00))
+                        .fill(AppColor.innerSurface)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                        .stroke(Color(red: 0.88, green: 0.91, blue: 0.95), lineWidth: 1)
+                        .stroke(AppColor.subtleBorder, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -1084,21 +1046,12 @@ struct CoachingOnboardingView: View {
 
     private var heroCardBackground: some View {
         RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.27, green: 0.25, blue: 0.23),
-                        Color(red: 0.36, green: 0.34, blue: 0.31)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+            .fill(AppColor.cardBackground)
             .overlay(
                 RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    .stroke(AppColor.subtleBorder, lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(0.12), radius: 20, y: 12)
+            .shadow(color: Color.black.opacity(0.04), radius: 12, y: 6)
     }
 
     private func progressRing(step: Int, total: Int, compact: Bool) -> some View {
@@ -1106,14 +1059,14 @@ struct CoachingOnboardingView: View {
 
         return ZStack {
             Circle()
-                .stroke(Color.white.opacity(0.16), lineWidth: compact ? 6 : 7)
+                .stroke(AppColor.subtleBorder, lineWidth: compact ? 6 : 7)
             Circle()
-                .trim(from: 0, to: max(0.06, Double(step) / Double(total)))
+                .trim(from: 0, to: step == 0 ? 0 : Double(step) / Double(total))
                 .stroke(
                     AngularGradient(
                         colors: [
-                            Color(red: 1.00, green: 0.79, blue: 0.42),
-                            Color(red: 0.33, green: 0.70, blue: 1.00)
+                            AppColor.brandBlueLight,
+                            AppColor.brandBlue
                         ],
                         center: .center
                     ),
@@ -1121,9 +1074,9 @@ struct CoachingOnboardingView: View {
                 )
                 .rotationEffect(.degrees(-90))
 
-            Text("\(step == 0 ? 1 : step)")
+            Text("\(step)")
                 .font(Typography.figtreeNumeric(size: compact ? 16 : 20, weight: .bold, relativeTo: compact ? .headline : .title3))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppColor.textPrimary)
         }
         .frame(width: size, height: size)
     }
@@ -1132,7 +1085,7 @@ struct CoachingOnboardingView: View {
         HStack(spacing: 8) {
             ForEach(0..<OnboardingStage.allCases.count, id: \.self) { index in
                 Capsule(style: .continuous)
-                    .fill(index < activeCount ? AppColor.brandBlue : Color.white.opacity(0.22))
+                    .fill(index < activeCount ? AppColor.brandBlue : AppColor.tagBackground)
                     .frame(height: 6)
             }
         }
@@ -1291,11 +1244,11 @@ struct CoachingOnboardingView: View {
     /// is mapped to a routing bucket at `CoachingOnboardingView` line ~785).
     private var coachCommitmentLine: String {
         let focus = biggestChallenge.trainingFocusFragment
-        let stance = "I won't guess at a verdict from a form, though — your first rep gives me the evidence, and then I'll name the one thing worth working on."
+        let stance = "The first rep sets the evidence; then Noum can name one useful move."
         if let style = speakingStyleGoal {
-            return "I'll help you \(style.coachingDescription), starting with \(focus). \(stance)"
+            return "Noum will help you \(style.coachingDescription), starting with \(focus). \(stance)"
         }
-        return "We'll start with \(focus). \(stance)"
+        return "Noum will start with \(focus). \(stance)"
     }
 
     private var coachCommitmentCard: some View {

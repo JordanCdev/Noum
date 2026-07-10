@@ -418,7 +418,7 @@ actor ForwardPlanService {
         guard dominantTransferRead(for: category, in: reports) == .didNotTransfer else {
             return nil
         }
-        return "Recent \(category.displayName) check-ins suggest the prep hasn't fully carried into the room yet — treat this mock as the bridge between rehearsal and the real thing."
+        return "Recent \(category.displayName) check-ins suggest the rehearsal hasn't fully carried into the room yet. Treat this mock as the bridge to the real thing."
     }
 
     /// Honest session target. Anchored on the user's actual weekly
@@ -770,7 +770,7 @@ enum ForwardPlanRenderer {
         }
         let provenance = isAIBacked
             ? "I shaped it around your last few reps and the voice you're training."
-            : "Built from your data without an AI pass — straight rules, no invention."
+            : "Built from your recent evidence using Noum's standard coaching rules."
         return "\(frame) \(provenance)"
     }
 
