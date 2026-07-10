@@ -176,7 +176,7 @@ struct HomeCoachCard: View {
                let days = bigMomentStore.daysUntil(moment),
                days >= 0 && days <= 14 {
                 prepSessionCTA(moment: moment, days: days)
-                Button("Run \(recommendedMode.displayLabel.lowercased()) instead") {
+                Button("Start \(recommendedMode.displayLabel) instead") {
                     beginRecommendedRep()
                 }
                 .font(Typography.captionSmall.weight(.semibold))
@@ -224,14 +224,7 @@ struct HomeCoachCard: View {
         guard hasSignal else {
             return "Start your first rep"
         }
-        let modeName: String
-        switch recommendedMode {
-        case .timed:          modeName = "timed rep"
-        case .suddenDeath:    modeName = PracticeMode.suddenDeath.displayLabel
-        case .ahCounter:      modeName = "Ah-Counter"
-        case .imConversation: modeName = "conversation"
-        }
-        return "Start \(modeName)"
+        return "Start \(recommendedMode.displayLabel)"
     }
 
     /// Hero card chrome — replaces the standard `CardView` so the Coach
@@ -369,7 +362,7 @@ struct HomeCoachCard: View {
 
         if let moment = bigMomentStore.activeMoment,
            let days = bigMomentStore.daysUntil(moment),
-           days >= 0 && days <= 30 {
+           days >= 0 && days <= 14 {
             return HomeMomentCopy.title(momentTitle: moment.title, days: days)
         }
 
@@ -402,7 +395,7 @@ struct HomeCoachCard: View {
             return "Hold \(tier.title)."
         }
 
-        let focus = recommendationBlueprint.focus.trimmingCharacters(in: .whitespacesAndNewlines)
+        let focus = CoachDisplayCopy.normalized(recommendationBlueprint.focus)
         if !focus.isEmpty {
             // Ensure punctuation closure — title reads as a complete
             // imperative, not a fragment trailing into the subtitle.
@@ -410,7 +403,7 @@ struct HomeCoachCard: View {
             return "\(trimmed)."
         }
 
-        return "Run a clean rep."
+        return "Build a clean rep."
     }
 
     private var coachSubtitle: String? {
@@ -420,7 +413,7 @@ struct HomeCoachCard: View {
         // goal-voice subtitle when the moment is cleared or past.
         if let moment = bigMomentStore.activeMoment,
            let days = bigMomentStore.daysUntil(moment),
-           days >= 0 && days <= 30 {
+           days >= 0 && days <= 14 {
             return "Three focused reps before the real conversation."
         }
 
@@ -446,7 +439,7 @@ struct HomeCoachCard: View {
         }
 
         if recommendationBlueprint.source == .caseIntervention {
-            return recommendationBlueprint.whyNow
+            return CoachDisplayCopy.normalized(recommendationBlueprint.whyNow)
         }
 
         // Landmark within reach — subtitle is the gating line itself so the
@@ -489,8 +482,8 @@ struct HomeCoachCard: View {
         }
 
         let blueprint = recommendationBlueprint
-        let focus = blueprint.focus.trimmingCharacters(in: .whitespacesAndNewlines)
-        let why = blueprint.whyNow.trimmingCharacters(in: .whitespacesAndNewlines)
+        let focus = CoachDisplayCopy.normalized(blueprint.focus)
+        let why = CoachDisplayCopy.normalized(blueprint.whyNow)
 
         let tier = LeagueTier.tier(for: ratingStore.rating.overall)
         let tierHolding = tier == .gold || tier == .platinum || tier == .diamond
@@ -520,7 +513,7 @@ struct HomeCoachCard: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Open rehearsal plan")
+                    Text("Continue prep")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                     Text("Three focused reps")

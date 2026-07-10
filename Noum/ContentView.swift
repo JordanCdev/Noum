@@ -60,6 +60,47 @@ struct HomePeakGlowPresentation: Equatable {
     }
 }
 
+/// Pure presentation plan for the one action Home leads with. The view passes
+/// existing store facts into this resolver; no state is persisted here.
+struct HomePrimaryActionPresentation: Equatable {
+    enum Kind: Equatable {
+        case pendingOutcomeCheckIn
+        case upcomingMomentPrep
+        case recommendedRep
+        case firstRep
+    }
+
+    let kind: Kind
+    let showsAskNoum: Bool
+
+    static func resolve(
+        sessionCount: Int,
+        hasPendingOutcomeCheckIn: Bool,
+        hasUpcomingMomentPrep: Bool
+    ) -> HomePrimaryActionPresentation {
+        let kind: Kind
+        if hasPendingOutcomeCheckIn {
+            kind = .pendingOutcomeCheckIn
+        } else if hasUpcomingMomentPrep {
+            kind = .upcomingMomentPrep
+        } else if sessionCount > 0 {
+            kind = .recommendedRep
+        } else {
+            kind = .firstRep
+        }
+        return HomePrimaryActionPresentation(
+            kind: kind,
+            showsAskNoum: sessionCount > 0
+        )
+    }
+
+    /// Home always has one primary surface, may add Ask Noum after rep one,
+    /// and accepts at most one conditional review row.
+    func visibleSurfaceCount(hasConditionalRow: Bool) -> Int {
+        1 + (showsAskNoum ? 1 : 0) + (hasConditionalRow ? 1 : 0)
+    }
+}
+
 // Home-only time-of-day ambient. The four buckets shift the canvas
 // gradient softly through the day: warm-light mornings → cool airy
 // middays → richer purple-pink evenings → deeper-saturated nights.
@@ -104,13 +145,13 @@ enum HomeAskNoumEvidenceCopy {
             // Cold start, lowest patience: lead with the benefit and make the
             // depth curve legible so a new user sees the coach sharpens with
             // evidence — without claiming history it doesn't have.
-            return "Give me one rep and I'll name the first lever worth training. A few more, and I'll name your core move."
+            return "Give me one rep and I'll name the first focus worth training. A few more, and I'll name your core move."
         case 1:
-            return "I have one rep, so I'll keep the read light and concrete — then sharpen it as you stack more."
+            return "I have one rep, so I'll keep the read light and concrete."
         case 2:
-            return "I have two reps, so I'll compare carefully without overcalling a pattern."
+            return "I have two reps, so I'll compare without overcalling a pattern."
         default:
-            return "I read your recent reps before answering, so the coaching stays specific."
+            return "I read your recent reps before answering."
         }
     }
 }
@@ -245,7 +286,7 @@ struct HomeBottomShortcut: Identifiable, Equatable {
     let accent: Accent
 
     var accessibilityLabel: String {
-        "Open \(title)"
+        title
     }
 
     static let all: [HomeBottomShortcut] = [
@@ -347,6 +388,7 @@ struct ContentView: View {
     /// celebration is dismissed.
     @State private var pathCelebrationProof: ProofMoment? = nil
     @State private var showBigMomentIntake: Bool = false
+    @State private var showGoalReview: Bool = false
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isOnboardingUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_ONBOARDING")
     private let launchedWithDeepLink = ProcessInfo.processInfo.arguments.contains("-DeepLink")
@@ -520,11 +562,7 @@ struct ContentView: View {
                     .frame(height: 0)
 
                     VStack(spacing: Spacing.cardGap) {
-                        if sessionStore.sessions.isEmpty {
-                            emptyStateHomeCards
-                        } else {
-                            populatedHomeCards
-                        }
+                        cohesiveHomeCards
                     }
                     .padding(.horizontal, Spacing.screenH)
                     // Generous top padding so when the user scrolls up, the
@@ -884,6 +922,173 @@ struct ContentView: View {
     // time"). Splitting each branch into its own `@ViewBuilder` computed
     // property is a pure refactor: identical card set, identical
     // conditions, identical `cardEntrance` ordering.
+    private enum HomeConditionalSurface {
+        case goalReview
+        case outcomeAcknowledgement
+        case ratingReview
+    }
+
+    private var homePrimaryAction: HomePrimaryActionPresentation {
+        let hasUpcomingPrep: Bool
+        if let moment = bigMomentStore.activeMoment,
+           let days = bigMomentStore.daysUntil(moment) {
+            hasUpcomingPrep = days >= 0 && days <= 14
+        } else {
+            hasUpcomingPrep = false
+        }
+
+        return HomePrimaryActionPresentation.resolve(
+            sessionCount: sessionStore.sessions.count,
+            hasPendingOutcomeCheckIn: bigMomentStore.pendingOutcomeCheckInMoment != nil,
+            hasUpcomingMomentPrep: hasUpcomingPrep
+        )
+    }
+
+    /// Only one quiet row may follow the primary action and Ask Noum.
+    /// Direction review wins because it is explicitly due, followed by a
+    /// just-saved real-world acknowledgement, then a transient rating review.
+    private var homeConditionalSurface: HomeConditionalSurface? {
+        if goalRefresh.shouldPresent { return .goalReview }
+        if bigMomentStore.pendingOutcomeAck != nil { return .outcomeAcknowledgement }
+        if ratingStore.pendingPeakGlow && ratingStore.rating.hasRatedEvidence {
+            return .ratingReview
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private var cohesiveHomeCards: some View {
+        let presentation = homePrimaryAction
+
+        if presentation.kind == .pendingOutcomeCheckIn,
+           let moment = bigMomentStore.pendingOutcomeCheckInMoment {
+            BigMomentOutcomeInlineCard(moment: moment)
+                .cardEntrance(0)
+        } else {
+            HomeCoachCard(
+                navigationPath: $navigationPath,
+                scrollOffset: homeScrollOffset,
+                showsPlanArc: false
+            )
+            .cardEntrance(0)
+        }
+
+        if presentation.showsAskNoum {
+            homeAskNoumRow.cardEntrance(1)
+        }
+
+        switch homeConditionalSurface {
+        case .goalReview:
+            if showGoalReview {
+                GoalRefreshInlineCard()
+                    .cardEntrance(2)
+            } else {
+                homeGoalReviewRow.cardEntrance(2)
+            }
+        case .outcomeAcknowledgement:
+            if let report = bigMomentStore.pendingOutcomeAck {
+                BigMomentOutcomeAckCard(report: report) {
+                    bigMomentStore.consumeOutcomeAck()
+                }
+                .cardEntrance(2)
+                .transition(.opacity)
+            }
+        case .ratingReview:
+            homeRatingReviewRow.cardEntrance(2)
+        case nil:
+            EmptyView()
+        }
+    }
+
+    private var homeGoalReviewRow: some View {
+        quietHomeRow(
+            icon: "scope",
+            title: "Review your direction",
+            body: "Confirm that Noum is still training for the right conversation.",
+            tint: AppColor.brandBlue,
+            accessibilityID: "home.goalReview.row"
+        ) {
+            if reduceMotion {
+                showGoalReview = true
+            } else {
+                withAnimation(.standardSpring) { showGoalReview = true }
+            }
+        }
+    }
+
+    private var homeRatingReviewRow: some View {
+        let rating = ratingStore.rating
+        let presentation = HomePeakGlowPresentation.make(
+            weekPeak: rating.weekPeakRating,
+            current: rating.overall,
+            allTime: rating.peakRating
+        )
+        return quietHomeRow(
+            icon: "chart.line.uptrend.xyaxis",
+            title: "Review this week's movement",
+            body: presentation.body,
+            tint: AppColor.positive,
+            accessibilityID: "home.ratingReview.row"
+        ) {
+            ratingStore.markPeakGlowConsumed()
+            navigationPath.append(AppDestination.socialProfile)
+        }
+        .task {
+            let seconds: UInt64 = reduceMotion ? 5 : 7
+            try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+            ratingStore.markPeakGlowConsumed()
+        }
+    }
+
+    private func quietHomeRow(
+        icon: String,
+        title: String,
+        body: String,
+        tint: Color,
+        accessibilityID: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: Spacing.md) {
+                Image(systemName: icon)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 32, height: 32)
+                    .background(tint.opacity(0.10), in: Circle())
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(title)
+                        .font(Typography.cardLabel)
+                        .foregroundStyle(.primary)
+                    Text(body)
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.pressable)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(AppColor.subtleBorder, lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title). \(body)")
+        .accessibilityIdentifier(accessibilityID)
+    }
+
     @ViewBuilder
     private var emptyStateHomeCards: some View {
         // Empty-state — use the same coach-first floor as

@@ -400,6 +400,200 @@ struct LightGradientBackground: View {
     }
 }
 
+// MARK: - Reading & Configuration Scaffolds
+
+/// Neutral, scrollable page scaffold for information-heavy screens.
+///
+/// The scaffold deliberately owns no navigation or feature state. It only
+/// applies Noum's shared canvas, reading width, spacing rhythm, and Dynamic
+/// Type-safe header treatment so feature screens do not invent their own
+/// card stacks.
+struct ReadingScreenScaffold<Content: View>: View {
+    let title: String
+    let subtitle: String?
+    let bottomClearance: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    init(
+        title: String,
+        subtitle: String? = nil,
+        bottomClearance: CGFloat = Spacing.lg,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.bottomClearance = bottomClearance
+        self.content = content
+    }
+
+    var body: some View {
+        ZStack {
+            AppColor.screenBackground
+                .ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text(title)
+                            .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        if let subtitle {
+                            Text(subtitle)
+                                .font(Typography.subheadline)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+
+                    content()
+                }
+                .frame(maxWidth: 680, alignment: .leading)
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.sm)
+                .padding(.bottom, bottomClearance)
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+}
+
+/// One calm group of destination rows. Callers supply the rows and dividers;
+/// this component owns only the shared title and container treatment.
+struct GroupedDestinationList<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: () -> Content
+
+    init(
+        title: String,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.title = title
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(title)
+                .font(Typography.headline)
+                .foregroundStyle(.primary)
+
+            VStack(spacing: 0) {
+                content()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                AppColor.cardBackground,
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(AppColor.subtleBorder, lineWidth: 1)
+            )
+        }
+    }
+}
+
+/// Compact coaching brief with one observation, optional evidence caption,
+/// and one next move. It intentionally has no card background so it can sit
+/// inside a hero without creating a nested surface.
+struct CoachBriefSurface: View {
+    let observation: String
+    let evidence: String?
+    let nextMove: String
+    let tint: Color
+
+    init(
+        observation: String,
+        evidence: String? = nil,
+        nextMove: String,
+        tint: Color = AppColor.brandBlue
+    ) {
+        self.observation = observation
+        self.evidence = evidence
+        self.nextMove = nextMove
+        self.tint = tint
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(observation)
+                .font(Typography.body)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let evidence {
+                Text(evidence)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                Image(systemName: "target")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+                Text(nextMove)
+                    .font(Typography.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Shared sheet framing for quiet configuration and reflection flows. The
+/// feature owns its bindings and dismissal; this view only aligns the title,
+/// content, and bottom actions without adding animation or persisted state.
+struct QuietSheetScaffold<Content: View, Actions: View>: View {
+    let title: String
+    let subtitle: String?
+    @ViewBuilder let content: () -> Content
+    @ViewBuilder let actions: () -> Actions
+
+    init(
+        title: String,
+        subtitle: String? = nil,
+        @ViewBuilder content: @escaping () -> Content,
+        @ViewBuilder actions: @escaping () -> Actions
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.content = content
+        self.actions = actions
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text(title)
+                    .font(Typography.sectionHero)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(Typography.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityElement(children: .combine)
+
+            content()
+            Spacer(minLength: 0)
+            actions()
+        }
+        .padding(.horizontal, Spacing.screenH)
+        .padding(.top, Spacing.lg)
+        .padding(.bottom, Spacing.sm)
+        .background(AppColor.screenBackground.ignoresSafeArea())
+    }
+}
+
 // MARK: - Hero Gradient System
 
 /// Hero gradient endpoints (docs/UX_VISUAL_DIRECTION.md — owner-approved
@@ -516,14 +710,41 @@ struct HeroGlassChip: View {
 
 // MARK: - Shared Helpers
 
+/// Final presentation guard for coaching text produced by older deterministic
+/// paths. It changes vocabulary only; evidence and recommendation ownership
+/// remain with the existing engines.
+enum CoachDisplayCopy {
+    static func normalized(_ value: String) -> String {
+        var result = value
+        let replacements: [(String, String)] = [
+            ("rolling baseline", "recent reps"),
+            ("rehearsal shapes", "practice rounds"),
+            ("read gets sharper", "coaching gets more specific"),
+            ("rule-based", ""),
+            ("using:", ""),
+            ("lever", "focus")
+        ]
+        for (source, replacement) in replacements {
+            result = result.replacingOccurrences(
+                of: source,
+                with: replacement,
+                options: [.caseInsensitive]
+            )
+        }
+        return result
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 extension PracticeMode {
     /// Display label for the mode.
     var displayLabel: String {
         switch self {
-        case .timed: return "Timed"
+        case .timed: return "Timed Practice"
         case .suddenDeath: return "Pressure Drill"
-        case .ahCounter: return "Ah-Counter"
-        case .imConversation: return "Conversation practice"
+        case .ahCounter: return "Filler Control"
+        case .imConversation: return "Conversation Practice"
         }
     }
 
