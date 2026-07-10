@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import coach_arena as arena
 
@@ -713,6 +714,65 @@ class AppPathBoundaryTests(unittest.TestCase):
         self.assertEqual(result["blockers"], [])
         self.assertEqual(result["traceCount"], 1)
         self.assertEqual(result["traceGitCommits"], ["abc1234"])
+
+    def test_app_path_regeneration_preflight_passes_clean_report_only_descendant(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / arena.SOURCE_GIT_COMMIT_SIDECAR).write_text("abc1234\n", encoding="utf-8")
+            (root / arena.SOURCE_FINGERPRINT_SIDECAR).write_text("sha256:fresh\n", encoding="utf-8")
+            (root / arena.APP_PATH_DUMP_NAME).write_text(json.dumps({
+                "passesAppPathFloor": True,
+                "rows": [{
+                    "turns": [{
+                        "arenaTrace": {
+                            "gitCommit": "abc1234",
+                            "sourceFingerprint": "sha256:fresh",
+                        }
+                    }]
+                }]
+            }), encoding="utf-8")
+
+            with mock.patch.object(arena, "git_commit_is_ancestor", return_value=True):
+                result = arena.app_path_regeneration_preflight(
+                    temp_dir,
+                    current_commit="def5678",
+                    dirty_source_files=[],
+                    current_source_fingerprint="sha256:fresh",
+                )
+
+        self.assertTrue(result["passes"])
+        self.assertEqual(result["blockers"], [])
+        self.assertIn("sourceGitCommitSidecarCleanAncestor", result["warnings"])
+        self.assertIn("traceGitCommitCleanAncestor", result["warnings"])
+
+    def test_app_path_regeneration_preflight_blocks_unrelated_matching_commit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / arena.SOURCE_GIT_COMMIT_SIDECAR).write_text("abc1234\n", encoding="utf-8")
+            (root / arena.SOURCE_FINGERPRINT_SIDECAR).write_text("sha256:fresh\n", encoding="utf-8")
+            (root / arena.APP_PATH_DUMP_NAME).write_text(json.dumps({
+                "passesAppPathFloor": True,
+                "rows": [{
+                    "turns": [{
+                        "arenaTrace": {
+                            "gitCommit": "abc1234",
+                            "sourceFingerprint": "sha256:fresh",
+                        }
+                    }]
+                }]
+            }), encoding="utf-8")
+
+            with mock.patch.object(arena, "git_commit_is_ancestor", return_value=False):
+                result = arena.app_path_regeneration_preflight(
+                    temp_dir,
+                    current_commit="def5678",
+                    dirty_source_files=[],
+                    current_source_fingerprint="sha256:fresh",
+                )
+
+        self.assertFalse(result["passes"])
+        self.assertIn("sourceGitCommitSidecarStale", result["blockers"])
+        self.assertIn("traceGitCommitStale", result["blockers"])
 
     def test_write_app_path_source_sidecars_stamps_commit_and_fingerprint(self):
         with tempfile.TemporaryDirectory() as temp_dir:

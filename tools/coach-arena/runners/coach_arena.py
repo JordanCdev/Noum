@@ -1016,6 +1016,18 @@ def current_git_commit(short=True):
     return proc.stdout.strip()
 
 
+def git_commit_is_ancestor(ancestor, descendant):
+    if not ancestor or not descendant:
+        return False
+    proc = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=str(ROOT),
+        text=True,
+        capture_output=True
+    )
+    return proc.returncode == 0
+
+
 def coach_source_fingerprint(paths=COACH_SOURCE_STATUS_PATHS):
     digest = hashlib.sha256()
     for rel_path in sorted(paths):
@@ -1102,10 +1114,30 @@ def app_path_regeneration_preflight(
         if (report.get("summary") or {}).get("appPathFloorFailureCount", 0):
             warnings.append("appPathFloorFailuresPresent")
 
+    source_fingerprints_match_current = bool(
+        current_source_fingerprint and
+        sidecar_fingerprint == current_source_fingerprint and
+        source_fingerprints and
+        all(fingerprint == current_source_fingerprint for fingerprint in source_fingerprints)
+    )
+
+    def commit_is_current_or_clean_ancestor(source_commit):
+        if not current_commit or not source_commit:
+            return False
+        if source_commit == current_commit:
+            return True
+        return bool(
+            not dirty_source_files and
+            source_fingerprints_match_current and
+            git_commit_is_ancestor(source_commit, current_commit)
+        )
+
     if sidecar_commit is None:
         blockers.append("missingSourceGitCommitSidecar")
-    elif current_commit and sidecar_commit != current_commit:
+    elif current_commit and not commit_is_current_or_clean_ancestor(sidecar_commit):
         blockers.append("sourceGitCommitSidecarStale")
+    elif current_commit and sidecar_commit != current_commit:
+        warnings.append("sourceGitCommitSidecarCleanAncestor")
     if sidecar_fingerprint is None:
         blockers.append("missingSourceCoachFingerprintSidecar")
     elif current_source_fingerprint and sidecar_fingerprint != current_source_fingerprint:
@@ -1117,8 +1149,12 @@ def app_path_regeneration_preflight(
         blockers.append("traceGitCommitMissing")
     if missing_fingerprint_count:
         blockers.append("traceCoachFingerprintMissing")
-    if source_commits and current_commit and any(commit != current_commit for commit in source_commits):
+    if source_commits and current_commit and any(
+        not commit_is_current_or_clean_ancestor(commit) for commit in source_commits
+    ):
         blockers.append("traceGitCommitStale")
+    elif source_commits and current_commit and any(commit != current_commit for commit in source_commits):
+        warnings.append("traceGitCommitCleanAncestor")
     if (
         source_fingerprints and
         current_source_fingerprint and
