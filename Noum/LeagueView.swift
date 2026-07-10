@@ -16,11 +16,18 @@ struct LeagueView: View {
             AppColor.screenBackground.ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: Spacing.lg) {
-                    headerCopy
-                    tierCard
-                    membersCard
-                    Spacer(minLength: Spacing.lg)
+                Group {
+                    switch peerVisibility {
+                    case .forming:
+                        formingState
+                    case .available:
+                        VStack(alignment: .leading, spacing: Spacing.lg) {
+                            headerCopy
+                            tierCard
+                            membersCard
+                            Spacer(minLength: Spacing.lg)
+                        }
+                    }
                 }
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.top, Spacing.sm)
@@ -40,6 +47,53 @@ struct LeagueView: View {
 
     // MARK: - Header
 
+    private var peerVisibility: PeerComparisonVisibility {
+        PeerComparisonVisibility.make(
+            members: league.members,
+            currentAccountID: authManager.currentAccountID
+        )
+    }
+
+    private var formingState: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            Text("Peer comparison")
+                .font(Typography.bigStat)
+                .foregroundStyle(.primary)
+
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Image(systemName: "person.2.wave.2")
+                    .font(Typography.bigStat)
+                    .foregroundStyle(AppColor.brandBlue)
+                    .frame(width: 56, height: 56)
+                    .background(AppColor.brandBlue.opacity(0.10), in: Circle())
+                    .accessibilityHidden(true)
+
+                Text("Your peer group is still forming.")
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(.primary)
+
+                Text("This view appears when another speaker in your weekly group has real activity. Noum will not fill the space with sample standings.")
+                    .font(Typography.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if league.isLoading {
+                    ProgressView()
+                        .tint(AppColor.brandBlue)
+                        .accessibilityLabel("Checking for active peers")
+                }
+            }
+            .padding(Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .stroke(AppColor.subtleBorder, lineWidth: 1)
+            )
+        }
+        .accessibilityIdentifier("peerComparison.forming")
+    }
+
     private var headerCopy: some View {
         VStack(alignment: .leading, spacing: 8) {
             Group {
@@ -58,8 +112,8 @@ struct LeagueView: View {
             }
 
             Text(ratingStore.rating.hasRatedEvidence
-                 ? "A weekly comparison with speakers at a similar rating."
-                 : "Complete one rated rep to create a fair weekly comparison.")
+                 ? "A weekly comparison with active speakers at a similar rating."
+                 : "Complete one rated rep to create a fair comparison.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -68,7 +122,7 @@ struct LeagueView: View {
     }
 
     private var leagueTitle: some View {
-        Text("League")
+        Text("Peer comparison")
             .font(Typography.bigStat)
             .foregroundStyle(.primary)
     }
@@ -196,7 +250,14 @@ struct LeagueView: View {
     }
 
     private var tierSubtitle: String {
-        LeaguePlacementPresentation.fullScreenSubtitle(tier: league.tier, rating: ratingStore.rating)
+        guard ratingStore.rating.hasRatedEvidence else {
+            return "One rated rep creates your comparison baseline."
+        }
+        if let next = league.tier.nextTier {
+            let remaining = max(0, next.ratingFloor - ratingStore.rating.overall)
+            return "\(remaining) rating points to \(next.title)."
+        }
+        return "You are in the top comparison tier."
     }
 
     private var streakValue: String {
@@ -220,7 +281,7 @@ struct LeagueView: View {
     private var membersCard: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
-                SettingsSectionLabel(title: "Standings")
+                SettingsSectionLabel(title: "This week")
                 Spacer()
                 if league.isLoading {
                     ProgressView()
