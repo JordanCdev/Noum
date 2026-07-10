@@ -700,7 +700,7 @@ struct YourNextMoveCard: View {
                     Image(systemName: "brain.head.profile")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    Text("AI Coach: \(aiFeedback.suggestedDrill)")
+                    Text("Coach note: \(aiFeedback.suggestedDrill)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -1191,6 +1191,166 @@ struct IMReadCard: View {
     }
 }
 
+// MARK: - Conversation debrief
+
+/// Conversation-mode counterpart to `PostRepDebriefCard`. It keeps the
+/// scenario/tone read intact while composing the strength and next move into
+/// one quiet surface.
+struct IMDebriefCard: View {
+    let coachNote: CoachNote
+    let effectiveDuration: TimeInterval
+    let imConversationDetails: IMConversationDetails?
+    var revisedChange: CoachCourseChange? = nil
+    var reviewIntervention: CoachIntervention? = nil
+    var onReview: (() -> Void)? = nil
+
+    private var isShortSession: Bool {
+        let turns = imConversationDetails?.turns.filter { $0.speaker == .user }.count ?? 0
+        return turns <= 2 || effectiveDuration < 30
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            if let change = revisedChange {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.pro)
+                        .accessibilityHidden(true)
+                    Text(RevisedReadCard.headlineCopy(for: change))
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("summary.revisedRead.card")
+            }
+
+            debriefSection(
+                title: "What held",
+                symbol: "checkmark.circle.fill",
+                tint: AppColor.positive,
+                body: coachNote.momentum
+            )
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                debriefSection(
+                    title: "Next move",
+                    symbol: "arrow.up.right",
+                    tint: AppColor.caution,
+                    body: reviewIntervention == nil ? coachNote.nextStep : coachNote.leverage
+                )
+
+                if let reviewIntervention, let onReview {
+                    Text(InterventionReviewPromptCard.headlineCopy(for: reviewIntervention))
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button(CohesiveSummaryCopy.askNoum, action: onReview)
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.pro)
+                        .frame(minHeight: 44, alignment: .leading)
+                        .buttonStyle(.pressable)
+                        .accessibilityIdentifier("summary.interventionReview.cta")
+                }
+            }
+
+            if isShortSession {
+                Text("This is an early read from a short conversation.")
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(AppColor.textSecondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(
+            AppColor.cardBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.subtleBorder, lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("summary.postRepVerdict")
+    }
+
+    private func debriefSection(
+        title: String,
+        symbol: String,
+        tint: Color,
+        body: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(AppColor.textPrimary)
+            }
+            Text(body)
+                .font(Typography.body)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// One dominant repeat action for conversation summaries. The optional Adjust
+/// link keeps mode selection reachable without competing with the prescribed
+/// start action.
+struct SummaryRepeatActionCard: View {
+    let exerciseName: String
+    let onStart: () -> Void
+    var onAdjust: (() -> Void)? = nil
+
+    static func primaryCTALabel(exerciseName: String) -> String {
+        let name = exerciseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Start practice" : "Start \(name)"
+    }
+
+    var body: some View {
+        VStack(spacing: Spacing.sm) {
+            Button(action: onStart) {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.subheadline.weight(.semibold))
+                    Text(Self.primaryCTALabel(exerciseName: exerciseName))
+                        .font(Typography.body.weight(.semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .background(
+                    AppColor.brandBlue,
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("summary.postRepVerdict.fullRetry")
+
+            if let onAdjust {
+                Button("Adjust", action: onAdjust)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .frame(minHeight: 44)
+                    .buttonStyle(.pressable)
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity)
+        .background(
+            AppColor.cardBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+    }
+}
+
 // MARK: - IM One Move Card
 
 struct IMOneMoveCard: View {
@@ -1225,7 +1385,7 @@ struct IMOneMoveCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Button(action: onReview) {
                     HStack(spacing: 6) {
-                        Text("Review with coach")
+                        Text(CohesiveSummaryCopy.askNoum)
                             .font(.caption.weight(.semibold))
                         Image(systemName: "arrow.right")
                             .font(.caption.weight(.bold))
