@@ -107,12 +107,12 @@ struct TalkToNoumCTACard: View {
 
     static func subCopy(isPremium: Bool) -> String {
         isPremium
-            ? "Open the thread with this session in hand — quotes, pace, and the call already loaded."
+            ? "Ask about this rep with its quotes, pace, and coaching read already in hand."
             : "Pro members can open a coach thread about every rep, with quotes and metrics pre-loaded."
     }
 
     static func ctaCopy(isPremium: Bool) -> String {
-        isPremium ? "Open the thread" : "Unlock with Pro"
+        isPremium ? "Ask Noum" : "Unlock with Pro"
     }
 
     static func accessibilityLabel(isPremium: Bool, voice: SpeakingStyleGoal? = nil) -> String {

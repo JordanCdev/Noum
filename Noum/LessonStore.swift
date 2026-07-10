@@ -76,10 +76,10 @@ struct LessonProgressPresentation: Equatable {
 
     func lessonSummaryLine(title: String) -> String {
         if completedPasses >= Self.masteryPassCap {
-            return "You've mastered \(title)."
+            return "You've completed all five passes of \(title)."
         }
         if completedPasses == 1 {
-            return "First practice pass complete. Four more to master."
+            return "First practice pass complete. Four more passes to complete."
         }
         return "\(completedPasses) of \(Self.masteryPassCap) practice passes on \(title)."
     }
@@ -87,11 +87,11 @@ struct LessonProgressPresentation: Equatable {
     func celebrationLine(for kind: LessonCelebration.Kind) -> String {
         switch kind {
         case .unlocked:
-            return "First practice pass complete. Four more to master."
+            return "First practice pass complete. Four more passes to complete."
         case .levelUp:
             return "\(completedPasses) of \(Self.masteryPassCap) practice passes."
         case .mastered:
-            return "All five practice passes. The technique is yours."
+            return "All five practice passes complete. Keep using the technique in live reps."
         }
     }
 
@@ -242,7 +242,7 @@ struct LessonCelebration: Equatable {
             switch self {
             case .unlocked: return "Lesson cleared"
             case .levelUp:  return "Practice pass added"
-            case .mastered: return "Lesson mastered"
+            case .mastered: return "Five passes complete"
             }
         }
     }

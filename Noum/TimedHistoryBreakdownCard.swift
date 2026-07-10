@@ -234,7 +234,7 @@ struct TimedHistoryBreakdownCard: View {
         let avg = stats.averageScore.map { String(format: "%.1f", $0) } ?? "not yet available"
         let zoneCopy = stats.inZoneRepCount == 1 ? "1 rep in zone" : "\(stats.inZoneRepCount) reps in zone"
         let wpm = stats.averageWPM.map { "\($0)" } ?? "not yet available"
-        return "Average score \(avg). \(zoneCopy). Average WPM \(wpm)."
+        return "Average score \(avg). \(zoneCopy). Average pace \(wpm) words per minute."
     }
 
     // MARK: - Best rep row

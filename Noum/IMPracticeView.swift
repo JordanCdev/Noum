@@ -7,6 +7,8 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct IMPracticeView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Binding var navigationPath: NavigationPath
     @StateObject private var speechVM: SpeechRecognizerViewModel
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
@@ -43,6 +45,9 @@ struct IMPracticeView: View {
     @State private var sessionElapsedSeconds = 0
     @State private var sessionTimeoutNudge: String?
     @State private var sessionTimerTask: Task<Void, Never>?
+    @State private var openingTask: Task<Void, Never>?
+    @State private var replyTask: Task<Void, Never>?
+    @State private var evaluationTask: Task<Void, Never>?
 
     private static let sessionMaxSeconds = 900    // 15-minute hard cap
     private static let sessionNudgeSeconds = 720  // 12-minute gentle nudge
@@ -132,22 +137,11 @@ struct IMPracticeView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [AppColor.lightGradientStart, AppColor.lightGradientEnd],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-
-            Circle()
-                .fill(Color.blue.opacity(0.08))
-                .frame(width: 240, height: 240)
-                .offset(x: 140, y: -250)
-
-            Circle()
-                .fill(Color.white.opacity(0.55))
-                .frame(width: 200, height: 200)
-                .offset(x: -130, y: -110)
+            if isEndingConversation {
+                AppColor.screenBackground.ignoresSafeArea()
+            } else {
+                FocusedPracticeBackground(style: .conversation)
+            }
 
             content
         }
@@ -167,14 +161,20 @@ struct IMPracticeView: View {
         }
         .accessibilityIdentifier("imPractice.screen")
         .safeAreaInset(edge: .bottom) {
-            if isSessionActive && !isEndingConversation {
+            if !isSessionActive && !isEndingConversation {
+                bottomSetupBar
+                    .padding(.horizontal, Spacing.screenH)
+                    .padding(.vertical, Spacing.sm)
+                    .background(Color.black.opacity(0.10).ignoresSafeArea())
+            } else if isSessionActive && !isEndingConversation {
                 composerBar
+                    .environment(\.colorScheme, .dark)
                     .padding(.horizontal, 16)
                     .padding(.top, 10)
                     .padding(.bottom, 8)
                     .background(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.0), Color.white],
+                            colors: [Color.clear, Color.black.opacity(0.18)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -184,6 +184,7 @@ struct IMPracticeView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
+        .tint(isEndingConversation ? AppColor.brandBlue : .white)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button {
@@ -207,7 +208,7 @@ struct IMPracticeView: View {
         } message: {
             Text("Your current session will be lost.")
         }
-        .alert("IM Mode Unavailable", isPresented: .constant(serviceErrorMessage != nil), actions: {
+        .alert("Conversation practice unavailable", isPresented: .constant(serviceErrorMessage != nil), actions: {
             Button("OK", role: .cancel) { serviceErrorMessage = nil }
         }, message: {
             Text(serviceErrorMessage ?? "")
@@ -239,8 +240,12 @@ struct IMPracticeView: View {
 
             processingStripeOffset = -140
             while isEndingConversation {
-                withAnimation(.linear(duration: 1.05)) {
-                    processingStripeOffset = 140
+                if reduceMotion {
+                    processingStripeOffset = 0
+                } else {
+                    withAnimation(.linear(duration: 1.05)) {
+                        processingStripeOffset = 140
+                    }
                 }
                 try? await Task.sleep(for: .milliseconds(1050))
                 guard isEndingConversation else { break }
@@ -274,6 +279,16 @@ struct IMPracticeView: View {
                 beginConversation()
             }
         }
+        .onDisappear {
+            openingTask?.cancel()
+            replyTask?.cancel()
+            evaluationTask?.cancel()
+            stopSessionTimer()
+            speechVM.stopRecording()
+#if canImport(AVFAudio)
+            messageSpeaker.stop()
+#endif
+        }
     }
 
     @ViewBuilder
@@ -281,15 +296,21 @@ struct IMPracticeView: View {
         if isEndingConversation {
             endingConversationScreen
         } else if !isSessionActive {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 14) {
-                    headerCard
-                    setupPanel
-                    bottomSetupBar
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 14)
+            FocusedPracticeScaffold(
+                style: .conversation,
+                status: setupStep == .scenario ? "Step 1 of 2" : "Step 2 of 2",
+                title: "Conversation practice",
+                subtitle: "Choose the situation, then decide how you want to sound."
+            ) {
+                NoumCharacter(
+                    mood: .calm,
+                    tint: .white,
+                    size: 48,
+                    stage: characterStage
+                )
+                .accessibilityHidden(true)
+            } content: {
+                setupPanel
             }
         } else {
             VStack(spacing: 12) {
@@ -311,12 +332,13 @@ struct IMPracticeView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
+            .environment(\.colorScheme, .dark)
         }
     }
 
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("IM Mode", systemImage: "message.badge.waveform.fill")
+            Label("Conversation practice", systemImage: "message.badge.waveform.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.blue)
 
@@ -326,7 +348,7 @@ struct IMPracticeView: View {
                 Text(isSessionActive ? "Target tone: \(resolvedTargetTone.title)" : "Pick a scenario, then shape the tone.")
                     .font(Typography.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
             }
 
             if !isSessionActive {
@@ -343,10 +365,10 @@ struct IMPracticeView: View {
                     )
                 }
             } else {
-                Text("You’re stepping into a live-text simulation with \(resolvedScenario.personaName).")
+                Text("You’re rehearsing a live conversation with \(resolvedScenario.personaName).")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -389,8 +411,8 @@ struct IMPracticeView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Spacing.md)
-                .background(canStartConversation ? Color.blue : Color.gray.opacity(0.35), in: Capsule())
-                .foregroundStyle(.white)
+                .background(canStartConversation ? Color.white : Color.white.opacity(0.32), in: Capsule())
+                .foregroundStyle(canStartConversation ? AppColor.modeIM : Color.white.opacity(0.58))
                 .buttonStyle(.pressable)
                 .disabled(!canStartConversation)
             }
@@ -446,11 +468,12 @@ struct IMPracticeView: View {
             Text(relationshipProfile.continuitySummary)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(3)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .background(AppColor.focusedGlassFill, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .focusedGlassSurface()
     }
 
     private var setupCard: some View {
@@ -502,13 +525,12 @@ struct IMPracticeView: View {
             Text(setupGuidanceBody)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-                .lineLimit(3)
 
             if let scenario {
-                HStack(spacing: 8) {
-                    detailPill(title: scenario.personaName, systemImage: "person.fill")
-                    detailPill(title: scenario.stakes, systemImage: "bolt.horizontal.fill")
-                }
+                detailPillPair(
+                    first: (title: scenario.personaName, systemImage: "person.fill"),
+                    second: (title: scenario.stakes, systemImage: "bolt.horizontal.fill")
+                )
                 .padding(.top, 2)
             }
         }
@@ -546,18 +568,27 @@ struct IMPracticeView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 12)
             .padding(.vertical, Spacing.md)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            .background(AppColor.focusedGlassFill, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            .focusedGlassSurface()
             .onChange(of: turns.count) { _, _ in
                 if let last = turns.last?.id {
-                    withAnimation(.easeOut(duration: 0.2)) {
+                    if reduceMotion {
                         proxy.scrollTo(last, anchor: .bottom)
+                    } else {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo(last, anchor: .bottom)
+                        }
                     }
                 }
             }
             .onChange(of: isAwaitingNPC) { _, awaiting in
                 guard awaiting else { return }
-                withAnimation(.easeOut(duration: 0.2)) {
+                if reduceMotion {
                     proxy.scrollTo("typing-indicator", anchor: .bottom)
+                } else {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo("typing-indicator", anchor: .bottom)
+                    }
                 }
             }
         }
@@ -569,7 +600,7 @@ struct IMPracticeView: View {
                 bubbleContent(
                     title: resolvedScenario.personaName,
                     text: turn.text,
-                    tint: Color(red: 0.92, green: 0.94, blue: 0.98),
+                    tint: Color.white.opacity(0.13),
                     isLeading: true
                 )
                 Spacer(minLength: 72)
@@ -578,7 +609,7 @@ struct IMPracticeView: View {
                 bubbleContent(
                     title: "You",
                     text: turn.text,
-                    tint: Color(red: 0.85, green: 0.93, blue: 1.0),
+                    tint: Color.white.opacity(0.22),
                     isLeading: false
                 )
             }
@@ -612,13 +643,14 @@ struct IMPracticeView: View {
                             .frame(width: 7, height: 7)
                             .scaleEffect(typingPhase == index ? 1.1 : 0.72)
                             .opacity(typingPhase == index ? 1 : 0.45)
-                            .animation(.easeInOut(duration: 0.18), value: typingPhase)
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: typingPhase)
                     }
                 }
             }
             .frame(maxWidth: 120, alignment: .leading)
             .padding(Spacing.cardGap)
-            .background(Color(red: 0.92, green: 0.94, blue: 0.98), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .background(AppColor.focusedGlassFill, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .focusedGlassSurface()
             Spacer(minLength: 72)
         }
     }
@@ -632,7 +664,7 @@ struct IMPracticeView: View {
                     Text("Couldn't finish")
                         .font(Typography.figtree(size: 26, weight: .bold, relativeTo: .title2))
 
-                    Text("Something went wrong building your feedback. You can try again or skip to the home screen.")
+                    Text("Noum couldn’t finish this read. Try again or return home.")
                         .font(Typography.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -654,7 +686,7 @@ struct IMPracticeView: View {
                     Button {
                         dismiss()
                     } label: {
-                        Text("Skip & Go Home")
+                        Text("Return home")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
@@ -692,9 +724,9 @@ struct IMPracticeView: View {
         case 0:
             return "Reading the full conversation and tone."
         case 1:
-            return "Updating the relationship and progression state."
+            return "Checking how the conversation changed."
         default:
-            return "Building the summary and best next move."
+            return "Preparing your summary and next move."
         }
     }
 
@@ -725,7 +757,7 @@ struct IMPracticeView: View {
 
     private var sessionWrapUpCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Session boost")
+            Text("Conversation snapshot")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
@@ -736,7 +768,7 @@ struct IMPracticeView: View {
                 wrapUpChip(title: "XP", value: "+\(summaryEvaluation?.xpEarned ?? 0)", tint: .teal)
             }
 
-            Text("Locking in your score, relationship impact, and next best move.")
+            Text("Preparing your score, conversation read, and next move.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -806,7 +838,7 @@ struct IMPracticeView: View {
                     )
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                 }
 
                 Spacer(minLength: 0)
@@ -898,12 +930,11 @@ struct IMPracticeView: View {
                         Text(option.title)
                             .font(.headline)
                             .foregroundStyle(.primary)
-                            .lineLimit(2)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(option.summary)
                             .font(Typography.caption)
                             .foregroundStyle(.secondary)
-                            .lineLimit(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -914,10 +945,10 @@ struct IMPracticeView: View {
                         .foregroundStyle(scenario == option ? .blue : .secondary)
                 }
 
-                HStack(spacing: 8) {
-                    detailPill(title: option.personaName, systemImage: "person.fill")
-                    detailPill(title: option.stakes, systemImage: "sparkles")
-                }
+                detailPillPair(
+                    first: (title: option.personaName, systemImage: "person.fill"),
+                    second: (title: option.stakes, systemImage: "sparkles")
+                )
             }
             .padding(Spacing.cardGap)
             .background(
@@ -930,6 +961,8 @@ struct IMPracticeView: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("imPractice.scenario.\(option.rawValue)")
+        .accessibilityAddTraits(scenario == option ? [.isSelected] : [])
     }
 
     private func toneChip(for tone: IMTargetTone) -> some View {
@@ -952,6 +985,8 @@ struct IMPracticeView: View {
                 )
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("imPractice.tone.\(tone.rawValue)")
+        .accessibilityAddTraits(targetTone == tone ? [.isSelected] : [])
     }
 
     private func selectionSummaryChip(title: String, value: String, isComplete: Bool) -> some View {
@@ -962,7 +997,7 @@ struct IMPracticeView: View {
             Text(value)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(isComplete ? .primary : .secondary)
-                .lineLimit(1)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -973,11 +1008,27 @@ struct IMPracticeView: View {
         Label(title, systemImage: systemImage)
             .font(Typography.micro.weight(.semibold))
             .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .minimumScaleFactor(0.72)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(Color.black.opacity(0.04), in: Capsule())
+    }
+
+    private func detailPillPair(
+        first: (title: String, systemImage: String),
+        second: (title: String, systemImage: String)
+    ) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                detailPill(title: first.title, systemImage: first.systemImage)
+                detailPill(title: second.title, systemImage: second.systemImage)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                detailPill(title: first.title, systemImage: first.systemImage)
+                detailPill(title: second.title, systemImage: second.systemImage)
+            }
+        }
     }
 
     private func scenarioIconName(for option: IMConversationScenario) -> String {
@@ -1032,7 +1083,8 @@ struct IMPracticeView: View {
         conversationState = relationshipStore.startingState(for: scenario)
         isAwaitingNPC = true
 
-        Task {
+        openingTask?.cancel()
+        openingTask = Task {
             do {
                 let context = await IMContextService.shared.context(
                     for: scenario,
@@ -1085,8 +1137,10 @@ struct IMPracticeView: View {
     private func finishUserReply() {
         guard speechVM.isRecording else { return }
         speechVM.stopRecording()
-        Task {
+        replyTask?.cancel()
+        replyTask = Task {
             try? await Task.sleep(for: .milliseconds(650))
+            guard !Task.isCancelled else { return }
             let text = sanitizedUserReplyText(from: draftReplyText)
             guard !text.isEmpty else { return }
             await processReply(text)
@@ -1101,7 +1155,8 @@ struct IMPracticeView: View {
 
         let text = sanitizedUserReplyText(from: draftReplyText)
         guard !text.isEmpty else { return }
-        Task { await processReply(text) }
+        replyTask?.cancel()
+        replyTask = Task { await processReply(text) }
     }
 
     private func processReply(_ text: String) async {
@@ -1162,7 +1217,8 @@ struct IMPracticeView: View {
         isEndingConversation = true
         stopSessionTimer()
         CoachHaptic.sessionComplete()
-        Task {
+        evaluationTask?.cancel()
+        evaluationTask = Task {
             let transcript = combinedUserTranscript
             guard !transcript.isEmpty else {
                 await MainActor.run {
@@ -1377,7 +1433,7 @@ struct IMPracticeView: View {
             suddenDeathMultiplierLabels: [],
             suddenDeathTotalWords: nil,
             showDuration: true,
-            practiceTitle: "IM Mode • \(resolvedScenario.title)",
+            practiceTitle: "Conversation — \(resolvedScenario.title)",
             feedbackOverride: summaryEvaluation?.feedback,
             headlineOverride: summaryEvaluation?.headline,
             scoreBreakdown: summaryEvaluation?.segments ?? [],

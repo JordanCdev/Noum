@@ -3,6 +3,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Server-only rate-limit state for the Ask Noum callable. Admin SDK
+    // bypasses rules; no client may inspect or mutate another user's budget.
+    match /_serverRateLimits/{accountID} {
+      allow read, write: if false;
+    }
+
     // ─── Per-user private data ────────────────────────────────────────
     // Owners only — already covered by the existing rules. Listed here
     // for completeness so reviewers see the full picture.

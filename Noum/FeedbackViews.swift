@@ -191,7 +191,7 @@ struct FeedbackRequestComposer: View {
             // Quick stats
             HStack(spacing: 0) {
                 feedbackStatCell(value: "\(fillerCount)", label: "Fillers")
-                feedbackStatCell(value: "\(wpm)", label: "WPM")
+                feedbackStatCell(value: "\(wpm)", label: "Words/min")
                 feedbackStatCell(value: "\(transcript.split { !$0.isLetter && !$0.isNumber }.count)", label: "Words")
             }
             .padding(.vertical, 10)
@@ -244,7 +244,7 @@ struct FeedbackRequestComposer: View {
                     Divider().padding(.leading, 52)
                     inclusionRow(
                         icon: "brain",
-                        title: "AI Coach Feedback",
+                        title: "Coach feedback",
                         subtitle: "Strengths, improvements, drills",
                         isOn: $includeAIFeedback
                     )
@@ -470,7 +470,7 @@ struct FeedbackRequestComposer: View {
 
         // AI Feedback
         if includeAIFeedback, let ai = aiFeedback {
-            parts.append("— AI COACH FEEDBACK —")
+            parts.append("— COACH FEEDBACK —")
             parts.append("Strengths: \(ai.strengths.joined(separator: ", "))")
             parts.append("Key Improvement: \(ai.keyImprovement)")
             parts.append("Suggested Drill: \(ai.suggestedDrill)")
@@ -507,7 +507,7 @@ struct FeedbackReviewScreen: View {
     enum FeedbackReviewTab: String, CaseIterable {
         case overview = "Overview"
         case transcript = "Transcript"
-        case feedback = "AI Feedback"
+        case feedback = "Coach feedback"
     }
 
     private var accent: Color {
@@ -656,7 +656,7 @@ struct FeedbackReviewScreen: View {
             // Dimension breakdown
             if !package.feedbackCategories.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("AI Dimension Ratings")
+                    Text("Coaching dimensions")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
 
@@ -740,7 +740,7 @@ struct FeedbackReviewScreen: View {
                     Image(systemName: "brain")
                         .font(.largeTitle)
                         .foregroundStyle(.secondary.opacity(0.5))
-                    Text("AI feedback was not included")
+                    Text("Coach feedback was not included")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }

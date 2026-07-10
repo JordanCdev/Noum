@@ -468,20 +468,26 @@ enum TrendAnalyzer {
 
         switch trend.direction {
         case .newIssue:
-            return "This is new — your \(skillArea.displayName.lowercased()) hasn't been a problem before, but it slipped this session."
+            if trend.confidence == .low {
+                return "Your newest rep read differently on \(skillArea.displayName.lowercased()). Another rep will show whether it repeats."
+            }
+            return "Your \(skillArea.displayName.lowercased()) changed in the recent window after stronger reps. One focused rep can test whether it repeats."
         case .declining:
-            return "Your \(skillArea.displayName.lowercased()) has been slipping over recent sessions. Worth focused attention."
+            if trend.confidence == .low {
+                return "Your newest rep read lower on \(skillArea.displayName.lowercased()), but the evidence is too early to call a pattern."
+            }
+            return "Recent reps read lower on \(skillArea.displayName.lowercased()). A focused rep can test the pattern."
         case .stable where trend.currentLevel == .weak:
-            return "Your \(skillArea.displayName.lowercased()) has been inconsistent across recent sessions. This is your biggest opportunity."
+            return "Your \(skillArea.displayName.lowercased()) has varied across recent reps. It is the clearest current practice target."
         case .improving where trend.currentLevel == .weak:
             if let delta = trend.recentDelta {
-                return "\(delta) One more push and this stops being an issue."
+                return "\(delta) The direction is improving, but the read is still forming."
             }
-            return "Your \(skillArea.displayName.lowercased()) is heading in the right direction. Keep the momentum going."
+            return "Your \(skillArea.displayName.lowercased()) is moving in the right direction, but the read is still forming."
         case .improving:
-            return "Your \(skillArea.displayName.lowercased()) is getting stronger. Good time to push it to the next level."
+            return "Your \(skillArea.displayName.lowercased()) has read stronger across recent reps. Keep testing it."
         case .resolved:
-            return "Your \(skillArea.displayName.lowercased()) has stabilized. Shifting focus to where you can grow most."
+            return "Your \(skillArea.displayName.lowercased()) has held steady in the recent window. Shift focus to the clearest next target."
         case .stable:
             return nil
         }

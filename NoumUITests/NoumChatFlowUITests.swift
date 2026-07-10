@@ -99,6 +99,13 @@ final class NoumChatFlowUITests: XCTestCase {
     }
 
     @MainActor
+    private func userBubbleCount(in app: XCUIApplication, containing text: String) -> Int {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "You: \(text)"))
+            .count
+    }
+
+    @MainActor
     private func waitForCoachBubbleLabel(
         in app: XCUIApplication,
         containing snippets: [String],
@@ -119,19 +126,19 @@ final class NoumChatFlowUITests: XCTestCase {
     }
 
     @MainActor
-    private func noticeCount(in app: XCUIApplication) -> Int {
+    private func transientFailureCount(in app: XCUIApplication) -> Int {
         app.descendants(matching: .any)
-            .matching(identifier: "askNoum.systemNotice")
+            .matching(identifier: "askNoum.transientFailure")
             .count
     }
 
     @MainActor
     private func resolvedTurnCount(in app: XCUIApplication) -> Int {
-        coachBubbleCount(in: app) + noticeCount(in: app)
+        coachBubbleCount(in: app) + transientFailureCount(in: app)
     }
 
     /// Wait until the result count rises above `baseline`, i.e. a reply or
-    /// honest notice resolved (never stuck on the thinking state). Returns the
+    /// honest transient status resolved (never stuck on the thinking state). Returns the
     /// new count.
     @MainActor
     @discardableResult
@@ -160,7 +167,7 @@ final class NoumChatFlowUITests: XCTestCase {
     // MARK: - Tests
 
     /// A typed turn must RESOLVE to either a live coach bubble or an honest
-    /// system notice — the thread must never get stuck on the thinking state.
+    /// retry status — the thread must never get stuck on the thinking state.
     /// Guards the
     /// "works then reverts / never answers" class of bug.
     @MainActor
@@ -190,6 +197,58 @@ final class NoumChatFlowUITests: XCTestCase {
         app.terminate()
     }
 
+    /// A failed request keeps exactly one user turn. Retrying reuses that turn
+    /// and never adds a second bubble for the same message.
+    @MainActor
+    func testRetryDoesNotDuplicateUserTurn() throws {
+        let app = launchTypedChat()
+        let field = messageField(in: app)
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        let uniqueText = "Keep this retry turn unique"
+
+        field.tap()
+        field.typeText(uniqueText)
+        let send = waitForEnabledSendControl(in: app)
+        XCTAssertTrue(send.isEnabled)
+        send.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["askNoum.transientFailure"]
+                .waitForExistence(timeout: 15)
+        )
+        XCTAssertEqual(userBubbleCount(in: app, containing: uniqueText), 1)
+
+        let retry = app.buttons["Try again"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        retry.tap()
+        Thread.sleep(forTimeInterval: 2)
+
+        XCTAssertEqual(userBubbleCount(in: app, containing: uniqueText), 1)
+        XCTAssertEqual(transientFailureCount(in: app), 1)
+        app.terminate()
+    }
+
+    /// Entry preflight presents one quiet status and never clears a draft the
+    /// user typed while the service was unavailable.
+    @MainActor
+    func testUnavailablePreflightPreservesDraftOutsideTranscript() throws {
+        let app = launchTypedChat(forceArguments: ["UI_TESTING_CHAT_FORCE_UNAVAILABLE"])
+        let status = app.descendants(matching: .any)["askNoum.availability"]
+        XCTAssertTrue(status.waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.staticTexts["Noum is temporarily unavailable. Your message is still here."]
+                .waitForExistence(timeout: 5)
+        )
+
+        let field = messageField(in: app)
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("Keep this draft")
+        XCTAssertTrue((field.value as? String)?.contains("Keep this draft") == true)
+        XCTAssertEqual(userBubbleCount(in: app, containing: "Keep this draft"), 0)
+        XCTAssertFalse(sendControl(in: app).isEnabled)
+        app.terminate()
+    }
+
     /// Provider markdown must be normalized before it reaches the rendered
     /// chat row. The TTS copy path is covered by the paired unit tests over
     /// `AskNoumSpokenMode.spokenText`.
@@ -211,7 +270,7 @@ final class NoumChatFlowUITests: XCTestCase {
 
         let afterCoach = waitForCoachBubble(in: app, above: beforeCoach)
         XCTAssertEqual(afterCoach, beforeCoach + 1, "Forced markdown reply should land as one coach bubble")
-        XCTAssertEqual(noticeCount(in: app), 0, "Forced markdown reply should not degrade into a notice")
+        XCTAssertEqual(transientFailureCount(in: app), 0, "Forced markdown reply should not degrade into a notice")
 
         guard let latest = waitForCoachBubbleLabel(
             in: app,
@@ -242,8 +301,9 @@ final class NoumChatFlowUITests: XCTestCase {
     }
 
     /// Focused screenshot regression for judgement-depth chat: a "How far off
-    /// am I?" turn should render a calibrated verdict, not a generic score tip
-    /// or an unsupported "close overall" claim.
+    /// am I?" turn should render a calibrated verdict, name the evidence limit,
+    /// and end with one concrete validation rep. It must not expose the
+    /// reasoning pipeline's old report-style labels.
     @MainActor
     func testDeepJudgementQuestionRendersCalibratedReply() throws {
         let app = launchTypedChat(forceArguments: ["UI_TESTING_CHAT_FORCE_JUDGEMENT_REPLY"])
@@ -265,16 +325,26 @@ final class NoumChatFlowUITests: XCTestCase {
 
         guard let latest = waitForCoachBubbleLabel(
             in: app,
-            containing: ["closer mechanically", "Proof test"]
+            containing: ["latest answer shows control"]
         ) else {
             XCTFail("Expected calibrated judgement reply among coach labels: \(coachBubbleLabels(in: app))")
             app.terminate()
             return
         }
-        XCTAssertTrue(latest.contains("closer mechanically"))
-        XCTAssertTrue(latest.contains("pressure evidence"))
-        XCTAssertTrue(latest.contains("Proof test"))
+        XCTAssertTrue(latest.contains("latest answer shows control"))
+        XCTAssertTrue(latest.contains("evidence is too thin"), "Thin evidence should bound the judgement")
+        XCTAssertTrue(latest.contains("does not yet show"), "Thin evidence should bound the judgement")
+        XCTAssertTrue(latest.contains("under pressure"), "The reply should name the unproven condition")
+        XCTAssertTrue(latest.contains("more than once"), "The reply should require repeated evidence")
+        XCTAssertTrue(latest.contains("Record a 75-second answer"), "The reply should prescribe a bounded validation rep")
+        XCTAssertTrue(latest.contains("verdict in sentence one"))
+        XCTAssertTrue(latest.contains("one reason"))
+        XCTAssertTrue(latest.contains("stop cleanly"))
         XCTAssertFalse(latest.localizedCaseInsensitiveContains("close overall"))
+        XCTAssertFalse(latest.localizedCaseInsensitiveContains("proof test:"), "Internal scaffold labels must stay out of coach speech")
+        XCTAssertFalse(latest.localizedCaseInsensitiveContains("mechanics:"), "Report-style headings must stay out of coach speech")
+        XCTAssertFalse(latest.localizedCaseInsensitiveContains("closer mechanically"), "Coach language should describe the observed answer directly")
+        XCTAssertFalse(latest.localizedCaseInsensitiveContains("goal readiness"), "Internal assessment terms must be translated into coach language")
 
         Thread.sleep(forTimeInterval: 2)
         let shot = XCTAttachment(screenshot: app.screenshot())

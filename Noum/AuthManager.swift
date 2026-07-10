@@ -46,7 +46,7 @@ class AuthManager: ObservableObject {
     static let shared = AuthManager()
 
     static let missingCredentialsMessage =
-        "Speech-to-text is not configured. For local development, add AWS credentials to your Xcode scheme environment or a local Transcribe.plist that stays out of git."
+        "Live transcription isn't available in this build."
 
     @Published var isSignedIn: Bool = false
     @Published var signInError: String?
@@ -105,9 +105,32 @@ class AuthManager: ObservableObject {
 #if canImport(GoogleSignIn)
         configureGoogleSignInIfAvailable()
 #endif
+        #if DEBUG
+        // UI automation owns its process-local account and seeded stores. A
+        // normal credential restore schedules an account reload/reset on the
+        // next actor turn; that can erase `DevSeedData` immediately after the
+        // app seeds it and make evidence-gated screens nondeterministic. Keep
+        // the real Keychain and Firebase session untouched for the next normal
+        // launch while the automation process starts signed out.
+        if !Self.shouldRestorePersistedSession(
+            arguments: ProcessInfo.processInfo.arguments
+        ) {
+            isSignedIn = false
+            authProvider = nil
+            return
+        }
+        #endif
         loadCredentialsAndAccount()
         restoreFirebaseSessionIfAvailable()
     }
+
+    #if DEBUG
+    nonisolated static func shouldRestorePersistedSession(
+        arguments: [String]
+    ) -> Bool {
+        !arguments.contains("UI_TESTING")
+    }
+    #endif
 
 #if canImport(GoogleSignIn) && canImport(UIKit)
     func startGoogleSignIn() {
@@ -458,6 +481,20 @@ class AuthManager: ObservableObject {
         deferStoreSessionReset()
     }
 
+#if DEBUG
+    /// Presents a deterministic signed-out UI state without changing the
+    /// Keychain, Firebase session, or any account-scoped stores. The next
+    /// normal launch restores the real session unchanged.
+    func useProcessLocalSignedOutStateForUITesting(arguments: [String]) {
+        guard arguments.contains("UI_TESTING"),
+              arguments.contains("UI_TESTING_SIGNED_OUT") else { return }
+
+        signInError = nil
+        isSignedIn = false
+        authProvider = nil
+    }
+#endif
+
     func deleteCurrentAccount() {
         guard let accountID = currentAccountID, let providerRawValue = currentAuthProviderRawValue else {
             signOut()
@@ -739,7 +776,7 @@ class AuthManager: ObservableObject {
 #if canImport(AuthenticationServices)
     private func friendlyAppleSignInMessage(for error: Error) -> String {
         if let authorizationError = error as? ASAuthorizationError, authorizationError.code == .unknown {
-            return "Sign in with Apple is not configured for this build yet. Add the Sign in with Apple capability in Xcode Signing & Capabilities, then try again."
+            return "Sign in with Apple isn't available in this build. Try Google or continue without an account."
         }
 
         return error.localizedDescription
@@ -768,7 +805,7 @@ class AuthManager: ObservableObject {
     }
 
     private var missingFirebaseConfigurationMessage: String {
-        "Firebase is not configured on this Mac yet. Add your local GoogleService-Info.plist to the app target, then try again."
+        "Google sign-in isn't available in this build. Try Apple or continue without an account."
     }
 #endif
 
@@ -898,7 +935,7 @@ class AuthManager: ObservableObject {
 class AuthManager {
     static let shared = AuthManager()
     static let missingCredentialsMessage =
-        "AWS Transcribe credentials are missing. For local development, add AWS credentials to your Xcode scheme environment, Info.plist, or a local Transcribe.plist that stays out of git. Do not ship static AWS secrets in a public app."
+        "Live transcription isn't available in this build."
     private(set) var region: String = "eu-west-2"
     var isSignedIn: Bool = false
     var signInError: String?

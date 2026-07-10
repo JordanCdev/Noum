@@ -161,6 +161,11 @@ struct ProgressionChartsPresentationTests {
         #expect(!Series.pace.isFlat(delta: 5.1))
     }
 
+    @Test func smallScoreMovementReadsAsHoldingSteady() {
+        #expect(Series.score.isFlat(delta: -0.1))
+        #expect(Series.score.formatDelta(-0.1) == "Even")
+    }
+
     @Test func paceMovingTowardBandExplainsTheRemainingGap() {
         let points = makePacePoints(Array(repeating: 32, count: 7) + Array(repeating: 56, count: 7))
         let model = Model(series: .pace, points: points)

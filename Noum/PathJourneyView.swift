@@ -9,7 +9,6 @@ import SwiftUI
 #if canImport(SwiftUI)
 @available(iOS 17.0, macOS 12.0, *)
 struct PathJourneyView: View {
-    @Environment(\.dismiss) private var dismiss
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var pathProgress = PathProgressManager.shared
@@ -27,6 +26,7 @@ struct PathJourneyView: View {
     @State private var bloomBaselineDays: Int?
     @State private var bloomTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 #if DEBUG
     @State private var debugDayOverride: Double = -1
 
@@ -117,14 +117,14 @@ struct PathJourneyView: View {
 
                 ScrollViewReader { scrollProxy in
                     ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: Spacing.lg) {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Your journey")
+                                Text("Path")
                                     .font(Typography.screenTitle)
                                 Text(headerStateLine)
                                     .font(Typography.subheadline)
                                     .foregroundStyle(.secondary)
-                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
 
                             VStack(alignment: .leading, spacing: 14) {
@@ -154,7 +154,11 @@ struct PathJourneyView: View {
                                         ? "journey.artwork.bloomed.\(bloomBaselineDays == nil)"
                                         : "journey.artwork")
                                 }
-                                .frame(height: min(300, geometry.size.height * 0.40))
+                                .frame(
+                                    height: dynamicTypeSize.isAccessibilitySize
+                                        ? min(220, geometry.size.height * 0.30)
+                                        : min(300, geometry.size.height * 0.40)
+                                )
                                 .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
@@ -175,12 +179,6 @@ struct PathJourneyView: View {
 
                             alongTheWayCard
 
-                            Text(snapshot.summaryLine)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(.top, 2)
-
                             // MARK: - Debug day slider (developer only)
 #if DEBUG
                             if AuthManager.shared.isDeveloper {
@@ -197,19 +195,6 @@ struct PathJourneyView: View {
         }
         .sheet(isPresented: $showWhyCapture) {
             DeferredProfileCaptureSheet(prompt: .whyNow)
-        }
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: { dismiss() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .semibold))
-                        Text("Back")
-                    }
-                    .foregroundStyle(.blue)
-                }
-            }
         }
         .accessibilityIdentifier("journey.screen")
         .task {
@@ -342,9 +327,9 @@ struct PathJourneyView: View {
     /// numbers live in the consistency strip; this line carries the idea.
     private var headerStateLine: String {
         if snapshot.practicedDays == 0 {
-            return "A habit is a path worn into a field. Your first rep cuts the first line."
+            return "Build a steadier speaking habit, one rep at a time."
         }
-        return "Worn in one day at a time. Every rep deepens the path."
+        return "Your recent practice, next landmark, and reason for showing up."
     }
 
     /// Replaces the old Path-% / Streak pills. The landscape is days, so
@@ -353,31 +338,19 @@ struct PathJourneyView: View {
     /// days age out; a "Day 12" label that goes backwards would read as
     /// punishment).
     private var consistencyStrip: some View {
-        HStack(spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
-                Text("\(snapshot.practicedDays)")
-                    .font(Typography.figtreeNumeric(size: 32, relativeTo: .title2))
-                    .foregroundStyle(.primary)
-                Text(snapshot.practicedDays == 0
-                     ? "of the last 21 days — the trail is waiting"
-                     : "of the last 21 days walked")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    practiceDayCount
+                    pathStreakChip
+                }
+            } else {
+                HStack(spacing: 10) {
+                    practiceDayCount
+                    Spacer(minLength: Spacing.xs)
+                    pathStreakChip
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(spacing: 6) {
-                Image(systemName: "flame.fill")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.orange.opacity(0.85))
-                Text(snapshot.streakLabel)
-                    .font(Typography.cardLabel)
-                    .foregroundStyle(.orange.opacity(0.92))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.orange.opacity(0.10), in: Capsule(style: .continuous))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -385,6 +358,32 @@ struct PathJourneyView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(snapshot.practicedDays) of the last 21 days practiced. Streak: \(snapshot.streakLabel).")
         .accessibilityIdentifier("journey.consistency")
+    }
+
+    private var practiceDayCount: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Text("\(snapshot.practicedDays)")
+                .font(Typography.figtreeNumeric(size: 32, relativeTo: .title2))
+                .foregroundStyle(.primary)
+            Text("of 21 recent days")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var pathStreakChip: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "flame.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.orange.opacity(0.85))
+            Text(snapshot.streakLabel)
+                .font(Typography.cardLabel)
+                .foregroundStyle(.orange.opacity(0.92))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.orange.opacity(0.10), in: Capsule(style: .continuous))
     }
 
     /// The page's one call to action. Pre-rep it points at practice;
@@ -411,26 +410,26 @@ struct PathJourneyView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "figure.walk")
                         .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(AppColor.brandBlue)
+                        .foregroundStyle(.white)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("One rep keeps the trail open.")
+                        Text("Start today's rep")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(.white)
                         Text("About two minutes.")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.white.opacity(0.78))
                     }
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(AppColor.brandBlue)
+                        .foregroundStyle(.white)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
                 .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             }
             .buttonStyle(.plain)
-            .background(AppColor.brandBlue.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            .background(AppColor.brandBlue, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             .accessibilityIdentifier("journey.today")
         }
     }
@@ -441,7 +440,7 @@ struct PathJourneyView: View {
     /// plain so the page never puts words in their mouth.
     private var whyCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Why you're walking")
+            Text("Your reason")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(AppColor.brandBlue.opacity(0.85))
                 .textCase(.uppercase)
@@ -472,7 +471,7 @@ struct PathJourneyView: View {
                     Button {
                         goalRefresh.requestReview()
                     } label: {
-                        Label("Check direction", systemImage: "scope")
+                        Label("Review goal", systemImage: "scope")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(AppColor.brandBlue.opacity(0.9))
                     }
@@ -480,7 +479,7 @@ struct PathJourneyView: View {
                     .accessibilityIdentifier("journey.why.refresh")
                 }
             } else {
-                Text("What are you walking toward?")
+                Text("What do you want to communicate more clearly?")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
                 Text(whyCoachLine)
@@ -491,15 +490,12 @@ struct PathJourneyView: View {
                 Button {
                     showWhyCapture = true
                 } label: {
-                    Text("Make it yours")
+                    Label("Set your reason", systemImage: "arrow.right")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 9)
-                        .background(AppColor.brandBlue, in: Capsule(style: .continuous))
+                        .foregroundStyle(AppColor.brandBlue)
                 }
                 .buttonStyle(.plain)
-                .padding(.top, 4)
+                .padding(.top, 2)
                 .accessibilityIdentifier("journey.why.capture")
             }
 
@@ -512,11 +508,11 @@ struct PathJourneyView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .fill(AppColor.brandBlue.opacity(0.06))
+                .fill(AppColor.cardBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .strokeBorder(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
+                .strokeBorder(Color.white.opacity(0.72), lineWidth: 1)
         )
         .accessibilityIdentifier("journey.why")
     }
@@ -551,13 +547,13 @@ struct PathJourneyView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text("Trail landmarks")
+                        Text("Next landmark")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(AppColor.brandBlue.opacity(0.85))
                             .textCase(.uppercase)
                             .tracking(0.4)
                         Spacer()
-                        Text("\(completedCount) of \(statuses.count)")
+                        Text("\(completedCount) of \(statuses.count) reached")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
@@ -632,7 +628,7 @@ struct PathJourneyView: View {
                 }
             } label: {
                 HStack {
-                    Text("Along the way")
+                    Text("More progress")
                         .font(Typography.headline)
                         .foregroundStyle(.primary)
                     Spacer()
@@ -689,8 +685,8 @@ struct PathJourneyView: View {
                 .fill(
                     RadialGradient(
                         colors: [
-                            AppColor.brandBlue.opacity(0.18),
-                            AppColor.brandBlueLight.opacity(0.06),
+                            AppColor.brandBlue.opacity(0.10),
+                            AppColor.brandBlueLight.opacity(0.03),
                             Color.clear
                         ],
                         center: .top,
@@ -702,7 +698,7 @@ struct PathJourneyView: View {
             RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                 .strokeBorder(AppColor.brandBlue.opacity(0.14), lineWidth: 1)
         }
-        .shadow(color: AppColor.brandBlue.opacity(0.10), radius: 18, y: 10)
+        .shadow(color: AppColor.brandBlue.opacity(0.07), radius: 14, y: 8)
     }
 
     /// This week's focus (the active challenge), compacted to one row
@@ -710,7 +706,7 @@ struct PathJourneyView: View {
     private var activeChallengeRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text("This week's focus")
+                Text("Weekly focus")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
@@ -810,8 +806,8 @@ struct PathJourneyView: View {
                         )
                         Text(
                             isUnlocked
-                                ? "Unlocked. This is now part of your communication identity."
-                                : "Keep going. This one unlocks once the habit becomes repeatable."
+                                ? "Reached through repeated practice."
+                                : "Keep practicing. This landmark becomes available when the habit is repeatable."
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1046,7 +1042,7 @@ enum RetentionLoopEngine {
             PracticeAchievementStatus(
                 id: "im_connector",
                 title: "Connection Builder",
-                summary: "Complete three IM sessions.",
+                summary: "Complete three conversation practice sessions.",
                 progress: min(Double(imSessions), 3) / 3,
                 progressLabel: imSessions >= 3 ? "Unlocked" : "\(imSessions)/3 chats",
                 isUnlocked: imSessions >= 3,
@@ -1236,7 +1232,7 @@ struct PracticeJourneySnapshot {
         // as a threatened loss (never-punish-shame invariant).
         let consequenceLine: String
         if practicedDays == 0 {
-            consequenceLine = "Nothing is lost — the route is waiting to be cut."
+            consequenceLine = "The route is here when you are ready to start."
         } else if streak <= 1 {
             consequenceLine = "Each return keeps the route easy to find."
         } else {
@@ -1357,10 +1353,10 @@ struct PathJourneyPresentation: Equatable {
                 currentStreak: max(0, currentStreak),
                 progressLabel: "Path pending",
                 previewLine: "One short rep gives Noum a real signal to build from.",
-                summaryLine: "Path progress unlocks from real practice signals, not calendar decoration.",
+                summaryLine: "Landmarks come from completed practice, not days on a calendar.",
                 explanationLine: "Start with one rep.",
-                nextMilestoneLabel: "Noum will name the first landmark after there is something to read.",
-                consequenceLine: "No progress is claimed before you speak.",
+                nextMilestoneLabel: "Complete one rep to reveal the first landmark.",
+                consequenceLine: "The path begins with your first completed rep.",
                 homeGoalLine: "Start the path with one rep today.",
                 homeGoalShortLabel: "Begin"
             )

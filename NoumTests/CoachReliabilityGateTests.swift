@@ -509,7 +509,7 @@ struct CoachReliabilityGateTests {
         let fallback = verdict.fallbackText ?? ""
         let lowered = fallback.lowercased()
         #expect(fallback.contains("The useful read is that your point arrived in sentence four"))
-        #expect(fallback.contains("Make sentence one the point"))
+        #expect(fallback.contains("say the point first"))
         #expect(!lowered.contains("real read:"))
         #expect(!lowered.contains("score"))
         #expect(!lowered.contains("cut the"))
@@ -662,9 +662,9 @@ struct CoachReliabilityGateTests {
         #expect(verdict.blocked)
         let fallback = verdict.fallbackText ?? ""
         let lowered = fallback.lowercased()
-        #expect(fallback.contains("You do not lose the thread"))
+        #expect(lowered.contains("kept the thread"))
         #expect(fallback.contains("weaker repeat"))
-        #expect(fallback.contains("Use a hard stop"))
+        #expect(lowered.contains("use a hard stop"))
         #expect(!lowered.contains("next rep:"))
         #expect(CoachReliabilityGate.wordCount(CoachReliabilityGate.normalize(fallback)) <= 45)
     }
@@ -761,10 +761,10 @@ struct CoachReliabilityGateTests {
         #expect(verdict.blocked)
         let fallback = verdict.fallbackText ?? ""
         let lowered = fallback.lowercased()
-        #expect(fallback.contains("real risk for tomorrow"))
-        #expect(fallback.contains("The fix is hierarchy"))
-        #expect(fallback.contains("Tonight, write the opener"))
-        #expect(fallback.contains("Say it aloud"))
+        #expect(fallback.contains("status-report risk is hierarchy"))
+        #expect(fallback.contains("equal-weight structure hides the leadership goal"))
+        #expect(fallback.contains("Tonight, write one opener"))
+        #expect(fallback.contains("say it aloud"))
         #expect(!lowered.contains("77"))
         #expect(!lowered.contains("score"))
     }
@@ -801,7 +801,7 @@ struct CoachReliabilityGateTests {
         #expect(fallback.contains("4 of the last 5"))
         #expect(fallback.contains("5 of the last 6 overall"))
         #expect(fallback.contains("recurring spot, not a trait"))
-        #expect(fallback.contains("Plant one silent beat before the final line"))
+        #expect(fallback.lowercased().contains("plant one silent beat before the final line"))
         #expect(!fallback.contains("second-to-last"))
         #expect(!fallback.contains("half the pace"))
     }
@@ -968,7 +968,7 @@ struct CoachReliabilityGateTests {
         #expect(!lowered.contains("i'll set"))
     }
 
-    @Test func voiceChoiceUncertaintyFallbackAsksTheRoomQuestion() {
+    @Test func voiceChoiceUncertaintyFallbackMakesOneGroundedRecommendation() {
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "For meetings I'd start with Authoritative. Tap to confirm and I'll lock it in.",
             previousCoachReply: nil,
@@ -982,10 +982,10 @@ struct CoachReliabilityGateTests {
         #expect(verdict.blocked)
         let fallback = verdict.fallbackText ?? ""
         let lowered = fallback.lowercased()
-        #expect(fallback.contains("Authoritative is the closest fit"))
-        #expect(fallback.contains("short verdicts that hold the floor"))
-        #expect(fallback.contains("Executive presence is the next-closest"))
-        #expect(fallback.contains("Which one matches"))
+        #expect(fallback.contains("Start with Authoritative"))
+        #expect(fallback.contains("short verdicts can hold the floor"))
+        #expect(fallback.contains("Executive presence is the comparison"))
+        #expect(!fallback.contains("?"))
         #expect(!lowered.contains("do not choose"))
         #expect(!lowered.contains("tap"))
         #expect(!lowered.contains("lock it"))
@@ -1697,7 +1697,7 @@ struct CoachReliabilityGateTests {
         // The recovery must itself be clean of every cold-start marker.
         let fb = CoachReliabilityGate.normalize(verdict.fallbackText ?? "")
         #expect(!CoachReliabilityGate.leaksColdStartJargon(fb), "cold-start fallback must not itself leak jargon")
-        #expect(!fb.contains("baseline"), "cold-start fallback should not lead with internal baseline framing")
+        #expect(fb.hasPrefix("no baseline yet"), "cold-start fallback should name the evidence gap plainly")
         #expect(fb.contains("start with one real sample"))
         #expect(!fb.contains("let's"), "cold-start fallback must obey the no-let's coach register")
     }

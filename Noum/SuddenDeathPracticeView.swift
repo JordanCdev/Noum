@@ -36,6 +36,7 @@ private final class SuddenDeathTTSDelegate: NSObject, AVSpeechSynthesizerDelegat
 @available(iOS 17.0, macOS 12.0, *)
 struct SuddenDeathPracticeView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var navigationPath: NavigationPath
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
@@ -53,6 +54,7 @@ struct SuddenDeathPracticeView: View {
 
     // UI state
     @State private var showExitConfirmation = false
+    @State private var showSetupAdjustments = false
     @State private var showUncertainIndicator = false
     @State private var roundTranscript = ""
     @State private var hasDetectedSpeechThisRound = false
@@ -136,7 +138,7 @@ struct SuddenDeathPracticeView: View {
                 .ignoresSafeArea()
 
             content
-                .animation(.snappySpring, value: phaseGroup)
+                .animation(reduceMotion ? nil : .snappySpring, value: phaseGroup)
         }
         // Note: `LiveEloquenceHUD` is intentionally NOT mounted here.
         // The chip surface fires the moment a rhetorical move lands
@@ -173,6 +175,9 @@ struct SuddenDeathPracticeView: View {
             }
         } message: {
             Text("Your progress in this run will be lost.")
+        }
+        .sheet(isPresented: $showSetupAdjustments) {
+            setupAdjustmentsSheet
         }
         .task {
             speechVM.prepareForInteractiveUse()
@@ -224,11 +229,19 @@ struct SuddenDeathPracticeView: View {
         }
         .onChange(of: speechVM.uncertainFillerCount) { oldVal, newVal in
             if newVal > oldVal, engine.isUserTurn {
-                withAnimation(.easeIn(duration: 0.15)) { showUncertainIndicator = true }
+                if reduceMotion {
+                    showUncertainIndicator = true
+                } else {
+                    withAnimation(.easeIn(duration: 0.15)) { showUncertainIndicator = true }
+                }
                 Task {
                     try? await Task.sleep(for: .seconds(1.2))
                     await MainActor.run {
-                        withAnimation(.easeOut(duration: 0.3)) { showUncertainIndicator = false }
+                        if reduceMotion {
+                            showUncertainIndicator = false
+                        } else {
+                            withAnimation(.easeOut(duration: 0.3)) { showUncertainIndicator = false }
+                        }
                     }
                 }
             }
@@ -324,6 +337,9 @@ struct SuddenDeathPracticeView: View {
     // MARK: - Background
 
     private var background: some View {
+        if phaseGroup == .setup {
+            return AnyView(FocusedPracticeBackground(style: .pressure))
+        }
         let base: (Color, Color) = {
             switch phaseGroup {
             case .setup:
@@ -341,94 +357,132 @@ struct SuddenDeathPracticeView: View {
             }
         }()
 
-        return LinearGradient(
+        return AnyView(LinearGradient(
             colors: [base.0, Color.white, base.1],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
-        .animation(.easeInOut(duration: 0.6), value: phaseGroup)
-        .animation(.easeInOut(duration: 0.4), value: engine.isUserTurn)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.6), value: phaseGroup)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: engine.isUserTurn))
     }
 
     // MARK: - Setup Screen (zero friction)
 
     private var setupScreen: some View {
-        VStack(spacing: 0) {
-            Spacer()
+        FocusedPracticeScaffold(
+            style: .pressure,
+            status: "Pressure drill",
+            title: "Stay direct under pressure.",
+            subtitle: "Each round gives you less time to respond."
+        ) {
+            Button {
+                CoachHaptic.selectionTap()
+                showSetupAdjustments = true
+            } label: {
+                Label("Adjust", systemImage: "slider.horizontal.3")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 44)
+                    .background(.white.opacity(0.14), in: Capsule())
+                    .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("suddenDeath.adjust")
+            .accessibilityLabel("Adjust pressure drill")
+        } content: {
+            VStack(spacing: Spacing.lg) {
+                HStack(alignment: .center, spacing: Spacing.md) {
+                    Image(systemName: "waveform.badge.exclamationmark")
+                        .font(Typography.headline)
+                        .foregroundStyle(.white)
+                        .frame(width: 40, height: 40)
+                        .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                        .accessibilityHidden(true)
 
-            VStack(spacing: 24) {
-                // Icon + title — the orb sits where the static bolt used to
-                // anchor the hero. Calm at rest; flips to listening once the
-                // user is mid-drill so the bound audioLevel reads as live.
-                VStack(spacing: 8) {
-                    NoumCharacter(
-                        mood: speechVM.isRecording ? .listening : .calm,
-                        tint: accentColor,
-                        size: 44,
-                        audioLevel: speechVM.audioLevel,
-                        stage: characterStage
-                    )
-                    .accessibilityHidden(true)
+                    Text("A filler, slow start, or short response ends the run.")
+                        .font(Typography.body.weight(.semibold))
+                        .foregroundStyle(AppColor.focusedTextSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                    Text("Pressure Drill")
-                        .font(Typography.bigStat)
-
-                    Text("Respond fast. Stay clean. Survive.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
                 }
-
-                // What to expect
-                VStack(alignment: .leading, spacing: 12) {
-                    ruleRow(icon: "timer", text: "A prompt appears. You have seconds to start speaking.")
-                    ruleRow(icon: "arrow.turn.right.up", text: "The NPC fires back follow-ups based on what you said.")
-                    ruleRow(icon: "waveform.badge.exclamationmark", text: "One filler, a slow start, or a short response ends the run.")
-                    ruleRow(icon: "flame.fill", text: "Pressure increases every round. How far can you go?")
-                }
-                .padding(Spacing.lg)
-                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-
-                // Personal best
-                if previousBestRounds > 0 {
-                    HStack(spacing: 6) {
-                        Image(systemName: "trophy.fill")
-                            .foregroundStyle(.yellow)
-                        Text("Best: Round \(previousBestRounds)")
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(.primary)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Color.yellow.opacity(0.1), in: Capsule())
-                }
+                .padding(Spacing.md)
+                .focusedGlassSurface()
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("A filler, slow start, or short response ends the run.")
 
                 if let error = speechVM.connectionError {
                     ErrorCard(message: error)
                 }
             }
-            .padding(.horizontal, Spacing.screenH)
-
-            Spacer()
-
-            // Begin button — zero friction, just tap
+        }
+        .safeAreaInset(edge: .bottom) {
             Button {
                 beginSession()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "bolt.fill")
                         .font(.headline)
-                    Text("Begin")
+                    Text("Start pressure drill")
                         .font(.headline.weight(.bold))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(AppColor.warning)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Spacing.md)
-                .background(accentColor.gradient, in: Capsule())
+                .background(.white, in: Capsule())
             }
             .buttonStyle(.pressable)
             .padding(.horizontal, Spacing.screenH)
-            .padding(.bottom, 24)
+            .padding(.vertical, Spacing.sm)
+            .background(Color.black.opacity(0.10).ignoresSafeArea())
+            .accessibilityIdentifier("suddenDeath.begin")
         }
+    }
+
+    private var setupAdjustmentsSheet: some View {
+        NavigationStack {
+            List {
+                Section("How the drill works") {
+                    ruleRow(icon: "timer", text: "A prompt appears. You have seconds to start speaking.")
+                    ruleRow(icon: "arrow.turn.right.up", text: "Noum follows up based on your answer.")
+                    ruleRow(icon: "waveform.badge.exclamationmark", text: "One filler, a slow start, or a short response ends the run.")
+                    ruleRow(icon: "flame.fill", text: "Pressure increases every round.")
+                }
+
+                Section("Prompt audio") {
+                    Toggle(isOn: $voicePlaybackSettings.isEnabled) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Read prompts aloud")
+                                .font(Typography.body.weight(.semibold))
+                            Text("Uses your existing conversation voice setting.")
+                                .font(Typography.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .tint(accentColor)
+                    .accessibilityIdentifier("suddenDeath.adjust.promptAudio")
+                }
+
+                if previousBestRounds > 0 {
+                    Section("Personal best") {
+                        Label("Round \(previousBestRounds)", systemImage: "trophy.fill")
+                            .foregroundStyle(.primary)
+                    }
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(AppColor.screenBackground)
+            .navigationTitle("Adjust pressure drill")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showSetupAdjustments = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private func ruleRow(icon: String, text: String) -> some View {
@@ -439,8 +493,9 @@ struct SuddenDeathPracticeView: View {
                 .frame(width: 24)
             Text(text)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
         }
+        .padding(.vertical, Spacing.xs)
     }
 
     // MARK: - Countdown Screen
@@ -546,7 +601,7 @@ struct SuddenDeathPracticeView: View {
                     Circle()
                         .fill(dotColor(for: i, currentRound: round))
                         .frame(width: i + 1 == round ? 10 : 7, height: i + 1 == round ? 10 : 7)
-                        .animation(.standardSpring, value: round)
+                        .animation(reduceMotion ? nil : .standardSpring, value: round)
                 }
             }
 
@@ -591,10 +646,10 @@ struct SuddenDeathPracticeView: View {
                 RoundedRectangle(cornerRadius: 2.5)
                     .fill(barColor)
                     .frame(width: geo.size.width * (1.0 - fraction))
-                    .animation(.linear(duration: 0.05), value: fraction)
+                    .animation(reduceMotion ? nil : .linear(duration: 0.05), value: fraction)
             }
             .frame(height: isCritical ? 5 : 3)
-            .animation(.easeInOut(duration: 0.2), value: isCritical)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isCritical)
         }
         .frame(height: 5)
         .padding(.horizontal, Spacing.screenH)
@@ -675,7 +730,7 @@ struct SuddenDeathPracticeView: View {
         )
         .scaleEffect(expanded ? 1.0 : 0.92, anchor: .top)
         .opacity(expanded ? 1.0 : 0.5)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: expanded)
+        .animation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.8), value: expanded)
     }
 
     /// Small unobtrusive capsule that surfaces this round's minimum-word
@@ -695,7 +750,7 @@ struct SuddenDeathPracticeView: View {
             Capsule()
                 .fill(Color.secondary.opacity(0.08))
         )
-        .accessibilityLabel("Aim for at least \(engine.roundConfig.minimumWords) words to avoid a too short failure.")
+        .accessibilityLabel("Aim for at least \(engine.roundConfig.minimumWords) words; shorter answers end the run.")
     }
 
     /// Replay button for the prompt-read-aloud. Mirrors Timed's
@@ -760,7 +815,7 @@ struct SuddenDeathPracticeView: View {
                 in: Capsule()
             )
             .scaleEffect(isCritical ? 1.08 : 1.0)
-            .animation(.easeInOut(duration: 0.25), value: isCritical)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: isCritical)
         }
     }
 
@@ -843,7 +898,7 @@ struct SuddenDeathPracticeView: View {
         )
         .scaleEffect(expanded ? 1.0 : 0.92, anchor: .bottom)
         .opacity(expanded ? 1.0 : 0.5)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: expanded)
+        .animation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.8), value: expanded)
     }
 
     // MARK: Word Counter (live, during userTurnActive)
@@ -862,8 +917,8 @@ struct SuddenDeathPracticeView: View {
                 .font(.system(.caption, design: .rounded).weight(.medium).monospacedDigit())
         }
         .foregroundStyle(foreground)
-        .animation(.easeInOut(duration: 0.2), value: met)
-        .animation(.easeInOut(duration: 0.2), value: approaching)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: met)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: approaching)
         .frame(maxWidth: .infinity, alignment: .trailing)
         .accessibilityLabel("\(words) of \(minimum) words spoken")
     }
@@ -1089,6 +1144,10 @@ struct SuddenDeathPracticeView: View {
     }
 
     private func startTypingAnimation() {
+        guard !reduceMotion else {
+            typingDotPhase = 0
+            return
+        }
         Task {
             while engine.isGeneratingFollowUp {
                 withAnimation(.easeInOut(duration: 0.3)) {

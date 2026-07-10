@@ -1112,8 +1112,8 @@ actor PostRepCoachNoteService {
                 : "\(scenario): \(lower) tone \(earlierPct)% to \(recentPct)%. Slipping. Reopen it."
         case .persuasive:
             return recovering
-                ? "Your \(lower) tone in \(scenario) is recovering — \(earlierPct)% to \(recentPct)%. The drill is working; one more locks it."
-                : "Your \(lower) tone in \(scenario) dropped — \(earlierPct)% to \(recentPct)%. Same scenario, a different opening closes it."
+                ? "Your \(lower) tone in \(scenario) is recovering — \(earlierPct)% to \(recentPct)%. The recent window is stronger; one more rep can test whether it holds."
+                : "Your \(lower) tone in \(scenario) dropped — \(earlierPct)% to \(recentPct)%. The same scenario with a different opening gives you the next test."
         case .executive:
             return recovering
                 ? "\(scenario) \(lower) tone: \(earlierPct)% to \(recentPct)%. Recovering. Recommend one more rep."
@@ -1129,13 +1129,10 @@ actor PostRepCoachNoteService {
         }
     }
 
-    /// IM tone-drill SOLVED sentence, voice-shaped. Reports the climb in the
-    /// committed tone's hit rate for the just-resolved scenario and points
-    /// the user at the next target — the terminal complement to
-    /// `imToneTrajectorySentence`'s in-flight read. Percentages come straight
-    /// off the resolved windows. Names the outcome ("solved", "turned
-    /// around") as an observation of the user's own hit rate; never claims a
-    /// drill caused it, and never re-prescribes the beaten scenario.
+    /// IM tone-drill holding sentence, voice-shaped. Reports the climb in the
+    /// committed tone's hit rate for the recent scenario window and points
+    /// the user at the next target. Percentages come straight off the resolved
+    /// windows without presenting a recent improvement as permanent mastery.
     nonisolated static func imToneResolvedSentence(
         resolved: IMToneDrillResolved,
         scenario: String,
@@ -1147,19 +1144,19 @@ actor PostRepCoachNoteService {
         let recentPct = Int((resolved.recentRate * 100).rounded())
         switch persona.voice {
         case .authoritative:
-            return "Your \(lower) tone in \(scenario) is solved — \(earlierPct)% to \(recentPct)%, holding now. Target met; next one's open."
+            return "Your \(lower) tone in \(scenario) moved from \(earlierPct)% to \(recentPct)% and is holding in the recent window. Keep the standard; the next target is open."
         case .warm:
-            return "You've turned your \(lower) tone in \(scenario) around — \(earlierPct)% to \(recentPct)%, and it's holding. That one's yours now."
+            return "Your \(lower) tone in \(scenario) moved from \(earlierPct)% to \(recentPct)% and has held in the recent window. That is real movement."
         case .concise:
-            return "\(scenario): \(lower) tone solved. \(earlierPct)% to \(recentPct)%, held. Next target."
+            return "\(scenario): \(lower) tone, \(earlierPct)% to \(recentPct)%. Holding recently. Next target."
         case .persuasive:
-            return "Your \(lower) tone in \(scenario) is solved — \(earlierPct)% to \(recentPct)%, holding. The gap's closed; the next one's open."
+            return "Your \(lower) tone in \(scenario) moved from \(earlierPct)% to \(recentPct)% and is holding recently. The evidence supports moving on for now."
         case .executive:
-            return "\(scenario) \(lower) tone: \(earlierPct)% to \(recentPct)%. Solved and holding. Recommend moving to the next target."
+            return "\(scenario) \(lower) tone: \(earlierPct)% to \(recentPct)%. Holding in the recent window. Move to the next target."
         case .storytelling:
-            return "Your \(lower) tone in \(scenario) found its footing — \(earlierPct)% to \(recentPct)%, holding now. That arc closed; the next opens."
+            return "Your \(lower) tone in \(scenario) found its footing — \(earlierPct)% to \(recentPct)% and holding in the recent window. Carry that into the next scene."
         case .none:
-            return "Your \(lower) tone in \(scenario) is solved — \(earlierPct)% to \(recentPct)%, holding now. Next target's open."
+            return "Your \(lower) tone in \(scenario) moved from \(earlierPct)% to \(recentPct)% and is holding in the recent window. Move to the next target."
         }
     }
 
@@ -1177,28 +1174,28 @@ actor PostRepCoachNoteService {
         switch persona.voice {
         case .authoritative:
             return daysUntil == 0
-                ? "\(event.capitalized) is today — you're ready."
-                : "\(event.capitalized) in \(daysUntil) day\(daysUntil == 1 ? "" : "s") — hold that pace."
+                ? "Your \(event) is today — carry this pace into the room."
+                : "\(event.capitalized) in \(daysUntil) day\(daysUntil == 1 ? "" : "s") — keep rehearsing at this pace."
         case .warm:
             return daysUntil == 0
-                ? "Your \(event) is today — carry this with you."
-                : "Your \(event) is \(daysUntil) day\(daysUntil == 1 ? "" : "s") out — carry this."
+                ? "Your \(event) is today — carry this read with you."
+                : "Your \(event) is \(daysUntil) day\(daysUntil == 1 ? "" : "s") out — keep rehearsing this move."
         case .concise:
             return daysUntil == 0
-                ? "\(event.capitalized) today. Ready."
-                : "\(daysUntil) day\(daysUntil == 1 ? "" : "s"). Hold it."
+                ? "\(event.capitalized) today. Carry this rep forward."
+                : "\(daysUntil) day\(daysUntil == 1 ? "" : "s"). Keep rehearsing."
         case .persuasive:
             return daysUntil == 0
-                ? "\(event.capitalized) is today — the preparation has landed."
-                : "\(event.capitalized) in \(daysUntil) day\(daysUntil == 1 ? "" : "s") — the reps are banking."
+                ? "\(event.capitalized) is today — take this delivery cue with you."
+                : "\(event.capitalized) in \(daysUntil) day\(daysUntil == 1 ? "" : "s") — keep rehearsing the move."
         case .executive:
             return daysUntil == 0
-                ? "\(event.capitalized) today. Prepared."
-                : "\(event.capitalized) in \(daysUntil) day\(daysUntil == 1 ? "" : "s"). Maintain."
+                ? "\(event.capitalized) today. Use this read."
+                : "\(event.capitalized) in \(daysUntil) day\(daysUntil == 1 ? "" : "s"). Keep the delivery cue."
         case .storytelling:
             return daysUntil == 0
-                ? "The \(event) is today — your arc is ready."
-                : "The \(event) is \(daysUntil) day\(daysUntil == 1 ? "" : "s") away — the rehearsal is doing its work."
+                ? "The \(event) is today — carry this version into the room."
+                : "The \(event) is \(daysUntil) day\(daysUntil == 1 ? "" : "s") away — keep rehearsing the move."
         case .none:
             return daysUntil == 0
                 ? "\(event.capitalized) is today."
@@ -1561,7 +1558,7 @@ actor PostRepCoachNoteService {
             lines.append("- Working hypothesis: \(Self.truncate(hypothesis, max: 200))")
             if let clause = input.standingWatchClause, !clause.isEmpty {
                 if input.standingWatchIsAssured {
-                    lines.append("- Evidence depth: watching this across \(clause).")
+                    lines.append("- Seen across \(clause).")
                 } else {
                     lines.append("- Evidence depth: early — \(clause) so far. Frame any reference to this read as tentative (\"may\", \"early read\"), never as established.")
                 }

@@ -31,8 +31,9 @@ struct LessonsHomeView: View {
                     headerCopy
                     if showsFirstTimeEmptyState {
                         firstTimeEmptyState
+                    } else {
+                        summaryStrip
                     }
-                    summaryStrip
                     lessonsByCategory
                     Spacer(minLength: Spacing.lg)
                 }
@@ -61,19 +62,12 @@ struct LessonsHomeView: View {
     // MARK: - Header
 
     private var headerCopy: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             Text("Lessons")
                 .font(Typography.screenTitle)
                 .foregroundStyle(.primary)
-            Text("Short, focused lessons that teach a single move. Concept, then spot it, then say it.")
+            Text("Build one speaking move at a time. Learn it, spot it, then say it.")
                 .font(Typography.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            // Crowns role (progression spine): passes point UP the spine —
-            // passes unlock landmarks; landmarks build the skills the rating
-            // measures. Future-tense before any rated evidence exists.
-            Text(LedgerRoleLines.crownsRole(hasRatedEvidence: ratingStore.rating.hasRatedEvidence))
-                .font(Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -94,37 +88,35 @@ struct LessonsHomeView: View {
         let recommended = lessonStore.nextRecommendedLesson ?? LessonsCatalog.all.first
         return EmptyStateView(
             symbol: "books.vertical.fill",
-            title: "Clear your first lesson",
-            body: "Each lesson teaches one move. Concept, then spot it, then say it.",
+            title: "Start with one clear move",
+            body: "A short lesson teaches the idea, helps you hear it, then puts it into a rep.",
             tint: AppColor.brandBlue,
             cta: recommended.map { lesson in
-                EmptyStateView.CTA(label: "Start \(lesson.title)", icon: "play.fill") {
+                EmptyStateView.CTA(label: "Start lesson", icon: "play.fill") {
                     navigationPath.append(AppDestination.lesson(id: lesson.id))
                 }
             }
         )
         .background(firstTimeEmptyStateBackground)
-        .shadow(color: AppColor.brandBlue.opacity(0.16), radius: 22, x: 0, y: 10)
         .accessibilityIdentifier("emptyState.lessons")
     }
 
-    /// Hero chrome for the first-time empty state — radial brand-blue wash
-    /// (learning register) + tint border. Mirrors the same hero pattern used
-    /// on Profile / Settings / League so the empty state reads as a premium
-    /// moment, not iOS-stock.
+    /// The first lesson is the page's single dominant action. Its wash is
+    /// intentionally restrained so the curriculum still reads as a quiet
+    /// learning surface rather than a second practice canvas.
     private var firstTimeEmptyStateBackground: some View {
         let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
         return ZStack {
             shape.fill(AppColor.cardBackground)
             shape.fill(
                 RadialGradient(
-                    colors: [AppColor.brandBlue.opacity(0.42), AppColor.brandBlueLight.opacity(0.22), AppColor.brandBlue.opacity(0.04), Color.clear],
-                    center: UnitPoint(x: 0.5, y: 0.0),
+                    colors: [AppColor.brandBlue.opacity(0.12), AppColor.brandBlue.opacity(0.03), Color.clear],
+                    center: .topLeading,
                     startRadius: 0,
                     endRadius: 320
                 )
             )
-            shape.strokeBorder(AppColor.brandBlue.opacity(0.40), lineWidth: 1)
+            shape.strokeBorder(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
         }
     }
 
@@ -132,52 +124,32 @@ struct LessonsHomeView: View {
 
     private var summaryStrip: some View {
         let totalPasses = lessonStore.totalPracticePasses
-        let passesValue = LessonProgressPresentation.aggregateValue(
-            totalCompleted: totalPasses,
-            lessonCount: LessonsCatalog.all.count
-        )
-        return HStack(spacing: 10) {
-            summaryPill(
-                title: "Passes",
-                value: passesValue,
-                icon: "checkmark.seal.fill",
-                tint: AppColor.brandBlue
-            )
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Passes \(passesValue). \(LedgerRoleLines.crownsRole(hasRatedEvidence: ratingStore.rating.hasRatedEvidence))")
-            summaryPill(
-                title: "Lessons",
-                value: "\(LessonsCatalog.all.count)",
-                icon: "books.vertical.fill",
-                tint: AppColor.positive
-            )
-        }
-    }
+        let totalAvailablePasses = LessonsCatalog.all.count * LessonProgressPresentation.masteryPassCap
+        return HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(AppColor.brandBlue)
+                .frame(width: 28, height: 28)
 
-    private func summaryPill(title: String, value: String, icon: String, tint: Color) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(tint.opacity(0.9))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(Typography.micro)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(totalPasses) of \(totalAvailablePasses) practice passes")
+                    .font(Typography.headline)
+                    .foregroundStyle(.primary)
+                Text(LedgerRoleLines.crownsRole(hasRatedEvidence: ratingStore.rating.hasRatedEvidence))
+                    .font(Typography.caption)
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
-                Text(value)
-                    .font(Typography.headline.monospacedDigit())
-                    .foregroundStyle(tint)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(Spacing.md)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                 .stroke(Color.white.opacity(0.72), lineWidth: 1)
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(totalPasses) of \(totalAvailablePasses) practice passes. \(LedgerRoleLines.crownsRole(hasRatedEvidence: ratingStore.rating.hasRatedEvidence))")
     }
 
     // MARK: - Catalog grouped by category
@@ -194,11 +166,20 @@ struct LessonsHomeView: View {
                             .textCase(.uppercase)
                             .tracking(0.8)
 
-                        VStack(spacing: Spacing.cardGap) {
-                            ForEach(lessons) { lesson in
+                        VStack(spacing: 0) {
+                            ForEach(Array(lessons.enumerated()), id: \.element.id) { index, lesson in
                                 lessonRow(lesson)
+                                if index < lessons.count - 1 {
+                                    Divider()
+                                        .padding(.leading, 76)
+                                }
                             }
                         }
+                        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+                        )
                     }
                 }
             }
@@ -237,13 +218,10 @@ struct LessonsHomeView: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.tertiary)
             }
-            .padding(Spacing.md)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
-            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("lessons.row.\(lesson.id)")

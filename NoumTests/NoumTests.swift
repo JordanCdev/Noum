@@ -1095,8 +1095,8 @@ struct NextActionEngineTests {
             sessionCount: 10, streakDays: 3, styleGoal: "authoritative"
         )
         let result = NextActionEngine.recommend(input: input)
-        // Severe filler issue → immediate corrective drill
-        #expect(result.reasoning.contains("significant issue"), "Severe session should mention significant issue. Got: \(result.reasoning)")
+        // A directly measured constraint should produce one calm corrective drill.
+        #expect(result.reasoning.contains("clear constraint"), "Severe session should name the measured constraint calmly. Got: \(result.reasoning)")
     }
 
     @Test func persistentBlockerGetsConfidenceRebuilding() {
@@ -1455,7 +1455,7 @@ struct NextActionEngineTests {
             recommendationOutcomes: everyMode
         )
         let result = NextActionEngine.recommend(input: severe)
-        #expect(result.reasoning.contains("significant issue"), "P1 severe must win over any verdict. Got: \(result.reasoning)")
+        #expect(result.reasoning.contains("clear constraint"), "P1 severe must win over any verdict. Got: \(result.reasoning)")
         if case .drill = result.primary {} else {
             Issue.record("P1 severe should return a drill regardless of the ledger. Got: \(result.primary)")
         }
@@ -2258,9 +2258,9 @@ struct SessionEdgeCaseTests {
             sessionCount: 3, streakDays: 1, styleGoal: nil
         )
         let result = NextActionEngine.recommend(input: input)
-        // Very short session → significant issue (duration < 8s)
-        #expect(result.reasoning.lowercased().contains("significant"),
-            "Very short session should be flagged as significant issue. Got: \(result.reasoning)")
+        // Very short session → a specific, calm next action (duration < 8s).
+        #expect(result.reasoning.lowercased().contains("clear constraint"),
+            "Very short session should receive calm corrective guidance. Got: \(result.reasoning)")
     }
 
     @Test func underdevelopedResponseGetsDepthDrill() {
@@ -2901,10 +2901,7 @@ struct RecommendationBiasCopyContractTests {
             plan: nil
         )
 
-        #expect(blueprint.whyNow.contains("You've been away from the rhythm"))
-        #expect(blueprint.whyNow.contains("you chose"))
-        #expect(blueprint.whyNow.contains("work conversations"))
-        #expect(blueprint.whyNow.contains("tightening your structure"))
+        #expect(blueprint.whyNow == "One structured rep will restore the rhythm.")
         #expect(!blueprint.whyNow.contains("The user"))
     }
 
@@ -2925,8 +2922,8 @@ struct RecommendationBiasCopyContractTests {
         #expect(blueprint.recommendedMode == .suddenDeath)
         #expect(blueprint.whyNow.contains("Investor Q&A is coming up."))
         #expect(blueprint.whyNow.contains("interviews"))
-        #expect(blueprint.whyNow.contains("thinking faster on the spot"))
-        #expect(blueprint.whyNow.contains("executive register"))
+        #expect(blueprint.whyNow.contains("under pressure"))
+        #expect(blueprint.whyNow.split(separator: " ").count <= 18)
         #expect(!blueprint.whyNow.contains("signed up"))
         #expect(!blueprint.whyNow.contains("The user"))
     }
@@ -2946,11 +2943,11 @@ struct RecommendationBiasCopyContractTests {
         )
 
         #expect(blueprint.recommendedMode == .imConversation)
-        #expect(blueprint.whyNow.contains("Investor Q&A is coming up with three partners and I keep feeling"))
+        #expect(blueprint.whyNow.contains("Investor Q&A is coming up with three partners"))
         #expect(!blueprint.whyNow.contains("follow-up question turns sharp"))
         #expect(blueprint.whyNow.contains("work conversations"))
-        #expect(blueprint.whyNow.contains("slowing down under pressure"))
-        #expect(blueprint.whyNow.contains("warm register"))
+        #expect(blueprint.whyNow.contains("target tone"))
+        #expect(blueprint.whyNow.split(separator: " ").count <= 20)
     }
 
     private func profile(
@@ -9540,8 +9537,8 @@ struct CoachReplyTextSanitizerTests {
 
         #expect(display == """
         Your recommendation led the answer.
-        repeat that shape in 30 seconds.
-        recommendation, one proof point, stop.
+        Repeat that shape in 30 seconds.
+        Recommendation, one proof point, stop.
         """)
         for label in ["observation:", "action:", "practice:"] {
             #expect(!display.lowercased().contains(label))
@@ -9736,7 +9733,7 @@ struct HomeAskNoumShortcutTests {
         // (below the Path card), not a chip nested in the coach hero, so
         // the identifier is location-neutral.
         #expect(HomeAskNoumShortcut.title == "Ask Noum")
-        #expect(HomeAskNoumShortcut.actionTitle == "Open the thread")
+        #expect(HomeAskNoumShortcut.actionTitle == "Ask Noum")
         #expect(HomeAskNoumShortcut.accessibilityIdentifier == "home.askNoum.row")
         #expect(HomeAskNoumShortcut.accessibilityIdentifier.hasPrefix("home.askNoum"))
     }
@@ -10486,8 +10483,8 @@ struct CoachContextBuilderTests {
         #expect(normalized.contains("if the user names one of the six voices exactly"))
         #expect(normalized.contains("do not hedge with \"closest match\""))
         #expect(normalized.contains("do not give a feature tour"))
-        #expect(normalized.contains("the confirmation card handles the actual commit"))
-        #expect(normalized.contains("let the card handle confirmation"))
+        #expect(normalized.contains("let the app handle any profile write outside the coach text"))
+        #expect(normalized.contains("the app handles any profile write outside the coach text"))
         #expect(normalized.contains("do not write button instructions into the reply"))
         #expect(!normalized.contains("tap to confirm and I'll lock it in"))
         #expect(normalized.contains("If the user names a style that is NOT one of the six"))
@@ -10506,10 +10503,10 @@ struct CoachContextBuilderTests {
         )
 
         #expect(normalized.contains("On cold start"))
-        #expect(normalized.contains("do not name internal practice modes"))
-        #expect(normalized.contains("Ah-Counter"))
-        #expect(normalized.contains("do not set a numeric target"))
-        #expect(normalized.contains("under 4 fillers"))
+        #expect(normalized.contains("do not name internal practice-mode labels"))
+        #expect(!normalized.contains("Ah-Counter"))
+        #expect(normalized.contains("do not set a numeric filler target"))
+        #expect(!normalized.contains("under 4 fillers"))
         #expect(normalized.contains("one plain 60-second first rep"))
         #expect(normalized.contains("low-friction invitation to start"))
     }
@@ -10616,7 +10613,7 @@ struct CoachContextBuilderTests {
         #expect(normalized.contains("this indicates"))
         #expect(normalized.contains("let us"))
         #expect(normalized.contains("as an AI"))
-        #expect(normalized.contains("i understand your frustration"))
+        #expect(normalized.contains("I understand your frustration"))
         #expect(normalized.contains("here are some tips"))
         #expect(normalized.contains("in order to improve"))
         #expect(normalized.contains("not a dashboard"))
@@ -12043,8 +12040,8 @@ struct CoachContextBuilderTests {
 //      placeholder, setting `isAwaitingReply = true`.
 //   2. `completeCoachTurn` hydrates the placeholder with the model's
 //      reply text and clears `isAwaitingReply`.
-//   3. An empty reply text becomes a `.systemNotice` row instead of
-//      an empty coach bubble — never leave a blank bubble.
+//   3. Failures remove the pending coach row and become transient UI
+//      state. They are never persisted as conversation messages.
 //   4. `cancelPendingCoachTurn` removes the pending row entirely.
 //   5. The thread caps at the configured max — older messages drop
 //      off the front.
@@ -12185,32 +12182,40 @@ struct AskNoumStoreTests {
         #expect(!store.isAwaitingReply, "input re-enables only after the turn resolves")
     }
 
-    @Test func completeCoachTurnWithEmptyTextBecomesSystemNotice() {
-        // Empty reply (model failure / no provider) MUST not leave a
-        // blank coach bubble — it converts to a system notice so the
-        // user understands what happened.
+    @Test func failedCoachTurnStaysOutsideTranscript() {
         let store = freshStore()
         let ids = store.appendUserTurn("Plan my week.")
         store.completeCoachTurn(id: ids.coachID, outcome: .failure(.network))
-        #expect(store.messages.count == 2)
-        #expect(store.messages[1].role == .systemNotice)
-        #expect(store.messages[1].text.contains("live read"))
+        #expect(store.messages.count == 1)
+        #expect(store.messages[0].role == .user)
+        #expect(store.lastFailure == .network)
+        #expect(store.transientFailureMessage == "Noum is temporarily unavailable. Your message is still here.")
         #expect(!store.isAwaitingReply)
     }
 
-    /// Provider/model failures are system notices, never coach bubbles. This
-    /// keeps Ask Noum from presenting local or failed content as the live coach.
-    @Test func allChatFailuresBecomeSystemNotices() {
-        let failures: [ChatFailure] = [.network, .noProvider, .localeUnsupported, .empty, .contentRejected]
+    @Test func allChatFailuresRemainTransient() {
+        let failures: [ChatFailure] = [
+            .network, .noProvider, .unauthenticated, .rateLimited,
+            .localeUnsupported, .empty, .contentRejected
+        ]
         for failure in failures {
             let store = freshStore()
             let ids = store.appendUserTurn("How did my last rep go?")
             store.completeCoachTurn(id: ids.coachID, outcome: .failure(failure))
-            #expect(store.messages.count == 2)
-            #expect(store.messages[1].role == .systemNotice)
-            #expect(store.messages[1].role != .coach)
-            #expect(store.messages[1].isPending == false)
-            #expect(store.messages[1].isOffline == false)
+            #expect(store.messages.count == 1)
+            #expect(store.messages[0].role == .user)
+            #expect(store.lastFailure == failure)
+            let notice = store.transientFailureMessage ?? ""
+            #expect(!notice.isEmpty)
+            if failure == .noProvider {
+                #if DEBUG
+                #expect(notice == "Live coaching isn’t connected in this build.")
+                #else
+                #expect(notice == "Noum is temporarily unavailable. Your message is still here.")
+                #endif
+            } else {
+                #expect(notice.contains("Your message is still here"))
+            }
             #expect(!store.isAwaitingReply)
         }
     }
@@ -12220,11 +12225,9 @@ struct AskNoumStoreTests {
         let ids = store.appendUserTurn("Why can't you shape a useful answer?")
         store.completeCoachTurn(id: ids.coachID, outcome: .failure(.contentRejected))
 
-        let notice = store.messages[1].text.lowercased()
-        #expect(store.messages[1].role == .systemNotice)
-        #expect(notice.contains("held that response"))
-        #expect(notice.contains("grounded enough"))
-        #expect(notice.contains("one clear move"))
+        let notice = store.transientFailureMessage?.lowercased() ?? ""
+        #expect(store.messages.count == 1)
+        #expect(notice == "noum couldn’t complete that coaching read. your message is still here.")
         #expect(!notice.contains("missed the coaching bar"))
         #expect(!notice.contains("clearer sentence"))
         #expect(!notice.contains("your question"))
@@ -12236,23 +12239,38 @@ struct AskNoumStoreTests {
         let ids = store.appendUserTurn("Give me one honest read.")
         store.completeCoachTurn(id: ids.coachID, outcome: .failure(.empty))
 
-        let notice = store.messages[1].text.lowercased()
-        #expect(store.messages[1].role == .systemNotice)
-        #expect(notice.contains("rather than guessing"))
+        let notice = store.transientFailureMessage?.lowercased() ?? ""
+        #expect(store.messages.count == 1)
+        #expect(notice == "noum couldn’t complete that coaching read. your message is still here.")
         #expect(!notice.contains("model"))
         #expect(!notice.contains("usable coach text"))
     }
 
     /// Defensive: a live `.reply` with all-whitespace text still must not leave
     /// a blank coach bubble. It routes to the same system notice as `.empty`.
-    @Test func completeCoachTurnWhitespaceLiveReplyBecomesNotice() {
+    @Test func completeCoachTurnWhitespaceLiveReplyBecomesTransientFailure() {
         let store = freshStore()
         let ids = store.appendUserTurn("How did my last rep go?")
         store.completeCoachTurn(id: ids.coachID, outcome: .reply("   \n\t "))
-        #expect(store.messages.count == 2)
-        #expect(store.messages[1].role == .systemNotice)
-        #expect(store.messages[1].isOffline == false)
+        #expect(store.messages.count == 1)
+        #expect(store.lastFailure == .empty)
         #expect(!store.isAwaitingReply)
+    }
+
+    @Test func retryReusesLatestUserTurnWithoutDuplicatingIt() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("What should I fix first?")
+        store.completeCoachTurn(id: ids.coachID, outcome: .failure(.network))
+
+        let retryCoachID = store.prepareRetry()
+
+        #expect(retryCoachID != nil)
+        #expect(store.messages.count == 2)
+        #expect(store.messages.filter { $0.role == .user }.count == 1)
+        #expect(store.messages.last?.id == retryCoachID)
+        #expect(store.messages.last?.isPending == true)
+        #expect(store.lastFailure == nil)
+        #expect(store.isAwaitingReply)
     }
 
     /// A3 — a LIVE `.reply` is NOT offline: it must render in the full
@@ -12680,7 +12698,7 @@ struct AskNoumStoreTests {
         #expect(!store2.isAwaitingReply)
     }
 
-    @Test func legacyRoboticCoachBubbleIsCleanedOnLoad() throws {
+    @Test func legacyRoboticCoachBubbleIsRemovedOnLoad() throws {
         let suite = UserDefaults(suiteName: UUID().uuidString)!
         let key = "askNoum.thread.tester"
         let old = CoachMessage(
@@ -12694,10 +12712,25 @@ struct AskNoumStoreTests {
 
         let store = AskNoumStore(defaults: suite, accountIDProvider: { "tester" })
 
+        #expect(store.messages.isEmpty)
+    }
+
+    @Test func legacySystemNoticesAreFilteredAndNotRepersisted() throws {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let key = "askNoum.thread.tester"
+        let old = [
+            CoachMessage(role: .user, text: "Hi"),
+            CoachMessage(role: .systemNotice, text: "Check AI setup in Settings, then try again.")
+        ]
+        suite.set(try JSONEncoder().encode(old), forKey: key)
+
+        let store = AskNoumStore(defaults: suite, accountIDProvider: { "tester" })
         #expect(store.messages.count == 1)
-        #expect(store.messages[0].role == .systemNotice)
-        #expect(store.messages[0].text.contains("older coach note"))
-        #expect(!store.messages[0].text.lowercased().contains("recent reps show"))
+        #expect(store.messages[0].role == .user)
+
+        let persisted = try #require(suite.data(forKey: key))
+        let decoded = try JSONDecoder().decode([CoachMessage].self, from: persisted)
+        #expect(decoded.allSatisfy { $0.role != .systemNotice })
     }
 
     @Test func legacyUsefulCoachBubbleSurvivesOnLoad() throws {
@@ -13450,7 +13483,7 @@ struct PracticeModePrescriptionCopyTests {
     @Test func beginLabelCarriesOnePrimaryAction() {
         let label = PracticeModePrescriptionCopy.beginLabel(for: "Timed Practice")
 
-        #expect(label == "Begin \u{00B7} Timed Practice")
+        #expect(label == "Start Timed Practice")
         #expect(!label.localizedCaseInsensitiveContains("start now"))
         #expect(!label.contains("!"))
     }
@@ -13466,7 +13499,7 @@ struct PracticeModePrescriptionCopyTests {
             target: "30s+"
         )
 
-        #expect(line == "30s+ \u{00B7} Longer answer")
+        #expect(line == "30s+ — Longer answer")
     }
 
     @Test func prescriptionLineSuppressesEmptyOrDuplicateSignals() {
@@ -15460,7 +15493,7 @@ struct DevSeedCoachIntelligenceFixtureTests {
         #expect(audit.contains("Pressure pace hold"))
         #expect(context.contains("Investor dry run"))
         #expect(context.contains("calm under challenge"))
-        #expect(context.contains("their prep didn't carry") || context.contains("prep didn't carry"))
+        #expect(context.contains("their rehearsal didn't carry") || context.contains("rehearsal didn't carry"))
     }
 
     @Test func everySeedCarriesRelationalEvidenceBeyondMetricHistory() {
@@ -16882,7 +16915,7 @@ struct TalkToNoumCTACardCopyTests {
     }
 
     @Test func ctaCopyMatchesPremiumState() {
-        #expect(TalkToNoumCTACard.ctaCopy(isPremium: true) == "Open the thread")
+        #expect(TalkToNoumCTACard.ctaCopy(isPremium: true) == "Ask Noum")
         #expect(TalkToNoumCTACard.ctaCopy(isPremium: false) == "Unlock with Pro")
     }
 
@@ -26194,7 +26227,10 @@ struct S5SpokenModeRouteTests {
     /// so a new cause can't silently become speakable, and `spokenText` is
     /// nil so no caller can even extract something to say.
     @Test func neverSpeaksAnyFailureCause() {
-        let causes: [ChatFailure] = [.noProvider, .localeUnsupported, .network, .empty, .contentRejected]
+        let causes: [ChatFailure] = [
+            .noProvider, .unauthenticated, .rateLimited, .localeUnsupported,
+            .network, .empty, .contentRejected
+        ]
         for cause in causes {
             #expect(AskNoumSpokenMode.spokenRoute(
                 outcome: .failure(cause),
@@ -26698,7 +26734,7 @@ struct AICoachChatReplyQualityGateTests {
     }
 
     @Test func acceptsVoiceChoiceRecommendationWithoutCommitDirective() {
-        let reply = "Given you are trying to stop getting talked over in meetings, Authoritative is the closest fit: short verdicts that hold the floor. Executive presence is the next-closest if the room is more senior leadership than peers. Which one matches the room you are actually in?"
+        let reply = "Start with Authoritative because short verdicts can hold the floor in meetings where you get talked over; Executive presence is the comparison only if the real pressure is a senior room."
         #expect(AICoachChatService.replyQualityIssue(
             in: reply,
             latestUserTurn: "What voice should I even pick? There are six and I don't know."
@@ -27089,8 +27125,8 @@ struct AICoachChatReplyQualityGateTests {
         #expect(AICoachChatService.replyQualityIssue(in: display, latestUserTurn: "What next?") == .scaffoldLabel)
         #expect(normalized == """
         5 fillers show the rush is happening near the close.
-        - next rep, hold one beat before the final sentence.
-        - that tests whether pace is driving the filler spike.
+        - Next rep, hold one beat before the final sentence.
+        - That tests whether pace is driving the filler spike.
         """)
         #expect(!normalized.lowercased().contains("read:"))
         #expect(!normalized.lowercased().contains("move:"))
@@ -27622,8 +27658,8 @@ struct AICoachChatReplyQualityGateTests {
             system: system
         ))
 
-        #expect(shape.contains("Your last rep had 6 fillers"))
-        #expect(shape.contains("hold a one-second silence"))
+        #expect(shape.contains("Your last pressure rep had 6 fillers"))
+        #expect(shape.contains("one silent beat"))
         #expect(shape.contains(" so "))
         #expect(AICoachChatService.replyQualityIssue(
             in: shape,
@@ -27651,7 +27687,7 @@ struct AICoachChatReplyQualityGateTests {
         ))
 
         #expect(shape.contains("No baseline yet"))
-        #expect(shape.contains("record 60 seconds"))
+        #expect(shape.contains("Record 60 seconds"))
         #expect(!shape.contains("one short rep"))
         #expect(AICoachChatService.replyQualityIssue(
             in: shape,
@@ -29817,7 +29853,7 @@ struct AIInsightsDeterministicFallbackTests {
         #expect(body.contains("6 fillers"))
     }
 
-    @Test func weeklyFallbackFramesSlippageAsSuspectNotCause() {
+    @Test func weeklyFallbackUsesAnotherRepToClarifySlippageWithoutClaimingCause() {
         let insight = AIInsightsService.templatedFallback(
             for: input(kind: .weeklyNarrative, weeklyDelta: -8, weeklyReps: 3)
         )
@@ -29825,9 +29861,11 @@ struct AIInsightsDeterministicFallbackTests {
 
         #expect(insight.kind == .weeklyNarrative)
         #expect(insight.isAIBacked == false)
+        #expect(insight.headline == "Rating moved down")
         #expect(!body.contains("cause"))
         #expect(!body.contains("diagnos"))
-        #expect(body.contains("clearest suspect"))
+        #expect(body.contains("controlled pressure rep"))
+        #expect(body.contains("isolate what needs attention"))
     }
 }
 
@@ -31068,8 +31106,7 @@ struct IMToneDrillSignalTests {
 
     @Test func blueprintReinforcesWhenDrillRecovering() {
         // A recovering trajectory should reinforce the drill the user is
-        // already on (it's working — one more) and report the climb, not
-        // repeat the flat "you missed X%" line.
+        // already on and report the climb without claiming the drill caused it.
         let signal = IMToneDrillSignal(
             scenario: .difficultConversation,
             targetTone: .calm,
@@ -31092,7 +31129,7 @@ struct IMToneDrillSignalTests {
         // Reinforcing rationale names the climb (recent vs earlier window).
         #expect(blueprint.whyNow.contains("50%"))
         #expect(blueprint.whyNow.contains("0%"))
-        #expect(blueprint.whyMode.contains("working"))
+        #expect(blueprint.whyMode.contains("test whether it holds"))
         // Not the neutral "landed only" line.
         #expect(!blueprint.whyNow.contains("landed only"))
     }
@@ -33892,13 +33929,13 @@ struct PostRepCoachNoteUserPromptAnchoringTests {
         #expect(prompt.contains("SOLVED this rep"))
         #expect(prompt.contains("Difficult Conversation"))
         #expect(!prompt.contains("Networking"))
-        // Note — SOLVED sentence names scenario A, not B. The deterministic
+        // Note — the holding sentence names scenario A, not B. The deterministic
         // priority chain hits SOLVED first (branch 0 in
-        // `metricSentence(for:persona:)`), so the metric reads "Your calm
-        // tone in Difficult Conversation is solved — …".
+        // `metricSentence(for:persona:)`), while the user-facing copy stays
+        // evidence-scaled rather than claiming the skill is solved.
         let lowerNote = note.noteText.lowercased()
         #expect(lowerNote.contains("difficult conversation"))
-        #expect(lowerNote.contains("solved"))
+        #expect(lowerNote.contains("holding"))
         #expect(!lowerNote.contains("networking"))
     }
 
@@ -33936,7 +33973,7 @@ struct PostRepCoachNoteUserPromptAnchoringTests {
         // trajectory would have been the loudest open thread.
         let lowerNote = note.noteText.lowercased()
         #expect(lowerNote.contains("difficult conversation"))
-        #expect(lowerNote.contains("solved"))
+        #expect(lowerNote.contains("holding"))
         #expect(!lowerNote.contains("networking"))
     }
 
@@ -33976,7 +34013,7 @@ struct PostRepCoachNoteUserPromptAnchoringTests {
         // Note — same anchoring on the deterministic surface.
         let lowerNote = note.noteText.lowercased()
         #expect(lowerNote.contains("difficult conversation"))
-        #expect(lowerNote.contains("solved"))
+        #expect(lowerNote.contains("holding"))
         #expect(!lowerNote.contains("work update"))
         #expect(!lowerNote.contains("professional"))
     }
@@ -35156,13 +35193,13 @@ struct PostRepCoachNoteToneResolvedTests {
         )
     }
 
-    @Test func resolvedWinHeadlinesTheNote() {
+    @Test func resolvedWinHeadlinesTheNoteWithoutClaimingMastery() {
         let note = PostRepCoachNoteService.deterministicNote(input: makeInput(resolved: resolved()))
         let lower = note.noteText.lowercased()
         #expect(lower.contains("difficult conversation"))
         #expect(lower.contains("calm"))
         #expect(note.noteText.contains("0%") && note.noteText.contains("100%"))
-        #expect(lower.contains("solved"))
+        #expect(lower.contains("holding"))
         #expect(!note.noteText.contains("!"))
     }
 
@@ -37062,7 +37099,7 @@ struct HeroScoreCardToneDrillRibbonContractTests {
                 let label = card.toneDrillResolvedRibbonLabel ?? ""
                 #expect(label.contains(scenario), "Label must name the scenario — got \(label)")
                 #expect(label.contains(tone), "Label must name the committed tone — got \(label)")
-                #expect(label.hasPrefix("Solved"), "Label must lead with the outcome — got \(label)")
+                #expect(label.hasPrefix("Holding"), "Label must lead with the evidence-scaled outcome — got \(label)")
             }
         }
     }
@@ -38767,10 +38804,10 @@ struct BigMomentTransferEnrichmentTests {
 
     @Test func coachContextLineIncludesDrillTransferAndStaysNonCausal() {
         let line = report(drillTransfer: .partly).coachContextLine
-        #expect(line.contains("prep partly carried"))
+        #expect(line.contains("They felt their rehearsal partly carried"))
         #expect(!line.lowercased().contains("caused"))
-        // Absent transfer -> no prep clause (no fabricated signal).
-        #expect(!report(drillTransfer: nil).coachContextLine.contains("their prep"))
+        // Absent transfer -> no rehearsal clause (no fabricated signal).
+        #expect(!report(drillTransfer: nil).coachContextLine.contains("their rehearsal"))
     }
 
     @Test func recordOutcomeCarriesDrillTransfer() {
@@ -38792,7 +38829,7 @@ struct BigMomentTransferEnrichmentTests {
     @Test func transferReviewCarriesDrillTransferIntoCaseLine() {
         let review = CoachTransferReview(report: report(drillTransfer: .didNotTransfer))
         #expect(review.drillTransfer == .didNotTransfer)
-        #expect(review.reportedOutcomeLine.contains("prep didn't carry"))
+        #expect(review.reportedOutcomeLine.contains("They felt their rehearsal didn't carry"))
     }
 
     @Test func outcomeReportDecodesWithoutDrillTransferField() throws {
@@ -39147,7 +39184,7 @@ struct AskNoumVoiceFirstDefaultTests {
         )
 
         let line = AskNoumView.currentFocusLine(caseFile: caseFile)
-        #expect(line == "Working on: Open with the answer, then add one proof point")
+        #expect(line == "Current focus: Open with the answer, then add one proof point")
         #expect(line?.contains("Target:") == false)
     }
 
@@ -47787,7 +47824,7 @@ struct HypothesisEvidenceDepthTests {
             now: now,
             calendar: utc
         )
-        #expect(line == "Watching this across 9 reps over 3 weeks.")
+        #expect(line == "Seen across 9 recent reps.")
     }
 
     @Test func depthLineHedgesBelowEvidenceFloor() {
@@ -47805,7 +47842,7 @@ struct HypothesisEvidenceDepthTests {
 
         // Below the floor the assured framing must never leak through.
         for line in [noSpan, withSpan] {
-            #expect(line?.contains("Watching this across") == false)
+            #expect(line?.contains("Seen across") == false)
         }
         #expect(CoachCaseFile.evidenceDepthLine(
             evidenceCount: 0, confidence: .moderate,
@@ -47951,7 +47988,7 @@ struct HypothesisEvidenceDepthTests {
             now: now
         )
         #expect(content.label == "FORMING READ")
-        #expect(content.evidenceLine == "Watching this across 8 reps over 3 weeks.")
+        #expect(content.evidenceLine == "Seen across 8 recent reps.")
     }
 
     @Test func profileReadHedgesEvidenceLineBelowFloor() {
@@ -47978,7 +48015,7 @@ struct HypothesisEvidenceDepthTests {
         // "EARLY READ READ".
         #expect(content.label == "EARLY READ")
         #expect(content.evidenceLine == "Early read — 4 reps so far; still forming.")
-        #expect(content.evidenceLine?.contains("Watching this across") == false)
+        #expect(content.evidenceLine?.contains("Seen across") == false)
     }
 
     @Test func profileReadHasNoEvidenceLineWithoutHypothesis() {
@@ -48169,7 +48206,7 @@ struct PostRepStandingWatchTests {
         let prompt = PostRepCoachNoteService.userPrompt(from: input(watch: watch))
         #expect(prompt.contains("STANDING COACH READ"))
         #expect(prompt.contains("Working hypothesis: Pace appears to be"))
-        #expect(prompt.contains("watching this across 9 reps over 3 weeks."))
+        #expect(prompt.contains("Seen across 9 reps over 3 weeks."))
         #expect(!prompt.contains("Frame any reference to this read as tentative"))
     }
 
@@ -48183,7 +48220,7 @@ struct PostRepStandingWatchTests {
         #expect(prompt.contains("STANDING COACH READ"))
         #expect(prompt.contains("tentative"))
         #expect(prompt.contains("never as established"))
-        #expect(!prompt.contains("watching this across"))
+        #expect(!prompt.contains("Seen across"))
     }
 
     @Test func userPromptOmitsBlockWithoutHypothesis() {
@@ -48483,7 +48520,7 @@ struct BigMomentOutcomeAckTests {
         for transfer in ReportedDrillTransfer.allCases {
             let line = BigMomentOutcomeAck.line(for: report(outcome: .mixed, drillTransfer: transfer))
             #expect(line.contains("You felt"))
-            #expect(line.lowercased().contains("prep"))
+            #expect(line.lowercased().contains("rehearsal"))
         }
         // No transfer reported → still acknowledges receipt, without
         // inventing a prep read the user never gave.

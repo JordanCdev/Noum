@@ -137,7 +137,7 @@ enum NextActionEngine {
             return NextAction(
                 primary: severe,
                 secondary: fallbackDrill(input: input),
-                reasoning: "This session had a significant issue that should be addressed immediately.",
+                reasoning: "This rep showed one clear constraint, so the next rep should isolate it.",
                 confidenceLevel: .stable // Severe issues don't need baseline confidence
             )
         }
@@ -147,7 +147,7 @@ enum NextActionEngine {
             return NextAction(
                 primary: blocker,
                 secondary: nil,
-                reasoning: groundInGoal("This has been a persistent pattern across many sessions — focused work here has the highest leverage.", action: blocker, style: style),
+                reasoning: groundInGoal("This is a persistent pattern across many sessions, so focused work here is the clearest next step.", action: blocker, style: style),
                 confidenceLevel: confidence
             )
         }
@@ -157,14 +157,14 @@ enum NextActionEngine {
             return NextAction(
                 primary: pressureAction,
                 secondary: standardDrill(input: input),
-                reasoning: "Your casual performance is strong, but pressure situations reveal a gap worth closing.",
+                reasoning: "Your casual reps have read stronger than your pressure reps. One pressure rep can test that gap.",
                 confidenceLevel: confidence
             )
         }
 
         // --- Priority 4: Declining trend ---
         if let declining = checkDecliningTrend(input: input) {
-            let base = ConfidencePhrasing.frame("A skill that was strong is slipping — a focused drill can reverse this before it becomes a pattern.", confidence: confidence)
+            let base = ConfidencePhrasing.frame("A previously stronger skill read lower recently. One focused drill can test whether the pattern responds.", confidence: confidence)
             return NextAction(
                 primary: declining,
                 secondary: nil,
@@ -178,7 +178,7 @@ enum NextActionEngine {
             return NextAction(
                 primary: newIssue,
                 secondary: nil,
-                reasoning: groundInGoal("This issue just appeared — catching it early prevents it from becoming a habit.", action: newIssue, style: style),
+                reasoning: groundInGoal("This just appeared in the latest evidence. One focused rep can test whether it repeats.", action: newIssue, style: style),
                 confidenceLevel: confidence
             )
         }
@@ -191,7 +191,7 @@ enum NextActionEngine {
         // the cascade past here is always total.
         if let reinforcing = checkImprovingTrend(input: input),
            !shouldDeferReinforcement(reinforcing, input: input) {
-            let base = ConfidencePhrasing.frame("You're making progress — one more rep can lock it in.", confidence: confidence)
+            let base = ConfidencePhrasing.frame("Recent evidence shows progress in the right direction. One more rep can test whether it holds.", confidence: confidence)
             return NextAction(
                 primary: reinforcing,
                 secondary: stretchChallenge(input: input),
@@ -205,7 +205,7 @@ enum NextActionEngine {
             return NextAction(
                 primary: stretch,
                 secondary: standardDrill(input: input),
-                reasoning: "Solid performance — time to push your edge.",
+                reasoning: "Recent performance has held up. A stretch rep can test the next edge.",
                 confidenceLevel: confidence
             )
         }
@@ -360,10 +360,10 @@ enum NextActionEngine {
         if confidentReplace(forMode: mode, input: input) {
             let flipped: PracticeMode = mode == .suddenDeath ? .timed : .suddenDeath
             guard !confidentReplace(forMode: flipped, input: input) else { return nil }
-            return .pressureExposure(flipped, reason: "Your casual delivery is solid — testing it under pressure will reveal your next growth edge.")
+            return .pressureExposure(flipped, reason: "Your casual delivery has read stronger than your pressure reps. One pressure rep can test the gap.")
         }
 
-        return .pressureExposure(mode, reason: "Your casual delivery is solid — testing it under pressure will reveal your next growth edge.")
+        return .pressureExposure(mode, reason: "Your casual delivery has read stronger than your pressure reps. One pressure rep can test the gap.")
     }
 
     /// Priority 4: A skill that was strong is now declining.
@@ -407,7 +407,7 @@ enum NextActionEngine {
         // If the improving area matches a recent drill, suggest another rep
         if let recentDrillArea = input.drillHistory.first?.skillArea,
            improving.contains(where: { $0.skillArea == recentDrillArea }) {
-            return .stabilizingRep(input.mode, reason: "Your \(recentDrillArea.displayName.lowercased()) is improving — another rep will solidify the gains.")
+            return .stabilizingRep(input.mode, reason: "Your \(recentDrillArea.displayName.lowercased()) has read stronger recently. Another rep can test whether it holds.")
         }
 
         // Otherwise suggest a drill for the improving area
@@ -467,7 +467,7 @@ enum NextActionEngine {
     /// function stays total. An empty/below-floor ledger makes every check `false`,
     /// leaving today's branches byte-for-byte unchanged.
     private static func stretchChallenge(input: NextActionInput) -> ActionRecommendation? {
-        let imSwitch: ActionRecommendation = .practiceMode(.imConversation, reason: "A change of modality is its own stretch — try an IM conversation to push a different edge.")
+        let imSwitch: ActionRecommendation = .practiceMode(.imConversation, reason: "Try a conversation rep to test a different communication demand.")
 
         // If they haven't tried sudden death much, suggest it
         let recentSuddenDeath = input.drillHistory.filter { $0.skillArea == .fillerReduction }.count
@@ -477,12 +477,12 @@ enum NextActionEngine {
                 // switch modality instead of repeating a not-moving pressure mode.
                 return imSwitch
             }
-            return .pressureExposure(.suddenDeath, reason: "Your filler control is strong — test it in Pressure Drill.")
+            return .pressureExposure(.suddenDeath, reason: "Your recent filler read is controlled. A Pressure Drill can test it under more demand.")
         }
 
         // If the session was in timed mode, suggest IM mode
         if input.mode == .timed && input.score >= 7 {
-            return .practiceMode(.imConversation, reason: "You're performing well in timed mode — try an IM conversation for a different challenge.")
+            return .practiceMode(.imConversation, reason: "Your timed reps have read well. Try a conversation rep to test a different demand.")
         }
 
         // Otherwise suggest pressure mode
@@ -495,9 +495,9 @@ enum NextActionEngine {
                     return imSwitch
                 }
                 let alt: PracticeMode = input.mode == .suddenDeath ? .timed : .suddenDeath
-                return .pressureExposure(alt, reason: "Turn on pressure mode for your next session to push your edge.")
+                return .pressureExposure(alt, reason: "Use pressure mode for the next rep to test how the skill holds.")
             }
-            return .pressureExposure(input.mode, reason: "Turn on pressure mode for your next session to push your edge.")
+            return .pressureExposure(input.mode, reason: "Use pressure mode for the next rep to test how the skill holds.")
         }
 
         return nil

@@ -800,7 +800,7 @@ struct CoachReasoningPassTests {
         #expect(assessment.nextProofTest.lowercased().contains("verdict") || assessment.nextProofTest.lowercased().contains("pressure"))
     }
 
-    @Test func deepAssessmentImmediateReadIncludesMissingEvidenceAndProofTest() {
+    @Test func deepAssessmentImmediateReadIncludesMissingEvidenceAndNextCheck() {
         let assessment = CoachReasoningPass.assess(
             turnDepth: .deepAssessment,
             userQuestion: "Where do I stand overall?",
@@ -815,7 +815,8 @@ struct CoachReasoningPassTests {
         #expect(!read.contains("try this next:"))
         #expect(read.contains("the useful signal"))
         #expect(read.contains("what is still missing"))
-        #expect(read.contains("use this as the proof test"))
+        #expect(read.contains("for the next check"))
+        #expect(!read.contains("proof test"))
         #expect(read.contains("pressure"))
     }
 
@@ -1015,7 +1016,7 @@ struct CoachReasoningPassTests {
         #expect(lowerProofs.contains { $0.contains("verified session example") })
         #expect(lowerProofs.contains { $0.contains("field note") })
         #expect(lowerProofs.contains { $0.contains("memorable detail") })
-        #expect(lowerProofs.contains { $0.contains("semantic words") })
+        #expect(lowerProofs.contains { $0.contains("keep the word only if it adds meaning") })
     }
 
     @Test func quickMoveVerdictVariesWithUserNamedLever() {
@@ -1415,7 +1416,7 @@ struct CoachSemanticQualityGateTests {
     @Test func transferCausalityFailsEvenWithoutTypedAssessment() {
         let context = """
         REAL-WORLD TRANSFER
-        - For presentation "Leadership update", the user reported it went well; the audience or counterpart seemed engaged. On their prep, they felt their prep carried into the moment.
+        - For presentation "Leadership update", the user reported it went well; the audience or counterpart seemed engaged. On their rehearsal, they felt their rehearsal carried into the moment.
         - These are the user's reported outcome and read of the room, not objective evidence or proof that training caused the result.
         """
 
@@ -1433,7 +1434,7 @@ struct CoachSemanticQualityGateTests {
     @Test func transferSelfReportLanguagePassesSemanticGate() {
         let context = """
         REAL-WORLD TRANSFER
-        - For presentation "Leadership update", the user reported it went well; the audience or counterpart seemed engaged. On their prep, they felt their prep carried into the moment.
+        - For presentation "Leadership update", the user reported it went well; the audience or counterpart seemed engaged. On their rehearsal, they felt their rehearsal carried into the moment.
         - These are the user's reported outcome and read of the room, not objective evidence or proof that training caused the result.
         """
 
@@ -2375,7 +2376,7 @@ struct CoachTypedFallbackTests {
 
         switch outcome {
         case .reply(let text):
-            #expect(text.contains("so run"))
+            #expect(text.contains("so use"))
             #expect(!text.contains("so Run"))
             #expect(AICoachChatService.replyQualityIssue(
                 in: text,
@@ -2442,14 +2443,14 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "Do I lack conviction?",
                 depth: .deepAssessment,
-                expectedFragments: ["not enough evidence", "rolling baseline", "hedge control", "not an identity verdict", "proof test"],
-                rejectedFragments: ["you lack conviction"]
+                expectedFragments: ["not enough evidence", "rolling baseline", "hedge before the recommendation", "not a verdict about your identity", "repeated answers under pressure"],
+                rejectedFragments: ["you lack conviction", "proof test", "goal readiness"]
             ),
             Spec(
                 userTurn: "Could this sound polished but evasive?",
                 depth: .deepAssessment,
-                expectedFragments: ["structure read", "not a claim about you", "answer-after-setup", "proof test"],
-                rejectedFragments: ["you are evasive", "personality"]
+                expectedFragments: ["structure read", "not a claim about you", "too much setup", "not seen it hold under pressure", "listener's read"],
+                rejectedFragments: ["you are evasive", "personality", "proof test", "goal readiness"]
             ),
             Spec(
                 userTurn: "Do I sound timid?",
@@ -2484,7 +2485,7 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "Quickly, what do I do next?",
                 depth: .quickMove,
-                expectedFragments: ["fix the close", "final sentence", "then stop"],
+                expectedFragments: ["close is the lever", "final sentence", "then stop"],
                 rejectedFragments: ["several things"]
             ),
             Spec(
@@ -2496,13 +2497,13 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "My interview answer landed better than practice. What do we learn?",
                 depth: .groundedRead,
-                expectedFragments: ["useful self-report", "not proof", "reusable move", "capture what question"],
+                expectedFragments: ["useful self-report", "not proof", "verdict first plus one example", "capture what question"],
                 rejectedFragments: ["drill caused"]
             ),
             Spec(
                 userTurn: "What voice should I even pick? There are six and I don't know.",
                 depth: .groundedRead,
-                expectedFragments: ["authoritative is the closest fit", "executive presence", "which one matches"],
+                expectedFragments: ["start with authoritative", "meetings where you get talked over", "executive presence"],
                 rejectedFragments: ["tap to confirm", "lock it in"]
             ),
             Spec(
@@ -2619,7 +2620,7 @@ struct CoachTypedFallbackTests {
         case .reply(let text):
             let lower = text.lowercased()
             #expect(lower.contains("start with one real sample"))
-            #expect(lower.contains("60-second rep"))
+            #expect(lower.contains("record 60 seconds"))
             #expect(lower.contains("real pace"))
             #expect(!lower.contains("ah-counter"))
             #expect(!lower.contains("under 4 fillers"))
@@ -2813,7 +2814,7 @@ struct CoachTypedFallbackTests {
 
         #expect(lower.contains("fair. i was too vague"))
         #expect(lower.contains("point arrived in sentence four"))
-        #expect(lower.contains("make sentence one the point"))
+        #expect(lower.contains("say the point first"))
         #expect(!lower.contains("real read:"))
         #expect(!lower.contains("score"))
         #expect(!lower.contains("cut the"))
@@ -2905,7 +2906,7 @@ struct CoachTypedFallbackTests {
         switch outcome {
         case .reply(let text):
             let lower = text.lowercased()
-            #expect(lower.contains("you do not lose the thread"))
+            #expect(lower.contains("kept the thread"))
             #expect(lower.contains("weaker repeat"))
             #expect(lower.contains("hard stop"))
             #expect(!lower.contains("next rep:"))
@@ -2956,7 +2957,8 @@ struct CoachTypedFallbackTests {
         switch outcome {
         case .reply(let text):
             let lower = text.lowercased()
-            #expect(lower.contains("real risk for tomorrow"))
+            #expect(lower.contains("status-report risk is hierarchy"))
+            #expect(lower.contains("leadership goal"))
             #expect(lower.contains("hierarchy"))
             #expect(lower.contains("tonight"))
             #expect(lower.contains("the one thing that matters this week"))
@@ -3118,7 +3120,10 @@ struct CoachTypedFallbackTests {
         case .reply(let text):
             let lower = text.lowercased()
             #expect(lower.contains("rolling baseline"))
-            #expect(lower.contains("highest-leverage mechanics signal"))
+            #expect(lower.contains("support one narrow read"))
+            #expect(lower.contains("hedge before the recommendation"))
+            #expect(!lower.contains("proof test"))
+            #expect(!lower.contains("goal readiness"))
             #expect(!lower.contains("you lack conviction"))
             #expect(AICoachChatService.semanticQualityIssue(
                 in: text,
@@ -3977,14 +3982,11 @@ struct CoachReplyPipelineProvisionalReadTests {
         #expect(callbackMetadata?.timeToFirstVisibleTokenSource == .localImmediateRead)
         #expect(callbackMetadata?.surface == .live)
 
-        let final = store.messages.first { $0.id == ids.coachID }
-        #expect(final?.role == .systemNotice)
-        #expect(final?.isPending == false)
-        #expect(final?.metadata?.immediateCoachReadShown == true)
-        #expect(final?.metadata?.timeToFirstVisibleTokenSource == .localImmediateRead)
-        #expect(final?.metadata?.assessment != nil)
-        #expect(final?.metadata?.providerAttemptCount == 0)
-        #expect(final?.metadata?.surface == .live)
+        #expect(store.messages.first { $0.id == ids.coachID } == nil)
+        #expect(store.messages.filter { $0.role == .user }.count == 1)
+        #expect(store.messages.allSatisfy { $0.role != .systemNotice })
+        #expect(store.lastFailure == .noProvider)
+        #expect(!store.isAwaitingReply)
     }
 
     @Test func successfulTextTurnsUsePriorAssessmentToVaryNextProofTest() async {

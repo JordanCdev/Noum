@@ -140,7 +140,38 @@ enum CoachReplySurface: String, Codable, Equatable {
 }
 
 /// High-level routing intent for the provider chain.
-enum CoachProviderTier: String, Codable, Equatable {
+enum CoachProviderTier: String, Codable, Equatable, Sendable {
     case geminiFast
     case claudeReasoning
+
+    /// Stable transport vocabulary. The provider-oriented enum cases remain
+    /// backward compatible with persisted diagnostics, while the production
+    /// wire contract names the user-visible service levels directly.
+    var transportQualityTier: String {
+        switch self {
+        case .geminiFast: return "fast"
+        case .claudeReasoning: return "ultra"
+        }
+    }
+
+    /// Decodes both the stable transport vocabulary and the provider-oriented
+    /// spellings emitted by pre-production clients/servers during rollout.
+    init?(transportQualityTier value: String) {
+        switch value {
+        case "fast", Self.geminiFast.rawValue:
+            self = .geminiFast
+        case "ultra", Self.claudeReasoning.rawValue:
+            self = .claudeReasoning
+        default:
+            return nil
+        }
+    }
+
+    static func transportQualityTiersMatch(_ lhs: String, _ rhs: String) -> Bool {
+        guard let left = Self(transportQualityTier: lhs),
+              let right = Self(transportQualityTier: rhs) else {
+            return false
+        }
+        return left == right
+    }
 }

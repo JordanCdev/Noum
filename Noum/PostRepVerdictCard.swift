@@ -372,7 +372,7 @@ struct PostRepWinCard: View {
 // MARK: - Slot 4 — FIX FIRST
 
 /// Amber-tinted card: one located fix with its evidence inline
-/// (evidence-above-fold principle) and a single "Next move ·" line.
+/// (evidence-above-fold principle) and a single "Next move:" line.
 /// On review-due reps the agreed case-file review IS the named next
 /// move — one-line context + the Ask-Noum CTA replace the generic
 /// next step, so the review never competes as a separate card.
@@ -449,7 +449,7 @@ struct PostRepFixCard: View {
     }
 
     private func nextMoveLine(_ text: String) -> some View {
-        (Text("Next move · ")
+        (Text("Next move: ")
             .font(Typography.caption.weight(.bold))
             .foregroundStyle(AppColor.caution)
          + Text(text)

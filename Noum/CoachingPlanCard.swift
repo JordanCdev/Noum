@@ -125,7 +125,7 @@ enum CoachingPlanCardVisibility {
               trend.latestRecordedAt <= plan.generatedAt else {
             return nil
         }
-        return "Plan adjusted from your \(activeMoment.category.displayName) check-ins: you reported prep has not fully carried into the room yet, so Week 4 is the bridge. Self-report only."
+        return "Plan adjusted from your \(activeMoment.category.displayName) check-ins: you reported that rehearsal has not fully carried into the room yet, so Week 4 is the bridge. Self-report only."
     }
 }
 

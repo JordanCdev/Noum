@@ -69,6 +69,7 @@ struct NoumApp: App {
         TypographyDebug.logRegisteredFamiliesOnce()
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
+        AuthManager.shared.useProcessLocalSignedOutStateForUITesting(arguments: args)
         let hasSeed = args.contains("UI_TESTING_SEED")
         // `UI_TESTING_SEED_FORCE` always reseeds — used by ScreenshotTour
         // so the test starts from a deterministic populated state every
@@ -233,7 +234,7 @@ struct NoumApp: App {
             }
             .interactiveDismissDisabled(true)
         } else {
-            ContentView()
+            AppShellView()
         }
         #else
         if shouldShowFirstRunOnboarding {
@@ -245,7 +246,7 @@ struct NoumApp: App {
             }
             .interactiveDismissDisabled(true)
         } else {
-            ContentView()
+            AppShellView()
         }
         #endif
     }

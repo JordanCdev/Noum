@@ -4798,11 +4798,11 @@ enum IMModeServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unavailable:
-            return "IM Mode is unavailable right now because no live AI provider or backend is configured."
-        case .replyGenerationFailed(let reason):
-            return "IM reply generation failed: \(reason)"
-        case .evaluationFailed(let reason):
-            return "IM evaluation failed: \(reason)"
+            return "Conversation practice is temporarily unavailable. You can keep training with another practice mode."
+        case .replyGenerationFailed:
+            return "Noum couldn't continue this conversation rep."
+        case .evaluationFailed:
+            return "Noum couldn't complete the conversation read."
         }
     }
 }
@@ -6342,11 +6342,11 @@ enum VideoAnalysisError: LocalizedError, Equatable {
         case .localeUnsupported:
             return "Video analysis is currently available only for English practice."
         case .providerNotVisionCapable:
-            return "Video analysis requires a vision-capable AI provider."
+            return "Video feedback isn't available in this build."
         case .noUsableFrames:
-            return "Noum could not extract usable frames from this recording."
+            return "Noum couldn't find enough usable video in this recording."
         case .invalidProviderRead:
-            return "The video analysis did not produce a usable visual read."
+            return "Noum couldn't complete a reliable video read."
         }
     }
 }
@@ -8001,7 +8001,7 @@ enum PracticeEvaluator {
             }
 
             if trends.durationDelta > 0 {
-                insights.append("You stayed with the answer longer than your recent average, which usually improves structure.")
+                insights.append("You stayed with the answer longer than your recent average. Check whether the added time made the structure clearer.")
             } else if trends.durationDelta < 0 {
                 insights.append("This answer ended earlier than your recent average. Push one idea further before stopping.")
             }
@@ -9653,18 +9653,20 @@ enum CoachingPlanner {
         let strongestMode = Dictionary(grouping: recent, by: \.mode).max { lhs, rhs in
             averageScore(for: lhs.value) < averageScore(for: rhs.value)
         }?.key
-        let identitySnapshot = PracticeEvaluator.speakingIdentity(for: recent.first?.transcript ?? "", profile: profile)
-
+        let identitySnapshot = PracticeEvaluator.speakingIdentity(
+            for: recent.first?.transcript ?? "",
+            profile: profile
+        )
         let latest = recent.first
         let previousFillers = recent.dropFirst().map(\.fillerWordCount)
         let previousAverageFillers = previousFillers.isEmpty ? averageFillers : Double(previousFillers.reduce(0, +)) / Double(previousFillers.count)
         let encouragement: String
         if let latest, Double(latest.fillerWordCount) < previousAverageFillers {
-            encouragement = "Your recent practice is moving in the right direction, so keep building on that consistency."
+            encouragement = "Your recent reps show cleaner control. Keep building that consistency."
         } else if let latest, Double(latest.fillerWordCount) > previousAverageFillers {
-            encouragement = "There is useful room to tighten the delivery, and a calmer opening will help."
+            encouragement = "Filler control was less steady in the latest rep. One focused reset will show whether it is a pattern."
         } else {
-            encouragement = "Your recent sessions are fairly steady, which gives you a good platform for focused improvement."
+            encouragement = "Your recent reps are holding steady. One focused rep will sharpen the next read."
         }
 
         let currentFocus: String
@@ -9693,51 +9695,35 @@ enum CoachingPlanner {
         if let profile {
             switch (profile.primaryGoal, profile.speakingStyleGoal) {
             case (_, .authoritative):
-                suggestedDrill = "Use Pressure Drill and Medium Timed Practice to strengthen firmer openings, cleaner pauses, and more decisive language."
+                suggestedDrill = "Run one Pressure Drill: open firmly, pause once, and stop on the ask."
             case (_, .executive):
-                suggestedDrill = "Use Medium Timed Practice and Pressure Drill to rehearse steadier pacing, shorter openings, and boardroom-style control."
+                suggestedDrill = "Run one Medium Timed rep: lead with the decision and keep the setup short."
             case (_, .storytelling):
-                suggestedDrill = "Use Easy Timed Practice to build fuller examples, then bring that colour into harder prompts."
+                suggestedDrill = "Run one Easy Timed rep with one vivid example."
             case (.reduceFillers, _):
-                suggestedDrill = "Timed Practice on Easy or Medium will help you slow the pace and protect cleaner transitions."
+                suggestedDrill = "Run one Easy Timed rep and pause before each new point."
             case (.moreConcise, _):
-                suggestedDrill = "Timed Practice on Medium will encourage tighter openings and more disciplined structure."
+                suggestedDrill = "Run one Medium Timed rep with the answer in sentence one."
             case (.thinkFaster, _):
-                suggestedDrill = "Timed Practice on Hard or Medium will help you organise thoughts quickly under pressure."
+                suggestedDrill = "Run one Pressure Drill and answer before you explain."
             case (.calmerDelivery, _):
-                suggestedDrill = "Ah-Counter and Easy Timed Practice will help you keep composure without forcing pace."
+                suggestedDrill = "Run one Ah-Counter rep and replace the first filler with a pause."
             }
         } else if averageFillers > 4 {
-            suggestedDrill = "Timed Practice on Easy or Medium will give you room to slow the pace and clean up transitions."
+            suggestedDrill = "Run one Easy Timed rep and pause before each new point."
         } else if averageDuration < 20 {
-            suggestedDrill = "Timed Practice on Easy will help you develop fuller answers."
+            suggestedDrill = "Run one Easy Timed rep with a clear middle point."
         } else if strongestMode == .suddenDeath {
-            suggestedDrill = "Pressure Drill is working well for you. Use it to keep the pressure high."
+            suggestedDrill = "Run one Pressure Drill and keep the first answer you land."
         } else {
-            suggestedDrill = "Mix Timed Practice with Ah-Counter so you can balance structure and awareness."
-        }
-
-        let outcomeNote: String? = profile.map { profile in
-            switch profile.desiredOutcome {
-            case .concise:
-                return "The coaching will keep steering you toward answers that land quickly and clearly."
-            case .composed:
-                return "The coaching will keep rewarding steadier pacing and calmer openings."
-            case .persuasive:
-                return "The coaching will keep pushing for stronger structure and clearer support."
-            case .spontaneous:
-                return "The coaching will keep emphasising responsiveness and on-the-spot clarity."
-            }
-        }
-        let styleNote: String? = profile.map { profile in
-            "Noum is steering your delivery toward a \(profile.speakingStyleGoal.title.lowercased()) voice, while your current sessions still read as \(identitySnapshot.identity.lowercased())."
+            suggestedDrill = "Run one Medium Timed rep with a clean opening and stop."
         }
 
         return CoachingPlan(
             strongestMode: strongestMode,
             currentFocus: currentFocus,
             suggestedDrill: suggestedDrill,
-            encouragement: [encouragement, outcomeNote, styleNote].compactMap { $0 }.joined(separator: " "),
+            encouragement: encouragement,
             hiddenBaseline: HiddenBaseline(
                 averageFillers: averageFillers,
                 averageDuration: averageDuration,
@@ -9766,7 +9752,7 @@ enum CoachingPlanner {
         }
 
         if session.duration > averageDuration {
-            insights.append("You stayed with the answer longer than usual, which often improves clarity.")
+            insights.append("You stayed with the answer longer than usual. Check whether the added time made the point clearer.")
         } else {
             insights.append("This answer ended sooner than your typical response length.")
         }
@@ -9802,15 +9788,15 @@ enum AICoachError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .providerDisabled:
-            return "AI coaching is turned off."
+            return "Personalized coaching is temporarily unavailable."
         case .missingAPIKey:
-            return "AI provider API key is missing."
+            return "Personalized coaching is temporarily unavailable."
         case .transcriptTooShort:
             return "The transcript is too short for meaningful deeper feedback."
         case .invalidResponse:
-            return "The AI response could not be parsed."
-        case .apiFailure(let message):
-            return message
+            return "Noum couldn't complete the deeper read."
+        case .apiFailure:
+            return "Noum couldn't complete the deeper read."
         }
     }
 }
@@ -10692,7 +10678,7 @@ enum RecommendationBiasEngine {
         case .recovering:
             let recentPct = Int(((signal.progress?.recentRate ?? 0) * 100).rounded())
             let earlierPct = Int(((signal.progress?.earlierRate ?? 0) * 100).rounded())
-            whyMode = "Your \(lowerTone) tone is landing more often than it was — the drill is working. One more focused rep locks it in."
+            whyMode = "Your \(lowerTone) tone is landing more often than it was. One more focused rep can test whether it holds."
             whyNow = "Across your latest \(scenario) reps your \(lowerTone) tone is up to \(recentPct)% from \(earlierPct)%. Keep the same scenario and hold the tone end to end."
         case .slipping:
             let recentPct = Int(((signal.progress?.recentRate ?? 0) * 100).rounded())
@@ -10700,7 +10686,7 @@ enum RecommendationBiasEngine {
             whyMode = "Your \(lowerTone) tone slipped back in this setup — same scenario, but change how you open it."
             whyNow = "Your \(lowerTone) tone dropped to \(recentPct)% across your latest \(scenario) reps, down from \(earlierPct)%. Re-run it slower and commit to the tone from the first beat."
         case .stalled, .none:
-            whyMode = "Your committed tone keeps slipping in this exact setup — drilling the same scenario is where it gets fixed."
+            whyMode = "Your committed tone has not held consistently in this setup yet. Repeating the scenario gives you a clean next test."
             whyNow = "Across your last \(signal.evaluatedCount) \(scenario) reps your \(lowerTone) tone landed only \(pct)% of the time. Re-run the same scenario and hold the tone end to end."
         }
 
@@ -10849,10 +10835,7 @@ enum RecommendationBiasEngine {
 
     private static func whyNow(for mode: PracticeMode, profile: CoachingProfile, input: AIHomeRecommendationInput) -> String {
         if input.daysSinceLastSession > 2 {
-            if let profileLine = profileAwareWhyNow(for: mode, profile: profile) {
-                return "You've been away from the rhythm, so this reconnects to the work you chose. \(profileLine)"
-            }
-            return "You've been away from the rhythm, so this drill reconnects the next rep to the communication goal you chose."
+            return returnToRhythmCopy(for: mode)
         }
 
         if let profileLine = profileAwareWhyNow(for: mode, profile: profile) {
@@ -10873,39 +10856,33 @@ enum RecommendationBiasEngine {
 
     private static func profileAwareWhyNow(for mode: PracticeMode, profile: CoachingProfile) -> String? {
         let context = profile.speakingContext.title.lowercased()
-        let challenge = profile.biggestChallenge.trainingFocusFragment
-        let register = profileRegisterPhrase(for: profile)
-        let modeClause = profileModeClause(for: mode)
-
-        let base = "For \(context), this \(modeClause) while you work on \(challenge), toward your \(register)."
+        let base: String = switch mode {
+        case .timed:
+            "Build one clear \(context) answer."
+        case .suddenDeath:
+            "Practise a clean \(context) answer under pressure."
+        case .ahCounter:
+            "Make fillers visible in one \(context) answer."
+        case .imConversation:
+            "Practise your target tone in a realistic \(context) exchange."
+        }
         guard let motivation = boundedMotivationLead(for: profile) else {
             return base
         }
         return "\(motivation) \(base)"
     }
 
-    private static func profileModeClause(for mode: PracticeMode) -> String {
+    private static func returnToRhythmCopy(for mode: PracticeMode) -> String {
         switch mode {
         case .timed:
-            return "builds structure"
+            return "One structured rep will restore the rhythm."
         case .suddenDeath:
-            return "puts pressure first"
+            return "One quick pressure rep will restore the rhythm."
         case .ahCounter:
-            return "makes fillers visible live"
+            return "A short filler-awareness rep will restore the rhythm."
         case .imConversation:
-            return "practices tone with another person"
+            return "One realistic exchange will restore the rhythm."
         }
-    }
-
-    private static func profileRegisterPhrase(for profile: CoachingProfile) -> String {
-        let voice = profile.chosenStyleGoal ?? profile.speakingStyleGoal
-        let name = CoachPersona.persona(for: voice).registerName
-            .lowercased()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name != "default" else {
-            return "target voice"
-        }
-        return "\(name) register"
     }
 
     private static func boundedMotivationLead(for profile: CoachingProfile) -> String? {
@@ -10924,7 +10901,7 @@ enum RecommendationBiasEngine {
         guard !normalized.isEmpty else { return nil }
 
         let words = normalized.split(separator: " ")
-        let bounded = words.prefix(12).joined(separator: " ")
+        let bounded = words.prefix(8).joined(separator: " ")
         let punctuated = bounded.hasSuffix(".") || bounded.hasSuffix("?") || bounded.hasSuffix("!")
             ? bounded
             : "\(bounded)."

@@ -83,13 +83,13 @@ struct PrepSessionReadiness: Equatable {
     var line: String {
         switch level {
         case .notStarted:
-            return "No rehearsal reps logged yet. Start with the warm-up — partial prep still counts."
+            return "No rehearsal reps logged yet. Start with the warm-up; partial completion still counts."
         case .underway:
             let remaining = plannedModes.filter { !coveredModes.contains($0) }
             let remainingNames = remaining.map(Self.shapeName(for:)).joined(separator: " and ")
             return "You've rehearsed \(coveredCount) of \(plannedModes.count) shapes. Still open: the \(remainingNames)."
         case .rehearsed:
-            return "You've run all \(plannedModes.count) rehearsal shapes. You're rehearsed — one more pass close to the day locks it in."
+            return "You've run all \(plannedModes.count) rehearsal shapes. One more pass close to the day can test what still holds."
         }
     }
 
@@ -100,9 +100,9 @@ struct PrepSessionReadiness: Equatable {
         case .notStarted:
             return "the user has not logged a rehearsal rep since setting this moment."
         case .underway:
-            return "the user has rehearsed \(coveredCount) of \(plannedModes.count) prep shapes (\(totalRepsInWindow) reps since setting it)."
+            return "the user has rehearsed \(coveredCount) of \(plannedModes.count) formats (\(totalRepsInWindow) reps since setting it)."
         case .rehearsed:
-            return "the user has rehearsed all \(plannedModes.count) prep shapes (\(totalRepsInWindow) reps since setting it)."
+            return "the user has rehearsed all \(plannedModes.count) formats (\(totalRepsInWindow) reps since setting it)."
         }
     }
 
@@ -136,17 +136,17 @@ enum PrepSessionPlanner {
         let steps: [PrepRepStep] = [
             PrepRepStep(
                 mode: .timed,
-                displayLabel: "Warm up · 2-minute Timed rep",
+                displayLabel: "Warm-up: two-minute timed rep",
                 rationale: "Loosen up. No pressure — just get your voice on tape."
             ),
             PrepRepStep(
                 mode: .suddenDeath,
-                displayLabel: "Pressure round · Pressure Drill",
+                displayLabel: "Pressure rep: Pressure Drill",
                 rationale: "Composure under fire. One filler ends the round — exactly the stakes you'll feel."
             ),
             PrepRepStep(
                 mode: .imConversation,
-                displayLabel: "Audience simulation · IM round",
+                displayLabel: "Audience simulation: conversation practice",
                 rationale: "Hard questions from the kind of audience you're walking into. Stay grounded."
             ),
         ]

@@ -16,28 +16,55 @@ struct LoginView: View {
     @StateObject private var authManager = AuthManager.shared
     @State private var showError = false
     @State private var showReportConfirmation = false
+    @State private var showOtherSignInOptions = false
 
     var body: some View {
         NavigationStack {
             ZStack {
                 background
 
-                VStack(spacing: 0) {
-                    Spacer(minLength: 60)
+                GeometryReader { geometry in
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 0) {
+                            Spacer(minLength: Spacing.lg)
 
-                    hero
-                        .padding(.horizontal, 28)
+                            hero
+                                .padding(.horizontal, Spacing.screenH)
 
-                    Spacer()
+                            Spacer(minLength: Spacing.lg)
 
-                    authPanel
-                        .padding(.horizontal, 28)
-                        .padding(.bottom, 48)
+                            authPanel
+                                .padding(.horizontal, Spacing.screenH)
+                                .padding(.bottom, Spacing.lg)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+                    }
                 }
             }
             .navigationTitle("")
             .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top) {
+                HStack {
+                    Spacer()
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(AppColor.textPrimary)
+                            .frame(width: 44, height: 44)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
+                    .accessibilityHint("Returns to settings.")
+                    .accessibilityIdentifier("login.close")
+                }
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.vertical, Spacing.xs)
+            }
         }
+        .accessibilityIdentifier("login.screen")
         .onChange(of: authManager.isSignedIn) { _, signedIn in
             if signedIn { dismiss() }
         }
@@ -60,40 +87,12 @@ struct LoginView: View {
     }
 
     private var background: some View {
-        ZStack {
-            // Rich dark-to-warm gradient
-            LinearGradient(
-                colors: [
-                    Color(red: 0.08, green: 0.10, blue: 0.18),
-                    Color(red: 0.12, green: 0.14, blue: 0.24),
-                    Color(red: 0.18, green: 0.16, blue: 0.22)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-
-            // Accent glow - blue
-            Circle()
-                .fill(Color(red: 0.20, green: 0.50, blue: 0.95).opacity(0.25))
-                .frame(width: 300, height: 300)
-                .blur(radius: 80)
-                .offset(x: 100, y: -200)
-
-            // Accent glow - warm
-            Circle()
-                .fill(Color(red: 0.95, green: 0.65, blue: 0.30).opacity(0.15))
-                .frame(width: 280, height: 280)
-                .blur(radius: 70)
-                .offset(x: -100, y: -80)
-
-            // Subtle bottom glow
-            Circle()
-                .fill(Color(red: 0.30, green: 0.55, blue: 1.00).opacity(0.10))
-                .frame(width: 400, height: 400)
-                .blur(radius: 100)
-                .offset(x: 0, y: 300)
-        }
+        LinearGradient(
+            colors: [AppColor.lightGradientStart, AppColor.screenBackground],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
     }
 
     private var hero: some View {
@@ -101,7 +100,7 @@ struct LoginView: View {
             // App name
             Text("noum")
                 .font(Typography.headline)
-                .foregroundStyle(Color.white.opacity(0.5))
+                .foregroundStyle(AppColor.brandBlue)
                 .tracking(4)
                 .textCase(.uppercase)
 
@@ -109,12 +108,12 @@ struct LoginView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Speak with\nmore clarity.")
                     .font(Typography.hero)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppColor.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("Practice out loud. Get real-time coaching.\nSound like the person you want to be.")
+                Text("Practice out loud. Get a clear next move.\nOne focused rep at a time.")
                     .font(Typography.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.6))
+                    .foregroundStyle(AppColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .lineSpacing(3)
             }
@@ -123,35 +122,65 @@ struct LoginView: View {
     }
 
     private var authPanel: some View {
-        VStack(spacing: 12) {
+        CardView(cornerRadius: CornerRadius.xl, padding: Spacing.lg) {
+            VStack(spacing: Spacing.sm) {
+                Text("Continue with an account to keep your practice history available across devices.")
+                    .font(Typography.body)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+
 #if canImport(AuthenticationServices)
-            SignInWithAppleButton(.continue) { request in
-                authManager.prepareAppleSignIn(request)
-            } onCompletion: { result in
-                authManager.handleAppleSignIn(result)
-            }
-            .signInWithAppleButtonStyle(.white)
-            .frame(height: 54)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                SignInWithAppleButton(.continue) { request in
+                    authManager.prepareAppleSignIn(request)
+                } onCompletion: { result in
+                    authManager.handleAppleSignIn(result)
+                }
+                .signInWithAppleButtonStyle(.black)
+                .frame(height: 54)
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                .accessibilityIdentifier("login.apple")
 #endif
 
-            googleButton
+                VStack(spacing: 0) {
+                    Button {
+                        showOtherSignInOptions.toggle()
+                    } label: {
+                        HStack(spacing: Spacing.sm) {
+                            Text("Other ways to continue")
+                                .font(Typography.body.weight(.semibold))
+                                .foregroundStyle(AppColor.textSecondary)
 
-            // Divider
-            HStack(spacing: 12) {
-                Rectangle()
-                    .fill(Color.white.opacity(0.12))
-                    .frame(height: 1)
-                Text("or")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Color.white.opacity(0.35))
-                Rectangle()
-                    .fill(Color.white.opacity(0.12))
-                    .frame(height: 1)
+                            Spacer(minLength: Spacing.sm)
+
+                            Image(systemName: showOtherSignInOptions ? "chevron.up" : "chevron.down")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(AppColor.textSecondary)
+                                .accessibilityHidden(true)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Other ways to continue")
+                    .accessibilityValue(showOtherSignInOptions ? "Expanded" : "Collapsed")
+                    .accessibilityHint(
+                        showOtherSignInOptions
+                            ? "Hides Google and guest options."
+                            : "Shows Google and guest options."
+                    )
+                    .accessibilityIdentifier("login.otherOptions")
+
+                    if showOtherSignInOptions {
+                        VStack(spacing: Spacing.sm) {
+                            googleButton
+                                .accessibilityIdentifier("login.google")
+                            guestButton
+                        }
+                        .padding(.top, Spacing.sm)
+                    }
+                }
             }
-            .padding(.vertical, 4)
-
-            guestButton
         }
         .frame(maxWidth: 460)
     }
@@ -187,12 +216,13 @@ struct LoginView: View {
         Button {
             authManager.startAnonymousSession()
         } label: {
-            Text("Try without an account")
+            Text("Continue as guest")
                 .font(Typography.body.weight(.medium))
-                .foregroundStyle(Color.white.opacity(0.55))
+                .foregroundStyle(AppColor.textSecondary)
+                .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(.plain)
-        .padding(.top, 4)
+        .accessibilityIdentifier("login.guest")
     }
 
     private func reportCurrentSignInIssue() {

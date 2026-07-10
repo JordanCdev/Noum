@@ -1,49 +1,103 @@
 import SwiftUI
 
 /// Scenario + starting-rung picker for the pressure-ladder roleplay.
-/// Mirrors the calm, single-purpose setup surfaces elsewhere in the app
-/// (e.g. `BigMomentIntakeView`) rather than introducing a new screen
-/// pattern: one header, a scrollable list of scenario cards, an inline
-/// pressure-rung control, one primary CTA.
+/// Uses the shared focused canvas. Scenario and pressure controls stay in an
+/// Adjust sheet so the launch screen has one directive and one primary CTA.
 struct RoleplaySetupView: View {
     @Binding var navigationPath: NavigationPath
 
     @State private var selectedScenarioId: String = RoleplayCatalog.interview.scenarioId
     @State private var startingLevel: RoleplayPressureLevel = .easy
+    @State private var showAdjustments = false
 
     private var selectedScenario: RoleplayScenario {
         RoleplayCatalog.scenario(id: selectedScenarioId) ?? RoleplayCatalog.interview
     }
 
     var body: some View {
-        ZStack {
-            AppColor.screenBackground.ignoresSafeArea()
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: Spacing.lg) {
-                    header
-                    scenarioList
-                    pressurePicker
-                    beginButton
-                }
-                .padding(.horizontal, Spacing.screenH)
-                .padding(.top, Spacing.sm)
-                .padding(.bottom, Spacing.lg)
+        FocusedPracticeScaffold(
+            style: .conversation,
+            status: "Ready at \(startingLevel.title.lowercased()) pressure",
+            title: "Roleplay",
+            subtitle: "Rehearse one difficult moment. Keep the response grounded."
+        ) {
+            Button {
+                CoachHaptic.selectionTap()
+                showAdjustments = true
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 48, height: 48)
+                    .background(.white.opacity(0.14), in: Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
             }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("roleplay.adjust")
+            .accessibilityLabel("Adjust roleplay")
+        } content: {
+            selectedScenarioCue
         }
-        .navigationTitle("Practise a conversation")
+        .accessibilityIdentifier("roleplay.setup.screen")
+        .safeAreaInset(edge: .bottom) {
+            beginButton
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.black.opacity(0.10).ignoresSafeArea())
+        }
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showAdjustments) {
+            roleplayAdjustSheet
+        }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: Spacing.xxs) {
-            Text("Practise a conversation")
-                .font(Typography.cardTitle)
-                .foregroundStyle(.primary)
-            Text("Pick a scenario and a starting pressure. You'll get one strength, one gap, and one next attempt after each turn.")
+    private var selectedScenarioCue: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Label(selectedScenario.title, systemImage: "person.2.wave.2.fill")
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(AppColor.focusedTextSecondary)
+
+            Text("\(selectedScenario.personaName), \(selectedScenario.personaRole)")
+                .font(Typography.figtree(size: 24, weight: .semibold, relativeTo: .title3))
+                .foregroundStyle(.white)
+
+            Text(selectedScenario.objective)
                 .font(Typography.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.focusedTextSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .focusedGlassSurface()
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("roleplay.selectionSummary")
+    }
+
+    private var roleplayAdjustSheet: some View {
+        NavigationStack {
+            ZStack {
+                AppColor.screenBackground.ignoresSafeArea()
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: Spacing.lg) {
+                        Text("Scenario")
+                            .font(Typography.cardTitle)
+                        scenarioList
+                        pressurePicker
+                    }
+                    .padding(Spacing.screenH)
+                }
+            }
+            .navigationTitle("Adjust roleplay")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showAdjustments = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private var scenarioList: some View {
@@ -77,7 +131,6 @@ struct RoleplaySetupView: View {
                     Text(scenario.objective)
                         .font(Typography.body)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -116,6 +169,8 @@ struct RoleplaySetupView: View {
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
         }
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .accessibilityIdentifier("roleplay.pressurePicker")
     }
 
@@ -123,14 +178,14 @@ struct RoleplaySetupView: View {
         Button {
             navigationPath.append(AppDestination.roleplayRun(scenario: selectedScenario, startingLevel: startingLevel))
         } label: {
-            Text("Begin roleplay")
+            Text("Start roleplay")
                 .font(Typography.headline)
-                .foregroundStyle(.white)
+                .foregroundStyle(AppColor.modeIM)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Spacing.sm)
         }
         .buttonStyle(.pressable)
-        .background(AppColor.modeIM, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .background(.white, in: Capsule())
         .accessibilityIdentifier("roleplay.begin")
     }
 }

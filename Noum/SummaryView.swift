@@ -465,7 +465,7 @@ struct SummaryView: View {
             case .timed: label = "Timed"
             case .suddenDeath: label = "Pressure Drill"
             case .ahCounter: label = "Ah-Counter"
-            case .imConversation: label = "IM"
+            case .imConversation: label = "Conversation"
             }
             return "\(label): \(session.fillerWordCount) fillers, \(Int(session.duration))s"
         }.joined(separator: " • ")
@@ -851,14 +851,14 @@ struct SummaryView: View {
                         recordingURL: recordingURL
                     )
                 }
-                .alert("AI Coaching Disclosure", isPresented: $showAIDisclosure) {
+                .alert("Coaching privacy", isPresented: $showAIDisclosure) {
                     Button("Continue") {
                         aiSettings.acknowledgeAIDisclosure()
                         Task { await requestDeeperFeedback() }
                     }
                     Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text("To generate coaching feedback, your speech transcript is sent to \(aiSettings.activeProviderDisplayName) for analysis. Your transcript is processed under their API data terms and is not used to train their AI models. Noum does not sell or share your data with advertisers.")
+                    Text("To create this deeper read, Noum securely processes the transcript with its coaching service. The transcript is not sold, shared with advertisers, or used to train AI models.")
                 }
                 // VoiceOver escape: back-nav is hidden and swipe-back is
                 // disabled by design, and the only Done now lives at the
@@ -1259,7 +1259,7 @@ struct SummaryView: View {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
-                    Text("More from this rep")
+                    Text("Details")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
@@ -1306,10 +1306,11 @@ struct SummaryView: View {
                         Image(systemName: "sparkles")
                             .font(.caption.weight(.semibold))
                     }
-                    Text(isAnalyzingVideo ? "Analyzing..." : "AI video analysis")
+                    Text(isAnalyzingVideo ? "Analyzing…" : "Analyze delivery")
                         .font(.caption.weight(.semibold))
                 }
                 .foregroundStyle(AppColor.brandBlue)
+                .frame(minHeight: 44, alignment: .leading)
             }
             .disabled(isAnalyzingVideo)
             .accessibilityIdentifier("summary.details.analyzeVideo")
@@ -1389,7 +1390,7 @@ struct SummaryView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("Pro also unlocks deep reads, rewrite suggestions, and AI video analysis on every rep.")
+            Text("Pro also unlocks deep reads, rewrite suggestions, and delivery analysis on every rep.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1506,7 +1507,7 @@ struct SummaryView: View {
         VStack(alignment: .leading, spacing: 12) {
             Divider()
 
-            Text("AI Video Analysis")
+            Text("Delivery analysis")
                 .font(.subheadline.weight(.bold))
 
             videoAnalysisRow(label: "Posture", rating: result.posture, note: result.postureNote)
@@ -2309,9 +2310,10 @@ struct SummaryView: View {
     private func requestDeeperFeedback() async {
         aiError = nil
 
-        // Check API configuration with specific error messages
+        // Provider configuration is an operational concern, not a user task.
+        // Keep the rep intact and describe availability honestly.
         if aiSettings.activeProvider == nil {
-            aiError = "Add an AI API key in Settings to enable Coach Read."
+            aiError = "Noum's deeper read is temporarily unavailable. This rep is still here."
             return
         }
         if aiSettings.hasReachedLimit {
@@ -2393,10 +2395,8 @@ struct SummaryView: View {
             let desc = error.localizedDescription
             if desc.contains("transcriptTooShort") || desc.contains("too short") {
                 aiError = "Speak at least 10 words to generate coaching feedback."
-            } else if desc.contains("API key") || desc.contains("apiKey") {
-                aiError = "API key issue — check your AI provider settings."
             } else {
-                aiError = "Coach Read failed: \(desc)"
+                aiError = "Noum couldn't complete the deeper read right now. This rep is still here."
             }
         }
     }
@@ -2416,16 +2416,7 @@ struct SummaryView: View {
             } catch {
                 await MainActor.run {
                     isAnalyzingVideo = false
-                    if let videoError = error as? VideoAnalysisError {
-                        aiError = videoError.localizedDescription
-                    } else {
-                        let desc = error.localizedDescription
-                        if desc.contains("API key") || desc.contains("apiKey") || desc.contains("configured") {
-                            aiError = "Add an AI API key in Settings to analyze video."
-                        } else {
-                            aiError = "Video analysis failed: \(desc)"
-                        }
-                    }
+                    aiError = "Delivery analysis is temporarily unavailable. Your recording is still here."
                 }
             }
         }

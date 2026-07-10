@@ -110,7 +110,7 @@ enum HomeAskNoumEvidenceCopy {
         case 2:
             return "I have two reps, so I'll compare carefully without overcalling a pattern."
         default:
-            return "I read your recent reps first, then keep the answer focused."
+            return "I read your recent reps before answering, so the coaching stays specific."
         }
     }
 }
@@ -339,7 +339,7 @@ struct ContentView: View {
     @State private var aiRecommendation: AIHomeRecommendation?
     @State private var homeCelebrationVisible = false
     @State private var homeScrollOffset: CGFloat = 0
-    @State private var navigationPath = NavigationPath()
+    @Binding private var navigationPath: NavigationPath
     @State private var hourBucket: HourBucket = HourBucket.current()
     /// Proof moment loaded for the active path celebration. Stays nil
     /// until the async extraction resolves, at which point the
@@ -350,6 +350,20 @@ struct ContentView: View {
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isOnboardingUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_ONBOARDING")
     private let launchedWithDeepLink = ProcessInfo.processInfo.arguments.contains("-DeepLink")
+    @Binding private var externalRoute: URL?
+    private let isEmbeddedInTabShell: Bool
+
+    init() {
+        _navigationPath = .constant(NavigationPath())
+        _externalRoute = .constant(nil)
+        isEmbeddedInTabShell = false
+    }
+
+    init(navigationPath: Binding<NavigationPath>, externalRoute: Binding<URL?>) {
+        _navigationPath = navigationPath
+        _externalRoute = externalRoute
+        isEmbeddedInTabShell = true
+    }
 
     static func navigationStackAccessibilityIdentifier(pathIsEmpty: Bool) -> String {
         pathIsEmpty ? "home.screen" : "app.navigationStack"
@@ -379,6 +393,117 @@ struct ContentView: View {
     }
 
     var body: some View {
+        homePresentationContent
+        .onChange(of: coachingProfileStore.profile) { old, new in
+            let autoFireKey = "bigMomentIntake.hasAutoFired"
+            if old == nil, new != nil,
+               !UserDefaults.standard.bool(forKey: autoFireKey),
+               !launchedWithDeepLink,
+               !deepLinkRouter.hasReceivedRouteThisLaunch,
+               navigationPath.isEmpty,
+               deepLinkRouter.pending == nil,
+               BigMomentStore.shared.activeMoment == nil,
+               !showBigMomentIntake {
+                UserDefaults.standard.set(true, forKey: autoFireKey)
+                showBigMomentIntake = true
+            }
+        }
+        .onChange(of: deepLinkRouter.pending) { _, url in
+            guard !isEmbeddedInTabShell, let url else { return }
+            consumeDeepLink(url)
+        }
+        .onChange(of: externalRoute) { _, url in
+            guard let url else { return }
+            consumeDeepLink(url)
+            externalRoute = nil
+        }
+        .onChange(of: dailyGoal.pendingGoalCelebration) { _, isPending in
+            if isPending && navigationPath.isEmpty {
+                showDailyGoalCelebration = true
+            }
+        }
+        .onChange(of: navigationPath) { _, newPath in
+            if newPath.isEmpty && dailyGoal.pendingGoalCelebration && !showDailyGoalCelebration {
+                showDailyGoalCelebration = true
+            }
+        }
+        .onAppear {
+            bigMomentStore.archiveExpiredIfNeeded()
+            dailyGoal.recompute()
+            DailyChallengesManager.shared.ensureForToday()
+            DailyChallengesManager.shared.recomputeReady()
+            WordOfTheDayManager.shared.ensureForToday()
+            refreshHourBucket()
+            if !isEmbeddedInTabShell, let url = deepLinkRouter.pending {
+                consumeDeepLink(url)
+            }
+        }
+        .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in
+            refreshHourBucket()
+            bigMomentStore.archiveExpiredIfNeeded()
+        }
+        .task {
+            guard !isUITesting, !isOnboardingUITesting, !authManager.isSignedIn else { return }
+            authManager.startAnonymousSession()
+        }
+        .task(id: recommendationCacheKey) {
+            await refreshHomeRecommendation()
+        }
+        .task(id: shownRecommendationFingerprint) {
+            recommendationLearningStore.recordShown(
+                fingerprint: shownRecommendationFingerprint,
+                title: effectiveSuggestion.title,
+                focus: effectiveSuggestion.focus,
+                target: effectiveSuggestion.target,
+                mode: effectiveSuggestion.mode,
+                isAIBacked: aiRecommendation != nil
+            )
+        }
+    }
+
+    private var homePresentationContent: some View {
+        homeNavigationContent
+        .accessibilityIdentifier(Self.navigationStackAccessibilityIdentifier(pathIsEmpty: navigationPath.isEmpty))
+        .accessibilityHidden(homeAccessibilityIsSuppressed)
+        .fullScreenCover(
+            isPresented: .init(
+                get: { isOnboardingUITesting },
+                set: { _ in }
+            )
+        ) {
+            CoachingOnboardingView()
+        }
+        // Tier promotion celebration. Surfaces over the home with a
+        // tinted radial gradient + sparkle ribbon. Cleared when the
+        // user taps Continue or the backdrop.
+        .fullScreenCover(item: $league.pendingPromotion) { promotion in
+            TierPromotionOverlay(promotion: promotion) {
+                league.consumePendingPromotion()
+            }
+            .presentationBackground(.clear)
+        }
+        .overlay {
+            if showDailyGoalCelebration {
+                DailyGoalCelebration {
+                    showDailyGoalCelebration = false
+                    dailyGoal.consumeGoalCelebration()
+                }
+                .transition(.opacity)
+                .zIndex(100)
+            }
+        }
+        .overlay {
+            pathCelebrationOverlay
+        }
+        .sheet(isPresented: $notificationPrePrompt.pendingPrompt) {
+            NotificationPrePromptSheet()
+        }
+        .sheet(isPresented: $showBigMomentIntake) {
+            BigMomentIntakeView()
+        }
+    }
+
+    private var homeNavigationContent: some View {
         NavigationStack(path: $navigationPath) {
             ZStack {
                 // Time-of-day ambient — morning lavender / midday airy /
@@ -414,7 +539,10 @@ struct ContentView: View {
                     // in `safeAreaInset(edge: .bottom)` further below; if
                     // we trim this any tighter the populated home's
                     // bottom card gets clipped on first paint.
-                    .padding(.bottom, HomeShortcutDockLayout.scrollBottomPadding)
+                    .padding(
+                        .bottom,
+                        isEmbeddedInTabShell ? Spacing.lg : HomeShortcutDockLayout.scrollBottomPadding
+                    )
                 }
             }
             .coordinateSpace(name: "homeScroll")
@@ -423,284 +551,31 @@ struct ContentView: View {
                 homeScrollOffset = value
             }
             .safeAreaInset(edge: .bottom, spacing: HomeShortcutDockLayout.contentClearance) {
-                bottomShortcutDock
+                if !isEmbeddedInTabShell {
+                    bottomShortcutDock
+                }
             }
             .navigationDestination(for: AppDestination.self) { destination in
-                switch destination {
-                case .practiceSelection:
-                    PracticeModeSelectionView(selectedMode: $selectedPracticeMode, navigationPath: $navigationPath)
-                case .timedPractice:
-                    TimedPracticeView(navigationPath: $navigationPath)
-                case .suddenDeathPractice:
-                    SuddenDeathPracticeView(navigationPath: $navigationPath)
-                case .ahCounterPractice:
-                    AhCounterView(navigationPath: $navigationPath)
-                case .imPractice(let scenario, let tone):
-                    if IMModeAvailability.isAvailable {
-                        IMPracticeView(
-                            navigationPath: $navigationPath,
-                            preferredScenario: scenario,
-                            preferredTone: tone
-                        )
-                    } else {
-                        TimedPracticeView(navigationPath: $navigationPath)
-                    }
-                case .cutTheCrutchPractice:
-                    CutTheCrutchView(navigationPath: $navigationPath)
-                case .paceTrainingPractice:
-                    PaceTrainingView(navigationPath: $navigationPath)
-                case .friendLeaderboard:
-                    FriendLeaderboardView()
-                case .league:
-                    LeagueView()
-                case .speechProjects:
-                    SpeechProjectsView(navigationPath: $navigationPath)
-                case .lessons:
-                    LessonsHomeView(navigationPath: $navigationPath)
-                case .lesson(let id):
-                    if let lesson = LessonsCatalog.lesson(id: id) {
-                        LessonView(lesson: lesson, navigationPath: $navigationPath)
-                    } else {
-                        LessonsHomeView(navigationPath: $navigationPath)
-                    }
-                case .summary(let payload):
-                    SummaryView(payload: payload, navigationPath: $navigationPath)
-                case .sessionHistory:
-                    SessionHistoryView(navigationPath: $navigationPath)
-                case .socialProfile:
-                    ProfileView()
-                case .settings:
-                    SettingsView()
-                case .speakingRank:
-                    ProfileView()
-                case .pathJourney:
-                    PathJourneyView()
-                case .askNoum:
-                    CoachSessionView(
-                        sessionStore: sessionStore,
-                        ratingStore: ratingStore,
-                        coachingProfileStore: coachingProfileStore,
-                        navigationPath: $navigationPath,
-                        initialMode: .live
-                    )
-                case .askNoumTyped:
-                    CoachSessionView(
-                        sessionStore: sessionStore,
-                        ratingStore: ratingStore,
-                        coachingProfileStore: coachingProfileStore,
-                        navigationPath: $navigationPath,
-                        initialMode: .type
-                    )
-                case .growthLibrary:
-                    GrowthLibraryView()
-                case .sessionDetail(let sessionID):
-                    // Resolve the session against the live store. The
-                    // sessionDetail destination is deep-linked from the
-                    // Growth Library (and any future surface that wants to
-                    // open "the session behind this artifact"); if the
-                    // session has been deleted since the artifact was
-                    // recorded, fall back to the History list rather than
-                    // crashing or rendering an empty card.
-                    if let session = sessionStore.sessions.first(where: { $0.id == sessionID }) {
-                        SessionHistoryDetailView(
-                            session: session,
-                            insights: CoachingPlanner.sessionInsights(
-                                for: session,
-                                comparedTo: sessionStore.sessions,
-                                profile: coachingProfileStore.profile
-                            )
-                        )
-                    } else {
-                        SessionHistoryView(navigationPath: $navigationPath)
-                    }
-                case .bigMomentIntake:
-                    BigMomentIntakeView()
-                case .prepSession:
-                    PrepSessionView(navigationPath: $navigationPath)
-                case .suddenDeathDifficultyDetail(let difficulty):
-                    SuddenDeathDifficultyRunsView(difficulty: difficulty)
-                case .imScenarioDetail(let scenario):
-                    IMScenarioDetailView(scenario: scenario, navigationPath: $navigationPath)
-                case .roleplaySetup:
-                    RoleplaySetupView(navigationPath: $navigationPath)
-                case .roleplayRun(let scenario, let startingLevel):
-                    RoleplayView(scenario: scenario, startingLevel: startingLevel, navigationPath: $navigationPath)
-                }
+                AppDestinationView(destination: destination, navigationPath: $navigationPath)
             }
         }
-        .accessibilityIdentifier(Self.navigationStackAccessibilityIdentifier(pathIsEmpty: navigationPath.isEmpty))
-        .accessibilityHidden(homeAccessibilityIsSuppressed)
-        .fullScreenCover(
-            isPresented: .init(
-                get: { isOnboardingUITesting },
-                set: { _ in }
+    }
+
+    @ViewBuilder
+    private var pathCelebrationOverlay: some View {
+        if navigationPath.isEmpty, let unlockedNode = pendingPathCelebration {
+            PathNodeCelebration(
+                node: unlockedNode,
+                onDismiss: { pathProgress.consumeCelebration() },
+                onOpenPath: {
+                    pathProgress.consumeCelebration()
+                    navigationPath.append(AppDestination.pathJourney)
+                },
+                proof: pathCelebrationProof
             )
-        ) {
-            CoachingOnboardingView()
-        }
-        // Tier promotion celebration. Surfaces over the home with a
-        // tinted radial gradient + sparkle ribbon. Cleared when the
-        // user taps Continue or the backdrop.
-        .fullScreenCover(item: $league.pendingPromotion) { promotion in
-            TierPromotionOverlay(promotion: promotion) {
-                league.consumePendingPromotion()
-            }
-            .presentationBackground(.clear)
-        }
-        .overlay {
-            if showDailyGoalCelebration {
-                DailyGoalCelebration {
-                    showDailyGoalCelebration = false
-                    dailyGoal.consumeGoalCelebration()
-                }
-                .transition(.opacity)
-                .zIndex(100)
-            }
-        }
-        .overlay {
-            // Guard: only show the path celebration when the user is on
-            // the home root — not inside SummaryView's progression chain.
-            // `pendingCelebrationNodeID` persists until consumed, so the
-            // overlay fires once the user navigates back from the summary.
-            if navigationPath.isEmpty, let unlockedNode = pendingPathCelebration {
-                PathNodeCelebration(
-                    node: unlockedNode,
-                    onDismiss: {
-                        pathProgress.consumeCelebration()
-                    },
-                    // Secondary CTA pushes the path view so the user can
-                    // see the just-unlocked node in context.
-                    onOpenPath: {
-                        pathProgress.consumeCelebration()
-                        navigationPath.append(AppDestination.pathJourney)
-                    },
-                    // Proof moment — the rep that triggered the unlock
-                    // is the most recent session. Pulls a transcript-
-                    // anchored quote + technique label tied to the
-                    // user's voice goal. Loaded on appear and hydrates
-                    // mid-celebration; if it doesn't resolve in time,
-                    // the proof line stays hidden (celebration renders
-                    // without it). See `pathCelebrationProof`.
-                    proof: pathCelebrationProof
-                )
-                .transition(.opacity)
-                .zIndex(99)
-                .onAppear {
-                    Task { await loadPathCelebrationProof() }
-                }
-            }
-        }
-        // Deferred profile capture — M14 UX rework.
-        //
-        // Previously fired as a full-screen sheet that hijacked the
-        // post-session moment. Real-device feedback flagged this as too
-        // much decision pressure right after a rep ("need a more user
-        // friendly way of adding it"). Now the pending prompt surfaces
-        // as an inline card on SummaryView (`DeferredCaptureInlineCard`)
-        // that the user can answer or scroll past — no modal block.
-        // Captured text lands on Profile via the "In your own words"
-        // section so users see their reflections being held by the app.
-        // Goal refresh now renders inline on Home (`GoalRefreshInlineCard`)
-        // instead of as a modal sheet. A direction check should feel like
-        // coaching, not a system interruption.
-        // Notification pre-prompt — soft sell before iOS's hard prompt.
-        // Fires once on session 1 with a 30-day cool-down on decline.
-        .sheet(isPresented: $notificationPrePrompt.pendingPrompt) {
-            NotificationPrePromptSheet()
-        }
-        // Big Moment intake — fires once after onboarding completes (new
-        // accounts) or on noum://bigmoment deep link. Never blocks: Skip
-        // clears the state without saving.
-        .sheet(isPresented: $showBigMomentIntake) {
-            BigMomentIntakeView()
-        }
-        .onChange(of: coachingProfileStore.profile) { old, new in
-            // Fire BigMoment intake once after a brand-new profile is saved
-            // (old == nil, new != nil). Skip if a moment is already set or
-            // if the intake is already showing. Do not steal focus from a
-            // direct route like Ask Noum; the intake is a home-root prompt.
-            //
-            // LAUNCH-AMBUSH GUARD: the profile store also transitions
-            // nil → loaded on every normal app launch, which made this
-            // sheet ambush returning users on open (owner bug report,
-            // 2026-06-10). The persisted once-flag limits the AUTO-fire to
-            // a single lifetime show; Settings and the noum://bigmoment
-            // deep link remain the deliberate re-entry points.
-            let autoFireKey = "bigMomentIntake.hasAutoFired"
-            if old == nil, new != nil,
-               !UserDefaults.standard.bool(forKey: autoFireKey),
-               !launchedWithDeepLink,
-               !deepLinkRouter.hasReceivedRouteThisLaunch,
-               navigationPath.isEmpty,
-               deepLinkRouter.pending == nil,
-               BigMomentStore.shared.activeMoment == nil,
-               !showBigMomentIntake {
-                UserDefaults.standard.set(true, forKey: autoFireKey)
-                showBigMomentIntake = true
-            }
-        }
-        .onChange(of: deepLinkRouter.pending) { _, url in
-            guard let url else { return }
-            consumeDeepLink(url)
-        }
-        .onChange(of: dailyGoal.pendingGoalCelebration) { _, isPending in
-            // Defer the daily goal celebration when the user is inside a
-            // pushed destination (e.g. SummaryView's progression screen).
-            // Showing it immediately stacks the overlay on top of the XP /
-            // level-up / personal-best chain — visual collision. The
-            // celebration fires once the user returns to the home root.
-            if isPending && navigationPath.isEmpty {
-                showDailyGoalCelebration = true
-            }
-        }
-        .onChange(of: navigationPath) { _, newPath in
-            // Deferred daily goal celebration: if the user was inside a
-            // pushed view when the goal triggered, show it now that
-            // they've returned to the home root.
-            if newPath.isEmpty && dailyGoal.pendingGoalCelebration && !showDailyGoalCelebration {
-                showDailyGoalCelebration = true
-            }
-        }
-        .onAppear {
-            bigMomentStore.archiveExpiredIfNeeded()
-            dailyGoal.recompute()
-            DailyChallengesManager.shared.ensureForToday()
-            DailyChallengesManager.shared.recomputeReady()
-            WordOfTheDayManager.shared.ensureForToday()
-            refreshHourBucket()
-            // Consume any deep link that was set before this view mounted
-            // (e.g. `-DeepLink` launch arg handled in `NoumApp.init`).
-            // `.onChange` only fires on subsequent mutations, so cold-start
-            // URLs would otherwise be missed.
-            if let url = deepLinkRouter.pending {
-                consumeDeepLink(url)
-            }
-        }
-        // Cheap 5-min poll so a long-lived session crosses a bucket
-        // boundary smoothly. The fade between bucket gradients is the
-        // .animation(_, value: hourBucket) on `homeBackground`.
-        .onReceive(
-            Timer.publish(every: 300, on: .main, in: .common).autoconnect()
-        ) { _ in
-            refreshHourBucket()
-            bigMomentStore.archiveExpiredIfNeeded()
-        }
-        .task {
-            guard !isUITesting, !isOnboardingUITesting, !authManager.isSignedIn else { return }
-            authManager.startAnonymousSession()
-        }
-        .task(id: recommendationCacheKey) {
-            await refreshHomeRecommendation()
-        }
-        .task(id: shownRecommendationFingerprint) {
-            recommendationLearningStore.recordShown(
-                fingerprint: shownRecommendationFingerprint,
-                title: effectiveSuggestion.title,
-                focus: effectiveSuggestion.focus,
-                target: effectiveSuggestion.target,
-                mode: effectiveSuggestion.mode,
-                isAIBacked: aiRecommendation != nil
-            )
+            .transition(.opacity)
+            .zIndex(99)
+            .onAppear { Task { await loadPathCelebrationProof() } }
         }
     }
 
@@ -802,7 +677,7 @@ struct ContentView: View {
             discoveryRow(
                 icon: "signpost.right.fill",
                 title: "Your path",
-                subtitle: "Clear nodes by hitting concrete goals.",
+                subtitle: "Reach landmarks by meeting concrete practice goals.",
                 tint: AppColor.positive,
                 destination: .pathJourney,
                 accessibilityID: "home.discovery.path"
@@ -890,14 +765,13 @@ struct ContentView: View {
                         Text(landmarkLine)
                             .font(Typography.captionSmall)
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("home.path.landmarkCounter")
                     }
 
                     Text(titleLine)
                         .font(Typography.caption.weight(.semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("home.path.landmarkTitle")
                 }
@@ -949,7 +823,7 @@ struct ContentView: View {
     /// drop just updates the snapshot silently.
     private func journeyGatingLine(for status: PathNodeStatus?) -> String {
         guard let status else {
-            return "You've cleared every node. Hold the path with one rep a day."
+            return "You've reached every landmark. Keep the path strong with regular practice."
         }
 
         // Tier-aware reinforcement — only when the next node IS the rating
@@ -1206,19 +1080,12 @@ struct ContentView: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
-                        Text(HomeAskNoumShortcut.title)
-                            .microLabel(tint)
-                        Text(HomeAskNoumShortcut.actionTitle)
-                            .font(Typography.captionSmall)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+                    Text(HomeAskNoumShortcut.title)
+                        .microLabel(tint)
 
                     Text(body)
                         .font(Typography.caption)
                         .foregroundStyle(.primary)
-                        .lineLimit(2)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1241,7 +1108,7 @@ struct ContentView: View {
                 .stroke(tint.opacity(0.10), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("\(HomeAskNoumShortcut.title). \(body). \(HomeAskNoumShortcut.actionTitle)."))
+        .accessibilityLabel(Text("\(HomeAskNoumShortcut.title). \(body)."))
         .accessibilityIdentifier(HomeAskNoumShortcut.accessibilityIdentifier)
     }
 

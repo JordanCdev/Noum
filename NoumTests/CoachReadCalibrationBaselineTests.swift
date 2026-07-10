@@ -452,7 +452,7 @@ struct CoachReadCalibrationBaselineTests {
         Scenario(
             id: "live-surface-bounded-immediate-read",
             lens: "ux-honesty",
-            pins: "Pins the live-surface honesty invariant: the instant local read shown while the model verbalises must still carry the abstention/missing-evidence and a proof test, never a confiden",
+            pins: "Pins the live-surface honesty invariant: the instant local read shown while the model verbalises must still carry the abstention, missing evidence, and a concrete next check.",
             question: "Real talk, am I there yet?",
             depth: .deepAssessment,
             surface: .live,
@@ -482,7 +482,7 @@ struct CoachReadCalibrationBaselineTests {
                 requiredMissing: ["repeated evidence", "pressure"],
                 confidenceMax: 0.5,
                 confidenceMin: 0.2,
-                immediateReadContains: ["missing", "proof test"],
+                immediateReadContains: ["missing", "next check"],
                 responseMode: .immediateOnly
             )
         ),

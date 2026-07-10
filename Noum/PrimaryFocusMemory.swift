@@ -419,7 +419,7 @@ struct CoachTransferReview: Codable, Equatable {
     var reportedOutcomeLine: String {
         var line = "For \(category.displayName) \"\(momentTitle)\", the user reported \(outcome.coachClause); \(audienceResponse.coachClause)."
         if let drillTransfer {
-            line += " On their prep, \(drillTransfer.coachClause)."
+            line += " They felt \(drillTransfer.coachClause)."
         }
         if let note {
             line += " Their note: \"\(note)\"."
@@ -1343,7 +1343,8 @@ struct CoachCaseFile: Codable, Equatable {
             calendar: calendar
         ) else { return nil }
         if confidence >= .moderate {
-            return "Watching this across \(clause)."
+            let noun = evidenceCount == 1 ? "rep" : "reps"
+            return "Seen across \(evidenceCount) recent \(noun)."
         }
         let hasSpan = watchSpanPhrase(from: watchingSince, to: now, calendar: calendar) != nil
         return hasSpan

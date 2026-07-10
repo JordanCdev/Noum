@@ -16,12 +16,18 @@ struct CutTheCrutchView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var didAwardXP = false
+    @State private var showAdjustments = false
 
     private let tint: Color = AppColor.modeCrutch
     private static let universalCrutches = ["actually", "basically", "honestly"]
 
     private var characterStage: NoumCharacter.Stage {
         ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
+    }
+
+    private var isResultPhase: Bool {
+        if case .ended = engine.phase { return true }
+        return false
     }
 
     init(navigationPath: Binding<NavigationPath>) {
@@ -39,7 +45,11 @@ struct CutTheCrutchView: View {
 
     var body: some View {
         ZStack {
-            AppColor.screenBackground.ignoresSafeArea()
+            if case .ended = engine.phase {
+                AppColor.screenBackground.ignoresSafeArea()
+            } else {
+                FocusedPracticeBackground(style: .crutch)
+            }
 
             switch engine.phase {
             case .setup:
@@ -50,6 +60,7 @@ struct CutTheCrutchView: View {
                 countdownOverlay(0, label: "GO")
             case .active:
                 activeSurface
+                    .environment(\.colorScheme, .dark)
             case .ended(let result):
                 resultSurface(result)
             }
@@ -64,7 +75,7 @@ struct CutTheCrutchView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(isResultPhase ? Color.secondary : Color.white)
                 }
                 .accessibilityLabel("Close")
             }
@@ -86,6 +97,9 @@ struct CutTheCrutchView: View {
             if case .setup = engine.phase, PracticeModeQuickStart.consumeCrutch() {
                 engine.beginCountdown()
             }
+        }
+        .sheet(isPresented: $showAdjustments) {
+            crutchAdjustSheet
         }
     }
 
@@ -109,138 +123,106 @@ struct CutTheCrutchView: View {
     // MARK: - Setup
 
     private var setupSurface: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                introCard
-                wordCard
-                promptCard
-                Spacer(minLength: Spacing.lg)
+        FocusedPracticeScaffold(
+            style: .crutch,
+            status: "Ready for 60 seconds",
+            title: "Cut the Crutch",
+            subtitle: "Remove one reflex word. Keep the thought moving."
+        ) {
+            Button {
+                CoachHaptic.selectionTap()
+                showAdjustments = true
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 48, height: 48)
+                    .background(.white.opacity(0.14), in: Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
             }
-            .padding(.horizontal, Spacing.screenH)
-            .padding(.top, Spacing.sm)
-            .padding(.bottom, Spacing.lg)
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("cutTheCrutch.adjust")
+            .accessibilityLabel("Adjust Cut the Crutch")
+        } content: {
+            crutchSetupCue
         }
+        .accessibilityIdentifier("cutTheCrutch.screen")
         .safeAreaInset(edge: .bottom) {
             beginCTA
         }
     }
 
-    private var introCard: some View {
-        HStack(alignment: .center, spacing: Spacing.md) {
-            NoumCharacter(
-                mood: speechVM.isRecording ? .listening : .calm,
-                tint: tint,
-                size: 44,
-                audioLevel: speechVM.audioLevel,
-                stage: characterStage
-            )
-            .accessibilityHidden(true)
+    private var crutchSetupCue: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text("Avoid this reflex word")
+                .font(Typography.caption.weight(.bold))
+                .textCase(.uppercase)
+                .tracking(0.8)
+                .foregroundStyle(AppColor.focusedTextSecondary)
 
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("Cut the Crutch")
-                    .font(Typography.bigStat)
-                Text("Speak for 60 seconds without using one specific word. Each use counts as a slip; three slips ends the rep.")
-                    .font(Typography.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("\u{201C}\(engine.avoidedWord)\u{201D}")
+                .font(Typography.figtree(size: 36, weight: .bold, relativeTo: .title))
+                .foregroundStyle(.white)
+
+            Text(engine.prompt)
+                .font(Typography.body)
+                .foregroundStyle(AppColor.focusedTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .focusedGlassSurface()
         .accessibilityElement(children: .combine)
     }
 
-    private var wordCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("Avoiding")
-                .font(Typography.caption)
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.8)
-
-            HStack {
-                Text("\u{201C}\(engine.avoidedWord)\u{201D}")
-                    .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
-                    .foregroundStyle(tint)
-                Spacer()
-            }
-
-            Text("Tap to change.")
-                .font(Typography.caption)
-                .foregroundStyle(.tertiary)
-
-            FlowChips(words: wordOptions) { word in
-                let isSelected = word.lowercased() == engine.avoidedWord.lowercased()
-                Button {
-                    engine.avoidedWord = word.lowercased()
-                    CoachHaptic.selectionTap()
-                } label: {
-                    Text(word)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(isSelected ? .white : tint)
-                        .padding(.horizontal, Spacing.sm)
-                        .padding(.vertical, 8)
-                        .background(
-                            isSelected ? tint : tint.opacity(0.10),
-                            in: Capsule()
-                        )
-                }
-                .buttonStyle(.pressable)
-                .accessibilityLabel("Avoid the word \(word)")
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-    }
-
-    private var promptCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack {
-                Text("Prompt")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
-                Spacer()
-                Button {
-                    engine.prompt = PracticeTopics.random()
-                    CoachHaptic.selectionTap()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.caption.weight(.bold))
-                        Text("New prompt")
-                            .font(.caption.weight(.semibold))
+    private var crutchAdjustSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Reflex word") {
+                    Picker("Word to avoid", selection: $engine.avoidedWord) {
+                        ForEach(wordOptions, id: \.self) { word in
+                            Text(word.capitalized).tag(word.lowercased())
+                        }
                     }
-                    .foregroundStyle(tint)
+                    .pickerStyle(.inline)
                 }
-                .buttonStyle(.pressable)
-                .accessibilityLabel("Get a different prompt")
-            }
 
-            Text(engine.prompt)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
+                Section("Prompt") {
+                    Text(engine.prompt)
+                    Button("Choose another prompt") {
+                        engine.prompt = PracticeTopics.random()
+                        CoachHaptic.selectionTap()
+                    }
+                }
+
+                Section {
+                    Text("Three uses end the rep. Pausing or rephrasing keeps it alive.")
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Adjust Cut the Crutch")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showAdjustments = false }
+                }
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private var beginCTA: some View {
         Button {
             engine.beginCountdown()
         } label: {
-            Text("Begin")
+            Text("Start Cut the Crutch")
                 .font(.headline.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(tint)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Spacing.md)
-                .background(tint, in: Capsule())
+                .background(.white, in: Capsule())
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.vertical, Spacing.sm)
         }
@@ -249,10 +231,11 @@ struct CutTheCrutchView: View {
             if hapticsSettings.isEnabled, case .countdown = new, case .setup = old { return true }
             return false
         }
+        .accessibilityIdentifier("cutTheCrutch.start")
         .accessibilityLabel("Begin Cut the Crutch")
         .background(
             LinearGradient(
-                colors: [Color.white.opacity(0.02), Color.white.opacity(0.72)],
+                colors: [Color.clear, Color.black.opacity(0.10)],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -367,7 +350,8 @@ struct CutTheCrutchView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .background(AppColor.focusedGlassFill, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .focusedGlassSurface()
     }
 
     private var transcriptCard: some View {
@@ -394,7 +378,8 @@ struct CutTheCrutchView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .background(AppColor.focusedGlassFill, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .focusedGlassSurface()
     }
 
     /// Renders the transcript with the avoided word tinted in `modeCrutch`.

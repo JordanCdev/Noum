@@ -265,7 +265,7 @@ struct BaselineMapCard: View {
             .padding(Spacing.md)
             .background(AppColor.brandBlue.opacity(0.07), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         } else {
-            Text("Goal gap appears once the underlying metric has enough reps.")
+            Text("Complete a few more reps to see how close you are to your goal.")
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
                 .padding(Spacing.md)
@@ -380,7 +380,7 @@ private enum BaselineReadRole {
         switch self {
         case .focus: return "Work next"
         case .strength: return "Holding"
-        case .learning: return "Needs signal"
+        case .learning: return "Needs more reps"
         case .monitor: return "Keep watching"
         }
     }
@@ -528,7 +528,7 @@ private struct BaselineSupportingSignals: View {
 
                 Spacer(minLength: 8)
 
-                Text("\(measuredCount)/\(totalCount) active")
+                Text("\(measuredCount) of \(totalCount) measured")
                     .font(Typography.captionSmall.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -1072,6 +1072,8 @@ struct ProfileView: View {
     @State private var showAchievementsTree = false
     @State private var showPaywall = false
     @State private var showProfileEvidence = false
+    @State private var showCoachReadEvidence = false
+    @State private var showRatingEvidence = false
     /// Last rating value this view has rendered — feeds the earned-motion
     /// policy so the numeric roll fires only on an upward tick to a new
     /// weekly best (drops and first paint update silently).
@@ -1233,7 +1235,7 @@ struct ProfileView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 18) {
+            VStack(spacing: Spacing.cardGap) {
                 let surfacePlan = defaultSurfacePlan
 
                 identityHeader
@@ -1253,24 +1255,17 @@ struct ProfileView: View {
 
                 profileEvidenceHub
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-            .padding(.bottom, 40)
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.top, Spacing.sm)
+            .padding(.bottom, Spacing.lg)
         }
         .task {
             bigMomentStore.archiveExpiredIfNeeded()
             await challenges.refreshFromBackend()
             await friends.refreshPeerStats()
         }
-        .background(
-            LinearGradient(
-                colors: [AppColor.lightGradientStart, AppColor.lightGradientEnd],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-        )
-        .navigationTitle("Profile")
+        .background(AppColor.screenBackground.ignoresSafeArea())
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("profile.screen")
         .sheet(isPresented: $showPaywall) { PaywallView() }
@@ -1334,14 +1329,6 @@ struct ProfileView: View {
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if let evidenceLine = content.evidenceLine {
-                Text(evidenceLine)
-                    .font(Typography.captionSmall)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Evidence behind this read: \(evidenceLine)")
-            }
-
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "arrow.turn.down.right")
                     .font(Typography.captionSmall.weight(.bold))
@@ -1353,29 +1340,61 @@ struct ProfileView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let proofClaim = content.proofClaim {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(proofClaim)
-                        .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    if let quote = content.proofQuote {
-                        Text("\"\(quote)\"")
-                            .font(Typography.captionSmall)
+            if content.evidenceLine != nil || content.proofClaim != nil {
+                Button {
+                    toggleCoachReadEvidence()
+                } label: {
+                    HStack(spacing: Spacing.xs) {
+                        Text(showCoachReadEvidence ? "Hide evidence behind this read" : "Evidence behind this read")
+                            .font(Typography.captionSmall.weight(.semibold))
                             .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: Spacing.xs)
+                        Image(systemName: "chevron.down")
+                            .font(Typography.captionSmall.weight(.bold))
+                            .foregroundStyle(.tertiary)
+                            .rotationEffect(.degrees(showCoachReadEvidence ? 180 : 0))
+                            .animation(reduceMotion ? nil : .standardSpring, value: showCoachReadEvidence)
                     }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    AppColor.pro.opacity(0.07),
-                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                        .stroke(AppColor.pro.opacity(0.16), lineWidth: 1)
-                )
+                .buttonStyle(.pressable)
+                .accessibilityLabel(showCoachReadEvidence ? "Hide evidence behind this coaching read" : "Show evidence behind this coaching read")
+                .accessibilityIdentifier("profile.coachRead.evidenceToggle")
+
+                if showCoachReadEvidence {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        if let evidenceLine = content.evidenceLine {
+                            Text(evidenceLine)
+                                .font(Typography.captionSmall)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityLabel("Evidence behind this read: \(evidenceLine)")
+                        }
+
+                        if let proofClaim = content.proofClaim {
+                            VStack(alignment: .leading, spacing: Spacing.xs) {
+                                Text(proofClaim)
+                                    .font(Typography.caption.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                if let quote = content.proofQuote {
+                                    Text("\"\(quote)\"")
+                                        .font(Typography.captionSmall)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .padding(Spacing.sm)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                AppColor.pro.opacity(0.07),
+                                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                            )
+                        }
+                    }
+                    .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
+                }
             }
 
             if let transferStatus {
@@ -1400,6 +1419,22 @@ struct ProfileView: View {
     }
 
     private func profileTransferStatusRow(_ status: ProfileTransferStatusContent) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                profileTransferStatusSummary(status)
+                transferStatusAction(status)
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                profileTransferStatusSummary(status)
+                transferStatusAction(status, fillsWidth: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("profile.transferStatus")
+    }
+
+    private func profileTransferStatusSummary(_ status: ProfileTransferStatusContent) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: transferStatusIcon(for: status.kind))
                 .font(.subheadline.weight(.bold))
@@ -1423,25 +1458,25 @@ struct ProfileView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            transferStatusAction(status)
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("profile.transferStatus")
     }
 
     @ViewBuilder
-    private func transferStatusAction(_ status: ProfileTransferStatusContent) -> some View {
+    private func transferStatusAction(_ status: ProfileTransferStatusContent, fillsWidth: Bool = false) -> some View {
         if let destination = status.destination,
            let actionTitle = status.actionTitle {
             NavigationLink(value: destination) {
                 Text(actionTitle)
                     .font(Typography.captionSmall.weight(.bold))
                     .foregroundStyle(AppColor.brandBlue)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
+                    .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: 44)
                     .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
             }
+            .frame(maxWidth: fillsWidth ? .infinity : nil)
             .accessibilityIdentifier("profile.transferStatus.prep")
         } else if let moment = status.moment,
                   let actionTitle = status.actionTitle {
@@ -1451,10 +1486,14 @@ struct ProfileView: View {
                 Text(actionTitle)
                     .font(Typography.captionSmall.weight(.bold))
                     .foregroundStyle(AppColor.brandBlue)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
+                    .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: 44)
                     .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
             }
+            .frame(maxWidth: fillsWidth ? .infinity : nil)
             .buttonStyle(.plain)
             .accessibilityIdentifier("profile.transferStatus.checkIn")
         }
@@ -1473,41 +1512,63 @@ struct ProfileView: View {
     private var profileEvidenceHub: some View {
         let presentation = ProfileEvidenceHubPresentation.valueFirst
         return VStack(alignment: .leading, spacing: Spacing.sm) {
-            if presentation.showsDefaultHeader {
-                HStack {
-                    Text("Evidence")
-                        .font(Typography.micro.weight(.bold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .tracking(1.0)
-                    Spacer()
-                }
-                .padding(.horizontal, 4)
-            }
-
-            VStack(spacing: presentation.usesCompactRows ? 10 : Spacing.cardGap) {
-                ForEach(presentation.linkOrder, id: \.self) { link in
-                    profileEvidenceLink(for: link)
-                }
-            }
-
             Button {
                 toggleProfileEvidence()
             } label: {
-                profileEvidenceToggleLabel
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(width: 40, height: 40)
+                        .background(AppColor.brandBlue.opacity(0.10), in: Circle())
+
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        Text("Evidence")
+                            .font(Typography.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text("Baseline, proof moments, and saved reps")
+                            .font(Typography.captionSmall)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(showProfileEvidence ? 180 : 0))
+                        .animation(reduceMotion ? nil : .standardSpring, value: showProfileEvidence)
+                }
+                .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(showProfileEvidence ? "Hide supporting evidence" : "Show supporting evidence")
             .accessibilityHint("Shows or hides supporting profile evidence.")
             .accessibilityIdentifier("profile.evidenceHub.toggle")
 
             if showProfileEvidence {
-                profileEvidenceDetails
-                    .padding(.top, Spacing.sm)
+                VStack(spacing: Spacing.cardGap) {
+                    Divider()
+
+                    VStack(spacing: presentation.usesCompactRows ? Spacing.xs : Spacing.cardGap) {
+                        ForEach(presentation.linkOrder, id: \.self) { link in
+                            profileEvidenceLink(for: link)
+                        }
+                    }
+
+                    profileEvidenceDetails
+                }
                     .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
             }
         }
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.subtleBorder, lineWidth: 1)
+        )
     }
 
     private var baselineCoachMap: BaselineCoachMap {
@@ -1528,29 +1589,32 @@ struct ProfileView: View {
         return "\(map.statusTitle) · \(map.measuredDimensionCount) coach reads"
     }
 
-    private var profileEvidenceToggleLabel: some View {
-        HStack(spacing: 10) {
-            Text(showProfileEvidence ? "Hide supporting evidence" : "Show supporting evidence")
-                .font(Typography.captionSmall.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Spacer()
-            Image(systemName: "chevron.down")
-                .font(Typography.captionSmall.weight(.bold))
-                .foregroundStyle(.tertiary)
-                .rotationEffect(.degrees(showProfileEvidence ? 180 : 0))
-                .animation(reduceMotion ? nil : .standardSpring, value: showProfileEvidence)
-        }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
-    }
-
     private func toggleProfileEvidence() {
         if reduceMotion {
             showProfileEvidence.toggle()
         } else {
             withAnimation(.standardSpring) {
                 showProfileEvidence.toggle()
+            }
+        }
+    }
+
+    private func toggleCoachReadEvidence() {
+        if reduceMotion {
+            showCoachReadEvidence.toggle()
+        } else {
+            withAnimation(.standardSpring) {
+                showCoachReadEvidence.toggle()
+            }
+        }
+    }
+
+    private func toggleRatingEvidence() {
+        if reduceMotion {
+            showRatingEvidence.toggle()
+        } else {
+            withAnimation(.standardSpring) {
+                showRatingEvidence.toggle()
             }
         }
     }
@@ -1782,34 +1846,31 @@ struct ProfileView: View {
     // MARK: - Identity Header
 
     private var identityHeader: some View {
-        VStack(spacing: 16) {
-            let identity = ProfileIdentityPresentation.make(profile: coachingProfileStore.profile)
-            let chosenVoice = coachingProfileStore.profile?.chosenStyleGoal
-
+        let identity = ProfileIdentityPresentation.make(profile: coachingProfileStore.profile)
+        let chosenVoice = coachingProfileStore.profile?.chosenStyleGoal
+        return HStack(spacing: Spacing.sm) {
             if let chosenVoice {
                 VoiceGoalIcon(
                     goal: chosenVoice,
-                    size: 34,
-                    containerSize: 90,
-                    cornerRadius: 24
+                    size: 20,
+                    containerSize: 52,
+                    cornerRadius: CornerRadius.medium
                 )
-                .padding(.bottom, -8)
             } else {
-                // Neutral pre-goal presence. Once a user chooses a voice target,
-                // the header leads with that target instead of another generic
-                // character mark.
                 NoumCharacter(
                     mood: .calm,
                     tint: premium.isPremium ? AppColor.pro : AppColor.brandBlue,
-                    size: 90
+                    size: 52
                 )
-                .padding(.bottom, -8)
             }
 
-            VStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 HStack(spacing: 8) {
                     Text(displayName)
-                        .font(.title2.weight(.bold))
+                        .font(Typography.headline.weight(.bold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     if premium.isPremium {
                         Text("PRO")
@@ -1829,71 +1890,52 @@ struct ProfileView: View {
                     Text(identity.subtitle)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                        .multilineTextAlignment(.leading)
                         .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 22)
-        // Identity hero — Pro-purple as the ambient brand register, matching
-        // the HomeCoachCard treatment. The default surface stays about the
-        // speaker and their chosen voice; XP/level detail lives behind the
-        // evidence disclosure so it does not compete with Speaking Rating.
-        .background(identityHeroBackground)
-        .shadow(color: AppColor.pro.opacity(0.18), radius: 22, x: 0, y: 10)
+        .padding(.horizontal, Spacing.xxs)
+        .padding(.vertical, Spacing.xs)
+        .accessibilityElement(children: .contain)
     }
 
-    /// Identity hero chrome — purple ambient wash + faint purple border.
-    /// Layers, bottom to top:
-    ///   1. White card base.
-    ///   2. Top-anchored radial purple wash (the dream's "fancy purple").
-    ///   3. Faint purple hairline border.
-    /// Outer `.shadow` adds elevation in the same hue.
-    private var identityHeroBackground: some View {
-        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-        return ZStack {
-            shape.fill(AppColor.cardBackground)
-            shape.fill(
-                RadialGradient(
-                    colors: [AppColor.pro.opacity(0.48), AppColor.proLight.opacity(0.22), AppColor.pro.opacity(0.04), Color.clear],
-                    center: UnitPoint(x: 0.5, y: 0.0),
-                    startRadius: 0,
-                    endRadius: 320
-                )
-            )
-            shape.strokeBorder(AppColor.pro.opacity(0.40), lineWidth: 1)
-        }
-    }
-
-    /// Slim purple upgrade pill — lives below the identity card so the
-    /// hero stays about WHO you are. Only rendered when `!premium.isPremium`.
+    /// Quiet secondary row shown after the coaching value, never a second hero.
     private var upgradeCTA: some View {
         Button {
             showPaywall = true
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: Spacing.sm) {
                 Image(systemName: "crown.fill")
                     .font(.caption.weight(.bold))
-                Text("Upgrade to Pro")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
+                    .foregroundStyle(AppColor.pro)
+                    .frame(width: 36, height: 36)
+                    .background(AppColor.pro.opacity(0.10), in: Circle())
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("Explore Noum Pro")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text("Deeper coaching and review tools")
+                        .font(Typography.captionSmall)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
-                    .opacity(0.8)
+                    .foregroundStyle(.tertiary)
             }
-            .foregroundStyle(.white)
-            .padding(.horizontal, Spacing.lg)
-            .padding(.vertical, 12)
-            .background(
-                LinearGradient(
-                    colors: [AppColor.pro, AppColor.proLight],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                ),
-                in: Capsule()
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                    .stroke(AppColor.subtleBorder, lineWidth: 1)
             )
-            .shadow(color: AppColor.pro.opacity(0.22), radius: 14, x: 0, y: 6)
         }
         .buttonStyle(.pressable)
         .accessibilityIdentifier("profile.upgradeCTA")
@@ -2047,7 +2089,28 @@ struct ProfileView: View {
                 // white surface so their tinted semantics stay legible on
                 // the gradient.
                 if hasTrayContent {
-                    VStack(alignment: .leading, spacing: 16) {
+                    Button {
+                        toggleRatingEvidence()
+                    } label: {
+                        HStack(spacing: Spacing.xs) {
+                            Text(showRatingEvidence ? "Hide rating details" : "Rating details")
+                                .font(Typography.caption.weight(.semibold))
+                            Spacer(minLength: Spacing.xs)
+                            Image(systemName: "chevron.down")
+                                .font(Typography.captionSmall.weight(.bold))
+                                .rotationEffect(.degrees(showRatingEvidence ? 180 : 0))
+                                .animation(reduceMotion ? nil : .standardSpring, value: showRatingEvidence)
+                        }
+                        .foregroundStyle(.white.opacity(0.88))
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityLabel(showRatingEvidence ? "Hide speaking rating details" : "Show speaking rating details")
+                    .accessibilityIdentifier("profile.rating.detailsToggle")
+
+                    if showRatingEvidence {
+                        VStack(alignment: .leading, spacing: 16) {
                 if rating.totalRatedSessions > 0 {
                     // Rating history chart — last 30 days, smoothed line
                     // with peak marker.
@@ -2107,7 +2170,7 @@ struct ProfileView: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.caption2)
                             .foregroundStyle(AppColor.caution)
-                        Text("Working on: \(baseline.persistentBlockers.joined(separator: ", "))")
+                        Text("Current focus: \(baseline.persistentBlockers.joined(separator: ", "))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -2137,10 +2200,12 @@ struct ProfileView: View {
                         resolvedSettleTick.toggle()
                     }
                 }
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.white.opacity(0.94), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                        .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
                     }
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.white.opacity(0.94), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                 }
             }
             .padding(20)
@@ -2148,7 +2213,7 @@ struct ProfileView: View {
             // (docs/UX_VISUAL_DIRECTION.md): blue→green gradient, the
             // believable number in white, evidence on a frosted tray.
             .background(HeroGradient.progress.gradient, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-            .shadow(color: HeroGradient.progress.shadowTint.opacity(0.30), radius: 22, x: 0, y: 10)
+            .shadow(color: HeroGradient.progress.shadowTint.opacity(0.18), radius: 12, x: 0, y: 6)
             .onAppear { lastSeenOverallRating = rating.overall }
             .onChange(of: rating.overall) { _, newValue in
                 lastSeenOverallRating = newValue
@@ -2288,7 +2353,7 @@ struct ProfileView: View {
                         Text("Share Pressure Drill history")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
-                        Text("\(runLabel) · cross-difficulty plain-text")
+                        Text("\(runLabel), all difficulties")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -2312,7 +2377,7 @@ struct ProfileView: View {
             .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Share Pressure Drill history — \(runLabel)")
-            .accessibilityHint("Opens a share sheet with a plain-text snapshot of your full Pressure Drill track record.")
+            .accessibilityHint("Shares your Pressure Drill history across every difficulty.")
             .accessibilityIdentifier("profile.suddenDeath.historyShare")
         }
     }
@@ -2369,13 +2434,7 @@ struct ProfileView: View {
     }
 
     private func trendLabel(_ trend: TrendDirection) -> String {
-        switch trend {
-        case .improving: return "Trending up"
-        case .stable: return "Holding steady"
-        case .declining: return "Dipping — more reps will help"
-        case .newIssue: return "New pattern detected"
-        case .resolved: return "Recent issue resolved"
-        }
+        RatingTrendCopy.label(for: trend)
     }
 
     // MARK: - League

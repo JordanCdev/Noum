@@ -28,7 +28,7 @@ struct PracticeLocalePickerSheet: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Practice language")
                     .font(Typography.cardTitle)
-                Text("Switches the prompt pool, filler-word detection, and transcription provider language. Coaching feedback stays in English for now.")
+                Text("Changes prompts, filler-word detection, and speech recognition for new reps. Coaching feedback stays in English for now.")
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -98,7 +98,7 @@ enum ReviewHighlightsEngine {
                 kind: .breakthrough,
                 sessionID: session.id,
                 title: "The rep where it jumped",
-                line: "\(score)/10 against a \(String(format: "%.1f", priorAverage)) average before it · \(day)"
+                line: "\(score)/10, up from a \(String(format: "%.1f", priorAverage)) prior average. \(day)."
             )
         }
         return nil

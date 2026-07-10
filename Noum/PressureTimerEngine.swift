@@ -684,7 +684,6 @@ final class PressureTimerEngine: ObservableObject {
             await MainActor.run {
                 currentPromptText = followUp
                 isGeneratingFollowUp = false
-                print("[PressureEngine] Follow-up generated for round \(round): \(followUp.prefix(50))...")
             }
 
             // Brief display, then signal the view to start the user waiting

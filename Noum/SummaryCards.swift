@@ -77,7 +77,7 @@ struct HeroScoreCard: View {
     /// and the label.
     var toneDrillResolvedRibbonLabel: String? {
         guard let ribbon = toneDrillResolvedRibbon else { return nil }
-        return "Solved · \(ribbon.toneTitle) tone in \(ribbon.scenarioTitle)"
+        return "Holding · \(ribbon.toneTitle) tone in \(ribbon.scenarioTitle)"
     }
 
     var body: some View {
@@ -1034,7 +1034,7 @@ struct IMVerdictCard: View {
         VStack(spacing: 14) {
             // Mode + confidence label
             HStack(spacing: 8) {
-                Text("IM Mode".uppercased())
+                Text("Conversation".uppercased())
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
                     .tracking(1.4)
@@ -1265,7 +1265,7 @@ struct IMOneMoveCard: View {
                 Button {
                     onSelectPracticeMode()
                 } label: {
-                    Text("New Chat")
+                    Text("Choose another rep")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)

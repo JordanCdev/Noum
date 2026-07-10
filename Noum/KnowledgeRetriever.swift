@@ -227,10 +227,9 @@ enum KnowledgeRetriever {
 
     // MARK: BM25 index
 
-    /// Built once over the static corpus. `nonisolated(unsafe)` is safe here:
-    /// it's a `let` computed from immutable static data, written once at first
-    /// access and only ever read thereafter.
-    nonisolated(unsafe) static let index = BM25Index(cards: CoachKnowledgeBase.cards)
+    /// Built once over the static corpus. The value is immutable after its
+    /// first initialization and only ever read thereafter.
+    static let index = BM25Index(cards: CoachKnowledgeBase.cards)
 
     /// A minimal, deterministic BM25 index over the cards' `searchableText`.
     struct BM25Index {

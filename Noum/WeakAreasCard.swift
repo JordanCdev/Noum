@@ -137,11 +137,11 @@ struct WeakAreasCard: View {
             ))
         }
 
-        // 3. Weekly rating slipped — pressure tolerance gap.
+        // 3. Weekly rating moved down — offer a rep that can clarify why.
         if ratingStore.rating.weeklyDelta < -10 {
             out.append(WeakRow(
-                title: "Pressure caught you this week",
-                detail: "Rating dipped \(ratingStore.rating.weeklyDelta) points. A calmer Pressure Drill rep is the better next target.",
+                title: "Rating moved down this week",
+                detail: "Rating moved down \(abs(ratingStore.rating.weeklyDelta)) points. One controlled Pressure Drill rep can help show what needs attention.",
                 target: .pressure
             ))
         }

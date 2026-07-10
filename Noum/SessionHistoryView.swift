@@ -41,7 +41,7 @@ struct SessionHistoryRowPreview: Equatable {
         case .timed: return "Timed"
         case .suddenDeath: return "Pressure Drill"
         case .ahCounter: return "Ah-Counter"
-        case .imConversation: return "IM Mode"
+        case .imConversation: return "Conversation practice"
         }
     }
 }
@@ -96,14 +96,14 @@ struct SessionHistoryDetailPresentation: Equatable {
             .max(by: { $0.date < $1.date })
         guard let previous, let previousScore = previous.score else { return nil }
         let day = previous.date.formatted(date: .abbreviated, time: .omitted)
-        return "Previous \(modeLabel(for: session.mode)) rep: \(previousScore)/10 · \(day)"
+        return "Previous \(modeLabel(for: session.mode)) rep: \(previousScore)/10 on \(day)."
     }
 
     /// Footer for the transcript card. The transcript is stored in full —
     /// when it reads as cut off, that's where the recording stopped, and
     /// saying so explicitly is what keeps the user trusting the capture.
     static func transcriptEndLine(for session: PracticeSession) -> String {
-        "Recording ended here · \(durationLabel(for: session))"
+        "Recording ended here. \(durationLabel(for: session))"
     }
 
     private static func modeLabel(for mode: PracticeMode) -> String {
@@ -111,7 +111,7 @@ struct SessionHistoryDetailPresentation: Equatable {
         case .timed: return "Timed"
         case .suddenDeath: return "Pressure Drill"
         case .ahCounter: return "Ah-Counter"
-        case .imConversation: return "IM Mode"
+        case .imConversation: return "Conversation practice"
         }
     }
 
@@ -153,6 +153,7 @@ struct SessionHistoryView: View {
     @StateObject private var ratingStore = RatingStore.shared
     @Binding var navigationPath: NavigationPath
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.isAppTabRoot) private var isAppTabRoot
 
     init(navigationPath: Binding<NavigationPath>) {
         self._navigationPath = navigationPath
@@ -234,8 +235,10 @@ struct SessionHistoryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("history.screen")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Done") { dismiss() }
+            if !isAppTabRoot {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
             }
         }
     }
@@ -631,7 +634,7 @@ struct SessionHistoryDetailView: View {
 
     private func conversationReadCard(_ imDetails: IMConversationDetails) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Full IM review")
+            Text("Full conversation review")
                 .font(.headline)
 
             if let outcome = imDetails.outcome {
@@ -842,7 +845,7 @@ struct SessionHistoryDetailView: View {
         case .timed: return "Timed"
         case .suddenDeath: return "Pressure Drill"
         case .ahCounter: return "Ah-Counter"
-        case .imConversation: return "IM Mode"
+        case .imConversation: return "Conversation practice"
         }
     }
 }

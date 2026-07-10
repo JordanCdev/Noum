@@ -341,7 +341,7 @@ struct MistakeReplayCard: View {
         case .timed:        return "Timed rep to revisit · \(when)"
         case .suddenDeath:  return "Pressure rep to revisit · \(when)"
         case .ahCounter:    return "Ah-Counter rep to revisit · \(when)"
-        case .imConversation: return "IM rep to revisit · \(when)"
+        case .imConversation: return "Conversation rep to revisit — \(when)"
         }
     }
 

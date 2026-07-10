@@ -169,13 +169,13 @@ struct ModeMasteryRow: View {
 
     private var detailLine: String {
         if snapshot.isMaxed {
-            return "Maxed · \(snapshot.totalXP) XP"
+            return "Maximum level. \(snapshot.totalXP) experience points."
         }
         if snapshot.sessionsLogged == 0 {
-            return "Untouched. One rep starts the climb."
+            return "No reps yet. Complete one rep to begin."
         }
         let remaining = max(0, snapshot.xpForNextLevel - snapshot.xpIntoLevel)
-        return "\(snapshot.sessionsLogged) reps · \(remaining) XP to Lv \(snapshot.level + 1)"
+        return "\(snapshot.sessionsLogged) reps. \(remaining) experience points to level \(snapshot.level + 1)."
     }
 
     private var accessibilityLabel: String {
@@ -195,7 +195,7 @@ struct ModeMasteryBadge: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Text("Lv \(snapshot.level)")
+            Text("Level \(snapshot.level)")
                 .font(Typography.figtree(size: 10, weight: .heavy, relativeTo: .caption2))
                 .tracking(0.4)
             if !snapshot.title.isEmpty {

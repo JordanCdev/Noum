@@ -29,6 +29,12 @@ struct RoleplayView: View {
     @State private var turnResults: [RoleplayTurnResult] = []
     @State private var lastFeedback: (strength: String, gap: String)?
     @State private var sessionID = UUID()
+    @State private var submissionTask: Task<Void, Never>?
+
+    private var isCompletePhase: Bool {
+        if case .complete = phase { return true }
+        return false
+    }
 
     init(scenario: RoleplayScenario, startingLevel: RoleplayPressureLevel, navigationPath: Binding<NavigationPath>) {
         self.scenario = scenario
@@ -39,7 +45,11 @@ struct RoleplayView: View {
 
     var body: some View {
         ZStack {
-            AppColor.screenBackground.ignoresSafeArea()
+            if isCompletePhase {
+                AppColor.screenBackground.ignoresSafeArea()
+            } else {
+                FocusedPracticeBackground(style: .conversation)
+            }
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
                     personaHeader
@@ -56,6 +66,7 @@ struct RoleplayView: View {
                 .padding(.top, Spacing.sm)
                 .padding(.bottom, Spacing.lg)
             }
+            .environment(\.colorScheme, isCompletePhase ? .light : .dark)
         }
         .navigationTitle(scenario.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -69,12 +80,17 @@ struct RoleplayView: View {
                 )
             }
         }
+        .onDisappear {
+            submissionTask?.cancel()
+            speechVM.stopRecording()
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("End") {
                     if speechVM.isRecording { speechVM.stopRecording() }
                     if !navigationPath.isEmpty { navigationPath.removeLast() }
                 }
+                .foregroundStyle(isCompletePhase ? Color.secondary : Color.white)
                 .accessibilityIdentifier("roleplay.end")
             }
         }
@@ -88,7 +104,7 @@ struct RoleplayView: View {
                 Text(scenario.personaName)
                     .font(Typography.headline)
                     .foregroundStyle(.primary)
-                Text("· \(scenario.personaRole)")
+                Text(scenario.personaRole)
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -104,10 +120,10 @@ struct RoleplayView: View {
     private var pressureChip: some View {
         Text(currentLevel.title)
             .font(Typography.captionSmall)
-            .foregroundStyle(AppColor.modeIM)
+            .foregroundStyle(isCompletePhase ? AppColor.modeIM : .white)
             .padding(.horizontal, Spacing.xs)
             .padding(.vertical, Spacing.xxs)
-            .background(AppColor.modeIM.opacity(0.10), in: Capsule())
+            .background(isCompletePhase ? AppColor.modeIM.opacity(0.10) : AppColor.focusedGlassFill, in: Capsule())
             .accessibilityIdentifier("roleplay.pressureChip")
     }
 
@@ -133,7 +149,8 @@ struct RoleplayView: View {
                     .foregroundStyle(.primary)
                     .padding(Spacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                    .background(AppColor.focusedGlassFill, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                    .focusedGlassSurface()
                     .accessibilityIdentifier("roleplay.objection")
             } else {
                 Text("No objection available at this pressure level.")
@@ -180,8 +197,10 @@ struct RoleplayView: View {
     private func toggleRecording() {
         if speechVM.isRecording {
             speechVM.stopRecording()
-            Task {
+            submissionTask?.cancel()
+            submissionTask = Task {
                 try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled else { return }
                 submitTurn()
             }
         } else {
@@ -233,7 +252,16 @@ struct RoleplayView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.md)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .background(
+            isCompletePhase ? AppColor.cardBackground : AppColor.focusedGlassFill,
+            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+        )
+        .overlay {
+            if !isCompletePhase {
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                    .stroke(AppColor.focusedGlassBorder, lineWidth: 1)
+            }
+        }
     }
 
     private func retryModeCopy(_ mode: RoleplayRetryMode) -> String {
@@ -255,12 +283,12 @@ struct RoleplayView: View {
         } label: {
             Text(turnResults.count >= Self.maxTurns ? "See results" : "Next attempt")
                 .font(Typography.headline)
-                .foregroundStyle(.white)
+                .foregroundStyle(AppColor.modeIM)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Spacing.sm)
         }
         .buttonStyle(.pressable)
-        .background(AppColor.modeIM, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .background(.white, in: Capsule())
         .accessibilityIdentifier("roleplay.continue")
     }
 
@@ -297,7 +325,7 @@ struct RoleplayView: View {
             Text("Roleplay complete")
                 .font(Typography.cardTitle)
                 .foregroundStyle(.primary)
-            Text("\(turnResults.count) attempts against \(scenario.personaName), ending at \(currentLevel.title) pressure.")
+            Text("\(turnResults.count) response attempts with \(scenario.personaName). Final pressure: \(currentLevel.title).")
                 .font(Typography.body)
                 .foregroundStyle(.secondary)
             if let feedback = lastFeedback {

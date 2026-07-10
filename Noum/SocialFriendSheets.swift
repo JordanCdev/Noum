@@ -9,7 +9,7 @@ import UIKit
 #if canImport(SwiftUI)
 
 enum SpeakOffConnectionCopy {
-    static let unlinkedFriendsNotice = "Scored speak-offs need linked Noum accounts on both sides. Manual friends stay local until linked invites are available."
+    static let unlinkedFriendsNotice = "Speak-offs are available with friends whose Noum accounts are linked. Saved contacts remain available for practice planning until linked invites are available."
 }
 
 enum SpeakOffFriendEligibility {
@@ -25,95 +25,126 @@ enum SpeakOffFriendEligibility {
     }
 }
 
+private extension AsyncChallenge.Reaction {
+    var symbolName: String {
+        switch self {
+        case .fire: return "sparkles"
+        case .clap: return "hands.clap.fill"
+        case .strong: return "bolt.fill"
+        case .mindBlown: return "lightbulb.fill"
+        case .trophy: return "checkmark.seal.fill"
+        case .heart: return "heart.fill"
+        }
+    }
+
+    var accessibilityName: String {
+        switch self {
+        case .fire: return "Standout"
+        case .clap: return "Well delivered"
+        case .strong: return "Strong"
+        case .mindBlown: return "Fresh idea"
+        case .trophy: return "Polished"
+        case .heart: return "Warm"
+        }
+    }
+}
+
 @available(iOS 17.0, *)
 struct AsyncChallengeDetailSheet: View {
     let challenge: AsyncChallenge
     @ObservedObject var challenges: ChallengesManager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 24) {
-                    VStack(spacing: 12) {
-                        Text("THE PROMPT")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.secondary)
-                            .tracking(1.2)
+            ZStack {
+                AppColor.screenBackground.ignoresSafeArea()
 
-                        Text(challenge.prompt)
-                            .font(.title3.weight(.bold))
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(24)
-                    .background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                            .stroke(Color.teal.opacity(0.15), lineWidth: 1)
-                    )
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: Spacing.lg) {
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
+                            Text("Prompt")
+                                .font(Typography.caption.weight(.semibold))
+                                .foregroundStyle(AppColor.brandBlue)
 
-                    if challenge.bothHavePlayed {
-                        HStack(spacing: 16) {
-                            scoreCard(
-                                name: challenge.creatorName,
-                                score: challenge.creatorScore ?? 0,
-                                duration: challenge.creatorDuration,
-                                reaction: challenge.opponentReaction
-                            )
-                            Text("vs")
-                                .font(.headline.weight(.bold))
-                                .foregroundStyle(.secondary)
-                            scoreCard(
-                                name: challenge.opponentName,
-                                score: challenge.opponentScore ?? 0,
-                                duration: challenge.opponentDuration,
-                                reaction: challenge.creatorReaction
-                            )
+                            Text(challenge.prompt)
+                                .font(Typography.cardTitle)
+                                .foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(Spacing.lg)
+                        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                                .stroke(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
+                        )
 
-                        VStack(spacing: 10) {
-                            Text("React to their performance")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        if challenge.bothHavePlayed {
+                            VStack(spacing: Spacing.md) {
+                                Group {
+                                    if dynamicTypeSize.isAccessibilitySize {
+                                        VStack(spacing: Spacing.sm) {
+                                            comparisonScoreCards
+                                        }
+                                    } else {
+                                        HStack(spacing: Spacing.sm) {
+                                            comparisonScoreCards
+                                        }
+                                    }
+                                }
 
-                            HStack(spacing: 12) {
-                                ForEach(AsyncChallenge.Reaction.allCases) { reaction in
-                                    Button {
-                                        challenges.addReaction(challengeID: challenge.id, reaction: reaction)
-                                    } label: {
-                                        Text(reaction.rawValue)
-                                            .font(.title2)
-                                            .frame(width: 44, height: 44)
-                                            .background(Color(.systemGray6), in: Circle())
+                                VStack(spacing: Spacing.sm) {
+                                    Text("Send a reaction")
+                                        .font(Typography.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+
+                                    HStack(spacing: Spacing.xs) {
+                                        ForEach(AsyncChallenge.Reaction.allCases) { reaction in
+                                            Button {
+                                                challenges.addReaction(challengeID: challenge.id, reaction: reaction)
+                                            } label: {
+                                                Image(systemName: reaction.symbolName)
+                                                    .font(.system(size: 16, weight: .semibold))
+                                                    .foregroundStyle(AppColor.brandBlue)
+                                                    .frame(width: 44, height: 44)
+                                                    .background(AppColor.brandBlue.opacity(0.08), in: Circle())
+                                            }
+                                            .accessibilityLabel(reaction.accessibilityName)
+                                        }
                                     }
                                 }
                             }
+                        } else {
+                            HStack(alignment: .top, spacing: Spacing.sm) {
+                                Image(systemName: "clock")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(AppColor.brandBlue)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Waiting for both reps")
+                                        .font(Typography.headline)
+                                        .foregroundStyle(.primary)
+                                    Text("Results appear after both speakers complete the prompt.")
+                                        .font(Typography.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(Spacing.md)
+                            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                         }
-                        .padding(.top, 8)
-                    } else {
-                        VStack(spacing: 12) {
-                            Image(systemName: "hourglass")
-                                .font(.title)
-                                .foregroundStyle(.secondary)
-                            Text("Waiting for both players to complete the challenge.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        .padding(.vertical, 20)
-                    }
 
-                    HStack(spacing: 6) {
-                        Image(systemName: "clock")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                        Text("Expires \(challenge.expiresAt, style: .relative)")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+                        HStack(spacing: 6) {
+                            Image(systemName: "calendar.badge.clock")
+                                .font(.caption2)
+                            Text("Expires \(challenge.expiresAt, style: .relative)")
+                                .font(Typography.caption)
+                        }
+                        .foregroundStyle(.tertiary)
                     }
+                    .padding(Spacing.screenH)
                 }
-                .padding(20)
             }
             .navigationTitle("Speak-off")
             .navigationBarTitleDisplayMode(.inline)
@@ -123,18 +154,16 @@ struct AsyncChallengeDetailSheet: View {
                 }
             }
         }
+        .accessibilityIdentifier("speakOff.detail")
     }
 
     private func scoreCard(name: String, score: Int, duration: TimeInterval?, reaction: AsyncChallenge.Reaction?) -> some View {
         VStack(spacing: 10) {
             Text(String(name.prefix(1)).uppercased())
                 .font(.headline.weight(.bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppColor.brandBlue)
                 .frame(width: 44, height: 44)
-                .background(
-                    LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: Circle()
-                )
+                .background(AppColor.brandBlue.opacity(0.12), in: Circle())
 
             Text(name)
                 .font(.caption.weight(.semibold))
@@ -142,7 +171,7 @@ struct AsyncChallengeDetailSheet: View {
 
             Text("\(score)")
                 .font(Typography.figtreeNumeric(size: 32, weight: .bold, relativeTo: .title))
-                .foregroundStyle(score >= 70 ? .green : score >= 50 ? .orange : .red)
+                .foregroundStyle(AppColor.brandBlue)
 
             if let dur = duration {
                 Text(String(format: "%d:%02d", Int(dur) / 60, Int(dur) % 60))
@@ -151,13 +180,40 @@ struct AsyncChallengeDetailSheet: View {
             }
 
             if let reaction {
-                Text(reaction.rawValue)
-                    .font(.title3)
+                Image(systemName: reaction.symbolName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .accessibilityLabel(reaction.accessibilityName)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(16)
-        .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var comparisonScoreCards: some View {
+        scoreCard(
+            name: challenge.creatorName,
+            score: challenge.creatorScore ?? 0,
+            duration: challenge.creatorDuration,
+            reaction: challenge.opponentReaction
+        )
+        Image(systemName: "arrow.left.arrow.right")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Compared with")
+        scoreCard(
+            name: challenge.opponentName,
+            score: challenge.opponentScore ?? 0,
+            duration: challenge.opponentDuration,
+            reaction: challenge.creatorReaction
+        )
     }
 }
 
@@ -166,6 +222,7 @@ struct ChallengePickFriendSheet: View {
     @ObservedObject var friends: FriendsManager
     @ObservedObject var challenges: ChallengesManager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var createdChallenge: AsyncChallenge?
     @State private var speakOffNavPath = NavigationPath()
 
@@ -177,37 +234,40 @@ struct ChallengePickFriendSheet: View {
         NavigationStack(path: $speakOffNavPath) {
             Group {
                 if let challenge = createdChallenge {
-                    VStack(spacing: 28) {
+                    VStack(spacing: Spacing.lg) {
                         Spacer()
 
-                        VStack(spacing: 8) {
-                            Image(systemName: "bolt.circle.fill")
-                                .font(.system(size: 48))
-                                .foregroundStyle(.teal)
-                            Text("Practice Speak-off created.")
-                                .font(.title2.weight(.bold))
-                        }
-
-                        VStack(spacing: 12) {
-                            Text("YOUR PROMPT")
-                                .font(.caption.weight(.bold))
+                        VStack(spacing: Spacing.sm) {
+                            Image(systemName: "waveform.circle.fill")
+                                .font(.system(size: 44, weight: .semibold))
+                                .foregroundStyle(AppColor.brandBlue)
+                            Text("Speak-off ready")
+                                .font(Typography.cardTitle)
+                            Text("Practice the same prompt, then compare the evidence.")
+                                .font(Typography.subheadline)
                                 .foregroundStyle(.secondary)
-                                .tracking(1.2)
-                            Text(challenge.prompt)
-                                .font(.title3.weight(.semibold))
                                 .multilineTextAlignment(.center)
-                                .padding(.horizontal, 20)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(24)
-                        .background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                                .stroke(Color.teal.opacity(0.15), lineWidth: 1)
-                        )
-                        .padding(.horizontal, 20)
 
-                        Text("vs \(challenge.opponentName)")
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
+                            Text("Your prompt")
+                                .font(Typography.caption.weight(.semibold))
+                                .foregroundStyle(AppColor.brandBlue)
+                            Text(challenge.prompt)
+                                .font(Typography.headline)
+                                .foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(Spacing.lg)
+                        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                                .stroke(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
+                        )
+                        .padding(.horizontal, Spacing.screenH)
+
+                        Text("With \(challenge.opponentName)")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.secondary)
 
@@ -219,21 +279,23 @@ struct ChallengePickFriendSheet: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "mic.fill")
                                     .font(.headline)
-                                Text("Start Speaking")
+                                Text("Start rep")
                                     .font(.headline.weight(.semibold))
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color.teal, in: Capsule())
+                            .background(AppColor.brandBlue, in: Capsule())
                             .foregroundStyle(.white)
                         }
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, Spacing.screenH)
+                        .accessibilityIdentifier("speakOff.start")
 
-                        Button("Do It Later") { dismiss() }
+                        Button("Not now") { dismiss() }
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.secondary)
                             .padding(.bottom, 8)
                     }
+                    .background(AppColor.screenBackground.ignoresSafeArea())
                     .navigationTitle("Speak-off")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -249,18 +311,15 @@ struct ChallengePickFriendSheet: View {
                 } else {
                     List {
                         if linkedFriends.isEmpty {
-                            VStack(spacing: 12) {
-                                Text("No linked friends yet")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                Text("Scored speak-offs need a friend linked to a Noum account. Manual friends stay local for now.")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                                    .multilineTextAlignment(.center)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 40)
+                            EmptyStateView(
+                                symbol: "person.2.slash",
+                                title: "No connected partners yet",
+                                body: "Speak-offs become available when a friend's Noum account is connected.",
+                                tint: AppColor.brandBlue
+                            )
+                            .padding(.vertical, Spacing.lg)
                             .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
                         } else {
                             ForEach(linkedFriends) { friend in
                                 Button {
@@ -270,22 +329,19 @@ struct ChallengePickFriendSheet: View {
                                         opponentName: friend.displayName,
                                         opponentAccountID: opponentAccountID
                                     )
-                                    withAnimation(.standardSpring) {
+                                    withAnimation(reduceMotion ? nil : .standardSpring) {
                                         createdChallenge = challenge
                                     }
                                 } label: {
                                     HStack(spacing: 14) {
                                         ZStack {
                                             Circle()
-                                                .fill(
-                                                    LinearGradient(colors: [.blue.opacity(0.2), .purple.opacity(0.2)],
-                                                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                                                )
+                                                .fill(AppColor.brandBlue.opacity(0.12))
                                                 .frame(width: 40, height: 40)
 
                                             Text(friend.initials)
                                                 .font(.caption.weight(.bold))
-                                                .foregroundStyle(.white)
+                                                .foregroundStyle(AppColor.brandBlue)
                                         }
 
                                         Text(friend.displayName)
@@ -293,15 +349,18 @@ struct ChallengePickFriendSheet: View {
 
                                         Spacer()
 
-                                        Image(systemName: "bolt.fill")
+                                        Image(systemName: "chevron.right")
                                             .font(.caption)
-                                            .foregroundStyle(.teal)
+                                            .foregroundStyle(.tertiary)
                                     }
                                 }
+                                .accessibilityIdentifier("speakOff.friend.\(friend.id.uuidString)")
                             }
                         }
                     }
-                    .navigationTitle("Challenge a Friend")
+                    .scrollContentBackground(.hidden)
+                    .background(AppColor.screenBackground)
+                    .navigationTitle("Choose a partner")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
@@ -311,6 +370,7 @@ struct ChallengePickFriendSheet: View {
                 }
             }
         }
+        .accessibilityIdentifier("speakOff.pickFriend")
     }
 }
 
@@ -319,40 +379,35 @@ struct AddFriendSheet: View {
     @ObservedObject var friends: FriendsManager
     @ObservedObject var challenges: ChallengesManager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var friendName = ""
     @State private var didAdd = false
     @FocusState private var nameFieldFocused: Bool
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
+            VStack(spacing: Spacing.lg) {
                 ZStack {
                     Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [.blue.opacity(0.3), .purple.opacity(0.4)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 72, height: 72)
+                        .fill(AppColor.brandBlue.opacity(0.12))
+                        .frame(width: 64, height: 64)
 
                     if friendName.trimmingCharacters(in: .whitespaces).isEmpty {
                         Image(systemName: "person.fill")
                             .font(.title2)
-                            .foregroundStyle(.white.opacity(0.6))
+                            .foregroundStyle(AppColor.brandBlue)
                     } else {
                         Text(String(friendName.trimmingCharacters(in: .whitespaces).prefix(1)).uppercased())
-                            .font(Typography.bigStat)
-                            .foregroundStyle(.white)
+                            .font(Typography.cardTitle)
+                            .foregroundStyle(AppColor.brandBlue)
                     }
                 }
                 .padding(.top, 20)
 
                 VStack(spacing: 8) {
-                    Text("Add a Practice Contact")
-                        .font(.title3.weight(.bold))
-                    Text("Save a name locally for practice planning. Scored speak-offs need linked Noum accounts.")
+                    Text("Save a practice contact")
+                        .font(Typography.cardTitle)
+                    Text("Keep a name for planning future reps. Shared scores require a connected Noum account.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -361,8 +416,12 @@ struct AddFriendSheet: View {
                 TextField("Friend's name", text: $friendName)
                     .font(.body)
                     .padding(16)
-                    .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                    .padding(.horizontal, 20)
+                    .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                            .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                    )
+                    .padding(.horizontal, Spacing.screenH)
                     .focused($nameFieldFocused)
                     .submitLabel(.done)
                     .onSubmit { addFriend() }
@@ -371,7 +430,7 @@ struct AddFriendSheet: View {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
-                        Text("Added.")
+                        Text("Contact saved")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.green)
                     }
@@ -381,23 +440,29 @@ struct AddFriendSheet: View {
                 Spacer()
 
                 Button(action: addFriend) {
-                    Text("Save Contact")
+                    Text("Save contact")
                         .font(.headline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(
                             friendName.trimmingCharacters(in: .whitespaces).isEmpty
-                                ? Color(.systemGray4)
-                                : Color.blue,
+                                ? AppColor.tagBackground
+                                : AppColor.brandBlue,
                             in: Capsule()
                         )
-                        .foregroundStyle(.white)
+                        .foregroundStyle(
+                            friendName.trimmingCharacters(in: .whitespaces).isEmpty
+                                ? Color.secondary
+                                : Color.white
+                        )
                 }
                 .disabled(friendName.trimmingCharacters(in: .whitespaces).isEmpty)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, Spacing.screenH)
                 .padding(.bottom, 16)
+                .accessibilityIdentifier("friends.add.save")
             }
-            .navigationTitle("Add Friend")
+            .background(AppColor.screenBackground.ignoresSafeArea())
+            .navigationTitle("New contact")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -406,13 +471,14 @@ struct AddFriendSheet: View {
             }
             .onAppear { nameFieldFocused = true }
         }
+        .accessibilityIdentifier("friends.add.sheet")
     }
 
     private func addFriend() {
         let trimmed = friendName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         friends.addFriend(name: trimmed, method: .manual)
-        withAnimation(.standardSpring) {
+        withAnimation(reduceMotion ? nil : .standardSpring) {
             didAdd = true
         }
         friendName = ""

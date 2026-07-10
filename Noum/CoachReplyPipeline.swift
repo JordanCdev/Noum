@@ -186,7 +186,8 @@ enum CoachReplyPipeline {
             : .groundedRead
         let preferredTier = CoachPromptBundle.preferredProviderTier(
             for: turnDepth,
-            surface: surface
+            surface: surface,
+            realtimeCoachModeEnabled: realtimeCoachModeEnabled
         )
         let previousCoachReply = latestUserIndex.flatMap { index in
             history[..<index].last { $0.role == .coach }?.text
@@ -505,6 +506,10 @@ enum CoachReplyPipeline {
                 onQualityGateEvent?(event)
             }
         )
+        guard !Task.isCancelled else {
+            store.cancelPendingCoachTurn(id: coachID)
+            return .failure(.network)
+        }
         let completionAt = Date()
 
         // Last-mile reliability gate: after the provider chain and its internal
@@ -938,7 +943,17 @@ enum CoachReplyPipeline {
         requestedTier: CoachProviderTier
     ) -> CoachProviderTier? {
         guard let choice else { return nil }
+        if let resolvedTier = choice.resolvedTier {
+            return resolvedTier
+        }
         let provider = choice.providerName.lowercased()
+        let model = choice.model.lowercased()
+        if model.contains("gemini-2.5-pro") || model.contains("ultra") {
+            return .claudeReasoning
+        }
+        if model.contains("flash") || model.contains("fast") {
+            return .geminiFast
+        }
         if provider.contains("claude") {
             return .claudeReasoning
         }
@@ -946,6 +961,9 @@ enum CoachReplyPipeline {
             return .geminiFast
         }
         if provider.contains("typed judgement fallback") {
+            return requestedTier
+        }
+        if provider.contains("vertex") || provider.contains("firebase") {
             return requestedTier
         }
         return nil

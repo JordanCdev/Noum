@@ -579,7 +579,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     private func failStartRecording(with error: Error) {
-        connectionError = "\(error)"
+        connectionError = "Live transcription is temporarily unavailable. Your rep hasn’t started."
         teardownAudioStream()
         try? AVAudioSession.sharedInstance().setActive(false)
         activeSession = nil

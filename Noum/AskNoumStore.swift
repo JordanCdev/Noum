@@ -162,6 +162,17 @@ enum CoachTurnQualityGateOutcome: Codable, Equatable {
 struct CoachTurnProviderChoice: Equatable, Sendable {
     let providerName: String
     let model: String
+    let resolvedTier: CoachProviderTier?
+
+    init(
+        providerName: String,
+        model: String,
+        resolvedTier: CoachProviderTier? = nil
+    ) {
+        self.providerName = providerName
+        self.model = model
+        self.resolvedTier = resolvedTier
+    }
 }
 
 struct CoachRetrievalTrace: Codable, Equatable {
@@ -489,6 +500,15 @@ final class AskNoumStore: ObservableObject {
     /// disable the input bar and show the pending message row.
     @Published private(set) var isAwaitingReply: Bool = false
 
+    /// Operational failures are transient UI state, never conversation. The
+    /// user's turn stays in the thread and can be retried without adding a
+    /// duplicate message.
+    @Published private(set) var lastFailure: ChatFailure?
+
+    var transientFailureMessage: String? {
+        lastFailure.map { Self.noticeCopy(for: $0) }
+    }
+
     /// AI-tailored follow-up chips keyed by the coach message ID they
     /// belong to. Lets `AskNoumView` request chips once per reply, cache
     /// the result, and read it back synchronously on every view rebuild
@@ -557,6 +577,7 @@ final class AskNoumStore: ObservableObject {
     /// the service returns.
     @discardableResult
     func appendUserTurn(_ text: String) -> (userID: UUID, coachID: UUID) {
+        lastFailure = nil
         markImmediatePushbackIfNeeded(for: text)
         let userMsg = CoachMessage(role: .user, text: text)
         let coachMsg = CoachMessage(role: .coach, text: "", isPending: true)
@@ -589,7 +610,7 @@ final class AskNoumStore: ObservableObject {
                 // it reaches the store, route through the same notice instead
                 // of leaving a blank coach bubble.
                 Self.log.error("coach turn completed with empty normalized text")
-                replaceWithNotice(at: idx, id: id, failure: .empty, metadata: resolvedMetadata)
+                resolveFailure(at: idx, failure: .empty)
             } else {
                 if trimmed != text.trimmingCharacters(in: .whitespacesAndNewlines) {
                     Self.log.notice("normalized coach turn before persistence id=\(id.uuidString, privacy: .public)")
@@ -606,8 +627,8 @@ final class AskNoumStore: ObservableObject {
                 Self.log.info("coach turn stored as live reply chars=\(trimmed.count, privacy: .public)")
             }
         case .failure(let failure):
-            Self.log.notice("coach turn resolved as system notice cause=\(String(describing: failure), privacy: .public)")
-            replaceWithNotice(at: idx, id: id, failure: failure, metadata: resolvedMetadata)
+            Self.log.notice("coach turn resolved as transient failure cause=\(String(describing: failure), privacy: .public)")
+            resolveFailure(at: idx, failure: failure)
         }
         isAwaitingReply = false
         trimAndPersist()
@@ -682,20 +703,9 @@ final class AskNoumStore: ObservableObject {
         return true
     }
 
-    private func replaceWithNotice(
-        at idx: Int,
-        id: UUID,
-        failure: ChatFailure,
-        metadata: CoachTurnMetadata? = nil
-    ) {
-        messages[idx] = CoachMessage(
-            id: id,
-            role: .systemNotice,
-            text: Self.noticeCopy(for: failure),
-            createdAt: messages[idx].createdAt,
-            isPending: false,
-            metadata: metadata
-        )
+    private func resolveFailure(at idx: Int, failure: ChatFailure) {
+        messages.remove(at: idx)
+        lastFailure = failure
     }
 
     private static func metadataByPreservingMutableFlags(
@@ -810,19 +820,44 @@ final class AskNoumStore: ObservableObject {
     /// User-facing copy per failure cause. First-person voice (Noum),
     /// sentence case, no exclamation marks, action-oriented — matches
     /// the coach voice rules used everywhere else.
-    private static func noticeCopy(for failure: ChatFailure) -> String {
+    static func noticeCopy(for failure: ChatFailure) -> String {
         switch failure {
         case .noProvider:
-            return "I can’t reach the live coach from this install yet. Check AI setup in Settings, then try again."
+            #if DEBUG
+            return "Live coaching isn’t connected in this build."
+            #else
+            return "Noum is temporarily unavailable. Your message is still here."
+            #endif
+        case .unauthenticated:
+            return "Noum is temporarily unavailable. Your message is still here."
+        case .rateLimited:
+            return "Noum is taking a short pause. Your message is still here. Try again in a moment."
         case .localeUnsupported:
-            return "I can only chat in English right now. Switch the practice language to English to continue."
+            return "Live coaching is currently available in English. Your message is still here."
         case .network:
-            return "I couldn't get a live read right now. Check your connection and try again."
+            return "Noum is temporarily unavailable. Your message is still here."
         case .empty:
-            return "I didn't get enough back to coach from, so I'm holding off rather than guessing. Try again and I'll give you one clear move."
+            return "Noum couldn’t complete that coaching read. Your message is still here."
         case .contentRejected:
-            return "I held that response because it wasn’t grounded enough to show as coaching. Try again and I’ll keep it to one clear move."
+            return "Noum couldn’t complete that coaching read. Your message is still here."
         }
+    }
+
+    /// Re-arm the latest unanswered user turn without appending it again.
+    /// Returns the pending coach row ID the existing reply pipeline should
+    /// hydrate.
+    func prepareRetry() -> UUID? {
+        guard !isAwaitingReply,
+              lastFailure != nil,
+              messages.last(where: { $0.role == .user }) != nil else {
+            return nil
+        }
+        let coach = CoachMessage(role: .coach, text: "", isPending: true)
+        messages.append(coach)
+        lastFailure = nil
+        isAwaitingReply = true
+        trimAndPersist()
+        return coach.id
     }
 
     /// Cancel an in-flight coach reply (user navigated away, etc.).
@@ -839,6 +874,7 @@ final class AskNoumStore: ObservableObject {
     /// is a one-button wipe.
     func clearThread() {
         messages.removeAll()
+        lastFailure = nil
         pendingInjectedCoachID = nil
         // Drop the AI chip cache too — every cached entry is keyed by
         // a coach message ID that no longer exists.
@@ -878,6 +914,7 @@ final class AskNoumStore: ObservableObject {
         starterChipsCache.removeAll()
         pendingInjectedCoachID = nil
         isAwaitingReply = false
+        lastFailure = nil
     }
 
     /// Cache an AI-generated chip set for a specific coach reply. Called
@@ -1014,8 +1051,8 @@ final class AskNoumStore: ObservableObject {
         // Defensive: don't restore a row that was pending when the app
         // exited — the model never returned, so this is effectively
         // dead. Drop it.
-        var didCleanLegacyCoachNotes = false
-        messages = decoded.filter { !$0.isPending }.map { message in
+        var didCleanLegacyCoachNotes = decoded.contains { $0.role == .systemNotice }
+        messages = decoded.filter { !$0.isPending && $0.role != .systemNotice }.compactMap { message in
             guard message.role == .coach else {
                 return message
             }
@@ -1037,14 +1074,7 @@ final class AskNoumStore: ObservableObject {
                 return message
             }
             didCleanLegacyCoachNotes = true
-            return CoachMessage(
-                id: message.id,
-                role: .systemNotice,
-                text: Self.legacyCoachMessageNotice,
-                createdAt: message.createdAt,
-                isPending: false,
-                metadata: message.metadata
-            )
+            return nil
         }
         if didCleanLegacyCoachNotes {
             persist()
@@ -1068,8 +1098,6 @@ final class AskNoumStore: ObservableObject {
         }
     }
 
-    private static let legacyCoachMessageNotice = "I cleaned up an older coach note that no longer meets the current standard. Ask for the current read and I'll use your latest case file."
-
     private func trimAndPersist() {
         if messages.count > Self.maxStoredMessages {
             messages.removeFirst(messages.count - Self.maxStoredMessages)
@@ -1082,7 +1110,7 @@ final class AskNoumStore: ObservableObject {
         // transient. If the user backgrounds the app mid-reply the
         // pending row will reappear from memory but won't be written
         // to disk, so a relaunch starts clean.
-        let persistable = messages.filter { !$0.isPending }
+        let persistable = messages.filter { !$0.isPending && $0.role != .systemNotice }
         guard let data = try? JSONEncoder().encode(persistable) else { return }
         defaults.set(data, forKey: currentKey)
     }

@@ -144,7 +144,7 @@ enum ReportedDrillTransfer: String, Codable, CaseIterable, Identifiable {
 
     var chipLabel: String {
         switch self {
-        case .transferred:    return "Prep carried over"
+        case .transferred:    return "Rehearsal carried over"
         case .partly:         return "Partly"
         case .didNotTransfer: return "Didn't carry"
         }
@@ -152,9 +152,9 @@ enum ReportedDrillTransfer: String, Codable, CaseIterable, Identifiable {
 
     var coachClause: String {
         switch self {
-        case .transferred:    return "they felt their prep carried into the moment"
-        case .partly:         return "they felt their prep partly carried into the moment"
-        case .didNotTransfer: return "they felt their prep didn't carry into the moment"
+        case .transferred:    return "their rehearsal carried into the moment"
+        case .partly:         return "their rehearsal partly carried into the moment"
+        case .didNotTransfer: return "their rehearsal didn't carry into the moment"
         }
     }
 }
@@ -206,7 +206,7 @@ struct BigMomentOutcomeReport: Codable, Identifiable, Equatable {
     var coachContextLine: String {
         var line = "For \(category.displayName) \"\(momentTitle)\", the user reported \(outcome.coachClause); \(audienceResponse.coachClause)."
         if let drillTransfer {
-            line += " On their prep, \(drillTransfer.coachClause)."
+            line += " They felt \(drillTransfer.coachClause)."
         }
         if let note {
             line += " Their note: \"\(note)\"."
@@ -261,11 +261,11 @@ enum BigMomentOutcomeAck {
     private static func transferRead(for report: BigMomentOutcomeReport) -> String {
         switch report.drillTransfer {
         case .transferred:
-            return "You felt the prep carry into the room — noted alongside your reps, as your read, not proof either way."
+            return "You felt the rehearsal carry into the room — your read, not proof either way."
         case .partly:
-            return "You felt part of the prep carry — noted, so the next reps can aim at the part that stayed behind."
+            return "You felt part of the rehearsal carry — a useful pointer to what stayed behind."
         case .didNotTransfer:
-            return "You felt the prep didn't carry this time — useful evidence, noted as your account, never a verdict on you."
+            return "You felt the rehearsal didn't carry this time — useful self-reported evidence, not a verdict on you."
         case nil:
             return "I've noted your read of the room alongside your training."
         }

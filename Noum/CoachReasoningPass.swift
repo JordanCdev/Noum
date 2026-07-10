@@ -800,7 +800,7 @@ enum CoachReasoningPass {
     ) -> String? {
         guard turnDepth == .trustRepair else { return nil }
         let lower = userQuestion.lowercased()
-        if containsAny(lower, ["markdown", "tts", "format", "**"]) {
+        if containsAny(lower, ["markdown", "tts", "formatting", "**"]) {
             return "Repair the same answer in plain speech: no markdown, one specific read, one move."
         }
         if containsAny(lower, ["generic", "generic ai", "ai tips", "ai wrapper", "assistant wrapper"]) {

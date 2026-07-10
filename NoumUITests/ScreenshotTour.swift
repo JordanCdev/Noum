@@ -104,34 +104,82 @@ final class ScreenshotTour: XCTestCase {
         // ============================================================
 
         // ----- MODE PICKER -----
-        let pickerApp = launchSeededAt("noum://train")
+        let pickerApp = launchSeededAt(
+            "noum://train",
+            extraEnvironment: ["BACKEND_BASE_URL": "https://noum-ui-test.invalid"]
+        )
         Thread.sleep(forTimeInterval: 1.5)
         attach(pickerApp, name: "13-mode-picker")
 
         // ----- TIMED PRACTICE SETUP -----
-        captureModeSetup(pickerApp, modeID: "practiceMode.timed", name: "14-timed-setup")
+        captureModeSetup(
+            pickerApp,
+            modeID: "practiceMode.timed",
+            screenID: "timedPractice.screen",
+            name: "14-timed-setup"
+        )
 
         // ----- SUDDEN DEATH SETUP -----
-        captureModeSetup(pickerApp, modeID: "practiceMode.suddenDeath", name: "15-sudden-death-setup")
+        captureModeSetup(
+            pickerApp,
+            modeID: "practiceMode.suddenDeath",
+            screenID: "suddenDeath.screen",
+            name: "15-sudden-death-setup"
+        )
 
         // ----- AH-COUNTER SETUP -----
-        captureModeSetup(pickerApp, modeID: "practiceMode.ahCounter", name: "16-ah-counter-setup")
+        captureModeSetup(
+            pickerApp,
+            modeID: "practiceMode.ahCounter",
+            screenID: "ahCounter.screen",
+            name: "16-ah-counter-setup"
+        )
 
         // ----- IM CONVERSATION SETUP -----
-        captureModeSetup(pickerApp, modeID: "practiceMode.imConversation", name: "17-im-conversation-setup")
+        captureModeSetup(
+            pickerApp,
+            modeID: "practiceMode.imConversation",
+            screenID: "imPractice.screen",
+            name: "17-im-conversation-setup"
+        )
 
         // ----- CUT THE CRUTCH SETUP -----
-        captureModeSetup(pickerApp, modeID: "practiceMode.cutTheCrutch", name: "18-cut-the-crutch-setup")
+        captureModeSetup(
+            pickerApp,
+            modeID: "practiceMode.cutTheCrutch",
+            screenID: "cutTheCrutch.screen",
+            name: "18-cut-the-crutch-setup"
+        )
+
+        // ----- PACE TRAINING SETUP -----
+        captureModeSetup(
+            pickerApp,
+            modeID: "practiceMode.paceTraining",
+            screenID: "paceTraining.screen",
+            name: "18b-pace-training-setup"
+        )
 
         pickerApp.terminate()
 
-        // ----- LESSONS HOME (card-style entry, not a pressure mode) -----
-        let lessonsApp = launchSeededAt("noum://train")
-        Thread.sleep(forTimeInterval: 1.0)
-        let lessonsCard = lessonsApp.buttons["practiceMode.lessons"]
-        if lessonsCard.waitForExistence(timeout: 5) {
-            lessonsCard.tap()
+        // ----- ROLEPLAY SETUP -----
+        let roleplayApp = launchSeededAt("noum://roleplay")
+        let roleplayScreen = roleplayApp.descendants(matching: .any)["roleplay.setup.screen"]
+        XCTAssertTrue(
+            roleplayScreen.waitForExistence(timeout: 10),
+            "Roleplay deep link did not reach roleplay.setup.screen"
+        )
+        XCTAssertTrue(roleplayApp.buttons["roleplay.adjust"].waitForExistence(timeout: 3))
+        XCTAssertTrue(roleplayApp.buttons["roleplay.begin"].waitForExistence(timeout: 3))
+        if roleplayScreen.exists {
             Thread.sleep(forTimeInterval: 1.2)
+            attach(roleplayApp, name: "18c-roleplay-setup")
+        }
+        roleplayApp.terminate()
+
+        // ----- LESSONS HOME (card-style entry, not a pressure mode) -----
+        let lessonsApp = launchSeededAt("noum://lessons")
+        let lessonsScreen = lessonsApp.descendants(matching: .any)["lessons.screen"]
+        if lessonsScreen.waitForExistence(timeout: 8) {
             attach(lessonsApp, name: "19-lessons-home")
 
             // ----- LESSON DETAIL — tap the first known lesson -----
@@ -145,12 +193,9 @@ final class ScreenshotTour: XCTestCase {
         lessonsApp.terminate()
 
         // ----- SPEECH PROJECTS + DETAIL -----
-        let projectsApp = launchSeededAt("noum://train")
-        Thread.sleep(forTimeInterval: 1.0)
-        let projectsCard = projectsApp.buttons["practiceMode.speechProjects"]
-        if projectsCard.waitForExistence(timeout: 5) {
-            projectsCard.tap()
-            Thread.sleep(forTimeInterval: 1.2)
+        let projectsApp = launchSeededAt("noum://projects")
+        let projectsScreen = projectsApp.descendants(matching: .any)["speechProjects.screen"]
+        if projectsScreen.waitForExistence(timeout: 8) {
             attach(projectsApp, name: "21-speech-projects")
 
             // First project row, if the seed populated any — falls back to
@@ -374,9 +419,14 @@ final class ScreenshotTour: XCTestCase {
     /// Cold-launch with seed + a `-DeepLink` arg so the app routes straight
     /// to the target screen without going through gesture nav.
     @MainActor
-    private func launchSeededAt(_ deepLink: String, extraArgs: [String] = []) -> XCUIApplication {
+    private func launchSeededAt(
+        _ deepLink: String,
+        extraArgs: [String] = [],
+        extraEnvironment: [String: String] = [:]
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE"] + extraArgs + ["-DeepLink", deepLink]
+        app.launchEnvironment.merge(extraEnvironment) { _, newValue in newValue }
         app.launch()
         // Home screen is the deep-link consumption point; wait for it then
         // give the routing one beat to flip the navigation path.
@@ -399,8 +449,23 @@ final class ScreenshotTour: XCTestCase {
     /// From the mode picker screen, tap a mode row + Start CTA, capture the
     /// setup view it lands on. Idempotent — caller must end on the picker.
     @MainActor
-    private func captureModeSetup(_ app: XCUIApplication, modeID: String, name: String) {
-        guard openModeSetup(modeID, in: app) else { return }
+    private func captureModeSetup(
+        _ app: XCUIApplication,
+        modeID: String,
+        screenID: String,
+        name: String
+    ) {
+        let didOpen = openModeSetup(modeID, in: app)
+        XCTAssertTrue(didOpen, "Could not open \(modeID) from the practice picker")
+        guard didOpen else { return }
+
+        let setupScreen = app.descendants(matching: .any)[screenID]
+        XCTAssertTrue(
+            setupScreen.waitForExistence(timeout: 10),
+            "\(modeID) did not reach \(screenID)"
+        )
+        guard setupScreen.exists else { return }
+
         Thread.sleep(forTimeInterval: 1.5)
         attach(app, name: name)
         // Back to picker for the next mode capture

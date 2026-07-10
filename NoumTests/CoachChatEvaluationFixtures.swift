@@ -4523,6 +4523,14 @@ struct CoachChatLatestLiveEvalRegressionTests {
             requestedTier: .claudeReasoning
         ) == .claudeReasoning)
         #expect(CoachReplyPipeline.providerTierChosen(
+            for: CoachTurnProviderChoice(providerName: "Firebase / Vertex AI", model: "gemini-2.5-pro"),
+            requestedTier: .claudeReasoning
+        ) == .claudeReasoning)
+        #expect(CoachReplyPipeline.providerTierChosen(
+            for: CoachTurnProviderChoice(providerName: "Firebase / Vertex AI", model: "gemini-2.5-flash"),
+            requestedTier: .geminiFast
+        ) == .geminiFast)
+        #expect(CoachReplyPipeline.providerTierChosen(
             for: CoachTurnProviderChoice(providerName: "OpenAI", model: "gpt-test"),
             requestedTier: .claudeReasoning
         ) == nil)
