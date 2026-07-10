@@ -5,6 +5,7 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest import mock
 
 import readiness_gate as gate
 
@@ -1258,6 +1259,94 @@ class ReadinessGateTests(unittest.TestCase):
         self.assertTrue(status["sourceFreshnessAudit"]["passes"])
         self.assertEqual(status["sourceFreshnessAudit"]["currentGitCommit"], None)
         self.assertEqual(status["localBlockingRequirements"], [])
+
+    def test_source_freshness_accepts_clean_report_only_descendant(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_coach_source(root, "current coach source")
+            current_fingerprint = gate.coach_source_fingerprint(root)
+            write_complete_evidence(
+                root,
+                source_fingerprint=current_fingerprint,
+                git_commit="abc123",
+            )
+            report = report_with_readiness(readiness)
+            report["results"] = [{
+                "trace": {
+                    "sourceFingerprint": current_fingerprint,
+                    "gitCommit": "abc123",
+                }
+            }]
+
+            with (
+                mock.patch.object(gate, "current_git_commit", return_value="def567"),
+                mock.patch.object(gate, "current_dirty_coach_source_files", return_value=[]),
+                mock.patch.object(gate, "git_commit_is_ancestor", return_value=True),
+            ):
+                status = gate.build_readiness_status(
+                    report,
+                    canonical_report_path(),
+                    root,
+                    root,
+                )
+
+        self.assertTrue(status["launchReady"])
+        self.assertTrue(status["sourceFreshnessAudit"]["passes"])
+        self.assertEqual(
+            status["sourceFreshnessAudit"]["cleanAncestorCommitsAccepted"],
+            ["abc123"],
+        )
+
+    def test_source_freshness_rejects_unrelated_matching_commit(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_static_ops_repo(root)
+            write_coach_source(root, "current coach source")
+            current_fingerprint = gate.coach_source_fingerprint(root)
+            write_complete_evidence(
+                root,
+                source_fingerprint=current_fingerprint,
+                git_commit="abc123",
+            )
+            report = report_with_readiness(readiness)
+            report["results"] = [{
+                "trace": {
+                    "sourceFingerprint": current_fingerprint,
+                    "gitCommit": "abc123",
+                }
+            }]
+
+            with (
+                mock.patch.object(gate, "current_git_commit", return_value="def567"),
+                mock.patch.object(gate, "current_dirty_coach_source_files", return_value=[]),
+                mock.patch.object(gate, "git_commit_is_ancestor", return_value=False),
+            ):
+                status = gate.build_readiness_status(
+                    report,
+                    canonical_report_path(),
+                    root,
+                    root,
+                )
+
+        self.assertFalse(status["launchReady"])
+        self.assertFalse(status["sourceFreshnessAudit"]["passes"])
+        self.assertEqual(
+            [item["label"] for item in status["localBlockingRequirements"]],
+            ["currentGitCommit"],
+        )
 
     def test_launch_ready_requires_operational_static_preflight(self):
         readiness = {

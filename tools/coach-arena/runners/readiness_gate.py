@@ -499,6 +499,40 @@ def current_git_commit(repo_root):
     return proc.stdout.strip() or None
 
 
+def current_dirty_coach_source_files(repo_root):
+    proc = subprocess.run(
+        ["git", "-C", str(Path(repo_root)), "status", "--porcelain", "--", *COACH_SOURCE_STATUS_PATHS],
+        text=True,
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        return ["<git-status-unavailable>"]
+    paths = []
+    for line in proc.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:].strip()
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1].strip()
+        if path:
+            paths.append(path)
+    return sorted(set(paths))
+
+
+def git_commit_is_ancestor(repo_root, ancestor, descendant):
+    if not ancestor or not descendant:
+        return False
+    proc = subprocess.run(
+        [
+            "git", "-C", str(Path(repo_root)), "merge-base", "--is-ancestor",
+            ancestor, descendant,
+        ],
+        text=True,
+        capture_output=True,
+    )
+    return proc.returncode == 0
+
+
 def coach_source_fingerprint(repo_root, paths=COACH_SOURCE_STATUS_PATHS):
     root = Path(repo_root)
     if not any((root / rel_path).exists() for rel_path in paths):
@@ -549,6 +583,7 @@ def source_freshness_audit(report, artifact_audit, repo_root=None):
     sidecar_commit = _sidecar_value(artifact_audit, "source-git-commit.txt")
     current_fingerprint = coach_source_fingerprint(repo_root) if repo_root else None
     current_commit = current_git_commit(repo_root) if repo_root else None
+    dirty_source_files = current_dirty_coach_source_files(repo_root) if repo_root else []
 
     mismatches = []
     if sidecar_fingerprint and report_fingerprints and sidecar_fingerprint not in report_fingerprints:
@@ -564,21 +599,43 @@ def source_freshness_audit(report, artifact_audit, repo_root=None):
             "reportValues": report_commits,
         })
 
-    current_mismatches = [
-        mismatch for mismatch in [
-            _current_source_mismatch(
-                "currentCoachFingerprint",
-                current_fingerprint,
-                sidecar_fingerprint,
-                report_fingerprints,
-            ),
-            _current_source_mismatch(
-                "currentGitCommit",
-                current_commit,
-                sidecar_commit,
-                report_commits,
-            ),
+    fingerprint_current_mismatch = _current_source_mismatch(
+        "currentCoachFingerprint",
+        current_fingerprint,
+        sidecar_fingerprint,
+        report_fingerprints,
+    )
+    commit_current_mismatch = _current_source_mismatch(
+        "currentGitCommit",
+        current_commit,
+        sidecar_commit,
+        report_commits,
+    )
+    clean_ancestor_commits_accepted = []
+    if commit_current_mismatch and repo_root:
+        source_commits = sorted(set(
+            [value for value in [sidecar_commit, *report_commits] if value]
+        ))
+        fingerprints_match_current = bool(
+            current_fingerprint and
+            sidecar_fingerprint == current_fingerprint and
+            report_fingerprints and
+            all(value == current_fingerprint for value in report_fingerprints)
+        )
+        clean_ancestor_commits_accepted = [
+            value for value in source_commits
+            if git_commit_is_ancestor(repo_root, value, current_commit)
         ]
+        if (
+            not dirty_source_files and
+            fingerprints_match_current and
+            source_commits and
+            len(clean_ancestor_commits_accepted) == len(source_commits)
+        ):
+            commit_current_mismatch = None
+
+    current_mismatches = [
+        mismatch for mismatch in [fingerprint_current_mismatch, commit_current_mismatch]
         if mismatch
     ]
 
@@ -590,6 +647,8 @@ def source_freshness_audit(report, artifact_audit, repo_root=None):
         ),
         "currentCoachFingerprint": current_fingerprint,
         "currentGitCommit": current_commit,
+        "dirtyCoachSourceFiles": dirty_source_files,
+        "cleanAncestorCommitsAccepted": clean_ancestor_commits_accepted,
         "sidecarCoachFingerprint": sidecar_fingerprint,
         "sidecarGitCommit": sidecar_commit,
         "reportCoachFingerprints": report_fingerprints,
