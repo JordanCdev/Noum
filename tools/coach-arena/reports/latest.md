@@ -1,7 +1,7 @@
-# Coach Arena — run_2026-07-09_22-54-24
+# Coach Arena — run_2026-07-10_07-13-37
 
 Provider: `replay` · coach model: `claude-sonnet-4-6` · judge model: `claude-sonnet-4-6`
-Git: `1cd32331` on `integration/prod-readiness` (+17 dirty) · prompt: CoachContextBuilder.swift@5bf3266802ca17ea, AICoachChatService.swift@5e613ff5d0f8947a
+Git: `1f4abe86` on `integration/prod-readiness` (+16 dirty) · prompt: CoachContextBuilder.swift@5bf3266802ca17ea, AICoachChatService.swift@00bc5d118e4e130e
 
 ## Headline
 
@@ -27,7 +27,7 @@ Finalizer changed 40 generated replies before user display (displaySanitizer 36,
 | Comparable app-path report | `tools/coach-arena/reports/app-path/latest.md` |
 | App-path source of truth | canonical `tools/coach-arena/reports/app-path/` only |
 | Nested duplicate app-path path | stale duplicate present at tools/coach-arena/tools/coach-arena/reports/app-path/latest.json (generated 2026-07-05T23:09:49+00:00); ignore this path |
-| Latest canonical app-path generated | `2026-07-09T22:54:13+00:00` |
+| Latest canonical app-path generated | `2026-07-10T07:13:28+00:00` |
 | Latest canonical app-path average | `79.78/100` |
 | App-path evidence gate (incl. source freshness) | `true` · claim `realPipelineEvidence` |
 | App-path trace-level quality (traces real/complete/unique) | `true` |

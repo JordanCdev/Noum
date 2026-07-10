@@ -1,16 +1,16 @@
 {
-  "runId": "run_2026-07-09_22-54-24",
+  "runId": "run_2026-07-10_07-13-37",
   "meta": {
-    "runId": "run_2026-07-09_22-54-24",
+    "runId": "run_2026-07-10_07-13-37",
     "provider": "replay",
     "coachModel": "claude-sonnet-4-6",
     "judgeModel": "claude-sonnet-4-6",
     "judgeVersion": "1.1.0",
     "git": {
-      "commit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99",
-      "shortCommit": "1cd32331",
+      "commit": "1f4abe869230cdd825923ea2fdea273123f1d292",
+      "shortCommit": "1f4abe86",
       "branch": "integration/prod-readiness",
-      "dirty": 17
+      "dirty": 16
     },
     "versions": {
       "node": "v26.0.0",
@@ -25,12 +25,12 @@
       },
       {
         "path": "Noum/AICoachChatService.swift",
-        "sha256": "5e613ff5d0f8947a",
-        "bytes": 320119
+        "sha256": "00bc5d118e4e130e",
+        "bytes": 320176
       }
     ],
-    "startedAt": "2026-07-09T22:54:24.919Z",
-    "finishedAt": "2026-07-09T22:54:25.033Z"
+    "startedAt": "2026-07-10T07:13:37.929Z",
+    "finishedAt": "2026-07-10T07:13:38.010Z"
   },
   "records": [
     {
@@ -85,11 +85,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -248,11 +248,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -447,11 +447,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -609,11 +609,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -774,11 +774,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -923,11 +923,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -1079,11 +1079,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -1254,11 +1254,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -1393,11 +1393,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -1556,11 +1556,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -1707,11 +1707,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -1898,11 +1898,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -2115,11 +2115,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -2305,11 +2305,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -2458,11 +2458,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -2597,11 +2597,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -2752,11 +2752,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -2908,11 +2908,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -3045,11 +3045,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -3207,11 +3207,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -3361,11 +3361,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -3526,11 +3526,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -3688,11 +3688,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -3839,11 +3839,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -3997,11 +3997,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -4145,11 +4145,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -4301,11 +4301,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -4449,11 +4449,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -4593,11 +4593,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -4731,11 +4731,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -4875,11 +4875,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -5026,11 +5026,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -5161,11 +5161,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -5324,11 +5324,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -5473,11 +5473,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -5627,11 +5627,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -5801,11 +5801,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -5957,11 +5957,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -6131,11 +6131,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -6259,11 +6259,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -6433,11 +6433,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -6591,11 +6591,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -6722,11 +6722,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -6879,11 +6879,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -7022,11 +7022,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -7203,11 +7203,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -7369,11 +7369,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -7504,11 +7504,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -7644,11 +7644,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [],
@@ -7799,11 +7799,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -7971,11 +7971,11 @@
           },
           {
             "path": "Noum/AICoachChatService.swift",
-            "sha256": "5e613ff5d0f8947a",
-            "bytes": 320119
+            "sha256": "00bc5d118e4e130e",
+            "bytes": 320176
           }
         ],
-        "gitCommit": "1cd3233150706dfa634903b7051c5b3f3c4ecb99"
+        "gitCommit": "1f4abe869230cdd825923ea2fdea273123f1d292"
       },
       "deterministic": {
         "findings": [
@@ -8278,7 +8278,7 @@
     }
   },
   "previous": {
-    "runId": "run_2026-07-09_22-39-29",
+    "runId": "run_2026-07-10_06-50-44",
     "summary": {
       "n": 51,
       "scored": 51,
