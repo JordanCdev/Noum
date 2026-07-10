@@ -1,6 +1,6 @@
 # Coach Arena Latest Report
 
-- Generated: `2026-07-10T07:13:28+00:00`
+- Generated: `2026-07-10T21:05:16+00:00`
 - Candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Fixtures: `50`
 - Average: `79.78/100`
@@ -47,7 +47,7 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 
 - Eligible real-pipeline traces: `50`
 - Passes: `True`
-- Unique proof-test hashes: `29`
+- Unique proof-test hashes: `30`
 - Max proof-test hash reuse: `5`
 - Max proof-test hash reuse allowed: `10`
 - Unique final-reply hashes: `50`
@@ -57,22 +57,22 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 - Trajectory-cache hits required: `1`
 - Missing trajectory-cache telemetry: `0`
 - Empty retrieval-card traces: `0`
-- Allowed empty retrieval-card traces: `40`
+- Allowed empty retrieval-card traces: `3`
 - Slow first-token traces: `0`
 
 ## Previous Run
 
 - Status: `compared`
-- Previous generated: `2026-07-10T06:53:11+00:00`
+- Previous generated: `2026-07-10T07:13:28+00:00`
 - Previous candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Candidate changed: `False`
 - Fixture count changed: `False`
-- Average delta: `0.42`
-- Failure count delta: `-1`
+- Average delta: `0.0`
+- Failure count delta: `0`
 - Placeholder leak delta: `0`
-- Pass state changed: `True`
-- Type average deltas: `deepAssessment` `0.0`, `groundedRead` `0.0`, `quickMove` `0.0`, `trustRepair` `2.34`
-- Cleared failures: `not-easy-empathy-004`
+- Pass state changed: `False`
+- Type average deltas: `deepAssessment` `0.0`, `groundedRead` `0.0`, `quickMove` `0.0`, `trustRepair` `0.0`
+- Cleared failures: `none`
 - New failures: `none`
 
 ## Coverage
@@ -85,12 +85,12 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 - App-path local fixture floor: `True`
 - Source target-reply mismatches: `0`
 - Source app-path failure samples: `0` of `0`
-- Source trace git commits: `1f4abe86`
+- Source trace git commits: `e502cb3c`
 - Source traces missing git commit: `0`
-- Current git commit: `1f4abe86`
-- Source trace coach fingerprints: `sha256:c8c5c72d80f6293d59b0cd8c96dfa1743b413d5a08cf92b6a9a08702e93693a2`
+- Current git commit: `e502cb3c`
+- Source trace coach fingerprints: `sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201`
 - Source traces missing coach fingerprint: `0`
-- Current coach source fingerprint: `sha256:c8c5c72d80f6293d59b0cd8c96dfa1743b413d5a08cf92b6a9a08702e93693a2`
+- Current coach source fingerprint: `sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201`
 - Source fingerprint matches current: `True`
 - Dirty coach source files: `0`
 - Source freshness passes: `True`
