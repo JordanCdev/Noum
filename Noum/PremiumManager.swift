@@ -411,11 +411,11 @@ struct PaywallView: View {
                                     .foregroundStyle(proColor)
                             }
 
-                            Text("Upgrade to Pro")
+                            Text("Go deeper with Noum")
                                 .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
                                 .foregroundStyle(AppColor.textPrimary)
 
-                            Text("Add deeper coaching when you want more than the core rep.")
+                            Text("Core practice stays free. Pro adds a coach that remembers your reps and helps you review them.")
                                 .font(Typography.body)
                                 .foregroundStyle(AppColor.textSecondary)
                                 .multilineTextAlignment(.center)
@@ -456,13 +456,8 @@ struct PaywallView: View {
                             DisclosureGroup(isExpanded: $showFeatureDetails) {
                                 VStack(spacing: 0) {
                                     featureRow(icon: "text.magnifyingglass", title: "Ask Noum", description: "A coaching thread grounded in your recent reps")
-                                    featureRow(icon: "text.quote", title: "Live transcript", description: "See your words while you speak")
-                                    featureRow(icon: "video.fill", title: "Video recording", description: "Review your delivery after a rep")
-                                    featureRow(icon: "waveform.badge.magnifyingglass", title: "Filler tracking", description: "Spot recurring verbal crutches")
-                                    featureRow(icon: "chart.line.uptrend.xyaxis", title: "Trend analysis", description: "Follow meaningful change across reps")
-                                    featureRow(icon: "person.2.wave.2.fill", title: "Unlimited friend challenges", description: "Practice the same prompt with a friend")
-                                    featureRow(icon: "sparkles.rectangle.stack.fill", title: "Delivery analysis", description: "Five video-based reads each month")
-                                    featureRow(icon: "tray.full.fill", title: "Saved transcripts", description: "Review and compare past sessions")
+                                    featureRow(icon: "chart.line.uptrend.xyaxis", title: "Deeper review", description: "See meaningful change and the next move")
+                                    featureRow(icon: "tray.full.fill", title: "Practice history", description: "Return to transcripts, delivery reads, and saved evidence")
 
                                     Divider()
                                         .padding(.vertical, Spacing.sm)
@@ -486,7 +481,7 @@ struct PaywallView: View {
                                         Text("What Pro adds")
                                             .font(.subheadline.weight(.semibold))
                                             .foregroundStyle(AppColor.textPrimary)
-                                        Text("Coaching depth, review, and continuity")
+                                        Text("Coaching, review, and continuity")
                                             .font(.caption)
                                             .foregroundStyle(AppColor.textSecondary)
                                     }

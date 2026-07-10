@@ -21,14 +21,14 @@ enum WeeklyCheckInCopy {
     static let cardTitle = "Your weekly read"
     static let cardBody = "One minute for the part metrics cannot hear."
     static let sheetTitle = "What should Noum know?"
-    static let sheetBody = "Answer one thing or all of it. These stay as your words, so the coach can ask better questions without guessing."
-    static let noteTitle = "No score. No diagnosis."
-    static let noteBody = "This is self-report: what felt hard, where it showed up, and whether the current drill still fits."
+    static let sheetBody = "Answer any one. Your words help Noum prepare the next question."
+    static let noteTitle = "Your words, not a score"
+    static let noteBody = "Share what felt hard, where it showed up, or whether the current exercise still fits."
 
     static let hardest = WeeklyCheckInPrompt(
         id: "hardest",
         title: "What felt hard?",
-        helper: "A moment, pattern, or feeling you kept noticing.",
+        helper: "A moment or feeling you kept noticing.",
         placeholder: "I tightened up when..."
     )
 
@@ -47,9 +47,9 @@ enum WeeklyCheckInCopy {
     )
 
     static let confidenceQuestion = "How steady did you feel?"
-    static let confidenceHelper = "Your read matters more than the score here."
+    static let confidenceHelper = "Use your own read of the moment."
     static let drillQuestion = "Did the drill still fit?"
-    static let drillHelper = "This helps Noum keep, vary, or replace the intervention."
+    static let drillHelper = "Noum can keep this exercise or choose another."
 }
 
 struct WeeklyCheckInCard: View {

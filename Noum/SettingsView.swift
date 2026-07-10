@@ -83,61 +83,43 @@ struct SettingsView: View {
                 .ignoresSafeArea()
 
             List {
-                    // M16 settings trim — first-open overwhelm was real
-                    // (20+ control rows packed across 10 cards). Top level
-                    // now surfaces 1 hero + 4 cluster zones + 1 advanced
-                    // disclosure. Every existing setting still reaches the
-                    // user; power-user toggles + dev tools live behind one
-                    // tap. Mirrors the Profile clustering at
-                    // `ProfileView.swift:113`.
-                    //
-                    //   Identity (no header — implicit hero)
-                    //     • profileHero
-                    //
-                    //   Practice (the act of speaking)
-                    //     • practiceCard (difficulty + 3 toggles),
-                    //       dailyGoalCard, localeCard, soundscapeCard,
-                    //       coachingProfileCard
-                    //
-                    //   Notifications (the coaching nudges)
-                    //     • feedbackCard (4 notifs + haptics + interaction sounds)
-                    //
-                    //   Account (the user as customer)
-                    //     • subscriptionCard, privacyCard, accountCard
-                    //
-                    //   About — trailing meta band, no header
-                    //
-                    //   Advanced (collapsed) — escape hatch + dev tools
-                    //     for `isDeveloper` only
-                    if !isAppTabRoot {
-                        Section {
-                            profileHero
-                                .listRowInsets(EdgeInsets())
-                                .listRowBackground(Color.clear)
-                        }
+                if !isAppTabRoot {
+                    Section {
+                        profileHero
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
                     }
-
-                    Section("Practice") {
-                        section(label: "Defaults") { practiceCard }
-                        section(label: "Daily goal") { dailyGoalCard }
-                        section(label: "Coaching profile") { coachingProfileCard }
-                        section(label: "Language") { localeCard }
-                        section(label: "Pre-rep ambience") { soundscapeCard }
-                    }
-
-                    Section("Notifications") {
-                        section(label: "Reminders") { feedbackCard }
-                    }
-
-                    Section("Account") {
-                        section(label: "Subscription") { subscriptionCard }
-                        section(label: "Privacy & data") { privacyCard }
-                        section(label: "Sign-in") { accountCard }
-                    }
-
-                    Section("About") { aboutCard }
-                    Section { advancedDisclosure }
                 }
+
+                Section("Practice") {
+                    practiceCard
+                    dailyGoalCard
+                    localeCard
+                    soundscapeCard
+                }
+
+                Section("Coaching") {
+                    coachingProfileCard
+                }
+
+                Section("Notifications") {
+                    feedbackCard
+                }
+
+                Section("Account") {
+                    subscriptionCard
+                    privacyCard
+                    accountCard
+                }
+
+                Section("About") {
+                    aboutCard
+                }
+
+                Section {
+                    advancedDisclosure
+                }
+            }
             .listStyle(.insetGrouped)
             .listSectionSpacing(.compact)
             .scrollContentBackground(.hidden)
@@ -554,36 +536,26 @@ struct SettingsView: View {
     }
 
     private var dailyGoalCard: some View {
-        cardContainer(spacing: Spacing.sm) {
-            HStack(spacing: Spacing.xs) {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Daily goal")
+                    .font(.subheadline.weight(.semibold))
+                Text("Choose a pace that fits your week.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: Spacing.sm)
+            Picker("Daily goal", selection: $dailyGoal.goalReps) {
                 ForEach(dailyGoal.minGoalReps...dailyGoal.maxGoalReps, id: \.self) { value in
-                    goalChip(value)
+                    Text("\(value) rep\(value == 1 ? "" : "s")").tag(value)
                 }
             }
-            .accessibilityElement(children: .contain)
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .tint(AppColor.brandBlue)
         }
-    }
-
-    private func goalChip(_ value: Int) -> some View {
-        let isSelected = dailyGoal.goalReps == value
-        return Button {
-            dailyGoal.goalReps = value
-            CoachHaptic.selectionTap()
-        } label: {
-            Text("\(value) rep\(value == 1 ? "" : "s")")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(isSelected ? .white : AppColor.brandBlue)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.sm)
-                .background(
-                    isSelected ? AppColor.brandBlue : AppColor.brandBlue.opacity(0.10),
-                    in: Capsule()
-                )
-        }
-        .buttonStyle(.pressable)
-        .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
-        .accessibilityLabel("Daily goal \(value) rep\(value == 1 ? "" : "s")")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .frame(minHeight: 44)
+        .accessibilityIdentifier("settings.dailyGoal")
     }
 
     private var micDisabledForFillerHighlight: Bool {
@@ -624,37 +596,12 @@ struct SettingsView: View {
     // MARK: - Coaching Profile Card
 
     private var coachingProfileCard: some View {
-        cardContainer(spacing: Spacing.md) {
-            if let profile = coachingProfileStore.profile {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Spacing.xs) {
-                    coachingTag(label: "Context", value: profile.speakingContext.title)
-                    coachingTag(label: "Priority", value: profile.primaryGoal.title)
-                    coachingTag(label: "Challenge", value: profile.challengeDisplayTitle)
-                    coachingTag(
-                        label: "Voice",
-                        value: profile.speakingStyleGoal.title,
-                        icon: profile.speakingStyleGoal.voiceIconSystemName,
-                        tint: profile.speakingStyleGoal.voiceIconTint
-                    )
-                }
-                if !profile.personalGoalReference.isEmpty {
-                    Text(profile.personalGoalReference)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(Spacing.sm)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                }
-            } else {
-                Text("Set a coaching profile so Noum can tailor drills to your goals.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
+        cardContainer(spacing: Spacing.sm) {
             SettingsNavRow(
                 title: coachingProfileStore.profile == nil ? "Set coaching profile" : "Update coaching profile",
+                value: coachingProfileStore.profile.map {
+                    "\($0.primaryGoal.title) · \($0.speakingStyleGoal.title)"
+                },
                 icon: "person.crop.circle.badge.checkmark",
                 accessibilityHint: "Open the coaching profile flow."
             ) {
@@ -670,41 +617,6 @@ struct SettingsView: View {
                 showBigMomentIntake = true
             }
         }
-    }
-
-    private func coachingTag(
-        label: String,
-        value: String,
-        icon: String? = nil,
-        tint: Color = AppColor.brandBlue
-    ) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            if let icon {
-                Image(systemName: icon)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 22, height: 22)
-                    .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .accessibilityHidden(true)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(label)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
-                Text(value)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.sm)
-        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Feedback Card (Reminders + Haptics)
@@ -1523,7 +1435,7 @@ struct SettingsView: View {
                 HStack(spacing: Spacing.xs) {
                     Image(systemName: isRunningAIProviderHealthCheck ? "hourglass" : "waveform.path.ecg")
                         .accessibilityHidden(true)
-                    Text(isRunningAIProviderHealthCheck ? "Checking providers..." : "Run provider checks")
+                    Text(isRunningAIProviderHealthCheck ? "Checking providers..." : "Check providers")
                     Spacer(minLength: Spacing.xs)
                     Image(systemName: "arrow.right.circle.fill")
                         .accessibilityHidden(true)

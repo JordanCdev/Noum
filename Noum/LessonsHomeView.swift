@@ -29,9 +29,10 @@ struct LessonsHomeView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
                     headerCopy
-                    if showsFirstTimeEmptyState {
-                        firstTimeEmptyState
-                    } else {
+                    if let recommendedLesson {
+                        recommendedLessonSection(recommendedLesson)
+                    }
+                    if !showsFirstTimeEmptyState {
                         summaryStrip
                     }
                     lessonsByCategory
@@ -66,7 +67,7 @@ struct LessonsHomeView: View {
             Text("Lessons")
                 .font(Typography.screenTitle)
                 .foregroundStyle(.primary)
-            Text("Build one speaking move at a time. Learn it, spot it, then say it.")
+            Text("Learn one speaking move, then use it in a rep.")
                 .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -84,40 +85,23 @@ struct LessonsHomeView: View {
         return lessonStore.totalPracticePasses == 0 && !everAttempted
     }
 
-    private var firstTimeEmptyState: some View {
-        let recommended = lessonStore.nextRecommendedLesson ?? LessonsCatalog.all.first
-        return EmptyStateView(
-            symbol: "books.vertical.fill",
-            title: "Start with one clear move",
-            body: "A short lesson teaches the idea, helps you hear it, then puts it into a rep.",
-            tint: AppColor.brandBlue,
-            cta: recommended.map { lesson in
-                EmptyStateView.CTA(label: "Start lesson", icon: "play.fill") {
-                    navigationPath.append(AppDestination.lesson(id: lesson.id))
-                }
-            }
-        )
-        .background(firstTimeEmptyStateBackground)
-        .accessibilityIdentifier("emptyState.lessons")
+    private var recommendedLesson: Lesson? {
+        lessonStore.nextRecommendedLesson ?? LessonsCatalog.all.first
     }
 
-    /// The first lesson is the page's single dominant action. Its wash is
-    /// intentionally restrained so the curriculum still reads as a quiet
-    /// learning surface rather than a second practice canvas.
-    private var firstTimeEmptyStateBackground: some View {
-        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-        return ZStack {
-            shape.fill(AppColor.cardBackground)
-            shape.fill(
-                RadialGradient(
-                    colors: [AppColor.brandBlue.opacity(0.12), AppColor.brandBlue.opacity(0.03), Color.clear],
-                    center: .topLeading,
-                    startRadius: 0,
-                    endRadius: 320
-                )
-            )
-            shape.strokeBorder(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
+    private func recommendedLessonSection(_ lesson: Lesson) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text("Recommended lesson")
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(AppColor.brandBlue)
+            lessonRow(lesson)
         }
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.brandBlue.opacity(0.14), lineWidth: 1)
+        )
+        .accessibilityIdentifier("emptyState.lessons")
     }
 
     // MARK: - Summary strip
@@ -157,14 +141,14 @@ struct LessonsHomeView: View {
     private var lessonsByCategory: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
             ForEach(Lesson.Category.allCases, id: \.self) { category in
-                let lessons = LessonsCatalog.all.filter { $0.category == category }
+                let lessons = LessonsCatalog.all.filter {
+                    $0.category == category && $0.id != recommendedLesson?.id
+                }
                 if !lessons.isEmpty {
                     VStack(alignment: .leading, spacing: Spacing.sm) {
                         Text(category.label)
-                            .font(Typography.micro)
+                            .font(Typography.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-                            .tracking(0.8)
 
                         VStack(spacing: 0) {
                             ForEach(Array(lessons.enumerated()), id: \.element.id) { index, lesson in

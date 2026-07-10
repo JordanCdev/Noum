@@ -9,7 +9,6 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct SpeechProjectsView: View {
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var sessionStore = PracticeSessionStore.shared
     @Binding var navigationPath: NavigationPath
     @State private var selectedProject: SpeechProject?
 
@@ -28,9 +27,6 @@ struct SpeechProjectsView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
                     headerCopy
-                    if showsFirstTimeEmptyState {
-                        firstTimeEmptyState
-                    }
                     projectGrid
                     Spacer(minLength: Spacing.lg)
                 }
@@ -57,39 +53,12 @@ struct SpeechProjectsView: View {
             Text("Speech projects")
                 .font(Typography.screenTitle)
                 .foregroundStyle(.primary)
-            Text("\(SpeechProjects.all.count) guided speeches with a clear purpose, target length, and coaching focus.")
+            Text("Choose a guided speech with a clear purpose and coaching focus.")
                 .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    // MARK: - First-time empty state
-
-    /// Shown only when the user has never completed a practice session at all.
-    /// Once a single rep exists, the catalog stands on its own — projects are
-    /// extra credit, not the only entry point.
-    private var showsFirstTimeEmptyState: Bool {
-        sessionStore.sessions.isEmpty
-    }
-
-    private var firstTimeEmptyState: some View {
-        EmptyStateView(
-            symbol: "rectangle.stack.fill",
-            title: "Prepare one complete speech",
-            body: "Start with a guided brief, then rehearse it in a focused timed rep.",
-            tint: AppColor.brandBlue,
-            cta: EmptyStateView.CTA(label: "Open first project", icon: "arrow.right") {
-                selectedProject = SpeechProjects.iceBreaker
-            }
-        )
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(Color.white.opacity(0.72), lineWidth: 1)
-        )
-        .accessibilityIdentifier("emptyState.projects")
     }
 
     private var projectGrid: some View {
@@ -135,11 +104,10 @@ struct SpeechProjectsView: View {
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 6) {
-                    pillTag(text: project.focus.label)
-                    pillTag(text: durationLabel(project.durationTarget))
-                }
-                .padding(.top, 2)
+                Text("\(project.focus.label) · \(durationLabel(project.durationTarget))")
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
             }
 
             Spacer(minLength: 0)
@@ -152,17 +120,6 @@ struct SpeechProjectsView: View {
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-    }
-
-    private func pillTag(text: String) -> some View {
-        Text(text)
-            .font(Typography.micro)
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .tracking(0.6)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(AppColor.tagBackground, in: Capsule())
     }
 
     private func durationLabel(_ seconds: TimeInterval) -> String {

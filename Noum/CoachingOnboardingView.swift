@@ -57,7 +57,6 @@ struct CoachingOnboardingView: View {
     @State private var whyNow = ""
     @State private var successVision = ""
     @State private var isSaving = false
-    @State private var showProfileCard = false
     @State private var isEditingExistingProfile = false
     @State private var editorOverlayField: InputField? = nil
     @State private var editorOverlayText = ""
@@ -217,7 +216,7 @@ struct CoachingOnboardingView: View {
                     }
                 } label: {
                     HStack(spacing: 12) {
-                        Text(isEditingExistingProfile ? "Review profile" : "Begin")
+                        Text(isEditingExistingProfile ? "Review profile" : "Start setup")
                             .font(.headline.weight(.semibold))
 
                         Spacer()
@@ -255,7 +254,7 @@ struct CoachingOnboardingView: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(heroCardBackground.matchedGeometryEffect(id: "heroCard", in: headerNamespace))
+        .background(Color.clear.matchedGeometryEffect(id: "heroCard", in: headerNamespace))
     }
 
     private func questionScreen(stage: OnboardingStage, size: CGSize) -> some View {
@@ -290,7 +289,7 @@ struct CoachingOnboardingView: View {
         .frame(height: 82)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(heroCardBackground.matchedGeometryEffect(id: "heroCard", in: headerNamespace))
+        .background(Color.clear.matchedGeometryEffect(id: "heroCard", in: headerNamespace))
     }
 
     private func questionCard(stage: OnboardingStage) -> some View {
@@ -379,67 +378,12 @@ struct CoachingOnboardingView: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .fill(Color.white.opacity(0.95))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .stroke(Color.white.opacity(0.90), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.04), radius: 12, y: 6)
+        .background(Color.clear)
     }
 
     private func summaryScreen(size: CGSize) -> some View {
-        VStack(spacing: 0) {
-            if showProfileCard {
-                // Interactive profile summary card
-                profileSummaryCard(size: size)
-                    .transition(.asymmetric(
-                        insertion: .scale(scale: 0.95).combined(with: .opacity),
-                        removal: .opacity
-                    ))
-            } else {
-                Spacer()
-
-                completionState
-                    .padding(.horizontal, 40)
-
-                Spacer()
-            }
-        }
+        profileSummaryCard(size: size)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            startCompletionReveal()
-        }
-    }
-
-    private var completionState: some View {
-        VStack(spacing: 24) {
-            ZStack {
-                Circle()
-                    .fill(AppColor.brandBlue.opacity(0.10))
-                    .frame(width: 72, height: 72)
-
-                Image(systemName: "checkmark")
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(AppColor.brandBlue)
-            }
-            .transition(.scale(scale: 0.5).combined(with: .opacity))
-
-            VStack(spacing: 8) {
-                Text(isEditingExistingProfile ? "Profile updated" : "Ready for your first rep")
-                    .font(Typography.screenTitle)
-                    .foregroundStyle(AppColor.textPrimary)
-
-                Text(isEditingExistingProfile
-                    ? "Your next recommendation will use these choices."
-                    : "Noum will start with this direction and adapt from your evidence.")
-                    .font(.headline.weight(.medium))
-                    .foregroundStyle(AppColor.textSecondary)
-            }
-            .transition(.opacity.combined(with: .offset(y: 16)))
-        }
     }
 
     private func profileSummaryCard(size: CGSize) -> some View {
@@ -491,37 +435,8 @@ struct CoachingOnboardingView: View {
                             tint: speakingStyleGoal?.voiceIconTint ?? AppColor.brandBlue
                         )
 
-                        if !coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            profileRow(
-                                icon: "target",
-                                label: "Your goal",
-                                value: coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines)
-                            )
-                        }
-
-                        if !whyNow.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            profileRow(
-                                icon: "bolt.fill",
-                                label: "Why now",
-                                value: whyNow.trimmingCharacters(in: .whitespacesAndNewlines)
-                            )
-                        }
-
-                        if !successVision.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            profileRow(
-                                icon: "star.fill",
-                                label: "Success looks like",
-                                value: successVision.trimmingCharacters(in: .whitespacesAndNewlines)
-                            )
-                        }
                     }
                     .padding(.horizontal, Spacing.md)
-
-                    // Coach commitment: the profile read back in the coach's own
-                    // voice, plus the honesty stance stated up front — evidence
-                    // before any verdict. Enum-derived; never quotes user text.
-                    coachCommitmentCard
-                        .padding(.horizontal, Spacing.md)
                 }
                 .padding(.bottom, Spacing.lg)
             }
@@ -623,15 +538,6 @@ struct CoachingOnboardingView: View {
             RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                 .fill(AppColor.innerSurface)
         )
-    }
-
-    private func startCompletionReveal() {
-        guard !showProfileCard else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + OnboardingCompletionTiming.profileRevealDelay) {
-            animate(.standardSpring) {
-                showProfileCard = true
-            }
-        }
     }
 
     private func optionList<Option: Identifiable & CaseIterable & Hashable>(

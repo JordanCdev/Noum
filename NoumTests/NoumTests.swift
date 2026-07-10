@@ -38617,12 +38617,12 @@ struct WeeklyCheckInCopyTests {
             WeeklyCheckInCopy.drillHelper
         ].joined(separator: " ")
 
-        #expect(combined.contains("your words"))
-        #expect(combined.contains("self-report"))
-        #expect(combined.contains("without guessing"))
-        #expect(combined.contains("No score. No diagnosis."))
+        #expect(combined.contains("Your words"))
+        #expect(combined.contains("not a score"))
+        #expect(combined.contains("your own read"))
         #expect(!combined.lowercased().contains("we know"))
         #expect(!combined.lowercased().contains("proof that"))
+        #expect(!combined.lowercased().contains("diagnosis"))
     }
 
     @Test func promptIDsMatchPersistedCheckInFields() {
