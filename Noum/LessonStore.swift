@@ -10,17 +10,22 @@ struct LessonProgress: Codable, Equatable {
     /// 0-5. 0 = never attempted. 1 = first pass. 5 = mastered.
     var practicePassCount: Int
     var lastCompletedAt: Date?
+    /// The last successful pass that counted toward spaced retention. Added
+    /// after launch; legacy records infer this from `lastCompletedAt`.
+    var lastPassedAt: Date?
     var totalAttempts: Int
 
     init(
         lessonID: String,
         practicePassCount: Int,
         lastCompletedAt: Date?,
-        totalAttempts: Int
+        totalAttempts: Int,
+        lastPassedAt: Date? = nil
     ) {
         self.lessonID = lessonID
         self.practicePassCount = practicePassCount
         self.lastCompletedAt = lastCompletedAt
+        self.lastPassedAt = lastPassedAt
         self.totalAttempts = totalAttempts
     }
 
@@ -33,6 +38,7 @@ struct LessonProgress: Codable, Equatable {
         case practicePassCount
         case legacyCrownLevel = "crownLevel"
         case lastCompletedAt
+        case lastPassedAt
         case totalAttempts
     }
 
@@ -45,6 +51,8 @@ struct LessonProgress: Codable, Equatable {
             practicePassCount = try container.decodeIfPresent(Int.self, forKey: .legacyCrownLevel) ?? 0
         }
         lastCompletedAt = try container.decodeIfPresent(Date.self, forKey: .lastCompletedAt)
+        lastPassedAt = try container.decodeIfPresent(Date.self, forKey: .lastPassedAt)
+            ?? (practicePassCount > 0 ? lastCompletedAt : nil)
         totalAttempts = try container.decodeIfPresent(Int.self, forKey: .totalAttempts) ?? 0
     }
 
@@ -53,7 +61,89 @@ struct LessonProgress: Codable, Equatable {
         try container.encode(lessonID, forKey: .lessonID)
         try container.encode(practicePassCount, forKey: .practicePassCount)
         try container.encodeIfPresent(lastCompletedAt, forKey: .lastCompletedAt)
+        try container.encodeIfPresent(lastPassedAt, forKey: .lastPassedAt)
         try container.encode(totalAttempts, forKey: .totalAttempts)
+    }
+}
+
+// MARK: - Retention schedule
+
+enum LessonReviewState: Equatable {
+    case new
+    case ready(dueAt: Date)
+    case waiting(dueAt: Date)
+}
+
+/// A deliberately modest expanding schedule. It does not claim to find an
+/// individually optimal interval; it prevents same-session repetition from
+/// being presented as durable learning and gives the curriculum a clear
+/// revisit rhythm.
+enum LessonReviewSchedule {
+    static let day: TimeInterval = 86_400
+    static let intervals: [TimeInterval] = [
+        0,
+        day,
+        3 * day,
+        7 * day,
+        14 * day,
+        30 * day
+    ]
+
+    static func state(for progress: LessonProgress, now: Date = Date()) -> LessonReviewState {
+        guard progress.practicePassCount > 0 else { return .new }
+        let anchor = progress.lastPassedAt ?? progress.lastCompletedAt
+        guard let anchor else { return .ready(dueAt: now) }
+        let index = min(progress.practicePassCount, intervals.count - 1)
+        let dueAt = anchor.addingTimeInterval(intervals[index])
+        return dueAt <= now ? .ready(dueAt: dueAt) : .waiting(dueAt: dueAt)
+    }
+
+    static func canCountAnotherPass(for progress: LessonProgress, now: Date = Date()) -> Bool {
+        switch state(for: progress, now: now) {
+        case .new, .ready: return true
+        case .waiting: return false
+        }
+    }
+
+    static func dueDate(for progress: LessonProgress) -> Date? {
+        guard progress.practicePassCount > 0 else { return nil }
+        guard let anchor = progress.lastPassedAt ?? progress.lastCompletedAt else { return nil }
+        let index = min(progress.practicePassCount, intervals.count - 1)
+        return anchor.addingTimeInterval(intervals[index])
+    }
+}
+
+struct LessonProgressUpdate: Equatable {
+    let outcomePassed: Bool
+    let didAdvanceRetention: Bool
+    let didCompleteMaintenanceReview: Bool
+
+    var earnsXP: Bool { didAdvanceRetention || didCompleteMaintenanceReview }
+}
+
+enum LessonRecommendationEngine {
+    static func recommendedLesson(
+        catalog: [Lesson],
+        progressByID: [String: LessonProgress],
+        now: Date = Date()
+    ) -> Lesson? {
+        let progress: (Lesson) -> LessonProgress = { lesson in
+            progressByID[lesson.id] ?? .empty(lessonID: lesson.id)
+        }
+
+        let due = catalog.filter { lesson in
+            guard progress(lesson).practicePassCount > 0 else { return false }
+            if case .ready = LessonReviewSchedule.state(for: progress(lesson), now: now) { return true }
+            return false
+        }
+        if let oldestDue = due.min(by: {
+            (LessonReviewSchedule.dueDate(for: progress($0)) ?? .distantPast)
+                < (LessonReviewSchedule.dueDate(for: progress($1)) ?? .distantPast)
+        }) {
+            return oldestDue
+        }
+
+        return catalog.first(where: { progress($0).practicePassCount == 0 })
     }
 }
 
@@ -71,32 +161,61 @@ struct LessonProgressPresentation: Equatable {
     }
 
     var accessibilityLabel: String {
-        "\(completedPasses) of \(Self.masteryPassCap) practice passes complete"
+        "\(completedPasses) of \(Self.masteryPassCap) spaced practice rounds complete"
     }
 
     func lessonSummaryLine(title: String) -> String {
         if completedPasses >= Self.masteryPassCap {
-            return "You've completed all five passes of \(title)."
+            return "You've completed five spaced rounds of \(title)."
         }
         if completedPasses == 1 {
-            return "First practice pass complete. Four more passes to complete."
+            return "First round complete. Revisit it after a little time has passed."
         }
-        return "\(completedPasses) of \(Self.masteryPassCap) practice passes on \(title)."
+        return "\(completedPasses) of \(Self.masteryPassCap) spaced rounds on \(title)."
     }
 
     func celebrationLine(for kind: LessonCelebration.Kind) -> String {
         switch kind {
         case .unlocked:
-            return "First practice pass complete. Four more passes to complete."
+            return "First round complete. Use the move live before you revisit it."
         case .levelUp:
-            return "\(completedPasses) of \(Self.masteryPassCap) practice passes."
+            return "\(completedPasses) of \(Self.masteryPassCap) spaced rounds."
         case .mastered:
-            return "All five practice passes complete. Keep using the technique in live reps."
+            return "Five spaced rounds complete. Keep using the move in live conversations."
         }
     }
 
     static func aggregateValue(totalCompleted: Int, lessonCount: Int) -> String {
         "\(totalCompleted)/\(lessonCount * masteryPassCap)"
+    }
+}
+
+struct LessonReviewPresentation: Equatable {
+    let progress: LessonProgress
+    let now: Date
+    let calendar: Calendar
+
+    init(progress: LessonProgress, now: Date = Date(), calendar: Calendar = .current) {
+        self.progress = progress
+        self.now = now
+        self.calendar = calendar
+    }
+
+    var rowLabel: String {
+        switch LessonReviewSchedule.state(for: progress, now: now) {
+        case .new:
+            return "New"
+        case .ready:
+            return "Ready to revisit"
+        case .waiting(let dueAt):
+            let days = max(1, calendar.dateComponents(
+                [.day],
+                from: calendar.startOfDay(for: now),
+                to: calendar.startOfDay(for: dueAt)
+            ).day ?? 1)
+            let prefix = "\(progress.practicePassCount) spaced \(progress.practicePassCount == 1 ? "round" : "rounds")"
+            return days == 1 ? "\(prefix) · Review tomorrow" : "\(prefix) · Review in \(days) days"
+        }
     }
 }
 
@@ -150,24 +269,50 @@ final class LessonStore: ObservableObject {
     ///    by catalog order (so the user works the curriculum).
     /// 3. Returns nil only when every lesson is mastered.
     var nextRecommendedLesson: Lesson? {
-        let untouched = LessonsCatalog.all.first(where: { practicePassCount(for: $0.id) == 0 })
-        if let untouched { return untouched }
-        return LessonsCatalog.all
-            .filter { practicePassCount(for: $0.id) < Self.masteryPassCap }
-            .min(by: { practicePassCount(for: $0.id) < practicePassCount(for: $1.id) })
+        nextRecommendedLesson(at: Date())
+    }
+
+    func nextRecommendedLesson(at now: Date) -> Lesson? {
+        LessonRecommendationEngine.recommendedLesson(
+            catalog: LessonsCatalog.all,
+            progressByID: progress,
+            now: now
+        )
+    }
+
+    func reviewState(for lessonID: String, now: Date = Date()) -> LessonReviewState {
+        LessonReviewSchedule.state(for: progress(for: lessonID), now: now)
+    }
+
+    var reviewsReadyCount: Int {
+        LessonsCatalog.all.filter { lesson in
+            if case .ready = LessonReviewSchedule.state(for: progress(for: lesson.id)) { return true }
+            return false
+        }.count
     }
 
     /// Apply a lesson outcome. Raises practice-pass progress if passed. Fires
     /// a celebration the first time a lesson is cleared or when progress
     /// crosses a milestone (1, 3, 5).
-    func apply(outcome: LessonOutcome) {
+    @discardableResult
+    func apply(outcome: LessonOutcome, now: Date = Date()) -> LessonProgressUpdate {
         var current = progress(for: outcome.lessonID)
         let priorPassCount = current.practicePassCount
+        let canCountAnotherPass = LessonReviewSchedule.canCountAnotherPass(for: current, now: now)
         current.totalAttempts += 1
-        current.lastCompletedAt = Date()
+        current.lastCompletedAt = now
 
-        if outcome.passed {
-            current.practicePassCount = min(Self.masteryPassCap, current.practicePassCount + 1)
+        var didAdvanceRetention = false
+        var didCompleteMaintenanceReview = false
+
+        if outcome.passed && canCountAnotherPass {
+            current.lastPassedAt = now
+            if current.practicePassCount < Self.masteryPassCap {
+                current.practicePassCount += 1
+                didAdvanceRetention = true
+            } else {
+                didCompleteMaintenanceReview = true
+            }
         }
 
         progress[outcome.lessonID] = current
@@ -177,7 +322,13 @@ final class LessonStore: ObservableObject {
         let didUnlock = priorPassCount == 0 && current.practicePassCount > 0
         let didMaster = current.practicePassCount == Self.masteryPassCap && priorPassCount != Self.masteryPassCap
 
-        guard didLevelUp else { return }
+        guard didLevelUp else {
+            return LessonProgressUpdate(
+                outcomePassed: outcome.passed,
+                didAdvanceRetention: didAdvanceRetention,
+                didCompleteMaintenanceReview: didCompleteMaintenanceReview
+            )
+        }
 
         let kind: LessonCelebration.Kind
         if didMaster { kind = .mastered }
@@ -188,6 +339,11 @@ final class LessonStore: ObservableObject {
             lessonID: outcome.lessonID,
             kind: kind,
             practicePassCount: current.practicePassCount
+        )
+        return LessonProgressUpdate(
+            outcomePassed: outcome.passed,
+            didAdvanceRetention: didAdvanceRetention,
+            didCompleteMaintenanceReview: didCompleteMaintenanceReview
         )
     }
 
@@ -240,9 +396,9 @@ struct LessonCelebration: Equatable {
 
         var headline: String {
             switch self {
-            case .unlocked: return "Lesson cleared"
-            case .levelUp:  return "Practice pass added"
-            case .mastered: return "Five passes complete"
+        case .unlocked: return "Lesson cleared"
+            case .levelUp:  return "Practice retained"
+            case .mastered: return "Five spaced rounds complete"
             }
         }
     }

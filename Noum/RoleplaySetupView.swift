@@ -80,8 +80,13 @@ struct RoleplaySetupView: View {
                 AppColor.screenBackground.ignoresSafeArea()
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: Spacing.lg) {
-                        Text("Scenario")
-                            .font(Typography.cardTitle)
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
+                            Text("Choose a conversation")
+                                .font(Typography.cardTitle)
+                            Text("Eight situations, from discovery to difficult repair.")
+                                .font(Typography.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         scenarioList
                         pressurePicker
                     }
@@ -101,11 +106,21 @@ struct RoleplaySetupView: View {
     }
 
     private var scenarioList: some View {
-        VStack(spacing: Spacing.sm) {
-            ForEach(RoleplayCatalog.all) { scenario in
+        VStack(spacing: 0) {
+            ForEach(Array(RoleplayCatalog.all.enumerated()), id: \.element.id) { index, scenario in
                 scenarioCard(scenario)
+                if index < RoleplayCatalog.all.count - 1 {
+                    Divider()
+                        .padding(.leading, 68)
+                }
             }
         }
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+        )
     }
 
     private func scenarioCard(_ scenario: RoleplayScenario) -> some View {
@@ -121,17 +136,13 @@ struct RoleplaySetupView: View {
                     .background(AppColor.modeIM.opacity(0.10), in: Circle())
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(scenario.title)
                         .font(Typography.headline)
                         .foregroundStyle(.primary)
-                    Text("\(scenario.personaName) — \(scenario.personaRole)")
+                    Text(scenario.personaRole)
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
-                    Text(scenario.objective)
-                        .font(Typography.body)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -142,13 +153,11 @@ struct RoleplaySetupView: View {
                 }
             }
             .padding(Spacing.md)
+            .frame(minHeight: 64)
+            .background(isSelected ? AppColor.modeIM.opacity(0.06) : Color.clear)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.pressable)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(isSelected ? AppColor.modeIM.opacity(0.35) : Color.black.opacity(0.05), lineWidth: isSelected ? 1.5 : 1)
-        )
+        .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("roleplay.scenario.\(scenario.scenarioId)")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])

@@ -73,17 +73,48 @@ enum RoleplayEngine {
         var hedgeCount: Int
         var hasEarlyDirectAnswer: Bool
         var evidenceMarkerCount: Int
+        var acknowledgementMarkerCount: Int
+        var ownershipMarkerCount: Int
+        var actionMarkerCount: Int
+        var questionSignalCount: Int
     }
 
     static let fillerWords: Set<String> = ["um", "uh", "like", "basically", "actually", "literally", "sort", "kind"]
     static let hedgePhrases: [String] = ["i think", "i guess", "maybe", "not sure", "kind of", "sort of", "probably"]
     static let evidenceMarkers: [String] = ["because", "for example", "specifically", "last quarter", "last month", "the data", "%"]
+    static let acknowledgementMarkers: [String] = [
+        "i hear", "i understand", "it sounds like", "what i'm hearing",
+        "what i hear", "i can see", "that makes sense", "you're saying",
+        "you are saying"
+    ]
+    static let ownershipMarkers: [String] = [
+        "i was wrong", "i should have", "my part", "i interrupted",
+        "i dismissed", "i'm sorry", "i am sorry", "i take responsibility"
+    ]
+    static let actionMarkers: [String] = [
+        "next time", "from now on", "i will", "i'll", "could you",
+        "can we", "i propose", "the next step", "instead", "going forward"
+    ]
+    static let questionStarters: [String] = [
+        "what", "how", "why", "when", "where", "who", "which",
+        "could", "would", "can", "do", "did", "is", "are"
+    ]
 
     static func analyze(_ response: String) -> ResponseSignals {
         let normalized = response.lowercased()
         let words = normalized.split { !$0.isLetter && !$0.isNumber }.map(String.init)
         guard !words.isEmpty else {
-            return ResponseSignals(wordCount: 0, fillerRatio: 0, hedgeCount: 0, hasEarlyDirectAnswer: false, evidenceMarkerCount: 0)
+            return ResponseSignals(
+                wordCount: 0,
+                fillerRatio: 0,
+                hedgeCount: 0,
+                hasEarlyDirectAnswer: false,
+                evidenceMarkerCount: 0,
+                acknowledgementMarkerCount: 0,
+                ownershipMarkerCount: 0,
+                actionMarkerCount: 0,
+                questionSignalCount: 0
+            )
         }
 
         let fillerCount = words.filter { fillerWords.contains($0) }.count
@@ -100,13 +131,33 @@ enum RoleplayEngine {
         let evidenceMarkerCount = evidenceMarkers.reduce(into: 0) { count, marker in
             if normalized.contains(marker) { count += 1 }
         }
+        let acknowledgementMarkerCount = acknowledgementMarkers.reduce(into: 0) { count, marker in
+            if normalized.contains(marker) { count += 1 }
+        }
+        let ownershipMarkerCount = ownershipMarkers.reduce(into: 0) { count, marker in
+            if normalized.contains(marker) { count += 1 }
+        }
+        let actionMarkerCount = actionMarkers.reduce(into: 0) { count, marker in
+            if normalized.contains(marker) { count += 1 }
+        }
+        let punctuationQuestions = response.filter { $0 == "?" }.count
+        let starterQuestions = questionStarters.reduce(into: 0) { count, starter in
+            let padded = " " + normalized + " "
+            if normalized.hasPrefix(starter + " ") || padded.contains(" \(starter) ") {
+                count += 1
+            }
+        }
 
         return ResponseSignals(
             wordCount: words.count,
             fillerRatio: fillerRatio,
             hedgeCount: hedgeCount,
             hasEarlyDirectAnswer: hasEarlyDirectAnswer,
-            evidenceMarkerCount: evidenceMarkerCount
+            evidenceMarkerCount: evidenceMarkerCount,
+            acknowledgementMarkerCount: acknowledgementMarkerCount,
+            ownershipMarkerCount: ownershipMarkerCount,
+            actionMarkerCount: actionMarkerCount,
+            questionSignalCount: max(punctuationQuestions, starterQuestions)
         )
     }
 
@@ -114,11 +165,23 @@ enum RoleplayEngine {
         var directness: Double
         var evidence: Double
         var composure: Double
+        var listening: Double
+        var ownership: Double
+        var constructiveness: Double
+        var inquiry: Double
     }
 
     static func axisScores(for signals: ResponseSignals) -> AxisScores {
         guard signals.wordCount > 0 else {
-            return AxisScores(directness: 0, evidence: 0, composure: 0)
+            return AxisScores(
+                directness: 0,
+                evidence: 0,
+                composure: 0,
+                listening: 0,
+                ownership: 0,
+                constructiveness: 0,
+                inquiry: 0
+            )
         }
 
         var directness = signals.hasEarlyDirectAnswer ? 0.75 : 0.35
@@ -135,7 +198,33 @@ enum RoleplayEngine {
         composure -= min(0.3, signals.fillerRatio * 1.5)
         composure = clamp(composure)
 
-        return AxisScores(directness: directness, evidence: evidence, composure: composure)
+        var listening = Double(signals.acknowledgementMarkerCount) * 0.4
+        listening += min(0.35, Double(signals.questionSignalCount) * 0.2)
+        if signals.wordCount >= 8 { listening += 0.15 }
+        listening = clamp(listening)
+
+        var ownership = Double(signals.ownershipMarkerCount) * 0.4
+        if signals.wordCount >= 8 { ownership += 0.15 }
+        ownership = clamp(ownership)
+
+        var constructiveness = Double(signals.actionMarkerCount) * 0.35
+        if signals.hasEarlyDirectAnswer { constructiveness += 0.2 }
+        if signals.wordCount >= 10 { constructiveness += 0.15 }
+        constructiveness = clamp(constructiveness)
+
+        var inquiry = Double(signals.questionSignalCount) * 0.35
+        if signals.acknowledgementMarkerCount > 0 { inquiry += 0.2 }
+        inquiry = clamp(inquiry)
+
+        return AxisScores(
+            directness: directness,
+            evidence: evidence,
+            composure: composure,
+            listening: listening,
+            ownership: ownership,
+            constructiveness: constructiveness,
+            inquiry: inquiry
+        )
     }
 
     private static func clamp(_ value: Double, _ lower: Double = 0, _ upper: Double = 1) -> Double {
@@ -147,6 +236,10 @@ enum RoleplayEngine {
         case "Directness": return axes.directness
         case "Evidence": return axes.evidence
         case "Composure": return axes.composure
+        case "Listening": return axes.listening
+        case "Ownership": return axes.ownership
+        case "Constructiveness": return axes.constructiveness
+        case "Inquiry": return axes.inquiry
         default: return nil
         }
     }
