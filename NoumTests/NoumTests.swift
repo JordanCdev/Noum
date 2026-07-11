@@ -13888,6 +13888,84 @@ struct FirstRunFrictionContractTests {
         ))
     }
 
+    @Test func backendBootstrapAlsoRequiresTheCurrentHydrationGeneration() {
+        let generation = UUID()
+        #expect(AuthManager.shouldApplyHydrationBootstrap(
+            requestedGeneration: generation,
+            activeGeneration: generation,
+            requestedAccountID: "account-a",
+            requestedProviderRawValue: "apple",
+            currentAccountID: "account-a",
+            currentProviderRawValue: "apple"
+        ))
+        #expect(!AuthManager.shouldApplyHydrationBootstrap(
+            requestedGeneration: generation,
+            activeGeneration: UUID(),
+            requestedAccountID: "account-a",
+            requestedProviderRawValue: "apple",
+            currentAccountID: "account-a",
+            currentProviderRawValue: "apple"
+        ))
+    }
+
+    @MainActor
+    @Test func initialRemoteProfileTimeoutClosesTheLateResultBoundary() async {
+        let race = InitialRemoteProfileHydrationRace()
+        let outcome = await AuthManager.waitForInitialRemoteProfileHydration(
+            race: race,
+            timeoutNanoseconds: 1_000_000
+        )
+        let didTimeOut: Bool
+        if case .timedOut = outcome {
+            didTimeOut = true
+        } else {
+            didTimeOut = false
+        }
+        #expect(didTimeOut)
+        #expect(!race.resolve(.fetched(nil)))
+    }
+
+    @MainActor
+    @Test func fetchedRemoteProfileCanWinBeforeTheDeadline() async {
+        let race = InitialRemoteProfileHydrationRace()
+        #expect(race.resolve(.fetched(nil)))
+        let outcome = await AuthManager.waitForInitialRemoteProfileHydration(
+            race: race,
+            timeoutNanoseconds: 0
+        )
+        let didFetch: Bool
+        if case .fetched = outcome {
+            didFetch = true
+        } else {
+            didFetch = false
+        }
+        #expect(didFetch)
+        #expect(!race.resolve(.timedOut))
+    }
+
+    @MainActor
+    @Test func hydratedProfileNeverReplacesANewerLocalSaveOrEdit() {
+        let original = firstRunProfile(coachingBrief: "Original direction")
+        let edited = firstRunProfile(coachingBrief: "Updated direction")
+
+        #expect(AuthManager.shouldReplaceHydratedProfile(
+            expectedProfile: nil,
+            currentProfile: nil
+        ))
+        #expect(!AuthManager.shouldReplaceHydratedProfile(
+            expectedProfile: nil,
+            currentProfile: original
+        ))
+        #expect(AuthManager.shouldReplaceHydratedProfile(
+            expectedProfile: original,
+            currentProfile: original
+        ))
+        #expect(!AuthManager.shouldReplaceHydratedProfile(
+            expectedProfile: original,
+            currentProfile: edited
+        ))
+    }
+
     @Test func timedOutGuestBootstrapRejectsItsLateFirebaseCompletion() {
         let requested = UUID()
         #expect(AuthManager.shouldAcceptGuestBootstrapCompletion(
@@ -13929,6 +14007,21 @@ struct FirstRunFrictionContractTests {
             persistedAccountID: "incomplete-account",
             persistedProviderRawValue: nil
         ))
+    }
+
+    private func firstRunProfile(coachingBrief: String) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .inconsistent,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .concise,
+            styleReference: "",
+            coachingBrief: coachingBrief,
+            motivationWhyNow: "",
+            successVision: ""
+        )
     }
 }
 

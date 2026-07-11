@@ -100,6 +100,41 @@ private final class AnonymousFirebaseBootstrapRace {
     }
 }
 
+enum InitialRemoteProfileHydrationOutcome {
+    case fetched(BackendBootstrap?)
+    case timedOut
+    case superseded
+}
+
+/// One-shot boundary for the initial remote profile read. Firestore writes may
+/// never call their completion while offline, so the app root must not await
+/// that callback directly.
+@MainActor
+final class InitialRemoteProfileHydrationRace {
+    private var continuation: CheckedContinuation<InitialRemoteProfileHydrationOutcome, Never>?
+    private var pendingOutcome: InitialRemoteProfileHydrationOutcome?
+
+    func wait() async -> InitialRemoteProfileHydrationOutcome {
+        if let pendingOutcome {
+            return pendingOutcome
+        }
+        return await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    @discardableResult
+    func resolve(_ outcome: InitialRemoteProfileHydrationOutcome) -> Bool {
+        guard pendingOutcome == nil else { return false }
+        pendingOutcome = outcome
+        if let continuation {
+            self.continuation = nil
+            continuation.resume(returning: outcome)
+        }
+        return true
+    }
+}
+
 @MainActor
 class AuthManager: ObservableObject {
     static let shared = AuthManager()
@@ -121,8 +156,10 @@ class AuthManager: ObservableObject {
     private var activeGuestBootstrapGeneration: UUID?
     private var activeGuestBootstrapRace: AnonymousFirebaseBootstrapRace?
     private var activeAccountHydrationGeneration: UUID?
+    private var activeInitialRemoteProfileHydrationRace: InitialRemoteProfileHydrationRace?
     private static let localGuestPrefix = "local-guest-"
     private static let guestBootstrapTimeoutNanoseconds: UInt64 = 4_000_000_000
+    private static let initialRemoteProfileTimeoutNanoseconds: UInt64 = 4_000_000_000
     var currentAccountID: String? { KeychainHelper.load(key: accountKey) }
     var currentAccountName: String? { KeychainHelper.load(key: accountNameKey) }
     var currentAuthProviderTitle: String? { authProvider?.title }
@@ -656,7 +693,7 @@ class AuthManager: ObservableObject {
 
     func signOut() {
         cancelActiveGuestBootstrap()
-        activeAccountHydrationGeneration = nil
+        cancelActiveAccountHydration()
         AutoGuidedFirstRep.cancelPendingLaunch()
         credentialIdentity = nil
 #if canImport(GoogleSignIn)
@@ -866,6 +903,7 @@ class AuthManager: ObservableObject {
         providerRawValue: String,
         fetchRemote: Bool
     ) {
+        cancelActiveAccountHydration()
         let generation = UUID()
         activeAccountHydrationGeneration = generation
         initialAccountHydrationState = .hydratingStores
@@ -889,15 +927,39 @@ class AuthManager: ObservableObject {
                 && CoachingProfileStore.shared.profile == nil
 
             if shouldAwaitRemoteProfile {
-                await self.fetchAndApplyBackendBootstrap(
+                let outcome = await self.boundedInitialRemoteProfileHydration(
                     accountID: accountID,
                     providerRawValue: providerRawValue
                 )
+                switch outcome {
+                case .fetched(let bootstrap):
+                    guard self.isCurrentHydration(
+                        generation: generation,
+                        accountID: accountID,
+                        providerRawValue: providerRawValue
+                    ) else { return }
+                    if let bootstrap {
+                        self.applyBackendBootstrap(
+                            bootstrap,
+                            accountID: accountID,
+                            providerRawValue: providerRawValue,
+                            generation: generation,
+                            expectedProfile: nil
+                        )
+                    }
+                case .timedOut:
+                    break
+                case .superseded:
+                    return
+                }
             } else if fetchRemote {
+                let expectedProfile = CoachingProfileStore.shared.profile
                 Task { @MainActor in
                     await self.fetchAndApplyBackendBootstrap(
                         accountID: accountID,
-                        providerRawValue: providerRawValue
+                        providerRawValue: providerRawValue,
+                        generation: generation,
+                        expectedProfile: expectedProfile
                     )
                 }
             }
@@ -1010,12 +1072,30 @@ class AuthManager: ObservableObject {
         accountID: String,
         providerRawValue: String
     ) -> Bool {
-        activeAccountHydrationGeneration == generation
-            && Self.shouldApplyBackendBootstrap(
-                requestedAccountID: accountID,
-                requestedProviderRawValue: providerRawValue,
+        Self.shouldApplyHydrationBootstrap(
+            requestedGeneration: generation,
+            activeGeneration: activeAccountHydrationGeneration,
+            requestedAccountID: accountID,
+            requestedProviderRawValue: providerRawValue,
+            currentAccountID: currentAccountID,
+            currentProviderRawValue: currentAuthProviderRawValue
+        )
+    }
+
+    nonisolated static func shouldApplyHydrationBootstrap(
+        requestedGeneration: UUID,
+        activeGeneration: UUID?,
+        requestedAccountID: String,
+        requestedProviderRawValue: String,
+        currentAccountID: String?,
+        currentProviderRawValue: String?
+    ) -> Bool {
+        requestedGeneration == activeGeneration
+            && shouldApplyBackendBootstrap(
+                requestedAccountID: requestedAccountID,
+                requestedProviderRawValue: requestedProviderRawValue,
                 currentAccountID: currentAccountID,
-                currentProviderRawValue: currentAuthProviderRawValue
+                currentProviderRawValue: currentProviderRawValue
             )
     }
 
@@ -1096,6 +1176,12 @@ class AuthManager: ObservableObject {
         activeGuestBootstrapRace = nil
     }
 
+    private func cancelActiveAccountHydration() {
+        activeAccountHydrationGeneration = nil
+        activeInitialRemoteProfileHydrationRace?.resolve(.superseded)
+        activeInitialRemoteProfileHydrationRace = nil
+    }
+
     private func deferStoreSessionReset() {
         Task { @MainActor in
             await Task.yield()
@@ -1155,9 +1241,58 @@ class AuthManager: ObservableObject {
 #endif
     }
 
-    private func fetchAndApplyBackendBootstrap(
+    private func boundedInitialRemoteProfileHydration(
         accountID: String,
         providerRawValue: String
+    ) async -> InitialRemoteProfileHydrationOutcome {
+        let race = InitialRemoteProfileHydrationRace()
+        activeInitialRemoteProfileHydrationRace = race
+
+        // Deliberately unstructured. A structured timeout race would still
+        // wait for a cancelled Firestore continuation that never resumes.
+        Task { @MainActor in
+            let bootstrap = await BackendSyncManager.shared.fetchBootstrap(
+                accountID: accountID,
+                providerRawValue: providerRawValue
+            )
+            race.resolve(.fetched(bootstrap))
+        }
+
+        let outcome = await Self.waitForInitialRemoteProfileHydration(
+            race: race,
+            timeoutNanoseconds: Self.initialRemoteProfileTimeoutNanoseconds
+        )
+        if activeInitialRemoteProfileHydrationRace === race {
+            activeInitialRemoteProfileHydrationRace = nil
+        }
+        return outcome
+    }
+
+    static func waitForInitialRemoteProfileHydration(
+        race: InitialRemoteProfileHydrationRace,
+        timeoutNanoseconds: UInt64
+    ) async -> InitialRemoteProfileHydrationOutcome {
+        // This timer is intentionally unstructured so resolving the deadline
+        // never waits for the remote operation to acknowledge cancellation.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+            race.resolve(.timedOut)
+        }
+        return await race.wait()
+    }
+
+    static func shouldReplaceHydratedProfile(
+        expectedProfile: CoachingProfile?,
+        currentProfile: CoachingProfile?
+    ) -> Bool {
+        expectedProfile == currentProfile
+    }
+
+    private func fetchAndApplyBackendBootstrap(
+        accountID: String,
+        providerRawValue: String,
+        generation: UUID,
+        expectedProfile: CoachingProfile?
     ) async {
         guard let bootstrap = await BackendSyncManager.shared.fetchBootstrap(
             accountID: accountID,
@@ -1166,7 +1301,26 @@ class AuthManager: ObservableObject {
             return
         }
 
-        guard Self.shouldApplyBackendBootstrap(
+        applyBackendBootstrap(
+            bootstrap,
+            accountID: accountID,
+            providerRawValue: providerRawValue,
+            generation: generation,
+            expectedProfile: expectedProfile
+        )
+    }
+
+    private func applyBackendBootstrap(
+        _ bootstrap: BackendBootstrap,
+        accountID: String,
+        providerRawValue: String,
+        generation: UUID,
+        expectedProfile: CoachingProfile?
+    ) {
+
+        guard Self.shouldApplyHydrationBootstrap(
+            requestedGeneration: generation,
+            activeGeneration: activeAccountHydrationGeneration,
             requestedAccountID: accountID,
             requestedProviderRawValue: providerRawValue,
             currentAccountID: currentAccountID,
@@ -1178,7 +1332,13 @@ class AuthManager: ObservableObject {
         if let xp = bootstrap.xp {
             ProfileManager.shared.replaceFromRemote(xp)
         }
-        if let profile = bootstrap.profile {
+        // If onboarding or Settings saved while this request was in flight,
+        // that newer local profile owns the decision and must not be replaced.
+        if let profile = bootstrap.profile,
+           Self.shouldReplaceHydratedProfile(
+               expectedProfile: expectedProfile,
+               currentProfile: CoachingProfileStore.shared.profile
+           ) {
             CoachingProfileStore.shared.replaceFromRemote(profile, for: accountID)
         }
         if let sessions = bootstrap.sessions {
