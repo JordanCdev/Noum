@@ -28,6 +28,23 @@ defaults:
     shell: bash
 
 jobs:
+  secret-history:
+    name: Full-history secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Install pinned Gitleaks release
+        run: go install github.com/gitleaks/gitleaks/v8@v8.30.1
+      - name: Scan all reachable commits with redacted output
+        run: ./scripts/release-secret-scan.sh
+
   functions-unit:
     name: Functions lint and unit tests
     runs-on: ubuntu-24.04

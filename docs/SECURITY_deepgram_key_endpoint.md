@@ -37,11 +37,21 @@ credential remain outside our control.
 
 - The old API Gateway deployment is still reachable and must be disabled or
   hardened across **every route listed in this document**.
-- The old Deepgram credential has not been revoked because it belongs to the
-  earlier Deepgram account, not the new Noum production project.
+- A full-history Gitleaks scan found the same old Deepgram credential in commit
+  `277e2b388bb17d603011277a819b0bcaae517404`. A redacted live
+  `/v1/auth/token` check on 2026-07-11 confirmed that it is still active with
+  `account:write` scope. Its key ID is `025571b9-6cf4-4118-8c0d-532944ac0cca`
+  in project `1dca5364-3e7c-461a-8b40-bb28bef6e537`.
+- An exact API deletion attempt for that key returned 403. The credential can
+  list its project but cannot list/delete keys or read usage/billing, so it must
+  be revoked through the earlier Deepgram account or Deepgram Support.
 - Historic provider usage and billing for the exposed credential have not been
-  audited.
+  audited because all matching management endpoints returned 403.
 - No AWS identity for the legacy deployment is available in this environment.
+- The full-history scan also found two older AWS access-key pairs. Redacted AWS
+  STS checks returned `InvalidClientTokenId` for both, confirming that those
+  specific pairs are already invalid or revoked. This does not disable the
+  credential-vending AWS endpoint documented below.
 
 Containment requires access to the old Deepgram account and legacy AWS account,
 or an incident request to their support teams. Closure evidence must include:
@@ -49,6 +59,10 @@ the legacy credential returning 401, every legacy credential/IM/TTS route
 returning 401 or 404 without a verified identity, and the usage/billing audit.
 The new Firebase path reduces future app exposure; it does not revoke or disable
 the already-exposed legacy infrastructure.
+
+The CI full-history secret gate is intentionally red until the active Deepgram
+credential is revoked and the reviewed historical findings can be recorded as a
+revoked baseline. Do not suppress an active credential merely to make CI green.
 
 ---
 
