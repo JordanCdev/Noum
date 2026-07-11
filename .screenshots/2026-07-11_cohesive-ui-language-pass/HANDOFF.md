@@ -21,7 +21,7 @@ detailed
 - `audit_A-*` through `audit_D-*` — cold, beginner, improving, and plateaued evidence-depth sweeps.
 
 ## VISION gap
-The simulator experience now reads as one calm communication system and keeps Home, Train, Review, and Profile on one evidence-backed focus. Production launch proof still requires the deployed Firebase/Vertex path with live App Check, signed-device microphone and Live Activity verification, professional-coach calibration, and longitudinal real-user transfer evidence. The Functions emulator could not run locally because this Mac has no Java runtime; the non-emulator Functions suite passed.
+The simulator experience now reads as one calm communication system and keeps Home, Train, Review, and Profile on one evidence-backed focus. Production launch proof still requires the deployed Firebase/Vertex path with live App Check, signed-device microphone and Live Activity verification, professional-coach calibration, and longitudinal real-user transfer evidence. The local Auth, Firestore, and Functions emulator suite passes all eight integration gates with deterministic Fast and Ultra routes.
 
 ## Next steps to reach desired state
 1. Deploy and validate Firebase Functions, Vertex IAM/billing, App Check, Fast/Ultra parameters, cancellation, and rate limiting in the production project.
