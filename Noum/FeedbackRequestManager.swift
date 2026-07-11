@@ -50,6 +50,13 @@ struct StoredFeedbackResponse: Codable, Identifiable {
     }
 }
 
+/// Versioned account export wraps this value in `AccountDataRegistry`'s
+/// participant envelope. Keeping the raw feedback records together here makes
+/// transcript-bearing data explicit and independently testable.
+struct FeedbackRequestsAccountDataSnapshot: Codable {
+    let requests: [StoredFeedbackRequest]
+}
+
 // MARK: - Feedback Request Manager
 
 #if canImport(SwiftUI)
@@ -75,10 +82,61 @@ final class FeedbackRequestManager: ObservableObject {
         respondedRequests.count
     }
 
-    private let storageKey = "noum_feedback_requests"
+    private static let legacyStorageKey = "noum_feedback_requests"
+    private static let storagePrefix = "noum_feedback_requests."
 
-    private init() {
-        load()
+    private let defaults: UserDefaults
+    private let accountIDProvider: () -> String?
+
+    init(
+        defaults: UserDefaults = .standard,
+        accountIDProvider: (() -> String?)? = nil
+    ) {
+        self.defaults = defaults
+        self.accountIDProvider = accountIDProvider ?? {
+            KeychainHelper.load(key: "NoumAccountID")
+        }
+        reloadForCurrentAccount()
+    }
+
+    // MARK: - Account Lifecycle
+
+    /// Reload only the records owned by the active Noum identity. The legacy
+    /// unscoped archive is claimed once by the first established account, then
+    /// removed so it can never surface for a later account.
+    func reloadForCurrentAccount() {
+        guard let accountID = currentAccountID else {
+            requests = []
+            return
+        }
+        migrateLegacyDataIfNeeded(to: accountID)
+        requests = Self.load(
+            from: defaults,
+            key: Self.storageKey(for: accountID)
+        )
+    }
+
+    /// Clear observable state while preserving the signed-out account's data.
+    func endSession() {
+        requests = []
+    }
+
+    func exportSnapshot(for accountID: String) -> FeedbackRequestsAccountDataSnapshot {
+        FeedbackRequestsAccountDataSnapshot(requests: Self.load(
+            from: defaults,
+            key: Self.storageKey(for: accountID)
+        ))
+    }
+
+    func deleteAllData(for accountID: String) {
+        defaults.removeObject(forKey: Self.storageKey(for: accountID))
+        if currentAccountID == accountID {
+            // A legacy blob that survived an interrupted migration belongs to
+            // the current account. Removing it prevents deletion followed by
+            // an account switch from resurrecting private transcripts.
+            defaults.removeObject(forKey: Self.legacyStorageKey)
+            requests = []
+        }
     }
 
     // MARK: - Create Request
@@ -149,15 +207,53 @@ final class FeedbackRequestManager: ObservableObject {
     // MARK: - Persistence
 
     private func save() {
-        if let data = try? JSONEncoder().encode(requests) {
-            UserDefaults.standard.set(data, forKey: storageKey)
-        }
+        guard let accountID = currentAccountID,
+              let data = try? JSONEncoder().encode(requests) else { return }
+        defaults.set(data, forKey: Self.storageKey(for: accountID))
     }
 
-    private func load() {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let decoded = try? JSONDecoder().decode([StoredFeedbackRequest].self, from: data) else { return }
-        requests = decoded
+    private var currentAccountID: String? {
+        guard let accountID = accountIDProvider(), !accountID.isEmpty else {
+            return nil
+        }
+        return accountID
+    }
+
+    private func migrateLegacyDataIfNeeded(to accountID: String) {
+        guard let legacyData = defaults.data(forKey: Self.legacyStorageKey) else {
+            return
+        }
+
+        let scopedKey = Self.storageKey(for: accountID)
+        if defaults.data(forKey: scopedKey) == nil,
+           (try? JSONDecoder().decode(
+               [StoredFeedbackRequest].self,
+               from: legacyData
+           )) != nil {
+            defaults.set(legacyData, forKey: scopedKey)
+        }
+
+        // Remove even malformed or superseded legacy data. Leaving a global
+        // transcript archive behind would allow a later identity to claim it.
+        defaults.removeObject(forKey: Self.legacyStorageKey)
+    }
+
+    private static func storageKey(for accountID: String) -> String {
+        "\(storagePrefix)\(accountID)"
+    }
+
+    private static func load(
+        from defaults: UserDefaults,
+        key: String
+    ) -> [StoredFeedbackRequest] {
+        guard let data = defaults.data(forKey: key),
+              let decoded = try? JSONDecoder().decode(
+                  [StoredFeedbackRequest].self,
+                  from: data
+              ) else {
+            return []
+        }
+        return decoded
     }
 }
 #endif
