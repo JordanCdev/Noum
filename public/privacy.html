@@ -126,7 +126,7 @@
 
   <div class="card">
     <h1>Privacy Policy</h1>
-    <p class="muted"><strong>Last updated:</strong> July 9, 2026</p>
+    <p class="muted"><strong>Last updated:</strong> July 11, 2026</p>
     <p>Noum ("we", "us", "our") is a speaking practice app that helps you improve your communication skills through guided exercises, AI coaching, and conversation simulations. This policy explains what data we collect, why, who processes it, and how you can control it.</p>
 
     <hr>
@@ -139,7 +139,8 @@
       <li><strong>Display name</strong> (from Apple or Google Sign-In, if provided) — for personalisation.</li>
       <li><strong>Authentication provider</strong> (Apple, Google, or Guest) — to manage your sign-in method.</li>
     </ul>
-    <p>We do not collect your email address, phone number, or password. Authentication is handled entirely by Apple Sign-In, Google Sign-In, or anonymous guest sessions through Firebase Authentication.</p>
+    <p>Noum itself does not store your email address, phone number, or password in Noum profile or session records. Authentication is handled through Apple Sign-In, Google Sign-In, or anonymous guest sessions with Firebase Authentication.</p>
+    <p>When Google Sign-In is used, Google's bundled sign-in SDK declares that it may process linked name, email address, phone number, coarse location, user ID, device ID, other usage data, and other data types. Its manifest lists name, email address, phone number, and coarse location for app functionality; user ID and other data types for app functionality and analytics; and device ID and other usage data for analytics. The data available to that SDK depends on the Google account and sign-in flow.</p>
 
     <h3>Coaching Profile</h3>
     <p>During onboarding, you may provide:</p>
@@ -222,7 +223,7 @@
         <tr><td>Nearby clubs and Path daylight</td><td>An optional device coordinate handled through Apple Core Location, MapKit, and geocoding APIs; Core Location is configured with a one-kilometre desired accuracy for club search and three kilometres for Path daylight</td></tr>
         <tr><td>Conversation weather context</td><td>A city or region label inferred from the device time zone and locale, or supplied by app configuration, sent to Open-Meteo for geocoding; coordinates returned by Open-Meteo are then sent to its forecast API</td></tr>
         <tr><td>Practice reminders</td><td>Notification preferences, coaching context (not user-authored text)</td></tr>
-        <tr><td>Account management</td><td>Account ID, auth provider</td></tr>
+        <tr><td>Account management and sync reliability</td><td>Account ID and auth provider; required Google Sign-In and Firebase SDKs also perform the vendor-declared sign-in, diagnostic, and analytics-purpose processing described below</td></tr>
       </tbody>
     </table>
     <p>We do <strong>not</strong> use your data for advertising, user profiling for marketing purposes, or sale to third parties.</p>
@@ -243,11 +244,12 @@
         <tr><td><strong>OpenAI</strong></td><td>Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence, optionally selected video frames; text for speech synthesis</td><td>AI coaching feedback, conversation generation, and fallback text-to-speech. <a href="https://platform.openai.com/docs/models/default-usage-policies-by-endpoint">OpenAI API Data Controls</a>.</td></tr>
         <tr><td><strong>DeepSeek</strong></td><td>Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence</td><td>AI coaching feedback and fallback conversation generation. <a href="https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html">DeepSeek Privacy Policy</a>.</td></tr>
         <tr><td><strong>Google Cloud Text-to-Speech</strong></td><td>Text prompts for voice synthesis</td><td>AI character voices and spoken coach replies. <a href="https://cloud.google.com/terms">Google Cloud Terms</a>.</td></tr>
-        <tr><td><strong>Firebase</strong> (Google)</td><td>Account ID, display name, optionally synced profile/session data</td><td>Authentication and optional cloud sync. <a href="https://firebase.google.com/terms">Firebase Terms</a>.</td></tr>
+        <tr><td><strong>Google Sign-In</strong></td><td>Its SDK vendor declaration covers linked name, email address, phone number, coarse location, user ID, device ID, other usage data, and other data types when Google Sign-In is used</td><td>Authentication. The manifest lists name, email address, phone number, and coarse location for app functionality; user ID and other data types for app functionality and analytics; and device ID and other usage data for analytics. It declares no tracking. <a href="https://policies.google.com/privacy">Google Privacy Policy</a>.</td></tr>
+        <tr><td><strong>Firebase</strong> (Google)</td><td>Account ID, display name, optionally synced profile/session data. The Firebase Authentication SDK manifest declares linked user ID for app functionality; Firebase Authentication and Firestore SDK manifests declare unlinked other diagnostic data for analytics purposes</td><td>Authentication, optional cloud sync, and vendor-declared service diagnostics and measurement. <a href="https://firebase.google.com/terms">Firebase Terms</a>.</td></tr>
         <tr><td><strong>Open-Meteo</strong></td><td>City or region search label inferred from the device time zone and locale, or supplied by app configuration; then coordinates returned by Open-Meteo itself</td><td>Weather context for conversation topics. Noum does not send a device Core Location coordinate or account identifier to Open-Meteo. Public API, no authentication.</td></tr>
       </tbody>
     </table>
-    <p>No data is shared with analytics providers, advertising networks, or data brokers.</p>
+    <p>Noum does not include a dedicated Firebase Analytics SDK, advertising SDK, or cross-app tracking SDK. Required Google Sign-In, Firebase Authentication, and Firestore SDKs carry vendor-declared analytics-purpose processing as described above. Noum does not use that processing for advertising or cross-app tracking. Noum does not share data with advertising networks or data brokers.</p>
 
     <hr>
 

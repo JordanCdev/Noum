@@ -67,6 +67,103 @@ struct PrivacyProductionContractTests {
 
         #expect(!project.contains("FirebaseAnalytics"))
     }
+
+    @Test func topLevelPrivacyManifestDeclaresOnlyNoumFunctionalityData() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let manifestFile = repositoryRoot
+            .appendingPathComponent("Noum")
+            .appendingPathComponent("PrivacyInfo.xcprivacy")
+        let manifestData = try Data(contentsOf: manifestFile)
+        let manifest = try #require(
+            try PropertyListSerialization.propertyList(
+                from: manifestData,
+                options: [],
+                format: nil
+            ) as? [String: Any]
+        )
+        let collectedTypes = try #require(
+            manifest["NSPrivacyCollectedDataTypes"] as? [[String: Any]]
+        )
+
+        let declaredTypes = Set(collectedTypes.compactMap { entry in
+            entry["NSPrivacyCollectedDataType"] as? String
+        })
+        let expectedTypes: Set<String> = [
+            "NSPrivacyCollectedDataTypeAudioData",
+            "NSPrivacyCollectedDataTypeName",
+            "NSPrivacyCollectedDataTypeOtherUserContent",
+            "NSPrivacyCollectedDataTypePhotosorVideos",
+            "NSPrivacyCollectedDataTypeProductInteraction",
+            "NSPrivacyCollectedDataTypeUserID",
+        ]
+        #expect(declaredTypes == expectedTypes)
+
+        let declaredPurposes = collectedTypes.flatMap { entry in
+            entry["NSPrivacyCollectedDataTypePurposes"] as? [String] ?? []
+        }
+        #expect(!declaredPurposes.contains("NSPrivacyCollectedDataTypePurposeAnalytics"))
+        #expect(collectedTypes.allSatisfy { entry in
+            entry["NSPrivacyCollectedDataTypePurposes"] as? [String]
+                == ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
+        })
+        #expect(collectedTypes.allSatisfy { entry in
+            entry["NSPrivacyCollectedDataTypeLinked"] as? Bool == true
+                && entry["NSPrivacyCollectedDataTypeTracking"] as? Bool == false
+        })
+
+        let accessedAPITypes = try #require(
+            manifest["NSPrivacyAccessedAPITypes"] as? [[String: Any]]
+        )
+        let reasonsByAPI: [String: Set<String>] = Dictionary(
+            uniqueKeysWithValues: accessedAPITypes.compactMap { entry -> (String, Set<String>)? in
+                guard let api = entry["NSPrivacyAccessedAPIType"] as? String,
+                      let reasons = entry["NSPrivacyAccessedAPITypeReasons"] as? [String] else {
+                    return nil
+                }
+                return (api, Set(reasons))
+            }
+        )
+        let expectedReasonsByAPI: [String: Set<String>] = [
+            "NSPrivacyAccessedAPICategoryFileTimestamp": ["C617.1"],
+            "NSPrivacyAccessedAPICategorySystemBootTime": ["35F9.1"],
+            "NSPrivacyAccessedAPICategoryUserDefaults": ["CA92.1"],
+        ]
+        #expect(reasonsByAPI == expectedReasonsByAPI)
+        #expect(manifest["NSPrivacyTracking"] as? Bool == false)
+        #expect((manifest["NSPrivacyTrackingDomains"] as? [String])?.isEmpty == true)
+    }
+
+    @Test func sourcePoliciesDiscloseRequiredSDKProcessing() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let policyFiles = [
+            repositoryRoot.appendingPathComponent("Noum/PrivacyPolicy.md"),
+            repositoryRoot.appendingPathComponent("public/privacy.html"),
+        ]
+        let requiredDisclosures = [
+            "July 11, 2026",
+            "Noum itself does not store your email address, phone number, or password in Noum profile or session records.",
+            "Google's bundled sign-in SDK declares that it may process linked name, email address, phone number, coarse location, user ID, device ID, other usage data, and other data types.",
+            "Its manifest lists name, email address, phone number, and coarse location for app functionality; user ID and other data types for app functionality and analytics; and device ID and other usage data for analytics.",
+            "It declares no tracking",
+            "The Firebase Authentication SDK manifest declares linked user ID for app functionality; Firebase Authentication and Firestore SDK manifests declare unlinked other diagnostic data for analytics purposes",
+            "Noum does not include a dedicated Firebase Analytics SDK, advertising SDK, or cross-app tracking SDK.",
+            "Required Google Sign-In, Firebase Authentication, and Firestore SDKs carry vendor-declared analytics-purpose processing as described above.",
+            "Noum does not use that processing for advertising or cross-app tracking.",
+            "Noum does not share data with advertising networks or data brokers.",
+        ]
+
+        for policyFile in policyFiles {
+            let policy = try String(contentsOf: policyFile, encoding: .utf8)
+            for disclosure in requiredDisclosures {
+                #expect(policy.contains(disclosure))
+            }
+            #expect(!policy.contains("No data is shared with analytics providers"))
+        }
+    }
 }
 
 @Suite("Firestore production contracts")

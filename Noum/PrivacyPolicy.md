@@ -1,6 +1,6 @@
 # Noum Privacy Policy
 
-**Last updated:** July 9, 2026
+**Last updated:** July 11, 2026
 
 Noum ("we", "us", "our") is a speaking practice app that helps you improve your communication skills through guided exercises, AI coaching, and conversation simulations. This policy explains what data we collect, why, who processes it, and how you can control it.
 
@@ -13,7 +13,9 @@ Noum ("we", "us", "our") is a speaking practice app that helps you improve your 
 - **Display name** (from Apple or Google Sign-In, if provided) — for personalization
 - **Authentication provider** (Apple, Google, or Guest) — to manage your sign-in method
 
-We do not collect your email address, phone number, or password. Authentication is handled entirely by Apple Sign-In, Google Sign-In, or anonymous guest sessions through Firebase Authentication.
+Noum itself does not store your email address, phone number, or password in Noum profile or session records. Authentication is handled through Apple Sign-In, Google Sign-In, or anonymous guest sessions with Firebase Authentication.
+
+When Google Sign-In is used, Google's bundled sign-in SDK declares that it may process linked name, email address, phone number, coarse location, user ID, device ID, other usage data, and other data types. Its manifest lists name, email address, phone number, and coarse location for app functionality; user ID and other data types for app functionality and analytics; and device ID and other usage data for analytics. The data available to that SDK depends on the Google account and sign-in flow.
 
 ### Coaching Profile
 During onboarding, you may provide:
@@ -90,7 +92,7 @@ The app requests:
 | Nearby clubs and Path daylight | An optional device coordinate handled through Apple Core Location, MapKit, and geocoding APIs; Core Location is configured with a one-kilometre desired accuracy for club search and three kilometres for Path daylight |
 | Conversation weather context | A city or region label inferred from the device time zone and locale, or supplied by app configuration, sent to Open-Meteo for geocoding; coordinates returned by Open-Meteo are then sent to its forecast API |
 | Practice reminders | Notification preferences, coaching context (not user-authored text) |
-| Account management | Account ID, auth provider |
+| Account management and sync reliability | Account ID and auth provider; required Google Sign-In and Firebase SDKs also perform the vendor-declared sign-in, diagnostic, and analytics-purpose processing described below |
 
 We do **not** use your data for advertising, user profiling for marketing purposes, or sale to third parties.
 
@@ -110,10 +112,11 @@ We do **not** use your data for advertising, user profiling for marketing purpos
 | **OpenAI** | Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence, optionally selected video frames; text for speech synthesis | AI coaching feedback, conversation generation, and fallback text-to-speech | [OpenAI API Data Controls](https://platform.openai.com/docs/models/default-usage-policies-by-endpoint) |
 | **DeepSeek** | Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence | AI coaching feedback and fallback conversation generation | [DeepSeek Privacy Policy](https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html) |
 | **Google Cloud Text-to-Speech** | Text prompts for voice synthesis | AI character voices in conversation mode | [Google Cloud Terms](https://cloud.google.com/terms) |
-| **Firebase** (Google) | Account ID, display name, optionally synced profile/session data | Authentication and optional cloud sync | [Firebase Terms](https://firebase.google.com/terms) |
+| **Google Sign-In** | Its SDK vendor declaration covers linked name, email address, phone number, coarse location, user ID, device ID, other usage data, and other data types when Google Sign-In is used | Authentication. The manifest lists name, email address, phone number, and coarse location for app functionality; user ID and other data types for app functionality and analytics; and device ID and other usage data for analytics. It declares no tracking | [Google Privacy Policy](https://policies.google.com/privacy) |
+| **Firebase** (Google) | Account ID, display name, optionally synced profile/session data. The Firebase Authentication SDK manifest declares linked user ID for app functionality; Firebase Authentication and Firestore SDK manifests declare unlinked other diagnostic data for analytics purposes | Authentication, optional cloud sync, and vendor-declared service diagnostics and measurement | [Firebase Terms](https://firebase.google.com/terms) |
 | **Open-Meteo** | City or region search label inferred from the device time zone and locale, or supplied by app configuration; then coordinates returned by Open-Meteo itself | Weather context for conversation topics. Noum does not send a device Core Location coordinate or account identifier to Open-Meteo | Public API, no authentication |
 
-No data is shared with analytics providers, advertising networks, or data brokers.
+Noum does not include a dedicated Firebase Analytics SDK, advertising SDK, or cross-app tracking SDK. Required Google Sign-In, Firebase Authentication, and Firestore SDKs carry vendor-declared analytics-purpose processing as described above. Noum does not use that processing for advertising or cross-app tracking. Noum does not share data with advertising networks or data brokers.
 
 ---
 
