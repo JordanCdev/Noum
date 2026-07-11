@@ -23,6 +23,12 @@ curl --fail --silent --show-error --location \
 grep -qi '^content-type:.*text/html' "$headers"
 grep -q '<h1>Privacy Policy</h1>' "$response"
 grep -q 'Your Cloud Processing Choice' "$response"
+grep -q 'Google Vertex AI (Gemini)' "$response"
+grep -q 'mip_opt_out=true' "$response"
 grep -q 'noumsupport@gmail.com' "$response"
+if grep -Eq 'AWS Transcribe|Google Cloud Speech-to-Text|Anthropic Claude|DeepSeek' "$response"; then
+  echo "Hosted privacy policy contains a non-production processor claim." >&2
+  exit 1
+fi
 
 echo "Live privacy policy probe passed."

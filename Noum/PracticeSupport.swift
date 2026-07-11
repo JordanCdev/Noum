@@ -4709,7 +4709,7 @@ final class AISettingsManager: ObservableObject {
     private let consentKeyPrefix = "cloudProcessingConsent."
 
     nonisolated static let disclosureVersion = 1
-    nonisolated static let processorManifestVersion = 1
+    nonisolated static let processorManifestVersion = CloudProcessorManifest.version
 
     // MARK: - Usage Tiers
     // Premium: generous 100/month — most active users won't hit this.

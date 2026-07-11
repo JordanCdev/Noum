@@ -155,31 +155,28 @@
     <h3>Speech Transcripts and Session Data</h3>
     <p>When you use a practice mode, the app:</p>
     <ul>
-      <li>After you permit cloud processing, streams your audio to the configured speech-to-text provider for real-time transcription. The shipping providers are <strong>Deepgram</strong> (the default), <strong>Amazon Web Services (AWS) Transcribe</strong>, and <strong>Google Cloud Speech-to-Text</strong></li>
+      <li>After you permit cloud processing, streams your audio to <strong>Deepgram</strong>, the Release app's production speech-to-text provider, for real-time transcription</li>
       <li>Stores the resulting text transcript, filler-word count, session duration, score, and practice mode on your device</li>
       <li>May send the transcript and relevant session evidence to a generative-AI provider when you use a cloud coaching feature, such as Coach Read, conversation simulation, or Ask Noum</li>
     </ul>
     <p>For short Ask Noum voice questions, the app first uses the configured cloud transcription provider and may fall back to Apple Speech Recognition. Apple determines whether that fallback is processed on-device or by Apple for the device, language, and system configuration.</p>
-    <p>Noum does not save the streamed microphone audio as an audio file on your device or Noum's servers. Speech-to-text providers process the stream under their own terms and retention practices.</p>
+    <p>Noum does not save the streamed microphone audio as an audio file on your device or Noum's servers. Production Deepgram requests set <code>mip_opt_out=true</code>; Deepgram says opted-out data is retained only as needed to process the request.</p>
 
     <h3>Your Cloud Processing Choice</h3>
     <p>Before Noum sends microphone audio, a transcript, coaching-profile details, or session evidence to a non-Apple cloud speech or generative-AI provider, the app explains the categories of data involved, identifies the processing purpose, and asks for your permission. Microphone permission from iOS is separate and does not by itself permit Noum to share that data with a cloud AI provider.</p>
     <p>You can decline or later withdraw cloud-processing permission in Settings. When you decline or withdraw it, Noum does not send new speech or coaching data to those cloud services. Noum uses an on-device or deterministic local path where one is available; a feature that has no suitable local path remains unavailable and explains why. Withdrawing permission does not recall data already processed under a provider's terms.</p>
 
     <h3>AI Coaching Feedback</h3>
-    <p>When you have permitted cloud processing and use a cloud AI coaching feature, Noum sends the information needed to answer that request. Depending on the feature, configuration, and fallback routing, a request may be processed by one or more of the following providers:</p>
+    <p>When you have permitted cloud processing and use a production cloud AI coaching feature, Noum sends the information needed to answer that request to <strong>Google Vertex AI (Gemini)</strong> through a protected Firebase callable. Developer-only provider configurations are excluded from the Release bundle and are not production processors.</p>
     <ul>
-      <li><strong>Google Gemini</strong></li>
-      <li><strong>Anthropic Claude</strong></li>
-      <li><strong>OpenAI</strong></li>
-      <li><strong>DeepSeek</strong></li>
+      <li><strong>Google Vertex AI (Gemini)</strong></li>
     </ul>
     <p>For <strong>Ask Noum</strong>, this includes your current message, a bounded number of recent conversation turns, and bounded coaching context and session evidence. When available and relevant, that context may include your coaching profile and goals, recent session metrics or transcript evidence, saved proof quotes, coaching memory, plans, reflections, or an upcoming speaking moment. Noum limits the context assembled for each request; it does not send an unbounded copy of your on-device history.</p>
     <p>In production, Ask Noum sends your current message, bounded recent conversation turns, and bounded coaching context and session evidence through a Firebase Functions endpoint. The function then sends the bounded request to Google Vertex AI (Gemini). Firebase Authentication and Firebase App Check tokens accompany that request to authenticate the caller, verify the app request, and protect the service from abuse. Firebase Functions processes the bounded request as an application-service intermediary; Noum does not use this transport for advertising or cross-app tracking.</p>
-    <p>Other AI features may send a speech transcript and related coaching context, and may send selected video frames when you explicitly request nonverbal feedback. Providers process data under their own API terms, privacy policies, account settings, and retention practices. Those practices vary and can include temporary or longer retention for service operation, safety, abuse prevention, or legal compliance; Noum does not promise zero provider-side retention.</p>
+    <p>Other supported production AI features may send a speech transcript and related coaching context, and may send selected video frames only when you explicitly request visual feedback. Google and Firebase process data under their API terms, privacy policies, account settings, and retention practices. Those practices can include retention for service operation, safety, abuse prevention, or legal compliance; Noum does not promise zero provider-side retention.</p>
 
     <h3>Spoken AI Replies</h3>
-    <p>When spoken replies or prompt readout are enabled, the text to be spoken may be sent to <strong>Google Cloud Text-to-Speech</strong>. If that service is unavailable or not configured, <strong>OpenAI Text-to-Speech</strong> may be used as the cloud fallback. An Apple on-device voice may be used as a terminal fallback on supported devices; that fallback does not send the text to Google Cloud or OpenAI for synthesis.</p>
+    <p>The Release app uses Apple's on-device speech synthesizer for spoken replies and prompt readout. Developer-only cloud text-to-speech configuration is excluded from the Release bundle, so production prompt speech is not sent to a cloud text-to-speech provider.</p>
 
     <h3>Video Recordings</h3>
     <ul>
@@ -219,12 +216,12 @@
     <table>
       <thead><tr><th>Purpose</th><th>Data Used</th></tr></thead>
       <tbody>
-        <tr><td>Real-time speech-to-text</td><td>After cloud-processing permission, an audio stream sent to Deepgram, AWS Transcribe, or Google Cloud Speech-to-Text; Ask Noum voice input may use Apple Speech Recognition as a fallback</td></tr>
-        <tr><td>AI coaching feedback</td><td>After cloud-processing permission, a speech transcript or Ask Noum message, recent conversation turns, bounded coaching context and session evidence, and optionally selected video frames. Production Ask Noum requests pass through Firebase Functions with Firebase Authentication and App Check tokens before reaching Google Vertex AI; other cloud coaching features use the configured Google, Anthropic, OpenAI, or DeepSeek service</td></tr>
+        <tr><td>Real-time speech-to-text</td><td>After cloud-processing permission, an audio stream sent to Deepgram with <code>mip_opt_out=true</code>; Ask Noum voice input may use Apple Speech Recognition as a fallback</td></tr>
+        <tr><td>AI coaching feedback</td><td>After cloud-processing permission, a speech transcript or Ask Noum message, recent conversation turns, bounded coaching context and session evidence, and selected video frames only when an explicitly requested production visual-feedback feature supports them. Production requests pass through Firebase Functions with Firebase Authentication and App Check before reaching Google Vertex AI</td></tr>
         <tr><td>Personalised coaching</td><td>Coaching profile, session history</td></tr>
         <tr><td>Progress tracking</td><td>Session scores, XP, streaks, challenge completion</td></tr>
         <tr><td>Conversation simulation</td><td>IM conversation turns and relevant relationship/context fields sent to the configured AI provider</td></tr>
-        <tr><td>Spoken replies and prompt readout</td><td>Text to be spoken (sent to Google Cloud Text-to-Speech or OpenAI Text-to-Speech when cloud speech is used)</td></tr>
+        <tr><td>Spoken replies and prompt readout</td><td>Text rendered by Apple's on-device speech synthesizer in the Release app</td></tr>
         <tr><td>Nearby clubs and Path daylight</td><td>An optional device coordinate handled through Apple Core Location, MapKit, and geocoding APIs; Core Location is configured with a one-kilometre desired accuracy for club search and three kilometres for Path daylight</td></tr>
         <tr><td>Conversation weather context</td><td>A city or region label inferred from the device time zone and locale, or supplied by app configuration, sent to Open-Meteo for geocoding; coordinates returned by Open-Meteo are then sent to its forecast API</td></tr>
         <tr><td>Practice reminders</td><td>Notification preferences, coaching context (not user-authored text)</td></tr>
@@ -236,24 +233,20 @@
     <hr>
 
     <h2>3. Third-Party Data Processors</h2>
+    <!-- PROCESSOR-MANIFEST:START -->
     <table>
       <thead><tr><th>Service</th><th>Data Shared</th><th>Purpose</th></tr></thead>
       <tbody>
-        <tr><td><strong>Deepgram</strong></td><td>Real-time audio stream</td><td>Default speech-to-text transcription. <a href="https://deepgram.com/terms">Deepgram Terms</a>.</td></tr>
-        <tr><td><strong>AWS Transcribe</strong> (Amazon)</td><td>Real-time audio stream</td><td>Speech-to-text transcription. <a href="https://aws.amazon.com/service-terms/">AWS Service Terms</a>.</td></tr>
-        <tr><td><strong>Google Cloud Speech-to-Text</strong></td><td>Real-time audio stream</td><td>Speech-to-text transcription. <a href="https://cloud.google.com/terms/data-processing-terms">Google Cloud Data Processing and Security Terms</a>.</td></tr>
-        <tr><td><strong>Apple Speech Recognition</strong></td><td>Short voice-question audio when the Apple fallback is used</td><td>Ask Noum voice transcription; processing location depends on Apple's service/device availability. <a href="https://www.apple.com/legal/privacy/">Apple Privacy Policy</a>.</td></tr>
-        <tr><td><strong>Apple Core Location / MapKit</strong></td><td>Device coordinate when you request nearby-club search; a location passed to Apple geocoding for Path daylight only when permission already exists</td><td>Nearby-club results and a cosmetic local day/night scene. Desired accuracy is one kilometre for club search and three kilometres for Path daylight; iOS controls the location ultimately supplied. <a href="https://www.apple.com/legal/privacy/">Apple Privacy Policy</a>.</td></tr>
-        <tr><td><strong>Google Gemini / Google Cloud Agent Platform</strong></td><td>Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence, optionally selected video frames</td><td>AI coaching feedback and conversation generation. <a href="https://ai.google.dev/gemini-api/terms">Gemini API Terms</a>.</td></tr>
-        <tr><td><strong>Anthropic Claude</strong></td><td>Ask Noum message, recent turns, bounded coaching context/session evidence</td><td>Ask Noum coaching replies and fallback processing. <a href="https://privacy.anthropic.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data">Anthropic API Retention</a>.</td></tr>
-        <tr><td><strong>OpenAI</strong></td><td>Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence, optionally selected video frames; text for speech synthesis</td><td>AI coaching feedback, conversation generation, and fallback text-to-speech. <a href="https://platform.openai.com/docs/models/default-usage-policies-by-endpoint">OpenAI API Data Controls</a>.</td></tr>
-        <tr><td><strong>DeepSeek</strong></td><td>Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence</td><td>AI coaching feedback and fallback conversation generation. <a href="https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html">DeepSeek Privacy Policy</a>.</td></tr>
-        <tr><td><strong>Google Cloud Text-to-Speech</strong></td><td>Text prompts for voice synthesis</td><td>AI character voices and spoken coach replies. <a href="https://cloud.google.com/terms">Google Cloud Terms</a>.</td></tr>
-        <tr><td><strong>Google Sign-In</strong></td><td>Its SDK vendor declaration covers linked name, email address, phone number, coarse location, user ID, device ID, other usage data, and other data types when Google Sign-In is used</td><td>Authentication. The manifest lists name, email address, phone number, and coarse location for app functionality; user ID and other data types for app functionality and analytics; and device ID and other usage data for analytics. It declares no tracking. <a href="https://policies.google.com/privacy">Google Privacy Policy</a>.</td></tr>
-        <tr><td><strong>Firebase</strong> (Google)</td><td>Account ID, display name, optionally synced profile/session data; production Ask Noum messages, bounded recent turns, and bounded coaching context/session evidence sent through Firebase Functions; Firebase Authentication and App Check tokens or attestation data used to secure that transport. The Firebase Authentication SDK manifest declares linked user ID for app functionality; Firebase Authentication and Firestore SDK manifests declare unlinked other diagnostic data for analytics purposes</td><td>Authentication when configured, optional cloud sync, protected Firebase Functions transport for production Ask Noum, App Check abuse protection, and vendor-declared service diagnostics and measurement. <a href="https://firebase.google.com/terms">Firebase Terms</a>.</td></tr>
-        <tr><td><strong>Open-Meteo</strong></td><td>City or region search label inferred from the device time zone and locale, or supplied by app configuration; then coordinates returned by Open-Meteo itself</td><td>Weather context for conversation topics. Noum does not send a device Core Location coordinate or account identifier to Open-Meteo. Public API, no authentication.</td></tr>
+        <tr><td><strong>Deepgram</strong></td><td>Real-time audio stream with mip_opt_out=true</td><td>Production speech-to-text transcription. <a href="https://deepgram.com/terms">Deepgram Terms</a>.</td></tr>
+        <tr><td><strong>Apple Speech Recognition</strong></td><td>Short voice-question audio when the Apple fallback is used</td><td>Ask Noum voice transcription; processing location depends on Apple&#x27;s service and device availability. <a href="https://www.apple.com/legal/privacy/">Apple Privacy Policy</a>.</td></tr>
+        <tr><td><strong>Apple Core Location / MapKit</strong></td><td>Device coordinate when you request nearby-club search; a location passed to Apple geocoding for Path daylight only when permission already exists</td><td>Nearby-club results and a cosmetic local day/night scene; iOS controls the location ultimately supplied. <a href="https://www.apple.com/legal/privacy/">Apple Privacy Policy</a>.</td></tr>
+        <tr><td><strong>Google Vertex AI (Gemini)</strong></td><td>Speech transcript or Ask Noum message, bounded recent turns, bounded coaching context and session evidence, and selected video frames only when a production feature explicitly supports and requests visual feedback</td><td>Production generated coaching and conversation responses. <a href="https://cloud.google.com/terms">Google Cloud Terms</a>.</td></tr>
+        <tr><td><strong>Google Sign-In</strong></td><td>The SDK vendor declaration covers linked account and device data when Google Sign-In is used</td><td>Authentication and vendor-declared service diagnostics; Noum does not use it for advertising or cross-app tracking. <a href="https://policies.google.com/privacy">Google Privacy Policy</a>.</td></tr>
+        <tr><td><strong>Firebase (Google)</strong></td><td>Account ID, display name, optional sync data, bounded production coaching requests, and Authentication and App Check proof</td><td>Authentication, optional sync, protected callable transport, abuse protection, and vendor-declared diagnostics. <a href="https://firebase.google.com/terms">Firebase Terms</a>.</td></tr>
+        <tr><td><strong>Open-Meteo</strong></td><td>A city or region label inferred from device time zone and locale, or supplied by app configuration; then coordinates returned by Open-Meteo itself</td><td>Conversation weather context; Noum does not send a Core Location coordinate or account identifier. <a href="https://open-meteo.com/en/terms">Open-Meteo Terms</a>.</td></tr>
       </tbody>
     </table>
+    <!-- PROCESSOR-MANIFEST:END -->
     <p>Noum does not include a dedicated Firebase Analytics SDK, advertising SDK, or cross-app tracking SDK. Required Google Sign-In, Firebase Authentication, and Firestore SDKs carry vendor-declared analytics-purpose processing as described above. Noum does not use that processing for advertising or cross-app tracking. Noum does not share data with advertising networks or data brokers.</p>
 
     <hr>
@@ -286,8 +279,8 @@
     <ul>
       <li><strong>On-device data</strong> is retained until you delete it (via session deletion, account deletion, or app uninstall).</li>
       <li><strong>Noum-controlled Firebase data</strong> is retained while your account is active. A completed account-deletion request removes the active user tree, public profile, league memberships, challenges containing the account, server rate-limit state, and Firebase Authentication user. Operational backups may age out on a different schedule.</li>
-      <li><strong>Streamed audio</strong> is not retained by Noum as an audio file. Speech-to-text providers handle the stream under their own service terms and retention practices.</li>
-      <li><strong>AI-provider inputs and outputs</strong> are handled under the selected provider's terms, privacy policy, service tier, and account settings. Retention and model-improvement practices differ across Google, Anthropic, OpenAI, and DeepSeek and may change; review the links above for current details.</li>
+      <li><strong>Streamed audio</strong> is not retained by Noum as an audio file. Production Deepgram requests set <code>mip_opt_out=true</code>; Deepgram says opted-out data is retained only as needed to process the request.</li>
+      <li><strong>AI-provider inputs and outputs</strong> are handled under Google and Firebase terms, privacy policies, service tier, and account settings. Retention and model-improvement practices may change; review the links above for current details.</li>
     </ul>
 
     <hr>

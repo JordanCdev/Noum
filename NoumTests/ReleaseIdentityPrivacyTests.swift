@@ -48,6 +48,30 @@ struct ReleaseIdentityPrivacyTests {
         ))
     }
 
+    @Test("One versioned manifest drives production processor disclosure")
+    func processorManifestIsProductionScoped() {
+        #expect(AISettingsManager.processorManifestVersion == CloudProcessorManifest.version)
+        #expect(CloudProcessorManifest.version == 2)
+        #expect(Set(CloudProcessorManifest.processors.map(\.id)) == Set([
+            "deepgram",
+            "apple-speech",
+            "apple-location-mapkit",
+            "google-vertex-ai",
+            "google-sign-in",
+            "firebase",
+            "open-meteo",
+        ]))
+        #expect(Set(CloudProcessorManifest.consentProcessors.map(\.id)) == Set([
+            "deepgram",
+            "apple-speech",
+            "google-vertex-ai",
+            "firebase",
+        ]))
+        #expect(CloudProcessorManifest.processors.allSatisfy {
+            $0.termsURL.scheme == "https"
+        })
+    }
+
     @Test("Decline and stale disclosure versions keep cloud processing closed")
     func declinedOrStaleConsentIsClosed() {
         let declined = CloudProcessingConsent(

@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "manifestVersion": 2,
+  "updatedAt": "2026-07-11",
+  "processors": [
+    {
+      "id": "deepgram",
+      "name": "Deepgram",
+      "data": "Real-time audio stream with mip_opt_out=true",
+      "purpose": "Production speech-to-text transcription",
+      "termsLabel": "Deepgram Terms",
+      "termsURL": "https://deepgram.com/terms",
+      "requiresCloudProcessingConsent": true
+    },
+    {
+      "id": "apple-speech",
+      "name": "Apple Speech Recognition",
+      "data": "Short voice-question audio when the Apple fallback is used",
+      "purpose": "Ask Noum voice transcription; processing location depends on Apple's service and device availability",
+      "termsLabel": "Apple Privacy Policy",
+      "termsURL": "https://www.apple.com/legal/privacy/",
+      "requiresCloudProcessingConsent": true
+    },
+    {
+      "id": "apple-location-mapkit",
+      "name": "Apple Core Location / MapKit",
+      "data": "Device coordinate when you request nearby-club search; a location passed to Apple geocoding for Path daylight only when permission already exists",
+      "purpose": "Nearby-club results and a cosmetic local day/night scene; iOS controls the location ultimately supplied",
+      "termsLabel": "Apple Privacy Policy",
+      "termsURL": "https://www.apple.com/legal/privacy/",
+      "requiresCloudProcessingConsent": false
+    },
+    {
+      "id": "google-vertex-ai",
+      "name": "Google Vertex AI (Gemini)",
+      "data": "Speech transcript or Ask Noum message, bounded recent turns, bounded coaching context and session evidence, and selected video frames only when a production feature explicitly supports and requests visual feedback",
+      "purpose": "Production generated coaching and conversation responses",
+      "termsLabel": "Google Cloud Terms",
+      "termsURL": "https://cloud.google.com/terms",
+      "requiresCloudProcessingConsent": true
+    },
+    {
+      "id": "google-sign-in",
+      "name": "Google Sign-In",
+      "data": "The SDK vendor declaration covers linked account and device data when Google Sign-In is used",
+      "purpose": "Authentication and vendor-declared service diagnostics; Noum does not use it for advertising or cross-app tracking",
+      "termsLabel": "Google Privacy Policy",
+      "termsURL": "https://policies.google.com/privacy",
+      "requiresCloudProcessingConsent": false
+    },
+    {
+      "id": "firebase",
+      "name": "Firebase (Google)",
+      "data": "Account ID, display name, optional sync data, bounded production coaching requests, and Authentication and App Check proof",
+      "purpose": "Authentication, optional sync, protected callable transport, abuse protection, and vendor-declared diagnostics",
+      "termsLabel": "Firebase Terms",
+      "termsURL": "https://firebase.google.com/terms",
+      "requiresCloudProcessingConsent": true
+    },
+    {
+      "id": "open-meteo",
+      "name": "Open-Meteo",
+      "data": "A city or region label inferred from device time zone and locale, or supplied by app configuration; then coordinates returned by Open-Meteo itself",
+      "purpose": "Conversation weather context; Noum does not send a Core Location coordinate or account identifier",
+      "termsLabel": "Open-Meteo Terms",
+      "termsURL": "https://open-meteo.com/en/terms",
+      "requiresCloudProcessingConsent": false
+    }
+  ]
+}
