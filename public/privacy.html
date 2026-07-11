@@ -139,7 +139,7 @@
       <li><strong>Display name</strong> (from Apple or Google Sign-In, if provided) — for personalisation.</li>
       <li><strong>Authentication provider</strong> (Apple, Google, or Guest) — to manage your sign-in method.</li>
     </ul>
-    <p>Noum itself does not store your email address, phone number, or password in Noum profile or session records. Authentication is handled through Apple Sign-In, Google Sign-In, or anonymous guest sessions with Firebase Authentication.</p>
+    <p>Noum itself does not store your email address, phone number, or password in Noum profile or session records. Apple and Google account sign-in is handled through those providers and Firebase Authentication. Guest access normally uses anonymous Firebase Authentication when it is available and completes during the bounded launch window. When Firebase Authentication is unconfigured, unavailable, or cannot complete during that window, Noum creates a local-only guest account identifier and stores it in the iOS Keychain instead of creating a Firebase Authentication user. This fallback applies to account sign-in and persistence only; cloud-backed features you choose to use may still contact the processors described in this policy.</p>
     <p>When Google Sign-In is used, Google's bundled sign-in SDK declares that it may process linked name, email address, phone number, coarse location, user ID, device ID, other usage data, and other data types. Its manifest lists name, email address, phone number, and coarse location for app functionality; user ID and other data types for app functionality and analytics; and device ID and other usage data for analytics. The data available to that SDK depends on the Google account and sign-in flow.</p>
 
     <h3>Coaching Profile</h3>
@@ -171,6 +171,7 @@
       <li><strong>DeepSeek</strong></li>
     </ul>
     <p>For <strong>Ask Noum</strong>, this includes your current message, a bounded number of recent conversation turns, and bounded coaching context and session evidence. When available and relevant, that context may include your coaching profile and goals, recent session metrics or transcript evidence, saved proof quotes, coaching memory, plans, reflections, or an upcoming speaking moment. Noum limits the context assembled for each request; it does not send an unbounded copy of your on-device history.</p>
+    <p>In production, Ask Noum sends your current message, bounded recent conversation turns, and bounded coaching context and session evidence through a Firebase Functions endpoint. The function then sends the bounded request to Google Vertex AI (Gemini). Firebase Authentication and Firebase App Check tokens accompany that request to authenticate the caller, verify the app request, and protect the service from abuse. Firebase Functions processes the bounded request as an application-service intermediary; Noum does not use this transport for advertising or cross-app tracking.</p>
     <p>Other AI features may send a speech transcript and related coaching context, and may send selected video frames when you explicitly request nonverbal feedback. Providers process data under their own API terms, privacy policies, account settings, and retention practices. Those practices vary and can include temporary or longer retention for service operation, safety, abuse prevention, or legal compliance; Noum does not promise zero provider-side retention.</p>
 
     <h3>Spoken AI Replies</h3>
@@ -215,7 +216,7 @@
       <thead><tr><th>Purpose</th><th>Data Used</th></tr></thead>
       <tbody>
         <tr><td>Real-time speech-to-text</td><td>Audio stream (sent to Deepgram, AWS Transcribe, or Google Cloud Speech-to-Text; Ask Noum voice input may use Apple Speech Recognition as a fallback)</td></tr>
-        <tr><td>AI coaching feedback</td><td>Speech transcript or Ask Noum message, recent conversation turns, bounded coaching context and session evidence, and optionally selected video frames (sent to configured Google, Anthropic, OpenAI, or DeepSeek services)</td></tr>
+        <tr><td>AI coaching feedback</td><td>Speech transcript or Ask Noum message, recent conversation turns, bounded coaching context and session evidence, and optionally selected video frames. Production Ask Noum requests pass through Firebase Functions with Firebase Authentication and App Check tokens before reaching Google Vertex AI; other cloud coaching features use the configured Google, Anthropic, OpenAI, or DeepSeek service</td></tr>
         <tr><td>Personalised coaching</td><td>Coaching profile, session history</td></tr>
         <tr><td>Progress tracking</td><td>Session scores, XP, streaks, challenge completion</td></tr>
         <tr><td>Conversation simulation</td><td>IM conversation turns and relevant relationship/context fields sent to the configured AI provider</td></tr>
@@ -223,7 +224,7 @@
         <tr><td>Nearby clubs and Path daylight</td><td>An optional device coordinate handled through Apple Core Location, MapKit, and geocoding APIs; Core Location is configured with a one-kilometre desired accuracy for club search and three kilometres for Path daylight</td></tr>
         <tr><td>Conversation weather context</td><td>A city or region label inferred from the device time zone and locale, or supplied by app configuration, sent to Open-Meteo for geocoding; coordinates returned by Open-Meteo are then sent to its forecast API</td></tr>
         <tr><td>Practice reminders</td><td>Notification preferences, coaching context (not user-authored text)</td></tr>
-        <tr><td>Account management and sync reliability</td><td>Account ID and auth provider; required Google Sign-In and Firebase SDKs also perform the vendor-declared sign-in, diagnostic, and analytics-purpose processing described below</td></tr>
+        <tr><td>Account management and sync reliability</td><td>Firebase UID or a generated local guest UUID, auth provider, and optional sync data; required Google Sign-In and Firebase SDKs also perform the vendor-declared sign-in, diagnostic, security, and analytics-purpose processing described below</td></tr>
       </tbody>
     </table>
     <p>We do <strong>not</strong> use your data for advertising, user profiling for marketing purposes, or sale to third parties.</p>
@@ -245,7 +246,7 @@
         <tr><td><strong>DeepSeek</strong></td><td>Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence</td><td>AI coaching feedback and fallback conversation generation. <a href="https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html">DeepSeek Privacy Policy</a>.</td></tr>
         <tr><td><strong>Google Cloud Text-to-Speech</strong></td><td>Text prompts for voice synthesis</td><td>AI character voices and spoken coach replies. <a href="https://cloud.google.com/terms">Google Cloud Terms</a>.</td></tr>
         <tr><td><strong>Google Sign-In</strong></td><td>Its SDK vendor declaration covers linked name, email address, phone number, coarse location, user ID, device ID, other usage data, and other data types when Google Sign-In is used</td><td>Authentication. The manifest lists name, email address, phone number, and coarse location for app functionality; user ID and other data types for app functionality and analytics; and device ID and other usage data for analytics. It declares no tracking. <a href="https://policies.google.com/privacy">Google Privacy Policy</a>.</td></tr>
-        <tr><td><strong>Firebase</strong> (Google)</td><td>Account ID, display name, optionally synced profile/session data. The Firebase Authentication SDK manifest declares linked user ID for app functionality; Firebase Authentication and Firestore SDK manifests declare unlinked other diagnostic data for analytics purposes</td><td>Authentication, optional cloud sync, and vendor-declared service diagnostics and measurement. <a href="https://firebase.google.com/terms">Firebase Terms</a>.</td></tr>
+        <tr><td><strong>Firebase</strong> (Google)</td><td>Account ID, display name, optionally synced profile/session data; production Ask Noum messages, bounded recent turns, and bounded coaching context/session evidence sent through Firebase Functions; Firebase Authentication and App Check tokens or attestation data used to secure that transport. The Firebase Authentication SDK manifest declares linked user ID for app functionality; Firebase Authentication and Firestore SDK manifests declare unlinked other diagnostic data for analytics purposes</td><td>Authentication when configured, optional cloud sync, protected Firebase Functions transport for production Ask Noum, App Check abuse protection, and vendor-declared service diagnostics and measurement. <a href="https://firebase.google.com/terms">Firebase Terms</a>.</td></tr>
         <tr><td><strong>Open-Meteo</strong></td><td>City or region search label inferred from the device time zone and locale, or supplied by app configuration; then coordinates returned by Open-Meteo itself</td><td>Weather context for conversation topics. Noum does not send a device Core Location coordinate or account identifier to Open-Meteo. Public API, no authentication.</td></tr>
       </tbody>
     </table>
@@ -303,7 +304,7 @@
     <ul>
       <li>Delete account-scoped data that Noum controls from our backend and Firebase</li>
       <li>Remove all per-account data from your device (coaching profile, sessions, XP, friends, AI settings)</li>
-      <li>Delete your Firebase Authentication account</li>
+      <li>Delete your Firebase Authentication account, if one exists</li>
       <li>Sign you out</li>
     </ul>
     <p>Account deletion is irreversible. Noum removes per-account data from the device and starts deletion of account-scoped backend records it controls. Third-party processors may retain request data for their published retention periods, safety or abuse-prevention needs, legal obligations, or configured service features. Shared challenge or league records and backups may also require separate cleanup or retention windows.</p>
@@ -320,7 +321,7 @@
 
     <h2>8. Security</h2>
     <ul>
-      <li>Authentication is handled by Apple and Google Sign-In via Firebase, using industry-standard OAuth flows.</li>
+      <li>Apple and Google account sign-in is handled through Firebase Authentication using industry-standard OAuth flows; guest access uses anonymous Firebase Authentication when it completes during the bounded launch window or a Keychain-backed local identifier when Firebase is unconfigured, unavailable, or cannot complete during that window.</li>
       <li>Cloud-speech credentials intended for client use are short-lived and are not intentionally persisted; broader provider secrets are not intended to be distributed in the app.</li>
       <li>All network communication uses HTTPS/TLS.</li>
       <li>On-device credentials are stored in the iOS Keychain (hardware-encrypted).</li>
