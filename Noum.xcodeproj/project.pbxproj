@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0B2EB16C2F7355070093625F /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 0B2EB16B2F7355070093625F /* FirebaseAnalytics */; };
 		0B2EB16E2F7355070093625F /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 0B2EB16D2F7355070093625F /* FirebaseStorage */; };
 		0B2EB1702F7357160093625F /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 0B2EB16F2F7357160093625F /* FirebaseAuth */; };
 		0B2EB1722F7357200093625F /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0B2EB1712F7357200093625F /* FirebaseCore */; };
@@ -199,7 +198,6 @@
 			files = (
 				0B31DDB72E04EA9100DE8F71 /* AWSClientRuntime in Frameworks */,
 				0B31DD962E04E1AB00DE8F71 /* AWSTranscribeStreaming in Frameworks */,
-				0B2EB16C2F7355070093625F /* FirebaseAnalytics in Frameworks */,
 				0B2EB1742F7357270093625F /* FirebaseFirestore in Frameworks */,
 				0B2EB1762F7357270093625F /* FirebaseFunctions in Frameworks */,
 				0B2EB1782F7357270093625F /* FirebaseAppCheck in Frameworks */,
@@ -391,7 +389,6 @@
 				0B31DDB62E04EA9100DE8F71 /* AWSClientRuntime */,
 				0D222222222222222222222222 /* GoogleSignIn */,
 				0D333333333333333333333333 /* GoogleSignInSwift */,
-				0B2EB16B2F7355070093625F /* FirebaseAnalytics */,
 				0B2EB16D2F7355070093625F /* FirebaseStorage */,
 				0B2EB16F2F7357160093625F /* FirebaseAuth */,
 				0B2EB1712F7357200093625F /* FirebaseCore */,
@@ -1173,11 +1170,6 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		0B2EB16B2F7355070093625F /* FirebaseAnalytics */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0B2EB16A2F7355070093625F /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseAnalytics;
-		};
 		0B2EB16D2F7355070093625F /* FirebaseStorage */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 0B2EB16A2F7355070093625F /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;

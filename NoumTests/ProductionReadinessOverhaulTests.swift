@@ -54,6 +54,21 @@ struct ProductionAppShellRoutingTests {
     }
 }
 
+@Suite("Privacy production contracts")
+struct PrivacyProductionContractTests {
+    @Test func appTargetDoesNotExplicitlyLinkFirebaseAnalytics() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let projectFile = repositoryRoot
+            .appendingPathComponent("Noum.xcodeproj")
+            .appendingPathComponent("project.pbxproj")
+        let project = try String(contentsOf: projectFile, encoding: .utf8)
+
+        #expect(!project.contains("FirebaseAnalytics"))
+    }
+}
+
 @Suite("Firestore production contracts")
 struct FirestoreProductionContractTests {
     @Test func challengeQueriesRequireTheAuthenticatedFirebaseUID() {

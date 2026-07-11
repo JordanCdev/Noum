@@ -202,7 +202,7 @@
     <ul>
       <li><strong>Microphone</strong> — required for speech practice (core functionality)</li>
       <li><strong>Camera</strong> — optional, for video recording during practice</li>
-      <li><strong>Contacts</strong> — optional, only if you choose to add friends from your contacts (only names are imported; phone numbers are not stored)</li>
+      <li><strong>Location</strong> — optional. If you choose nearby-club search, Noum requests When In Use access. Club search configures Core Location with a one-kilometre desired accuracy and uses the resulting coordinate as the centre of a 25-kilometre Apple MapKit search. If you have already granted location access, the Path may request a location with a three-kilometre desired accuracy and ask Apple to resolve its time zone solely to align the cosmetic day/night scene. These device coordinates remain in memory and are not sent to Noum's backend or Open-Meteo.</li>
       <li><strong>Notifications</strong> — optional, for practice reminders</li>
       <li><strong>Speech Recognition</strong> — for optional Ask Noum voice input and Apple transcription fallback; Apple may process recognition on-device or through its service depending on system availability</li>
     </ul>
@@ -219,6 +219,8 @@
         <tr><td>Progress tracking</td><td>Session scores, XP, streaks, challenge completion</td></tr>
         <tr><td>Conversation simulation</td><td>IM conversation turns and relevant relationship/context fields sent to the configured AI provider</td></tr>
         <tr><td>Spoken replies and prompt readout</td><td>Text to be spoken (sent to Google Cloud Text-to-Speech or OpenAI Text-to-Speech when cloud speech is used)</td></tr>
+        <tr><td>Nearby clubs and Path daylight</td><td>An optional device coordinate handled through Apple Core Location, MapKit, and geocoding APIs; Core Location is configured with a one-kilometre desired accuracy for club search and three kilometres for Path daylight</td></tr>
+        <tr><td>Conversation weather context</td><td>A city or region label inferred from the device time zone and locale, or supplied by app configuration, sent to Open-Meteo for geocoding; coordinates returned by Open-Meteo are then sent to its forecast API</td></tr>
         <tr><td>Practice reminders</td><td>Notification preferences, coaching context (not user-authored text)</td></tr>
         <tr><td>Account management</td><td>Account ID, auth provider</td></tr>
       </tbody>
@@ -235,13 +237,14 @@
         <tr><td><strong>AWS Transcribe</strong> (Amazon)</td><td>Real-time audio stream</td><td>Speech-to-text transcription. <a href="https://aws.amazon.com/service-terms/">AWS Service Terms</a>.</td></tr>
         <tr><td><strong>Google Cloud Speech-to-Text</strong></td><td>Real-time audio stream</td><td>Speech-to-text transcription. <a href="https://cloud.google.com/terms/data-processing-terms">Google Cloud Data Processing and Security Terms</a>.</td></tr>
         <tr><td><strong>Apple Speech Recognition</strong></td><td>Short voice-question audio when the Apple fallback is used</td><td>Ask Noum voice transcription; processing location depends on Apple's service/device availability. <a href="https://www.apple.com/legal/privacy/">Apple Privacy Policy</a>.</td></tr>
+        <tr><td><strong>Apple Core Location / MapKit</strong></td><td>Device coordinate when you request nearby-club search; a location passed to Apple geocoding for Path daylight only when permission already exists</td><td>Nearby-club results and a cosmetic local day/night scene. Desired accuracy is one kilometre for club search and three kilometres for Path daylight; iOS controls the location ultimately supplied. <a href="https://www.apple.com/legal/privacy/">Apple Privacy Policy</a>.</td></tr>
         <tr><td><strong>Google Gemini / Google Cloud Agent Platform</strong></td><td>Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence, optionally selected video frames</td><td>AI coaching feedback and conversation generation. <a href="https://ai.google.dev/gemini-api/terms">Gemini API Terms</a>.</td></tr>
         <tr><td><strong>Anthropic Claude</strong></td><td>Ask Noum message, recent turns, bounded coaching context/session evidence</td><td>Ask Noum coaching replies and fallback processing. <a href="https://privacy.anthropic.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data">Anthropic API Retention</a>.</td></tr>
         <tr><td><strong>OpenAI</strong></td><td>Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence, optionally selected video frames; text for speech synthesis</td><td>AI coaching feedback, conversation generation, and fallback text-to-speech. <a href="https://platform.openai.com/docs/models/default-usage-policies-by-endpoint">OpenAI API Data Controls</a>.</td></tr>
         <tr><td><strong>DeepSeek</strong></td><td>Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence</td><td>AI coaching feedback and fallback conversation generation. <a href="https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html">DeepSeek Privacy Policy</a>.</td></tr>
         <tr><td><strong>Google Cloud Text-to-Speech</strong></td><td>Text prompts for voice synthesis</td><td>AI character voices and spoken coach replies. <a href="https://cloud.google.com/terms">Google Cloud Terms</a>.</td></tr>
         <tr><td><strong>Firebase</strong> (Google)</td><td>Account ID, display name, optionally synced profile/session data</td><td>Authentication and optional cloud sync. <a href="https://firebase.google.com/terms">Firebase Terms</a>.</td></tr>
-        <tr><td><strong>Open-Meteo</strong></td><td>Approximate location (via IP, not GPS)</td><td>Weather context for conversation topics. Public API, no authentication, no personal data sent.</td></tr>
+        <tr><td><strong>Open-Meteo</strong></td><td>City or region search label inferred from the device time zone and locale, or supplied by app configuration; then coordinates returned by Open-Meteo itself</td><td>Weather context for conversation topics. Noum does not send a device Core Location coordinate or account identifier to Open-Meteo. Public API, no authentication.</td></tr>
       </tbody>
     </table>
     <p>No data is shared with analytics providers, advertising networks, or data brokers.</p>

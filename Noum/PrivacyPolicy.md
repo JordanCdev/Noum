@@ -71,7 +71,7 @@ This data is stored on your device and optionally synced to Firebase if backend 
 The app requests:
 - **Microphone** — required for speech practice (core functionality)
 - **Camera** — optional, for video recording during practice
-- **Contacts** — optional, only if you choose to add friends from your contacts (only names are imported; phone numbers are not stored)
+- **Location** — optional. If you choose nearby-club search, Noum requests When In Use access. Club search configures Core Location with a one-kilometre desired accuracy and uses the resulting coordinate as the centre of a 25-kilometre Apple MapKit search. If you have already granted location access, the Path may request a location with a three-kilometre desired accuracy and ask Apple to resolve its time zone solely to align the cosmetic day/night scene. These device coordinates remain in memory and are not sent to Noum's backend or Open-Meteo.
 - **Notifications** — optional, for practice reminders
 - **Speech Recognition** — for optional Ask Noum voice input and Apple transcription fallback; Apple may process recognition on-device or through its service depending on system availability
 
@@ -87,6 +87,8 @@ The app requests:
 | Progress tracking | Session scores, XP, streaks, challenge completion |
 | Conversation simulation | IM conversation turns and relevant relationship/context fields sent to the configured AI provider |
 | Spoken replies and prompt readout | Text to be spoken (sent to Google Cloud Text-to-Speech or OpenAI Text-to-Speech when cloud speech is used) |
+| Nearby clubs and Path daylight | An optional device coordinate handled through Apple Core Location, MapKit, and geocoding APIs; Core Location is configured with a one-kilometre desired accuracy for club search and three kilometres for Path daylight |
+| Conversation weather context | A city or region label inferred from the device time zone and locale, or supplied by app configuration, sent to Open-Meteo for geocoding; coordinates returned by Open-Meteo are then sent to its forecast API |
 | Practice reminders | Notification preferences, coaching context (not user-authored text) |
 | Account management | Account ID, auth provider |
 
@@ -102,13 +104,14 @@ We do **not** use your data for advertising, user profiling for marketing purpos
 | **AWS Transcribe** (Amazon) | Real-time audio stream | Speech-to-text transcription | [AWS Service Terms](https://aws.amazon.com/service-terms/) |
 | **Google Cloud Speech-to-Text** | Real-time audio stream | Speech-to-text transcription | [Google Cloud Data Processing and Security Terms](https://cloud.google.com/terms/data-processing-terms) |
 | **Apple Speech Recognition** | Short voice-question audio when the Apple fallback is used | Ask Noum voice transcription; processing location depends on Apple's service/device availability | [Apple Privacy Policy](https://www.apple.com/legal/privacy/) |
+| **Apple Core Location / MapKit** | Device coordinate when you request nearby-club search; a location passed to Apple geocoding for Path daylight only when permission already exists | Nearby-club results and a cosmetic local day/night scene. Desired accuracy is one kilometre for club search and three kilometres for Path daylight; iOS controls the location ultimately supplied | [Apple Privacy Policy](https://www.apple.com/legal/privacy/) |
 | **Google Gemini / Google Cloud Agent Platform** | Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence, optionally selected video frames | AI coaching feedback and conversation generation | [Gemini API Terms](https://ai.google.dev/gemini-api/terms) |
 | **Anthropic Claude** | Ask Noum message, recent turns, bounded coaching context/session evidence | Ask Noum coaching replies and fallback processing | [Anthropic API Retention](https://privacy.anthropic.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data) |
 | **OpenAI** | Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence, optionally selected video frames; text for speech synthesis | AI coaching feedback, conversation generation, and fallback text-to-speech | [OpenAI API Data Controls](https://platform.openai.com/docs/models/default-usage-policies-by-endpoint) |
 | **DeepSeek** | Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence | AI coaching feedback and fallback conversation generation | [DeepSeek Privacy Policy](https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html) |
 | **Google Cloud Text-to-Speech** | Text prompts for voice synthesis | AI character voices in conversation mode | [Google Cloud Terms](https://cloud.google.com/terms) |
 | **Firebase** (Google) | Account ID, display name, optionally synced profile/session data | Authentication and optional cloud sync | [Firebase Terms](https://firebase.google.com/terms) |
-| **Open-Meteo** | Approximate location (via IP, not GPS) | Weather context for conversation topics | Public API, no authentication, no personal data sent |
+| **Open-Meteo** | City or region search label inferred from the device time zone and locale, or supplied by app configuration; then coordinates returned by Open-Meteo itself | Weather context for conversation topics. Noum does not send a device Core Location coordinate or account identifier to Open-Meteo | Public API, no authentication |
 
 No data is shared with analytics providers, advertising networks, or data brokers.
 
@@ -194,7 +197,7 @@ We may update this privacy policy from time to time. We will update the "Last up
 
 If you have questions about this privacy policy or your data, contact us at:
 
-**Email:** [your-email@example.com]
+**Email:** [hello@noum.app](mailto:hello@noum.app)
 
 ---
 
