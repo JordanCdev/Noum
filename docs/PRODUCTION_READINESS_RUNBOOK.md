@@ -74,6 +74,27 @@ The operational live probe is narrower: it checks the public privacy URL only.
 It does not prove Firestore rule deployment, TestFlight upload, App Store privacy
 review, or release-blocking bug triage.
 
+## Live Cloud Operations Probe
+
+With an authenticated `gcloud` identity that can read the production project,
+run:
+
+```bash
+./scripts/release-cloud-operations-probe.sh
+```
+
+The probe is read-only. It verifies the production Firestore recovery settings
+and daily backup, required log metrics and routed alert policies, dedicated
+function identities, exclusive access to the Deepgram secret, removal of broad
+roles from the default compute identity, the hosted privacy page, and 401
+responses from the sensitive callables when no Firebase Auth or App Check proof
+is supplied. It never reads the Deepgram secret value.
+
+This is current cloud-configuration evidence, not signed-device evidence. It
+does not prove that App Attest succeeds on an archived build, that StoreKit
+entitlements match App Store Connect, or that a real microphone session reaches
+Deepgram and finalizes correctly.
+
 ## Local Evidence Path
 
 ```bash
