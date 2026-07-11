@@ -157,7 +157,7 @@ struct AhCounterView: View {
                         .accessibilityHidden(true)
 
                         VStack(alignment: .leading, spacing: Spacing.xs) {
-                            Text("Ah-Counter")
+                            Text("Filler Control")
                                 .font(Typography.bigStat)
                             Text("Track filler words live. Open-ended reps without a fixed countdown — speak freely while Noum listens.")
                                 .font(Typography.subheadline)
@@ -438,7 +438,7 @@ struct AhCounterView: View {
     private var focusedSetupScreen: some View {
         FocusedPracticeScaffold(
             style: .clarity,
-            status: "Ah-Counter",
+            status: "Filler Control",
             title: "Keep the thought. Lose the filler.",
             subtitle: "Speak naturally while Noum listens live."
         ) {
@@ -456,7 +456,7 @@ struct AhCounterView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("ahCounter.adjust")
-            .accessibilityLabel("Adjust Ah-Counter")
+            .accessibilityLabel("Adjust Filler Control")
         } content: {
             VStack(spacing: Spacing.lg) {
                 HStack(alignment: .top, spacing: Spacing.md) {
@@ -490,7 +490,7 @@ struct AhCounterView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            Button("Start Ah-Counter") {
+            Button("Start Filler Control") {
                 beginLaunchCountdown()
             }
             .font(.headline.weight(.bold))
@@ -534,7 +534,7 @@ struct AhCounterView: View {
             }
             .scrollContentBackground(.hidden)
             .background(AppColor.screenBackground)
-            .navigationTitle("Adjust Ah-Counter")
+            .navigationTitle("Adjust Filler Control")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -949,7 +949,7 @@ struct AhCounterView: View {
             suddenDeathMultiplierLabels: [],
             suddenDeathTotalWords: nil,
             showDuration: true,
-            practiceTitle: "Ah-Counter Practice",
+            practiceTitle: "Filler Control",
             feedbackOverride: evaluation?.feedback,
             headlineOverride: evaluation?.headline,
             scoreBreakdown: evaluation?.segments ?? [],

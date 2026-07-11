@@ -213,6 +213,26 @@ enum AskNoumCoachVisibleText {
     }
 }
 
+/// Bounded provenance line shown directly beneath the latest coach response.
+/// It names only inputs the user can inspect and stays silent when either side
+/// of the claim is missing.
+enum AskNoumEvidenceMetadata {
+    static func line(hasCurrentFocus: Bool, recentRepCount: Int) -> String? {
+        guard hasCurrentFocus, recentRepCount > 0 else { return nil }
+        let boundedCount = min(recentRepCount, 12)
+        let noun = boundedCount == 1 ? "rep" : "reps"
+        return "Based on your current focus and \(boundedCount) recent \(noun)"
+    }
+}
+
+enum AskNoumVisibleCopy {
+    static let currentFocus = "Current focus"
+    static let reviewFocus = "Review your focus"
+    static let askNoum = "Ask Noum"
+
+    static let primaryLabels = [currentFocus, reviewFocus, askNoum]
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct CoachFormattedMessageText: View {
     let text: String
@@ -395,7 +415,7 @@ enum AskNoumDayZeroGreeting {
         challenge: SpeakingChallenge?,
         voice: SpeakingStyleGoal?
     ) -> String {
-        let evidenceInvite = "No read yet. One short rep gives me evidence; then I can name the first lever worth training."
+        let evidenceInvite = "No read yet. One short rep gives me evidence; then I can name the first focus worth training."
         let acknowledgement: String?
         switch (challenge, voice) {
         case let (challenge?, voice?):
@@ -415,7 +435,7 @@ enum AskNoumDayZeroGreeting {
     static let headline = "Before rep one"
 
     /// Title for the first-rep CTA that stands in for the composer.
-    static let firstRepCTATitle = "Run your first rep"
+    static let firstRepCTATitle = "Start first rep"
 
     /// One-line honest reason the composer is not there yet. Plain
     /// statement, no countdown, no shame.
@@ -641,20 +661,6 @@ struct AskNoumView: View {
                                     EmptyView()
                                 }
 
-                                // Transparent memory — only once a real (non-
-                                // pending) coach reply has landed, so the pill
-                                // never appears beside an empty thread or a
-                                // still-composing reply.
-                                if let lastMessage = store.messages.last,
-                                   lastMessage.role == .coach,
-                                   !lastMessage.isPending {
-                                    MemoryUsagePill(snapshot: memoryTrajectorySnapshot) {
-                                        showTrajectorySheet = true
-                                    }
-                                    .padding(.top, 2)
-                                    .id("memoryUsagePill")
-                                }
-
                                 // End chat — the deliberate session exit,
                                 // at the BOTTOM of the thread (owner
                                 // refinement on T2: "like end chat which
@@ -819,7 +825,7 @@ struct AskNoumView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: isHeaderCompact ? Spacing.sm : Spacing.md) {
+        HStack(spacing: Spacing.sm) {
             NoumCharacter(
                 // Living-coach-presence: the orb REACTS to the thread via
                 // `orbMood` — `.thinking` while composing/writing a reply,
@@ -829,7 +835,7 @@ struct AskNoumView: View {
                 // coach stays a present, reacting embodiment even compact.
                 mood: orbMood,
                 tint: AppColor.pro,
-                size: isHeaderCompact ? 34 : 56,
+                size: isHeaderCompact ? 30 : 42,
                 stage: characterStage
             )
             VStack(alignment: .leading, spacing: 2) {
@@ -849,8 +855,7 @@ struct AskNoumView: View {
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isHeaderCompact)
         .padding(.horizontal, Spacing.lg)
-        .padding(.top, Spacing.xs)
-        .padding(.bottom, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
         // T1 — the header no longer reads as a closed box. The old opaque
         // `cardBackground.opacity(0.5)` bar + hard Divider fenced the coach
         // off from the thread; now the header sits directly on
@@ -862,21 +867,24 @@ struct AskNoumView: View {
 
     @ViewBuilder
     private var currentFocusStrip: some View {
-        if !store.messages.isEmpty, let line = activeCaseSubtitle {
+        if !store.messages.isEmpty,
+           let line = Self.currentFocusValue(caseFile: coachMemoryStore.currentMemory?.caseFile) {
             HStack(spacing: 6) {
                 Image(systemName: "scope")
                     .font(Typography.captionSmall.weight(.semibold))
                     .foregroundStyle(AppColor.pro.opacity(0.85))
                 Text(line)
-                    .font(Typography.caption.weight(.semibold))
+                    .font(Typography.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, Spacing.lg)
+            .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 6)
-            .background(AppColor.cardBackground.opacity(0.35))
+            .background(AppColor.pro.opacity(0.06), in: Capsule())
+            .padding(.horizontal, Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Current focus: \(line)")
             .accessibilityIdentifier("askNoum.currentFocus")
@@ -932,7 +940,7 @@ struct AskNoumView: View {
                 Image(systemName: "ellipsis.circle")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 44, height: 44)
                     .contentShape(Circle())
             }
             .accessibilityLabel("Chat options")
@@ -968,9 +976,6 @@ struct AskNoumView: View {
         if store.isAwaitingReply {
             return store.hasLandedCoachReply ? "Thinking\u{2026}" : "Reading your context\u{2026}"
         }
-        if let line = activeCaseSubtitle {
-            return line
-        }
         if let voice = voice {
             return "Your \(voice.title.lowercased()) coach."
         }
@@ -982,19 +987,29 @@ struct AskNoumView: View {
     }
 
     static func currentFocusLine(caseFile: CoachCaseFile?) -> String? {
+        guard let caseFile, let value = currentFocusValue(caseFile: caseFile) else { return nil }
+        let target = caseFile.observableTarget?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if target?.isEmpty == false || caseFile.focus != nil {
+            return "Current focus: \(value)"
+        }
+        return "Current practice: \(value)"
+    }
+
+    static func currentFocusValue(caseFile: CoachCaseFile?) -> String? {
         guard let caseFile else { return nil }
         if let target = caseFile.observableTarget?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !target.isEmpty {
-            return "Current focus: \(Self.shortCaseLine(target, maxLength: 64))"
+            return Self.shortCaseLine(CoachDisplayCopy.normalized(target), maxLength: 64)
         }
         if let focus = caseFile.focus {
-            return "Current focus: \(focus.displayName)"
+            return focus.displayName
         }
         if let intervention = caseFile.activeIntervention?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !intervention.isEmpty {
-            return "Current practice: \(Self.shortCaseLine(intervention, maxLength: 64))"
+            return Self.shortCaseLine(CoachDisplayCopy.normalized(intervention), maxLength: 64)
         }
         return nil
     }
@@ -1148,7 +1163,7 @@ struct AskNoumView: View {
 
     private var emptyStateHeadline: String {
         if activeCaseSubtitle != nil {
-            return "Start with the current case."
+            return "Start with your current focus."
         }
         if let voice = voice {
             return "Start with your \(voice.title.lowercased())."
@@ -1167,8 +1182,8 @@ struct AskNoumView: View {
                     .frame(width: 3)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("CURRENT CASE")
-                        .font(Typography.captionSmall.weight(.bold))
+                    Text(AskNoumVisibleCopy.currentFocus)
+                        .font(Typography.captionSmall.weight(.semibold))
                         .foregroundStyle(AppColor.pro)
                     Text(line)
                         .font(Typography.caption)
@@ -1221,10 +1236,12 @@ struct AskNoumView: View {
            let intervention = memory.activeIntervention,
            intervention.isReviewDue(at: Date()) {
             Button {
-                let opener = CoachContextBuilder.interventionReviewOpener(
-                    intervention: intervention,
-                    voice: voice,
-                    reflectionPattern: memory.reflectionPattern
+                let opener = CoachDisplayCopy.normalized(
+                    CoachContextBuilder.interventionReviewOpener(
+                        intervention: intervention,
+                        voice: voice,
+                        reflectionPattern: memory.reflectionPattern
+                    )
                 )
                 send(opener)
             } label: {
@@ -1234,9 +1251,8 @@ struct AskNoumView: View {
                         .foregroundStyle(AppColor.pro)
                         .padding(.top, 2)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("REVIEW DUE")
-                            .font(Typography.captionSmall)
-                            .tracking(0.6)
+                        Text(AskNoumVisibleCopy.reviewFocus)
+                            .font(Typography.captionSmall.weight(.semibold))
                             .foregroundStyle(AppColor.pro)
                         Text(CoachContextBuilder.interventionReviewStarterHeadline(for: intervention))
                             .font(Typography.body.weight(.semibold))
@@ -1303,10 +1319,8 @@ struct AskNoumView: View {
                             .foregroundStyle(AppColor.pro)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Recommended ask")
-                                .font(Typography.micro.weight(.bold))
+                                .font(Typography.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-                                .tracking(0.7)
                             Text(primary)
                                 .font(Typography.body.weight(.semibold))
                                 .foregroundStyle(.primary)
@@ -1348,8 +1362,7 @@ struct AskNoumView: View {
             Label("Other useful asks", systemImage: "ellipsis.circle")
                 .font(Typography.caption.weight(.semibold))
                 .foregroundStyle(AppColor.pro)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 2)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         }
         .accessibilityLabel("Other useful asks")
     }
@@ -1624,10 +1637,8 @@ struct AskNoumView: View {
         if shouldShowHypothesisAck {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text("Does this read match?")
-                    .font(Typography.micro.weight(.bold))
+                    .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
                     .accessibilityLabel("Does this coaching read match?")
 
                 FlowLayout(spacing: 8, runSpacing: 6) {
@@ -1761,10 +1772,8 @@ struct AskNoumView: View {
         if shouldShowRevisedReadFollowUp {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text("Where does the new read land?")
-                    .font(Typography.micro.weight(.bold))
+                    .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
                     .accessibilityLabel("Does the revised coaching read match?")
 
                 FlowLayout(spacing: 8, runSpacing: 6) {
@@ -1851,10 +1860,8 @@ struct AskNoumView: View {
         if shouldShowGoalProposal, let intent = pendingGoalIntent {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(goalProposalEyebrow(for: intent))
-                    .font(Typography.micro.weight(.bold))
+                    .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
                     .accessibilityLabel("Confirm a change to your speaking voice")
 
                 if let detail = goalProposalDetail(for: intent) {
@@ -2106,10 +2113,8 @@ struct AskNoumView: View {
         if destination != nil || layout.primary != nil {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text("Next move")
-                    .font(Typography.micro.weight(.bold))
+                    .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
                     .accessibilityHidden(true)
 
                 Button {
@@ -2161,8 +2166,7 @@ struct AskNoumView: View {
                         Label("Other directions", systemImage: "ellipsis.circle")
                             .font(Typography.caption.weight(.semibold))
                             .foregroundStyle(AppColor.pro)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 2)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     }
                     .accessibilityIdentifier("askNoum.nextMove.more")
                     .accessibilityLabel("Other directions")
@@ -2191,6 +2195,15 @@ struct AskNoumView: View {
 
     // MARK: - Message rows
 
+    private var latestResponseEvidenceMetadata: String? {
+        AskNoumEvidenceMetadata.line(
+            hasCurrentFocus: Self.currentFocusValue(
+                caseFile: coachMemoryStore.currentMemory?.caseFile
+            ) != nil,
+            recentRepCount: sessionStore.sessions.count
+        )
+    }
+
     /// Quiet session-ending action at the bottom of the thread. Stops any
     /// speech, then pops the shared NavigationPath to root — a deep chat
     /// thread returns straight Home in one tap. Renders only when a
@@ -2204,7 +2217,7 @@ struct AskNoumView: View {
             HStack(spacing: Spacing.xs) {
                 Image(systemName: "arrow.uturn.left")
                     .font(.caption.weight(.semibold))
-                Text("End chat")
+                Text("Done")
                     .font(Typography.caption.weight(.semibold))
             }
             .foregroundStyle(.secondary)
@@ -2215,7 +2228,7 @@ struct AskNoumView: View {
         .buttonStyle(.pressable)
         .frame(maxWidth: .infinity)
         .padding(.top, Spacing.xs)
-        .accessibilityLabel("End chat and return home")
+        .accessibilityLabel("Done. Return home")
         .accessibilityIdentifier("askNoum.endChat")
     }
 
@@ -2301,24 +2314,34 @@ struct AskNoumView: View {
                         textColor: message.isOffline ? Color.secondary : Color.primary,
                         accent: accent
                     )
+
+                    if !message.isOffline,
+                       message.id == latestLandedCoachID,
+                       let metadata = latestResponseEvidenceMetadata {
+                        HStack(spacing: 5) {
+                            Image(systemName: "checkmark.circle")
+                                .font(Typography.captionSmall)
+                                .accessibilityHidden(true)
+                            Text(metadata)
+                                .font(Typography.captionSmall)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .foregroundStyle(AppColor.textSecondary)
+                        .padding(.top, 2)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(metadata)
+                        .accessibilityIdentifier("askNoum.responseEvidence")
+                    }
                 }
             }
         }
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, 14)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            message.isOffline ? AppColor.innerSurface : AppColor.cardBackground,
-            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+            message.isOffline ? AppColor.innerSurface : Color.clear,
+            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(
-                    message.isOffline ? AppColor.subtleBorder : AppColor.pro.opacity(0.10),
-                    lineWidth: 1
-                )
-        )
-        .shadow(color: Color.black.opacity(message.isOffline ? 0 : 0.035), radius: 12, x: 0, y: 6)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             message.isOffline
@@ -2339,10 +2362,8 @@ struct AskNoumView: View {
                     stage: characterStage
                 )
                 Text("Coach read")
-                    .font(Typography.micro.weight(.bold))
-                    .tracking(0.7)
+                    .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(accent.opacity(0.72))
-                    .textCase(.uppercase)
             }
             .accessibilityHidden(true)
 
@@ -2490,6 +2511,7 @@ struct AskNoumView: View {
                 Button("Try again") { retryLastTurn() }
                     .font(Typography.caption.weight(.bold))
                     .foregroundStyle(AppColor.brandBlue)
+                    .frame(minHeight: 44)
             }
             .padding(.horizontal, Spacing.md)
             .padding(.top, Spacing.xs)
@@ -2522,6 +2544,7 @@ struct AskNoumView: View {
                 }
                 .font(Typography.caption.weight(.bold))
                 .foregroundStyle(AppColor.brandBlue)
+                .frame(minHeight: 44)
             }
             .padding(.horizontal, Spacing.md)
             .padding(.top, Spacing.xs)

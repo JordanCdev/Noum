@@ -243,10 +243,10 @@ struct ShareableSessionCard: View {
 
     private var modeLabel: String {
         switch session.mode {
-        case .timed:          return "TIMED · \(modeDifficulty)"
+        case .timed:          return "TIMED PRACTICE · \(modeDifficulty)"
         case .suddenDeath:    return "PRESSURE DRILL"
-        case .ahCounter:      return "FREE-FLOW"
-        case .imConversation: return "LIVE CONVERSATION"
+        case .ahCounter:      return "FILLER CONTROL"
+        case .imConversation: return "CONVERSATION PRACTICE"
         }
     }
 

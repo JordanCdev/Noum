@@ -111,7 +111,7 @@ struct CoachParityReadiness: Equatable {
         let confidence = memory?.evidenceConfidence ?? .insufficient
         let hasLever = memory?.currentLever != nil
         if confidence >= .moderate && hasLever {
-            return StageRead(stage: .diagnosis, status: .earned, basis: "Baseline established and a high-leverage focus identified.")
+            return StageRead(stage: .diagnosis, status: .earned, basis: "Recent reps support a clear coaching focus.")
         }
         if confidence >= .tentative || sessionCount >= 1 {
             return StageRead(stage: .diagnosis, status: .forming, basis: "An early baseline is forming from your reps.")

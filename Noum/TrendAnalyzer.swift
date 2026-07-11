@@ -93,15 +93,25 @@ struct SkillSnapshot: Identifiable, Codable {
 // MARK: - Skill Trend Store
 
 /// Persists skill snapshots across sessions for trend analysis.
-class SkillTrendStore: ObservableObject {
+final class SkillTrendStore: ObservableObject {
     static let shared = SkillTrendStore()
 
-    @Published var snapshots: [SkillSnapshot] = []
+    @Published private(set) var snapshots: [SkillSnapshot] = []
 
-    private let storageKey = "skillTrendSnapshots"
+    private static let storageKeyPrefix = "skillTrendSnapshots."
+    private static let legacyStorageKey = "skillTrendSnapshots"
+    private let defaults: UserDefaults
+    private let accountIDProvider: () -> String?
 
-    private init() {
-        load()
+    init(
+        defaults: UserDefaults = .standard,
+        accountIDProvider: @escaping () -> String? = {
+            KeychainHelper.load(key: "NoumAccountID")
+        }
+    ) {
+        self.defaults = defaults
+        self.accountIDProvider = accountIDProvider
+        load(migratingLegacyValue: true)
     }
 
     func record(_ snapshot: SkillSnapshot) {
@@ -140,16 +150,52 @@ class SkillTrendStore: ObservableObject {
         record(snapshot)
     }
 
+    /// Account switches keep one in-memory owner while swapping its persisted
+    /// account scope, matching the lifecycle used by the other coaching stores.
+    func reloadForCurrentAccount() {
+        load(migratingLegacyValue: true)
+    }
+
+    /// Signed-out state must not retain the prior account's evidence in memory.
+    func endSession() {
+        snapshots = []
+    }
+
     private func save() {
         if let data = try? JSONEncoder().encode(snapshots) {
-            UserDefaults.standard.set(data, forKey: storageKey)
+            defaults.set(data, forKey: storageKey)
         }
     }
 
-    private func load() {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let decoded = try? JSONDecoder().decode([SkillSnapshot].self, from: data) else { return }
-        snapshots = decoded
+    private func load(migratingLegacyValue: Bool) {
+        if let data = defaults.data(forKey: storageKey),
+           let decoded = try? JSONDecoder().decode([SkillSnapshot].self, from: data) {
+            snapshots = decoded
+            return
+        }
+
+        // One-time upgrade from the pre-account-scoped key. The active
+        // account at upgrade receives its existing local history; removing
+        // the legacy value prevents any later account from inheriting it.
+        if migratingLegacyValue,
+           let data = defaults.data(forKey: Self.legacyStorageKey),
+           let decoded = try? JSONDecoder().decode([SkillSnapshot].self, from: data) {
+            snapshots = decoded
+            defaults.set(data, forKey: storageKey)
+            defaults.removeObject(forKey: Self.legacyStorageKey)
+            return
+        }
+
+        snapshots = []
+    }
+
+    private var storageKey: String {
+        Self.storageKey(for: accountIDProvider())
+    }
+
+    static func storageKey(for accountID: String?) -> String {
+        let trimmed = accountID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return storageKeyPrefix + (trimmed.isEmpty ? "guest" : trimmed)
     }
 }
 

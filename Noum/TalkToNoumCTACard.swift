@@ -1,10 +1,11 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
-// MARK: - Talk To Noum CTA Card
+// MARK: - Ask Noum summary affordance
 //
-// Single-source Ask Noum CTA. Replaces the previous two-card setup
-// (this card + askCoachBridgeCard in the Details disclosure).
+// Single-source Ask Noum affordance. It deliberately renders as a quiet row,
+// not another summary card, so the prescribed next rep remains the one
+// visually dominant action.
 //
 // Behavior:
 //   • Pro user → opens AskNoumView with session-anchored opener seeded.
@@ -25,48 +26,27 @@ struct TalkToNoumCTACard: View {
 
     var body: some View {
         Button(action: handleTap) {
-            HStack(alignment: .top, spacing: Spacing.md) {
-                NoumCharacter.Inline(size: 22, mood: .calm, tint: AppColor.pro)
-                    .padding(.top, 2)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text("ASK NOUM")
-                            .font(Typography.micro)
-                            .foregroundStyle(AppColor.pro)
-                            .tracking(1.0)
-                        if !isPremium {
-                            lockChip
-                        }
-                    }
-                    Text(headlineCopy)
-                        .font(Typography.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(subCopy)
-                        .font(Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 6) {
-                        Text(ctaCopy)
-                            .font(Typography.caption.weight(.semibold))
-                            .foregroundStyle(AppColor.pro)
-                        Image(systemName: isPremium ? "arrow.right" : "lock.fill")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(AppColor.pro)
-                    }
-                    .padding(.top, 2)
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppColor.pro)
+                    .accessibilityHidden(true)
+                Text(CohesiveSummaryCopy.askNoum)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(AppColor.pro)
+                if !isPremium {
+                    lockChip
                 }
                 Spacer(minLength: 0)
+                Image(systemName: isPremium ? "chevron.right" : "lock.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .accessibilityHidden(true)
             }
-            .padding(Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.pressable)
-        .background(background)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityIdentifier(isPremium
@@ -84,9 +64,6 @@ struct TalkToNoumCTACard: View {
 
     // MARK: - Copy
 
-    private var headlineCopy: String { Self.headlineCopy(isPremium: isPremium, voice: speakingStyleGoal) }
-    private var subCopy: String { Self.subCopy(isPremium: isPremium) }
-    private var ctaCopy: String { Self.ctaCopy(isPremium: isPremium) }
     private var accessibilityLabel: String { Self.accessibilityLabel(isPremium: isPremium, voice: speakingStyleGoal) }
 
     /// Copy contract — extracted to static accessors so brand-voice rules
@@ -149,30 +126,11 @@ struct TalkToNoumCTACard: View {
         )
     }
 
-    // MARK: - Background
-
-    @ViewBuilder
-    private var background: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .fill(AppColor.cardBackground)
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [AppColor.pro.opacity(0.10), AppColor.pro.opacity(0.03)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(AppColor.pro.opacity(0.22), lineWidth: 1)
-        }
-    }
 }
 
 #if DEBUG
 @available(iOS 17.0, *)
-#Preview("Talk to Noum — Pro") {
+#Preview("Ask Noum — Pro") {
     TalkToNoumCTACard(
         isPremium: true,
         speakingStyleGoal: .authoritative,
@@ -184,7 +142,7 @@ struct TalkToNoumCTACard: View {
 }
 
 @available(iOS 17.0, *)
-#Preview("Talk to Noum — Free (locked)") {
+#Preview("Ask Noum — Free (locked)") {
     TalkToNoumCTACard(
         isPremium: false,
         speakingStyleGoal: nil,

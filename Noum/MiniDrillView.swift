@@ -150,7 +150,7 @@ struct MiniDrillView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "play.fill")
                                     .font(.subheadline.weight(.bold))
-                                Text("Begin Drill")
+                                Text("Start drill")
                                     .font(.subheadline.weight(.bold))
                             }
                             .foregroundStyle(.white)

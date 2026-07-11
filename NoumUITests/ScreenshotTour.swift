@@ -258,6 +258,7 @@ final class ScreenshotTour: XCTestCase {
         // ----- FRIEND LEADERBOARD (via Profile → leaderboard NavigationLink) -----
         let leaderboardApp = launchSeededAt("noum://profile")
         Thread.sleep(forTimeInterval: 1.2)
+        expandProfileLibrary(in: leaderboardApp)
         let leaderboardLink = leaderboardApp.descendants(matching: .any)
             .matching(identifier: "profile.friendLeaderboard")
             .element(boundBy: 0)
@@ -289,11 +290,7 @@ final class ScreenshotTour: XCTestCase {
 
     @MainActor
     func testCapturePathJourneyOnly() throws {
-        let pathApp = launchSeeded()
-        XCTAssertTrue(pathApp.otherElements["home.screen"].waitForExistence(timeout: 10))
-        let pathCard = pathApp.descendants(matching: .any)["home.path"].firstMatch
-        XCTAssertTrue(pathCard.waitForExistence(timeout: 8))
-        pathCard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let pathApp = launchSeededAt("noum://path")
         let journeyScreen = pathApp.descendants(matching: .any)["journey.screen"].firstMatch
         XCTAssertTrue(journeyScreen.waitForExistence(timeout: 10))
         Thread.sleep(forTimeInterval: 1.5)
@@ -308,6 +305,7 @@ final class ScreenshotTour: XCTestCase {
     func testCaptureProfileBaselineMapOnly() throws {
         let profileApp = launchSeededAt("noum://profile")
         XCTAssertTrue(profileApp.descendants(matching: .any)["profile.screen"].waitForExistence(timeout: 10))
+        expandProfileLibrary(in: profileApp)
 
         let baselineRow = profileApp.descendants(matching: .any)["profile.evidence.baselineMap.row"].firstMatch
         if !baselineRow.waitForExistence(timeout: 3) {
@@ -428,9 +426,10 @@ final class ScreenshotTour: XCTestCase {
         app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE"] + extraArgs + ["-DeepLink", deepLink]
         app.launchEnvironment.merge(extraEnvironment) { _, newValue in newValue }
         app.launch()
-        // Home screen is the deep-link consumption point; wait for it then
-        // give the routing one beat to flip the navigation path.
-        _ = app.otherElements["home.screen"].waitForExistence(timeout: 10)
+        // AppShell resolves launch deep links before the destination tab is
+        // presented. Waiting for Home here made every non-Home capture spend
+        // ten seconds looking for an element that correctly is not mounted.
+        _ = app.wait(for: .runningForeground, timeout: 10)
         Thread.sleep(forTimeInterval: 1.0)
         return app
     }
@@ -442,7 +441,7 @@ final class ScreenshotTour: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE"] + extraArgs
         app.launch()
-        _ = app.otherElements["home.screen"].waitForExistence(timeout: 10)
+        _ = app.wait(for: .runningForeground, timeout: 10)
         return app
     }
 
@@ -533,15 +532,21 @@ final class ScreenshotTour: XCTestCase {
         // longer reach the SETUP page. The recommended mode has no row in "other
         // ways", so its setup is reached via the hero's "Adjust this rep" CTA,
         // which navigates to setup without arming quick-start.
-        if modeID == "practiceMode.timed" {
-            let recommendedBegin = app.buttons["practiceModes.recommendedHero.begin"]
-            let adjust = app.buttons["practiceModes.recommendedHero.adjust"]
-            if recommendedBegin.waitForExistence(timeout: 2),
-               recommendedBegin.label.contains("Timed"),
-               adjust.waitForExistence(timeout: 2) {
-                adjust.tap()
-                return true
-            }
+        let displayLabel: String? = switch modeID {
+        case "practiceMode.timed": "Timed Practice"
+        case "practiceMode.suddenDeath": "Pressure Drill"
+        case "practiceMode.ahCounter": "Filler Control"
+        case "practiceMode.imConversation": "Conversation Practice"
+        default: nil
+        }
+        let recommendedBegin = app.buttons["practiceModes.recommendedHero.begin"]
+        let adjust = app.buttons["practiceModes.recommendedHero.adjust"]
+        if let displayLabel,
+           recommendedBegin.waitForExistence(timeout: 2),
+           recommendedBegin.label.localizedCaseInsensitiveContains(displayLabel),
+           adjust.waitForExistence(timeout: 2) {
+            adjust.tap()
+            return true
         }
 
         let modeRow = revealPracticeMode(modeID, in: app)
@@ -566,7 +571,9 @@ final class ScreenshotTour: XCTestCase {
             return modeRow
         }
 
-        let otherWays = app.buttons["practiceModes.otherWays"]
+        // The Train library row combines its children for VoiceOver, so it
+        // may surface as an accessibility element rather than a typed button.
+        let otherWays = app.descendants(matching: .any)["practiceModes.otherWays"].firstMatch
         if !otherWays.waitForExistence(timeout: 2) {
             scrollUntilVisible(otherWays, in: app, maxSwipes: 3)
         }
@@ -599,6 +606,17 @@ final class ScreenshotTour: XCTestCase {
         }
 
         evidenceToggle.tap()
+        Thread.sleep(forTimeInterval: 0.5)
+
+        let evidenceRow = profileApp.descendants(matching: .any)["profile.evidence.baselineMap.row"].firstMatch
+        scrollUntilVisible(evidenceRow, in: profileApp, maxSwipes: 5)
+        XCTAssertTrue(evidenceRow.waitForExistence(timeout: 5))
+        guard evidenceRow.exists else {
+            attach(profileApp, name: "\(name)-missing-evidence-row")
+            profileApp.terminate()
+            return
+        }
+        evidenceRow.tap()
         Thread.sleep(forTimeInterval: 0.5)
 
         let checkInCard = profileApp.descendants(matching: .any)["profile.weeklyCheckIn.start"].firstMatch
@@ -647,6 +665,17 @@ final class ScreenshotTour: XCTestCase {
         }
 
         return reviewCard
+    }
+
+    @MainActor
+    private func expandProfileLibrary(in app: XCUIApplication) {
+        let toggle = app.descendants(matching: .any)["profile.evidenceHub.toggle"].firstMatch
+        if !toggle.waitForExistence(timeout: 3) {
+            scrollUntilVisible(toggle, in: app, maxSwipes: 4)
+        }
+        guard toggle.waitForExistence(timeout: 3) else { return }
+        toggle.tap()
+        Thread.sleep(forTimeInterval: 0.5)
     }
 
     @MainActor
@@ -735,7 +764,7 @@ final class ScreenshotTour: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE", "-DeepLink", "noum://summary"]
         app.launch()
-        _ = app.otherElements["home.screen"].waitForExistence(timeout: 10)
+        _ = app.wait(for: .runningForeground, timeout: 10)
         Thread.sleep(forTimeInterval: 2.5) // deep-link routes Home -> Summary
         // The force-hook re-finalizes the seeded session, which can fire a
         // celebration/achievement overlay over the summary body. Dismiss the
@@ -797,6 +826,28 @@ final class ScreenshotTour: XCTestCase {
         app.terminate()
     }
 
+    /// Opens the real paywall from Settings through a DEBUG-only UI-test
+    /// presentation hook so its collapsed value hierarchy and sticky action
+    /// remain part of the visual regression corpus.
+    @MainActor
+    func testCapturePaywall() throws {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING",
+            "UI_TESTING_PAYWALL",
+            "-DeepLink",
+            "noum://settings"
+        ]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["settings.screen"].waitForExistence(timeout: 10))
+        Thread.sleep(forTimeInterval: 1.5)
+        deepAttach(app, name: "P-01-paywall-top")
+        app.swipeUp(velocity: .slow)
+        Thread.sleep(forTimeInterval: 0.5)
+        deepAttach(app, name: "P-02-paywall-details")
+        app.terminate()
+    }
+
     // MARK: - Deep-audit helpers
 
     private struct AuditSurface {
@@ -843,7 +894,7 @@ final class ScreenshotTour: XCTestCase {
         }
         app.launchArguments += launchArgs
         app.launch()
-        _ = app.otherElements["home.screen"].waitForExistence(timeout: 10)
+        _ = app.wait(for: .runningForeground, timeout: 10)
         Thread.sleep(forTimeInterval: 1.0)
         return app
     }

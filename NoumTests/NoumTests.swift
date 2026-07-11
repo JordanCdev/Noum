@@ -2921,7 +2921,7 @@ struct RecommendationBiasCopyContractTests {
 
         #expect(blueprint.recommendedMode == .suddenDeath)
         #expect(blueprint.whyNow.contains("Investor Q&A is coming up."))
-        #expect(blueprint.whyNow.contains("interviews"))
+        #expect(blueprint.whyNow.contains("interview"))
         #expect(blueprint.whyNow.contains("under pressure"))
         #expect(blueprint.whyNow.split(separator: " ").count <= 18)
         #expect(!blueprint.whyNow.contains("signed up"))
@@ -2945,7 +2945,7 @@ struct RecommendationBiasCopyContractTests {
         #expect(blueprint.recommendedMode == .imConversation)
         #expect(blueprint.whyNow.contains("Investor Q&A is coming up with three partners"))
         #expect(!blueprint.whyNow.contains("follow-up question turns sharp"))
-        #expect(blueprint.whyNow.contains("work conversations"))
+        #expect(blueprint.whyNow.contains("work"))
         #expect(blueprint.whyNow.contains("target tone"))
         #expect(blueprint.whyNow.split(separator: " ").count <= 20)
     }
@@ -7932,9 +7932,9 @@ struct BelievableProgressZeroDataTests {
         let subtitle = LeaguePlacementPresentation.subtitle(tier: .silver, rating: .initial)
         let fullSubtitle = LeaguePlacementPresentation.fullScreenSubtitle(tier: .silver, rating: .initial)
 
-        #expect(title == "League placement pending")
+        #expect(title == "Peer comparison pending")
         #expect(subtitle.contains("One rated rep"))
-        #expect(fullSubtitle.contains("Run one rated rep"))
+        #expect(fullSubtitle.contains("Complete one rated rep"))
         #expect(!title.contains("Silver"))
         #expect(!subtitle.contains("Gold"))
         #expect(LeaguePlacementPresentation.ratingValue(for: .initial) == "—")
@@ -8208,7 +8208,7 @@ struct ProfileCollapseContractTests {
             now: Date(timeIntervalSince1970: 2_000)
         )
 
-        #expect(content.read == "Filler-word control looks like the strongest lever right now. It keeps showing up in the rolling baseline, so keep testing it against future reps.")
+        #expect(content.read == "Filler-word control looks like the main focus right now. It keeps showing up in recent reps, so keep checking it in future reps.")
         #expect(!content.read.contains("highest-leverage"))
         #expect(!content.read.contains("persistent blocker"))
     }
@@ -8390,7 +8390,7 @@ struct ProfileCollapseContractTests {
         #expect(status?.kind == .activePrep)
         #expect(status?.title.contains("tomorrow") == true)
         #expect(status?.detail.contains("1 of 3") == true)
-        #expect(status?.actionTitle == "Prep now")
+        #expect(status?.actionTitle == "Continue prep")
         #expect(status?.destination == .prepSession)
     }
 
@@ -11266,11 +11266,11 @@ struct CoachContextBuilderTests {
         #expect(ctx.contains("INTERVENTION CYCLE (prescribe → observe → adapt)"))
         #expect(ctx.contains("Stated goal anchor: Make technical updates feel more vivid."))
         #expect(ctx.contains("Working hypothesis (tentative): Pauses may be the highest-leverage focus"))
-        #expect(ctx.contains("Active intervention: Timed for a decisive close. Success marker: One clean final sentence."))
+        #expect(ctx.contains("Active intervention: Timed Practice for a decisive close. Success marker: One clean final sentence."))
         #expect(ctx.contains("Evidence depth for this intervention: 1 followed rep; review threshold 2."))
         #expect(ctx.contains("Intervention review: Evidence is forming."))
         #expect(ctx.contains("Focus shift: last read was Filler Words; current read is Pauses."))
-        #expect(ctx.contains("Current plan: week 2 trains Pauses via Timed."))
+        #expect(ctx.contains("Current plan: week 2 trains Pauses via Timed Practice."))
         #expect(ctx.contains("Last declared rep focus: Make the point land."))
     }
 
@@ -11580,7 +11580,7 @@ struct CoachContextBuilderTests {
         )
 
         #expect(ctx.contains("INTERVENTION RESPONSE (association only; never claim causation)"))
-        #expect(ctx.contains("Timed for a clearer close"))
+        #expect(ctx.contains("Timed Practice for a clearer close"))
         #expect(ctx.contains("one observation only; treat it as tentative"))
     }
 
@@ -11692,7 +11692,7 @@ struct CoachContextBuilderTests {
         )
         #expect(!opener.contains("/10"), "Score is omitted when absent: \(opener)")
         #expect(!opener.contains("nil"), "Never leaks nil: \(opener)")
-        #expect(opener.contains("Ah-Counter"), "Mode label is present: \(opener)")
+        #expect(opener.contains("Filler Control"), "Mode label is present: \(opener)")
         #expect(opener.contains("45s"), "Duration is present: \(opener)")
         #expect(opener.contains("3 fillers"), "Filler count is present: \(opener)")
     }
@@ -13489,17 +13489,19 @@ struct PracticeModePrescriptionCopyTests {
     }
 
     @Test func sectionTitlesDemoteTheCatalog() {
-        #expect(PracticeModePrescriptionCopy.heroEyebrow == "Coach pick")
-        #expect(PracticeModePrescriptionCopy.alternateSectionTitle == "Other ways to practice")
+        #expect(PracticeModePrescriptionCopy.heroEyebrow == "Recommended rep")
+        #expect(PracticeModePrescriptionCopy.practiceLibraryTitle == "Practice library")
+        #expect(PracticeModePrescriptionCopy.alternateSectionTitle == "Choose another exercise")
+        #expect(PracticeModePrescriptionCopy.adjustLabel == "Adjust")
     }
 
-    @Test func prescriptionLineCollapsesTargetAndFocusIntoOneRead() {
+    @Test func prescriptionLinePrefersConcreteTargetOverBroaderFocus() {
         let line = PracticeModePrescriptionCopy.prescriptionLine(
             focus: "Longer answer",
             target: "30s+"
         )
 
-        #expect(line == "30s+ — Longer answer")
+        #expect(line == "30s+")
     }
 
     @Test func prescriptionLineSuppressesEmptyOrDuplicateSignals() {
@@ -13556,7 +13558,7 @@ struct PracticeModePrescriptionCopyTests {
         )
 
         #expect(PracticeModeAvailability.isUnlocked(.suddenDeath, rating: rated))
-        #expect(PracticeModePrescriptionCopy.pressureLockedHint == "Run one rated rep before Pressure Drill.")
+        #expect(PracticeModePrescriptionCopy.pressureLockedHint == "Complete one rated rep before Pressure Drill.")
     }
 }
 
@@ -15977,7 +15979,7 @@ struct PostRepVerdictContentTests {
 
         #expect(content.win?.headline == "You gave the listener a clean frame.")
         #expect(content.win?.quote == "we will focus on three priorities")
-        #expect(content.win?.support == "Structured Claim")
+        #expect(content.win?.support == nil)
         // The proof cleared the transcript-verify guard, so the quote is
         // earned provenance — the UI may show the "Your words" affordance.
         #expect(content.win?.quoteIsVerified == true)
@@ -16200,7 +16202,7 @@ struct PostRepVerdictContentTests {
 
         #expect(content.readText.lowercased().contains("too short"))
         #expect(content.readText != "Brief rep. Not enough signal yet.")
-        #expect(content.thinEvidenceCopy == "Early read: one longer rep will sharpen the diagnosis.")
+        #expect(content.thinEvidenceCopy == "Early read: one longer rep will make the next read clearer.")
         #expect(content.win == nil)
         #expect(content.fix == nil)
     }
@@ -16223,7 +16225,7 @@ struct PostRepVerdictContentTests {
             isMinimalEffort: false
         )
 
-        #expect(ruleBased.provenanceLabel == "RULE-BASED")
+        #expect(ruleBased.provenanceLabel == nil)
         #expect(aiBacked.provenanceLabel == nil)
     }
 }
@@ -18190,7 +18192,7 @@ struct RecommendationResponseAnalyzerTests {
         ])
 
         #expect(lines.count == 1)
-        #expect(lines[0].contains("Timed for clearer close"))
+        #expect(lines[0].contains("Timed Practice for clearer close"))
         #expect(!lines[0].contains("score"))
         #expect(lines[0].contains("fillers -2.0"))
         #expect(lines[0].contains("one observation only; treat it as tentative"))
@@ -18763,8 +18765,8 @@ struct CoachMemoryEngineTests {
         )
 
         #expect(memory?.currentLever == .fillerReduction)
-        #expect(memory?.currentLeverBasis == "it keeps showing up in the rolling baseline")
-        #expect(memory?.workingHypothesis?.contains("because it keeps showing up in the rolling baseline") == true)
+        #expect(memory?.currentLeverBasis == "it keeps showing up in recent reps")
+        #expect(memory?.workingHypothesis?.contains("because it keeps showing up in recent reps") == true)
         #expect(memory?.workingHypothesis?.contains("persistent blocker") == false)
     }
 
@@ -18901,7 +18903,7 @@ struct CoachMemoryEngineTests {
 
         #expect(memory?.caseFile?.hypothesis?.contains("verify over more reps") == true)
         #expect(memory?.caseFile?.focus == .conciseSpeaking)
-        #expect(memory?.caseFile?.activeIntervention == "Timed for a decisive close")
+        #expect(memory?.caseFile?.activeIntervention == "Timed Practice for a decisive close")
         #expect(memory?.caseFile?.observableTarget == "One clean final sentence")
         #expect(memory?.caseFile?.successMeasure?.contains("score of") == true)
         #expect(memory?.caseFile?.subjectivePattern?.contains("Across 3 of the last 4 reflections") == true)
@@ -21137,7 +21139,7 @@ struct CoachMemoryStoreTests {
         #expect(reloaded.currentMemory?.lastTransferReview?.momentTitle == "Board update")
         #expect(reloaded.currentMemory?.activeIntervention?.reviewStatus == .awaitingAttempt)
         #expect(reloaded.currentMemory?.caseFile?.transferRead?.contains("Board update") == true)
-        #expect(reloaded.currentMemory?.caseFile?.activeIntervention == "Timed for a decisive close")
+        #expect(reloaded.currentMemory?.caseFile?.activeIntervention == "Timed Practice for a decisive close")
     }
 
     // REMEMBER-4 coherence: an incremental case-file rebuild must re-derive the
@@ -22023,7 +22025,8 @@ struct ForwardPlanRendererTests {
     @Test func openingAnnotatesRuleBasedOriginHonestly() {
         let plan = makeForwardPlan(isAIBacked: false)
         let msg = ForwardPlanRenderer.coachMessage(for: plan, voice: nil, bigMoment: nil)
-        #expect(msg.contains("rules") || msg.contains("rule-based") || msg.contains("without an AI"))
+        #expect(msg.contains("shaped"))
+        #expect(!msg.localizedCaseInsensitiveContains("rule-based"))
     }
 
     @Test func openingAnnotatesAIBackedOriginHonestly() {
@@ -24854,9 +24857,9 @@ struct CoachReadParityTests {
         #expect(summaries.count == 3)
         #expect(!summaries.contains { $0.contains("9 filler") })
         // Shape: "Mode | score X/10 | N fillers", singular for 1.
-        #expect(summaries[0] == "Timed | score 8/10 | 1 filler")
+        #expect(summaries[0] == "Timed Practice | score 8/10 | 1 filler")
         #expect(summaries[1] == "Pressure Drill | score 7/10 | 2 fillers")
-        #expect(summaries[2] == "Timed | score n/a | 3 fillers")
+        #expect(summaries[2] == "Timed Practice | score n/a | 3 fillers")
     }
 
     // 15. Baseline extraction returns nil on insufficient confidence, value
@@ -30296,7 +30299,7 @@ struct SessionHistoryRowPreviewTests {
 
         let preview = SessionHistoryRowPreview.text(for: session) ?? ""
 
-        #expect(preview == "Timed read: 6/10 · 2 fillers")
+        #expect(preview == "Timed Practice read: 6/10 · 2 fillers")
         #expect(!preview.contains("private transcript content"))
         #expect(!preview.lowercased().contains("fuck"))
     }
@@ -30324,7 +30327,7 @@ struct SessionHistoryRowPreviewTests {
             mode: .ahCounter
         )
 
-        #expect(SessionHistoryRowPreview.text(for: session) == "Ah-Counter rep saved · 42s")
+        #expect(SessionHistoryRowPreview.text(for: session) == "Filler Control rep saved · 42s")
     }
 
     @Test func detailFocusLabelDoesNotExposeXP() {
@@ -31030,7 +31033,7 @@ struct IMToneDrillSignalTests {
 
         #expect(blueprint.source == .caseIntervention)
         #expect(blueprint.target == "1 or fewer fillers per rep across 2 reps")
-        #expect(blueprint.whyNow.contains("not observed"))
+        #expect(blueprint.whyNow == "Start the first rep for this focus.")
     }
 
     @Test func caseInterventionStopsWhenCoachNeedsAdaptation() {
@@ -37601,13 +37604,13 @@ struct CoachReadCardDailyBudgetHintTests {
     }
 
     @Test func hintCopyAtZeroNamesTomorrowsResume() {
-        // The rule-based-today copy is the one shown at the
-        // cap-reached state. Brand-voice compliant: no exclamation,
+        // The simplified-copy line is shown at the cap-reached state.
+        // Brand-voice compliant: no exclamation,
         // no urgency, no "running out" framing. Pins the exact
         // string so a copy edit must be deliberate.
         #expect(
             CoachReadCard.dailyBudgetHintCopy(remaining: 0)
-                == "Rule-based today — coach notes resume tomorrow."
+                == "Simpler coach notes today. Personalized wording resumes tomorrow."
         )
     }
 
@@ -37635,7 +37638,7 @@ struct CoachReadCardDailyBudgetHintTests {
         // emit "-1 AI coach notes remaining today."
         #expect(
             CoachReadCard.dailyBudgetHintCopy(remaining: -2)
-                == "Rule-based today — coach notes resume tomorrow."
+                == "Simpler coach notes today. Personalized wording resumes tomorrow."
         )
     }
 }
@@ -37855,7 +37858,7 @@ struct InterventionReviewPromptTests {
         let intervention = makeIntervention(followedRepCount: 1)
         #expect(
             InterventionReviewPromptCard.bodyCopy(for: intervention)
-                == "Your coach scheduled this review after 1 followed rep. One question: keep going, adapt, or replace it?"
+                == "Your coach scheduled this review after 1 completed rep. One question: keep going, adapt, or replace it?"
         )
     }
 
@@ -37863,7 +37866,7 @@ struct InterventionReviewPromptTests {
         let intervention = makeIntervention(followedRepCount: 4)
         #expect(
             InterventionReviewPromptCard.bodyCopy(for: intervention)
-                == "Your coach scheduled this review after 4 followed reps. One question: keep going, adapt, or replace it?"
+                == "Your coach scheduled this review after 4 completed reps. One question: keep going, adapt, or replace it?"
         )
     }
 
@@ -37876,7 +37879,7 @@ struct InterventionReviewPromptTests {
         let intervention = makeIntervention(followedRepCount: 0)
         #expect(
             InterventionReviewPromptCard.bodyCopy(for: intervention)
-                == "Your coach scheduled this review after 0 followed reps. One question: keep going, adapt, or replace it?"
+                == "Your coach scheduled this review after 0 completed reps. One question: keep going, adapt, or replace it?"
         )
     }
 
@@ -37894,7 +37897,7 @@ struct InterventionReviewPromptTests {
             intervention: intervention,
             voice: nil
         )
-        #expect(opener.hasPrefix("Time to review the active case: Timed for filler reduction, 4 followed reps in."))
+        #expect(opener.hasPrefix("Time to review the active case: Timed Practice for filler reduction, 4 followed reps in."))
     }
 
     @Test func openerLeadUsesSingularRepNoun() {
@@ -38617,12 +38620,12 @@ struct WeeklyCheckInCopyTests {
             WeeklyCheckInCopy.drillHelper
         ].joined(separator: " ")
 
-        #expect(combined.contains("your words"))
-        #expect(combined.contains("self-report"))
-        #expect(combined.contains("without guessing"))
-        #expect(combined.contains("No score. No diagnosis."))
+        #expect(combined.contains("Your words"))
+        #expect(combined.contains("not a score"))
+        #expect(combined.contains("your own read"))
         #expect(!combined.lowercased().contains("we know"))
         #expect(!combined.lowercased().contains("proof that"))
+        #expect(!combined.lowercased().contains("diagnosis"))
     }
 
     @Test func promptIDsMatchPersistedCheckInFields() {
@@ -39096,10 +39099,10 @@ struct AskNoumModeSuggestionTests {
     }
 
     @Test func labelsAreActionShaped() {
-        #expect(AskNoumModeSuggestion.label(for: .timedPractice) == "Start a Timed rep")
-        #expect(AskNoumModeSuggestion.label(for: .ahCounterPractice) == "Start an Ah-Counter round")
-        #expect(AskNoumModeSuggestion.label(for: .suddenDeathPractice) == "Try a Pressure Drill round")
-        #expect(AskNoumModeSuggestion.label(for: .imPractice(scenario: nil, tone: nil)).contains("conversation"))
+        #expect(AskNoumModeSuggestion.label(for: .timedPractice) == "Start Timed Practice")
+        #expect(AskNoumModeSuggestion.label(for: .ahCounterPractice) == "Start Filler Control")
+        #expect(AskNoumModeSuggestion.label(for: .suddenDeathPractice) == "Start Pressure Drill")
+        #expect(AskNoumModeSuggestion.label(for: .imPractice(scenario: nil, tone: nil)) == "Start Conversation Practice")
     }
 
     @Test func launchableSuggestionsMapToQuickStartModes() {
@@ -39184,7 +39187,7 @@ struct AskNoumVoiceFirstDefaultTests {
         )
 
         let line = AskNoumView.currentFocusLine(caseFile: caseFile)
-        #expect(line == "Current focus: Open with the answer, then add one proof point")
+        #expect(line == "Current focus: Open with the answer, then add one concrete example")
         #expect(line?.contains("Target:") == false)
     }
 
@@ -40508,7 +40511,7 @@ struct RevisedReadCardTests {
         let hypothesis = "Pace appears to be the highest-leverage focus because stable at developing; keep checking against future reps."
         let body = RevisedReadCard.bodyCopy(workingHypothesis: hypothesis)
         #expect(body.hasPrefix("Here's the revised read: "))
-        #expect(body.contains("Pace appears to be the highest-leverage focus"))
+        #expect(body.contains("Pace appears to be the main focus"))
     }
 
     @Test func bodyCopyStripsTrailingPeriodToAvoidDoubleStop() {
@@ -40632,8 +40635,8 @@ struct RevisedReadCardTests {
             workingHypothesis: hypothesis
         )
         #expect(body.hasPrefix("Here's the next read: "))
-        #expect(body.contains("Pace appears to be the highest-leverage focus"))
-        #expect(body.contains("Expect one focused question, not the same intervention again."))
+        #expect(body.contains("Pace appears to be the main focus"))
+        #expect(body.contains("Expect one focused question, not the same exercise again."))
     }
 
     @Test func bodyCopyOnSecondCycleEntryStripsTrailingPeriodToAvoidDoubleStop() {
@@ -40684,7 +40687,7 @@ struct RevisedReadCardTests {
             workingHypothesis: hypothesis
         )
         #expect(body == RevisedReadCard.bodyCopy(workingHypothesis: hypothesis))
-        #expect(body == "Here's the revised read: Pace is the highest-leverage focus.")
+        #expect(body == "Here's the revised read: Pace is the main focus.")
     }
 
     @Test func bodyCopyRouterReturnsFirstCycleFallbackOnNilHypothesisWithoutMarker() {
@@ -49267,7 +49270,7 @@ struct TrajectorySummaryBuilderTests {
         #expect(snapshot.trendSignals.isEmpty)
         // No rep history at all — freshness must stay nil, never fabricated.
         #expect(snapshot.evidenceFreshnessDays == nil)
-        #expect(snapshot.userVisibility.hasPrefix("Using:"))
+        #expect(snapshot.userVisibility.hasPrefix("Based on"))
         #expect(snapshot.userVisibility.contains("goal"))
         #expect(!snapshot.userVisibility.contains("reps"))
     }

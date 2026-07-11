@@ -110,7 +110,7 @@ struct IMScenarioDetailView: View {
                 }
             }
         }
-        .navigationTitle("Conversation: \(scenario.title)")
+        .navigationTitle("Conversation Practice: \(scenario.title)")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("history.im.scenarioDetail")
         .toolbar {

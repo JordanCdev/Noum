@@ -41,6 +41,150 @@ struct ProfileDefaultSurfacePlan: Equatable {
     }
 }
 
+enum ProfileCompositionEvidenceStage: Equatable {
+    case zero
+    case thin
+    case established
+
+    static func make(sessionCount: Int) -> ProfileCompositionEvidenceStage {
+        switch sessionCount {
+        case ...0: return .zero
+        case 1...4: return .thin
+        default: return .established
+        }
+    }
+}
+
+/// The default Profile is intentionally bounded to four roles. The progress
+/// hero self-suppresses when neither rating nor baseline has enough evidence;
+/// every other secondary system lives behind the single library disclosure.
+struct ProfileCompositionPlan: Equatable {
+    let stage: ProfileCompositionEvidenceStage
+    let surfaces: [ProfileDefaultSurface]
+
+    static func make(
+        sessionCount: Int,
+        hasProgressEvidence: Bool
+    ) -> ProfileCompositionPlan {
+        let stage = ProfileCompositionEvidenceStage.make(sessionCount: sessionCount)
+        var surfaces: [ProfileDefaultSurface] = [.identity]
+        if hasProgressEvidence {
+            surfaces.append(.progressHero)
+        }
+        surfaces.append(contentsOf: [.coachRead, .evidenceHub])
+        return ProfileCompositionPlan(stage: stage, surfaces: surfaces)
+    }
+}
+
+enum ProfileLibraryRow: String, Equatable {
+    case coachingEvidence
+    case growthLibrary
+    case allReps
+    case personalBests
+    case friends
+    case achievements
+    case peerComparison
+    case upgrade
+}
+
+struct ProfileLibraryPresentation: Equatable {
+    let rows: [ProfileLibraryRow]
+
+    static func make(
+        showsPeerComparison: Bool,
+        isPremium: Bool
+    ) -> ProfileLibraryPresentation {
+        var rows: [ProfileLibraryRow] = [
+            .coachingEvidence,
+            .growthLibrary,
+            .allReps,
+            .personalBests,
+            .friends,
+            .achievements
+        ]
+        if showsPeerComparison {
+            rows.append(.peerComparison)
+        }
+        if !isPremium {
+            rows.append(.upgrade)
+        }
+        return ProfileLibraryPresentation(rows: rows)
+    }
+}
+
+enum PeerComparisonVisibility: Equatable {
+    case forming
+    case available(peerCount: Int)
+
+    static func make(
+        members: [PublicProfileSnapshot],
+        currentAccountID: String?,
+        now: Date = Date()
+    ) -> PeerComparisonVisibility {
+        guard let currentAccountID,
+              !currentAccountID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .forming
+        }
+
+        let peerIDs = Set(
+            members.compactMap { member -> String? in
+                guard isGenuinePeer(member, currentAccountID: currentAccountID, now: now) else {
+                    return nil
+                }
+                return member.accountID.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        )
+        guard !peerIDs.isEmpty else { return .forming }
+        return .available(peerCount: peerIDs.count)
+    }
+
+    /// A Firestore bucket document alone is not enough to present a person.
+    /// Old test rows, inactive accounts, and anonymous placeholder names stay
+    /// out of this trust-sensitive social surface.
+    static func isGenuinePeer(
+        _ member: PublicProfileSnapshot,
+        currentAccountID: String,
+        now: Date = Date()
+    ) -> Bool {
+        let accountID = member.accountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accountID.isEmpty, accountID != currentAccountID else { return false }
+        guard member.weeklyReps > 0 else { return false }
+        guard currentWeek(containing: now)?.contains(member.updatedAt) == true else { return false }
+
+        let name = member.displayName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let placeholders: Set<String> = ["", "speaker", "guest speaker", "noum speaker"]
+        return !placeholders.contains(name)
+    }
+
+    /// Peer rows live in an ISO-week Firestore bucket and `weeklyReps` is
+    /// computed for that same interval. Keep freshness aligned with that
+    /// source-of-truth instead of hiding a valid weekly peer after 24 hours.
+    private static func currentWeek(containing date: Date) -> DateInterval? {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.firstWeekday = 2
+        return calendar.dateInterval(of: .weekOfYear, for: date)
+    }
+
+    static func visibleMembers(
+        _ members: [PublicProfileSnapshot],
+        currentAccountID: String?,
+        now: Date = Date()
+    ) -> [PublicProfileSnapshot] {
+        guard let currentAccountID else { return [] }
+        return members.filter { member in
+            member.accountID == currentAccountID
+                || isGenuinePeer(member, currentAccountID: currentAccountID, now: now)
+        }
+    }
+
+    var showsProfileEntry: Bool {
+        if case .available = self { return true }
+        return false
+    }
+}
+
 enum ProfileEvidenceDetailSurface: String, Equatable {
     case rankProgress
     case ratingTrajectory
@@ -747,12 +891,30 @@ struct ProfileCoachReadContent: Equatable {
         let trimmed = hypothesis.trimmingCharacters(in: .whitespacesAndNewlines)
         if let parts = splitHypothesis(
             trimmed,
+            marker: " appears to be the main focus because ",
+            suffix: "; keep checking against future reps."
+        ) {
+            let topic = userFacingTopic(parts.topic)
+            let basis = sentenceCased(userFacingBasis(parts.basis))
+            return "\(topic) looks like the main focus right now. \(basis), so keep checking it in future reps."
+        }
+        if let parts = splitHypothesis(
+            trimmed,
+            marker: " may be the main focus because ",
+            suffix: "; verify over more reps."
+        ) {
+            let topic = userFacingTopic(parts.topic)
+            let basis = sentenceCased(userFacingBasis(parts.basis))
+            return "\(topic) may be the main focus. \(basis), but Noum needs a few more reps before treating it as a pattern."
+        }
+        if let parts = splitHypothesis(
+            trimmed,
             marker: " appears to be the highest-leverage focus because ",
             suffix: "; keep checking against future reps."
         ) {
             let topic = userFacingTopic(parts.topic)
             let basis = sentenceCased(userFacingBasis(parts.basis))
-            return "\(topic) looks like the strongest lever right now. \(basis), so keep testing it against future reps."
+            return "\(topic) looks like the main focus right now. \(basis), so keep checking it in future reps."
         }
         if let parts = splitHypothesis(
             trimmed,
@@ -761,12 +923,12 @@ struct ProfileCoachReadContent: Equatable {
         ) {
             let topic = userFacingTopic(parts.topic)
             let basis = sentenceCased(userFacingBasis(parts.basis))
-            return "\(topic) may be the strongest lever. \(basis), but Noum needs a few more reps before treating it as the main case."
+            return "\(topic) may be the main focus. \(basis), but Noum needs a few more reps before treating it as a pattern."
         }
         return trimmed
             .replacingOccurrences(
                 of: "persistent blocker in the rolling baseline",
-                with: "it keeps showing up in the rolling baseline"
+                with: "it keeps showing up in recent reps"
             )
     }
 
@@ -801,7 +963,7 @@ struct ProfileCoachReadContent: Equatable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "."))
         if trimmed.localizedCaseInsensitiveCompare("persistent blocker in the rolling baseline") == .orderedSame {
-            return "it keeps showing up in the rolling baseline"
+            return "it keeps showing up in recent reps"
         }
         if trimmed.localizedCaseInsensitiveCompare("stable at developing") == .orderedSame {
             return "the pattern is steady, but not yet moving"
@@ -818,6 +980,134 @@ struct ProfileCoachReadContent: Equatable {
     private static func bounded(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+/// The three visible lines on Profile's coaching brief. This is a
+/// presentation adapter over the existing plan and memory; it does not persist
+/// or strengthen a coaching claim.
+struct ProfileCoachBriefPresentation: Equatable {
+    let observation: String
+    let nextMove: String
+    let evidenceCaption: String?
+
+    static func make(
+        sessionCount: Int,
+        plan: CoachingPlan?,
+        memory: CoachMemory?,
+        trends: [SkillTrend] = [],
+        proof: ProofMomentRecord? = nil,
+        now: Date = Date()
+    ) -> ProfileCoachBriefPresentation {
+        if let currentFocus = CurrentCoachingFocusPresentation.make(
+            trends: trends,
+            sessionCount: sessionCount
+        ) {
+            return ProfileCoachBriefPresentation(
+                observation: currentFocus.observation,
+                nextMove: currentFocus.instruction,
+                evidenceCaption: currentFocus.evidenceCaption
+            )
+        }
+
+        let content = ProfileCoachReadContent.make(
+            sessionCount: sessionCount,
+            plan: plan,
+            memory: memory,
+            proof: proof,
+            now: now
+        )
+        let evidenceCount = max(0, memory?.evidenceCount ?? sessionCount)
+
+        let observation: String
+        if evidenceCount == 0 {
+            observation = "One short rep gives Noum something real to read."
+        } else if evidenceCount <= 2 {
+            observation = latestRepObservation(focus: plan?.currentFocus)
+        } else {
+            observation = plainLanguage(content.read)
+        }
+
+        return ProfileCoachBriefPresentation(
+            observation: observation,
+            nextMove: plainLanguage(content.nextMove),
+            evidenceCaption: evidenceCaption(for: evidenceCount)
+        )
+    }
+
+    static func evidenceCaption(for evidenceCount: Int) -> String? {
+        switch evidenceCount {
+        case ...0:
+            return nil
+        case 1:
+            return "Based on your latest rep."
+        case 2:
+            return "Based on your latest two reps."
+        case 3...4:
+            return "Early read from \(evidenceCount) recent reps."
+        case 5...9:
+            return "Seen across \(evidenceCount) recent reps."
+        default:
+            return "Repeated across \(evidenceCount) recent reps."
+        }
+    }
+
+    static func plainLanguage(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "highest-leverage", with: "main", options: .caseInsensitive)
+            .replacingOccurrences(of: "strongest lever right now", with: "main focus right now", options: .caseInsensitive)
+            .replacingOccurrences(of: "strongest lever", with: "main focus", options: .caseInsensitive)
+            .replacingOccurrences(of: "rolling baseline", with: "recent reps", options: .caseInsensitive)
+            .replacingOccurrences(of: "persistent blocker", with: "recurring focus", options: .caseInsensitive)
+            .replacingOccurrences(of: "keep testing it against future reps", with: "keep checking it in future reps", options: .caseInsensitive)
+            .replacingOccurrences(of: "rehearsal shapes", with: "practice rounds", options: .caseInsensitive)
+            .replacingOccurrences(of: "proof point", with: "concrete example", options: .caseInsensitive)
+    }
+
+    private static func latestRepObservation(focus: String?) -> String {
+        guard var focus = bounded(focus) else {
+            return "Your latest rep is the next thing to review."
+        }
+        focus = plainLanguage(focus)
+        if focus.hasPrefix("Focus on ") {
+            focus.removeFirst("Focus on ".count)
+        }
+        focus = focus.trimmingCharacters(in: CharacterSet(charactersIn: ".!? "))
+        guard !focus.isEmpty else {
+            return "Your latest rep is the next thing to review."
+        }
+        return "Your latest rep points to \(focus.prefix(1).lowercased())\(focus.dropFirst())."
+    }
+
+    private static func bounded(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+struct ProfileRatingHeroPresentation: Equatable {
+    let value: Int
+    let directionLine: String
+
+    static func make(rating: SpeakingRating) -> ProfileRatingHeroPresentation {
+        let directionLine: String
+        if rating.ratingHistory.count < 3 {
+            directionLine = "Your rated baseline is forming."
+        } else {
+            switch rating.currentTrend {
+            case .improving:
+                directionLine = "Moving up across recent rated reps."
+            case .stable:
+                directionLine = "Holding steady across recent rated reps."
+            case .declining:
+                directionLine = "One more rated rep will clarify the direction."
+            case .newIssue:
+                directionLine = "A new pattern needs one confirming rep."
+            case .resolved:
+                directionLine = "A recent issue is no longer showing up."
+            }
+        }
+        return ProfileRatingHeroPresentation(value: rating.overall, directionLine: directionLine)
     }
 }
 
@@ -940,7 +1230,7 @@ struct ProfileTransferStatusContent: Equatable {
                 eyebrow: "Real-world prep",
                 title: "\(activeMoment.title) \(daysText)",
                 detail: readiness.line,
-                actionTitle: "Prep now",
+                actionTitle: "Continue prep",
                 destination: .prepSession,
                 moment: activeMoment
             )
@@ -1212,11 +1502,14 @@ struct ProfileView: View {
     }
 
     private var hasProgressEvidence: Bool {
-        ratingStore.rating.hasRatedEvidence || baselineStore.baseline.overallConfidence >= .tentative
+        ratingStore.rating.hasRatedEvidence
     }
 
-    private var defaultSurfacePlan: ProfileDefaultSurfacePlan {
-        ProfileDefaultSurfacePlan.make(hasProgressEvidence: hasProgressEvidence)
+    private var defaultSurfacePlan: ProfileCompositionPlan {
+        ProfileCompositionPlan.make(
+            sessionCount: sessions.count,
+            hasProgressEvidence: hasProgressEvidence
+        )
     }
 
     private var evidenceDetailPlan: ProfileEvidenceDetailPlan {
@@ -1233,6 +1526,20 @@ struct ProfileView: View {
         )
     }
 
+    private var peerComparisonVisibility: PeerComparisonVisibility {
+        PeerComparisonVisibility.make(
+            members: league.members,
+            currentAccountID: authManager.currentAccountID
+        )
+    }
+
+    private var profileLibraryPresentation: ProfileLibraryPresentation {
+        ProfileLibraryPresentation.make(
+            showsPeerComparison: peerComparisonVisibility.showsProfileEntry,
+            isPremium: premium.isPremium
+        )
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: Spacing.cardGap) {
@@ -1241,17 +1548,10 @@ struct ProfileView: View {
                 identityHeader
 
                 if surfacePlan.surfaces.contains(.progressHero) {
-                    speakingRatingCard
+                    compactSpeakingRatingHero
                 }
 
                 profileCoachReadCard
-
-                // Pro after value (owner decision): the upsell renders
-                // below the believable-progress hero + coach read, never
-                // above them.
-                if !premium.isPremium {
-                    upgradeCTA
-                }
 
                 profileEvidenceHub
             }
@@ -1263,6 +1563,9 @@ struct ProfileView: View {
             bigMomentStore.archiveExpiredIfNeeded()
             await challenges.refreshFromBackend()
             await friends.refreshPeerStats()
+            if ratingStore.rating.hasRatedEvidence {
+                await league.refreshMembers(force: false)
+            }
         }
         .background(AppColor.screenBackground.ignoresSafeArea())
         .navigationTitle("")
@@ -1291,120 +1594,47 @@ struct ProfileView: View {
     // MARK: - Collapsed Profile
 
     private var profileCoachReadCard: some View {
-        let content = ProfileCoachReadContent.make(
+        let presentation = ProfileCoachBriefPresentation.make(
             sessionCount: sessions.count,
             plan: CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile),
             memory: coachMemoryStore.currentMemory,
+            trends: TrendAnalyzer.analyze(snapshots: trendStore.snapshots),
             proof: proofStore.recent(limit: 1).first
         )
-        let transferStatus = ProfileTransferStatusContent.make(
-            activeMoment: bigMomentStore.activeMoment,
-            pendingOutcomeMoment: bigMomentStore.pendingOutcomeCheckInMoment,
-            recentOutcome: bigMomentStore.recentOutcomeReports(limit: 1).first,
-            transferTrend: bigMomentStore.transferTrends(limit: 1).first,
-            sessions: sessions,
-            voice: coachingProfileStore.profile?.speakingStyleGoal
-        )
 
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(spacing: 8) {
                 Image(systemName: "sparkle.magnifyingglass")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(AppColor.pro)
-                Text("Your coach")
-                    .font(Typography.micro.weight(.bold))
+                    .accessibilityHidden(true)
+                Text("Current coaching focus")
+                    .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
-                Spacer()
-                Text(content.label)
-                    .font(Typography.micro.weight(.bold))
-                    .foregroundStyle(content.isThinEvidence ? AppColor.caution : AppColor.pro)
-                    .textCase(.uppercase)
-                    .tracking(0.7)
             }
 
-            Text(content.read)
+            Text(presentation.observation)
                 .font(Typography.body.weight(.semibold))
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "arrow.turn.down.right")
+                Image(systemName: "scope")
                     .font(Typography.captionSmall.weight(.bold))
                     .foregroundStyle(AppColor.brandBlue)
                     .padding(.top, 3)
-                Text(content.nextMove)
+                    .accessibilityHidden(true)
+                Text(presentation.nextMove)
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if content.evidenceLine != nil || content.proofClaim != nil {
-                Button {
-                    toggleCoachReadEvidence()
-                } label: {
-                    HStack(spacing: Spacing.xs) {
-                        Text(showCoachReadEvidence ? "Hide evidence behind this read" : "Evidence behind this read")
-                            .font(Typography.captionSmall.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Spacer(minLength: Spacing.xs)
-                        Image(systemName: "chevron.down")
-                            .font(Typography.captionSmall.weight(.bold))
-                            .foregroundStyle(.tertiary)
-                            .rotationEffect(.degrees(showCoachReadEvidence ? 180 : 0))
-                            .animation(reduceMotion ? nil : .standardSpring, value: showCoachReadEvidence)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.pressable)
-                .accessibilityLabel(showCoachReadEvidence ? "Hide evidence behind this coaching read" : "Show evidence behind this coaching read")
-                .accessibilityIdentifier("profile.coachRead.evidenceToggle")
-
-                if showCoachReadEvidence {
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        if let evidenceLine = content.evidenceLine {
-                            Text(evidenceLine)
-                                .font(Typography.captionSmall)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .accessibilityLabel("Evidence behind this read: \(evidenceLine)")
-                        }
-
-                        if let proofClaim = content.proofClaim {
-                            VStack(alignment: .leading, spacing: Spacing.xs) {
-                                Text(proofClaim)
-                                    .font(Typography.caption.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                if let quote = content.proofQuote {
-                                    Text("\"\(quote)\"")
-                                        .font(Typography.captionSmall)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(2)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                            .padding(Spacing.sm)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                AppColor.pro.opacity(0.07),
-                                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                            )
-                        }
-                    }
-                    .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
-                }
-            }
-
-            if let transferStatus {
-                Divider()
-                    .padding(.vertical, 2)
-                profileTransferStatusRow(transferStatus)
-            }
-
-            if coachingProfileStore.profile != nil {
-                askNoumProfileLink
+            if let evidenceCaption = presentation.evidenceCaption {
+                Text(evidenceCaption)
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(Spacing.lg)
@@ -1510,7 +1740,6 @@ struct ProfileView: View {
     }
 
     private var profileEvidenceHub: some View {
-        let presentation = ProfileEvidenceHubPresentation.valueFirst
         return VStack(alignment: .leading, spacing: Spacing.sm) {
             Button {
                 toggleProfileEvidence()
@@ -1523,10 +1752,10 @@ struct ProfileView: View {
                         .background(AppColor.brandBlue.opacity(0.10), in: Circle())
 
                     VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        Text("Evidence")
+                        Text("Library")
                             .font(Typography.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
-                        Text("Baseline, proof moments, and saved reps")
+                        Text("Evidence, history, and account tools")
                             .font(Typography.captionSmall)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1544,23 +1773,22 @@ struct ProfileView: View {
             }
             .buttonStyle(.pressable)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(showProfileEvidence ? "Hide supporting evidence" : "Show supporting evidence")
-            .accessibilityHint("Shows or hides supporting profile evidence.")
+            .accessibilityLabel(showProfileEvidence ? "Hide profile library" : "Show profile library")
+            .accessibilityHint("Shows or hides evidence, history, and account tools.")
             .accessibilityIdentifier("profile.evidenceHub.toggle")
 
             if showProfileEvidence {
-                VStack(spacing: Spacing.cardGap) {
+                VStack(spacing: 0) {
                     Divider()
 
-                    VStack(spacing: presentation.usesCompactRows ? Spacing.xs : Spacing.cardGap) {
-                        ForEach(presentation.linkOrder, id: \.self) { link in
-                            profileEvidenceLink(for: link)
+                    ForEach(Array(profileLibraryPresentation.rows.enumerated()), id: \.element.rawValue) { index, row in
+                        profileLibraryRow(row)
+                        if index < profileLibraryPresentation.rows.count - 1 {
+                            Divider().padding(.leading, 48)
                         }
                     }
-
-                    profileEvidenceDetails
                 }
-                    .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
+                .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(Spacing.lg)
@@ -1569,6 +1797,167 @@ struct ProfileView: View {
             RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(AppColor.subtleBorder, lineWidth: 1)
         )
+    }
+
+    @ViewBuilder
+    private func profileLibraryRow(_ row: ProfileLibraryRow) -> some View {
+        switch row {
+        case .coachingEvidence:
+            NavigationLink {
+                ScrollView(showsIndicators: false) {
+                    profileEvidenceDetails
+                        .padding(.horizontal, Spacing.screenH)
+                        .padding(.vertical, Spacing.md)
+                }
+                .background(AppColor.screenBackground.ignoresSafeArea())
+                .navigationTitle("Coaching evidence")
+                .navigationBarTitleDisplayMode(.inline)
+            } label: {
+                profileLibraryRowLabel(
+                    title: "Coaching evidence",
+                    subtitle: baselineMapHubSubtitle,
+                    icon: "chart.bar.xaxis",
+                    tint: AppColor.pro
+                )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("profile.evidence.baselineMap.row")
+
+        case .growthLibrary:
+            NavigationLink(value: AppDestination.growthLibrary) {
+                profileLibraryRowLabel(
+                    title: "Growth library",
+                    subtitle: growthLibrarySubtitle,
+                    icon: "quote.opening",
+                    tint: AppColor.positive
+                )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("profile.evidence.library")
+
+        case .allReps:
+            NavigationLink(value: AppDestination.sessionHistory) {
+                profileLibraryRowLabel(
+                    title: "All reps",
+                    subtitle: historyLinkSubtitle,
+                    icon: "clock.arrow.circlepath",
+                    tint: AppColor.brandBlue
+                )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("profile.evidence.history")
+
+        case .personalBests:
+            NavigationLink(destination: PeakRatingWallView()) {
+                profileLibraryRowLabel(
+                    title: "Personal bests",
+                    subtitle: "Your strongest verified results",
+                    icon: "chart.line.uptrend.xyaxis",
+                    tint: AppColor.brandBlue
+                )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("profile.peakRatingWall.link")
+
+        case .friends:
+            NavigationLink(value: AppDestination.friendLeaderboard) {
+                profileLibraryRowLabel(
+                    title: "Friends",
+                    subtitle: friends.friendCount == 0
+                        ? "Add a friend when you want to practice together"
+                        : "\(friends.friendCount) connected",
+                    icon: "person.2.fill",
+                    tint: AppColor.positive
+                )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("profile.friendLeaderboard")
+
+        case .achievements:
+            Button {
+                showAchievementsTree = true
+            } label: {
+                profileLibraryRowLabel(
+                    title: "Achievements",
+                    subtitle: achievementsSummarySubtitle(
+                        unlocked: unlockedAchievements.count,
+                        total: retentionSnapshot.achievements.count
+                    ),
+                    icon: "seal.fill",
+                    tint: AppColor.pro
+                )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("profile.library.achievements")
+
+        case .peerComparison:
+            NavigationLink(value: AppDestination.league) {
+                profileLibraryRowLabel(
+                    title: "Peer comparison",
+                    subtitle: peerComparisonSubtitle,
+                    icon: "person.2.wave.2.fill",
+                    tint: leagueTierTint
+                )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("profile.library.peerComparison")
+
+        case .upgrade:
+            Button {
+                showPaywall = true
+            } label: {
+                profileLibraryRowLabel(
+                    title: "Explore Noum Pro",
+                    subtitle: "Deeper coaching and review tools",
+                    icon: "crown.fill",
+                    tint: AppColor.pro
+                )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("profile.upgradeCTA")
+        }
+    }
+
+    private func profileLibraryRowLabel(
+        title: String,
+        subtitle: String,
+        icon: String,
+        tint: Color
+    ) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: icon)
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(tint)
+                .frame(width: 34, height: 34)
+                .background(tint.opacity(0.10), in: Circle())
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(title)
+                    .font(Typography.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Image(systemName: "chevron.right")
+                .font(Typography.captionSmall.weight(.bold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private var peerComparisonSubtitle: String {
+        guard case let .available(peerCount) = peerComparisonVisibility else {
+            return "Appears when another speaker is available"
+        }
+        return peerCount == 1 ? "Compare with one active peer" : "Compare with \(peerCount) active peers"
     }
 
     private var baselineCoachMap: BaselineCoachMap {
@@ -1984,6 +2373,45 @@ struct ProfileView: View {
 
     // MARK: - Speaking Rating
 
+    private var compactSpeakingRatingHero: some View {
+        let presentation = ProfileRatingHeroPresentation.make(rating: ratingStore.rating)
+        return VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(Typography.caption.weight(.bold))
+                    .accessibilityHidden(true)
+                Text("Speaking rating")
+                    .font(Typography.caption.weight(.semibold))
+            }
+            .foregroundStyle(.white.opacity(0.86))
+
+            Text("\(presentation.value)")
+                .font(Typography.figtreeNumeric(size: 44, relativeTo: .largeTitle))
+                .foregroundStyle(.white)
+                .contentTransition(reduceMotion ? .identity : .numericText())
+
+            Text(presentation.directionLine)
+                .font(Typography.subheadline.weight(.medium))
+                .foregroundStyle(.white.opacity(0.88))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            HeroGradient.progress.gradient,
+            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        )
+        .shadow(
+            color: HeroGradient.progress.shadowTint.opacity(0.16),
+            radius: 12,
+            x: 0,
+            y: 6
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Speaking rating \(presentation.value). \(presentation.directionLine)")
+        .accessibilityIdentifier("profile.rating.hero")
+    }
+
     @ViewBuilder
     private var speakingRatingCard: some View {
         let rating = ratingStore.rating
@@ -2244,10 +2672,10 @@ struct ProfileView: View {
                         Text("See your peak wall")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
-                        Text("Best this week, best ever, best in your league.")
+                        Text("Best this week, best ever, and your peer comparison.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer(minLength: Spacing.xs)
@@ -2839,16 +3267,8 @@ struct ProfileView: View {
     /// catalogues so all three coach entry points sound like the same
     /// voice. Phrasing is ambient ("about your goal", "what to drill
     /// next") because Profile isn't anchored to a specific rep.
-    private func askNoumProfileLabel(for voice: SpeakingStyleGoal?) -> String {
-        switch voice {
-        case .authoritative: return "Ask Noum what to drill next"
-        case .warm: return "Talk to Noum about your goal"
-        case .concise: return "Ask Noum — one move"
-        case .persuasive: return "Ask Noum where to leverage"
-        case .executive: return "Brief Noum on what's next"
-        case .storytelling: return "Tell Noum what's next"
-        case .none: return "Ask Noum about your goal"
-        }
+    private func askNoumProfileLabel(for _: SpeakingStyleGoal?) -> String {
+        "Ask Noum"
     }
 
     // MARK: - Active Challenge

@@ -101,11 +101,11 @@ enum SessionIntentEngine {
         // 4) Generic — always present, always last. Gives the user a
         //    concrete "I just want to speak" option so any future
         //    declared-focus surface can stay low-friction.
-        let genericLabel = "Open rep"
+        let genericLabel = "Start a rep"
         let generic = SessionIntent(
             // Pick a default priority for the generic option — pick the
             // user's profile goal when available so the metadata still
-            // carries a useful signal even when they tap "Open rep".
+            // carries a useful signal even when they tap "Start a rep".
             // Cold-start (no profile) falls through to `.calmerDelivery`
             // as the most universally-applicable starting point.
             priority: profile?.primaryGoal ?? .calmerDelivery,

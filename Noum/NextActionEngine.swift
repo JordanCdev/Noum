@@ -27,9 +27,9 @@ enum ActionRecommendation: Equatable {
     var displayTitle: String {
         switch self {
         case .drill(let rec): return rec.title
-        case .practiceMode(let mode, _): return "\(mode.displayLabel) Practice"
-        case .pressureExposure(let mode, _): return "\(mode.displayLabel) — Pressure Mode"
-        case .stabilizingRep(let mode, _): return "\(mode.displayLabel) — Consolidation"
+        case .practiceMode(let mode, _): return mode.displayLabel
+        case .pressureExposure(let mode, _): return "\(mode.displayLabel) · Pressure"
+        case .stabilizingRep(let mode, _): return "\(mode.displayLabel) · Steady the gain"
         case .confidenceRebuilding(let rec): return rec.title
         }
     }

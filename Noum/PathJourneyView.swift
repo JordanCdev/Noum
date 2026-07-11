@@ -169,8 +169,6 @@ struct PathJourneyView: View {
                                 consistencyStrip
                                 todayRow
                             }
-                            .padding(18)
-                            .background(journeyHeroBackground)
 
                             whyCard
                                 .id("journey.why")
@@ -329,7 +327,7 @@ struct PathJourneyView: View {
         if snapshot.practicedDays == 0 {
             return "Build a steadier speaking habit, one rep at a time."
         }
-        return "Your recent practice, next landmark, and reason for showing up."
+        return "Your practice, next landmark, and reason for showing up."
     }
 
     /// Replaces the old Path-% / Streak pills. The landscape is days, so
@@ -352,12 +350,17 @@ struct PathJourneyView: View {
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .padding(.horizontal, 4)
+        .padding(.vertical, Spacing.xs)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(snapshot.practicedDays) of the last 21 days practiced. Streak: \(snapshot.streakLabel).")
+        .accessibilityLabel(consistencyAccessibilityLabel)
         .accessibilityIdentifier("journey.consistency")
+    }
+
+    private var consistencyAccessibilityLabel: String {
+        let practiced = "\(snapshot.practicedDays) of the last 21 days practiced."
+        guard snapshot.streak > 0 else { return practiced }
+        return "\(practiced) Current rhythm: \(snapshot.streak) days."
     }
 
     private var practiceDayCount: some View {
@@ -372,18 +375,17 @@ struct PathJourneyView: View {
         }
     }
 
+    @ViewBuilder
     private var pathStreakChip: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "flame.fill")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.orange.opacity(0.85))
-            Text(snapshot.streakLabel)
-                .font(Typography.cardLabel)
-                .foregroundStyle(.orange.opacity(0.92))
+        if snapshot.streak > 0 {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("\(snapshot.streak)-day rhythm")
+                    .font(Typography.caption.weight(.semibold))
+            }
+            .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.orange.opacity(0.10), in: Capsule(style: .continuous))
     }
 
     /// The page's one call to action. Pre-rep it points at practice;
@@ -395,7 +397,7 @@ struct PathJourneyView: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(.green.opacity(0.85))
-                Text("Today's rep is in. The trail held.")
+                Text("Today's rep is done.")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                 Spacer()
@@ -441,10 +443,8 @@ struct PathJourneyView: View {
     private var whyCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Your reason")
-                .font(.caption.weight(.semibold))
+                .font(Typography.headline)
                 .foregroundStyle(AppColor.brandBlue.opacity(0.85))
-                .textCase(.uppercase)
-                .tracking(0.4)
 
             if let why = whyContent {
                 Group {
@@ -474,6 +474,7 @@ struct PathJourneyView: View {
                         Label("Review goal", systemImage: "scope")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(AppColor.brandBlue.opacity(0.9))
+                            .frame(minHeight: 44)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("journey.why.refresh")
@@ -490,12 +491,12 @@ struct PathJourneyView: View {
                 Button {
                     showWhyCapture = true
                 } label: {
-                    Label("Set your reason", systemImage: "arrow.right")
+                    Label("Add your reason", systemImage: "arrow.right")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(AppColor.brandBlue)
+                        .frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
-                .padding(.top, 2)
                 .accessibilityIdentifier("journey.why.capture")
             }
 
@@ -505,15 +506,7 @@ struct PathJourneyView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .fill(AppColor.cardBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.72), lineWidth: 1)
-        )
+        .padding(.vertical, Spacing.sm)
         .accessibilityIdentifier("journey.why")
     }
 
@@ -548,10 +541,8 @@ struct PathJourneyView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
                         Text("Next landmark")
-                            .font(.caption.weight(.semibold))
+                            .font(Typography.headline)
                             .foregroundStyle(AppColor.brandBlue.opacity(0.85))
-                            .textCase(.uppercase)
-                            .tracking(0.4)
                         Spacer()
                         Text("\(completedCount) of \(statuses.count) reached")
                             .font(.caption.weight(.semibold))
@@ -604,15 +595,7 @@ struct PathJourneyView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .fill(Color.white)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.06), lineWidth: 1)
-        )
+        .padding(.vertical, Spacing.sm)
         .accessibilityIdentifier("journey.landmarks")
     }
 
@@ -662,43 +645,7 @@ struct PathJourneyView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .fill(Color.white)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.06), lineWidth: 1)
-        )
-    }
-
-    /// Hero background for the main journey card — brand-blue radial wash on white,
-    /// soft blue elevation, faint blue hairline. Mirrors the Pro-purple hero pattern
-    /// but in the "you progressing through speaking" blue register.
-    private var journeyHeroBackground: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .fill(Color.white)
-
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            AppColor.brandBlue.opacity(0.10),
-                            AppColor.brandBlueLight.opacity(0.03),
-                            Color.clear
-                        ],
-                        center: .top,
-                        startRadius: 8,
-                        endRadius: 320
-                    )
-                )
-
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .strokeBorder(AppColor.brandBlue.opacity(0.14), lineWidth: 1)
-        }
-        .shadow(color: AppColor.brandBlue.opacity(0.07), radius: 14, y: 8)
+        .padding(.vertical, Spacing.sm)
     }
 
     /// This week's focus (the active challenge), compacted to one row
@@ -1042,7 +989,7 @@ enum RetentionLoopEngine {
             PracticeAchievementStatus(
                 id: "im_connector",
                 title: "Connection Builder",
-                summary: "Complete three conversation practice sessions.",
+                summary: "Complete three Conversation Practice sessions.",
                 progress: min(Double(imSessions), 3) / 3,
                 progressLabel: imSessions >= 3 ? "Unlocked" : "\(imSessions)/3 chats",
                 isUnlocked: imSessions >= 3,
@@ -1248,7 +1195,7 @@ struct PracticeJourneySnapshot {
 
         let homeGoalShortLabel: String
         if practicedDays == 0 {
-            homeGoalShortLabel = "Begin"
+            homeGoalShortLabel = "Start"
         } else if daysRemaining == 0 {
             homeGoalShortLabel = "Opened"
         } else {
@@ -1358,7 +1305,7 @@ struct PathJourneyPresentation: Equatable {
                 nextMilestoneLabel: "Complete one rep to reveal the first landmark.",
                 consequenceLine: "The path begins with your first completed rep.",
                 homeGoalLine: "Start the path with one rep today.",
-                homeGoalShortLabel: "Begin"
+                homeGoalShortLabel: "Start"
             )
         }
 
@@ -1371,7 +1318,7 @@ struct PathJourneyPresentation: Equatable {
                 summaryLine: "All \(totalCount) landmarks reached from real practice signals.",
                 explanationLine: "Current path complete.",
                 nextMilestoneLabel: "Keep training to strengthen the habits behind the unlocks.",
-                consequenceLine: "The coach will keep looking for the next high-leverage pattern.",
+                consequenceLine: "The coach will keep looking for the next clear pattern.",
                 homeGoalLine: "All \(totalCount) landmarks reached. Keep the route strong.",
                 homeGoalShortLabel: "Cleared"
             )

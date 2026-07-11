@@ -156,8 +156,6 @@ struct CutTheCrutchView: View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             Text("Avoid this reflex word")
                 .font(Typography.caption.weight(.bold))
-                .textCase(.uppercase)
-                .tracking(0.8)
                 .foregroundStyle(AppColor.focusedTextSecondary)
 
             Text("\u{201C}\(engine.avoidedWord)\u{201D}")
@@ -232,7 +230,7 @@ struct CutTheCrutchView: View {
             return false
         }
         .accessibilityIdentifier("cutTheCrutch.start")
-        .accessibilityLabel("Begin Cut the Crutch")
+        .accessibilityLabel("Start Cut the Crutch")
         .background(
             LinearGradient(
                 colors: [Color.clear, Color.black.opacity(0.10)],
@@ -336,8 +334,6 @@ struct CutTheCrutchView: View {
                 Text("Avoiding")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
                 Text("\u{201C}\(engine.avoidedWord)\u{201D}")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(tint)
@@ -359,8 +355,6 @@ struct CutTheCrutchView: View {
             Text("You said")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.8)
 
             if speechVM.transcribedText.isEmpty {
                 Text("Listening…")
@@ -522,8 +516,6 @@ struct CutTheCrutchView: View {
             Text("Where it landed")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.8)
 
             ForEach(violations) { v in
                 violationRow(v)

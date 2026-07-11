@@ -499,10 +499,8 @@ private struct ImpromptuSettingsPanel: View {
 
     private var coachToolsHeader: some View {
         Text("Coach tools")
-            .font(Typography.micro)
+            .font(Typography.caption.weight(.semibold))
             .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .tracking(0.8)
             .padding(.horizontal, Spacing.lg)
             .padding(.top, Spacing.sm)
             .padding(.bottom, Spacing.xs)
@@ -1027,7 +1025,7 @@ struct TimedPracticeView: View {
         FocusedPracticeScaffold(
             style: .timed,
             status: enableThinkingTime ? "Ready with 15-second prep" : "Ready for instant start",
-            title: "Impromptu",
+            title: PracticeMode.timed.displayLabel,
             subtitle: "One prompt. One take. A clear landing."
         ) {
             Button {
@@ -1044,7 +1042,7 @@ struct TimedPracticeView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("timedPractice.settings.toggle")
-            .accessibilityLabel("Adjust Impromptu")
+            .accessibilityLabel("Adjust Timed Practice")
         } content: {
             VStack(alignment: .leading, spacing: Spacing.lg) {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -1115,7 +1113,7 @@ struct TimedPracticeView: View {
     private var setupHeader: some View {
         HStack(alignment: .center, spacing: Spacing.md) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Impromptu")
+                Text(PracticeMode.timed.displayLabel)
                     .font(Typography.figtree(size: 36, weight: .bold, relativeTo: .largeTitle))
                     .foregroundStyle(.primary)
                 if !showSetupSettings {
@@ -1146,7 +1144,7 @@ struct TimedPracticeView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("timedPractice.settings.toggle")
-            .accessibilityLabel(showSetupSettings ? "Hide Impromptu settings" : "Show Impromptu settings")
+            .accessibilityLabel(showSetupSettings ? "Hide Timed Practice settings" : "Show Timed Practice settings")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1481,10 +1479,8 @@ struct TimedPracticeView: View {
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.pink)
                 Text("Camera preview")
-                    .font(Typography.micro)
+                    .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
                 Spacer()
                 Text("Visible only to you")
                     .font(Typography.caption)
@@ -2561,7 +2557,7 @@ struct TimedPracticeView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "bolt.fill")
                         .font(.headline)
-                    Text("Start impromptu")
+                    Text("Start Timed Practice")
                         .font(.headline.weight(.semibold))
                 }
                 .frame(maxWidth: .infinity)
@@ -2961,7 +2957,7 @@ struct TimedPracticeView: View {
             suddenDeathMultiplierLabels: [],
             suddenDeathTotalWords: nil,
             showDuration: false,
-            practiceTitle: "Impromptu Practice",
+            practiceTitle: PracticeMode.timed.displayLabel,
             feedbackOverride: result.feedback,
             headlineOverride: result.headline,
             scoreBreakdown: result.segments,
@@ -3148,7 +3144,7 @@ struct TimedPracticeView: View {
             suddenDeathMultiplierLabels: [],
             suddenDeathTotalWords: nil,
             showDuration: false,
-            practiceTitle: "Impromptu Practice",
+            practiceTitle: PracticeMode.timed.displayLabel,
             feedbackOverride: evaluation?.feedback,
             headlineOverride: evaluation?.headline,
             scoreBreakdown: evaluation?.segments ?? [],

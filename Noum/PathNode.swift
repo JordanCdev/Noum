@@ -189,7 +189,7 @@ enum PathNodeRegistry {
                 title: "Three reps",
                 detail: "Reach three completed sessions.",
                 coachLine: "Three reps starts to flatten the trail under your feet.",
-                actionLabel: "Open practice",
+                actionLabel: "Start a rep",
                 actionDestination: .practiceSelection,
                 symbolName: "figure.walk.motion"
             ),
@@ -203,7 +203,7 @@ enum PathNodeRegistry {
                 title: "First Pressure Drill",
                 detail: "Complete one Pressure Drill run.",
                 coachLine: "Pressure Drill shows how you handle a clock and a misstep.",
-                actionLabel: "Open Pressure Drill",
+                actionLabel: "Start Pressure Drill",
                 actionDestination: .suddenDeathPractice,
                 symbolName: "bolt.fill"
             ),
@@ -215,9 +215,9 @@ enum PathNodeRegistry {
                 order: 3,
                 tier: .bronze,
                 title: "First conversation rep",
-                detail: "Complete one conversation practice rep.",
+                detail: "Complete one Conversation Practice rep.",
                 coachLine: "Live conversation tests the muscles drills can't fully reach.",
-                actionLabel: "Open conversation practice",
+                actionLabel: "Start Conversation Practice",
                 actionDestination: .imPractice(scenario: nil, tone: nil),
                 symbolName: "bubble.left.and.bubble.right.fill"
             ),
@@ -231,7 +231,7 @@ enum PathNodeRegistry {
                 title: "First lesson cleared",
                 detail: "Complete your first lesson practice pass.",
                 coachLine: "Lessons teach the technique. One pass means you've built the recognition.",
-                actionLabel: "Open lessons",
+                actionLabel: "Start a lesson",
                 actionDestination: .lessons,
                 symbolName: "books.vertical.fill"
             ),
@@ -273,7 +273,7 @@ enum PathNodeRegistry {
                 title: "Three-day streak",
                 detail: "Practice three days in a row.",
                 coachLine: "Three consecutive days is when the habit starts owning your reps, not the other way around.",
-                actionLabel: "Open practice",
+                actionLabel: "Start a rep",
                 actionDestination: .practiceSelection,
                 symbolName: "flame.fill"
             ),
@@ -301,7 +301,7 @@ enum PathNodeRegistry {
                 title: "Rating 500",
                 detail: "Reach a peak speaking rating of 500.",
                 coachLine: "A 500 rating marks stronger decisions across rated pressure reps.",
-                actionLabel: "Open Pressure",
+                actionLabel: "Start Pressure Drill",
                 actionDestination: .suddenDeathPractice,
                 symbolName: "chart.line.uptrend.xyaxis"
             ),
@@ -315,7 +315,7 @@ enum PathNodeRegistry {
                 title: "Pressure Drill survivor",
                 detail: "Survive into round 3 of a Pressure Drill session.",
                 coachLine: "Round 3 is past the warmup. Holding it means you're composing under load.",
-                actionLabel: "Open Pressure Drill",
+                actionLabel: "Start Pressure Drill",
                 actionDestination: .suddenDeathPractice,
                 symbolName: "shield.lefthalf.filled"
             ),
@@ -329,7 +329,7 @@ enum PathNodeRegistry {
                 title: "Seven-day streak",
                 detail: "Practice seven days in a row.",
                 coachLine: "A week without a missed day means speaking practice is part of your day, not on top of it.",
-                actionLabel: "Open practice",
+                actionLabel: "Start a rep",
                 actionDestination: .practiceSelection,
                 symbolName: "flame.circle.fill"
             ),
@@ -343,7 +343,7 @@ enum PathNodeRegistry {
                 title: "Mode mastery III",
                 detail: "Reach mastery level 3 in any practice mode.",
                 coachLine: "Going deep in one mode beats going shallow in four.",
-                actionLabel: "Open practice",
+                actionLabel: "Start a rep",
                 actionDestination: .practiceSelection,
                 symbolName: "rosette"
             ),
@@ -357,7 +357,7 @@ enum PathNodeRegistry {
                 title: "Rating 700",
                 detail: "Reach a peak speaking rating of 700.",
                 coachLine: "700 is where coaching defaults to refinement, not correction.",
-                actionLabel: "Open Pressure",
+                actionLabel: "Start Pressure Drill",
                 actionDestination: .suddenDeathPractice,
                 symbolName: "star.fill"
             ),
@@ -385,7 +385,7 @@ enum PathNodeRegistry {
                 title: "Five lesson passes",
                 detail: "Complete five practice passes across the lessons catalog.",
                 coachLine: "Five passes means the techniques aren't theoretical anymore — they're moves you've practiced.",
-                actionLabel: "Open lessons",
+                actionLabel: "Start a lesson",
                 actionDestination: .lessons,
                 symbolName: "checkmark.seal.fill"
             ),
@@ -399,7 +399,7 @@ enum PathNodeRegistry {
                 title: "Thirty days trained",
                 detail: "Practice on thirty distinct days.",
                 coachLine: "Thirty days of returns is a real practice, not a streak hack.",
-                actionLabel: "Open practice",
+                actionLabel: "Start a rep",
                 actionDestination: .practiceSelection,
                 symbolName: "calendar.badge.checkmark"
             ),
@@ -413,7 +413,7 @@ enum PathNodeRegistry {
                 title: "Master a lesson",
                 detail: "Take any lesson through five successful practice passes.",
                 coachLine: "Mastery means the move has survived repetition, not just recognition.",
-                actionLabel: "Open lessons",
+                actionLabel: "Start a lesson",
                 actionDestination: .lessons,
                 symbolName: "rosette"
             ),

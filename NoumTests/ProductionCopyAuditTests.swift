@@ -88,20 +88,20 @@ struct ProductionCopyAuditRegressionTests {
 
         #expect(primary == "Start Timed Practice")
         #expect(!primary.contains("·"))
-        #expect(target == "30s+ — Longer answer")
+        #expect(target == "30s+")
         #expect(target?.contains("·") == false)
     }
 
     @Test func conversationModeDoesNotExposeInternalInitials() {
-        #expect(PracticeMode.imConversation.displayLabel == "Conversation practice")
-        #expect(SessionHistoryListModel.modeLabel(for: .imConversation) == "Conversation practice")
+        #expect(PracticeMode.imConversation.displayLabel == "Conversation Practice")
+        #expect(SessionHistoryListModel.modeLabel(for: .imConversation) == "Conversation Practice")
         #expect(!PracticeMode.imConversation.displayLabel.contains("IM"))
     }
 
     @Test func conversationExportDoesNotDependOnInternalModeInitials() {
         let export = IMHistoryExport.formatPlainText(sessions: [])
 
-        #expect(export.contains("Conversation practice history"))
+        #expect(export.contains("Conversation Practice history"))
         #expect(!export.contains("IM history"))
         #expect(!export.contains("·"))
     }

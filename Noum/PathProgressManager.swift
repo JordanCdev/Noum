@@ -351,12 +351,7 @@ enum GatingPhrase {
     }
 
     private static func modeName(_ mode: PracticeMode) -> String {
-        switch mode {
-        case .timed:          return "Timed"
-        case .suddenDeath:    return "Pressure Drill"
-        case .ahCounter:      return "Ah-Counter"
-        case .imConversation: return "Conversation Practice"
-        }
+        mode.displayLabel
     }
 
     /// "1.5s" / "3s" — short numeric label for inline reading.

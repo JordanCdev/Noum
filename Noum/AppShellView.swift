@@ -49,7 +49,7 @@ enum AppTab: String, CaseIterable, Identifiable {
             return .train
         case "review", "history", "growth", "library":
             return .review
-        case "profile", "social", "league", "friends":
+        case "profile", "social", "league", "friend", "friends":
             return .profile
         case "settings": return .settings
         default: return nil
@@ -106,7 +106,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case "prep": return .prepSession
         case "growth", "library": return .growthLibrary
         case "league": return .league
-        case "friends": return .friendLeaderboard
+        case "friend", "friends": return .friendLeaderboard
         case "ask", "asknoum":
             let queryMode = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name.lowercased() == "mode" })?.value?.lowercased()
@@ -454,12 +454,13 @@ struct AppDestinationView: View {
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var ratingStore = RatingStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @State private var selectedPracticeMode: PracticeMode = .timed
 
     @ViewBuilder
     var body: some View {
         switch destination {
         case .practiceSelection:
-            PracticeModeSelectionView(selectedMode: .constant(.timed), navigationPath: $navigationPath)
+            PracticeModeSelectionView(selectedMode: $selectedPracticeMode, navigationPath: $navigationPath)
         case .timedPractice:
             TimedPracticeView(navigationPath: $navigationPath)
                 .toolbar(.hidden, for: .tabBar)

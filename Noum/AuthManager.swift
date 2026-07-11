@@ -535,6 +535,7 @@ class AuthManager: ObservableObject {
             "coachingProfile.\(accountID)",
             "coachingProfileOnboardingComplete.\(accountID)",
             "practiceSessions.\(accountID)",
+            "skillTrendSnapshots.\(accountID)",
             "communicationBaseline.\(accountID)",
             "pressureProfile.\(accountID)",
             "speakingRating.\(accountID)",
@@ -602,6 +603,7 @@ class AuthManager: ObservableObject {
         defaults.removeObject(forKey: "NoumChallenges")
         defaults.removeObject(forKey: "NoumCompletedChallenges")
         defaults.removeObject(forKey: "NoumAsyncChallenges")
+        defaults.removeObject(forKey: "skillTrendSnapshots")
         defaults.removeObject(forKey: "aiMonthlyAnalysisCount")
         defaults.removeObject(forKey: "aiMonthlyAnalysisMonth")
         defaults.removeObject(forKey: "hasAcknowledgedAIDisclosure.\(accountID)")
@@ -660,6 +662,7 @@ class AuthManager: ObservableObject {
             CoachingProfileStore.shared.reloadForCurrentAccount()
             FirstRunOnboardingManager.shared.reloadForCurrentAccount()
             PracticeSessionStore.shared.reloadForCurrentAccount()
+            SkillTrendStore.shared.reloadForCurrentAccount()
             BaselineStore.shared.reloadForCurrentAccount()
             RatingStore.shared.reloadForCurrentAccount()
             ProfileManager.shared.reloadForCurrentAccount()
@@ -687,6 +690,7 @@ class AuthManager: ObservableObject {
             await Task.yield()
             CoachingProfileStore.shared.endSession()
             PracticeSessionStore.shared.endSession()
+            SkillTrendStore.shared.endSession()
             BaselineStore.shared.endSession()
             RatingStore.shared.endSession()
             ProfileManager.shared.endSession()

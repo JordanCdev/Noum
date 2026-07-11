@@ -41,9 +41,9 @@ struct SuddenDeathResultView: View {
 
     private var runEndNote: String {
         switch result.finalOutcome {
-        case .survived:          return "Run cleared"
+        case .survived:          return "Round cleared"
         case .fillerOverload:
-            return "\(result.totalFillers) filler\(result.totalFillers == 1 ? "" : "s") ended the run"
+            return "\(result.totalFillers) filler\(result.totalFillers == 1 ? "" : "s") ended the round"
         case .timeoutBeforeStart: return "Start window expired"
         case .tooShort:          return "Below word target"
         }
@@ -202,7 +202,7 @@ struct SuddenDeathResultView: View {
     /// Compact horizontal dot strip — scales to any number of tiers.
     private var compactRunPath: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Run Path")
+            Text("Round path")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)

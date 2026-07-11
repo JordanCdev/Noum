@@ -510,9 +510,17 @@ actor ProofMomentService {
             }
         case .warm:
             if cleanRep {
-                return ("Open Delivery", "Calm, unhurried. That reads as warmth — you let the listener in.")
+                // Zero fillers is a useful delivery fact, but duration and
+                // filler count cannot establish pace, tone, or warmth.
+                return (
+                    "Clean Delivery",
+                    "No fillers across this rep. Keep that clean delivery, then let tone and wording carry the warmth."
+                )
             } else {
-                return ("Personal Anchor", "You spoke from a real place. Warmth lives in specifics, not platitudes.")
+                // The deterministic path cannot infer that a sentence is
+                // personal or specific from wording alone. Keep the claim at
+                // the observable level until a semantic provider verifies it.
+                return ("Complete Thought", "This line held together as one complete thought.")
             }
         case .concise:
             if cleanRep || strongRep {

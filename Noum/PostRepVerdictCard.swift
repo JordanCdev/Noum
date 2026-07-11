@@ -3,6 +3,12 @@ import SwiftUI
 
 // MARK: - Post Rep Verdict Card
 
+enum CohesiveSummaryCopy {
+    static let askNoum = "Ask Noum"
+    static let seeDetails = "See details"
+    static let done = "Done"
+}
+
 @available(iOS 17.0, *)
 struct PostRepVerdictContent: Equatable {
     struct Win: Equatable {
@@ -57,8 +63,8 @@ struct PostRepVerdictContent: Equatable {
     ) -> PostRepVerdictContent {
         PostRepVerdictContent(
             readText: readText(note: note, coachNote: coachNote, isMinimalEffort: isMinimalEffort),
-            provenanceLabel: note?.isAIBacked == false ? "RULE-BASED" : nil,
-            thinEvidenceCopy: isMinimalEffort ? "Early read: one longer rep will sharpen the diagnosis." : nil,
+            provenanceLabel: nil,
+            thinEvidenceCopy: isMinimalEffort ? "Early read: one longer rep will make the next read clearer." : nil,
             deliveryReadLine: isMinimalEffort ? nil : deliveryReadLine,
             win: isMinimalEffort ? nil : win(proof: proof, bullets: winBullets),
             fix: isMinimalEffort ? nil : fix(coachNote: coachNote, bullets: fixBullets)
@@ -92,7 +98,10 @@ struct PostRepVerdictContent: Equatable {
             return Win(
                 headline: proof.claim,
                 quote: proof.quote,
-                support: proof.technique,
+                // The verified quote and its plain-language claim are the
+                // evidence. Internal technique taxonomy adds a third label
+                // without helping the user decide what to repeat.
+                support: nil,
                 quoteIsVerified: true
             )
         }
@@ -137,6 +146,231 @@ struct PostRepVerdictContent: Equatable {
         guard case .nextStep(let text) = source else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+// MARK: - Combined post-rep debrief
+
+/// Pure visibility contract for the single post-rep debrief surface. The
+/// content still comes from `PostRepVerdictContent`; this projection only
+/// decides which named sections have something honest to show.
+@available(iOS 17.0, *)
+struct PostRepDebriefVisibility: Equatable {
+    let showsWhatHeld: Bool
+    let showsNextMove: Bool
+
+    static func resolve(
+        content: PostRepVerdictContent,
+        hasReviewIntervention: Bool = false
+    ) -> PostRepDebriefVisibility {
+        PostRepDebriefVisibility(
+            showsWhatHeld: content.win != nil,
+            showsNextMove: content.fix != nil || hasReviewIntervention
+        )
+    }
+}
+
+/// The one coaching surface beneath the verdict hero. It composes the existing
+/// read, win and fix selectors into a single reading flow instead of making the
+/// user parse three adjacent cards. Analytical depth remains in Summary's
+/// Details disclosure; this surface stays focused on comprehension and action.
+@available(iOS 17.0, *)
+struct PostRepDebriefCard: View {
+    let content: PostRepVerdictContent
+    var revisedChange: CoachCourseChange? = nil
+    var reviewIntervention: CoachIntervention? = nil
+    var onReview: (() -> Void)? = nil
+
+    private var visibility: PostRepDebriefVisibility {
+        .resolve(content: content, hasReviewIntervention: reviewIntervention != nil)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            if !visibility.showsWhatHeld && !visibility.showsNextMove {
+                coachRead
+            }
+
+            if visibility.showsWhatHeld, let win = content.win {
+                whatHeld(win)
+                    .accessibilityIdentifier("summary.win.card")
+            }
+
+            if visibility.showsNextMove {
+                if visibility.showsWhatHeld {
+                    Divider()
+                }
+                nextMove
+                    .accessibilityIdentifier("summary.fix.card")
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            AppColor.cardBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.subtleBorder, lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(PostRepReadCard.AccessibilityID.root)
+        .accessibilityLabel("Coaching debrief for this rep")
+    }
+
+    private var coachRead: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            if let change = revisedChange {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.pro)
+                        .accessibilityHidden(true)
+                    Text(RevisedReadCard.headlineCopy(for: change))
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Revised coaching read. \(RevisedReadCard.headlineCopy(for: change))")
+                .accessibilityIdentifier("summary.revisedRead.card")
+            }
+
+            Text(content.readText)
+                .font(Typography.body)
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let deliveryLine = content.deliveryReadLine {
+                Text(deliveryLine)
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Delivery read: \(deliveryLine)")
+            }
+
+            if let copy = content.thinEvidenceCopy {
+                Text(copy)
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func whatHeld(_ win: PostRepVerdictContent.Win) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            debriefHeading("What held", symbol: "checkmark.circle.fill", tint: AppColor.positive)
+
+            Text(win.headline)
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let quote = win.quote, !quote.isEmpty {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("\"\(quote)\"")
+                        .font(Typography.body.italic())
+                        .foregroundStyle(AppColor.textPrimary.opacity(0.86))
+                        .fixedSize(horizontal: false, vertical: true)
+                    if win.quoteIsVerified {
+                        Text("Your words from this rep")
+                            .font(Typography.captionSmall)
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                }
+                .padding(.leading, Spacing.sm)
+                .overlay(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(AppColor.positive.opacity(0.55))
+                        .frame(width: 3)
+                }
+            }
+
+            if let support = win.support, !support.isEmpty {
+                Text(support)
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var nextMove: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            debriefHeading("Next move", symbol: "arrow.up.right", tint: AppColor.caution)
+
+            if let fix = content.fix {
+                Text(fix.headline)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let evidence = fix.evidence {
+                    fixEvidence(evidence)
+                }
+            }
+
+            if let reviewIntervention, let onReview {
+                Text(InterventionReviewPromptCard.headlineCopy(for: reviewIntervention))
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(CohesiveSummaryCopy.askNoum, action: onReview)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.pro)
+                    .frame(minHeight: 44, alignment: .leading)
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("summary.interventionReview.cta")
+                    .accessibilityHint("Opens Ask Noum to review whether the active focus is working.")
+            } else if let next = content.fix?.nextMove, !next.isEmpty {
+                Text(next)
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func debriefHeading(_ text: String, symbol: String, tint: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(AppColor.textPrimary)
+        }
+    }
+
+    @ViewBuilder
+    private func fixEvidence(_ evidence: PostRepVerdictContent.Fix.Evidence) -> some View {
+        switch evidence {
+        case .text(let text):
+            Text(text)
+                .font(Typography.caption)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        case .fillerChips(let chips):
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Spacing.xs) {
+                    ForEach(chips, id: \.word) { chip in
+                        Text("\"\(chip.word)\" · \(chip.count)")
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(AppColor.textSecondary)
+                            .padding(.horizontal, Spacing.sm)
+                            .padding(.vertical, 6)
+                            .background(AppColor.tagBackground, in: Capsule())
+                    }
+                }
+            }
+            .accessibilityLabel(
+                chips.map { "\($0.word), \($0.count)" }.joined(separator: "; ")
+            )
+        }
     }
 }
 
@@ -244,17 +478,6 @@ struct PostRepReadCard: View {
                 .tracking(0.6)
                 .foregroundStyle(AppColor.brandBlue)
             Spacer(minLength: 0)
-            if let label = content.provenanceLabel {
-                Text(label)
-                    .font(Typography.captionSmall)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule()
-                            .stroke(AppColor.textSecondary.opacity(0.35), lineWidth: 1)
-                    )
-            }
         }
     }
 }
@@ -412,7 +635,7 @@ struct PostRepFixCard: View {
                     nextMoveLine(InterventionReviewPromptCard.headlineCopy(for: reviewIntervention))
                     Button(action: onReview) {
                         HStack(spacing: 6) {
-                            Text("Review with coach")
+                            Text(CohesiveSummaryCopy.askNoum)
                                 .font(Typography.caption.weight(.semibold))
                             Image(systemName: "arrow.right")
                                 .font(.caption.weight(.bold))
@@ -423,7 +646,7 @@ struct PostRepFixCard: View {
                     }
                     .buttonStyle(.pressable)
                     .accessibilityIdentifier("summary.interventionReview.cta")
-                    .accessibilityHint("Opens Ask Noum to review whether the active intervention is working.")
+                    .accessibilityHint("Opens Ask Noum to review whether this focus is working.")
                 }
             } else if let nextMove = fix?.nextMove, !nextMove.isEmpty {
                 nextMoveLine(nextMove)
@@ -543,7 +766,7 @@ struct SummaryExitPanel: View {
     }
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: Spacing.sm) {
             if let drill {
                 SummaryDrillActionCard(
                     drill: drill,
@@ -553,42 +776,18 @@ struct SummaryExitPanel: View {
                 )
             }
 
-            VStack(spacing: 14) {
-                Button(action: onDone) {
-                    Text("Done")
-                        .font(Typography.body.weight(.semibold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(
-                            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                                .stroke(AppColor.textSecondary.opacity(0.35), lineWidth: 1)
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                }
-                .buttonStyle(.pressable)
-                .accessibilityIdentifier(AccessibilityID.done)
-                .accessibilityLabel("Done")
-                .accessibilityHint("Finishes the review and returns home.")
-
-                if let onPracticeAgain {
-                    Button(action: onPracticeAgain) {
-                        Text("Practice again")
-                            .font(Typography.caption.weight(.semibold))
-                            .foregroundStyle(AppColor.textSecondary)
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 32)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier(AccessibilityID.practiceAgain)
-                    .accessibilityLabel("Practice again")
-                }
+            Button(action: onDone) {
+                Text(CohesiveSummaryCopy.done)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
             }
-            .padding(18)
-            .frame(maxWidth: .infinity)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-            .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier(AccessibilityID.done)
+            .accessibilityLabel("Done")
+            .accessibilityHint("Finishes the review and returns home.")
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
@@ -606,6 +805,15 @@ struct SummaryDrillActionCard: View {
     var onStartMiniDrill: ((DrillRecommendationV2) -> Void)? = nil
     var onStartDrill: ((DrillRecommendation) -> Void)? = nil
 
+    static func primaryCTALabel(drillTitle: String) -> String {
+        let title = drillTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? "Start practice" : "Start \(title)"
+    }
+
+    private var primaryCTALabel: String {
+        Self.primaryCTALabel(drillTitle: drill.title)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(drill.title)
@@ -621,57 +829,25 @@ struct SummaryDrillActionCard: View {
                 Button {
                     onStartMiniDrill(drill)
                 } label: {
-                    ctaLabel("Start 45s drill", systemImage: "bolt.fill")
+                    ctaLabel(primaryCTALabel, systemImage: "bolt.fill")
                 }
                 .buttonStyle(.pressable)
                 .accessibilityIdentifier(SummaryExitPanel.AccessibilityID.startMiniDrill)
                 .accessibilityHint("Starts the short drill Noum prescribed from this rep.")
-
-                if let onStartDrill, let legacyDrill {
-                    Button {
-                        onStartDrill(legacyDrill)
-                    } label: {
-                        Text("Full retry")
-                            .font(Typography.caption.weight(.semibold))
-                            .foregroundStyle(AppColor.textSecondary)
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 32)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier(SummaryExitPanel.AccessibilityID.fullRetry)
-                    .accessibilityHint("Starts a full retry of the recommended practice.")
-                }
             } else if drill.format != .miniDrill, let onStartDrill, let legacyDrill {
                 Button {
                     onStartDrill(legacyDrill)
                 } label: {
-                    ctaLabel("Start full retry", systemImage: "arrow.clockwise")
+                    ctaLabel(primaryCTALabel, systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.pressable)
                 .accessibilityIdentifier(SummaryExitPanel.AccessibilityID.startFullRetry)
                 .accessibilityHint("Starts a full retry of the recommended practice.")
-
-                if let onStartMiniDrill {
-                    Button {
-                        onStartMiniDrill(drill)
-                    } label: {
-                        Text("45s drill")
-                            .font(Typography.caption.weight(.semibold))
-                            .foregroundStyle(AppColor.textSecondary)
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 32)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier(SummaryExitPanel.AccessibilityID.secondaryMiniDrill)
-                    .accessibilityHint("Starts the short drill Noum prescribed from this rep.")
-                }
             } else if let onStartMiniDrill {
                 Button {
                     onStartMiniDrill(drill)
                 } label: {
-                    ctaLabel("Start 45s drill", systemImage: "bolt.fill")
+                    ctaLabel(primaryCTALabel, systemImage: "bolt.fill")
                 }
                 .buttonStyle(.pressable)
                 .accessibilityIdentifier(SummaryExitPanel.AccessibilityID.startMiniDrill)

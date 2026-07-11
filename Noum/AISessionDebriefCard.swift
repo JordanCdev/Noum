@@ -82,7 +82,7 @@ struct AISessionDebriefCard: View {
         HStack(spacing: 4) {
             Image(systemName: isAIBacked ? "sparkles" : "doc.plaintext")
                 .font(.caption2.weight(.bold))
-            Text(isAIBacked ? "AI" : "Rule-based")
+            Text("Coach read")
                 .font(Typography.micro)
                 .textCase(.uppercase)
                 .tracking(0.6)
@@ -95,7 +95,7 @@ struct AISessionDebriefCard: View {
             in: Capsule()
         )
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(isAIBacked ? "AI-generated read" : "Rule-based read")
+        .accessibilityLabel("Coach read")
     }
 
     private var skeleton: some View {

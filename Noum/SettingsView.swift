@@ -83,61 +83,55 @@ struct SettingsView: View {
                 .ignoresSafeArea()
 
             List {
-                    // M16 settings trim — first-open overwhelm was real
-                    // (20+ control rows packed across 10 cards). Top level
-                    // now surfaces 1 hero + 4 cluster zones + 1 advanced
-                    // disclosure. Every existing setting still reaches the
-                    // user; power-user toggles + dev tools live behind one
-                    // tap. Mirrors the Profile clustering at
-                    // `ProfileView.swift:113`.
-                    //
-                    //   Identity (no header — implicit hero)
-                    //     • profileHero
-                    //
-                    //   Practice (the act of speaking)
-                    //     • practiceCard (difficulty + 3 toggles),
-                    //       dailyGoalCard, localeCard, soundscapeCard,
-                    //       coachingProfileCard
-                    //
-                    //   Notifications (the coaching nudges)
-                    //     • feedbackCard (4 notifs + haptics + interaction sounds)
-                    //
-                    //   Account (the user as customer)
-                    //     • subscriptionCard, privacyCard, accountCard
-                    //
-                    //   About — trailing meta band, no header
-                    //
-                    //   Advanced (collapsed) — escape hatch + dev tools
-                    //     for `isDeveloper` only
-                    if !isAppTabRoot {
-                        Section {
-                            profileHero
-                                .listRowInsets(EdgeInsets())
-                                .listRowBackground(Color.clear)
-                        }
+                if !isAppTabRoot {
+                    Section {
+                        profileHero
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
                     }
-
-                    Section("Practice") {
-                        section(label: "Defaults") { practiceCard }
-                        section(label: "Daily goal") { dailyGoalCard }
-                        section(label: "Coaching profile") { coachingProfileCard }
-                        section(label: "Language") { localeCard }
-                        section(label: "Pre-rep ambience") { soundscapeCard }
-                    }
-
-                    Section("Notifications") {
-                        section(label: "Reminders") { feedbackCard }
-                    }
-
-                    Section("Account") {
-                        section(label: "Subscription") { subscriptionCard }
-                        section(label: "Privacy & data") { privacyCard }
-                        section(label: "Sign-in") { accountCard }
-                    }
-
-                    Section("About") { aboutCard }
-                    Section { advancedDisclosure }
                 }
+
+                Section("Practice") {
+                    practiceDifficultyRow
+                    dailyGoalCard
+                    practiceVoiceCuesRow
+                    fillerHighlightRow
+                    pressureModeRow
+                    practiceLanguageRow
+                    soundscapeRow
+                }
+
+                Section("Coaching") {
+                    coachingProfileRow
+                    upcomingMomentRow
+                }
+
+                Section("Notifications") {
+                    dailyReminderRow
+                    if notificationManager.dailyReminderEnabled {
+                        dailyReminderTimePicker
+                    }
+                    eveningPracticeNudgeRow
+                    weeklyDigestRow
+                    notificationAccessRow
+                    hapticsRow
+                    interactionSoundsRow
+                }
+
+                Section("Account") {
+                    subscriptionCard
+                    privacyCard
+                    accountCard
+                }
+
+                Section("About") {
+                    aboutCard
+                }
+
+                Section {
+                    advancedDisclosure
+                }
+            }
             .listStyle(.insetGrouped)
             .listSectionSpacing(.compact)
             .scrollContentBackground(.hidden)
@@ -165,6 +159,11 @@ struct SettingsView: View {
         .task {
             isBackendConfigured = await BackendSyncManager.shared.isConfigured
             refreshMicrophonePermission()
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("UI_TESTING_PAYWALL") {
+                showPaywall = true
+            }
+            #endif
         }
         .sheet(isPresented: $showCoachingProfile) {
             CoachingOnboardingView()
@@ -495,6 +494,107 @@ struct SettingsView: View {
 
     // MARK: - Practice Card
 
+    private var practiceDifficultyRow: some View {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Practice difficulty")
+                    .font(.subheadline.weight(.semibold))
+                Text(practiceSettings.timedDifficulty.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: Spacing.sm)
+            Picker("Practice difficulty", selection: $practiceSettings.timedDifficulty) {
+                ForEach(TimedPracticeDifficulty.allCases) { difficulty in
+                    Text(difficulty.title).tag(difficulty)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .accessibilityLabel("Practice difficulty")
+            .tint(AppColor.brandBlue)
+        }
+        .frame(minHeight: 44)
+        .accessibilityIdentifier("settings.practiceDifficulty")
+    }
+
+    private var practiceVoiceCuesRow: some View {
+        SettingsToggleRow(
+            title: "Voice cues",
+            subtitle: "Read replies aloud during Conversation Practice.",
+            isOn: $imVoicePlaybackSettings.isEnabled,
+            accessibilityHint: "Enables spoken responses during Conversation Practice."
+        )
+    }
+
+    private var fillerHighlightRow: some View {
+        SettingsToggleRow(
+            title: "Real-time filler highlight",
+            subtitle: micDisabledForFillerHighlight
+                ? "Microphone access is required for live filler detection."
+                : "Plays a soft cue and pulse when a filler word is detected.",
+            isOn: $practiceSettings.fillerAlertSoundEnabled,
+            isDisabled: micDisabledForFillerHighlight,
+            disabledReason: micDisabledForFillerHighlight ? "Mic access blocked" : nil,
+            accessibilityHint: "Plays a soft cue when a filler word is detected during a session."
+        )
+    }
+
+    private var pressureModeRow: some View {
+        SettingsToggleRow(
+            title: "Pressure mode",
+            subtitle: "One-take reps, shorter prep, and a rated finish across exercises.",
+            isOn: $practiceSettings.pressureModeEnabled,
+            accessibilityHint: "Adds time pressure and rating to every exercise."
+        )
+    }
+
+    private var practiceLanguageRow: some View {
+        SettingsNavRow(
+            title: "Practice language",
+            value: localeSettings.current.displayName,
+            icon: "globe",
+            accessibilityHint: "Pick the language you want to practice in."
+        ) {
+            showLocalePicker = true
+        }
+    }
+
+    private var soundscapeRow: some View {
+        let mode = SoundscapeSettings.savedMode
+        return SettingsNavRow(
+            title: "Pre-rep ambience",
+            value: mode == .off ? "Off" : mode.title,
+            icon: mode.symbolName,
+            accessibilityHint: "Pick an ambient texture for the pre-rep countdown."
+        ) {
+            showSoundscape = true
+        }
+    }
+
+    private var coachingProfileRow: some View {
+        SettingsNavRow(
+            title: coachingProfileStore.profile == nil ? "Set coaching profile" : "Update coaching profile",
+            value: coachingProfileStore.profile?.speakingStyleGoal.title,
+            icon: "person.crop.circle.badge.checkmark",
+            accessibilityHint: "Open the coaching profile flow."
+        ) {
+            showCoachingProfile = true
+        }
+    }
+
+    private var upcomingMomentRow: some View {
+        SettingsNavRow(
+            title: "Upcoming moment",
+            value: bigMomentStore.activeMoment?.title,
+            icon: "calendar.badge.clock",
+            accessibilityHint: "Set or update the important moment you are preparing for."
+        ) {
+            showBigMomentIntake = true
+        }
+    }
+
     private var practiceCard: some View {
         cardContainer(spacing: Spacing.md) {
             HStack(alignment: .center, spacing: Spacing.md) {
@@ -524,9 +624,9 @@ struct SettingsView: View {
 
             SettingsToggleRow(
                 title: "Voice cues",
-                subtitle: "Read replies aloud during conversation practice.",
+                subtitle: "Read replies aloud during Conversation Practice.",
                 isOn: $imVoicePlaybackSettings.isEnabled,
-                accessibilityHint: "Enables spoken responses in conversation practice."
+                accessibilityHint: "Enables spoken responses during Conversation Practice."
             )
 
             Divider()
@@ -554,36 +654,26 @@ struct SettingsView: View {
     }
 
     private var dailyGoalCard: some View {
-        cardContainer(spacing: Spacing.sm) {
-            HStack(spacing: Spacing.xs) {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Daily goal")
+                    .font(.subheadline.weight(.semibold))
+                Text("Choose a pace that fits your week.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: Spacing.sm)
+            Picker("Daily goal", selection: $dailyGoal.goalReps) {
                 ForEach(dailyGoal.minGoalReps...dailyGoal.maxGoalReps, id: \.self) { value in
-                    goalChip(value)
+                    Text("\(value) rep\(value == 1 ? "" : "s")").tag(value)
                 }
             }
-            .accessibilityElement(children: .contain)
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .tint(AppColor.brandBlue)
         }
-    }
-
-    private func goalChip(_ value: Int) -> some View {
-        let isSelected = dailyGoal.goalReps == value
-        return Button {
-            dailyGoal.goalReps = value
-            CoachHaptic.selectionTap()
-        } label: {
-            Text("\(value) rep\(value == 1 ? "" : "s")")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(isSelected ? .white : AppColor.brandBlue)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.sm)
-                .background(
-                    isSelected ? AppColor.brandBlue : AppColor.brandBlue.opacity(0.10),
-                    in: Capsule()
-                )
-        }
-        .buttonStyle(.pressable)
-        .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
-        .accessibilityLabel("Daily goal \(value) rep\(value == 1 ? "" : "s")")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .frame(minHeight: 44)
+        .accessibilityIdentifier("settings.dailyGoal")
     }
 
     private var micDisabledForFillerHighlight: Bool {
@@ -624,37 +714,12 @@ struct SettingsView: View {
     // MARK: - Coaching Profile Card
 
     private var coachingProfileCard: some View {
-        cardContainer(spacing: Spacing.md) {
-            if let profile = coachingProfileStore.profile {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Spacing.xs) {
-                    coachingTag(label: "Context", value: profile.speakingContext.title)
-                    coachingTag(label: "Priority", value: profile.primaryGoal.title)
-                    coachingTag(label: "Challenge", value: profile.challengeDisplayTitle)
-                    coachingTag(
-                        label: "Voice",
-                        value: profile.speakingStyleGoal.title,
-                        icon: profile.speakingStyleGoal.voiceIconSystemName,
-                        tint: profile.speakingStyleGoal.voiceIconTint
-                    )
-                }
-                if !profile.personalGoalReference.isEmpty {
-                    Text(profile.personalGoalReference)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(Spacing.sm)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                }
-            } else {
-                Text("Set a coaching profile so Noum can tailor drills to your goals.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
+        cardContainer(spacing: Spacing.sm) {
             SettingsNavRow(
                 title: coachingProfileStore.profile == nil ? "Set coaching profile" : "Update coaching profile",
+                value: coachingProfileStore.profile.map {
+                    "\($0.primaryGoal.title) · \($0.speakingStyleGoal.title)"
+                },
                 icon: "person.crop.circle.badge.checkmark",
                 accessibilityHint: "Open the coaching profile flow."
             ) {
@@ -672,42 +737,76 @@ struct SettingsView: View {
         }
     }
 
-    private func coachingTag(
-        label: String,
-        value: String,
-        icon: String? = nil,
-        tint: Color = AppColor.brandBlue
-    ) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            if let icon {
-                Image(systemName: icon)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 22, height: 22)
-                    .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .accessibilityHidden(true)
-            }
+    // MARK: - Feedback Card (Reminders + Haptics)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(label)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
-                Text(value)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.sm)
-        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-        .accessibilityElement(children: .combine)
+    private var dailyReminderRow: some View {
+        SettingsToggleRow(
+            title: "Daily reminder",
+            subtitle: dailyReminderSubtitle,
+            isOn: Binding(
+                get: { notificationManager.dailyReminderEnabled },
+                set: { newValue in
+                    Task { await notificationManager.setDailyReminderEnabled(newValue) }
+                }
+            ),
+            accessibilityHint: "A single reminder at your chosen time of day."
+        )
     }
 
-    // MARK: - Feedback Card (Reminders + Haptics)
+    private var eveningPracticeNudgeRow: some View {
+        SettingsToggleRow(
+            title: "Evening practice nudge",
+            subtitle: "A quiet reminder when you have not practiced today.",
+            isOn: Binding(
+                get: { notificationManager.streakWarningEnabled },
+                set: { newValue in
+                    Task { await notificationManager.setStreakWarningEnabled(newValue) }
+                }
+            ),
+            accessibilityHint: "Sends an optional evening reminder for a short practice rep."
+        )
+    }
+
+    private var weeklyDigestRow: some View {
+        SettingsToggleRow(
+            title: "Weekly digest",
+            subtitle: "A Sunday review of how the week landed and what is changing.",
+            isOn: Binding(
+                get: { notificationManager.weeklyDigestEnabled },
+                set: { newValue in
+                    Task { await notificationManager.setWeeklyDigestEnabled(newValue) }
+                }
+            ),
+            accessibilityHint: "A short weekly summary every Sunday."
+        )
+    }
+
+    private var notificationAccessRow: some View {
+        SettingsStatusRow(
+            title: "Notification access",
+            value: notificationManager.authorizationLabel,
+            valueTint: authorizationTint(notificationManager.authorizationLabel),
+            icon: "bell.fill"
+        )
+    }
+
+    private var hapticsRow: some View {
+        SettingsToggleRow(
+            title: "Haptics",
+            subtitle: "Subtle taps for results and rep transitions.",
+            isOn: $hapticsSettings.isEnabled,
+            accessibilityHint: "Master haptic feedback switch."
+        )
+    }
+
+    private var interactionSoundsRow: some View {
+        SettingsToggleRow(
+            title: "Interaction sounds",
+            subtitle: "Quiet ticks when results land. The silent switch always wins.",
+            isOn: $interactionSounds.isEnabled,
+            accessibilityHint: "Master switch for interface sound cues."
+        )
+    }
 
     private var feedbackCard: some View {
         cardContainer(spacing: Spacing.md) {
@@ -827,9 +926,7 @@ struct SettingsView: View {
             selection: binding,
             displayedComponents: .hourAndMinute
         )
-        .labelsHidden()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, Spacing.xs)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .accessibilityLabel("Daily reminder time")
     }
 
@@ -1523,7 +1620,7 @@ struct SettingsView: View {
                 HStack(spacing: Spacing.xs) {
                     Image(systemName: isRunningAIProviderHealthCheck ? "hourglass" : "waveform.path.ecg")
                         .accessibilityHidden(true)
-                    Text(isRunningAIProviderHealthCheck ? "Checking providers..." : "Run provider checks")
+                    Text(isRunningAIProviderHealthCheck ? "Checking providers..." : "Check providers")
                     Spacer(minLength: Spacing.xs)
                     Image(systemName: "arrow.right.circle.fill")
                         .accessibilityHidden(true)

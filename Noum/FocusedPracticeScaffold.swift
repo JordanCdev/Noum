@@ -88,9 +88,7 @@ struct FocusedPracticeScaffold<Accessory: View, Content: View>: View {
                     HStack(alignment: .center, spacing: Spacing.md) {
                         VStack(alignment: .leading, spacing: Spacing.xs) {
                             Text(status)
-                                .font(Typography.micro.weight(.bold))
-                                .textCase(.uppercase)
-                                .tracking(0.9)
+                                .font(Typography.caption.weight(.semibold))
                                 .foregroundStyle(AppColor.focusedTextSecondary)
                             Text(title)
                                 .font(Typography.figtree(size: 38, weight: .bold, relativeTo: .largeTitle))

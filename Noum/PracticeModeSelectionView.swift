@@ -52,27 +52,32 @@ struct PracticeModeExpansionCopy {
 }
 
 struct PracticeModePrescriptionCopy {
-    static let heroEyebrow = "Coach pick"
-    static let alternateSectionTitle = "Other ways to practice"
-    static let adjustLabel = "Adjust this rep"
-    static let pressureLockedHint = "Run one rated rep before Pressure Drill."
+    static let heroEyebrow = "Recommended rep"
+    static let alternateSectionTitle = "Choose another exercise"
+    static let displayHeroEyebrow = heroEyebrow
+    static let practiceLibraryTitle = "Practice library"
+    static let chooseExerciseTitle = "Choose another exercise"
+    static let adjustLabel = "Adjust"
+    static let pressureLockedHint = "Complete one rated rep before Pressure Drill."
+    static let pressureLockedDisplayHint = pressureLockedHint
     static let cutTheCrutchTitle = "Cut the Crutch"
-    static let cutTheCrutchSubtitle = "Avoid one specific word for 60 seconds. Three slips ends the rep."
+    static let cutTheCrutchSubtitle = "Avoid one specific word for 60 seconds. Three slips end the rep."
 
     static func beginLabel(for title: String) -> String {
         "Start \(title)"
     }
 
     static func prescriptionLine(focus: String?, target: String?) -> String? {
-        let cleanTarget = target?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanFocus = focus?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanTarget = target.map(CoachDisplayCopy.normalized)
+        let cleanFocus = focus.map(CoachDisplayCopy.normalized)
         let targetValue = cleanTarget.flatMap { $0.isEmpty ? nil : $0 }
         let focusValue = cleanFocus.flatMap { $0.isEmpty ? nil : $0 }
 
         switch (targetValue, focusValue) {
-        case let (target?, focus?) where target.localizedCaseInsensitiveCompare(focus) != .orderedSame:
-            return "\(target) — \(focus)"
         case let (target?, _):
+            // The target is the concrete instruction. The broader focus can
+            // explain why this exercise was chosen, but appending it here
+            // turns one clear move into a second, competing thought.
             return target
         case let (nil, focus?):
             return focus
@@ -87,6 +92,65 @@ struct PracticeModeAvailability: Equatable {
         guard mode == .suddenDeath else { return true }
         return rating.hasRatedEvidence
     }
+}
+
+enum TrainLibraryAction: Hashable {
+    case expandExercises
+    case destination(AppDestination)
+}
+
+/// Pure, ordered contract for Train's grouped library. Navigation remains
+/// owned by the existing `NavigationPath`; this type only describes rows.
+struct TrainLibraryItem: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    let tint: Color
+    let action: TrainLibraryAction
+
+    static let items: [TrainLibraryItem] = [
+        TrainLibraryItem(
+            id: "chooseExercise",
+            title: PracticeModePrescriptionCopy.chooseExerciseTitle,
+            subtitle: "Compare every focused speaking exercise.",
+            systemImage: "square.grid.2x2",
+            tint: AppColor.brandBlue,
+            action: .expandExercises
+        ),
+        TrainLibraryItem(
+            id: "roleplay",
+            title: "Roleplay",
+            subtitle: "Rehearse a real conversation under rising pressure.",
+            systemImage: "person.2.fill",
+            tint: AppColor.modeIM,
+            action: .destination(.roleplaySetup)
+        ),
+        TrainLibraryItem(
+            id: "lessons",
+            title: "Lessons",
+            subtitle: "Learn one communication move at a time.",
+            systemImage: "books.vertical.fill",
+            tint: AppColor.caution,
+            action: .destination(.lessons)
+        ),
+        TrainLibraryItem(
+            id: "speechProjects",
+            title: "Speech Projects",
+            subtitle: "Build a prepared talk around a clear objective.",
+            systemImage: "doc.text.fill",
+            tint: AppColor.pro,
+            action: .destination(.speechProjects)
+        ),
+        TrainLibraryItem(
+            id: "path",
+            title: "Path",
+            subtitle: "Continue your communication curriculum.",
+            systemImage: "signpost.right.fill",
+            tint: AppColor.positive,
+            action: .destination(.pathJourney)
+        )
+    ]
 }
 
 /// The quiet goal-grounding line under the Coach-Pick hero — ties the ONE
@@ -128,6 +192,7 @@ struct PracticeModeSelectionView: View {
     @StateObject private var masteryStore = ModeMasteryStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    @StateObject private var skillTrendStore = SkillTrendStore.shared
     @StateObject private var streakFreeze = StreakFreezeManager.shared
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var goalRefresh = GoalRefreshManager.shared
@@ -186,6 +251,7 @@ struct PracticeModeSelectionView: View {
         let mode: PracticeMode
         let title: String
         let subtitle: String
+        let instruction: String
         let systemImage: String
         let tint: Color
         /// Pre-baked single line shown only when this mode is the recommended pick.
@@ -198,8 +264,9 @@ struct PracticeModeSelectionView: View {
         [
             ModeOption(
                 mode: .timed,
-                title: "Timed Practice",
+                title: PracticeMode.timed.displayLabel,
                 subtitle: "Build a full answer with structure and a soft clock.",
+                instruction: "Lead with the answer, then add one concrete example.",
                 systemImage: "clock.fill",
                 tint: AppColor.modeTimed,
                 recommendedReason: "Helps when your answers end early."
@@ -208,14 +275,16 @@ struct PracticeModeSelectionView: View {
                 mode: .suddenDeath,
                 title: PracticeMode.suddenDeath.displayLabel,
                 subtitle: "A hard clock with zero filler tolerance.",
+                instruction: "Answer once and keep your composure under the clock.",
                 systemImage: "bolt.fill",
                 tint: AppColor.modeSuddenDeath,
                 recommendedReason: "Sharpens composure under live pressure."
             ),
             ModeOption(
                 mode: .ahCounter,
-                title: "Ah-Counter",
+                title: PracticeMode.ahCounter.displayLabel,
                 subtitle: "Speak freely while Noum tracks fillers and pacing.",
+                instruction: "Pause instead of filling the space.",
                 systemImage: "waveform.and.mic",
                 tint: AppColor.modeAhCounter,
                 recommendedReason: "Cleans openings and steadies rhythm."
@@ -223,8 +292,9 @@ struct PracticeModeSelectionView: View {
         ] + (IMModeAvailability.isAvailable ? [
             ModeOption(
                 mode: .imConversation,
-                title: "Conversation practice",
+                title: PracticeMode.imConversation.displayLabel,
                 subtitle: "Live conversation reps with tone and pressure control.",
+                instruction: "Hold one clear point through the back-and-forth.",
                 systemImage: "message.badge.waveform.fill",
                 tint: AppColor.modeIM,
                 recommendedReason: "Trains realistic social or work pressure."
@@ -277,25 +347,13 @@ struct PracticeModeSelectionView: View {
     // MARK: - Body
 
     var body: some View {
-        ZStack {
-            AppColor.screenBackground
-                .ignoresSafeArea()
-
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: Spacing.lg) {
-                    headerCopy
-                    recommendedRepHero
-
-                    otherWaysSection
-                }
-                .padding(.horizontal, Spacing.screenH)
-                .padding(.top, Spacing.sm)
-                // Bottom inset clears the floating Start CTA when the user
-                // opens alternate choices. At rest, the recommendation hero
-                // owns the only Begin button so the picker does not show two
-                // competing primary actions.
-                .padding(.bottom, showsFloatingStartCTA ? 96 : Spacing.lg)
-            }
+        ReadingScreenScaffold(
+            title: "Train",
+            subtitle: "Choose one focused rep, or continue your curriculum.",
+            bottomClearance: showsFloatingStartCTA ? 96 : Spacing.lg
+        ) {
+            recommendedRepHero
+            practiceLibrary
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -319,64 +377,60 @@ struct PracticeModeSelectionView: View {
             PracticeModeQuickStart.clear()
             PracticeModeQuickStart.clearCrutch()
         }
+        .onChange(of: skillTrendStore.snapshots.count) { _, _ in
+            computeRecommendation()
+            selectedMode = recommendedMode
+            crutchSelected = false
+            paceSelected = false
+        }
     }
 
     // MARK: - Recommended Rep
 
     private var recommendedRepHero: some View {
         let option = recommendedOption
-        let reason = cachedRecommendedReason ?? option.recommendedReason
-        let snapshot = masteryStore.snapshot(for: option.mode)
-        return VStack(alignment: .leading, spacing: 14) {
+        let reason = CoachDisplayCopy.normalized(cachedRecommendedReason ?? option.recommendedReason)
+        let instruction = PracticeModePrescriptionCopy.prescriptionLine(
+            focus: cachedRecommendedFocus,
+            target: cachedRecommendedTarget
+        ) ?? option.instruction
+        return VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(alignment: .top, spacing: Spacing.md) {
                 modeIcon(option)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(PracticeModePrescriptionCopy.heroEyebrow)
-                        .font(.caption.weight(.bold))
+                    Text(PracticeModePrescriptionCopy.displayHeroEyebrow)
+                        .font(Typography.caption)
                         .foregroundStyle(option.tint)
-                        .textCase(.uppercase)
 
                     Text(option.title)
-                        .font(.title2.weight(.bold))
+                        .font(Typography.cardTitle)
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
-
-                    if snapshot.sessionsLogged > 0 {
-                        ModeMasteryBadge(snapshot: snapshot)
-                            .fixedSize(horizontal: true, vertical: false)
-                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text(reason)
-                .font(.subheadline)
-                .foregroundStyle(.primary)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
+            CoachBriefSurface(
+                observation: reason,
+                nextMove: instruction,
+                tint: option.tint
+            )
 
-            recommendedSuccessMarker(tint: option.tint)
-
-            goalGroundingRow
-
-            PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: option.title), tint: option.tint) {
-                selectedMode = option.mode
-                crutchSelected = false
-                paceSelected = false
-                recommendationLearningStore.markTapped(mode: option.mode)
-                // The recommended rep is a prescription: one tap launches it.
-                // Arm quick-start so the destination auto-begins instead of
-                // flashing its own setup page + a second Begin (the acquisition /
-                // time-to-first-word lever). `beginSession` re-reads the persisted
-                // theme + tool config, so the user's last settings still apply —
-                // one-tap saves taps, not preferences. The destination consumes-
-                // and-clears the flag in its `.task`; the picker's own `.task`
-                // clears any stale flag on re-entry so a back-out can't re-trigger.
-                PracticeModeQuickStart.arm(for: option.mode)
-                navigationPath.append(appDestination(for: option.mode))
+            if !showsFloatingStartCTA {
+                PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: option.title), tint: option.tint) {
+                    selectedMode = option.mode
+                    crutchSelected = false
+                    paceSelected = false
+                    recommendationLearningStore.markTapped(mode: option.mode)
+                    // The recommended rep is a prescription: one tap launches it.
+                    // Quick start preserves the user's saved setup while avoiding
+                    // another confirmation screen.
+                    PracticeModeQuickStart.arm(for: option.mode)
+                    navigationPath.append(appDestination(for: option.mode))
+                }
+                .accessibilityIdentifier("practiceModes.recommendedHero.begin")
             }
-            .accessibilityIdentifier("practiceModes.recommendedHero.begin")
 
             // Config access for the recommended mode WITHOUT losing the one-tap
             // Begin above. The recommended mode has no row in "other ways", so
@@ -463,6 +517,243 @@ struct PracticeModeSelectionView: View {
         }
     }
 
+    // MARK: - Practice library
+
+    private var practiceLibrary: some View {
+        GroupedDestinationList(title: PracticeModePrescriptionCopy.practiceLibraryTitle) {
+            ForEach(Array(TrainLibraryItem.items.enumerated()), id: \.element.id) { index, item in
+                if index > 0 {
+                    Divider().padding(.leading, 60)
+                }
+
+                trainLibraryRow(item)
+
+                if item.action == .expandExercises, showOtherWays {
+                    Divider().padding(.leading, 60)
+                    exerciseLibraryRows
+                        .transition(reduceMotion
+                            ? .opacity
+                            : .opacity.combined(with: .move(edge: .top)))
+                }
+            }
+        }
+    }
+
+    private func trainLibraryRow(_ item: TrainLibraryItem) -> some View {
+        Button {
+            switch item.action {
+            case .expandExercises:
+                animateMode { showOtherWays.toggle() }
+            case .destination(let destination):
+                navigationPath.append(destination)
+            }
+        } label: {
+            HStack(spacing: Spacing.md) {
+                Image(systemName: item.systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(item.tint)
+                    .frame(width: 36, height: 36)
+                    .background(item.tint.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(item.title)
+                        .font(Typography.cardLabel)
+                        .foregroundStyle(.primary)
+                    Text(item.subtitle)
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: libraryChevron(for: item))
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(item.title). \(item.subtitle)")
+        .accessibilityHint(libraryHint(for: item))
+        .accessibilityIdentifier(item.action == .expandExercises
+            ? "practiceModes.otherWays"
+            : "train.library.\(item.id)")
+    }
+
+    private func libraryChevron(for item: TrainLibraryItem) -> String {
+        if item.action == .expandExercises {
+            return showOtherWays ? "chevron.up" : "chevron.down"
+        }
+        return "chevron.right"
+    }
+
+    private func libraryHint(for item: TrainLibraryItem) -> String {
+        if item.action == .expandExercises {
+            return showOtherWays ? "Collapses the exercise list." : "Expands the exercise list."
+        }
+        return "Opens \(item.title)."
+    }
+
+    private var exerciseLibraryRows: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
+                if index > 0 {
+                    Divider().padding(.leading, 72)
+                }
+                modeLibraryRow(option)
+            }
+            Divider().padding(.leading, 72)
+            supplementalExerciseRow(
+                title: crutchOption.title,
+                subtitle: "Remove one verbal crutch for a focused minute.",
+                systemImage: crutchOption.systemImage,
+                tint: crutchOption.tint,
+                isSelected: crutchSelected,
+                accessibilityID: "practiceMode.cutTheCrutch"
+            ) {
+                animateMode {
+                    crutchSelected = true
+                    paceSelected = false
+                }
+                CoachHaptic.selectionTap()
+            }
+            Divider().padding(.leading, 72)
+            supplementalExerciseRow(
+                title: paceOption.title,
+                subtitle: "Match a steady target pace for 75 seconds.",
+                systemImage: paceOption.systemImage,
+                tint: paceOption.tint,
+                isSelected: paceSelected,
+                accessibilityID: "practiceMode.paceTraining"
+            ) {
+                animateMode {
+                    paceSelected = true
+                    crutchSelected = false
+                }
+                CoachHaptic.selectionTap()
+            }
+        }
+        .background(AppColor.innerSurface.opacity(0.58))
+    }
+
+    private func modeLibraryRow(_ option: ModeOption) -> some View {
+        let isSelected = !crutchSelected && !paceSelected && selectedMode == option.mode
+        let isExpanded = expandedModes.contains(option.mode)
+        let isLocked = !PracticeModeAvailability.isUnlocked(option.mode, rating: ratingStore.rating)
+
+        return VStack(spacing: 0) {
+            Button {
+                guard !isLocked else { return }
+                animateMode {
+                    selectedMode = option.mode
+                    crutchSelected = false
+                    paceSelected = false
+                    expandedModes = [option.mode]
+                }
+                CoachHaptic.selectionTap()
+            } label: {
+                HStack(spacing: Spacing.md) {
+                    Image(systemName: option.systemImage)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(option.tint)
+                        .frame(width: 36, height: 36)
+                        .background(option.tint.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        Text(option.title)
+                            .font(Typography.cardLabel)
+                            .foregroundStyle(.primary)
+                        Text(isLocked ? PracticeModePrescriptionCopy.pressureLockedDisplayHint : option.subtitle)
+                            .font(Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Image(systemName: isLocked ? "lock.fill" : isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(isLocked ? Color.secondary.opacity(0.45) : isSelected ? option.tint : Color.secondary.opacity(0.35))
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("practiceMode.\(option.mode.rawValue)")
+            .accessibilityLabel(option.title)
+            .accessibilityHint(isLocked ? PracticeModePrescriptionCopy.pressureLockedDisplayHint : option.subtitle)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .overlay(alignment: .topTrailing) {
+                expandToggleButton(for: option, isExpanded: isExpanded)
+            }
+
+            if isExpanded {
+                modeExpandedSection(option)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.bottom, Spacing.md)
+                    .transition(reduceMotion
+                        ? .opacity
+                        : .opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
+    }
+
+    private func supplementalExerciseRow(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        tint: Color,
+        isSelected: Bool,
+        accessibilityID: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: Spacing.md) {
+                Image(systemName: systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 36, height: 36)
+                    .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(title)
+                        .font(Typography.cardLabel)
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(isSelected ? tint : Color.secondary.opacity(0.35))
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier(accessibilityID)
+        .accessibilityLabel(title)
+        .accessibilityHint(subtitle)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
     private var otherWaysSection: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             sectionToggleButton(
@@ -534,7 +825,7 @@ struct PracticeModeSelectionView: View {
                 .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
                 .foregroundStyle(.primary)
 
-            Text("One focused rep, then the read gets sharper.")
+            Text("One focused rep, then the coaching gets more specific.")
                 .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -612,7 +903,7 @@ struct PracticeModeSelectionView: View {
                             .multilineTextAlignment(.leading)
 
                         if isLocked {
-                            Label(PracticeModePrescriptionCopy.pressureLockedHint, systemImage: "lock.fill")
+                            Label(PracticeModePrescriptionCopy.pressureLockedDisplayHint, systemImage: "lock.fill")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(option.tint)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -639,7 +930,7 @@ struct PracticeModeSelectionView: View {
             .buttonStyle(.pressable)
             .accessibilityIdentifier("practiceMode.\(option.mode.rawValue)")
             .accessibilityLabel(accessibilityLabel(option, isRecommended: isRecommended))
-            .accessibilityHint(isLocked ? PracticeModePrescriptionCopy.pressureLockedHint : option.subtitle)
+            .accessibilityHint(isLocked ? PracticeModePrescriptionCopy.pressureLockedDisplayHint : option.subtitle)
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             .overlay(alignment: .topTrailing) {
                 expandToggleButton(for: option, isExpanded: isExpanded)
@@ -797,7 +1088,7 @@ struct PracticeModeSelectionView: View {
         HStack(spacing: 6) {
             Image(systemName: "lock.fill")
                 .font(.footnote.weight(.bold))
-            Text(PracticeModePrescriptionCopy.pressureLockedHint)
+            Text(PracticeModePrescriptionCopy.pressureLockedDisplayHint)
                 .font(.subheadline.weight(.semibold))
         }
         .foregroundStyle(tint)
@@ -815,12 +1106,7 @@ struct PracticeModeSelectionView: View {
     /// name is appended so accessibility users hear which rep they're
     /// about to launch when scanning the picker linearly.
     private func quickStartLabel(for mode: PracticeMode) -> String {
-        switch mode {
-        case .timed: return "Start timed practice"
-        case .suddenDeath: return "Start \(PracticeMode.suddenDeath.displayLabel)"
-        case .ahCounter: return "Start Ah-Counter"
-        case .imConversation: return "Start conversation practice"
-        }
+        "Start \(mode.displayLabel)"
     }
 
     /// Reduce-motion opts out of the picker spring entirely. The state
@@ -1136,7 +1422,7 @@ struct PracticeModeSelectionView: View {
         .buttonStyle(.pressable)
         .accessibilityIdentifier("practiceMode.paceTraining.quickStart")
         .accessibilityLabel("Start Pace Training")
-        .accessibilityHint("Begins a Pace Training drill.")
+        .accessibilityHint("Starts a Pace Training drill.")
     }
 
     // MARK: - Bottom CTA
@@ -1173,7 +1459,7 @@ struct PracticeModeSelectionView: View {
         .buttonStyle(.pressable)
         .accessibilityIdentifier("practiceModes.start")
         .accessibilityLabel(ctaLabel)
-        .accessibilityHint("Begins a \(title) rep.")
+        .accessibilityHint("Starts a \(title) rep.")
         // Background tightened from a 0.02 → 0.72 white gradient to a
         // solid screen-bg fade — the earlier opacity stop left content
         // bleeding through (Cut the Crutch's setup copy was visible under
@@ -1203,7 +1489,12 @@ struct PracticeModeSelectionView: View {
             recommendationOutcomes: recommendationLearningStore.outcomes,
             summaryStyle: .compact
         )
-        let blueprint = visibleBlueprint(from: context.blueprint)
+        let trends = TrendAnalyzer.analyze(snapshots: skillTrendStore.snapshots)
+        let coherentBlueprint = CurrentCoachingFocusPresentation.make(
+            trends: trends,
+            sessionCount: sessionStore.sessions.count
+        )?.applying(to: context.blueprint) ?? context.blueprint
+        let blueprint = visibleBlueprint(from: coherentBlueprint)
         cachedRecommendedMode = blueprint.recommendedMode
         cachedRecommendedFocus = blueprint.focus
         cachedRecommendedTarget = blueprint.target
@@ -1227,13 +1518,13 @@ struct PracticeModeSelectionView: View {
                 recommendedMode: .timed,
                 recommendedTone: nil,
                 recommendedScenario: nil,
-                focus: "Baseline control",
-                target: "One rated rep",
+                focus: "First clear read",
+                target: "Complete one rated rep",
                 modeBenefit: timedBenefit?.benefit ?? "Builds a clean, rated speaking baseline.",
-                whyMode: timedBenefit?.bestFor ?? "Timed Practice gives Noum the cleanest rated evidence.",
+                whyMode: timedBenefit?.bestFor ?? "Timed Practice creates a clear rated starting point.",
                 whyNow: canShowMode
-                    ? PracticeModePrescriptionCopy.pressureLockedHint
-                    : "Start with a spoken rep while that practice mode is unavailable.",
+                    ? PracticeModePrescriptionCopy.pressureLockedDisplayHint
+                    : "Timed Practice is ready now.",
                 suggestedTimedDifficulty: nil,
                 suggestedTheme: blueprint.suggestedTheme,
                 source: blueprint.source

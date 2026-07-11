@@ -223,7 +223,7 @@ struct AIWeeklyInsightCard: View {
         HStack(spacing: 4) {
             Image(systemName: isAIBacked ? "sparkles" : "doc.plaintext")
                 .font(.caption2.weight(.bold))
-            Text(isAIBacked ? "AI" : "Rule-based")
+            Text("Coach read")
                 .font(Typography.micro)
                 .textCase(.uppercase)
                 .tracking(0.6)

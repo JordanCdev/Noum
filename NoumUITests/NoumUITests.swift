@@ -101,7 +101,7 @@ final class NoumUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["profile.screen"].waitForExistence(timeout: 10))
 
         let toggle = app.descendants(matching: .any)["profile.evidenceHub.toggle"]
-        let toggleLabel = app.staticTexts["Show supporting evidence"]
+        let toggleLabel = app.staticTexts["Show profile library"]
         for _ in 0..<10 where !toggle.exists && !toggleLabel.exists {
             app.swipeUp(velocity: .slow)
         }
@@ -117,10 +117,15 @@ final class NoumUITests: XCTestCase {
         }
 
         XCTAssertTrue(
-            app.buttons["Hide supporting evidence"].waitForExistence(timeout: 5)
-                || app.staticTexts["Hide supporting evidence"].waitForExistence(timeout: 2),
-            "Profile evidence disclosure should expand"
+            app.buttons["Hide profile library"].waitForExistence(timeout: 5)
+                || app.staticTexts["Hide profile library"].waitForExistence(timeout: 2),
+            "Profile library disclosure should expand"
         )
+
+        let evidenceRow = app.descendants(matching: .any)["profile.evidence.baselineMap.row"]
+        scrollUntilHittable(evidenceRow, in: app, attempts: 4)
+        XCTAssertTrue(evidenceRow.waitForExistence(timeout: 5))
+        evidenceRow.tap()
 
         let coachingDirection = app.descendants(matching: .any)["profile.evidence.coachingDirection"]
         let coachingDirectionTitle = app.staticTexts["Coaching Direction"]
@@ -196,15 +201,15 @@ final class NoumUITests: XCTestCase {
         // Final stage CTA: `coaching.startPracticing` (was `coaching.save`
         // before the redesign). This test opts into the real app-level
         // first-run cover, not the pinned `UI_TESTING_ONBOARDING` harness,
-        // so dismissing the cover must route into the Train picker.
+        // so dismissing the cover must route directly into the first rep.
         let finishButton = app.buttons["coaching.startPracticing"]
         XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
         XCTAssertTrue(finishButton.isEnabled)
         finishButton.tap()
 
         XCTAssertTrue(
-            app.descendants(matching: .any)["practiceModes.screen"].waitForExistence(timeout: 10),
-            "First-run completion should land on the prescribed-rep picker, not a cold Home."
+            app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 10),
+            "First-run completion should land on Timed Practice, not a cold Home or another menu."
         )
     }
 
@@ -268,45 +273,10 @@ final class NoumUITests: XCTestCase {
         XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
         finishButton.tap()
 
-        XCTAssertTrue(app.descendants(matching: .any)["practiceModes.screen"].waitForExistence(timeout: 10))
-
-        let timedMode = app.buttons["practiceMode.timed"]
-        if !timedMode.waitForExistence(timeout: 2) {
-            let otherWays = app.buttons["practiceModes.otherWays"]
-            if otherWays.waitForExistence(timeout: 5) {
-                otherWays.tap()
-            }
-        }
-
-        if timedMode.waitForExistence(timeout: 8) {
-            timedMode.tap()
-
-            let selectedPredicate = NSPredicate(format: "isSelected == true")
-            let selectedExpectation = expectation(for: selectedPredicate, evaluatedWith: timedMode)
-            wait(for: [selectedExpectation], timeout: 5)
-
-            XCTAssertTrue(app.buttons["practiceModes.start"].waitForExistence(timeout: 5))
-            app.buttons["practiceModes.start"].tap()
-            // Mode-row + Start CTA does NOT arm quick-start, so the setup page's
-            // Begin still appears and must be tapped to start the rep.
-            let begin = app.buttons["timedPractice.begin"]
-            XCTAssertTrue(begin.waitForExistence(timeout: 10))
-            tapTimedPracticeBegin(begin, in: app)
-        } else {
-            let recommendedBegin = app.buttons["practiceModes.recommendedHero.begin"]
-            XCTAssertTrue(
-                recommendedBegin.waitForExistence(timeout: 5) && recommendedBegin.label.contains("Timed"),
-                "Timed Practice should be selectable from the collapsed picker, or be the recommended hero."
-            )
-            // Recommended hero now arms one-tap quick-start: the destination
-            // auto-begins, so there is NO second Begin to tap. Asserting its
-            // absence is the regression guard for the double-Begin fix.
-            recommendedBegin.tap()
-            XCTAssertFalse(
-                app.buttons["timedPractice.begin"].waitForExistence(timeout: 3),
-                "Recommended-hero path must auto-begin (one tap), not show a second Begin."
-            )
-        }
+        XCTAssertTrue(app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 10))
+        let begin = app.buttons["timedPractice.begin"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 10))
+        tapTimedPracticeBegin(begin, in: app)
 
         let verdict = advanceToPostRepVerdict(in: app)
 
@@ -410,7 +380,7 @@ final class NoumUITests: XCTestCase {
         // Final stage CTA: `coaching.startPracticing` (was `coaching.save`
         // before the redesign). This test opts into the real app-level
         // first-run cover, not the pinned `UI_TESTING_ONBOARDING` harness,
-        // so dismissing the cover must route into the Train picker.
+        // so dismissing the cover must route into the first focused rep.
         let finishButton = app.buttons["coaching.startPracticing"]
         XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
         XCTAssertTrue(finishButton.isEnabled)
@@ -495,9 +465,9 @@ final class NoumUITests: XCTestCase {
         case "practiceMode.suddenDeath":
             return "Pressure Drill"
         case "practiceMode.ahCounter":
-            return "Ah-Counter"
+            return "Filler Control"
         case "practiceMode.imConversation":
-            return "IM Conversation"
+            return "Conversation Practice"
         default:
             return nil
         }
@@ -531,9 +501,7 @@ final class NoumUITests: XCTestCase {
             "UI_TESTING_CLEAR_ASK_NOUM"
         ] + extraArgs + ["-DeepLink", deepLink]
         app.launch()
-        // Home screen is the deep-link consumption point; wait for it then
-        // give the routing one beat to flip the navigation path.
-        _ = app.otherElements["home.screen"].waitForExistence(timeout: 10)
+        _ = app.wait(for: .runningForeground, timeout: 10)
         Thread.sleep(forTimeInterval: 1.0)
         return app
     }

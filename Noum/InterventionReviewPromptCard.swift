@@ -64,7 +64,7 @@ struct InterventionReviewPromptCard: View {
 
             Button(action: onReview) {
                 HStack(spacing: 6) {
-                    Text("Review with coach")
+                    Text("Ask Noum")
                         .font(.subheadline.weight(.semibold))
                     Image(systemName: "arrow.right")
                         .font(.subheadline.weight(.semibold))
@@ -75,7 +75,7 @@ struct InterventionReviewPromptCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.pressable)
-            .accessibilityHint("Opens Ask Noum to review whether the active intervention is working.")
+            .accessibilityHint("Opens Ask Noum to review whether this focus is working.")
             .accessibilityIdentifier("summary.interventionReview.cta")
         }
         .padding(16)
@@ -90,7 +90,7 @@ struct InterventionReviewPromptCard: View {
         )
         .shadow(color: AppColor.pro.opacity(0.06), radius: 8, y: 2)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Review the active coaching intervention")
+        .accessibilityLabel("Review the current coaching focus")
         .accessibilityIdentifier("summary.interventionReview.card")
     }
 
@@ -122,7 +122,7 @@ struct InterventionReviewPromptCard: View {
     /// urgency framing, no "running out."
     static func bodyCopy(for intervention: CoachIntervention) -> String {
         let repNoun = intervention.followedRepCount == 1 ? "rep" : "reps"
-        return "Your coach scheduled this review after \(intervention.followedRepCount) followed \(repNoun). One question: keep going, adapt, or replace it?"
+        return "Your coach scheduled this review after \(intervention.followedRepCount) completed \(repNoun). One question: keep going, adapt, or replace it?"
     }
 }
 

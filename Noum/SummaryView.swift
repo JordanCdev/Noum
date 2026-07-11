@@ -6,6 +6,54 @@ import UIKit
 #if canImport(SwiftUI)
 import SwiftUI
 
+// MARK: - Summary interstitial policy
+
+/// The only full-screen beat allowed between a completed rep and its summary.
+/// Priority favors evidence of speaking improvement over volume/progression
+/// furniture. The first rep always lands directly on its coaching read.
+enum SummaryInterstitial: Hashable, CaseIterable {
+    case personalBest
+    case skillProgress
+    case achievementProgress
+    case practiceVolume
+}
+
+struct SummaryInterstitialPolicy {
+    /// Highest-value first. Kept public to the module so tests can pin future
+    /// additions to an intentional place in the attention budget.
+    static let priority: [SummaryInterstitial] = [
+        .personalBest,
+        .skillProgress,
+        .achievementProgress,
+        .practiceVolume,
+    ]
+
+    static func select(
+        completedRepCount: Int,
+        hasPersonalBest: Bool,
+        hasSkillProgress: Bool,
+        hasAchievementProgress: Bool,
+        hasPracticeVolumeLevel: Bool
+    ) -> SummaryInterstitial? {
+        guard completedRepCount > 1 else { return nil }
+        var available: Set<SummaryInterstitial> = []
+        if hasPersonalBest { available.insert(.personalBest) }
+        if hasSkillProgress { available.insert(.skillProgress) }
+        if hasAchievementProgress { available.insert(.achievementProgress) }
+        if hasPracticeVolumeLevel { available.insert(.practiceVolume) }
+        return priority.first(where: available.contains)
+    }
+}
+
+/// Keeps the status-area cover tied to the container's measured safe area.
+/// The clamp is defensive for previews or transient layout passes that can
+/// briefly report a negative inset while a navigation transition settles.
+enum SummaryTopSafeAreaCoverLayout {
+    static func height(for topInset: CGFloat) -> CGFloat {
+        max(0, topInset)
+    }
+}
+
 // MARK: - SummaryView (Redesigned)
 
 struct SummaryView: View {
@@ -97,12 +145,7 @@ struct SummaryView: View {
     @State private var feedbackRequestURL: URL?
     @State private var videoAnalysisResult: VideoAnalysisResult?
     @State private var isAnalyzingVideo = false
-    @State private var activeMilestone: MilestoneEvent?
     @State private var personalBestMilestone: MilestoneEvent?
-    @State private var showPersonalBestScreen = false
-    @State private var showLevelUpScreen = false
-    @State private var levelUpPreviousLevel: String = ""
-    @State private var levelUpNewLevel: String = ""
     /// Skill level-up sequence played between PersonalBest (or
     /// LevelUp / Progression) and the standard summary content. The
     /// snapshot is locked at setup so the pre-summary celebration
@@ -110,8 +153,8 @@ struct SummaryView: View {
     /// time, not whatever's pending the moment the user scrolls back.
     /// Empty array = no celebration; the parent skips straight to
     /// summary content without rendering the overlay.
-    @State private var showPreSummaryCelebration = false
     @State private var preSummaryEvents: [SkillLevelUpEvent] = []
+    @State private var selectedInterstitial: SummaryInterstitial?
     @State private var activeMiniDrill: DrillRecommendationV2?
     @State private var miniDrillOutcome: MiniDrillOutcome?
     @State private var miniDrillAwardedXP: Int = 0
@@ -121,7 +164,6 @@ struct SummaryView: View {
     @State private var enhancedCoachNote: CoachNote?
     @State private var eloquenceFindings: [EloquenceFinding] = []
     @State private var showAIDisclosure = false
-    @State private var showProgressionScreen = false
     /// Proof moment loaded for the personal-best celebration. Hydrated
     /// async after the milestone fires; if it doesn't resolve in time
     /// the celebration renders without the proof line.
@@ -461,12 +503,7 @@ struct SummaryView: View {
         guard !recentWindow.isEmpty else { return "No recent sessions yet." }
         return recentWindow.map { session in
             let label: String
-            switch session.mode {
-            case .timed: label = "Timed"
-            case .suddenDeath: label = "Pressure Drill"
-            case .ahCounter: label = "Ah-Counter"
-            case .imConversation: label = "Conversation"
-            }
+            label = session.mode.displayLabel
             return "\(label): \(session.fillerWordCount) fillers, \(Int(session.duration))s"
         }.joined(separator: " • ")
     }
@@ -517,7 +554,7 @@ struct SummaryView: View {
         if !insights.isEmpty { return insights }
         let previousSessions = Array(recentSessions.dropFirst())
         guard !previousSessions.isEmpty else {
-            return ["First rep complete — your baseline is set. From here, every session gives you something to compare against."]
+            return ["First rep saved. Complete another rep to start comparing."]
         }
         let averageDuration = previousSessions.map(\.duration).reduce(0, +) / Double(previousSessions.count)
         let averageFillers = previousSessions.map(\.fillerWordCount).reduce(0, +) / previousSessions.count
@@ -550,84 +587,40 @@ struct SummaryView: View {
             AppColor.screenBackground
                 .ignoresSafeArea()
 
-            if showProgressionScreen {
-                // Post-session progression: XP, achievement progress, unlock celebrations
-                PostSessionProgressionView(
-                    xpEarned: xpEarned,
-                    previousXP: progressionPreviousXP,
-                    newXP: profile.xp,
-                    previousLevel: currentLevel,
-                    newLevel: ProfileManager.levelTitle(forXP: profile.xp),
-                    achievementProgress: progressionDeltas,
-                    newUnlocks: progressionNewUnlocks,
-                    onContinue: {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
-                            showProgressionScreen = false
-                            // Chain: level-up → personal best → pre-summary → summary
-                            if levelUpPreviousLevel != levelUpNewLevel && !levelUpNewLevel.isEmpty {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + motionDelay(0.5)) {
-                                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
-                                        showLevelUpScreen = true
-                                    }
-                                }
-                            } else if personalBestMilestone != nil {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + motionDelay(0.5)) {
-                                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
-                                        showPersonalBestScreen = true
-                                    }
-                                }
-                            } else {
-                                advanceToPreSummaryIfNeeded()
-                            }
-                        }
+            if let selectedInterstitial {
+                switch selectedInterstitial {
+                case .personalBest:
+                    if let milestone = personalBestMilestone {
+                        personalBestCelebration(milestone: milestone)
+                            .transition(reduceMotion ? .identity : .opacity)
                     }
-                )
-                .transition(reduceMotion ? .identity : .opacity)
-            } else if showLevelUpScreen {
-                // Full-screen practice-volume milestone. Detection still keys
-                // off the legacy levelUpPreviousLevel/levelUpNewLevel strings;
-                // the DISPLAY routes through PracticeVolumeNarration so XP
-                // never wears a skill-identity title ("Speaker N").
-                LevelUpCelebrationScreen(
-                    newLevel: PracticeVolumeNarration.title(forXP: profile.xp),
-                    previousLevel: PracticeVolumeNarration.title(forXP: progressionPreviousXP),
-                    xp: profile.xp,
-                    xpProgress: progress,
-                    onContinue: {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
-                            showLevelUpScreen = false
-                            // Chain to personal best if needed, otherwise
-                            // fall through to the skill-level-up sequence
-                            // before the summary content lands.
-                            if personalBestMilestone != nil {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + motionDelay(0.5)) {
-                                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
-                                        showPersonalBestScreen = true
-                                    }
-                                }
-                            } else {
-                                advanceToPreSummaryIfNeeded()
-                            }
-                        }
+                case .skillProgress:
+                    PreSummaryCelebration(events: preSummaryEvents) {
+                        finishInterstitial()
                     }
-                )
-                .transition(reduceMotion ? .identity : .opacity)
-            } else if showPersonalBestScreen, let milestone = personalBestMilestone {
-                // Full-screen personal best celebration (intermediary before summary)
-                personalBestCelebration(milestone: milestone)
                     .transition(reduceMotion ? .identity : .opacity)
-            } else if showPreSummaryCelebration, !preSummaryEvents.isEmpty {
-                // Skill level-up celebration sequence — plays each
-                // pending SkillLevelUpEvent one at a time before the
-                // summary content lands. Replaces the previous inline
-                // stack inside the hero (which competed with the score
-                // and added visual noise on multi-event reps).
-                PreSummaryCelebration(events: preSummaryEvents) {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
-                        showPreSummaryCelebration = false
-                    }
+                case .achievementProgress:
+                    PostSessionProgressionView(
+                        xpEarned: xpEarned,
+                        previousXP: progressionPreviousXP,
+                        newXP: profile.xp,
+                        previousLevel: currentLevel,
+                        newLevel: ProfileManager.levelTitle(forXP: profile.xp),
+                        achievementProgress: progressionDeltas,
+                        newUnlocks: progressionNewUnlocks,
+                        onContinue: finishInterstitial
+                    )
+                    .transition(reduceMotion ? .identity : .opacity)
+                case .practiceVolume:
+                    LevelUpCelebrationScreen(
+                        newLevel: PracticeVolumeNarration.title(forXP: profile.xp),
+                        previousLevel: PracticeVolumeNarration.title(forXP: progressionPreviousXP),
+                        xp: profile.xp,
+                        xpProgress: progress,
+                        onContinue: finishInterstitial
+                    )
+                    .transition(reduceMotion ? .identity : .opacity)
                 }
-                .transition(reduceMotion ? .identity : .opacity)
             } else {
                 // Normal summary content — redesigned hierarchy
                 ScrollView(showsIndicators: false) {
@@ -660,45 +653,35 @@ struct SummaryView: View {
                                 imConversationDetails: imConversationDetails
                             )
                             .cardEntrance(0)
-                            IMReadCard(
+                            IMDebriefCard(
                                 coachNote: coachNote,
                                 effectiveDuration: effectiveDuration,
                                 imConversationDetails: imConversationDetails,
-                                revisedChange: freshRevisedReadChange
-                            )
-                            .cardEntrance(1)
-                            IMOneMoveCard(
-                                coachNote: coachNote,
-                                onPracticeAgain: onPracticeAgain,
-                                onSelectPracticeMode: onSelectPracticeMode,
+                                revisedChange: freshRevisedReadChange,
                                 reviewIntervention: activeReviewDueIntervention,
                                 onReview: activeReviewDueIntervention.map { intervention in
                                     { onAskNoumAboutRep?(interventionReviewOpener(for: intervention)) }
                                 }
                             )
+                            .cardEntrance(1)
+                            SummaryRepeatActionCard(
+                                exerciseName: currentMode.displayLabel,
+                                onStart: onPracticeAgain,
+                                onAdjust: onSelectPracticeMode
+                            )
                             .cardEntrance(2)
-                            // Slot 4.5 — exactly ONE Ask/Pro surface:
-                            // premium gets the quiet Ask-Noum row, free
-                            // gets the single merged Pro card.
-                            if premium.isPremium {
-                                TalkToNoumCTACard(
-                                    isPremium: premium.isPremium,
-                                    speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,
-                                    onAskNoum: {
-                                        onAskNoumAboutRep?(talkToNoumOpener)
-                                    },
-                                    onUpgradePrompt: {
-                                        showPaywall = true
-                                    }
-                                )
-                                .cardEntrance(3)
-                            } else {
-                                proPreviewCard.cardEntrance(3)
-                            }
+                            TalkToNoumCTACard(
+                                isPremium: premium.isPremium,
+                                speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,
+                                onAskNoum: {
+                                    onAskNoumAboutRep?(talkToNoumOpener)
+                                },
+                                onUpgradePrompt: {
+                                    showPaywall = true
+                                }
+                            )
+                            .cardEntrance(3)
                             expandableDetailsSection.cardEntrance(4)
-                            // Slot 5 — bottom exit. IMOneMoveCard above
-                            // already carries Try Again / New Chat, so
-                            // the panel is the ghost Done only.
                             SummaryExitPanel(onDone: onHome).cardEntrance(5)
                         } else {
                             // TIMED / AH-COUNTER / SUDDEN DEATH hierarchy.
@@ -736,39 +719,19 @@ struct SummaryView: View {
                                 )
                                 .cardEntrance(0)
                             }
-                            // Slots 2–4 — the one coach pass, split into
-                            // three calm cards (read / win / fix) per the
-                            // approved verdict layout. The underlying
-                            // selectors are unchanged; PostRepVerdictContent
-                            // still owns the content contract. Reflection
-                            // stays out of the comprehension flow (deferred
-                            // reflection lives in the More-from-this-rep
-                            // drawer). The revised-read acknowledgment is
-                            // a one-line prefix inside THE READ; a due
-                            // case review becomes the FIX card's named
-                            // next move.
-                            PostRepReadCard(
+                            // One bounded coaching pass. The existing read,
+                            // proof and fix selectors still feed
+                            // PostRepVerdictContent; presentation is composed
+                            // into one surface so the user reads it as a story.
+                            PostRepDebriefCard(
                                 content: postRepVerdictContent,
-                                revisedChange: freshRevisedReadChange
+                                revisedChange: freshRevisedReadChange,
+                                reviewIntervention: activeReviewDueIntervention,
+                                onReview: activeReviewDueIntervention.map { intervention in
+                                    { onAskNoumAboutRep?(interventionReviewOpener(for: intervention)) }
+                                }
                             )
                             .cardEntrance(1)
-                            if let win = postRepVerdictContent.win {
-                                PostRepWinCard(win: win).cardEntrance(2)
-                            }
-                            if postRepVerdictContent.fix != nil || activeReviewDueIntervention != nil {
-                                PostRepFixCard(
-                                    fix: postRepVerdictContent.fix,
-                                    reviewIntervention: activeReviewDueIntervention,
-                                    onReview: activeReviewDueIntervention.map { intervention in
-                                        { onAskNoumAboutRep?(interventionReviewOpener(for: intervention)) }
-                                    }
-                                )
-                                .cardEntrance(3)
-                            }
-                            // The prescribed action belongs directly after
-                            // FIX FIRST, while the user's read is still in
-                            // working memory. It reuses the same recommendation
-                            // and routing callbacks the former bottom panel did.
                             SummaryDrillActionCard(
                                 drill: drillRecommendationV2,
                                 legacyDrill: drillRecommendation,
@@ -777,35 +740,20 @@ struct SummaryView: View {
                                 },
                                 onStartDrill: onStartDrill
                             )
-                            .cardEntrance(4)
-                            // Slot 4.5 — exactly ONE Ask/Pro surface:
-                            // premium gets the quiet Ask-Noum row, free
-                            // gets the single merged Pro card (upsell
-                            // after value, before the exit).
-                            if premium.isPremium {
-                                TalkToNoumCTACard(
-                                    isPremium: premium.isPremium,
-                                    speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,
-                                    onAskNoum: {
-                                        onAskNoumAboutRep?(talkToNoumOpener)
-                                    },
-                                    onUpgradePrompt: {
-                                        showPaywall = true
-                                    }
-                                )
-                                .cardEntrance(5)
-                            } else {
-                                proPreviewCard.cardEntrance(5)
-                            }
-                            expandableDetailsSection.cardEntrance(6)
-                            // Slot 5 — the single bottom exit. The prescribed
-                            // drill now sits beside FIX FIRST above; Done stays
-                            // last and is never duplicated.
-                            SummaryExitPanel(
-                                onDone: onHome,
-                                onPracticeAgain: onPracticeAgain
+                            .cardEntrance(2)
+                            TalkToNoumCTACard(
+                                isPremium: premium.isPremium,
+                                speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,
+                                onAskNoum: {
+                                    onAskNoumAboutRep?(talkToNoumOpener)
+                                },
+                                onUpgradePrompt: {
+                                    showPaywall = true
+                                }
                             )
-                            .cardEntrance(7)
+                            .cardEntrance(3)
+                            expandableDetailsSection.cardEntrance(4)
+                            SummaryExitPanel(onDone: onHome).cardEntrance(5)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -830,7 +778,7 @@ struct SummaryView: View {
                                 showFeedbackRequestSheet = true
                             }
                         } label: {
-                            Label("Request Feedback", systemImage: "person.2.fill")
+                            Label("Request feedback", systemImage: "person.2.fill")
                         }
                     }
                 } message: {
@@ -875,19 +823,28 @@ struct SummaryView: View {
                         .transition(.opacity)
                 }
 
-                // Non-personal-best milestones (level-up, streak, first session)
-                if let milestone = activeMilestone {
-                    MilestoneCelebrationOverlay(
-                        icon: milestone.icon,
-                        tint: milestone.tint,
-                        title: milestone.title,
-                        subtitle: milestone.subtitle,
-                        detail: milestone.detail,
-                        onDismiss: { activeMilestone = nil }
-                    )
-                    .transition(reduceMotion ? .identity : .opacity)
-                    .zIndex(10)
+            }
+        }
+        .overlay {
+            if selectedInterstitial == nil {
+                // Summary intentionally hides navigation chrome. Keep a
+                // quiet, persistent safe-area scrim so scrolled coaching
+                // never competes with the status-bar clock and indicators.
+                GeometryReader { geometry in
+                    VStack(spacing: 0) {
+                        AppColor.screenBackground
+                            .frame(maxWidth: .infinity)
+                            .frame(
+                                height: SummaryTopSafeAreaCoverLayout.height(
+                                    for: geometry.safeAreaInsets.top
+                                )
+                            )
+                        Spacer(minLength: 0)
+                    }
+                    .ignoresSafeArea(edges: .top)
                 }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
         }
         .navigationTitle("")
@@ -895,6 +852,11 @@ struct SummaryView: View {
         .navigationBarBackButtonHidden(true)
         .disableSwipeBack()
         .onAppear(perform: setup)
+        .onDisappear {
+            if selectedInterstitial != nil {
+                skillProgression.consumeAll()
+            }
+        }
         // Iteration 1: load the transcript-verified proof moment on every
         // summary (not just the personal-best celebration) so the WIN card
         // can lead with the user's own strongest line. Nil on a miss.
@@ -906,21 +868,6 @@ struct SummaryView: View {
         }
         .sheet(isPresented: $showPaywall) {
             PaywallView()
-        }
-        // First-rep celebration — fires *once* on the user's very first
-        // session. The manager handles the once-only logic; we just
-        // present whatever it yields.
-        .fullScreenCover(
-            item: Binding(
-                get: { FirstRepCelebrationManager.shared.pendingSession },
-                set: { newValue in
-                    if newValue == nil { FirstRepCelebrationManager.shared.dismiss() }
-                }
-            )
-        ) { session in
-            FirstRepCelebration(session: session) {
-                FirstRepCelebrationManager.shared.dismiss()
-            }
         }
         .fullScreenCover(item: $activeMiniDrill) { drill in
             let _ = print("[QuickDrill] Present: \(drill.title) | id=\(drill.id) | type=\(MiniDrillType.from(variationId: drill.variation.id))")
@@ -1259,17 +1206,13 @@ struct SummaryView: View {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
-                    Text("Details")
-                        .font(.caption.weight(.bold))
+                    Text(CohesiveSummaryCopy.seeDetails)
+                        .font(Typography.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .tracking(0.8)
                 }
             }
             .tint(.secondary)
-            .padding(Spacing.lg)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-            .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+            .padding(.horizontal, Spacing.xs)
         }
     }
 
@@ -1337,110 +1280,6 @@ struct SummaryView: View {
             whyNow: blueprint.whyNow,
             styleGoal: coachingProfileStore.profile?.speakingStyleGoal
         )
-    }
-
-    // MARK: - Pro Card (Free Users, slot 4.5)
-
-    /// The SINGLE Pro surface a free user sees on the summary — the old
-    /// locked TalkToNoumCTACard and the separate "Unlock deeper insights"
-    /// preview merged into one door, placed AFTER the read/win/fix value
-    /// and before the exit panel. Headline + lock register reuse
-    /// `TalkToNoumCTACard`'s tested copy statics so the Ask-Noum door
-    /// keeps one voice. The old card's greeked "coach read preview" lines
-    /// were hardcoded fake content (engineering ban) — replaced with
-    /// honest copy that only claims what Pro actually ships on this
-    /// screen: the coach thread, deep reads, rewrite suggestions, and
-    /// AI video analysis.
-    private var proPreviewCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                NoumCharacter.Inline(size: 22, mood: .calm, tint: AppColor.pro)
-                Text("ASK NOUM")
-                    .font(Typography.micro)
-                    .foregroundStyle(AppColor.pro)
-                    .tracking(1.0)
-                HStack(spacing: 3) {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 8, weight: .bold))
-                    Text("PRO")
-                        .font(Typography.micro)
-                        .tracking(0.8)
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(
-                    LinearGradient(
-                        colors: [AppColor.pro, AppColor.proLight],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ),
-                    in: Capsule()
-                )
-                Spacer(minLength: 0)
-            }
-
-            Text(TalkToNoumCTACard.headlineCopy(isPremium: false))
-                .font(Typography.body.weight(.semibold))
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text(TalkToNoumCTACard.subCopy(isPremium: false))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("Pro also unlocks deep reads, rewrite suggestions, and delivery analysis on every rep.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Button {
-                showPaywall = true
-            } label: {
-                HStack {
-                    Text("See what Pro unlocks")
-                        .font(.subheadline.weight(.semibold))
-                    Image(systemName: "arrow.right")
-                        .font(.caption.weight(.bold))
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(
-                    LinearGradient(
-                        colors: [AppColor.pro, AppColor.proLight],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ),
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                )
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(Spacing.lg)
-        .background(
-            // Subtle purple wash so the Pro card reads as visually
-            // distinct from the default white cards. Stays inside the
-            // motion+color rule (no illustration), and uses the brand's
-            // existing purple tokens.
-            LinearGradient(
-                colors: [
-                    AppColor.pro.opacity(0.06),
-                    AppColor.cardBackground
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(AppColor.pro.opacity(0.18), lineWidth: 1)
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(TalkToNoumCTACard.accessibilityLabel(isPremium: false))
-        .accessibilityIdentifier("summary.talkToNoum.gated")
     }
 
     /// Video playback button for the expandable section
@@ -1719,10 +1558,12 @@ struct SummaryView: View {
 
     private var talkToNoumOpener: String {
         if let change = freshRevisedReadChange {
-            return CoachContextBuilder.revisedReadOpener(
-                for: change,
-                workingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis,
-                voice: coachingProfileStore.profile?.speakingStyleGoal
+            return CoachDisplayCopy.normalized(
+                CoachContextBuilder.revisedReadOpener(
+                    for: change,
+                    workingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis,
+                    voice: coachingProfileStore.profile?.speakingStyleGoal
+                )
             )
         }
         return sessionAnchoredOpener
@@ -1770,10 +1611,12 @@ struct SummaryView: View {
     /// voice-mapping contract lives next to the existing
     /// `sessionOpener` voice mapping — one home for both.
     private func interventionReviewOpener(for intervention: CoachIntervention) -> String {
-        CoachContextBuilder.interventionReviewOpener(
-            intervention: intervention,
-            voice: coachingProfileStore.profile?.speakingStyleGoal,
-            reflectionPattern: coachMemoryStore.currentMemory?.reflectionPattern
+        CoachDisplayCopy.normalized(
+            CoachContextBuilder.interventionReviewOpener(
+                intervention: intervention,
+                voice: coachingProfileStore.profile?.speakingStyleGoal,
+                reflectionPattern: coachMemoryStore.currentMemory?.reflectionPattern
+            )
         )
     }
 
@@ -1981,12 +1824,7 @@ struct SummaryView: View {
             scoreAccent: scoreAccent,
             modeName: currentMode.displayLabel,
             previousBest: milestone.detail,
-            onContinue: {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
-                    showPersonalBestScreen = false
-                }
-                advanceToPreSummaryIfNeeded()
-            },
+            onContinue: finishInterstitial,
             proof: resolvedProof
         )
         .onAppear {
@@ -1994,18 +1832,13 @@ struct SummaryView: View {
         }
     }
 
-    /// Bridge between the personal-best / level-up chain and the new
-    /// pre-summary celebration. Fires the celebration on a small async
-    /// delay (mirroring the rest of the chain's pacing) so the previous
-    /// screen has finished its fade before the new overlay swaps in.
-    /// Idempotent — calling twice is a no-op once the celebration has
-    /// drained the snapshot.
-    private func advanceToPreSummaryIfNeeded() {
-        guard !preSummaryEvents.isEmpty, !showPreSummaryCelebration else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + motionDelay(0.45)) {
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
-                showPreSummaryCelebration = true
-            }
+    /// Clears the complete post-rep interstitial budget in one transition.
+    /// Pending skill events are consumed whether or not they won priority so
+    /// an unshown event can never leak into the next rep.
+    private func finishInterstitial() {
+        skillProgression.consumeAll()
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
+            selectedInterstitial = nil
         }
     }
 
@@ -2199,10 +2032,6 @@ struct SummaryView: View {
         // setup()-time profile.xp snapshot would already include the rep.
         progressionPreviousXP = result.previousXP
 
-        if result.showProgressionScreen && !isSuddenDeathSummary {
-            showProgressionScreen = true
-        }
-
         animateXP(to: result.newXP)
         // HeroScoreCard now owns the score-reveal beat — its ring draws in
         // on appear and the haptic + verdict thump fire on the settle
@@ -2214,35 +2043,43 @@ struct SummaryView: View {
             InteractionSoundEngine.cue(.verdictReveal)
         }
 
-        // Milestone routing — personal bests and level-ups get full intermediary screens,
-        // other milestones (streak, first session) use the compact overlay.
+        // Capture milestone payloads first, then let one pure policy decide
+        // which (if any) earns the full-screen attention budget.
         if let milestone = result.milestone {
             if milestone.title == "New personal best." {
                 personalBestMilestone = milestone
-                if !showProgressionScreen {
-                    showPersonalBestScreen = true
-                }
-            } else if milestone.title == "Level up." {
-                levelUpPreviousLevel = result.previousLevel
-                levelUpNewLevel = result.newLevel
-                if !showProgressionScreen {
-                    showLevelUpScreen = true
-                }
-            } else {
-                let milestoneDelay = motionDelay(showProgressionScreen ? 0.5 : 2.2)
-                Task {
-                    if milestoneDelay > 0 {
-                        try? await Task.sleep(for: .seconds(milestoneDelay))
-                    }
-                    await MainActor.run {
-                        withAnimation(reduceMotion ? nil : .standardSpring) { activeMilestone = milestone }
-                    }
-                }
             }
         }
 
-        // Score celebration + coach note reveal (delayed if progression screen is showing)
-        let celebrationDelay = motionDelay(showProgressionScreen ? 0.5 : 0)
+        preSummaryEvents = skillProgression.pendingLevelUps
+        let completedRepCount = sessionStore.sessions.count
+        selectedInterstitial = SummaryInterstitialPolicy.select(
+            completedRepCount: completedRepCount,
+            hasPersonalBest: personalBestMilestone != nil,
+            hasSkillProgress: !preSummaryEvents.isEmpty,
+            hasAchievementProgress: result.showProgressionScreen && !isSuddenDeathSummary,
+            hasPracticeVolumeLevel: result.isLevelUp
+        )
+
+        // First-rep celebration used to stack on top of the summary. The
+        // cohesive pass deliberately starts with the useful coaching read;
+        // dismissing here also marks the once-only manager so it cannot leak
+        // into a later rep.
+        if completedRepCount == 1 {
+            FirstRepCelebrationManager.shared.dismiss()
+        }
+
+        // Only the skill-progress interstitial consumes events as it renders.
+        // Every other choice (including no choice) records progression
+        // silently and drains pending presentation state immediately.
+        if selectedInterstitial != .skillProgress {
+            skillProgression.consumeAll()
+        }
+
+        // The hero's restrained score beat waits until the single earned
+        // interstitial has cleared. It never adds a second celebration on top
+        // of the selected full-screen beat.
+        let celebrationDelay = motionDelay(selectedInterstitial == nil ? 0 : 0.5)
         let revealDelay = motionDelay(0.8)
         Task {
             if celebrationDelay > 0 {
@@ -2256,7 +2093,7 @@ struct SummaryView: View {
                     // or XP threshold, and never on the first rep (count milestones
                     // start at 10, streak at 3, no PB on rep 1). The score-ring
                     // count-up + haptic stays the honest per-rep beat.
-                    celebrationVisible = Self.shouldShowCelebration(
+                    celebrationVisible = selectedInterstitial == nil && completedRepCount > 1 && Self.shouldShowCelebration(
                         hasMilestoneCrossing: result.milestone != nil,
                         score: scoreValue,
                         xpEarned: xpEarned
@@ -2277,34 +2114,6 @@ struct SummaryView: View {
             }
         }
 
-        // Snapshot the pending skill level-ups at finalize time so the
-        // pre-summary celebration plays the exact set that was pending
-        // when the session landed. The Summary previously rendered
-        // these as a stack inside the hero (which competed with the
-        // score read); they now play as a sequenced intermediary
-        // screen between any existing celebration chain and the
-        // summary content. We DON'T consume from the store here —
-        // PreSummaryCelebration consumes each event as its card lands
-        // so a mid-sequence back-out doesn't leave them queued for
-        // the next session.
-        preSummaryEvents = skillProgression.pendingLevelUps
-        if !preSummaryEvents.isEmpty {
-            // If no other intermediary screen is going to fire (no
-            // progression screen, no personal best, no level-up), the
-            // pre-summary celebration is the only intermediary — fire
-            // it directly so the user lands on it instead of the
-            // summary content. Other chain branches call
-            // `advanceToPreSummaryIfNeeded` from their own continue
-            // handlers, so we only need the direct path here.
-            let willChainFromOther = showProgressionScreen
-                || showPersonalBestScreen
-                || showLevelUpScreen
-                || personalBestMilestone != nil
-                || (!levelUpNewLevel.isEmpty && levelUpPreviousLevel != levelUpNewLevel)
-            if !willChainFromOther {
-                advanceToPreSummaryIfNeeded()
-            }
-        }
     }
 
     private func requestDeeperFeedback() async {
@@ -2572,7 +2381,7 @@ extension SummaryView {
         score: 8,
         progressSegments: 3,
         xpEarned: 74,
-        practiceTitle: "Impromptu Practice",
+        practiceTitle: PracticeMode.timed.displayLabel,
         feedbackOverride: "Clear answer overall. Push for a little more depth or time on the next rep.",
         headlineOverride: "Solid response",
         scoreBreakdown: [

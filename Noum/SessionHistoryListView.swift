@@ -131,12 +131,7 @@ enum SessionHistoryListModel {
     }
 
     static func modeLabel(for mode: PracticeMode) -> String {
-        switch mode {
-        case .timed: return "Timed"
-        case .suddenDeath: return "Pressure Drill"
-        case .ahCounter: return "Ah-Counter"
-        case .imConversation: return "Conversation practice"
-        }
+        mode.displayLabel
     }
 }
 

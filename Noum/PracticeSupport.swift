@@ -4798,7 +4798,7 @@ enum IMModeServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unavailable:
-            return "Conversation practice is temporarily unavailable. You can keep training with another practice mode."
+            return "Conversation Practice is temporarily unavailable. You can keep training with another exercise."
         case .replyGenerationFailed:
             return "Noum couldn't continue this conversation rep."
         case .evaluationFailed:
@@ -9707,7 +9707,7 @@ enum CoachingPlanner {
             case (.thinkFaster, _):
                 suggestedDrill = "Run one Pressure Drill and answer before you explain."
             case (.calmerDelivery, _):
-                suggestedDrill = "Run one Ah-Counter rep and replace the first filler with a pause."
+                suggestedDrill = "Start Filler Control and replace the first filler with a pause."
             }
         } else if averageFillers > 4 {
             suggestedDrill = "Run one Easy Timed rep and pause before each new point."
@@ -10495,12 +10495,14 @@ enum RecommendationBiasEngine {
                 recommendedMode: mode,
                 recommendedTone: nil,
                 recommendedScenario: nil,
-                focus: mode == .ahCounter ? "Cleaner delivery" : "Baseline control",
-                target: mode == .ahCounter ? "Cut fillers by 1" : "One complete rep",
+                focus: mode == .ahCounter ? "Cleaner delivery" : "First clear read",
+                target: mode == .ahCounter ? "Pause instead of filling the space" : "One complete rep",
                 modeBenefit: playbookEntry(for: mode).benefit,
                 whyMode: playbookEntry(for: mode).bestFor,
                 whyNow: adaptationWhyNow(replacedMode: modeRead.replacedMode, selectedMode: mode)
-                    ?? (input.daysSinceLastSession > 2 ? "The fastest win is getting back into a clean practice rhythm." : "Your recent sessions still need a steadier baseline."),
+                    ?? (input.daysSinceLastSession > 2
+                        ? "One complete rep restarts your practice rhythm."
+                        : "One complete rep gives Noum a clearer starting point."),
                 suggestedTimedDifficulty: nil,
                 suggestedTheme: .all,
                 source: modeRead.replacedMode == nil ? .coldStart : .adaptationBias
@@ -10608,11 +10610,11 @@ enum RecommendationBiasEngine {
         let modeName = intervention.mode.displayLabel
         switch intervention.reviewStatus {
         case .awaitingAttempt:
-            return "\(modeName) is the open case-file intervention for \(focus.lowercased()); Noum needs one followed rep before judging it."
+            return "\(modeName) is the next exercise for \(focus.lowercased())."
         case .formingEvidence:
-            return "\(modeName) is still the active intervention for \(focus.lowercased()); keep collecting reps before strengthening the claim."
+            return "\(modeName) keeps the same focus while the evidence builds."
         case .continueAndVerify:
-            return "\(modeName) is showing promise for \(focus.lowercased()); verify it once more before raising the confidence."
+            return "\(modeName) may be helping with \(focus.lowercased()); one more rep checks whether it holds."
         case .diagnoseBeforeRepeating, .adaptBeforeRepeating:
             return intervention.reviewBasis
         }
@@ -10628,12 +10630,12 @@ enum RecommendationBiasEngine {
 
         switch intervention.reviewStatus {
         case .awaitingAttempt:
-            return "This was prescribed in the current case file, but Noum has not observed a followed rep yet."
+            return "Start the first rep for this focus."
         case .formingEvidence:
             if remaining <= 1 {
-                return "The case file has \(observed) of \(minimum) followed reps. One more makes the review more honest."
+                return "\(observed) of \(minimum) planned reps are complete. One more gives a fairer read."
             }
-            return "The case file has \(observed) of \(minimum) followed reps. \(remaining) more reps make the review more honest."
+            return "\(observed) of \(minimum) planned reps are complete. \(remaining) more give a fairer read."
         case .continueAndVerify:
             if let status = intervention.criterionStatus {
                 if status == .pending {
@@ -10855,7 +10857,12 @@ enum RecommendationBiasEngine {
     }
 
     private static func profileAwareWhyNow(for mode: PracticeMode, profile: CoachingProfile) -> String? {
-        let context = profile.speakingContext.title.lowercased()
+        let context: String = switch profile.speakingContext {
+        case .work: "work"
+        case .interviews: "interview"
+        case .presentations: "presentation"
+        case .social: "everyday conversation"
+        }
         let base: String = switch mode {
         case .timed:
             "Build one clear \(context) answer."

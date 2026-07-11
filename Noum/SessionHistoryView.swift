@@ -37,12 +37,7 @@ struct SessionHistoryRowPreview: Equatable {
     }
 
     private static func modeLabel(for mode: PracticeMode) -> String {
-        switch mode {
-        case .timed: return "Timed"
-        case .suddenDeath: return "Pressure Drill"
-        case .ahCounter: return "Ah-Counter"
-        case .imConversation: return "Conversation practice"
-        }
+        mode.displayLabel
     }
 }
 
@@ -107,12 +102,7 @@ struct SessionHistoryDetailPresentation: Equatable {
     }
 
     private static func modeLabel(for mode: PracticeMode) -> String {
-        switch mode {
-        case .timed: return "Timed"
-        case .suddenDeath: return "Pressure Drill"
-        case .ahCounter: return "Ah-Counter"
-        case .imConversation: return "Conversation practice"
-        }
+        mode.displayLabel
     }
 
     private static func clean(_ text: String?) -> String? {
@@ -151,9 +141,11 @@ struct SessionHistoryView: View {
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var clutchWordStore = ClutchWordStore.shared
     @StateObject private var ratingStore = RatingStore.shared
+    @State private var isProgressExpanded = ReviewProgressDisclosure.defaultExpanded
     @Binding var navigationPath: NavigationPath
     @Environment(\.dismiss) private var dismiss
     @Environment(\.isAppTabRoot) private var isAppTabRoot
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(navigationPath: Binding<NavigationPath>) {
         self._navigationPath = navigationPath
@@ -190,6 +182,14 @@ struct SessionHistoryView: View {
         )
     }
 
+    private var visibleHighlights: [ReviewHighlightsEngine.Highlight] {
+        ReviewHighlightLimit.visible(highlights)
+    }
+
+    private var reviewStory: ReviewStoryPresentation? {
+        ReviewStoryPresentation.make(trends: skillTrends, sessions: sessions)
+    }
+
     private var reviewSurface: SessionHistoryReviewSurface {
         SessionHistoryReviewSurface.visibleSurface(
             hasRecentRepReviews: MistakeReplayCard.hasReviewRows(in: sessions),
@@ -212,18 +212,13 @@ struct SessionHistoryView: View {
             } else {
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        // Insight-first: the page opens with what a coach
-                        // would say (development, read, picks) — the raw
-                        // session log lives behind the entry card below.
-                        developmentSection
-
-                        coachReadSection
+                        storySection
 
                         highlightsSection
 
-                        reviewSignalsSection
-
                         sessionHistoryEntry
+
+                        progressDisclosureSection
 
                         Spacer(minLength: 40)
                     }
@@ -246,6 +241,66 @@ struct SessionHistoryView: View {
     // MARK: - Development
 
     @ViewBuilder
+    private var storySection: some View {
+        if let reviewStory {
+            ReviewStoryCard(presentation: reviewStory) {
+                navigationPath.append(
+                    AppDestination.sessionDetail(sessionID: reviewStory.latestSessionID)
+                )
+            }
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.bottom, Spacing.lg)
+        }
+    }
+
+    private var progressDisclosureSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Button {
+                withAnimation(reduceMotion ? nil : .standardSpring) {
+                    isProgressExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(Typography.caption.weight(.bold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(width: 34, height: 34)
+                        .background(AppColor.brandBlue.opacity(0.10), in: Circle())
+
+                    Text(isProgressExpanded ? "Hide progress" : "See progress")
+                        .font(Typography.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+
+                    Spacer(minLength: Spacing.xs)
+
+                    Image(systemName: "chevron.down")
+                        .font(Typography.captionSmall.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(isProgressExpanded ? 180 : 0))
+                }
+                .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel(isProgressExpanded ? "Hide progress" : "See progress")
+            .accessibilityIdentifier("review.progress.toggle")
+
+            if isProgressExpanded {
+                Group {
+                    if developmentChartHasData {
+                        ProgressionChartsCard(sessionStore: sessionStore)
+                    } else {
+                        earlyDevelopmentCard
+                    }
+                }
+                .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(.horizontal, Spacing.screenH)
+        .padding(.bottom, Spacing.lg)
+    }
+
+    @ViewBuilder
     private var developmentSection: some View {
         Group {
             if developmentChartHasData {
@@ -266,13 +321,11 @@ struct SessionHistoryView: View {
                 Image(systemName: "chart.line.uptrend.xyaxis")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(AppColor.brandBlue)
-                Text("Your development")
-                    .font(Typography.micro)
+                Text("Progress is forming")
+                    .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
             }
-            Text("Your development picture is forming. A few more scored reps unlock your progress chart here.")
+            Text("A few more scored reps will unlock the progress chart.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -291,20 +344,21 @@ struct SessionHistoryView: View {
 
     @ViewBuilder
     private var highlightsSection: some View {
-        if !highlights.isEmpty {
+        if !visibleHighlights.isEmpty {
             VStack(alignment: .leading, spacing: Spacing.md) {
-                Text("Worth a second look")
-                    .font(Typography.micro)
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
+                Text("Worth another look")
+                    .font(Typography.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
 
-                VStack(spacing: 8) {
-                    ForEach(highlights) { highlight in
+                VStack(spacing: 0) {
+                    ForEach(Array(visibleHighlights.enumerated()), id: \.element.id) { index, highlight in
                         ReviewHighlightRow(highlight: highlight) {
                             navigationPath.append(
                                 AppDestination.sessionDetail(sessionID: highlight.sessionID)
                             )
+                        }
+                        if index < visibleHighlights.count - 1 {
+                            Divider().padding(.leading, 42)
                         }
                     }
                 }
@@ -328,10 +382,10 @@ struct SessionHistoryView: View {
                     .background(AppColor.brandBlue.opacity(0.10), in: Circle())
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Session history")
+                    Text("All reps")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                    Text("\(totalSessions) saved rep\(totalSessions == 1 ? "" : "s") — search, filter, and revisit any of them")
+                    Text("\(totalSessions) saved rep\(totalSessions == 1 ? "" : "s")")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -342,11 +396,10 @@ struct SessionHistoryView: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.quaternary)
             }
-            .padding(Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+            .padding(.vertical, Spacing.xs)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .padding(.horizontal, Spacing.screenH)
         .padding(.bottom, 20)
         .accessibilityIdentifier("history.sessionListEntry")
@@ -396,8 +449,8 @@ struct SessionHistoryView: View {
     private var emptyState: some View {
         EmptyStateView(
             symbol: "clock.arrow.circlepath",
-            title: "Your first session is the hardest",
-            body: "One short rep populates this view with score, pacing, and filler trends.",
+            title: "Your progress starts with one rep",
+            body: "Complete a short rep to see your first score, pace, and filler count.",
             tint: AppColor.brandBlue,
             cta: EmptyStateView.CTA(label: "Start a rep", icon: "mic.fill") {
                 navigationPath.append(AppDestination.practiceSelection)
@@ -841,12 +894,7 @@ struct SessionHistoryDetailView: View {
     }
 
     private var modeLabel: String {
-        switch session.mode {
-        case .timed: return "Timed"
-        case .suddenDeath: return "Pressure Drill"
-        case .ahCounter: return "Ah-Counter"
-        case .imConversation: return "Conversation practice"
-        }
+        session.mode.displayLabel
     }
 }
 #endif

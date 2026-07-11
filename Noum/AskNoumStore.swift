@@ -604,7 +604,9 @@ final class AskNoumStore: ObservableObject {
         )
         switch outcome {
         case .reply(let text):
-            let trimmed = CoachReplyTextSanitizer.coachReplyText(from: text)
+            let trimmed = CoachDisplayCopy.normalized(
+                CoachReplyTextSanitizer.coachReplyText(from: text)
+            )
             if trimmed.isEmpty {
                 // Defensive: a live empty should be `.failure(.empty)`, but if
                 // it reaches the store, route through the same notice instead
@@ -644,7 +646,9 @@ final class AskNoumStore: ObservableObject {
         text: String,
         metadata: CoachTurnMetadata? = nil
     ) -> Bool {
-        let trimmed = CoachReplyTextSanitizer.coachReplyText(from: text)
+        let trimmed = CoachDisplayCopy.normalized(
+            CoachReplyTextSanitizer.coachReplyText(from: text)
+        )
         guard !trimmed.isEmpty,
               let idx = messages.firstIndex(where: { $0.id == id }),
               messages[idx].role == .coach,
@@ -923,7 +927,7 @@ final class AskNoumStore: ObservableObject {
     /// distinguish because the source of truth is the cached value, not
     /// the request that produced it.
     func setAIChips(_ chips: [String], for coachID: UUID) {
-        aiChipsCache[coachID] = chips
+        aiChipsCache[coachID] = normalizedVisibleChips(chips)
     }
 
     /// Read cached chips for a coach reply, if any. Returns nil when the
@@ -937,7 +941,7 @@ final class AskNoumStore: ObservableObject {
     /// signature that produced it. Called by AskNoumView once the starter
     /// generation request returns successfully.
     func setStarterChips(_ chips: [String], for signature: String) {
-        starterChipsCache[signature] = chips
+        starterChipsCache[signature] = normalizedVisibleChips(chips)
     }
 
     /// Read cached starter prompts for a given input signature, if any.
@@ -946,6 +950,16 @@ final class AskNoumStore: ObservableObject {
     /// once per new signature.
     func starterChips(for signature: String) -> [String]? {
         starterChipsCache[signature]
+    }
+
+    private func normalizedVisibleChips(_ chips: [String]) -> [String] {
+        var seen: Set<String> = []
+        return chips.compactMap { raw in
+            let normalized = CoachDisplayCopy.normalized(raw)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalized.isEmpty, seen.insert(normalized).inserted else { return nil }
+            return normalized
+        }
     }
 
     /// Cross-surface seed-message inject. Used by post-session bridges

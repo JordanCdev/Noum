@@ -52,11 +52,11 @@ struct WeakAreasCard: View {
 
         var actionLabel: String {
             switch self {
-            case .fillerControl: return "Run Land the Pause"
-            case .opening:       return "Open Timed mode"
-            case .structure:     return "Run Rule of Three lesson"
-            case .pace:          return "Open Ah-Counter"
-            case .pressure:      return "Open Pressure Drill"
+            case .fillerControl: return "Start Land the Pause"
+            case .opening:       return "Start Timed Practice"
+            case .structure:     return "Start Rule of Three"
+            case .pace:          return "Start Filler Control"
+            case .pressure:      return "Start Pressure Drill"
             }
         }
 

@@ -1736,7 +1736,7 @@ enum CoachMemoryEngine {
             selection = LeverSelection(
                 area: area,
                 confidence: nil,
-                basis: "it keeps showing up in the rolling baseline"
+                basis: "it keeps showing up in recent reps"
             )
         } else if let voice = profile?.speakingStyleGoal {
             selection = LeverSelection(

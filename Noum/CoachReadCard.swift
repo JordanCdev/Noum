@@ -93,18 +93,6 @@ struct CoachReadCard: View {
                     .font(Typography.captionSmall)
                     .tracking(0.6)
                     .foregroundStyle(AppColor.pro)
-                Spacer(minLength: 0)
-                if !note.isAIBacked {
-                    Text("RULE-BASED")
-                        .font(Typography.captionSmall)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule()
-                                .stroke(AppColor.textSecondary.opacity(0.35), lineWidth: 1)
-                        )
-                }
             }
 
             Text(note.noteText)
@@ -373,7 +361,7 @@ struct CoachReadCard: View {
         let clamped = max(0, remaining)
         switch clamped {
         case 0:
-            return "Rule-based today — coach notes resume tomorrow."
+            return "Simpler coach notes today. Personalized wording resumes tomorrow."
         case 1:
             return "1 AI coach note remaining today."
         default:

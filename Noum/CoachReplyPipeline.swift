@@ -328,8 +328,10 @@ enum CoachReplyPipeline {
                 realtimeCoachModeEnabled: realtimeCoachModeEnabled
             ) {
                 let provisionalVisibleAt = Date()
-                let immediateCoachRead = CoachReplyTextSanitizer.coachReplyText(
-                    from: assessment.immediateCoachRead
+                let immediateCoachRead = CoachDisplayCopy.normalized(
+                    CoachReplyTextSanitizer.coachReplyText(
+                        from: assessment.immediateCoachRead
+                    )
                 )
                 let provisionalMetadata = CoachTurnMetadata(
                     turnDepth: turnDepth,

@@ -87,7 +87,7 @@ enum LeagueTier: String, CaseIterable, Codable, Identifiable {
 
 enum LeaguePlacementPresentation {
     static func title(tier: LeagueTier, rating: SpeakingRating) -> String {
-        rating.hasRatedEvidence ? "\(tier.title) league" : "League placement pending"
+        rating.hasRatedEvidence ? "\(tier.title) peer group" : "Peer comparison pending"
     }
 
     static func tierTitle(tier: LeagueTier, rating: SpeakingRating) -> String {
@@ -96,24 +96,24 @@ enum LeaguePlacementPresentation {
 
     static func subtitle(tier: LeagueTier, rating: SpeakingRating) -> String {
         guard rating.hasRatedEvidence else {
-            return "One rated rep places you into a weekly bucket."
+            return "One rated rep creates a fair comparison baseline."
         }
         if let next = tier.nextTier {
             let toNext = max(0, next.ratingFloor - rating.overall)
-            return "+\(toNext) rating to \(next.title)"
+            return "\(toNext) rating points to \(next.title)."
         }
-        return "Top tier — defend your rating to stay."
+        return "You are in the highest comparison group."
     }
 
     static func fullScreenSubtitle(tier: LeagueTier, rating: SpeakingRating) -> String {
         guard rating.hasRatedEvidence else {
-            return "Run one rated rep first. Then your weekly league forms from real rating evidence."
+            return "Complete one rated rep first. Your peer comparison will then use real rating evidence."
         }
         if let next = tier.nextTier {
             let toNext = max(0, next.ratingFloor - rating.overall)
-            return "+\(toNext) rating to \(next.title)"
+            return "\(toNext) rating points to \(next.title)."
         }
-        return "Top tier — defend your rating to stay here."
+        return "You are in the highest comparison group."
     }
 
     static func ratingValue(for rating: SpeakingRating) -> String {
