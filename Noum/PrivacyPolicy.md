@@ -108,7 +108,7 @@ We do **not** use your data for advertising, user profiling for marketing purpos
 | **Apple Core Location / MapKit** | Device coordinate when you request nearby-club search; a location passed to Apple geocoding for Path daylight only when permission already exists | Nearby-club results and a cosmetic local day/night scene; iOS controls the location ultimately supplied | [Apple Privacy Policy](https://www.apple.com/legal/privacy/) |
 | **Google Vertex AI (Gemini)** | Speech transcript or Ask Noum message, bounded recent turns, bounded coaching context and session evidence, and selected video frames only when a production feature explicitly supports and requests visual feedback | Production generated coaching and conversation responses | [Google Cloud Terms](https://cloud.google.com/terms) |
 | **Google Sign-In** | The SDK vendor declaration covers linked account and device data when Google Sign-In is used | Authentication and vendor-declared service diagnostics; Noum does not use it for advertising or cross-app tracking | [Google Privacy Policy](https://policies.google.com/privacy) |
-| **Firebase (Google)** | Account ID, display name, optional sync data, bounded production coaching requests, and Authentication and App Check proof | Authentication, optional sync, protected callable transport, abuse protection, and vendor-declared diagnostics | [Firebase Terms](https://firebase.google.com/terms) |
+| **Firebase (Google)** | Bounded production coaching requests and Authentication and App Check proof; account identity and optional sync data are processed separately for account functionality | Protected callable transport and abuse protection for cloud coaching, plus authentication, optional sync, and vendor-declared diagnostics | [Firebase Terms](https://firebase.google.com/terms) |
 | **Open-Meteo** | A city or region label inferred from device time zone and locale, or supplied by app configuration; then coordinates returned by Open-Meteo itself | Conversation weather context; Noum does not send a Core Location coordinate or account identifier | [Open-Meteo Terms](https://open-meteo.com/en/terms) |
 <!-- PROCESSOR-MANIFEST:END -->
 
@@ -152,7 +152,7 @@ Production Deepgram transcription uses a short-lived provider credential obtaine
 Go to **Settings > Your Data** in the app to see a summary of the principal data stored on your device and which cloud services may process it.
 
 ### Export Your Data
-In **Settings > Your Data > Export Local Account Data**, you can export a versioned JSON file containing the account-scoped UserDefaults records Noum can identify plus the device-local friend list. Recordings saved to Photos, Keychain authentication material, shared device-global state, and data retained by third-party processors are not included.
+In **Settings > Your Data > Export account data**, Noum creates `Noum-export-YYYY-MM-DD.zip`. The archive contains a versioned manifest, one JSON snapshot for every registered local account-data participant, residual account-scoped records that are not yet owned by a named participant, and app-managed files under `Documents/Recordings` when present. Legacy records or recordings that were not stamped with an account ID are explicitly labelled as device-local and unattributed. Recordings saved to Photos, Keychain authentication material, provider credentials, and data retained by third-party processors are not included.
 
 ### Delete Individual Sessions
 Long-press any session in your Session History to delete it.

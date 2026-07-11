@@ -2127,17 +2127,17 @@ struct CloudProcessingConsentDisclosure: View {
                             disclosureRow(
                                 icon: "person.text.rectangle.fill",
                                 title: "Personal coaching context",
-                                detail: "Your coaching profile, recent session evidence, and bounded conversation context may go to Google Vertex AI or another configured generative-AI provider to produce coaching."
+                                detail: "Your coaching profile, recent session evidence, and bounded conversation context may pass through a protected Firebase callable to Google Vertex AI (Gemini) for coaching you request."
                             )
                             disclosureRow(
-                                icon: "speaker.wave.2.fill",
-                                title: "Spoken coaching",
-                                detail: "Text may go to Google Cloud or OpenAI for speech synthesis. Selected video frames are sent only when you explicitly request visual feedback."
+                                icon: "video.fill",
+                                title: "Visual feedback",
+                                detail: "Selected video frames are sent only when you explicitly request a production visual-feedback feature that supports them. Release prompt speech uses Apple's on-device voice."
                             )
                         }
                     }
 
-                    Text("Generative-AI provider retention, safety, and model-improvement practices vary by service and account configuration. Noum does not sell this data or use it for advertising.")
+                    Text("Production processors: \(CloudProcessorManifest.consentProcessors.map(\.name).joined(separator: ", ")). Retention and safety practices follow their linked terms. Noum does not sell this data or use it for advertising.")
                         .font(Typography.caption)
                         .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -2464,26 +2464,11 @@ struct YourDataView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            processorRow(
-                name: "Deepgram",
-                purpose: "Real-time speech-to-text during practice sessions",
-                data: "Live audio stream with Deepgram's model-improvement opt-out enabled; Deepgram says opted-out data is retained only as needed to process the request"
-            )
-            processorRow(
-                name: "Google Gemini / OpenAI",
-                purpose: "AI coaching analysis (Coach Read)",
-                data: "Transcript and bounded coaching context; retention and model-improvement terms vary by provider"
-            )
-            processorRow(
-                name: "Google Cloud TTS",
-                purpose: "Voice playback for prompts and coaching",
-                data: "Text sent for speech synthesis"
-            )
-            if isBackendConfigured {
+            ForEach(CloudProcessorManifest.consentProcessors) { processor in
                 processorRow(
-                    name: "Noum Backend / Firebase",
-                    purpose: "Syncing sessions and profile across devices",
-                    data: "Practice sessions, coaching profile, progress"
+                    name: processor.name,
+                    purpose: processor.purpose,
+                    data: processor.data
                 )
             }
 

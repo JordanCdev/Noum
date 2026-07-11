@@ -57,8 +57,8 @@ enum CloudProcessorManifest {
         CloudProcessorDisclosure(
             id: "firebase",
             name: "Firebase (Google)",
-            data: "Account ID, display name, optional sync data, bounded production coaching requests, and Authentication and App Check proof",
-            purpose: "Authentication, optional sync, protected callable transport, abuse protection, and vendor-declared diagnostics",
+            data: "Bounded production coaching requests and Authentication and App Check proof; account identity and optional sync data are processed separately for account functionality",
+            purpose: "Protected callable transport and abuse protection for cloud coaching, plus authentication, optional sync, and vendor-declared diagnostics",
             termsURL: URL(string: "https://firebase.google.com/terms")!,
             appearsInCloudProcessingDisclosure: true
         ),
