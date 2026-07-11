@@ -1,5 +1,53 @@
 # Noum — Current state
 
+## 2026-07-11 — Research-to-coaching loop and first-run trust
+
+Branch `ux-overhaul` translates the valid, product-agnostic findings from the
+referenced research report into Noum's M14 launch gate. The report could not
+inspect the private repository and incorrectly benchmarked Noum as a fintech
+app, so transaction feeds, budgets, bills, and other finance systems were
+explicitly rejected. The retained goals reinforce the actual product pillars:
+a no-dead-end first run, an evidence-to-practice loop, and trustworthy privacy
+and account behavior.
+
+First run is now transactional. `AuthManager` establishes and verifies a
+durable account before onboarding can save, with a bounded Firebase-anonymous
+attempt and a Keychain-backed local guest fallback. `CoachingProfileStore` is
+the sole onboarding-completion truth and publishes only after persistence is
+verified. Fresh Firebase guests proceed directly to onboarding; restored
+Firebase-backed identities without a local profile require a server-authoritative
+bootstrap result, while timeout or unavailable state presents the existing
+retryable recovery root instead of guessing that the account is new. Late
+results are sealed by the existing one-shot/generation/account guards and
+cannot replace a newly saved profile. `FirebaseBootstrap` configures Core, App
+Check, and Remote Config once; `AuthManager` is the only anonymous-auth owner.
+
+Review now closes the evidence loop. Every session detail carries a restrained,
+mode-tinted **Practice this mode** action backed by the existing
+`SummaryPracticeAgainRouter`; Timed, Sudden Death, and Ah-Counter route to their
+matching practice surface, while IM preserves the recorded scenario and target
+tone. The action is a semantic 64-point button with a combined accessibility
+label and appends to the existing tab-owned `NavigationPath`. A targeted UI test
+opens seeded Review, enters the latest Timed session, activates the action, and
+proves arrival on `timedPractice.screen`.
+
+The app target no longer links the dedicated Firebase Analytics product. Noum's
+top-level privacy manifest now declares only Noum-owned, linked,
+non-tracking App Functionality data; stale analytics, crash, performance, and
+diagnostic entries were removed. Both policy copies disclose the Keychain guest
+fallback, production Ask Noum transport through Firebase Functions to Vertex AI
+with Firebase Auth/App Check, and the analytics-purpose declarations carried by
+required Google Sign-In/Firebase vendor manifests. This is deliberately not a
+claim that the bundled auth/sync SDKs declare no analytics-purpose processing.
+
+Combined verification on iOS 26.4 includes a full simulator build, 38 focused
+unit/contract tests, an erased-simulator production onboarding smoke, the
+Review-to-Timed end-to-end UI test, built-manifest and binary inspection, and a
+five-tab light screenshot sweep plus the targeted Review detail capture. The
+hosted `public/privacy.html` source is updated but deployment remains an M14
+operational step. Auto-guided first-rep launch preparation remains default-off
+pending real-device felt QA.
+
 ## 2026-07-11 — Home, practice, and Path production polish
 
 Branch `codex/home-practice-path-polish` closes the simulator-visible quality
