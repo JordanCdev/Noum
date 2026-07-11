@@ -7,17 +7,15 @@ These are fixture-backed synthetic conversations for done-state review.
 > Source freshness passes: `False`.
 > Real-pipeline evidence passes: `False`.
 > Report-internal source freshness passes: `False`.
-> Sidecar source freshness passes: `False`.
-> Current git commit: `5bef2d08`.
-> Report trace git commit(s): `a556f772`.
-> Current coach source fingerprint: `sha256:10bbf2c3aa86cece99f2cce118756078e594165d31e3b0d74b8e45d7ef809894`.
-> Report trace coach source fingerprint(s): `sha256:d8662f3feef2bed08afc861b6d41edbfecc7c3b1471bacef2863a6a42aee5e0a`.
-> Sidecar git commit: `5bef2d08`.
-> Sidecar coach source fingerprint: `sha256:10bbf2c3aa86cece99f2cce118756078e594165d31e3b0d74b8e45d7ef809894`.
-> Sidecar/report mismatch `sourceCoachFingerprint`: sidecar `sha256:10bbf2c3aa86cece99f2cce118756078e594165d31e3b0d74b8e45d7ef809894`, report `sha256:d8662f3feef2bed08afc861b6d41edbfecc7c3b1471bacef2863a6a42aee5e0a`.
-> Sidecar/report mismatch `sourceGitCommit`: sidecar `5bef2d08`, report `a556f772`.
-> Source freshness failures: `dirty coach source files after app-path dump: Noum/AICoachChatService.swift,Noum/AskNoumStore.swift,Noum/CoachContextBuilder.swift,Noum/CoachReliabilityGate.swift,Noum/CoachReplyPipeline.swift,NoumTests/CoachChatConversationEvaluationTests.swift,NoumTests/CoachChatEvaluationFixtures.swift,NoumTests/CoachJudgementLayerTests.swift,+3 more`, `source app-path git commit(s) do not match current HEAD: a556f772`.
-> Production evidence failures: `2 app-path fixture(s) below local quality floor 70: filler-pressure-007,not-easy-empathy-004`, `50 real-pipeline trace(s) missing first-token source`, `source Swift app-path freshness: dirty coach source files after app-path dump: Noum/AICoachChatService.swift,Noum/AskNoumStore.swift,Noum/CoachContextBuilder.swift,Noum/CoachReliabilityGate.swift,Noum/CoachReplyPipeline.swift,NoumTests/CoachChatConversationEvaluationTests.swift,NoumTests/CoachChatEvaluationFixtures.swift,NoumTests/CoachJudgementLayerTests.swift,+3 more`, `source Swift app-path freshness: source app-path git commit(s) do not match current HEAD: a556f772`, `source Swift app-path readiness warnings: appPathFloorFailures,targetReplyMismatch`, `source Swift app-path report did not pass its app-path floor`.
+> Sidecar source freshness passes: `True`.
+> Current git commit: `9e7503af`.
+> Report trace git commit(s): `1cd32331`.
+> Current coach source fingerprint: `sha256:5954ca93db697b5198dac69054371d10426b96fa88baca5f461e3ea0d714ac13`.
+> Report trace coach source fingerprint(s): `sha256:af101abff73847d45a865779d3c5ed64a04b19359c45ba8a1006d1c35a3ad403`.
+> Sidecar git commit: `1cd32331`.
+> Sidecar coach source fingerprint: `sha256:af101abff73847d45a865779d3c5ed64a04b19359c45ba8a1006d1c35a3ad403`.
+> Source freshness failures: `source app-path git commit(s) do not match current HEAD: 1cd32331`.
+> Production evidence failures: `source Swift app-path freshness: source app-path git commit(s) do not match current HEAD: 1cd32331`, `trajectoryCacheHit true for 3 real-pipeline fixtures (required 5)`.
 
 ## authoritative-distance-001
 
@@ -75,9 +73,9 @@ Prior chat:
 
 User: It's not easy.
 
-Noum: Fair push. I made the move sound easier than it feels under pressure. Your last rep gives one safe signal, I made the move sound easier than it feels under pressure, so say only the disagreement and one calm reason, then stop before defending it.
+Noum: Fair push: no, it is not easy. The hard part is that sentence one carries the social risk, so test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it.
 
-Arena score: 60/100
+Arena score: 85/100
 
 ## repeating-yourself-005
 
@@ -106,9 +104,9 @@ Prior chat:
 
 User: How do I get better before my interview?
 
-Noum: No baseline yet, so the honest move is one interview rep. Record 60 seconds on a likely question, then review whether the first sentence gives the point before polishing anything.
+Noum: No baseline yet, so start there. Record 60 seconds on 'Why should we hire you?' and check whether sentence one answers before you polish anything else. Want to go now?
 
-Arena score: 72/100
+Arena score: 87/100
 
 ## filler-pressure-007
 
@@ -121,9 +119,9 @@ Prior chat:
 
 User: How do I stop saying um under pressure?
 
-Noum: Your last rep gives one usable signal so far, so run one answer and separate semantic words from filler words before cutting anything.
+Noum: Your last pressure rep had 6 fillers, mostly before the close, so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask.
 
-Arena score: 30/100
+Arena score: 83/100
 
 ## leadership-update-008
 

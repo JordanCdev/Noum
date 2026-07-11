@@ -159,14 +159,12 @@
 				AIConfig.plist.example,
 				BackendConfig.plist,
 				BackendConfig.plist.example,
-				GoogleService-Info.plist.example,
+				"GoogleService-Info.plist.example",
 				Info.plist,
 				PRIVACY_AUDIT.md,
 				PRIVACY_EXECUTION.md,
 				PRIVACY_REMEDIATION.md,
-				Transcribe.plist,
 				Transcribe.plist.example,
-				TranscriptionProviders.plist,
 				TranscriptionProviders.plist.example,
 			);
 			target = 0B981F6B2D44610E008F4158 /* Noum */;
@@ -815,9 +813,9 @@
 		0B981F912D446110008F4158 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_ATTEST_ENVIRONMENT = development;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				APP_ATTEST_ENVIRONMENT = development;
 				CODE_SIGN_ENTITLEMENTS = Noum.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
@@ -844,9 +842,9 @@
 		0B981F922D446110008F4158 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_ATTEST_ENVIRONMENT = production;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				APP_ATTEST_ENVIRONMENT = production;
 				CODE_SIGN_ENTITLEMENTS = Noum.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
