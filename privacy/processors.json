@@ -10,7 +10,7 @@
       "purpose": "Production speech-to-text transcription",
       "termsLabel": "Deepgram Terms",
       "termsURL": "https://deepgram.com/terms",
-      "requiresCloudProcessingConsent": true
+      "appearsInCloudProcessingDisclosure": true
     },
     {
       "id": "apple-speech",
@@ -19,7 +19,7 @@
       "purpose": "Ask Noum voice transcription; processing location depends on Apple's service and device availability",
       "termsLabel": "Apple Privacy Policy",
       "termsURL": "https://www.apple.com/legal/privacy/",
-      "requiresCloudProcessingConsent": true
+      "appearsInCloudProcessingDisclosure": true
     },
     {
       "id": "apple-location-mapkit",
@@ -28,7 +28,7 @@
       "purpose": "Nearby-club results and a cosmetic local day/night scene; iOS controls the location ultimately supplied",
       "termsLabel": "Apple Privacy Policy",
       "termsURL": "https://www.apple.com/legal/privacy/",
-      "requiresCloudProcessingConsent": false
+      "appearsInCloudProcessingDisclosure": false
     },
     {
       "id": "google-vertex-ai",
@@ -37,7 +37,7 @@
       "purpose": "Production generated coaching and conversation responses",
       "termsLabel": "Google Cloud Terms",
       "termsURL": "https://cloud.google.com/terms",
-      "requiresCloudProcessingConsent": true
+      "appearsInCloudProcessingDisclosure": true
     },
     {
       "id": "google-sign-in",
@@ -46,7 +46,7 @@
       "purpose": "Authentication and vendor-declared service diagnostics; Noum does not use it for advertising or cross-app tracking",
       "termsLabel": "Google Privacy Policy",
       "termsURL": "https://policies.google.com/privacy",
-      "requiresCloudProcessingConsent": false
+      "appearsInCloudProcessingDisclosure": false
     },
     {
       "id": "firebase",
@@ -55,7 +55,7 @@
       "purpose": "Authentication, optional sync, protected callable transport, abuse protection, and vendor-declared diagnostics",
       "termsLabel": "Firebase Terms",
       "termsURL": "https://firebase.google.com/terms",
-      "requiresCloudProcessingConsent": true
+      "appearsInCloudProcessingDisclosure": true
     },
     {
       "id": "open-meteo",
@@ -64,7 +64,7 @@
       "purpose": "Conversation weather context; Noum does not send a Core Location coordinate or account identifier",
       "termsLabel": "Open-Meteo Terms",
       "termsURL": "https://open-meteo.com/en/terms",
-      "requiresCloudProcessingConsent": false
+      "appearsInCloudProcessingDisclosure": false
     }
   ]
 }

@@ -8,7 +8,7 @@ struct CloudProcessorDisclosure: Identifiable, Equatable, Sendable {
     let data: String
     let purpose: String
     let termsURL: URL
-    let requiresCloudProcessingConsent: Bool
+    let appearsInCloudProcessingDisclosure: Bool
 }
 
 enum CloudProcessorManifest {
@@ -20,7 +20,7 @@ enum CloudProcessorManifest {
             data: "Real-time audio stream with mip_opt_out=true",
             purpose: "Production speech-to-text transcription",
             termsURL: URL(string: "https://deepgram.com/terms")!,
-            requiresCloudProcessingConsent: true
+            appearsInCloudProcessingDisclosure: true
         ),
         CloudProcessorDisclosure(
             id: "apple-speech",
@@ -28,7 +28,7 @@ enum CloudProcessorManifest {
             data: "Short voice-question audio when the Apple fallback is used",
             purpose: "Ask Noum voice transcription; processing location depends on Apple's service and device availability",
             termsURL: URL(string: "https://www.apple.com/legal/privacy/")!,
-            requiresCloudProcessingConsent: true
+            appearsInCloudProcessingDisclosure: true
         ),
         CloudProcessorDisclosure(
             id: "apple-location-mapkit",
@@ -36,7 +36,7 @@ enum CloudProcessorManifest {
             data: "Device coordinate when you request nearby-club search; a location passed to Apple geocoding for Path daylight only when permission already exists",
             purpose: "Nearby-club results and a cosmetic local day/night scene; iOS controls the location ultimately supplied",
             termsURL: URL(string: "https://www.apple.com/legal/privacy/")!,
-            requiresCloudProcessingConsent: false
+            appearsInCloudProcessingDisclosure: false
         ),
         CloudProcessorDisclosure(
             id: "google-vertex-ai",
@@ -44,7 +44,7 @@ enum CloudProcessorManifest {
             data: "Speech transcript or Ask Noum message, bounded recent turns, bounded coaching context and session evidence, and selected video frames only when a production feature explicitly supports and requests visual feedback",
             purpose: "Production generated coaching and conversation responses",
             termsURL: URL(string: "https://cloud.google.com/terms")!,
-            requiresCloudProcessingConsent: true
+            appearsInCloudProcessingDisclosure: true
         ),
         CloudProcessorDisclosure(
             id: "google-sign-in",
@@ -52,7 +52,7 @@ enum CloudProcessorManifest {
             data: "The SDK vendor declaration covers linked account and device data when Google Sign-In is used",
             purpose: "Authentication and vendor-declared service diagnostics; Noum does not use it for advertising or cross-app tracking",
             termsURL: URL(string: "https://policies.google.com/privacy")!,
-            requiresCloudProcessingConsent: false
+            appearsInCloudProcessingDisclosure: false
         ),
         CloudProcessorDisclosure(
             id: "firebase",
@@ -60,7 +60,7 @@ enum CloudProcessorManifest {
             data: "Account ID, display name, optional sync data, bounded production coaching requests, and Authentication and App Check proof",
             purpose: "Authentication, optional sync, protected callable transport, abuse protection, and vendor-declared diagnostics",
             termsURL: URL(string: "https://firebase.google.com/terms")!,
-            requiresCloudProcessingConsent: true
+            appearsInCloudProcessingDisclosure: true
         ),
         CloudProcessorDisclosure(
             id: "open-meteo",
@@ -68,9 +68,9 @@ enum CloudProcessorManifest {
             data: "A city or region label inferred from device time zone and locale, or supplied by app configuration; then coordinates returned by Open-Meteo itself",
             purpose: "Conversation weather context; Noum does not send a Core Location coordinate or account identifier",
             termsURL: URL(string: "https://open-meteo.com/en/terms")!,
-            requiresCloudProcessingConsent: false
+            appearsInCloudProcessingDisclosure: false
         ),
     ]
 
-    static let consentProcessors = processors.filter(\.requiresCloudProcessingConsent)
+    static let consentProcessors = processors.filter(\.appearsInCloudProcessingDisclosure)
 }

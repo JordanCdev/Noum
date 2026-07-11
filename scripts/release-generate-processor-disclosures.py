@@ -33,7 +33,7 @@ def load_manifest() -> dict:
         raise ValueError("Processor manifest version must be a positive integer.")
     expected = {
         "id", "name", "data", "purpose", "termsLabel", "termsURL",
-        "requiresCloudProcessingConsent",
+        "appearsInCloudProcessingDisclosure",
     }
     identifiers: set[str] = set()
     for processor in manifest["processors"]:
@@ -52,8 +52,8 @@ def load_manifest() -> dict:
         terms = urlparse(processor["termsURL"])
         if terms.scheme != "https" or not terms.netloc:
             raise ValueError(f"Processor terms URL must be HTTPS: {identifier}")
-        if not isinstance(processor["requiresCloudProcessingConsent"], bool):
-            raise ValueError(f"Invalid consent flag for {identifier}.")
+        if not isinstance(processor["appearsInCloudProcessingDisclosure"], bool):
+            raise ValueError(f"Invalid disclosure flag for {identifier}.")
     return manifest
 
 
@@ -113,7 +113,7 @@ def swift_source(manifest: dict) -> str:
         "    let data: String",
         "    let purpose: String",
         "    let termsURL: URL",
-        "    let requiresCloudProcessingConsent: Bool",
+        "    let appearsInCloudProcessingDisclosure: Bool",
         "}",
         "",
         "enum CloudProcessorManifest {",
@@ -128,14 +128,14 @@ def swift_source(manifest: dict) -> str:
             f"            data: {swift_string(item['data'])},",
             f"            purpose: {swift_string(item['purpose'])},",
             f"            termsURL: URL(string: {swift_string(item['termsURL'])})!,",
-            "            requiresCloudProcessingConsent: "
-            f"{'true' if item['requiresCloudProcessingConsent'] else 'false'}",
+            "            appearsInCloudProcessingDisclosure: "
+            f"{'true' if item['appearsInCloudProcessingDisclosure'] else 'false'}",
             "        ),",
         ])
     rows.extend([
         "    ]",
         "",
-        "    static let consentProcessors = processors.filter(\\.requiresCloudProcessingConsent)",
+        "    static let consentProcessors = processors.filter(\\.appearsInCloudProcessingDisclosure)",
         "}",
         "",
     ])
