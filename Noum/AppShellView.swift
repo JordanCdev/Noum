@@ -542,7 +542,8 @@ struct AppDestinationView: View {
                         for: session,
                         comparedTo: sessionStore.sessions,
                         profile: coachingProfileStore.profile
-                    )
+                    ),
+                    navigationPath: $navigationPath
                 )
             } else {
                 SessionHistoryView(navigationPath: $navigationPath)

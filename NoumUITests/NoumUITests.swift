@@ -191,6 +191,34 @@ final class NoumUITests: XCTestCase {
     }
 
     @MainActor
+    func testReviewDetailPracticeAgainLaunchesMatchingMode() throws {
+        let app = launchSeededAt("noum://review")
+        XCTAssertTrue(app.descendants(matching: .any)["history.screen"].waitForExistence(timeout: 10))
+
+        let sessionListEntry = app.descendants(matching: .any)["history.sessionListEntry"]
+        XCTAssertTrue(sessionListEntry.waitForExistence(timeout: 5))
+        sessionListEntry.tap()
+
+        let firstSession = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'history.row.'"))
+            .element(boundBy: 0)
+        XCTAssertTrue(firstSession.waitForExistence(timeout: 5))
+        firstSession.tap()
+
+        let practiceAgain = app.buttons["history.detail.practiceAgain"]
+        XCTAssertTrue(practiceAgain.waitForExistence(timeout: 5))
+        scrollUntilHittable(practiceAgain, in: app, attempts: 6)
+        XCTAssertTrue(practiceAgain.isHittable)
+        XCTAssertGreaterThanOrEqual(practiceAgain.frame.height, 48)
+
+        practiceAgain.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 10),
+            "The seeded Timed session should route back to Timed Practice."
+        )
+    }
+
+    @MainActor
     func testOnboardingFlowSmoke() throws {
         let app = XCUIApplication()
         // UI_TESTING_REAL_FIRST_RUN clears the persisted identity inside

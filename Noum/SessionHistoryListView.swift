@@ -467,7 +467,8 @@ struct SessionHistoryListView: View {
                     for: session,
                     comparedTo: sessions,
                     profile: coachingProfileStore.profile
-                )
+                ),
+                navigationPath: $navigationPath
             )
         } label: {
             sessionRow(session)

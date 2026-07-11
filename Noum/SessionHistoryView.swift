@@ -492,6 +492,7 @@ struct SessionHistoryDetailReplayPresentation: Equatable {
 struct SessionHistoryDetailView: View {
     let session: PracticeSession
     let insights: [String]
+    @Binding var navigationPath: NavigationPath
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @State private var showsFullReview = false
@@ -665,7 +666,9 @@ struct SessionHistoryDetailView: View {
         let presentation = SessionHistoryDetailReplayPresentation.make(for: session)
         let tint = AppColor.tint(for: session.mode)
 
-        return NavigationLink(value: presentation.destination) {
+        return Button {
+            navigationPath.append(presentation.destination)
+        } label: {
             HStack(spacing: Spacing.sm) {
                 Image(systemName: session.mode.iconName)
                     .font(Typography.subheadline.weight(.bold))
@@ -704,7 +707,6 @@ struct SessionHistoryDetailView: View {
             )
         }
         .buttonStyle(.pressable)
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel(presentation.accessibilityLabel)
         .accessibilityIdentifier("history.detail.practiceAgain")
     }
