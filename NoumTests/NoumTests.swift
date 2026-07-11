@@ -23649,7 +23649,6 @@ struct PaywallFeatureAccuracyTests {
         #expect(!manager.canUseFillerTracking, "Filler tracking must require Pro")
         #expect(!manager.canViewTrends, "Trend analytics must require Pro")
         #expect(!manager.canUseAsyncChallenges, "Unlimited async challenges must require Pro")
-        #expect(!manager.canSaveTranscripts, "Saved transcripts must require Pro")
         #expect(!manager.canUseVideoAnalysis, "AI video analysis must require Pro")
     }
 

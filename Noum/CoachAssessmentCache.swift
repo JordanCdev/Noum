@@ -24,7 +24,9 @@ final class CoachAssessmentCache {
     private let lock = NSLock()
     private var entry: Entry?
 
-    private init() {}
+    /// Internal construction keeps deterministic tests isolated from the
+    /// process-wide cache used by the live reply pipeline.
+    init() {}
 
     @discardableResult
     func assessment(

@@ -275,7 +275,9 @@ actor ProofMomentService {
         "Open-Ended Question", "Sensory Detail".
         - "claim": ONE coach-voice sentence (≤ 20 words) tying the technique \
         to the user's goal voice. No emoji, no exclamation marks, no chirpy \
-        filler. Sentence case. End in a period.
+        filler. Sentence case. End in a period. Stay with observable wording \
+        or delivery. A single rep cannot prove authenticity, confidence, \
+        conviction, intent, personality, or what the speaker felt.
 
         If the transcript shows no clear technique, return JSON with all \
         three keys empty: {"quote":"","technique":"","claim":""}.
@@ -348,7 +350,8 @@ actor ProofMomentService {
         let quote = (payload["quote"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let technique = (payload["technique"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let claim = (payload["claim"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !quote.isEmpty, !technique.isEmpty, !claim.isEmpty else { return nil }
+        guard !quote.isEmpty, !technique.isEmpty, !claim.isEmpty,
+              claimStaysObservable(claim) else { return nil }
         // Guard against fabrication — the quote MUST appear in the
         // session's transcript (case-insensitive, whitespace-flexible).
         // If not, the model is hallucinating; fall through to template.
@@ -432,6 +435,19 @@ actor ProofMomentService {
         return n2.contains(n1)
     }
 
+    /// Rejects single-rep interpretations that claim access to the speaker's
+    /// inner state. A valid quote is evidence of words used, not motive or
+    /// authenticity; unsafe model copy falls back to the deterministic read.
+    static func claimStaysObservable(_ claim: String) -> Bool {
+        let normalized = claim.lowercased()
+        let unsupported = [
+            "real place", "authentic", "genuine", "you meant it",
+            "you believed", "your confidence", "you felt", "you were feeling",
+            "true to you", "sincere", "vulnerable", "your personality",
+        ]
+        return !unsupported.contains(where: normalized.contains)
+    }
+
     // MARK: - Deterministic fallback
 
     /// Template proof for the offline / no-provider path. Picks a quote
@@ -500,13 +516,13 @@ actor ProofMomentService {
         switch voice {
         case .authoritative:
             if cleanRep {
-                return ("Declarative Close", "That's a clean, certain line. Authority reads as commitment, and you committed.")
+                return ("Declarative Close", "No fillers across this rep. Test whether the same control also makes the wording more decisive.")
             } else if strongRep {
-                return ("Steady Frame", "You held the frame. That's how authority shows up — without rushing or hedging.")
+                return ("Steady Frame", "This line came from a high-scoring rep. Repeat it before treating authority as a stable pattern.")
             } else if longRep {
-                return ("Sustained Voice", "You held the room for the full duration. Authority is endurance.")
+                return ("Sustained Voice", "This line came from a rep sustained beyond 45 seconds. Next, test whether the close stays equally direct.")
             } else {
-                return ("Direct Move", "A direct claim, no softeners. That's the authoritative move.")
+                return ("Direct Move", "This complete line is one example. Repeat it before treating directness as a pattern.")
             }
         case .warm:
             if cleanRep {
@@ -524,39 +540,39 @@ actor ProofMomentService {
             }
         case .concise:
             if cleanRep || strongRep {
-                return ("BLUF", "Bottom line up front. Crisp. That's concision earning its keep.")
+                return ("BLUF", "This line came from a clean or high-scoring rep. Now test whether you can say it with fewer words.")
             } else {
-                return ("Trim Move", "You cut to the point. The next move is doing it in one fewer word.")
+                return ("Trim Move", "This complete line gives you something to trim. Try it again in one fewer phrase.")
             }
         case .persuasive:
             if strongRep {
-                return ("Structured Claim", "Premise, evidence, recommendation — in that order. That's a persuasive frame.")
+                return ("Structured Claim", "This line came from a high-scoring rep. Test whether a listener can name the evidence and recommendation.")
             } else if longRep {
-                return ("Argument Arc", "You held the through-line. Persuasion is about not losing the thread.")
+                return ("Argument Arc", "You sustained the rep beyond 45 seconds. Next, check whether this line still supports the main claim.")
             } else {
-                return ("Anchor Phrase", "A clear claim to hang the rest on. That's the move persuasion needs first.")
+                return ("Anchor Phrase", "This complete line can be tested as an anchor. Follow it with one concrete piece of evidence.")
             }
         case .executive:
             if cleanRep || strongRep {
-                return ("Top-Line First", "You led with the verdict. That's executive presence in one move.")
+                return ("Top-Line First", "This line came from a clean or high-scoring rep. Test it as the opening verdict next time.")
             } else {
-                return ("Composed Delivery", "Steady, no rush. Executive register is calm under attention — you had it.")
+                return ("Composed Delivery", "This complete line is one data point. Repeat it under pressure before calling the delivery composed.")
             }
         case .storytelling:
             if longRep {
-                return ("Scene Set", "You painted the scene. Stories live in the specifics you chose to surface.")
+                return ("Scene Set", "This line came from a rep sustained beyond 45 seconds. Test whether it gives the listener a concrete scene.")
             } else if strongRep {
-                return ("Vivid Choice", "A specific image, not an abstraction. That's the storytelling move.")
+                return ("Vivid Choice", "This line came from a high-scoring rep. Test whether a listener can picture one concrete detail.")
             } else {
-                return ("Anchor Detail", "One concrete detail. That's the foundation a story needs.")
+                return ("Anchor Detail", "This complete line is a candidate anchor. Add one observable detail before treating it as a story beat.")
             }
         case .none:
             if cleanRep {
                 return ("Clean Rep", "No fillers across the full duration. That's a solid baseline move.")
             } else if strongRep {
-                return ("Strong Delivery", "A high-score rep — the moves you made this time hold up.")
+                return ("Strong Delivery", "This line came from a high-scoring rep. Repeat it before treating the result as a pattern.")
             } else {
-                return ("Forward Motion", "A real attempt at the move. Repetition turns this into instinct.")
+                return ("Forward Motion", "This complete line is one usable example. Repetition will show whether it holds.")
             }
         }
     }

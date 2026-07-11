@@ -644,8 +644,7 @@ struct UserTrajectoryCacheTests {
 struct CoachAssessmentCacheTests {
 
     @Test func repeatedInputsReuseTypedAssessment() {
-        let cache = CoachAssessmentCache.shared
-        cache.invalidate()
+        let cache = CoachAssessmentCache()
         var buildCount = 0
         let trajectory = Self.trajectory()
         let rubric = ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative)
@@ -693,12 +692,10 @@ struct CoachAssessmentCacheTests {
         #expect(second.cacheHit == true)
         #expect(buildCount == 1)
         #expect(second.assessment == first.assessment)
-        cache.invalidate()
     }
 
     @Test func recentProofTestsChangeAssessmentSignature() {
-        let cache = CoachAssessmentCache.shared
-        cache.invalidate()
+        let cache = CoachAssessmentCache()
         var buildCount = 0
         let trajectory = Self.trajectory()
         let rubric = ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative)
@@ -746,7 +743,6 @@ struct CoachAssessmentCacheTests {
         #expect(second.cacheHit == false)
         #expect(buildCount == 2)
         #expect(second.assessment.nextProofTest != first.assessment.nextProofTest)
-        cache.invalidate()
     }
 
     private static func trajectory() -> UserTrajectorySnapshot {

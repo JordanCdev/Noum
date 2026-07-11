@@ -626,13 +626,12 @@ struct LiveCoachCallView: View {
             .buttonStyle(.plain)
             .disabled(disabled)
             .opacity(disabled ? 0.4 : 1)
+            .accessibilityLabel(accessibilityLabel ?? label)
             Text(label)
                 .font(Typography.caption)
                 .foregroundStyle(.white.opacity(0.6))
+                .accessibilityHidden(true)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel ?? label)
-        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: - Hands-free loop

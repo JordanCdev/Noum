@@ -832,6 +832,8 @@ final class AskNoumStore: ObservableObject {
             #else
             return "Noum is temporarily unavailable. Your message is still here."
             #endif
+        case .consentRequired:
+            return "Cloud coaching is off. Your message is still here. You can allow it in Settings > Cloud Processing."
         case .unauthenticated:
             return "Noum is temporarily unavailable. Your message is still here."
         case .rateLimited:

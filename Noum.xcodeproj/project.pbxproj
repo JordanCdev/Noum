@@ -163,7 +163,9 @@
 				PRIVACY_AUDIT.md,
 				PRIVACY_EXECUTION.md,
 				PRIVACY_REMEDIATION.md,
+				Transcribe.plist,
 				Transcribe.plist.example,
+				TranscriptionProviders.plist,
 				TranscriptionProviders.plist.example,
 			);
 			target = 0B981F6B2D44610E008F4158 /* Noum */;

@@ -47,6 +47,8 @@ import os
 enum ChatFailure: Equatable {
     /// No AI provider has a usable API key configured.
     case noProvider
+    /// This account has not granted the current cloud-processing disclosure.
+    case consentRequired
     /// Firebase callable rejected the request because no authenticated
     /// session was attached.
     case unauthenticated
@@ -1242,6 +1244,7 @@ actor AICoachChatService {
     private let semanticGateDryRunOverride: (() -> Bool)?
     private let diagnosticRecorder: CoachChatDiagnosticRecorder
     private let secureTransport: any CoachChatTransport
+    private let cloudProcessingAllowed: () async -> Bool
 
     /// Cap on the number of chat messages we replay to the model per
     /// request. The user context block carries the long-arc summary,
@@ -1292,12 +1295,20 @@ actor AICoachChatService {
         self.semanticGateDryRunOverride = nil
         self.diagnosticRecorder = Self.defaultDiagnosticRecorder
         self.secureTransport = FirebaseCoachChatTransport()
+        self.cloudProcessingAllowed = {
+            await MainActor.run {
+                AISettingsManager.shared.isCloudProcessingAllowed
+            }
+        }
     }
 
     /// Focused injection point for secure-transport contract tests. Runtime
     /// uses the private shared initializer above; no alternate state owner is
     /// introduced.
-    init(secureTransport: any CoachChatTransport) {
+    init(
+        secureTransport: any CoachChatTransport,
+        cloudProcessingAllowed: @escaping () async -> Bool = { true }
+    ) {
         self.keyedProvidersOverride = nil
         self.keyLookupOverride = nil
         self.localeSupportsAIOverride = { true }
@@ -1305,6 +1316,7 @@ actor AICoachChatService {
         self.semanticGateDryRunOverride = nil
         self.diagnosticRecorder = Self.defaultDiagnosticRecorder
         self.secureTransport = secureTransport
+        self.cloudProcessingAllowed = cloudProcessingAllowed
     }
 
     init(
@@ -1314,7 +1326,8 @@ actor AICoachChatService {
         providerHTTP: @escaping (CoachChatProvider, URL, String, [String: Any]) async throws -> ProviderHTTPResult,
         semanticGateDryRun: (() -> Bool)? = nil,
         diagnosticRecorder: CoachChatDiagnosticRecorder? = nil,
-        secureTransport: any CoachChatTransport = FirebaseCoachChatTransport()
+        secureTransport: any CoachChatTransport = FirebaseCoachChatTransport(),
+        cloudProcessingAllowed: @escaping () async -> Bool = { true }
     ) {
         self.keyedProvidersOverride = keyedProviders
         self.keyLookupOverride = keyLookup
@@ -1323,6 +1336,7 @@ actor AICoachChatService {
         self.semanticGateDryRunOverride = semanticGateDryRun
         self.diagnosticRecorder = diagnosticRecorder ?? Self.defaultDiagnosticRecorder
         self.secureTransport = secureTransport
+        self.cloudProcessingAllowed = cloudProcessingAllowed
     }
 
     init(
@@ -1331,7 +1345,8 @@ actor AICoachChatService {
         localeSupportsAI: @escaping () -> Bool,
         semanticGateDryRun: (() -> Bool)? = nil,
         diagnosticRecorder: CoachChatDiagnosticRecorder? = nil,
-        secureTransport: any CoachChatTransport = FirebaseCoachChatTransport()
+        secureTransport: any CoachChatTransport = FirebaseCoachChatTransport(),
+        cloudProcessingAllowed: @escaping () async -> Bool = { true }
     ) {
         self.keyedProvidersOverride = keyedProviders
         self.keyLookupOverride = keyLookup
@@ -1340,6 +1355,7 @@ actor AICoachChatService {
         self.semanticGateDryRunOverride = semanticGateDryRun
         self.diagnosticRecorder = diagnosticRecorder ?? Self.defaultDiagnosticRecorder
         self.secureTransport = secureTransport
+        self.cloudProcessingAllowed = cloudProcessingAllowed
     }
 
     /// Send a turn to the model. Returns `.reply(text)` on a live success or
@@ -1414,6 +1430,11 @@ actor AICoachChatService {
             ) {
                 return .failure(.network)
             }
+        }
+
+        guard await cloudProcessingAllowed() else {
+            recordChatDiagnostic(.skipped, "Cloud processing not allowed")
+            return .failure(.consentRequired)
         }
 
         // M13: AI surfaces are English-only. Non-English chat now resolves as

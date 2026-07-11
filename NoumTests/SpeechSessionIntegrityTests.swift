@@ -242,6 +242,11 @@ struct SpeechSessionIntegrityTests {
         #expect(noLocalModel.isEmpty)
     }
 
+    @Test("Unset production provider resolves to authenticated Deepgram")
+    func productionProviderDefault() {
+        #expect(TranscriptionProviderID.resolved(fromStoredValue: nil) == .deepgram)
+    }
+
     @Test("Pressure evidence replaces interim words with the terminal transcript")
     func pressureEvidenceReconciliation() {
         var log = PressureSessionTranscriptLog()

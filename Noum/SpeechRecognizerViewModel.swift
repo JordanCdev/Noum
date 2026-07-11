@@ -266,8 +266,16 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     private static func resolveProvider() -> any TranscriptionProvider {
+        #if DEBUG
         let selected = UserDefaults.standard.string(forKey: "transcriptionProvider")
         return makeProvider(for: TranscriptionProviderID.resolved(fromStoredValue: selected))
+        #else
+        // Release builds have one authenticated cloud route. Ignore any
+        // provider preference left behind by an internal build so production
+        // can never fall back to the retired AWS credential endpoint or a
+        // client-side Google key.
+        return DeepgramProvider()
+        #endif
     }
 
     /// Shared provider factory. The live coach call (`AskNoumVoiceInput`)

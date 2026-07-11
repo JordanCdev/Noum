@@ -406,6 +406,12 @@ enum AskNoumDayZeroGreeting {
         sessionCount < 1
     }
 
+    /// Persisted chat can survive a profile or session reset. It becomes
+    /// visible again only after this account has produced fresh evidence.
+    static func canDisplayPersistedThread(sessionCount: Int) -> Bool {
+        !isActive(sessionCount: sessionCount)
+    }
+
     /// Deterministic seeded greeting. Acknowledges the stated challenge
     /// and/or chosen voice using enum-derived copy only, states plainly
     /// that there is no read yet (weak evidence → soft language), and
@@ -562,6 +568,12 @@ struct AskNoumView: View {
         AskNoumDayZeroGreeting.isActive(sessionCount: sessionStore.sessions.count)
     }
 
+    private var canDisplayPersistedThread: Bool {
+        AskNoumDayZeroGreeting.canDisplayPersistedThread(
+            sessionCount: sessionStore.sessions.count
+        )
+    }
+
     /// True once the thread has scrolled up past a small threshold. Collapses
     /// the header to a compact bar (small orb + name, no subtitle) so the
     /// conversation gets the screen back. The 24pt deadband keeps the header
@@ -569,7 +581,7 @@ struct AskNoumView: View {
     /// when there are messages to scroll — the empty state never scrolls far
     /// enough to trip it, so the full header greets a first-time user.
     private var isHeaderCompact: Bool {
-        !store.messages.isEmpty || scrollOffset < -24
+        (canDisplayPersistedThread && !store.messages.isEmpty) || scrollOffset < -24
     }
 
     private var characterStage: NoumCharacter.Stage {
@@ -583,6 +595,7 @@ struct AskNoumView: View {
     /// `.calm` greeting before the first message. Pure read — no state, same
     /// shape as `isHeaderCompact`.
     private var orbMood: NoumCharacter.Mood {
+        if isDayZero { return .calm }
         if store.isAwaitingReply || revealingMessageID != nil { return .thinking }
         return store.messages.isEmpty ? .calm : .coaching
     }
@@ -625,8 +638,12 @@ struct AskNoumView: View {
                         .frame(height: 0)
 
                         VStack(spacing: Spacing.md) {
-                            if store.messages.isEmpty {
-                                emptyState
+                            if isDayZero {
+                                // Persisted messages can outlive a profile/session reset.
+                                // Keep them quarantined until this account has fresh evidence.
+                                dayZeroIntroCard
+                            } else if store.messages.isEmpty {
+                                standardEmptyState
                             } else {
                                 ForEach(store.messages) { message in
                                     messageRow(message: message)
@@ -707,7 +724,7 @@ struct AskNoumView: View {
                             // The reply hydrated — fire the AI chip request for
                             // the freshly landed coach message (idempotent;
                             // cache-deduped).
-                            if let coachID = latestLandedCoachID {
+                            if canDisplayPersistedThread, let coachID = latestLandedCoachID {
                                 requestAIChipsIfNeeded(for: coachID)
                             }
                             // Reveal the landed reply word by word. Normally the
@@ -867,7 +884,7 @@ struct AskNoumView: View {
 
     @ViewBuilder
     private var currentFocusStrip: some View {
-        if !store.messages.isEmpty,
+        if canDisplayPersistedThread, !store.messages.isEmpty,
            let line = Self.currentFocusValue(caseFile: coachMemoryStore.currentMemory?.caseFile) {
             HStack(spacing: 6) {
                 Image(systemName: "scope")
@@ -949,9 +966,9 @@ struct AskNoumView: View {
     }
 
     private var shouldShowThreadOptions: Bool {
-        // "Your trajectory" is always available, so the menu itself is
-        // always worth showing now.
-        true
+        // A pre-rep account has no current thread evidence. Keep any restored
+        // history quarantined until a fresh rep re-opens the coaching thread.
+        canDisplayPersistedThread
     }
 
     private func toggleSpokenReplies() {
@@ -1025,18 +1042,6 @@ struct AskNoumView: View {
     }
 
     // MARK: - Empty state (starter prompts)
-
-    @ViewBuilder
-    private var emptyState: some View {
-        if isDayZero {
-            // Seeded day-0 presence — deterministic greeting only. No
-            // starter prompts (they dispatch LLM replies, which stay
-            // gated on rep 1) and no AI starter generation task.
-            dayZeroIntroCard
-        } else {
-            standardEmptyState
-        }
-    }
 
     /// Day-0 seeded greeting card. Same chrome as the standard empty
     /// state so the surface reads as the same coach, one day earlier.

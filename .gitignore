@@ -64,3 +64,6 @@ tools/coach-arena/.env.local
 
 # local Anthropic key for live arena runs (never commit; rotate after use)
 .noum_anthropic_key
+
+# Firebase CLI local hosting/deploy cache.
+.firebase/

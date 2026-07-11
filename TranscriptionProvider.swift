@@ -247,7 +247,11 @@ final class TranscriptionAudioPump: @unchecked Sendable {
         onFailure: @escaping @Sendable (Error) -> Void
     ) {
         var capturedContinuation: AsyncStream<Data>.Continuation!
-        let stream = AsyncStream<Data>(bufferingPolicy: .bufferingNewest(256)) {
+        // Microphone callbacks cannot block. Preserve every accepted buffer in
+        // order and reject the newest one if provider backpressure exceeds the
+        // bounded queue. The caller then invalidates the attempt; unlike a
+        // newest-buffer policy, no earlier accepted speech is silently evicted.
+        let stream = AsyncStream<Data>(bufferingPolicy: .bufferingOldest(256)) {
             capturedContinuation = $0
         }
         continuation = capturedContinuation

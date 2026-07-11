@@ -238,7 +238,6 @@ final class PremiumManager: ObservableObject {
     var canUseCoachMode: Bool { isPremium }
     var canUseLiveTranscript: Bool { isPremium }
     var canViewCoachingInsights: Bool { isPremium }
-    var canSaveTranscripts: Bool { isPremium }
     var canUseFillerTracking: Bool { isPremium }
     var canViewTrends: Bool { isPremium }
     var canRecordVideo: Bool { isPremium }
@@ -254,9 +253,6 @@ final class PremiumManager: ObservableObject {
 
     // Free users can create 1 async challenge at a time; premium unlimited
     var asyncChallengeLimit: Int { isPremium ? .max : 1 }
-
-    // Transcript limits for free users
-    var savedTranscriptLimit: Int { isPremium ? .max : 3 }
 
     // MARK: - Product Helpers
 
@@ -468,7 +464,7 @@ struct PaywallView: View {
 
                                 featureRow(icon: "text.magnifyingglass", title: "Ask Noum", description: "A coaching thread grounded in your recent reps")
                                 featureRow(icon: "chart.line.uptrend.xyaxis", title: "Deeper review", description: "See meaningful change and the next move")
-                                featureRow(icon: "tray.full.fill", title: "Practice history", description: "Return to transcripts, delivery reads, and saved evidence")
+                                featureRow(icon: "video.fill", title: "Video analysis", description: "Review delivery from saved practice recordings")
 
                                 Divider()
                                     .padding(.vertical, Spacing.xs)

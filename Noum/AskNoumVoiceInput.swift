@@ -473,8 +473,14 @@ final class AskNoumVoiceInput: ObservableObject {
         let nativeAvailable = recognizer.map {
             $0.isAvailable && (cloudProcessingAllowed || $0.supportsOnDeviceRecognition)
         } == true
+        #if DEBUG
+        let configuredProvider = UserDefaults.standard.string(forKey: "transcriptionProvider")
+        #else
+        // The App Store build has one authenticated cloud speech route.
+        let configuredProvider: String? = nil
+        #endif
         let order = LiveCallSTTChain.engineOrder(
-            configuredProviderRawValue: UserDefaults.standard.string(forKey: "transcriptionProvider"),
+            configuredProviderRawValue: configuredProvider,
             cloudMarkedUnhealthy: cloudUnhealthy,
             nativeAvailable: nativeAvailable,
             cloudProcessingAllowed: cloudProcessingAllowed
