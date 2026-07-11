@@ -17,6 +17,15 @@ struct BackendBootstrap: Codable {
     let recommendationOutcomes: [RecommendationOutcome]?
 }
 
+enum BackendBootstrapFetchResult {
+    /// The backend answered successfully. A nil profile in this payload is a
+    /// confirmed absence and may legitimately lead to onboarding.
+    case success(BackendBootstrap)
+    /// Configuration, transport, authorization, or decoding did not produce
+    /// an authoritative answer. This must never be treated as an empty account.
+    case unavailable
+}
+
 private struct RecommendationSyncPayload: Codable {
     let pendingExposure: RecommendationExposure?
     let outcomes: [RecommendationOutcome]
@@ -39,29 +48,33 @@ actor BackendSyncManager {
         firebaseIsConfigured || baseURL != nil
     }
 
-    func fetchBootstrap(accountID: String, providerRawValue: String) async -> BackendBootstrap? {
+    func fetchBootstrap(accountID: String, providerRawValue: String) async -> BackendBootstrapFetchResult {
 #if canImport(FirebaseFirestore)
         if firebaseIsConfigured {
-            return await fetchFirebaseBootstrap(accountID: accountID, providerRawValue: providerRawValue)
+            return await fetchFirebaseBootstrap(accountID: accountID)
         }
 #endif
-        guard let request = await request(
+        guard var request = await request(
             path: "/v1/me/bootstrap",
             method: "GET",
             accountID: accountID,
             providerRawValue: providerRawValue
         ) else {
-            return nil
+            return .unavailable
         }
+        request.cachePolicy = .reloadIgnoringLocalCacheData
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
-                return nil
+            guard let httpResponse = response as? HTTPURLResponse else {
+                return .unavailable
             }
-            return try JSONDecoder().decode(BackendBootstrap.self, from: data)
+            guard (200..<300).contains(httpResponse.statusCode) else {
+                return .unavailable
+            }
+            return .success(try JSONDecoder().decode(BackendBootstrap.self, from: data))
         } catch {
-            return nil
+            return .unavailable
         }
     }
 
@@ -268,18 +281,28 @@ actor BackendSyncManager {
 
 #if canImport(FirebaseFirestore)
 private extension BackendSyncManager {
-    func fetchFirebaseBootstrap(accountID: String, providerRawValue: String) async -> BackendBootstrap? {
+    func fetchFirebaseBootstrap(accountID: String) async -> BackendBootstrapFetchResult {
         let userRef = userDocument(accountID: accountID)
-        await ensureFirebaseUserDocument(accountID: accountID, providerRawValue: providerRawValue)
 
         do {
-            async let profileDocument = getDocument(userRef.collection("profile").document("main"))
-            async let progressionDocument = getDocument(userRef.collection("progress").document("main"))
+            // Server-only reads make a successful missing profile authoritative.
+            // Cached absence while offline remains `.unavailable`, never a cue
+            // to overwrite a delayed cloud profile through onboarding.
+            async let profileDocument = getDocument(
+                userRef.collection("profile").document("main"),
+                source: .server
+            )
+            async let progressionDocument = getDocument(
+                userRef.collection("progress").document("main"),
+                source: .server
+            )
             async let sessionDocuments = getDocuments(
-                userRef.collection("sessions").order(by: "date", descending: true).limit(to: 100)
+                userRef.collection("sessions").order(by: "date", descending: true).limit(to: 100),
+                source: .server
             )
             async let recommendationStateDocument = getDocument(
-                userRef.collection("recommendations").document("state")
+                userRef.collection("recommendations").document("state"),
+                source: .server
             )
 
             let profileSnapshot = try await profileDocument
@@ -287,7 +310,16 @@ private extension BackendSyncManager {
             let sessionSnapshots = try await sessionDocuments
             let recommendationStateSnapshot = try await recommendationStateDocument
 
-            let profile = try decodeDocument(CoachingProfile.self, from: profileSnapshot?.data())
+            guard let profileSnapshot else { return .unavailable }
+            let profile: CoachingProfile?
+            if profileSnapshot.exists {
+                guard let decoded = try decodeDocument(CoachingProfile.self, from: profileSnapshot.data()) else {
+                    return .unavailable
+                }
+                profile = decoded
+            } else {
+                profile = nil
+            }
             let xp = progressionSnapshot?.data()?["xp"] as? Int
             let sessions = try sessionSnapshots.compactMap { try decodeDocument(PracticeSession.self, from: $0.data()) }
             let recommendationPending = try decodeDocument(
@@ -299,15 +331,15 @@ private extension BackendSyncManager {
                 from: recommendationStateSnapshot?.data()?["outcomes"] as? [[String: Any]]
             )
 
-            return BackendBootstrap(
+            return .success(BackendBootstrap(
                 xp: xp,
                 profile: profile,
                 sessions: sessions.isEmpty ? nil : sessions,
                 recommendationPending: recommendationPending,
                 recommendationOutcomes: recommendationOutcomes.isEmpty ? nil : recommendationOutcomes
-            )
+            ))
         } catch {
-            return nil
+            return .unavailable
         }
     }
 
@@ -473,9 +505,12 @@ private extension BackendSyncManager {
         return try decoder.decode([T].self, from: data)
     }
 
-    func getDocument(_ reference: DocumentReference) async throws -> DocumentSnapshot? {
+    func getDocument(
+        _ reference: DocumentReference,
+        source: FirestoreSource = .default
+    ) async throws -> DocumentSnapshot? {
         try await withCheckedThrowingContinuation { continuation in
-            reference.getDocument { snapshot, error in
+            reference.getDocument(source: source) { snapshot, error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else {
@@ -485,9 +520,12 @@ private extension BackendSyncManager {
         }
     }
 
-    func getDocuments(_ query: Query) async throws -> [QueryDocumentSnapshot] {
+    func getDocuments(
+        _ query: Query,
+        source: FirestoreSource = .default
+    ) async throws -> [QueryDocumentSnapshot] {
         try await withCheckedThrowingContinuation { continuation in
-            query.getDocuments { snapshot, error in
+            query.getDocuments(source: source) { snapshot, error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else {

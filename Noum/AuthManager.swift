@@ -101,9 +101,20 @@ private final class AnonymousFirebaseBootstrapRace {
 }
 
 enum InitialRemoteProfileHydrationOutcome {
-    case fetched(BackendBootstrap?)
+    case fetched(BackendBootstrapFetchResult)
     case timedOut
     case superseded
+}
+
+enum InitialRemoteProfileHydrationDisposition: Equatable {
+    case ready
+    case retry
+    case superseded
+}
+
+enum GuestIdentityHydrationOrigin {
+    case freshlyCreated
+    case restored
 }
 
 /// One-shot boundary for the initial remote profile read. Firestore writes may
@@ -141,6 +152,8 @@ class AuthManager: ObservableObject {
 
     static let missingCredentialsMessage =
         "Live transcription isn't available in this build."
+    static let remoteProfileRecoveryMessage =
+        "Noum couldn't confirm your saved coaching profile. Check your connection and try again."
 
     @Published var isSignedIn: Bool = false
     @Published var signInError: String?
@@ -204,6 +217,13 @@ class AuthManager: ObservableObject {
             accountID: persistedAccountID,
             providerRawValue: persistedProviderRawValue
         )
+    }
+
+    nonisolated static func shouldRehydrateDurableIdentityOnRetry(
+        accountID: String?,
+        providerRawValue: String?
+    ) -> Bool {
+        hasDurableIdentity(accountID: accountID, providerRawValue: providerRawValue)
     }
 
     nonisolated static func userFacingDisplayName(
@@ -399,7 +419,7 @@ class AuthManager: ObservableObject {
                 hydrateStoresForCurrentAccount(
                     accountID: accountID,
                     providerRawValue: providerRawValue,
-                    fetchRemote: true
+                    fetchRemote: Self.shouldFetchRemoteForDurableIdentity(accountID: accountID)
                 )
             }
             return
@@ -435,7 +455,10 @@ class AuthManager: ObservableObject {
                         accountID: accountID,
                         name: name,
                         provider: .guest,
-                        fetchRemote: true
+                        fetchRemote: Self.shouldFetchRemoteForGuestIdentity(
+                            accountID: accountID,
+                            origin: .freshlyCreated
+                        )
                     ) {
                         return
                     }
@@ -454,7 +477,20 @@ class AuthManager: ObservableObject {
     }
 
     func retryInitialAccountBootstrap() async {
-        guard currentAccountID == nil else { return }
+        guard isInitialBootstrapFailure else { return }
+        signInError = nil
+        if Self.shouldRehydrateDurableIdentityOnRetry(
+            accountID: currentAccountID,
+            providerRawValue: currentAuthProviderRawValue
+        ), let accountID = currentAccountID,
+           let providerRawValue = currentAuthProviderRawValue {
+            hydrateStoresForCurrentAccount(
+                accountID: accountID,
+                providerRawValue: providerRawValue,
+                fetchRemote: Self.shouldFetchRemoteForDurableIdentity(accountID: accountID)
+            )
+            return
+        }
         initialAccountHydrationState = .needsIdentity
         await bootstrapInitialAccountIfNeeded()
     }
@@ -564,7 +600,7 @@ class AuthManager: ObservableObject {
         hydrateStoresForCurrentAccount(
             accountID: accountID,
             providerRawValue: provider.rawValue,
-            fetchRemote: !Self.isLocalGuestAccountID(accountID)
+            fetchRemote: Self.shouldFetchRemoteForDurableIdentity(accountID: accountID)
         )
         if let creds = Self.loadCredentials() {
             self.credentialIdentity = creds.identity
@@ -919,36 +955,45 @@ class AuthManager: ObservableObject {
             self.reloadAccountScopedStores()
 
             // A locally saved profile is enough to route immediately. When a
-            // non-guest account has no local profile (for example, first use on
-            // a second device), finish one backend bootstrap read before
-            // deciding that onboarding is genuinely needed.
-            let shouldAwaitRemoteProfile = fetchRemote
-                && providerRawValue != AuthProvider.guest.rawValue
-                && CoachingProfileStore.shared.profile == nil
+            // remote-backed account has no local profile (for example, first
+            // use on a second device), finish one authoritative backend read
+            // before deciding that onboarding is genuinely needed.
+            let shouldAwaitRemoteProfile = Self.shouldAwaitAuthoritativeRemoteProfile(
+                fetchRemote: fetchRemote,
+                hasLocalProfile: CoachingProfileStore.shared.profile != nil
+            )
 
             if shouldAwaitRemoteProfile {
                 let outcome = await self.boundedInitialRemoteProfileHydration(
                     accountID: accountID,
                     providerRawValue: providerRawValue
                 )
-                switch outcome {
-                case .fetched(let bootstrap):
+                switch Self.initialRemoteProfileHydrationDisposition(for: outcome) {
+                case .ready:
                     guard self.isCurrentHydration(
                         generation: generation,
                         accountID: accountID,
                         providerRawValue: providerRawValue
                     ) else { return }
-                    if let bootstrap {
-                        self.applyBackendBootstrap(
-                            bootstrap,
-                            accountID: accountID,
-                            providerRawValue: providerRawValue,
-                            generation: generation,
-                            expectedProfile: nil
-                        )
-                    }
-                case .timedOut:
-                    break
+                    guard case .fetched(.success(let bootstrap)) = outcome else { return }
+                    self.applyBackendBootstrap(
+                        bootstrap,
+                        accountID: accountID,
+                        providerRawValue: providerRawValue,
+                        generation: generation,
+                        expectedProfile: nil
+                    )
+                case .retry:
+                    guard self.isCurrentHydration(
+                        generation: generation,
+                        accountID: accountID,
+                        providerRawValue: providerRawValue
+                    ) else { return }
+                    self.signInError = Self.remoteProfileRecoveryMessage
+                    self.initialAccountHydrationState = .failed(
+                        message: Self.remoteProfileRecoveryMessage
+                    )
+                    return
                 case .superseded:
                     return
                 }
@@ -1101,6 +1146,29 @@ class AuthManager: ObservableObject {
 
     private static func isLocalGuestAccountID(_ accountID: String) -> Bool {
         accountID.hasPrefix(localGuestPrefix)
+    }
+
+    static func shouldFetchRemoteForDurableIdentity(accountID: String) -> Bool {
+        shouldFetchRemoteForGuestIdentity(accountID: accountID, origin: .restored)
+    }
+
+    static func shouldFetchRemoteForGuestIdentity(
+        accountID: String,
+        origin: GuestIdentityHydrationOrigin
+    ) -> Bool {
+        switch origin {
+        case .freshlyCreated:
+            return false
+        case .restored:
+            return !isLocalGuestAccountID(accountID)
+        }
+    }
+
+    nonisolated static func shouldAwaitAuthoritativeRemoteProfile(
+        fetchRemote: Bool,
+        hasLocalProfile: Bool
+    ) -> Bool {
+        fetchRemote && !hasLocalProfile
     }
 
     #if canImport(FirebaseAuth)
@@ -1288,16 +1356,30 @@ class AuthManager: ObservableObject {
         expectedProfile == currentProfile
     }
 
+    static func initialRemoteProfileHydrationDisposition(
+        for outcome: InitialRemoteProfileHydrationOutcome
+    ) -> InitialRemoteProfileHydrationDisposition {
+        switch outcome {
+        case .fetched(.success):
+            return .ready
+        case .fetched(.unavailable), .timedOut:
+            return .retry
+        case .superseded:
+            return .superseded
+        }
+    }
+
     private func fetchAndApplyBackendBootstrap(
         accountID: String,
         providerRawValue: String,
         generation: UUID,
         expectedProfile: CoachingProfile?
     ) async {
-        guard let bootstrap = await BackendSyncManager.shared.fetchBootstrap(
+        let result = await BackendSyncManager.shared.fetchBootstrap(
             accountID: accountID,
             providerRawValue: providerRawValue
-        ) else {
+        )
+        guard case .success(let bootstrap) = result else {
             return
         }
 

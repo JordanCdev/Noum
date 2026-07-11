@@ -134,6 +134,36 @@ struct FirebaseBootstrapTests {
         #expect(!FirebaseBootstrap.shouldStartOptionalServices(configurationPresent: true, configured: false))
         #expect(FirebaseBootstrap.shouldStartOptionalServices(configurationPresent: true, configured: true))
     }
+
+    @Test func authManagerIsTheOnlyAnonymousAuthenticationSourceOwner() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceDirectory = repositoryRoot.appendingPathComponent("Noum", isDirectory: true)
+        let swiftSources = try FileManager.default
+            .subpathsOfDirectory(atPath: sourceDirectory.path)
+            .filter { $0.hasSuffix(".swift") }
+
+        var owners: [String] = []
+        for relativePath in swiftSources {
+            let sourceURL = sourceDirectory.appendingPathComponent(relativePath)
+            let source = try String(contentsOf: sourceURL, encoding: .utf8)
+            if source.contains(".signInAnonymously") {
+                owners.append(relativePath)
+            }
+        }
+        #expect(owners.sorted() == ["AuthManager.swift"])
+
+        let bootstrapSource = try String(
+            contentsOf: sourceDirectory.appendingPathComponent("FirebaseBootstrap.swift"),
+            encoding: .utf8
+        )
+        #expect(!bootstrapSource.contains("import FirebaseAuth"))
+        #expect(bootstrapSource.contains("private static let runtimeServicesReady"))
+        #expect(bootstrapSource.contains("FirebaseApp.configure()"))
+        #expect(bootstrapSource.contains("AppCheck.setAppCheckProviderFactory"))
+        #expect(bootstrapSource.contains("RemoteConfig.remoteConfig()"))
+    }
 }
 
 // MARK: - Filler Detection Confidence Tests
@@ -13922,13 +13952,13 @@ struct FirstRunFrictionContractTests {
             didTimeOut = false
         }
         #expect(didTimeOut)
-        #expect(!race.resolve(.fetched(nil)))
+        #expect(!race.resolve(.fetched(.unavailable)))
     }
 
     @MainActor
-    @Test func fetchedRemoteProfileCanWinBeforeTheDeadline() async {
+    @Test func fetchedRemoteResultCanWinBeforeTheDeadline() async {
         let race = InitialRemoteProfileHydrationRace()
-        #expect(race.resolve(.fetched(nil)))
+        #expect(race.resolve(.fetched(.unavailable)))
         let outcome = await AuthManager.waitForInitialRemoteProfileHydration(
             race: race,
             timeoutNanoseconds: 0
@@ -13941,6 +13971,72 @@ struct FirstRunFrictionContractTests {
         }
         #expect(didFetch)
         #expect(!race.resolve(.timedOut))
+    }
+
+    @MainActor
+    @Test func onlyConfirmedRemoteAbsenceCanAdvanceToOnboarding() {
+        let confirmedEmpty = BackendBootstrap(
+            xp: nil,
+            profile: nil,
+            sessions: nil,
+            recommendationPending: nil,
+            recommendationOutcomes: nil
+        )
+
+        #expect(AuthManager.initialRemoteProfileHydrationDisposition(
+            for: .fetched(.success(confirmedEmpty))
+        ) == .ready)
+        #expect(AuthManager.initialRemoteProfileHydrationDisposition(
+            for: .fetched(.unavailable)
+        ) == .retry)
+        #expect(AuthManager.initialRemoteProfileHydrationDisposition(
+            for: .timedOut
+        ) == .retry)
+        #expect(AuthManager.initialRemoteProfileHydrationDisposition(
+            for: .superseded
+        ) == .superseded)
+        #expect(!AuthManager.remoteProfileRecoveryMessage.contains("!"))
+    }
+
+    @Test func retryRehydratesAStillDurableRestoredIdentity() {
+        #expect(AuthManager.shouldRehydrateDurableIdentityOnRetry(
+            accountID: "restored-account",
+            providerRawValue: AuthProvider.apple.rawValue
+        ))
+        #expect(!AuthManager.shouldRehydrateDurableIdentityOnRetry(
+            accountID: nil,
+            providerRawValue: nil
+        ))
+    }
+
+    @MainActor
+    @Test func freshAndRestoredFirebaseGuestsUseDifferentHydrationPolicies() {
+        #expect(!AuthManager.shouldFetchRemoteForGuestIdentity(
+            accountID: "firebase-anonymous-uid",
+            origin: .freshlyCreated
+        ))
+        #expect(AuthManager.shouldFetchRemoteForGuestIdentity(
+            accountID: "firebase-anonymous-uid",
+            origin: .restored
+        ))
+        #expect(AuthManager.shouldFetchRemoteForDurableIdentity(
+            accountID: "firebase-anonymous-uid"
+        ))
+        #expect(!AuthManager.shouldFetchRemoteForDurableIdentity(
+            accountID: "local-guest-offline-id"
+        ))
+        #expect(AuthManager.shouldAwaitAuthoritativeRemoteProfile(
+            fetchRemote: true,
+            hasLocalProfile: false
+        ))
+        #expect(!AuthManager.shouldAwaitAuthoritativeRemoteProfile(
+            fetchRemote: false,
+            hasLocalProfile: false
+        ))
+        #expect(!AuthManager.shouldAwaitAuthoritativeRemoteProfile(
+            fetchRemote: true,
+            hasLocalProfile: true
+        ))
     }
 
     @MainActor

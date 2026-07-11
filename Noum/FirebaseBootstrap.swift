@@ -1,14 +1,11 @@
 // FirebaseBootstrap.swift
-// Centralized Firebase setup: App Check, Core, Auth (anonymous), Remote Config defaults
+// Centralized Firebase setup: App Check, Core, and Remote Config defaults
 
 import Foundation
 import OSLog
 
 #if canImport(FirebaseCore)
 import FirebaseCore
-#endif
-#if canImport(FirebaseAuth)
-import FirebaseAuth
 #endif
 #if canImport(FirebaseAppCheck)
 import FirebaseAppCheck
@@ -35,7 +32,7 @@ public enum FirebaseBootstrap {
         #endif
 
         // Unit-test hosts do not have an app keychain entitlement and should
-        // not exchange App Check tokens or start anonymous/network services.
+        // not exchange App Check tokens or start optional network services.
         // Keep Firebase Core configured so tests that touch Firebase-backed
         // types still see a valid default app. UI automation launches the real
         // app separately with `UI_TESTING`, so it continues through production
@@ -52,6 +49,13 @@ public enum FirebaseBootstrap {
         }
         #endif
 
+        _ = runtimeServicesReady
+    }
+
+    /// Both the SwiftUI stored-property path and the UIKit delegate call
+    /// `configure()`. A static-let initializer is process-wide and thread-safe,
+    /// so App Check and Remote Config start exactly once without mutable flags.
+    private static let runtimeServicesReady: Void = {
         #if canImport(FirebaseAppCheck)
         #if DEBUG || targetEnvironment(simulator)
         // DeviceCheck/App Attest are not available in Simulator, including a
@@ -74,18 +78,6 @@ public enum FirebaseBootstrap {
         ) else { return }
         #endif
 
-        #if canImport(FirebaseAuth)
-        if Auth.auth().currentUser == nil {
-            Auth.auth().signInAnonymously { result, error in
-                if let error = error {
-                    Self.log.error("Anonymous sign-in failed: \(error.localizedDescription, privacy: .private)")
-                } else if result?.user != nil {
-                    Self.log.info("Anonymous Firebase session ready")
-                }
-            }
-        }
-        #endif
-
         #if canImport(FirebaseRemoteConfig)
         let rc = RemoteConfig.remoteConfig()
         let defaults: [String: NSObject] = [
@@ -100,7 +92,7 @@ public enum FirebaseBootstrap {
             }
         }
         #endif
-    }
+    }()
 
     static var hasConfigurationPlist: Bool {
         Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist") != nil
