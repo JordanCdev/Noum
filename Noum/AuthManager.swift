@@ -41,6 +41,65 @@ enum AuthProvider: String {
     }
 }
 
+/// Initial identity + local-store readiness consumed by `NoumApp` before it
+/// chooses onboarding or the main shell. This is account lifecycle state, not
+/// a second onboarding flag.
+enum InitialAccountHydrationState: Equatable {
+    case needsIdentity
+    case establishingGuest
+    case hydratingStores
+    case ready
+    case failed(message: String)
+
+    var hasHydratedAccountStores: Bool {
+        self == .ready
+    }
+
+    var isWorking: Bool {
+        switch self {
+        case .needsIdentity, .establishingGuest, .hydratingStores:
+            return true
+        case .ready, .failed:
+            return false
+        }
+    }
+}
+
+enum AnonymousFirebaseBootstrapOutcome {
+    case account(id: String, name: String?)
+    case unavailable
+    case superseded
+}
+
+/// Main-actor one-shot used to race Firebase's callback against a bounded
+/// timeout without leaving a checked continuation unresolved. A late Firebase
+/// callback is handled separately by AuthManager's generation guard.
+@MainActor
+private final class AnonymousFirebaseBootstrapRace {
+    private var continuation: CheckedContinuation<AnonymousFirebaseBootstrapOutcome, Never>?
+    private var pendingOutcome: AnonymousFirebaseBootstrapOutcome?
+
+    func wait() async -> AnonymousFirebaseBootstrapOutcome {
+        if let pendingOutcome {
+            return pendingOutcome
+        }
+        return await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func resolve(_ outcome: AnonymousFirebaseBootstrapOutcome) {
+        guard pendingOutcome == nil else { return }
+        if let continuation {
+            self.continuation = nil
+            pendingOutcome = outcome
+            continuation.resume(returning: outcome)
+        } else {
+            pendingOutcome = outcome
+        }
+    }
+}
+
 @MainActor
 class AuthManager: ObservableObject {
     static let shared = AuthManager()
@@ -52,16 +111,63 @@ class AuthManager: ObservableObject {
     @Published var signInError: String?
     @Published private(set) var authProvider: AuthProvider?
     @Published private(set) var isGoogleSignInAvailable = false
+    @Published private(set) var initialAccountHydrationState: InitialAccountHydrationState = .needsIdentity
     private var credentialIdentity: AWSCredentialIdentity?
     private(set) var region: String = "eu-west-2"
     private let accountKey = "NoumAccountID"
     private let accountNameKey = "NoumAccountName"
     private let accountProviderKey = "NoumAccountProvider"
     private let installInitializedKey = "NoumHasInitializedInstallState"
+    private var activeGuestBootstrapGeneration: UUID?
+    private var activeGuestBootstrapRace: AnonymousFirebaseBootstrapRace?
+    private var activeAccountHydrationGeneration: UUID?
+    private static let localGuestPrefix = "local-guest-"
+    private static let guestBootstrapTimeoutNanoseconds: UInt64 = 4_000_000_000
     var currentAccountID: String? { KeychainHelper.load(key: accountKey) }
     var currentAccountName: String? { KeychainHelper.load(key: accountNameKey) }
     var currentAuthProviderTitle: String? { authProvider?.title }
     var currentAuthProviderRawValue: String? { KeychainHelper.load(key: accountProviderKey) }
+
+    nonisolated static func hasDurableIdentity(
+        accountID: String?,
+        providerRawValue: String?
+    ) -> Bool {
+        guard let accountID = accountID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !accountID.isEmpty,
+              let providerRawValue,
+              AuthProvider(rawValue: providerRawValue) != nil else {
+            return false
+        }
+        return true
+    }
+
+    nonisolated static func shouldAcceptGuestBootstrapCompletion(
+        generation: UUID,
+        activeGeneration: UUID?
+    ) -> Bool {
+        generation == activeGeneration
+    }
+
+    nonisolated static func shouldEstablishLocalGuest(
+        after outcome: AnonymousFirebaseBootstrapOutcome
+    ) -> Bool {
+        if case .superseded = outcome { return false }
+        return true
+    }
+
+    /// A verified Keychain identity is authoritative across launches. Firebase
+    /// may finish an anonymous request after our timeout/fallback or even after
+    /// process death; that stale SDK session must never replace the local guest
+    /// that owns the persisted profile.
+    nonisolated static func shouldAdoptFirebaseSession(
+        persistedAccountID: String?,
+        persistedProviderRawValue: String?
+    ) -> Bool {
+        !hasDurableIdentity(
+            accountID: persistedAccountID,
+            providerRawValue: persistedProviderRawValue
+        )
+    }
 
     nonisolated static func userFacingDisplayName(
         from rawName: String?,
@@ -106,6 +212,22 @@ class AuthManager: ObservableObject {
         configureGoogleSignInIfAvailable()
 #endif
         #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if Self.shouldUseCleanLocalGuestForFirstRunUITesting(arguments: arguments) {
+            // The real-first-run UI path must prove the empty-Keychain contract,
+            // not inherit a prior simulator account. It deliberately avoids
+            // Firebase so the test has no network dependency.
+            clearStoredSession()
+            #if canImport(FirebaseAuth)
+            if isFirebaseAuthConfigured {
+                try? Auth.auth().signOut()
+            }
+            #endif
+            isSignedIn = false
+            authProvider = nil
+            initialAccountHydrationState = .needsIdentity
+            return
+        }
         // UI automation owns its process-local account and seeded stores. A
         // normal credential restore schedules an account reload/reset on the
         // next actor turn; that can erase `DevSeedData` immediately after the
@@ -113,10 +235,11 @@ class AuthManager: ObservableObject {
         // the real Keychain and Firebase session untouched for the next normal
         // launch while the automation process starts signed out.
         if !Self.shouldRestorePersistedSession(
-            arguments: ProcessInfo.processInfo.arguments
+            arguments: arguments
         ) {
             isSignedIn = false
             authProvider = nil
+            initialAccountHydrationState = .ready
             return
         }
         #endif
@@ -129,6 +252,13 @@ class AuthManager: ObservableObject {
         arguments: [String]
     ) -> Bool {
         !arguments.contains("UI_TESTING")
+    }
+
+    nonisolated static func shouldUseCleanLocalGuestForFirstRunUITesting(
+        arguments: [String]
+    ) -> Bool {
+        arguments.contains("UI_TESTING")
+            && arguments.contains("UI_TESTING_REAL_FIRST_RUN")
     }
     #endif
 
@@ -218,31 +348,85 @@ class AuthManager: ObservableObject {
         loadCredentialsAndAccount()
     }
 
-    func startAnonymousSession() {
-#if canImport(FirebaseAuth)
-        Task {
-            guard isFirebaseAuthConfigured else {
-                completeSignIn(accountID: UUID().uuidString, name: nil, provider: .guest)
-                return
+    /// Establishes the initial durable guest identity before app-level
+    /// onboarding is allowed to save a profile. Firebase anonymous auth is the
+    /// preferred production path; a bounded failure/timeout falls back to a
+    /// Keychain-backed local guest so first run never depends on the network.
+    func bootstrapInitialAccountIfNeeded() async {
+        if Self.hasDurableIdentity(
+            accountID: currentAccountID,
+            providerRawValue: currentAuthProviderRawValue
+        ), let accountID = currentAccountID,
+           let providerRawValue = currentAuthProviderRawValue {
+            if initialAccountHydrationState == .needsIdentity {
+                hydrateStoresForCurrentAccount(
+                    accountID: accountID,
+                    providerRawValue: providerRawValue,
+                    fetchRemote: true
+                )
             }
-            do {
-                let authResult = try await signInAnonymouslyWithFirebase()
-                await MainActor.run {
-                    self.completeSignIn(
-                        accountID: authResult.user.uid,
-                        name: nil,
-                        provider: .guest
-                    )
-                }
-            } catch {
-                await MainActor.run {
-                    self.signInError = "Guest access could not be started right now. Please try again."
-                }
-            }
+            return
         }
-#else
-        completeSignIn(accountID: UUID().uuidString, name: nil, provider: .guest)
-#endif
+        if currentAccountID != nil || currentAuthProviderRawValue != nil {
+            clearStoredSession()
+        }
+        guard initialAccountHydrationState == .needsIdentity
+                || isInitialBootstrapFailure else {
+            return
+        }
+
+        signInError = nil
+        initialAccountHydrationState = .establishingGuest
+
+        #if DEBUG
+        let useLocalOnly = Self.shouldUseCleanLocalGuestForFirstRunUITesting(
+            arguments: ProcessInfo.processInfo.arguments
+        )
+        #else
+        let useLocalOnly = false
+        #endif
+
+        if !useLocalOnly {
+            #if canImport(FirebaseAuth)
+            if isFirebaseAuthConfigured {
+                cancelActiveGuestBootstrap()
+                let generation = UUID()
+                activeGuestBootstrapGeneration = generation
+                let outcome = await boundedFirebaseAnonymousIdentity(generation: generation)
+                if case let .account(accountID, name) = outcome {
+                    if completeSignIn(
+                        accountID: accountID,
+                        name: name,
+                        provider: .guest,
+                        fetchRemote: true
+                    ) {
+                        return
+                    }
+                    if Auth.auth().currentUser?.uid == accountID {
+                        try? Auth.auth().signOut()
+                    }
+                }
+                guard Self.shouldEstablishLocalGuest(after: outcome) else {
+                    return
+                }
+            }
+            #endif
+        }
+
+        establishDurableLocalGuest()
+    }
+
+    func retryInitialAccountBootstrap() async {
+        guard currentAccountID == nil else { return }
+        initialAccountHydrationState = .needsIdentity
+        await bootstrapInitialAccountIfNeeded()
+    }
+
+    func startAnonymousSession() {
+        initialAccountHydrationState = .needsIdentity
+        Task { @MainActor in
+            await bootstrapInitialAccountIfNeeded()
+        }
     }
 
 #if canImport(AuthenticationServices)
@@ -326,6 +510,7 @@ class AuthManager: ObservableObject {
             clearStoredSession()
             isSignedIn = false
             authProvider = nil
+            initialAccountHydrationState = .needsIdentity
             deferStoreSessionReset()
             if let creds = Self.loadCredentials() {
                 self.credentialIdentity = creds.identity
@@ -339,7 +524,11 @@ class AuthManager: ObservableObject {
         #endif
         isSignedIn = true
         authProvider = provider
-        deferStoreReloadForCurrentAccount()
+        hydrateStoresForCurrentAccount(
+            accountID: accountID,
+            providerRawValue: provider.rawValue,
+            fetchRemote: !Self.isLocalGuestAccountID(accountID)
+        )
         if let creds = Self.loadCredentials() {
             self.credentialIdentity = creds.identity
             self.region = creds.region
@@ -466,6 +655,9 @@ class AuthManager: ObservableObject {
     }
 
     func signOut() {
+        cancelActiveGuestBootstrap()
+        activeAccountHydrationGeneration = nil
+        AutoGuidedFirstRep.cancelPendingLaunch()
         credentialIdentity = nil
 #if canImport(GoogleSignIn)
         GIDSignIn.sharedInstance.signOut()
@@ -478,6 +670,10 @@ class AuthManager: ObservableObject {
         clearStoredSession()
         isSignedIn = false
         authProvider = nil
+        // Sign-out is an explicit user choice, not an initial-launch failure.
+        // Keep the app usable in its signed-out state; the next cold launch can
+        // establish a fresh guest identity.
+        initialAccountHydrationState = .ready
         deferStoreSessionReset()
     }
 
@@ -533,7 +729,11 @@ class AuthManager: ObservableObject {
         let defaults = UserDefaults.standard
         let keysToRemove = [
             "coachingProfile.\(accountID)",
+            // Legacy onboarding completion flag. The profile itself is now the
+            // sole completion truth, but deletion still removes older writes.
             "coachingProfileOnboardingComplete.\(accountID)",
+            "\(FirstRunOnboardingGate.legacyCompletedKeyPrefix)\(accountID)",
+            "\(AutoGuidedFirstRep.completedKeyPrefix)\(accountID)",
             "practiceSessions.\(accountID)",
             "skillTrendSnapshots.\(accountID)",
             "communicationBaseline.\(accountID)",
@@ -607,6 +807,12 @@ class AuthManager: ObservableObject {
         defaults.removeObject(forKey: "aiMonthlyAnalysisCount")
         defaults.removeObject(forKey: "aiMonthlyAnalysisMonth")
         defaults.removeObject(forKey: "hasAcknowledgedAIDisclosure.\(accountID)")
+        AutoGuidedFirstRep.cancelPendingLaunch()
+        // Legacy device-local account sighting flags. They no longer drive any
+        // runtime decision, but must not survive account deletion.
+        for provider in [AuthProvider.apple, .google, .guest] {
+            defaults.removeObject(forKey: "hasSeenAccount.\(provider.rawValue).\(accountID)")
+        }
         // AIRateLimiter day-bucketed counters — keys roll daily, so
         // they're cleared via the store's own 30-day rolling sweep
         // rather than enumerated by name here.
@@ -626,21 +832,20 @@ class AuthManager: ObservableObject {
         """
     }
 
-    private func completeSignIn(accountID: String, name: String?, provider: AuthProvider) {
-        let hasSeenAccountKey = "hasSeenAccount.\(provider.rawValue).\(accountID)"
-        let isNewAccount = !UserDefaults.standard.bool(forKey: hasSeenAccountKey)
-
-        _ = KeychainHelper.save(accountID, key: accountKey)
-        _ = KeychainHelper.save(provider.rawValue, key: accountProviderKey)
-
-        let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if trimmedName.isEmpty {
-            KeychainHelper.delete(key: accountNameKey)
-        } else {
-            _ = KeychainHelper.save(trimmedName, key: accountNameKey)
+    @discardableResult
+    private func completeSignIn(
+        accountID: String,
+        name: String?,
+        provider: AuthProvider,
+        fetchRemote: Bool = true
+    ) -> Bool {
+        cancelActiveGuestBootstrap()
+        guard persistIdentity(accountID: accountID, name: name, provider: provider) else {
+            let message = "Noum couldn't save this account on this device. Try again."
+            signInError = message
+            initialAccountHydrationState = .failed(message: message)
+            return false
         }
-
-        UserDefaults.standard.set(true, forKey: hasSeenAccountKey)
 
         #if DEBUG
         print("Saved \(provider.title) user ID: \(accountID)")
@@ -648,46 +853,256 @@ class AuthManager: ObservableObject {
         signIn()
         authProvider = provider
         isSignedIn = true
-        deferStoreReloadForCurrentAccount {
-            CoachingProfileStore.shared.beginSession(isNewAccount: isNewAccount)
-        }
-        syncFromBackendIfPossible(accountID: accountID, providerRawValue: provider.rawValue)
+        hydrateStoresForCurrentAccount(
+            accountID: accountID,
+            providerRawValue: provider.rawValue,
+            fetchRemote: fetchRemote
+        )
+        return true
     }
 
-    private func deferStoreReloadForCurrentAccount(
-        completion: (@MainActor () -> Void)? = nil
+    private func hydrateStoresForCurrentAccount(
+        accountID: String,
+        providerRawValue: String,
+        fetchRemote: Bool
     ) {
+        let generation = UUID()
+        activeAccountHydrationGeneration = generation
+        initialAccountHydrationState = .hydratingStores
+
         Task { @MainActor in
             await Task.yield()
-            CoachingProfileStore.shared.reloadForCurrentAccount()
-            FirstRunOnboardingManager.shared.reloadForCurrentAccount()
-            PracticeSessionStore.shared.reloadForCurrentAccount()
-            SkillTrendStore.shared.reloadForCurrentAccount()
-            BaselineStore.shared.reloadForCurrentAccount()
-            RatingStore.shared.reloadForCurrentAccount()
-            ProfileManager.shared.reloadForCurrentAccount()
-            IMRelationshipStore.shared.reloadForCurrentAccount()
-            RecommendationLearningStore.shared.reloadForCurrentAccount()
-            BigMomentStore.shared.reloadForCurrentAccount()
-            ForwardPlanStore.shared.reloadForCurrentAccount()
-            SessionIntentStore.shared.reloadForCurrentAccount()
-            SessionReflectionStore.shared.reloadForCurrentAccount()
-            CoachCheckInStore.shared.reloadForCurrentAccount()
-            CoachLetterStore.shared.reloadForCurrentAccount()
-            PostRepCoachNoteStore.shared.reloadForCurrentAccount()
-            CoachMemoryStore.shared.reloadForCurrentAccount()
-            if #available(iOS 17.0, *) {
-                ProofMomentStore.shared.reloadForCurrentAccount()
+            guard self.isCurrentHydration(
+                generation: generation,
+                accountID: accountID,
+                providerRawValue: providerRawValue
+            ) else { return }
+
+            self.reloadAccountScopedStores()
+
+            // A locally saved profile is enough to route immediately. When a
+            // non-guest account has no local profile (for example, first use on
+            // a second device), finish one backend bootstrap read before
+            // deciding that onboarding is genuinely needed.
+            let shouldAwaitRemoteProfile = fetchRemote
+                && providerRawValue != AuthProvider.guest.rawValue
+                && CoachingProfileStore.shared.profile == nil
+
+            if shouldAwaitRemoteProfile {
+                await self.fetchAndApplyBackendBootstrap(
+                    accountID: accountID,
+                    providerRawValue: providerRawValue
+                )
+            } else if fetchRemote {
+                Task { @MainActor in
+                    await self.fetchAndApplyBackendBootstrap(
+                        accountID: accountID,
+                        providerRawValue: providerRawValue
+                    )
+                }
             }
-            AskNoumStore.shared.reloadForCurrentAccount()
-            SuddenDeathRunHistoryStore.shared.reloadForCurrentAccount()
-            completion?()
+
+            guard self.isCurrentHydration(
+                generation: generation,
+                accountID: accountID,
+                providerRawValue: providerRawValue
+            ) else { return }
+            self.initialAccountHydrationState = .ready
         }
+    }
+
+    private func reloadAccountScopedStores() {
+        CoachingProfileStore.shared.reloadForCurrentAccount()
+        PracticeSessionStore.shared.reloadForCurrentAccount()
+        SkillTrendStore.shared.reloadForCurrentAccount()
+        BaselineStore.shared.reloadForCurrentAccount()
+        RatingStore.shared.reloadForCurrentAccount()
+        ProfileManager.shared.reloadForCurrentAccount()
+        IMRelationshipStore.shared.reloadForCurrentAccount()
+        RecommendationLearningStore.shared.reloadForCurrentAccount()
+        BigMomentStore.shared.reloadForCurrentAccount()
+        ForwardPlanStore.shared.reloadForCurrentAccount()
+        SessionIntentStore.shared.reloadForCurrentAccount()
+        SessionReflectionStore.shared.reloadForCurrentAccount()
+        CoachCheckInStore.shared.reloadForCurrentAccount()
+        CoachLetterStore.shared.reloadForCurrentAccount()
+        PostRepCoachNoteStore.shared.reloadForCurrentAccount()
+        CoachMemoryStore.shared.reloadForCurrentAccount()
+        if #available(iOS 17.0, *) {
+            ProofMomentStore.shared.reloadForCurrentAccount()
+        }
+        AskNoumStore.shared.reloadForCurrentAccount()
+        SuddenDeathRunHistoryStore.shared.reloadForCurrentAccount()
+    }
+
+    private var isInitialBootstrapFailure: Bool {
+        if case .failed = initialAccountHydrationState { return true }
+        return false
+    }
+
+    private func establishDurableLocalGuest() {
+        cancelActiveGuestBootstrap()
+        let accountID = Self.localGuestPrefix + UUID().uuidString.lowercased()
+        _ = completeSignIn(
+            accountID: accountID,
+            name: nil,
+            provider: .guest,
+            fetchRemote: false
+        )
+    }
+
+    private func persistIdentity(
+        accountID: String,
+        name: String?,
+        provider: AuthProvider
+    ) -> Bool {
+        let previousID = KeychainHelper.load(key: accountKey)
+        let previousProvider = KeychainHelper.load(key: accountProviderKey)
+        let previousName = KeychainHelper.load(key: accountNameKey)
+
+        guard KeychainHelper.save(accountID, key: accountKey),
+              KeychainHelper.save(provider.rawValue, key: accountProviderKey),
+              KeychainHelper.load(key: accountKey) == accountID,
+              KeychainHelper.load(key: accountProviderKey) == provider.rawValue else {
+            restoreIdentity(
+                accountID: previousID,
+                providerRawValue: previousProvider,
+                name: previousName
+            )
+            return false
+        }
+
+        let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmedName.isEmpty {
+            KeychainHelper.delete(key: accountNameKey)
+        } else {
+            // A display name is optional. Identity durability rests on the
+            // verified account ID + provider pair above.
+            _ = KeychainHelper.save(trimmedName, key: accountNameKey)
+        }
+        return true
+    }
+
+    private func restoreIdentity(
+        accountID: String?,
+        providerRawValue: String?,
+        name: String?
+    ) {
+        if let accountID {
+            _ = KeychainHelper.save(accountID, key: accountKey)
+        } else {
+            KeychainHelper.delete(key: accountKey)
+        }
+        if let providerRawValue {
+            _ = KeychainHelper.save(providerRawValue, key: accountProviderKey)
+        } else {
+            KeychainHelper.delete(key: accountProviderKey)
+        }
+        if let name {
+            _ = KeychainHelper.save(name, key: accountNameKey)
+        } else {
+            KeychainHelper.delete(key: accountNameKey)
+        }
+    }
+
+    private func isCurrentHydration(
+        generation: UUID,
+        accountID: String,
+        providerRawValue: String
+    ) -> Bool {
+        activeAccountHydrationGeneration == generation
+            && Self.shouldApplyBackendBootstrap(
+                requestedAccountID: accountID,
+                requestedProviderRawValue: providerRawValue,
+                currentAccountID: currentAccountID,
+                currentProviderRawValue: currentAuthProviderRawValue
+            )
+    }
+
+    private static func isLocalGuestAccountID(_ accountID: String) -> Bool {
+        accountID.hasPrefix(localGuestPrefix)
+    }
+
+    #if canImport(FirebaseAuth)
+    private func boundedFirebaseAnonymousIdentity(
+        generation: UUID
+    ) async -> AnonymousFirebaseBootstrapOutcome {
+        let race = AnonymousFirebaseBootstrapRace()
+        activeGuestBootstrapRace = race
+
+        Auth.auth().signInAnonymously { [weak self, weak race] authResult, _ in
+            Task { @MainActor in
+                guard let self, let race else { return }
+                guard Self.shouldAcceptGuestBootstrapCompletion(
+                    generation: generation,
+                    activeGeneration: self.activeGuestBootstrapGeneration
+                ) else {
+                    if let staleUID = authResult?.user.uid,
+                       Auth.auth().currentUser?.uid == staleUID {
+                        try? Auth.auth().signOut()
+                    }
+                    race.resolve(.superseded)
+                    if self.activeGuestBootstrapRace === race {
+                        self.activeGuestBootstrapRace = nil
+                    }
+                    return
+                }
+
+                self.activeGuestBootstrapGeneration = nil
+                if self.activeGuestBootstrapRace === race {
+                    self.activeGuestBootstrapRace = nil
+                }
+                if let user = authResult?.user {
+                    race.resolve(.account(id: user.uid, name: user.displayName))
+                } else {
+                    race.resolve(.unavailable)
+                }
+            }
+        }
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.guestBootstrapTimeoutNanoseconds)
+            guard let self else {
+                race.resolve(.superseded)
+                return
+            }
+            guard Self.shouldAcceptGuestBootstrapCompletion(
+                    generation: generation,
+                    activeGeneration: self.activeGuestBootstrapGeneration
+                  ) else {
+                race.resolve(.superseded)
+                if self.activeGuestBootstrapRace === race {
+                    self.activeGuestBootstrapRace = nil
+                }
+                return
+            }
+            // Clearing the generation before resolving makes any callback that
+            // arrives after the timeout a stale completion; it is ignored and
+            // its Firebase session is signed back out above.
+            self.activeGuestBootstrapGeneration = nil
+            if self.activeGuestBootstrapRace === race {
+                self.activeGuestBootstrapRace = nil
+            }
+            race.resolve(.unavailable)
+        }
+
+        return await race.wait()
+    }
+    #endif
+
+    private func cancelActiveGuestBootstrap() {
+        activeGuestBootstrapGeneration = nil
+        activeGuestBootstrapRace?.resolve(.superseded)
+        activeGuestBootstrapRace = nil
     }
 
     private func deferStoreSessionReset() {
         Task { @MainActor in
             await Task.yield()
+            // A clean-launch guest bootstrap or a new sign-in may have won the
+            // next actor turn. Never let a stale signed-out reset erase the
+            // newly active account's hydrated stores.
+            guard self.currentAccountID == nil else { return }
             CoachingProfileStore.shared.endSession()
             PracticeSessionStore.shared.endSession()
             SkillTrendStore.shared.endSession()
@@ -722,40 +1137,77 @@ class AuthManager: ObservableObject {
 #if canImport(FirebaseAuth)
         guard isFirebaseAuthConfigured, let user = Auth.auth().currentUser else { return }
         let provider = firebaseProvider(for: user) ?? authProvider ?? .google
+        let persistedAccountID = currentAccountID
+        let persistedProviderRawValue = currentAuthProviderRawValue
+        guard Self.shouldAdoptFirebaseSession(
+            persistedAccountID: persistedAccountID,
+            persistedProviderRawValue: persistedProviderRawValue
+        ) else {
+            if persistedAccountID != user.uid
+                || persistedProviderRawValue != provider.rawValue {
+                // Most importantly: clear a Firebase-anonymous completion that
+                // arrived after the bounded local-guest fallback won.
+                try? Auth.auth().signOut()
+            }
+            return
+        }
         completeSignIn(accountID: user.uid, name: user.displayName ?? currentAccountName, provider: provider)
 #endif
     }
 
-    private func syncFromBackendIfPossible(accountID: String, providerRawValue: String) {
-        Task {
-            guard let bootstrap = await BackendSyncManager.shared.fetchBootstrap(
-                accountID: accountID,
-                providerRawValue: providerRawValue
-            ) else {
-                return
-            }
-
-            await MainActor.run {
-                if let xp = bootstrap.xp {
-                    ProfileManager.shared.replaceFromRemote(xp)
-                }
-                if let profile = bootstrap.profile {
-                    CoachingProfileStore.shared.replaceFromRemote(profile, for: accountID)
-                }
-                if let sessions = bootstrap.sessions {
-                    PracticeSessionStore.shared.replaceFromRemote(sessions)
-                }
-                RecommendationLearningStore.shared.replaceFromRemote(
-                    pendingExposure: bootstrap.recommendationPending,
-                    outcomes: bootstrap.recommendationOutcomes ?? []
-                )
-            }
+    private func fetchAndApplyBackendBootstrap(
+        accountID: String,
+        providerRawValue: String
+    ) async {
+        guard let bootstrap = await BackendSyncManager.shared.fetchBootstrap(
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        ) else {
+            return
         }
+
+        guard Self.shouldApplyBackendBootstrap(
+            requestedAccountID: accountID,
+            requestedProviderRawValue: providerRawValue,
+            currentAccountID: currentAccountID,
+            currentProviderRawValue: currentAuthProviderRawValue
+        ) else {
+            return
+        }
+
+        if let xp = bootstrap.xp {
+            ProfileManager.shared.replaceFromRemote(xp)
+        }
+        if let profile = bootstrap.profile {
+            CoachingProfileStore.shared.replaceFromRemote(profile, for: accountID)
+        }
+        if let sessions = bootstrap.sessions {
+            PracticeSessionStore.shared.replaceFromRemote(sessions)
+        }
+        RecommendationLearningStore.shared.replaceFromRemote(
+            pendingExposure: bootstrap.recommendationPending,
+            outcomes: bootstrap.recommendationOutcomes ?? []
+        )
+    }
+
+    nonisolated static func shouldApplyBackendBootstrap(
+        requestedAccountID: String,
+        requestedProviderRawValue: String,
+        currentAccountID: String?,
+        currentProviderRawValue: String?
+    ) -> Bool {
+        requestedAccountID == currentAccountID
+            && requestedProviderRawValue == currentProviderRawValue
     }
 
     private func initializeInstallStateIfNeeded() {
         guard !UserDefaults.standard.bool(forKey: installInitializedKey) else { return }
         clearStoredSession()
+        #if canImport(FirebaseAuth)
+        if isFirebaseAuthConfigured {
+            try? Auth.auth().signOut()
+        }
+        #endif
         UserDefaults.standard.set(true, forKey: installInitializedKey)
     }
 
@@ -827,28 +1279,6 @@ class AuthManager: ObservableObject {
                         domain: "AuthManager",
                         code: -1,
                         userInfo: [NSLocalizedDescriptionKey: "Firebase sign-in returned no user."]
-                    ))
-                    return
-                }
-
-                continuation.resume(returning: authResult)
-            }
-        }
-    }
-
-    private func signInAnonymouslyWithFirebase() async throws -> FirebaseAuth.AuthDataResult {
-        try await withCheckedThrowingContinuation { continuation in
-            Auth.auth().signInAnonymously { authResult, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                guard let authResult else {
-                    continuation.resume(throwing: NSError(
-                        domain: "AuthManager",
-                        code: -2,
-                        userInfo: [NSLocalizedDescriptionKey: "Anonymous sign-in returned no user."]
                     ))
                     return
                 }

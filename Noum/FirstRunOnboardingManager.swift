@@ -1,88 +1,28 @@
 import Foundation
-#if canImport(SwiftUI)
-import SwiftUI
-#endif
 
-// MARK: - First Run Onboarding Manager
+// MARK: - First-run onboarding policy
 
+/// Pure root-routing policy for the first coaching intake.
+///
+/// `CoachingProfileStore.profile` is the only completion truth. The policy
+/// waits until AuthManager has established a durable identity and hydrated the
+/// account's local stores, then presents onboarding only when that account has
+/// no saved coaching profile. No second "has seen onboarding" flag is owned
+/// here.
 enum FirstRunOnboardingGate {
+    /// Legacy key retained only so account deletion can remove data written by
+    /// builds that predate profile-as-truth onboarding.
+    static let legacyCompletedKeyPrefix = "noum.onboarding.firstRun.completed."
+
     static func shouldPresent(
-        hasCompletedFirstRun: Bool,
+        hasDurableIdentity: Bool,
+        hasHydratedAccountStores: Bool,
         hasCoachingProfile: Bool,
         isUITesting: Bool
     ) -> Bool {
-        !isUITesting && !hasCompletedFirstRun && !hasCoachingProfile
-    }
-}
-
-/// Tracks whether the brand-new user has completed the first-run coaching
-/// intake. The intake is the product proof path: ask three questions, then
-/// send the user to their first real rep.
-///
-/// Design principles:
-/// - **Show once.** After the user completes the intake, we never replay it.
-/// - **Per-account scoped.** A device that signs in with a fresh account
-///   should see onboarding — this is a per-account property, not a per-device
-///   one. Mirrors `StreakFreezeManager`'s scoping pattern.
-/// - **Pre-auth safe.** A brand-new install has no `currentAccountID` yet.
-///   We fall back to `"guest"` — the same fallback `StreakFreezeManager`
-///   uses — so first-run state still persists before sign-in completes.
-@MainActor
-@available(iOS 17.0, *)
-final class FirstRunOnboardingManager: ObservableObject {
-    static let shared = FirstRunOnboardingManager()
-
-    // MARK: Published
-
-    /// Whether the current account has already completed first-run
-    /// onboarding. False on brand-new installs / fresh accounts.
-    @Published private(set) var hasSeen: Bool = false
-
-    // MARK: Storage
-
-    private let seenKeyPrefix = "noum.onboarding.firstRun.completed."
-
-    private init() {
-        load()
-    }
-
-    // MARK: - Account scoping
-
-    private static func currentAccountID() -> String {
-        AuthManager.shared.currentAccountID ?? "guest"
-    }
-
-    private var seenKey: String { seenKeyPrefix + Self.currentAccountID() }
-
-    // MARK: - Public API
-
-    /// Re-reads persisted state for the now-current account after auth
-    /// changes.
-    func reloadForCurrentAccount() {
-        load()
-    }
-
-    /// Marks first-run onboarding as completed for the current account.
-    /// Idempotent.
-    func markSeen() {
-        guard !hasSeen else { return }
-        hasSeen = true
-        UserDefaults.standard.set(true, forKey: seenKey)
-    }
-
-    #if DEBUG
-    /// UI-test reset for the real first-run path. Keeps the normal
-    /// `UI_TESTING` bypass intact unless a test explicitly opts into the
-    /// production app-level onboarding cover.
-    func resetForDebug() {
-        hasSeen = false
-        UserDefaults.standard.removeObject(forKey: seenKey)
-    }
-    #endif
-
-    // MARK: - Internals
-
-    private func load() {
-        hasSeen = UserDefaults.standard.bool(forKey: seenKey)
+        hasDurableIdentity
+            && hasHydratedAccountStores
+            && !isUITesting
+            && !hasCoachingProfile
     }
 }

@@ -2,10 +2,9 @@ import Foundation
 
 // MARK: - Auto-Guided First Rep
 
-/// Feature flag + one-shot state for the **auto-guided first rep** — the
-/// first-run-only path that skips the practice picker and drops a brand-new
-/// user straight into a single ~20–30s guided micro-rep, so they are *speaking*
-/// within seconds of finishing onboarding instead of choosing a mode first.
+/// Feature flag + one-shot launch preparation for the **auto-guided first
+/// rep**. Routing remains owned by NoumApp → DeepLinkRouter → AppShell; this
+/// type only seeds and arms the existing Timed engine when felt-QA enables it.
 /// Closing this "time-to-first-spoken-word" gap is the single biggest lever on
 /// the acquisition axis (see `docs/SPEC_first_rep_auto_guided.md`).
 ///
@@ -14,13 +13,13 @@ import Foundation
 /// `PracticeModeQuickStart` auto-begin handshake and `SummaryView`'s honest
 /// read. Nothing here forks the rep pipeline.
 ///
-/// Design principles (mirrors `PracticeModeQuickStart` / `FirstRunOnboardingManager`):
+/// Design principles (mirrors `PracticeModeQuickStart` and the app-level
+/// profile-as-truth gate):
 /// - **Default OFF.** `enabled` is false until an on-device felt-QA pass signs
 ///   off on the cold-start moment (the spec's gate). A debug build can flip the
 ///   `enabledOverrideKey` to exercise the path without recompiling.
-/// - **One-shot, per-account.** `firstRepCompleted` is scoped by account id the
-///   same way `FirstRunOnboardingManager.hasSeen` is, so a fresh account on the
-///   same device still gets its first guided rep.
+/// - **One-shot, per-account.** `firstRepCompleted` is scoped by account id, so
+///   a fresh account on the same device still gets its first guided rep.
 /// - **Marked at the fork, not at finalize.** The router sets the flag *before*
 ///   launching the rep, so an app-kill mid-rep can never re-trigger the
 ///   auto-guide (and never re-arm the mic on next launch).
@@ -52,10 +51,10 @@ enum AutoGuidedFirstRep {
 
     // MARK: One-shot state (per-account)
 
-    private static let completedKeyPrefix = "noum.firstRep.autoGuided.completed."
+    static let completedKeyPrefix = "noum.firstRep.autoGuided.completed."
 
-    /// Per-account scoping, identical fallback to `FirstRunOnboardingManager`
-    /// so pre-auth (brand-new install, no account yet) still persists state.
+    /// Account bootstrap completes before onboarding, but keep a defensive
+    /// guest fallback for debug/test helpers that invoke this type directly.
     private static func currentAccountID() -> String {
         AuthManager.shared.currentAccountID ?? "guest"
     }
@@ -72,17 +71,25 @@ enum AutoGuidedFirstRep {
     /// Mark the one-shot done. Idempotent. Called at the *fork* (before the rep
     /// launches) and on the "pick a different drill" escape, so neither
     /// completion, an app-kill mid-rep, nor a back-out can re-fire the path.
-    static func markFirstRepCompleted() {
+    private static func markFirstRepCompleted() {
         UserDefaults.standard.set(true, forKey: completedKey)
     }
 
-    // MARK: Routing decision
+    // MARK: Launch preparation
 
-    /// Whether the cold `noum://train` deep link should route to the guided
-    /// first rep instead of the picker. True only when the flag is on, the user
-    /// has finished onboarding, and the one-shot has not fired.
-    static func shouldAutoGuide(hasSeenOnboarding: Bool) -> Bool {
-        enabled && hasSeenOnboarding && !firstRepCompleted
+    /// Arms the existing Timed quick-start path once, after profile persistence
+    /// succeeds. The caller still queues the canonical
+    /// `noum://practice/timed` route whether this returns true or false.
+    @discardableResult
+    static func prepareLaunchIfNeeded(hasCompletedOnboarding: Bool) -> Bool {
+        guard enabled, hasCompletedOnboarding, !firstRepCompleted else {
+            return false
+        }
+        markFirstRepCompleted()
+        seedFramingPrompt()
+        armFastStartOnce()
+        PracticeModeQuickStart.arm(for: .timed)
+        return true
     }
 
     // MARK: Prompt seeding
@@ -128,15 +135,24 @@ enum AutoGuidedFirstRep {
         return defaults.bool(forKey: fastStartOnceKey)
     }
 
+    /// Clears an armed-but-not-yet-consumed launch during sign-out/account
+    /// deletion so a different account can never inherit the prompt or mic
+    /// auto-begin handshake.
+    static func cancelPendingLaunch() {
+        UserDefaults.standard.removeObject(forKey: "timedPractice.suggestedPrompt")
+        UserDefaults.standard.removeObject(forKey: fastStartOnceKey)
+        PracticeModeQuickStart.clear()
+    }
+
     // MARK: Debug
 
     #if DEBUG
     /// Re-arm the auto-guided path for felt-QA on a real build (clears the
     /// one-shot for the current account). Mirrors
-    /// `FirstRunOnboardingManager.resetForDebug`.
+    /// the other first-run one-shots.
     static func resetForDebug() {
         UserDefaults.standard.removeObject(forKey: completedKey)
-        UserDefaults.standard.removeObject(forKey: fastStartOnceKey)
+        cancelPendingLaunch()
     }
     #endif
 }

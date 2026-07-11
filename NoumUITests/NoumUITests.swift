@@ -193,15 +193,24 @@ final class NoumUITests: XCTestCase {
     @MainActor
     func testOnboardingFlowSmoke() throws {
         let app = XCUIApplication()
+        // UI_TESTING_REAL_FIRST_RUN clears the persisted identity inside
+        // AuthManager, establishes a network-independent local guest, hydrates
+        // that account, and only then presents the production onboarding root.
         app.launchArguments += ["UI_TESTING", "UI_TESTING_REAL_FIRST_RUN"]
         app.launch()
 
+        XCTAssertFalse(
+            app.descendants(matching: .any)["firstRun.bootstrap.error"].waitForExistence(timeout: 1),
+            "A clean Keychain should fall back to a durable local guest instead of dead-ending."
+        )
         try completeCoachingOnboarding(in: app)
 
         // Final stage CTA: `coaching.startPracticing` (was `coaching.save`
         // before the redesign). This test opts into the real app-level
         // first-run cover, not the pinned `UI_TESTING_ONBOARDING` harness,
-        // so dismissing the cover must route directly into the first rep.
+        // so saving the profile must route directly into the first rep. The
+        // save itself proves the clean local guest supplied a durable account
+        // ID; the old implementation silently failed here with an empty Keychain.
         let finishButton = app.buttons["coaching.startPracticing"]
         XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
         XCTAssertTrue(finishButton.isEnabled)

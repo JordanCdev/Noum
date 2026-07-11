@@ -54,10 +54,9 @@ struct NoumApp: App {
     // (e.g. on a platform without a UIKit delegate). Guarded no-op once the
     // delegate above has already configured it.
     private let firebaseReady: Void = FirebaseBootstrap.configure()
-    @StateObject private var firstRunOnboarding = FirstRunOnboardingManager.shared
+    @StateObject private var authManager = AuthManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var localeSettings = LocaleSettingsManager.shared
-    @State private var uiTestingFirstRunCoverDismissed = false
     @Environment(\.scenePhase) private var scenePhase
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isRealFirstRunUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_REAL_FIRST_RUN")
@@ -142,7 +141,7 @@ struct NoumApp: App {
             AchievementStore.shared.resetForDebug()
             SkillProgressionStore.shared.reset()
             FirstRepCelebrationManager.shared.resetForDebug()
-            FirstRunOnboardingManager.shared.resetForDebug()
+            AutoGuidedFirstRep.resetForDebug()
         }
         // Keep chat-flow UI tests deterministic. The seeded profile is
         // intentionally rich, but the Ask Noum thread itself should start
@@ -187,6 +186,7 @@ struct NoumApp: App {
         .environment(\.locale, Locale(identifier: localeSettings.current.code))
         .id(localeSettings.current.code)
         .task {
+            await authManager.bootstrapInitialAccountIfNeeded()
             await MainActor.run {
                 _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
             }
@@ -225,56 +225,58 @@ struct NoumApp: App {
         #if DEBUG
         if let overlayHarness = OverlayScreenshotHarnessKind.requested() {
             OverlayScreenshotHarnessView(kind: overlayHarness)
-        } else if shouldShowFirstRunOnboarding {
-            // First-run setup is the app's temporary root, not a cover above
-            // Home. This makes the intake feel deliberate and avoids a race
-            // where child sheets can win presentation on reused simulators.
-            CoachingOnboardingView {
-                completeFirstRunOnboarding()
-            }
-            .interactiveDismissDisabled(true)
         } else {
-            AppShellView()
+            hydratedRootContent
         }
         #else
-        if shouldShowFirstRunOnboarding {
-            // First-run setup is the app's temporary root, not a cover above
-            // Home. This makes the intake feel deliberate and avoids a race
-            // where child sheets can win presentation on reused simulators.
-            CoachingOnboardingView {
-                completeFirstRunOnboarding()
-            }
-            .interactiveDismissDisabled(true)
-        } else {
-            AppShellView()
-        }
+        hydratedRootContent
         #endif
     }
 
-    /// Drives the first-run coaching intake. UI testing bypasses it so the
-    /// screenshot-tour suite is not blocked. `UI_TESTING_REAL_FIRST_RUN`
-    /// opts back into the real app-level cover so the dismiss → Train route
-    /// can be verified without the older pinned `UI_TESTING_ONBOARDING`
-    /// harness.
-    private var shouldShowFirstRunOnboarding: Bool {
-        if isRealFirstRunUITesting {
-            return !uiTestingFirstRunCoverDismissed
+    @ViewBuilder
+    private var hydratedRootContent: some View {
+        switch authManager.initialAccountHydrationState {
+        case .failed(let message):
+            InitialAccountBootstrapView(message: message) {
+                Task { @MainActor in
+                    await authManager.retryInitialAccountBootstrap()
+                }
+            }
+        case .ready:
+            if shouldShowFirstRunOnboarding {
+                // First-run setup is the app's temporary root, not a cover above
+                // Home. This makes the intake feel deliberate and prevents a
+                // child sheet from racing account hydration.
+                CoachingOnboardingView {
+                    completeFirstRunOnboarding()
+                }
+                .interactiveDismissDisabled(true)
+            } else {
+                AppShellView()
+            }
+        case .needsIdentity, .establishingGuest, .hydratingStores:
+            InitialAccountBootstrapView()
         }
-        return FirstRunOnboardingGate.shouldPresent(
-            hasCompletedFirstRun: firstRunOnboarding.hasSeen,
+    }
+
+    /// Presents onboarding only after the current durable account's stores are
+    /// hydrated. The saved CoachingProfile is the sole completion truth.
+    private var shouldShowFirstRunOnboarding: Bool {
+        FirstRunOnboardingGate.shouldPresent(
+            hasDurableIdentity: AuthManager.hasDurableIdentity(
+                accountID: authManager.currentAccountID,
+                providerRawValue: authManager.currentAuthProviderRawValue
+            ),
+            hasHydratedAccountStores: authManager.initialAccountHydrationState.hasHydratedAccountStores,
             hasCoachingProfile: coachingProfileStore.profile != nil,
             isUITesting: isUITesting && !isRealFirstRunUITesting
         )
     }
 
     private func completeFirstRunOnboarding() {
-        uiTestingFirstRunCoverDismissed = true
-        markFirstRunCompletedIfProfileExists()
-    }
-
-    private func markFirstRunCompletedIfProfileExists() {
         guard coachingProfileStore.profile != nil else { return }
-        firstRunOnboarding.markSeen()
+        _ = AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true)
+        DeepLinkRouter.shared.pending = URL(string: "noum://practice/timed")
     }
 
     /// Routes an incoming `noum://` URL to the right surface.
@@ -291,6 +293,63 @@ struct NoumApp: App {
         // the navigationPath. Surface the URL via a global so ContentView
         // can pick it up on next refresh.
         DeepLinkRouter.shared.pending = url
+    }
+}
+
+/// Truthful launch boundary while AuthManager establishes a durable guest and
+/// reloads the account's local stores. It has no artificial delay: the view
+/// leaves as soon as the published hydration state changes.
+private struct InitialAccountBootstrapView: View {
+    var message: String? = nil
+    var onRetry: (() -> Void)? = nil
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack {
+            LightGradientBackground()
+
+            CardView {
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    if let message {
+                        Text("Your coaching profile is not ready")
+                            .font(Typography.headline)
+                            .foregroundStyle(AppColor.textPrimary)
+                        ErrorCard(message: message)
+                        if let onRetry {
+                            PrimaryCTA("Retry", icon: "arrow.clockwise", action: onRetry)
+                                .accessibilityIdentifier("firstRun.bootstrap.retry")
+                        }
+                    } else {
+                        Group {
+                            if reduceMotion {
+                                Image(systemName: "person.crop.circle.badge.clock")
+                                    .font(.title2.weight(.semibold))
+                                    .foregroundStyle(AppColor.brandBlue)
+                                    .frame(width: 44, height: 44)
+                            } else {
+                                ProgressView()
+                                    .tint(AppColor.brandBlue)
+                                    .frame(width: 44, height: 44)
+                            }
+                        }
+                        .accessibilityHidden(true)
+
+                        Text("Preparing your practice")
+                            .font(Typography.headline)
+                            .foregroundStyle(AppColor.textPrimary)
+                        Text("Noum is loading your coaching profile so this rep can be saved.")
+                            .font(Typography.body)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .frame(maxWidth: 460)
+            .padding(.horizontal, Spacing.screenH)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(message == nil ? "firstRun.bootstrap.progress" : "firstRun.bootstrap.error")
     }
 }
 

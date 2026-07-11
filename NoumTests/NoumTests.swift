@@ -13784,27 +13784,150 @@ struct FirstRunFrictionContractTests {
 
     @Test func firstRunGatePresentsCoachingIntakeForTrueColdStart() {
         #expect(FirstRunOnboardingGate.shouldPresent(
-            hasCompletedFirstRun: false,
+            hasDurableIdentity: true,
+            hasHydratedAccountStores: true,
             hasCoachingProfile: false,
             isUITesting: false
         ))
     }
 
-    @Test func firstRunGateStaysClosedForProfileCompletedOrUITesting() {
+    @Test func firstRunGateUsesProfileAsTheOnlyCompletionTruth() {
         #expect(!FirstRunOnboardingGate.shouldPresent(
-            hasCompletedFirstRun: true,
-            hasCoachingProfile: false,
-            isUITesting: false
-        ))
-        #expect(!FirstRunOnboardingGate.shouldPresent(
-            hasCompletedFirstRun: false,
+            hasDurableIdentity: true,
+            hasHydratedAccountStores: true,
             hasCoachingProfile: true,
             isUITesting: false
         ))
+    }
+
+    @Test func firstRunGateWaitsForIdentityAndHydrationAndBypassesOrdinaryUITesting() {
         #expect(!FirstRunOnboardingGate.shouldPresent(
-            hasCompletedFirstRun: false,
+            hasDurableIdentity: false,
+            hasHydratedAccountStores: true,
+            hasCoachingProfile: false,
+            isUITesting: false
+        ))
+        #expect(!FirstRunOnboardingGate.shouldPresent(
+            hasDurableIdentity: true,
+            hasHydratedAccountStores: false,
+            hasCoachingProfile: false,
+            isUITesting: false
+        ))
+        #expect(!FirstRunOnboardingGate.shouldPresent(
+            hasDurableIdentity: true,
+            hasHydratedAccountStores: true,
             hasCoachingProfile: false,
             isUITesting: true
+        ))
+    }
+
+    @Test func hydrationStatesDistinguishRealWorkFromReadyAndFailure() {
+        #expect(InitialAccountHydrationState.needsIdentity.isWorking)
+        #expect(InitialAccountHydrationState.establishingGuest.isWorking)
+        #expect(InitialAccountHydrationState.hydratingStores.isWorking)
+        #expect(!InitialAccountHydrationState.ready.isWorking)
+        #expect(!InitialAccountHydrationState.failed(message: "failed").isWorking)
+        #expect(InitialAccountHydrationState.ready.hasHydratedAccountStores)
+        #expect(!InitialAccountHydrationState.hydratingStores.hasHydratedAccountStores)
+    }
+
+    @Test func durableGuestIdentityRequiresBothKeychainValues() {
+        #expect(AuthManager.hasDurableIdentity(
+            accountID: "local-guest-123",
+            providerRawValue: AuthProvider.guest.rawValue
+        ))
+        #expect(!AuthManager.hasDurableIdentity(
+            accountID: "local-guest-123",
+            providerRawValue: nil
+        ))
+        #expect(!AuthManager.hasDurableIdentity(
+            accountID: nil,
+            providerRawValue: AuthProvider.guest.rawValue
+        ))
+        #expect(!AuthManager.hasDurableIdentity(
+            accountID: "local-guest-123",
+            providerRawValue: "unknown"
+        ))
+    }
+
+    @Test func onboardingNeverAdvancesAfterProfilePersistenceFails() {
+        #expect(!CoachingOnboardingCompletionPolicy.shouldAdvance(profileSaveSucceeded: false))
+        #expect(CoachingOnboardingCompletionPolicy.shouldAdvance(profileSaveSucceeded: true))
+        #expect(!CoachingOnboardingCompletionPolicy.persistenceError.contains("!"))
+    }
+
+    @Test func realFirstRunUITestingSelectsTheNetworkIndependentLocalGuestPath() {
+        #if DEBUG
+        #expect(AuthManager.shouldUseCleanLocalGuestForFirstRunUITesting(
+            arguments: ["UI_TESTING", "UI_TESTING_REAL_FIRST_RUN"]
+        ))
+        #expect(!AuthManager.shouldUseCleanLocalGuestForFirstRunUITesting(
+            arguments: ["UI_TESTING"]
+        ))
+        #endif
+    }
+
+    @Test func backendBootstrapAppliesOnlyToTheStillCurrentAccountAndProvider() {
+        #expect(AuthManager.shouldApplyBackendBootstrap(
+            requestedAccountID: "account-a",
+            requestedProviderRawValue: "apple",
+            currentAccountID: "account-a",
+            currentProviderRawValue: "apple"
+        ))
+        #expect(!AuthManager.shouldApplyBackendBootstrap(
+            requestedAccountID: "account-a",
+            requestedProviderRawValue: "apple",
+            currentAccountID: "account-b",
+            currentProviderRawValue: "apple"
+        ))
+        #expect(!AuthManager.shouldApplyBackendBootstrap(
+            requestedAccountID: "account-a",
+            requestedProviderRawValue: "apple",
+            currentAccountID: "account-a",
+            currentProviderRawValue: "google"
+        ))
+    }
+
+    @Test func timedOutGuestBootstrapRejectsItsLateFirebaseCompletion() {
+        let requested = UUID()
+        #expect(AuthManager.shouldAcceptGuestBootstrapCompletion(
+            generation: requested,
+            activeGeneration: requested
+        ))
+        #expect(!AuthManager.shouldAcceptGuestBootstrapCompletion(
+            generation: requested,
+            activeGeneration: nil
+        ))
+        #expect(!AuthManager.shouldAcceptGuestBootstrapCompletion(
+            generation: requested,
+            activeGeneration: UUID()
+        ))
+    }
+
+    @Test func supersededGuestBootstrapNeverCreatesAFallbackIdentity() {
+        #expect(AuthManager.shouldEstablishLocalGuest(after: .unavailable))
+        #expect(AuthManager.shouldEstablishLocalGuest(
+            after: .account(id: "firebase-guest", name: nil)
+        ))
+        #expect(!AuthManager.shouldEstablishLocalGuest(after: .superseded))
+    }
+
+    @Test func validKeychainGuestWinsOverALateFirebaseSessionOnRelaunch() {
+        #expect(!AuthManager.shouldAdoptFirebaseSession(
+            persistedAccountID: "local-guest-profile-owner",
+            persistedProviderRawValue: AuthProvider.guest.rawValue
+        ))
+        #expect(!AuthManager.shouldAdoptFirebaseSession(
+            persistedAccountID: "signed-in-account",
+            persistedProviderRawValue: AuthProvider.apple.rawValue
+        ))
+        #expect(AuthManager.shouldAdoptFirebaseSession(
+            persistedAccountID: nil,
+            persistedProviderRawValue: nil
+        ))
+        #expect(AuthManager.shouldAdoptFirebaseSession(
+            persistedAccountID: "incomplete-account",
+            persistedProviderRawValue: nil
         ))
     }
 }

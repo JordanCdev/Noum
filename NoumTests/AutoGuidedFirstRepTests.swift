@@ -2,12 +2,9 @@
 //  AutoGuidedFirstRepTests.swift
 //  NoumTests
 //
-//  Contracts behind the auto-guided first rep routing decision: the flag is
-//  off by default (new users unaffected until felt-QA signs off), the path
-//  fires only when enabled + onboarding-seen + not-yet-completed, the one-shot
-//  never re-fires, and the framing prompt is seeded into the exact key the
-//  Timed engine already consumes. Pure-logic tests — no UI, no rep engine —
-//  mirroring the existing FirstRunOnboardingGate / PracticeModeQuickStart style.
+//  Contracts behind the optional auto-guided first-rep launch preparation.
+//  Routing remains elsewhere; this suite pins the default-off felt-QA gate and
+//  the exact one-shot handshakes consumed by the existing Timed engine.
 //
 
 import Foundation
@@ -24,6 +21,7 @@ struct AutoGuidedFirstRepTests {
         defaults.removeObject(forKey: AutoGuidedFirstRep.enabledOverrideKey)
         defaults.removeObject(forKey: "timedPractice.suggestedPrompt")
         defaults.removeObject(forKey: AutoGuidedFirstRep.fastStartOnceKey)
+        PracticeModeQuickStart.clear()
         AutoGuidedFirstRep.resetForDebug() // clears the per-account one-shot + fast-start
     }
 
@@ -31,18 +29,23 @@ struct AutoGuidedFirstRepTests {
         cleanState()
         // Compile-time default is off until an on-device feel pass signs off.
         #expect(AutoGuidedFirstRep.enabled == false)
-        #expect(AutoGuidedFirstRep.shouldAutoGuide(hasSeenOnboarding: true) == false)
+        #expect(!AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true))
+        #expect(!PracticeModeQuickStart.consume(for: .timed))
         cleanState()
     }
 
-    @Test func firesOnlyWhenEnabledAndSeenAndNotCompleted() {
+    @Test func preparesOnlyWhenEnabledAndProfileCompleted() {
         cleanState()
         UserDefaults.standard.set(true, forKey: AutoGuidedFirstRep.enabledOverrideKey)
         #expect(AutoGuidedFirstRep.enabled == true)
-        // All three conditions met → fires.
-        #expect(AutoGuidedFirstRep.shouldAutoGuide(hasSeenOnboarding: true) == true)
-        // Onboarding not finished → never hijack a non-onboarded launch.
-        #expect(AutoGuidedFirstRep.shouldAutoGuide(hasSeenOnboarding: false) == false)
+        #expect(!AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: false))
+        #expect(AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true))
+        #expect(PracticeModeQuickStart.consume(for: .timed))
+        #expect(AutoGuidedFirstRep.consumeFastStartOnce())
+        #expect(
+            UserDefaults.standard.string(forKey: "timedPractice.suggestedPrompt")
+                == AutoGuidedFirstRep.framingPrompt
+        )
         cleanState()
     }
 
@@ -50,25 +53,21 @@ struct AutoGuidedFirstRepTests {
         cleanState()
         UserDefaults.standard.set(false, forKey: AutoGuidedFirstRep.enabledOverrideKey)
         #expect(AutoGuidedFirstRep.enabled == false)
-        #expect(AutoGuidedFirstRep.shouldAutoGuide(hasSeenOnboarding: true) == false)
+        #expect(!AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true))
         cleanState()
     }
 
     @Test func oneShotNeverRefires() {
         cleanState()
         UserDefaults.standard.set(true, forKey: AutoGuidedFirstRep.enabledOverrideKey)
-        #expect(AutoGuidedFirstRep.shouldAutoGuide(hasSeenOnboarding: true) == true)
-
-        // Marked at the fork (or on escape) → completion / app-kill / back-out
-        // can never re-trigger the auto-guide.
-        AutoGuidedFirstRep.markFirstRepCompleted()
+        #expect(AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true))
         #expect(AutoGuidedFirstRep.firstRepCompleted == true)
-        #expect(AutoGuidedFirstRep.shouldAutoGuide(hasSeenOnboarding: true) == false)
+        #expect(!AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true))
 
         // Debug reset re-arms it for felt-QA.
         AutoGuidedFirstRep.resetForDebug()
         #expect(AutoGuidedFirstRep.firstRepCompleted == false)
-        #expect(AutoGuidedFirstRep.shouldAutoGuide(hasSeenOnboarding: true) == true)
+        #expect(AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true))
         cleanState()
     }
 
@@ -128,6 +127,20 @@ struct AutoGuidedFirstRepTests {
         // flag into the next run; resetForDebug clears it alongside the one-shot.
         AutoGuidedFirstRep.resetForDebug()
         #expect(AutoGuidedFirstRep.consumeFastStartOnce() == false)
+        cleanState()
+    }
+
+    @Test func accountTransitionClearsEveryPendingLaunchHandshake() {
+        cleanState()
+        AutoGuidedFirstRep.seedFramingPrompt()
+        AutoGuidedFirstRep.armFastStartOnce()
+        PracticeModeQuickStart.arm(for: .timed)
+
+        AutoGuidedFirstRep.cancelPendingLaunch()
+
+        #expect(UserDefaults.standard.string(forKey: "timedPractice.suggestedPrompt") == nil)
+        #expect(!AutoGuidedFirstRep.consumeFastStartOnce())
+        #expect(!PracticeModeQuickStart.consume(for: .timed))
         cleanState()
     }
 }

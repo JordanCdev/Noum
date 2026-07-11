@@ -4338,15 +4338,13 @@ final class CoachingProfileStore: ObservableObject {
     static let shared = CoachingProfileStore()
 
     @Published private(set) var profile: CoachingProfile?
-    @Published private(set) var shouldPresentInitialOnboarding = false
 
     private let accountKey = "NoumAccountID"
     private let providerKey = "NoumAccountProvider"
     private let profileKeyPrefix = "coachingProfile."
-    private let onboardingCompletionKeyPrefix = "coachingProfileOnboardingComplete."
 
     private init() {
-        // Start with nil profile; AuthManager.deferStoreReloadForCurrentAccount()
+        // Start with nil profile; AuthManager's initial account hydration
         // will call reloadForCurrentAccount() after the first run-loop cycle,
         // avoiding synchronous Keychain + UserDefaults + JSON decode during
         // @StateObject creation.
@@ -4356,8 +4354,17 @@ final class CoachingProfileStore: ObservableObject {
         profile == nil
     }
 
-    func save(_ profile: CoachingProfile) {
-        guard let accountID = currentAccountID else { return }
+    /// Persists the current account's coaching profile transactionally.
+    ///
+    /// The profile is the sole onboarding-completion truth, so callers only
+    /// advance after this returns `true`. Persist before publishing to avoid a
+    /// successful-looking in-memory profile that disappears on relaunch.
+    @discardableResult
+    func save(_ profile: CoachingProfile) -> Bool {
+        guard let accountID = currentAccountID,
+              let data = try? JSONEncoder().encode(profile) else {
+            return false
+        }
         // Snapshot the prior voice BEFORE mutating self.profile so we
         // can detect a voice change and trigger a retroactive regen of
         // the most-recent PostRepCoachNote in the new voice. Initial
@@ -4366,12 +4373,13 @@ final class CoachingProfileStore: ObservableObject {
         // fresh account; the next finalize will produce the first note
         // in the chosen voice naturally.
         let previousVoice = self.profile?.speakingStyleGoal
-        self.profile = profile
-        if let data = try? JSONEncoder().encode(profile) {
-            UserDefaults.standard.set(data, forKey: profileKey(for: accountID))
+        let key = profileKey(for: accountID)
+        UserDefaults.standard.set(data, forKey: key)
+        guard UserDefaults.standard.data(forKey: key) == data else {
+            return false
         }
-        UserDefaults.standard.set(true, forKey: onboardingCompletionKey(for: accountID))
-        shouldPresentInitialOnboarding = false
+
+        self.profile = profile
         syncProfileIfPossible(profile, accountID: accountID)
         paraphraseGoalIfNeeded(profile: profile, accountID: accountID)
         refreshTrajectoryCache()
@@ -4381,6 +4389,7 @@ final class CoachingProfileStore: ObservableObject {
                 newVoice: profile.speakingStyleGoal
             )
         }
+        return true
     }
 
     /// Single-shot AI paraphrase of the user's goal at capture time. Best-effort:
@@ -4411,44 +4420,27 @@ final class CoachingProfileStore: ObservableObject {
     func reloadForCurrentAccount() {
         guard let accountID = currentAccountID else {
             profile = nil
-            shouldPresentInitialOnboarding = false
             return
         }
 
-        let loadedProfile = Self.loadProfile(forKey: profileKey(for: accountID))
-        profile = loadedProfile
-
-        if loadedProfile != nil {
-            UserDefaults.standard.set(true, forKey: onboardingCompletionKey(for: accountID))
-        }
-
-        shouldPresentInitialOnboarding = false
+        profile = Self.loadProfile(forKey: profileKey(for: accountID))
         refreshTrajectoryCache()
-    }
-
-    func beginSession(isNewAccount: Bool) {
-        guard let accountID = currentAccountID else {
-            shouldPresentInitialOnboarding = false
-            return
-        }
-
-        let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: onboardingCompletionKey(for: accountID))
-        shouldPresentInitialOnboarding = isNewAccount && !hasCompletedOnboarding && profile == nil
     }
 
     func endSession() {
         profile = nil
-        shouldPresentInitialOnboarding = false
         refreshTrajectoryCache()
     }
 
     func replaceFromRemote(_ profile: CoachingProfile?, for accountID: String) {
+        // A bootstrap request may finish after sign-out or an account switch.
+        // Never publish or persist that stale account's profile into the live
+        // store.
+        guard currentAccountID == accountID else { return }
         self.profile = profile
         if let profile, let data = try? JSONEncoder().encode(profile) {
             UserDefaults.standard.set(data, forKey: profileKey(for: accountID))
-            UserDefaults.standard.set(true, forKey: onboardingCompletionKey(for: accountID))
         }
-        shouldPresentInitialOnboarding = false
         refreshTrajectoryCache()
     }
 
@@ -4463,23 +4455,16 @@ final class CoachingProfileStore: ObservableObject {
         let accountID = currentAccountID ?? "guest"
         if let profile, let data = try? JSONEncoder().encode(profile) {
             UserDefaults.standard.set(data, forKey: profileKey(for: accountID))
-            UserDefaults.standard.set(true, forKey: onboardingCompletionKey(for: accountID))
         } else {
             UserDefaults.standard.removeObject(forKey: profileKey(for: accountID))
-            UserDefaults.standard.removeObject(forKey: onboardingCompletionKey(for: accountID))
         }
         self.profile = profile
-        shouldPresentInitialOnboarding = false
         refreshTrajectoryCache()
     }
     #endif
 
     private func profileKey(for accountID: String) -> String {
         "\(profileKeyPrefix)\(accountID)"
-    }
-
-    private func onboardingCompletionKey(for accountID: String) -> String {
-        "\(onboardingCompletionKeyPrefix)\(accountID)"
     }
 
     private var currentAccountID: String? {
@@ -8205,7 +8190,7 @@ final class PracticeSessionStore: ObservableObject {
     private let providerKey = "NoumAccountProvider"
 
     private init() {
-        // Start with empty sessions; AuthManager.deferStoreReloadForCurrentAccount()
+        // Start with empty sessions; AuthManager's account hydration
         // will call reloadForCurrentAccount() after the first run-loop cycle,
         // avoiding synchronous Keychain + UserDefaults + JSON decode during
         // @StateObject creation.

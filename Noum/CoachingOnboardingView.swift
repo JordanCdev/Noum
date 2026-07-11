@@ -36,6 +36,14 @@ enum OnboardingCompletionTiming {
     static let profileRevealDelay: Double = 0.35
 }
 
+enum CoachingOnboardingCompletionPolicy {
+    static let persistenceError = "Noum couldn't save your coaching direction. Try again."
+
+    static func shouldAdvance(profileSaveSucceeded: Bool) -> Bool {
+        profileSaveSucceeded
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct CoachingOnboardingView: View {
     @Environment(\.dismiss) private var dismiss
@@ -57,6 +65,7 @@ struct CoachingOnboardingView: View {
     @State private var whyNow = ""
     @State private var successVision = ""
     @State private var isSaving = false
+    @State private var saveError: String?
     @State private var isEditingExistingProfile = false
     @State private var editorOverlayField: InputField? = nil
     @State private var editorOverlayText = ""
@@ -440,19 +449,18 @@ struct CoachingOnboardingView: View {
 
             // CTA button pinned at bottom
             VStack(spacing: 0) {
+                if let saveError {
+                    ErrorCard(message: saveError)
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.bottom, Spacing.sm)
+                        .accessibilityIdentifier("coaching.saveError")
+                }
+
                 Divider()
                     .opacity(0.3)
 
                 Button {
-                    if !isEditingExistingProfile {
-                        // First-run: don't drop the brand-new user on a cold Home.
-                        // Route straight to the first focused rep. Editing from
-                        // Settings still saves without changing destinations.
-                        DeepLinkRouter.shared.pending = URL(string: "noum://practice/timed")
-                    }
-                    saveProfile()
-                    onComplete?()
-                    dismiss()
+                    finishOnboarding()
                 } label: {
                     HStack(spacing: Spacing.sm) {
                         Text(isEditingExistingProfile ? "Save changes" : "Start first rep")
@@ -491,6 +499,7 @@ struct CoachingOnboardingView: View {
                     .shadow(color: AppColor.brandBlue.opacity(0.22), radius: 16, y: 8)
                 }
                 .buttonStyle(.pressable)
+                .disabled(isSaving)
                 .accessibilityIdentifier("coaching.startPracticing")
                 .padding(.horizontal, Spacing.lg)
                 .padding(.top, Spacing.md)
@@ -1071,19 +1080,40 @@ struct CoachingOnboardingView: View {
         }
     }
 
-    private func saveProfile() {
+    private func finishOnboarding() {
         guard !isSaving else { return }
+        saveError = nil
+        isSaving = true
+
+        let profileSaveSucceeded = saveProfile()
+        guard CoachingOnboardingCompletionPolicy.shouldAdvance(
+            profileSaveSucceeded: profileSaveSucceeded
+        ) else {
+            isSaving = false
+            saveError = CoachingOnboardingCompletionPolicy.persistenceError
+            return
+        }
+
+        isSaving = false
+        if let onComplete {
+            onComplete()
+        } else {
+            dismiss()
+        }
+    }
+
+    @discardableResult
+    private func saveProfile() -> Bool {
         // Voice is required to finish onboarding (the continue button on the
         // style stage is gated on it), so a nil here is a programmer error, not
         // a user path — bail rather than persist a phantom default.
-        guard let chosenVoice = speakingStyleGoal else { return }
-        isSaving = true
+        guard let chosenVoice = speakingStyleGoal else { return false }
         let trimmedCustomChallenge = customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines)
         let savedChallenge = usesCustomChallenge
             ? SpeakingChallenge.routingFallback(forCustomText: trimmedCustomChallenge)
             : biggestChallenge
 
-        coachingProfileStore.save(
+        return coachingProfileStore.save(
             CoachingProfile(
                 speakingContext: speakingContext,
                 primaryGoal: savedChallenge.recommendedPriority,
