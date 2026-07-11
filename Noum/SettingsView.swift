@@ -2381,6 +2381,7 @@ private struct DeleteAccountConfirmationSheet: View {
 struct YourDataView: View {
     var isBackendConfigured: Bool
 
+    @StateObject private var authManager = AuthManager.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var profileManager = ProfileManager.shared
@@ -2388,6 +2389,8 @@ struct YourDataView: View {
     @StateObject private var aiSettings = AISettingsManager.shared
     @State private var showExportSheet = false
     @State private var exportURL: URL?
+    @State private var exportError: String?
+    @State private var isExporting = false
 
     var body: some View {
         ScrollView {
@@ -2409,10 +2412,15 @@ struct YourDataView: View {
         .background(AppColor.screenBackground)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showExportSheet) {
+        .sheet(isPresented: $showExportSheet, onDismiss: cleanupExport) {
             if let exportURL {
                 ShareSheet(activityItems: [exportURL])
             }
+        }
+        .alert("Export unavailable", isPresented: exportErrorBinding) {
+            Button("OK", role: .cancel) { exportError = nil }
+        } message: {
+            Text(exportError ?? "Noum couldn't prepare your export.")
         }
     }
 
@@ -2439,7 +2447,7 @@ struct YourDataView: View {
             )
             dataRow(
                 label: "Recordings",
-                detail: "Saved to your Photos library (not stored by Noum)"
+                detail: "App-managed fallback recordings are included. Recordings saved to Photos remain in your Photos library and are not included."
             )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2505,8 +2513,13 @@ struct YourDataView: View {
                 exportData()
             } label: {
                 HStack {
-                    Image(systemName: "square.and.arrow.up")
-                    Text("Export local account data")
+                    if isExporting {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    Text(isExporting ? "Preparing export…" : "Export account data")
                 }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
@@ -2515,8 +2528,10 @@ struct YourDataView: View {
                 .background(AppColor.brandBlue, in: Capsule())
             }
             .buttonStyle(.pressable)
+            .disabled(isExporting)
+            .accessibilityHint("Creates a ZIP archive without Keychain credentials or provider tokens.")
 
-            Text("Exports a versioned JSON file containing identified account-scoped UserDefaults records plus the device-local friend list. Photos-library recordings and provider-held data are not included.")
+            Text("Creates Noum-export-YYYY-MM-DD.zip with versioned JSON for every registered account-data owner and any app-managed fallback recordings. Keychain credentials, Photos-library recordings, and provider-held data are not included. Legacy device-wide records are labelled as unattributed.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -2550,42 +2565,33 @@ struct YourDataView: View {
         .padding(.vertical, 4)
     }
 
+    private var exportErrorBinding: Binding<Bool> {
+        Binding(
+            get: { exportError != nil },
+            set: { if !$0 { exportError = nil } }
+        )
+    }
+
     private func exportData() {
-        let accountID = AuthManager.shared.currentAccountID ?? "guest"
-        let defaults = UserDefaults.standard
-
-        var export: [String: Any] = [
-            "schemaVersion": 1,
-            "exportDate": ISO8601DateFormatter().string(from: Date()),
-            "accountID": accountID,
-            "accountScopedLocalStorage": AuthManager.accountScopedDefaultsSnapshot(
-                for: accountID,
-                defaults: defaults
-            ),
-            "limitations": [
-                "Only account-scoped local records Noum can identify are included.",
-                "Recordings saved to Photos and data retained by third-party processors are not included."
-            ]
-        ]
-        if let data = defaults.data(forKey: "NoumFriendsList"),
-           let json = try? JSONSerialization.jsonObject(with: data) {
-            export["deviceLocalFriends"] = json
+        guard !isExporting else { return }
+        isExporting = true
+        exportError = nil
+        Task { @MainActor in
+            do {
+                let url = try await authManager.exportCurrentAccountData()
+                exportURL = url
+                showExportSheet = true
+            } catch {
+                exportError = (error as? LocalizedError)?.errorDescription
+                    ?? "Noum couldn't prepare your export. Nothing was shared. Try again."
+            }
+            isExporting = false
         }
+    }
 
-        guard let jsonData = try? JSONSerialization.data(
-            withJSONObject: export,
-            options: [.prettyPrinted, .sortedKeys]
-        ) else { return }
-
-        let tempDir = FileManager.default.temporaryDirectory
-        let fileDateFormatter = DateFormatter()
-        fileDateFormatter.locale = Locale(identifier: "en_US_POSIX")
-        fileDateFormatter.dateFormat = "yyyy-MM-dd"
-        let dateStamp = fileDateFormatter.string(from: Date())
-        let fileURL = tempDir.appendingPathComponent("Noum-export-\(dateStamp).json")
-        try? jsonData.write(to: fileURL)
-        exportURL = fileURL
-        showExportSheet = true
+    private func cleanupExport() {
+        authManager.cleanupAccountDataExport(at: exportURL)
+        exportURL = nil
     }
 }
 

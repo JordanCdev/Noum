@@ -76,6 +76,7 @@ enum AccountDeletionError: LocalizedError, Equatable {
     case appleRevocationUnavailable
     case serviceUnavailable
     case remoteRejected
+    case localCleanupFailed
 
     var errorDescription: String? {
         switch self {
@@ -89,6 +90,8 @@ enum AccountDeletionError: LocalizedError, Equatable {
             return "Noum couldn't reach the account service. Your account and local data are unchanged. Try again when you're connected."
         case .remoteRejected:
             return "Noum couldn't complete account deletion. Your local data is unchanged and you can retry."
+        case .localCleanupFailed:
+            return "Noum removed the remote account but couldn't finish clearing this device. Retry to complete local cleanup."
         }
     }
 
@@ -231,6 +234,8 @@ class AuthManager: ObservableObject {
     private let accountNameKey = "NoumAccountName"
     private let accountProviderKey = "NoumAccountProvider"
     private let installInitializedKey = "NoumHasInitializedInstallState"
+    private let accountDataRegistry: AccountDataRegistry
+    private let accountDataExportService: AccountDataExportService
     private var activeGuestBootstrapGeneration: UUID?
     private var activeGuestBootstrapRace: AnonymousFirebaseBootstrapRace?
     private var activeAccountHydrationGeneration: UUID?
@@ -349,6 +354,9 @@ class AuthManager: ObservableObject {
 #endif
 
     private init() {
+        let registry = AccountDataRegistry.production()
+        accountDataRegistry = registry
+        accountDataExportService = AccountDataExportService(registry: registry)
         initializeInstallStateIfNeeded()
 #if canImport(GoogleSignIn)
         configureGoogleSignInIfAvailable()
@@ -829,6 +837,7 @@ class AuthManager: ObservableObject {
         cancelActiveAccountHydration()
         AutoGuidedFirstRep.cancelPendingLaunch()
         credentialIdentity = nil
+        accountDataExportService.cleanupAll()
 #if canImport(GoogleSignIn)
         GIDSignIn.sharedInstance.signOut()
 #endif
@@ -883,7 +892,7 @@ class AuthManager: ObservableObject {
                 }
             }
 
-            Self.clearAllUserData(for: accountID)
+            try accountDataRegistry.deleteAllData(for: accountID)
             signOut()
             accountDeletionState = .completed
         } catch {
@@ -893,129 +902,18 @@ class AuthManager: ObservableObject {
         }
     }
 
-    /// Removes all per-account UserDefaults keys so no personal data remains on device.
+    /// Compatibility entry point for diagnostics and older tests. Production
+    /// deletion uses the registry owned by this AuthManager instance.
     static func clearAllUserData(for accountID: String) {
-        let defaults = UserDefaults.standard
-        let keysToRemove = [
-            "coachingProfile.\(accountID)",
-            // Legacy onboarding completion flag. The profile itself is now the
-            // sole completion truth, but deletion still removes older writes.
-            "coachingProfileOnboardingComplete.\(accountID)",
-            "\(FirstRunOnboardingGate.legacyCompletedKeyPrefix)\(accountID)",
-            "\(AutoGuidedFirstRep.completedKeyPrefix)\(accountID)",
-            "practiceSessions.\(accountID)",
-            "skillTrendSnapshots.\(accountID)",
-            "communicationBaseline.\(accountID)",
-            "pressureProfile.\(accountID)",
-            "speakingRating.\(accountID)",
-            "imRelationshipProfiles.\(accountID)",
-            "recommendation.pending.\(accountID)",
-            "recommendation.outcomes.\(accountID)",
-            "profileXP.\(accountID)",
-            // Daily Goal
-            "noum.dailyGoal.reps.\(accountID)",
-            "noum.dailyGoal.drillCompletions.\(accountID)",
-            "noum.dailyGoal.lastCelebrationDay.\(accountID)",
-            // Streak Freeze
-            "noum.streakFreeze.available.\(accountID)",
-            "noum.streakFreeze.lastEarnedWeek.\(accountID)",
-            "noum.streakFreeze.consumedDates.\(accountID)",
-            // Path progression (M3)
-            "noum.pathProgress.unlocked.\(accountID)",
-            "noum.pathProgress.initialized.\(accountID)",
-            // Lessons (M3+: teaching layer)
-            "noum.lessons.progress.\(accountID)",
-            // First-rep celebration (one-shot per account)
-            "noum.firstRep.seen.\(accountID)",
-            // Deferred profile capture (one-shot per prompt per account)
-            "noum.deferredCapture.seen.goal.\(accountID)",
-            "noum.deferredCapture.seen.whyNow.\(accountID)",
-            "noum.deferredCapture.seen.successVision.\(accountID)",
-            // Notification preferences
-            "noum.notifications.dailyReminderEnabled.\(accountID)",
-            "noum.notifications.dailyReminderTime.\(accountID)",
-            "noum.notifications.streakWarningEnabled.\(accountID)",
-            "noum.notifications.weeklyDigestEnabled.\(accountID)",
-            // M14: peak-glow cursor (Home-only post-session celebration).
-            "speakingRating.lastShownWeekPeak.\(accountID)",
-            // M14: NoumCharacter lifetime-stage ratchet
-            "noumCharacter.peakStage.\(accountID)",
-            // Journey day-bloom ratchet (last-seen practiced days)
-            "noum.journey.lastSeenPracticedDays.\(accountID)",
-            // M19: Big Moment intake + archive of past moments
-            "bigMoment.\(accountID)",
-            "bigMomentArchive.\(accountID)",
-            "bigMomentOutcomes.\(accountID)",
-            // M20: Forward Plan (4-week coach program)
-            "forwardPlan.\(accountID)",
-            // M21: Session Intent — bounded history of declared focuses
-            "sessionIntent.history.\(accountID)",
-            // Session Reflection — bounded history of post-rep felt experience
-            "sessionReflection.history.\(accountID)",
-            // M24: Post-rep coach note — bounded history of coach reads
-            "postRepCoachNote.\(accountID)",
-            // M25: Coach memory — durable working formulation for Ask Noum
-            "coachMemory.\(accountID)",
-            // Transcript-anchored quote archive used by Ask Noum.
-            "proofMoment.archive.\(accountID)",
-            // Ask Noum coach thread — the full per-account chat/call dialogue.
-            // Must be wiped on account deletion (GDPR) like every other store.
-            "askNoum.thread.\(accountID)",
-            // M24 Track 3: Sudden Death run history — bounded per-account
-            "suddenDeath.runHistory.\(accountID)",
-            // Account-scoped owners added after the original deletion list.
-            "coachCheckIns.\(accountID)",
-            "coachLetter.archive.\(accountID)",
-            "lastPrimaryFocus.\(accountID)",
-            "roleplayTurns.\(accountID)",
-            "noum.skillProgression.\(accountID)",
-            "noum.dailyChallenges.\(accountID)",
-            "noum.wordOfTheDay.usedDays.\(accountID)",
-            "noum.practiceLocale.\(accountID)",
-            "noum.streakFreeze.lastSeenStreakDay.\(accountID)",
-            "cloudProcessingConsent.\(accountID)",
-        ]
-
-        // Future-proof the deletion inventory. Every per-account owner uses a
-        // dot-delimited account ID; include newly added stores and day-bucketed
-        // keys even if this explicit audit list has not yet been updated.
-        let discoveredKeys = defaults.dictionaryRepresentation().keys.filter {
-            isAccountScopedDefaultsKey($0, accountID: accountID)
-        }
-        for key in Set(keysToRemove + discoveredKeys) {
-            defaults.removeObject(forKey: key)
-        }
-        // Global keys that are not per-account but should be cleared on deletion
-        defaults.removeObject(forKey: "NoumFriendsList")
-        defaults.removeObject(forKey: "NoumChallenges")
-        defaults.removeObject(forKey: "NoumCompletedChallenges")
-        defaults.removeObject(forKey: "NoumAsyncChallenges")
-        defaults.removeObject(forKey: "skillTrendSnapshots")
-        defaults.removeObject(forKey: "aiMonthlyAnalysisCount")
-        defaults.removeObject(forKey: "aiMonthlyAnalysisMonth")
-        defaults.removeObject(forKey: "hasAcknowledgedAIDisclosure.\(accountID)")
-        defaults.removeObject(forKey: "noum_achievement_unlocks")
-        defaults.removeObject(forKey: "drillHistory")
+        try? AccountDataRegistry.production().deleteAllData(for: accountID)
         AutoGuidedFirstRep.cancelPendingLaunch()
-        // Legacy device-local account sighting flags. They no longer drive any
-        // runtime decision, but must not survive account deletion.
-        for provider in [AuthProvider.apple, .google, .guest] {
-            defaults.removeObject(forKey: "hasSeenAccount.\(provider.rawValue).\(accountID)")
-        }
-        // AIRateLimiter day-bucketed counters — keys roll daily, so
-        // they're cleared via the store's own 30-day rolling sweep
-        // rather than enumerated by name here.
-        AIRateLimiter.shared.deleteAllData(for: accountID)
     }
 
     nonisolated static func isAccountScopedDefaultsKey(
         _ key: String,
         accountID: String
     ) -> Bool {
-        let trimmed = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        let token = ".\(trimmed)"
-        return key.hasSuffix(token) || key.contains(token + ".")
+        AccountDataRegistry.isAccountScopedDefaultsKey(key, accountID: accountID)
     }
 
     /// JSON-safe export of every account-scoped UserDefaults value currently
@@ -1029,6 +927,25 @@ class AuthManager: ObservableObject {
             guard isAccountScopedDefaultsKey(entry.key, accountID: accountID) else { return }
             result[entry.key] = jsonSafeDefaultsValue(entry.value)
         }
+    }
+
+    var accountDataParticipantIDs: [String] {
+        accountDataRegistry.participantIDs
+    }
+
+    var accountDataCoverage: AccountDataCoverage {
+        accountDataRegistry.coverage
+    }
+
+    func exportCurrentAccountData() async throws -> URL {
+        guard let accountID = currentAccountID else {
+            throw AccountDataExportError.noActiveAccount
+        }
+        return try await accountDataExportService.createExport(for: accountID)
+    }
+
+    func cleanupAccountDataExport(at url: URL?) {
+        accountDataExportService.cleanupExport(at: url)
     }
 
     nonisolated private static func jsonSafeDefaultsValue(_ value: Any) -> Any {
@@ -1053,6 +970,7 @@ class AuthManager: ObservableObject {
 
     private static func mapAccountDeletionError(_ error: Error) -> AccountDeletionError {
         if let error = error as? AccountDeletionError { return error }
+        if error is AccountDataRegistryError { return .localCleanupFailed }
         guard let backendError = error as? BackendAccountDeletionError else {
             #if canImport(FirebaseAuth)
             if AuthErrorCode(rawValue: (error as NSError).code) == .requiresRecentLogin {
@@ -1224,37 +1142,7 @@ class AuthManager: ObservableObject {
         NotificationPrePromptManager.shared.pendingPrompt = false
         DeferredProfileCaptureManager.shared.pendingPrompt = nil
         GoalRefreshManager.shared.shouldPresent = false
-        AISettingsManager.shared.reloadForCurrentAccount()
-        CoachingProfileStore.shared.reloadForCurrentAccount()
-        PracticeSessionStore.shared.reloadForCurrentAccount()
-        SkillTrendStore.shared.reloadForCurrentAccount()
-        BaselineStore.shared.reloadForCurrentAccount()
-        RatingStore.shared.reloadForCurrentAccount()
-        ProfileManager.shared.reloadForCurrentAccount()
-        IMRelationshipStore.shared.reloadForCurrentAccount()
-        RecommendationLearningStore.shared.reloadForCurrentAccount()
-        BigMomentStore.shared.reloadForCurrentAccount()
-        ForwardPlanStore.shared.reloadForCurrentAccount()
-        SessionIntentStore.shared.reloadForCurrentAccount()
-        SessionReflectionStore.shared.reloadForCurrentAccount()
-        CoachCheckInStore.shared.reloadForCurrentAccount()
-        CoachLetterStore.shared.reloadForCurrentAccount()
-        PostRepCoachNoteStore.shared.reloadForCurrentAccount()
-        CoachMemoryStore.shared.reloadForCurrentAccount()
-        if #available(iOS 17.0, *) {
-            ProofMomentStore.shared.reloadForCurrentAccount()
-        }
-        AskNoumStore.shared.reloadForCurrentAccount()
-        SuddenDeathRunHistoryStore.shared.reloadForCurrentAccount()
-        DailyGoalManager.shared.reloadForCurrentAccount()
-        StreakFreezeManager.shared.reloadForCurrentAccount()
-        PathProgressManager.shared.reloadForCurrentAccount()
-        LessonStore.shared.reloadForCurrentAccount()
-        SkillProgressionStore.shared.reloadForCurrentAccount()
-        DailyChallengesManager.shared.reloadForCurrentAccount()
-        WordOfTheDayManager.shared.reloadForCurrentAccount()
-        LocaleSettingsManager.shared.reloadForCurrentAccount()
-        RoleplayStore.shared.reloadForCurrentAccount()
+        accountDataRegistry.reloadForCurrentAccount()
     }
 
     private var isInitialBootstrapFailure: Bool {
@@ -1475,37 +1363,7 @@ class AuthManager: ObservableObject {
             NotificationPrePromptManager.shared.pendingPrompt = false
             DeferredProfileCaptureManager.shared.pendingPrompt = nil
             GoalRefreshManager.shared.shouldPresent = false
-            AISettingsManager.shared.endSession()
-            CoachingProfileStore.shared.endSession()
-            PracticeSessionStore.shared.endSession()
-            SkillTrendStore.shared.endSession()
-            BaselineStore.shared.endSession()
-            RatingStore.shared.endSession()
-            ProfileManager.shared.endSession()
-            IMRelationshipStore.shared.endSession()
-            BigMomentStore.shared.endSession()
-            ForwardPlanStore.shared.endSession()
-            SessionIntentStore.shared.endSession()
-            SessionReflectionStore.shared.endSession()
-            CoachCheckInStore.shared.endSession()
-            CoachLetterStore.shared.endSession()
-            PostRepCoachNoteStore.shared.endSession()
-            CoachMemoryStore.shared.endSession()
-            if #available(iOS 17.0, *) {
-                ProofMomentStore.shared.endSession()
-            }
-            AskNoumStore.shared.endSession()
-            SuddenDeathRunHistoryStore.shared.endSession()
-            DailyGoalManager.shared.reloadForCurrentAccount()
-            StreakFreezeManager.shared.reloadForCurrentAccount()
-            PathProgressManager.shared.reloadForCurrentAccount()
-            LessonStore.shared.reloadForCurrentAccount()
-            SkillProgressionStore.shared.reloadForCurrentAccount()
-            DailyChallengesManager.shared.reloadForCurrentAccount()
-            WordOfTheDayManager.shared.reloadForCurrentAccount()
-            LocaleSettingsManager.shared.reloadForCurrentAccount()
-            RoleplayStore.shared.endSession()
-            AIRateLimiter.shared.endSession()
+            self.accountDataRegistry.endSession()
         }
     }
 
