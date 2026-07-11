@@ -12,6 +12,11 @@ import Foundation
 // hit when the user taps "noum.app" anywhere in the app.
 
 enum NoumWebURLs {
+    /// Monitored support inbox used for privacy and account-deletion help
+    /// until the custom-domain mailbox is ready.
+    static let supportEmail = "noumsupport@gmail.com"
+    static let supportMail = URL(string: "mailto:\(supportEmail)")!
+
     /// Firebase Hosting default subdomain. The custom apex
     /// (e.g., `noum.app`) redirects here once DNS is wired.
     static let landing = URL(string: "https://noum-d0b6f.web.app")!
@@ -21,4 +26,8 @@ enum NoumWebURLs {
     /// resolve to this. Backed by `public/privacy.html` via the
     /// `firebase.json` rewrite `/privacy → /privacy.html`.
     static let privacy = URL(string: "https://noum-d0b6f.web.app/privacy")!
+
+    /// Apple's account-level subscription management surface. Account
+    /// deletion never claims to cancel a StoreKit subscription automatically.
+    static let manageSubscriptions = URL(string: "https://apps.apple.com/account/subscriptions")!
 }

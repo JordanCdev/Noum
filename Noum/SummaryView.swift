@@ -54,6 +54,11 @@ enum SummaryTopSafeAreaCoverLayout {
     }
 }
 
+private enum SummaryCloudProcessingAction {
+    case coachRead
+    case videoAnalysis
+}
+
 // MARK: - SummaryView (Redesigned)
 
 struct SummaryView: View {
@@ -164,6 +169,7 @@ struct SummaryView: View {
     @State private var enhancedCoachNote: CoachNote?
     @State private var eloquenceFindings: [EloquenceFinding] = []
     @State private var showAIDisclosure = false
+    @State private var pendingCloudProcessingAction: SummaryCloudProcessingAction = .coachRead
     /// Proof moment loaded for the personal-best celebration. Hydrated
     /// async after the milestone fires; if it doesn't resolve in time
     /// the celebration renders without the proof line.
@@ -799,14 +805,24 @@ struct SummaryView: View {
                         recordingURL: recordingURL
                     )
                 }
-                .alert("Coaching privacy", isPresented: $showAIDisclosure) {
-                    Button("Continue") {
-                        aiSettings.acknowledgeAIDisclosure()
-                        Task { await requestDeeperFeedback() }
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("To create this deeper read, Noum securely processes the transcript with its coaching service. The transcript is not sold, shared with advertisers, or used to train AI models.")
+                .sheet(isPresented: $showAIDisclosure) {
+                    CloudProcessingConsentDisclosure(
+                        isCurrentlyAllowed: aiSettings.isCloudProcessingAllowed,
+                        onAllow: {
+                            aiSettings.recordCloudProcessingDecision(.allowed)
+                            showAIDisclosure = false
+                            switch pendingCloudProcessingAction {
+                            case .coachRead:
+                                Task { await requestDeeperFeedback() }
+                            case .videoAnalysis:
+                                analyzeVideo()
+                            }
+                        },
+                        onNotNow: {
+                            aiSettings.recordCloudProcessingDecision(.declined)
+                            showAIDisclosure = false
+                        }
+                    )
                 }
                 // VoiceOver escape: back-nav is hidden and swipe-back is
                 // disabled by design, and the only Done now lives at the
@@ -1490,9 +1506,10 @@ struct SummaryView: View {
                 .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             } else {
                 Button {
-                    if aiSettings.hasAcknowledgedAIDisclosure {
+                    if aiSettings.isCloudProcessingAllowed {
                         Task { await requestDeeperFeedback() }
                     } else {
+                        pendingCloudProcessingAction = .coachRead
                         showAIDisclosure = true
                     }
                 } label: {
@@ -1740,9 +1757,6 @@ struct SummaryView: View {
 
             // Footer
             HStack {
-                Text("noum.app")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.25))
                 Spacer()
                 Text(Date().formatted(.dateTime.month(.abbreviated).day().year()))
                     .font(.system(size: 11, weight: .medium))
@@ -2119,6 +2133,12 @@ struct SummaryView: View {
     private func requestDeeperFeedback() async {
         aiError = nil
 
+        guard aiSettings.isCloudProcessingAllowed else {
+            pendingCloudProcessingAction = .coachRead
+            showAIDisclosure = true
+            return
+        }
+
         // Provider configuration is an operational concern, not a user task.
         // Keep the rep intact and describe availability honestly.
         if aiSettings.activeProvider == nil {
@@ -2211,6 +2231,11 @@ struct SummaryView: View {
     }
 
     private func analyzeVideo() {
+        guard aiSettings.isCloudProcessingAllowed else {
+            pendingCloudProcessingAction = .videoAnalysis
+            showAIDisclosure = true
+            return
+        }
         guard let url = recordingURL else { return }
         isAnalyzingVideo = true
 

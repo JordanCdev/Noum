@@ -4361,9 +4361,26 @@ final class CoachingProfileStore: ObservableObject {
     /// successful-looking in-memory profile that disappears on relaunch.
     @discardableResult
     func save(_ profile: CoachingProfile) -> Bool {
-        guard let accountID = currentAccountID,
-              let data = try? JSONEncoder().encode(profile) else {
-            return false
+        (try? persist(profile)) != nil
+    }
+
+    /// First-run completion uses an explicit async, throwing contract so the
+    /// onboarding root cannot advance after a missing identity, encoding
+    /// failure, or failed durability check. Existing edit surfaces retain the
+    /// synchronous compatibility wrapper above.
+    func saveForOnboarding(_ profile: CoachingProfile) async throws {
+        try persist(profile)
+    }
+
+    private func persist(_ profile: CoachingProfile) throws {
+        guard let accountID = currentAccountID else {
+            throw CoachingProfilePersistenceError.missingAccount
+        }
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(profile)
+        } catch {
+            throw CoachingProfilePersistenceError.encodingFailed
         }
         // Snapshot the prior voice BEFORE mutating self.profile so we
         // can detect a voice change and trigger a retroactive regen of
@@ -4376,7 +4393,7 @@ final class CoachingProfileStore: ObservableObject {
         let key = profileKey(for: accountID)
         UserDefaults.standard.set(data, forKey: key)
         guard UserDefaults.standard.data(forKey: key) == data else {
-            return false
+            throw CoachingProfilePersistenceError.verificationFailed
         }
 
         self.profile = profile
@@ -4389,7 +4406,6 @@ final class CoachingProfileStore: ObservableObject {
                 newVoice: profile.speakingStyleGoal
             )
         }
-        return true
     }
 
     /// Single-shot AI paraphrase of the user's goal at capture time. Best-effort:
@@ -4397,7 +4413,8 @@ final class CoachingProfileStore: ObservableObject {
     /// falls back to the deterministic template. Guarded so we never repeat the
     /// pass for the same profile, even across launches.
     private func paraphraseGoalIfNeeded(profile: CoachingProfile, accountID: String) {
-        guard profile.paraphrasedGoal == nil else { return }
+        guard profile.paraphrasedGoal == nil,
+              AISettingsManager.shared.isCloudProcessingAllowed else { return }
         Task { [weak self] in
             guard let self else { return }
             guard let paraphrase = await GoalParaphraseService.shared.paraphrase(profile: profile),
@@ -4491,6 +4508,21 @@ final class CoachingProfileStore: ObservableObject {
         guard let providerRawValue = currentProviderRawValue else { return }
         Task {
             await BackendSyncManager.shared.syncProfile(profile, accountID: accountID, providerRawValue: providerRawValue)
+        }
+    }
+}
+
+enum CoachingProfilePersistenceError: LocalizedError, Equatable {
+    case missingAccount
+    case encodingFailed
+    case verificationFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .missingAccount:
+            return "Noum is still preparing your account. Try again."
+        case .encodingFailed, .verificationFailed:
+            return "Noum couldn't save your coaching direction. Try again."
         }
     }
 }
@@ -4621,6 +4653,42 @@ final class IMRelationshipStore: ObservableObject {
     }
 }
 
+enum CloudProcessingConsentDecision: String, Codable, Sendable {
+    case allowed
+    case declined
+}
+
+struct CloudProcessingConsent: Codable, Equatable, Sendable {
+    let decision: CloudProcessingConsentDecision
+    let decidedAt: Date
+    let disclosureVersion: Int
+    let processorManifestVersion: Int
+
+    func isCurrent(disclosureVersion: Int, processorManifestVersion: Int) -> Bool {
+        decision == .allowed
+            && self.disclosureVersion == disclosureVersion
+            && self.processorManifestVersion == processorManifestVersion
+    }
+
+    static func migratedLegacyAcknowledgement(
+        acknowledged: Bool,
+        decidedAt: Date,
+        disclosureVersion: Int,
+        processorManifestVersion: Int
+    ) -> CloudProcessingConsent? {
+        guard acknowledged else { return nil }
+        return CloudProcessingConsent(
+            decision: .allowed,
+            decidedAt: decidedAt,
+            // The prior acknowledgement did not capture the complete data and
+            // processor disclosure. Preserve it as audit history, but make it
+            // stale so the user must make an explicit current-version choice.
+            disclosureVersion: max(0, disclosureVersion - 1),
+            processorManifestVersion: max(0, processorManifestVersion - 1)
+        )
+    }
+}
+
 @MainActor
 final class AISettingsManager: ObservableObject {
     static let shared = AISettingsManager()
@@ -4633,10 +4701,15 @@ final class AISettingsManager: ObservableObject {
     @Published private(set) var analysisCountThisMonth: Int {
         didSet { UserDefaults.standard.set(analysisCountThisMonth, forKey: countKey) }
     }
+    @Published private(set) var cloudProcessingConsent: CloudProcessingConsent?
 
     private let countKey = "aiMonthlyAnalysisCount"
     private let monthKey = "aiMonthlyAnalysisMonth"
     private let disclosureKeyPrefix = "hasAcknowledgedAIDisclosure."
+    private let consentKeyPrefix = "cloudProcessingConsent."
+
+    nonisolated static let disclosureVersion = 1
+    nonisolated static let processorManifestVersion = 1
 
     // MARK: - Usage Tiers
     // Premium: generous 100/month — most active users won't hit this.
@@ -4656,11 +4729,23 @@ final class AISettingsManager: ObservableObject {
 
     private init() {
         analysisCountThisMonth = UserDefaults.standard.integer(forKey: countKey)
+        cloudProcessingConsent = nil
         resetIfNeeded()
+        reloadForCurrentAccount()
     }
 
-    var activeProvider: AIProvider? {
+    /// The configured vendor independent of consent. This is used for
+    /// disclosure copy only. Network services must use `activeProvider`.
+    var configuredProvider: AIProvider? {
         Self.preferredProvider(hasAPIKey: hasAPIKey(for:))
+    }
+
+    /// Service-boundary gate shared by the existing AI services. Returning nil
+    /// here guarantees their established deterministic fallbacks run without a
+    /// provider request until current consent exists.
+    var activeProvider: AIProvider? {
+        guard isCloudProcessingAllowed else { return nil }
+        return configuredProvider
     }
 
     nonisolated static func preferredProvider(
@@ -4682,7 +4767,7 @@ final class AISettingsManager: ObservableObject {
     }
 
     var canRequestAnalysis: Bool {
-        activeProvider != nil && remainingAnalyses > 0
+        isCloudProcessingAllowed && activeProvider != nil && remainingAnalyses > 0
     }
 
     /// Whether the user is approaching their limit (≥90% used).
@@ -4732,22 +4817,86 @@ final class AISettingsManager: ObservableObject {
         }
     }
 
-    // MARK: - AI Transcript Disclosure
+    // MARK: - Cloud-processing consent
 
-    /// Whether the current user has acknowledged that speech transcripts are sent to cloud AI.
+    var isCloudProcessingAllowed: Bool {
+        cloudProcessingConsent?.isCurrent(
+            disclosureVersion: Self.disclosureVersion,
+            processorManifestVersion: Self.processorManifestVersion
+        ) == true
+    }
+
+    var cloudProcessingStatusTitle: String {
+        switch cloudProcessingConsent?.decision {
+        case .allowed where isCloudProcessingAllowed:
+            return "Allowed"
+        case .allowed:
+            return "Review needed"
+        case .declined:
+            return "Not allowed"
+        case nil:
+            return "Not chosen"
+        }
+    }
+
+    func recordCloudProcessingDecision(
+        _ decision: CloudProcessingConsentDecision,
+        now: Date = Date()
+    ) {
+        let consent = CloudProcessingConsent(
+            decision: decision,
+            decidedAt: now,
+            disclosureVersion: Self.disclosureVersion,
+            processorManifestVersion: Self.processorManifestVersion
+        )
+        cloudProcessingConsent = consent
+        guard let data = try? JSONEncoder().encode(consent) else { return }
+        UserDefaults.standard.set(data, forKey: consentKey(for: currentAccountID))
+    }
+
+    func revokeCloudProcessingConsent() {
+        recordCloudProcessingDecision(.declined)
+    }
+
+    func reloadForCurrentAccount() {
+        let accountID = currentAccountID
+        let key = consentKey(for: accountID)
+        if let data = UserDefaults.standard.data(forKey: key),
+           let decoded = try? JSONDecoder().decode(CloudProcessingConsent.self, from: data) {
+            cloudProcessingConsent = decoded
+            return
+        }
+
+        let legacyKey = disclosureKeyPrefix + accountID
+        let migrated = CloudProcessingConsent.migratedLegacyAcknowledgement(
+            acknowledged: UserDefaults.standard.bool(forKey: legacyKey),
+            decidedAt: Date(),
+            disclosureVersion: Self.disclosureVersion,
+            processorManifestVersion: Self.processorManifestVersion
+        )
+        cloudProcessingConsent = migrated
+        if let migrated, let data = try? JSONEncoder().encode(migrated) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+
+    func endSession() {
+        cloudProcessingConsent = nil
+    }
+
+    /// Compatibility name retained for older call sites. This now means the
+    /// account has a current, versioned allow decision.
     var hasAcknowledgedAIDisclosure: Bool {
-        let accountID = KeychainHelper.load(key: "NoumAccountID") ?? "guest"
-        return UserDefaults.standard.bool(forKey: disclosureKeyPrefix + accountID)
+        isCloudProcessingAllowed
     }
 
     func acknowledgeAIDisclosure() {
-        let accountID = KeychainHelper.load(key: "NoumAccountID") ?? "guest"
-        UserDefaults.standard.set(true, forKey: disclosureKeyPrefix + accountID)
+        recordCloudProcessingDecision(.allowed)
     }
 
     /// The user-facing name of the active AI provider (e.g., "Google Gemini", "OpenAI").
     var activeProviderDisplayName: String {
-        switch activeProvider {
+        switch configuredProvider {
         case .gemini: return "Google Gemini"
         case .openAI: return "OpenAI"
         case .deepSeek: return "DeepSeek"
@@ -4758,12 +4907,21 @@ final class AISettingsManager: ObservableObject {
     private func hasAPIKey(for provider: AIProvider) -> Bool {
         AIProviderCredential.hasAPIKey(for: provider)
     }
+
+    private var currentAccountID: String {
+        KeychainHelper.load(key: "NoumAccountID") ?? "guest"
+    }
+
+    private func consentKey(for accountID: String) -> String {
+        consentKeyPrefix + accountID
+    }
 }
 
 @MainActor
 enum IMModeAvailability {
     static var isAvailable: Bool {
-        AISettingsManager.shared.activeProvider != nil || backendBaseURL != nil
+        AISettingsManager.shared.isCloudProcessingAllowed
+            && (AISettingsManager.shared.activeProvider != nil || backendBaseURL != nil)
     }
 
     private static var backendBaseURL: URL? {
@@ -5111,6 +5269,17 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
         stop()
         currentGeneration &+= 1
         let myGeneration = currentGeneration
+        if !AISettingsManager.shared.isCloudProcessingAllowed {
+            if (onDeviceOnly || allowOnDeviceFallback),
+               speakOnDevice(trimmed, generation: myGeneration) {
+                playbackSettings.recordOnDeviceFallback(
+                    reason: "Cloud processing permission is not enabled."
+                )
+            } else if onDeviceOnly || allowOnDeviceFallback {
+                voiceUnavailableNotice = Self.voiceUnavailableNoticeText
+            }
+            return
+        }
         // V3 — DEV cost-saver: when the developer toggle forces on-device TTS,
         // chat-surface speech (the only callers that pass allowOnDeviceFallback)
         // routes straight to the system voice instead of paying for cloud TTS.
@@ -5247,6 +5416,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
     }
 
     func prewarmPreferredEngineIfNeeded(for setup: IMConversationSetup) {
+        guard AISettingsManager.shared.isCloudProcessingAllowed else { return }
         guard let engine = candidateEngines(for: setup).first else { return }
         let warmupKey = "\(engine.rawValue):\(setup.scenario.rawValue)"
         guard !warmedKeys.contains(warmupKey), !prewarmingKeys.contains(warmupKey) else { return }
@@ -5284,6 +5454,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
     func speakPrompt(_ text: String) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
+        guard AISettingsManager.shared.isCloudProcessingAllowed else { return false }
         stop()
 
         // Build a minimal setup for voice selection — use a calm, coaching-like persona
@@ -5397,13 +5568,15 @@ final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate,
     /// "no cloud provider" genuinely means "no spoken reply here" — and the
     /// honest UI is to hide the toggle, never to pretend.
     var canSpeakReplies: Bool {
-        googleCloudAccessToken() != nil
+        AISettingsManager.shared.isCloudProcessingAllowed
+            && (googleCloudAccessToken() != nil
             || googleCloudAPIKey() != nil
             || openAIAPIKey() != nil
-            || backendTTSAvailable()
+            || backendTTSAvailable())
     }
 
     private func candidateEngines(for setup: IMConversationSetup) -> [IMVoiceEngine] {
+        guard AISettingsManager.shared.isCloudProcessingAllowed else { return [] }
         func appendUnique(_ engine: IMVoiceEngine, to engines: inout [IMVoiceEngine]) {
             guard !engines.contains(engine) else { return }
             engines.append(engine)
@@ -9498,6 +9671,7 @@ enum PracticeSessionFinalizer {
         // AI upgrade fires concurrently. If the network is unreachable
         // or the locale is non-English, `generate` returns the same
         // deterministic note (no second write needed but harmless).
+        guard AISettingsManager.shared.isCloudProcessingAllowed else { return }
         Task { [input] in
             let upgraded = await PostRepCoachNoteService.shared.generate(input: input)
             await MainActor.run {
@@ -9607,6 +9781,7 @@ enum PracticeSessionFinalizer {
         // AI upgrade fires concurrently — same shape as the finalize
         // path so the polished phrasing eventually lands once the
         // model rewrites in the new voice.
+        guard AISettingsManager.shared.isCloudProcessingAllowed else { return }
         Task { [input] in
             let upgraded = await PostRepCoachNoteService.shared.generate(input: input)
             await MainActor.run {
@@ -10932,6 +11107,9 @@ struct IMConversationService: IMConversationServicing {
         context: IMSessionContext,
         latestUserSignal: IMUserMessageSignal?
     ) async throws -> IMConversationReply {
+        guard settings.isCloudProcessingAllowed else {
+            throw IMModeServiceError.unavailable
+        }
         guard IMModeAvailability.isAvailable else {
             throw IMModeServiceError.unavailable
         }
@@ -11455,6 +11633,11 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
                 statusCode: statusCode,
                 startedAt: startedAt
             )
+        }
+
+        guard settings.isCloudProcessingAllowed else {
+            record(.skipped, "Cloud processing not allowed")
+            return fallback
         }
 
         // Locale gate — the same one-liner the rest of PracticeSupport.swift
@@ -12213,6 +12396,12 @@ struct AICoachService: AICoachServicing {
             )
         }
 
+
+        guard settings.isCloudProcessingAllowed else {
+            record(.skipped, "Cloud processing not allowed")
+            return fallback
+        }
+
         // Locale gate — the one-liner the whole of PracticeSupport.swift was
         // missing (verified 0 prior occurrences). A Spanish/French rep gets the
         // deterministic grounded read, never English LLM coaching.
@@ -12862,6 +13051,10 @@ struct AIHomeRecommendationService: AIHomeRecommendationServicing {
         }
 
         settings.resetIfNeeded()
+        guard settings.isCloudProcessingAllowed else {
+            record(.skipped, "Cloud processing not allowed")
+            throw AICoachError.providerDisabled
+        }
         let configuredProvider = settings.activeProvider
         guard let provider = configuredProvider else {
             record(.skipped, "No active provider")
@@ -13288,6 +13481,10 @@ final class VideoAnalysisService {
         }
 
         settings.resetIfNeeded()
+        guard settings.isCloudProcessingAllowed else {
+            record(.skipped, "Cloud processing not allowed")
+            throw AICoachError.providerDisabled
+        }
         guard VideoAnalysisContract.localeSupportsAI(LocaleSettingsManager.shared.current) else {
             record(.skipped, "Locale not AI-supported")
             throw VideoAnalysisError.localeUnsupported

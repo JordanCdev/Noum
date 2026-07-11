@@ -56,7 +56,9 @@ struct NoumApp: App {
     private let firebaseReady: Void = FirebaseBootstrap.configure()
     @StateObject private var authManager = AuthManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var localeSettings = LocaleSettingsManager.shared
+    @State private var showFirstRepCloudProcessingConsent = false
     @Environment(\.scenePhase) private var scenePhase
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isRealFirstRunUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_REAL_FIRST_RUN")
@@ -185,6 +187,22 @@ struct NoumApp: App {
         // already-rendered Text views keep their original locale.
         .environment(\.locale, Locale(identifier: localeSettings.current.code))
         .id(localeSettings.current.code)
+        .sheet(isPresented: $showFirstRepCloudProcessingConsent) {
+            CloudProcessingConsentDisclosure(
+                isCurrentlyAllowed: aiSettings.isCloudProcessingAllowed,
+                onAllow: {
+                    aiSettings.recordCloudProcessingDecision(.allowed)
+                    showFirstRepCloudProcessingConsent = false
+                    prepareFirstRepLaunch()
+                },
+                onNotNow: {
+                    aiSettings.recordCloudProcessingDecision(.declined)
+                    showFirstRepCloudProcessingConsent = false
+                    prepareFirstRepLaunch()
+                }
+            )
+            .interactiveDismissDisabled(true)
+        }
         .task {
             await authManager.bootstrapInitialAccountIfNeeded()
             await MainActor.run {
@@ -275,6 +293,14 @@ struct NoumApp: App {
 
     private func completeFirstRunOnboarding() {
         guard coachingProfileStore.profile != nil else { return }
+        guard aiSettings.isCloudProcessingAllowed else {
+            showFirstRepCloudProcessingConsent = true
+            return
+        }
+        prepareFirstRepLaunch()
+    }
+
+    private func prepareFirstRepLaunch() {
         _ = AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true)
         DeepLinkRouter.shared.pending = URL(string: "noum://practice/timed")
     }

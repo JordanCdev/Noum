@@ -8,6 +8,42 @@ import FirebaseFirestore
 #if canImport(FirebaseAuth)
 import FirebaseAuth
 #endif
+#if canImport(FirebaseFunctions)
+import FirebaseFunctions
+#endif
+
+enum BackendAccountDeletionOutcome: Equatable {
+    /// The callable removed Noum-controlled data and the Firebase Auth record.
+    case accountAndAuthDeleted
+    /// A legacy REST backend removed its data; the client must still remove
+    /// the Firebase Auth record before local state can be cleared.
+    case dataDeleted
+}
+
+enum BackendAccountDeletionError: Error, Equatable {
+    case notConfigured
+    case requiresRecentAuthentication
+    case appleRevocationUnavailable
+    case serviceUnavailable
+    case rejected
+    case invalidResponse
+}
+
+private struct DeleteAccountCallableRequest: Codable, Sendable {
+    static let schemaVersion = 1
+    let schemaVersion: Int
+    let requestID: String
+
+    init(requestID: UUID = UUID()) {
+        self.schemaVersion = Self.schemaVersion
+        self.requestID = requestID.uuidString
+    }
+}
+
+private struct DeleteAccountCallableResponse: Codable, Sendable {
+    let deleted: Bool
+    let requestID: String
+}
 
 struct BackendBootstrap: Codable {
     let xp: Int?
@@ -33,6 +69,8 @@ private struct RecommendationSyncPayload: Codable {
 
 actor BackendSyncManager {
     static let shared = BackendSyncManager()
+    static let functionsRegion = "europe-west2"
+    static let deleteAccountFunctionName = "deleteAccount"
 
     private init() {}
 
@@ -136,13 +174,16 @@ actor BackendSyncManager {
         )
     }
 
-    func deleteAccount(accountID: String, providerRawValue: String) async {
-#if canImport(FirebaseFirestore)
+    func deleteAccount(
+        accountID: String,
+        providerRawValue: String
+    ) async throws -> BackendAccountDeletionOutcome {
+        #if canImport(FirebaseCore) && canImport(FirebaseFunctions)
         if firebaseIsConfigured {
-            await deleteFirebaseAccount(accountID: accountID)
-            return
+            return try await deleteFirebaseAccountThroughCallable()
         }
-#endif
+        #endif
+
         // REST backend path: send a DELETE request to remove server-side data
         guard let request = await request(
             path: "/v1/me",
@@ -150,10 +191,83 @@ actor BackendSyncManager {
             accountID: accountID,
             providerRawValue: providerRawValue
         ) else {
-            return
+            throw BackendAccountDeletionError.notConfigured
         }
-        _ = try? await URLSession.shared.data(for: request)
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw BackendAccountDeletionError.invalidResponse
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                if http.statusCode == 401 {
+                    throw BackendAccountDeletionError.requiresRecentAuthentication
+                }
+                throw BackendAccountDeletionError.rejected
+            }
+            return .dataDeleted
+        } catch let error as BackendAccountDeletionError {
+            throw error
+        } catch {
+            throw BackendAccountDeletionError.serviceUnavailable
+        }
     }
+
+    #if canImport(FirebaseCore) && canImport(FirebaseFunctions)
+    private func deleteFirebaseAccountThroughCallable() async throws -> BackendAccountDeletionOutcome {
+        guard FirebaseApp.app() != nil else {
+            throw BackendAccountDeletionError.notConfigured
+        }
+        #if canImport(FirebaseAuth)
+        guard let user = Auth.auth().currentUser else {
+            throw BackendAccountDeletionError.requiresRecentAuthentication
+        }
+        do {
+            _ = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+                user.getIDTokenForcingRefresh(true) { token, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else if let token {
+                        continuation.resume(returning: token)
+                    } else {
+                        continuation.resume(throwing: BackendAccountDeletionError.requiresRecentAuthentication)
+                    }
+                }
+            }
+        } catch {
+            throw BackendAccountDeletionError.requiresRecentAuthentication
+        }
+        #endif
+        let request = DeleteAccountCallableRequest()
+        do {
+            let functions = Functions.functions(region: Self.functionsRegion)
+            let callable: Callable<DeleteAccountCallableRequest, DeleteAccountCallableResponse> = functions
+                .httpsCallable(Self.deleteAccountFunctionName)
+            let response = try await callable.call(request)
+            guard response.deleted, response.requestID == request.requestID else {
+                throw BackendAccountDeletionError.invalidResponse
+            }
+            return .accountAndAuthDeleted
+        } catch let error as BackendAccountDeletionError {
+            throw error
+        } catch {
+            let nsError = error as NSError
+            guard nsError.domain == FunctionsErrorDomain,
+                  let code = FunctionsErrorCode(rawValue: nsError.code) else {
+                throw BackendAccountDeletionError.serviceUnavailable
+            }
+            switch code {
+            case .unauthenticated:
+                throw BackendAccountDeletionError.requiresRecentAuthentication
+            case .failedPrecondition:
+                throw BackendAccountDeletionError.appleRevocationUnavailable
+            case .unavailable, .deadlineExceeded, .cancelled:
+                throw BackendAccountDeletionError.serviceUnavailable
+            default:
+                throw BackendAccountDeletionError.rejected
+            }
+        }
+    }
+    #endif
 
     // MARK: - Peer (M2: Peer Pull v1)
 

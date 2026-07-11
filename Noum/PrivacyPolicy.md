@@ -28,13 +28,15 @@ This information is used to personalize your coaching experience and AI feedback
 
 ### Speech Transcripts and Session Data
 When you use a practice mode, the app:
-- Streams your audio to the configured speech-to-text provider for real-time transcription. The shipping providers are **Deepgram** (the default), **Amazon Web Services (AWS) Transcribe**, and **Google Cloud Speech-to-Text**
+- Streams your audio to **Deepgram**, Noum's production cloud speech-to-text provider, for real-time transcription
 - Stores the resulting text transcript, filler word count, session duration, score, and practice mode on your device
 - May send the transcript and relevant session evidence to a generative-AI provider when you use a cloud coaching feature, such as Coach Read, conversation simulation, or Ask Noum
 
 For short Ask Noum voice questions, the app first uses the configured cloud transcription provider and may fall back to Apple Speech Recognition. Apple determines whether that fallback is processed on-device or by Apple for the device, language, and system configuration.
 
-Noum does not save the streamed microphone audio as an audio file on your device or Noum's servers. Speech-to-text providers process the stream under their own terms and retention practices.
+Noum does not save the streamed microphone audio as an audio file on your device or Noum's servers. Production Deepgram requests set `mip_opt_out=true`. Deepgram documents that opted-out data is retained only as needed to process the request. Apple handles any Speech Recognition fallback under Apple's own service and device-dependent processing terms.
+
+Before Noum sends live audio, transcripts, coaching-profile fields, session context, or selected video frames to cloud speech or AI providers, the app asks for account-scoped cloud-processing permission. The disclosure identifies the data categories, purposes, and processor categories involved. If you choose **Not now** or later revoke permission, Noum does not start those cloud requests. Deterministic coaching remains available where supported, while cloud-dependent transcription, conversation, voice, and generated-coaching features may be unavailable. You can review or change this choice in **Settings > Cloud Processing**. A materially changed disclosure or processor manifest requires a new decision.
 
 ### AI Coaching Feedback
 When you use a cloud AI coaching feature, Noum sends the information needed to answer that request. Depending on the feature, configuration, and fallback routing, a request may be processed by one or more of the following providers:
@@ -85,7 +87,7 @@ The app requests:
 
 | Purpose | Data Used |
 |---------|-----------|
-| Real-time speech-to-text | Audio stream (sent to Deepgram, AWS Transcribe, or Google Cloud Speech-to-Text; Ask Noum voice input may use Apple Speech Recognition as a fallback) |
+| Real-time speech-to-text | Audio stream sent to Deepgram with `mip_opt_out=true`; Ask Noum voice input may use Apple Speech Recognition as a fallback |
 | AI coaching feedback | Speech transcript or Ask Noum message, recent conversation turns, bounded coaching context and session evidence, and optionally selected video frames. Production Ask Noum requests pass through Firebase Functions with Firebase Authentication and App Check tokens before reaching Google Vertex AI; other cloud coaching features use the configured Google, Anthropic, OpenAI, or DeepSeek service |
 | Personalized coaching | Coaching profile, session history |
 | Progress tracking | Session scores, XP, streaks, challenge completion |
@@ -104,9 +106,7 @@ We do **not** use your data for advertising, user profiling for marketing purpos
 
 | Service | Data Shared | Purpose | Data Terms |
 |---------|-------------|---------|------------|
-| **Deepgram** | Real-time audio stream | Default speech-to-text transcription | [Deepgram Terms](https://deepgram.com/terms) |
-| **AWS Transcribe** (Amazon) | Real-time audio stream | Speech-to-text transcription | [AWS Service Terms](https://aws.amazon.com/service-terms/) |
-| **Google Cloud Speech-to-Text** | Real-time audio stream | Speech-to-text transcription | [Google Cloud Data Processing and Security Terms](https://cloud.google.com/terms/data-processing-terms) |
+| **Deepgram** | Real-time audio stream with `mip_opt_out=true`; Deepgram says opted-out data is retained only as needed to process the request | Production speech-to-text transcription | [Deepgram Terms](https://deepgram.com/terms) |
 | **Apple Speech Recognition** | Short voice-question audio when the Apple fallback is used | Ask Noum voice transcription; processing location depends on Apple's service/device availability | [Apple Privacy Policy](https://www.apple.com/legal/privacy/) |
 | **Apple Core Location / MapKit** | Device coordinate when you request nearby-club search; a location passed to Apple geocoding for Path daylight only when permission already exists | Nearby-club results and a cosmetic local day/night scene. Desired accuracy is one kilometre for club search and three kilometres for Path daylight; iOS controls the location ultimately supplied | [Apple Privacy Policy](https://www.apple.com/legal/privacy/) |
 | **Google Gemini / Google Cloud Agent Platform** | Speech transcript or Ask Noum message, recent turns, bounded coaching context/session evidence, optionally selected video frames | AI coaching feedback and conversation generation | [Gemini API Terms](https://ai.google.dev/gemini-api/terms) |
@@ -133,13 +133,13 @@ Most of your data is stored locally on your device using:
 If Firebase is configured, the following may be synced:
 - Coaching profile
 - Practice session history
-- XP and gamification data
-- IM relationship profiles
+- XP and progression data
+- Recommendation state
 
 Cloud-synced data is stored in Firebase Firestore and is associated with your account ID.
 
 ### Temporary Credentials
-Some speech-to-text paths use short-lived provider credentials obtained from Noum's backend. Their lifetime and scope depend on the selected provider. The app keeps these temporary credentials in memory for the active service window and does not intentionally persist them to disk.
+Production Deepgram transcription uses a short-lived provider credential obtained from Noum's backend. The app keeps the temporary credential in memory for the active service window and does not intentionally persist it to disk.
 
 ---
 
@@ -147,7 +147,7 @@ Some speech-to-text paths use short-lived provider credentials obtained from Nou
 
 - **On-device data** is retained until you delete it (via session deletion, account deletion, or app uninstall)
 - **Noum-controlled Firebase data** is retained while your account is active and is submitted for deletion when you delete your account. Shared records and operational backups may follow different deletion windows
-- **Streamed audio** is not retained by Noum as an audio file. Speech-to-text providers handle the stream under their own service terms and retention practices
+- **Streamed audio** is not retained by Noum as an audio file. Production Deepgram requests set `mip_opt_out=true`; Deepgram says opted-out data is retained only as needed to process the request. Apple handles any Speech Recognition fallback under its own terms
 - **AI-provider inputs and outputs** are handled under the selected provider's terms, privacy policy, service tier, and account settings. Retention and model-improvement practices differ across Google, Anthropic, OpenAI, and DeepSeek and may change; review the links above for current details
 
 ---
@@ -155,10 +155,10 @@ Some speech-to-text paths use short-lived provider credentials obtained from Nou
 ## 6. Your Rights and Controls
 
 ### View Your Data
-Go to **Settings > Your Data** in the app to see a summary of all data stored on your device and which cloud services process your data.
+Go to **Settings > Your Data** in the app to see a summary of the principal data stored on your device and which cloud services may process it.
 
 ### Export Your Data
-In **Settings > Your Data > Export All My Data**, you can export all locally stored data as a JSON file.
+In **Settings > Your Data > Export Local Account Data**, you can export a versioned JSON file containing the account-scoped UserDefaults records Noum can identify plus the device-local friend list. Recordings saved to Photos, Keychain authentication material, shared device-global state, and data retained by third-party processors are not included.
 
 ### Delete Individual Sessions
 Long-press any session in your Session History to delete it.
@@ -166,11 +166,13 @@ Long-press any session in your Session History to delete it.
 ### Delete Your Account
 Go to **Settings > Delete Account**. This will:
 - Delete account-scoped data that Noum controls from our backend and Firebase
-- Remove all per-account data from your device (coaching profile, sessions, XP, friends, AI settings)
+- Remove identified per-account data from your device after remote deletion succeeds
 - Delete your Firebase Authentication account, if one exists
 - Sign you out
 
-Account deletion is irreversible. Noum removes per-account data from the device and starts deletion of account-scoped backend records it controls. Third-party processors may retain request data for their published retention periods, safety or abuse-prevention needs, legal obligations, or configured service features. Shared challenge or league records and backups may also require separate cleanup or retention windows.
+Account deletion is irreversible once completed. Noum performs deletion through an authenticated, idempotent account service and does not clear local state or claim success when the remote request fails. The service may require you to sign in again. For Sign in with Apple accounts, Noum stops before mutation unless it can safely revoke the Apple authorization; the app explains the blocker and leaves local and remote data unchanged. Deleting a Noum account does not cancel an App Store subscription, which you manage through your Apple account.
+
+Third-party processors may retain request data for their published retention periods, safety or abuse-prevention needs, legal obligations, or configured service features. Shared challenge or league records and backups may also require separate cleanup or retention windows.
 
 ### Notification Privacy
 Practice reminder notifications reference your coaching context (e.g., "Your conversation practice is waiting") but never display your personal text (goals, coaching brief, etc.) on the lock screen.
@@ -202,7 +204,7 @@ We may update this privacy policy from time to time. We will update the "Last up
 
 If you have questions about this privacy policy or your data, contact us at:
 
-**Email:** [hello@noum.app](mailto:hello@noum.app)
+**Email:** [noumsupport@gmail.com](mailto:noumsupport@gmail.com)
 
 ---
 

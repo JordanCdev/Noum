@@ -27,7 +27,7 @@ import Combine
 #endif
 
 #if canImport(Combine)
-enum AuthProvider: String {
+enum AuthProvider: String, Equatable {
     case apple
     case google
     case guest
@@ -39,6 +39,69 @@ enum AuthProvider: String {
         case .guest: return "Guest"
         }
     }
+}
+
+enum FirebaseCredentialStrategy: Equatable {
+    case signIn
+    case linkAnonymousUser
+    case preserveLocalGuest
+}
+
+enum AccountUpgradeConflict: LocalizedError, Equatable, Identifiable {
+    case credentialAlreadyInUse(AuthProvider)
+    case localGuestMigrationRequired(AuthProvider)
+
+    var id: String {
+        switch self {
+        case .credentialAlreadyInUse(let provider):
+            return "credential-in-use-\(provider.rawValue)"
+        case .localGuestMigrationRequired(let provider):
+            return "local-guest-migration-\(provider.rawValue)"
+        }
+    }
+
+    var errorDescription: String? {
+        switch self {
+        case .credentialAlreadyInUse(let provider):
+            return "That \(provider.title) account already exists. Your guest practice is unchanged; Noum won't switch accounts until you choose how to handle both histories."
+        case .localGuestMigrationRequired(let provider):
+            return "Your guest practice is stored only on this device. Noum won't replace it with \(provider.title) until a safe account transfer is available."
+        }
+    }
+}
+
+enum AccountDeletionError: LocalizedError, Equatable {
+    case noActiveAccount
+    case requiresRecentAuthentication
+    case appleRevocationUnavailable
+    case serviceUnavailable
+    case remoteRejected
+
+    var errorDescription: String? {
+        switch self {
+        case .noActiveAccount:
+            return "No active account was found."
+        case .requiresRecentAuthentication:
+            return "Sign in again, then retry account deletion. Your data has not been cleared from this device."
+        case .appleRevocationUnavailable:
+            return "Deletion is not available for this Apple-linked account until Noum can revoke its Apple authorization safely. Your data is unchanged."
+        case .serviceUnavailable:
+            return "Noum couldn't reach the account service. Your account and local data are unchanged. Try again when you're connected."
+        case .remoteRejected:
+            return "Noum couldn't complete account deletion. Your local data is unchanged and you can retry."
+        }
+    }
+
+    var requiresReauthentication: Bool {
+        self == .requiresRecentAuthentication
+    }
+}
+
+enum AccountDeletionState: Equatable {
+    case idle
+    case deleting
+    case failed(AccountDeletionError)
+    case completed
 }
 
 /// Initial identity + local-store readiness consumed by `NoumApp` before it
@@ -158,6 +221,8 @@ class AuthManager: ObservableObject {
     @Published var isSignedIn: Bool = false
     @Published var signInError: String?
     @Published private(set) var authProvider: AuthProvider?
+    @Published private(set) var accountUpgradeConflict: AccountUpgradeConflict?
+    @Published private(set) var accountDeletionState: AccountDeletionState = .idle
     @Published private(set) var isGoogleSignInAvailable = false
     @Published private(set) var initialAccountHydrationState: InitialAccountHydrationState = .needsIdentity
     private var credentialIdentity: AWSCredentialIdentity?
@@ -224,6 +289,26 @@ class AuthManager: ObservableObject {
         providerRawValue: String?
     ) -> Bool {
         hasDurableIdentity(accountID: accountID, providerRawValue: providerRawValue)
+    }
+
+    /// Selects the only non-lossy Firebase credential operation. A Firebase
+    /// anonymous user is linked in place so its UID and account-scoped history
+    /// remain stable. A Keychain-only guest cannot be merged safely on-device,
+    /// so the operation is blocked rather than silently replacing that guest.
+    nonisolated static func firebaseCredentialStrategy(
+        persistedAccountID: String?,
+        persistedProviderRawValue: String?,
+        firebaseUID: String?,
+        firebaseUserIsAnonymous: Bool
+    ) -> FirebaseCredentialStrategy {
+        guard persistedProviderRawValue == AuthProvider.guest.rawValue,
+              let persistedAccountID else {
+            return .signIn
+        }
+        if firebaseUserIsAnonymous, firebaseUID == persistedAccountID {
+            return .linkAnonymousUser
+        }
+        return .preserveLocalGuest
     }
 
     nonisolated static func userFacingDisplayName(
@@ -331,6 +416,9 @@ class AuthManager: ObservableObject {
     }
 
     private func signInWithGoogle(presenting controller: UIViewController) {
+        accountUpgradeConflict = nil
+        accountDeletionState = .idle
+        signInError = nil
         guard let config = googleConfig else {
             signInError = "Google sign-in is temporarily unavailable for this build. Please try again later."
             return
@@ -364,7 +452,10 @@ class AuthManager: ObservableObject {
 
                 let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
                 do {
-                    let authResult = try await self.signInWithFirebase(credential: credential)
+                    let authResult = try await self.authenticateWithFirebase(
+                        credential: credential,
+                        provider: .google
+                    )
                     let user = authResult.user
                     self.completeSignIn(
                         accountID: user.uid,
@@ -372,7 +463,7 @@ class AuthManager: ObservableObject {
                         provider: .google
                     )
                 } catch {
-                    self.signInError = self.friendlyGoogleSignInMessage(for: error)
+                    self.presentCredentialError(error, provider: .google)
                 }
 #else
                 self.completeSignIn(
@@ -392,6 +483,9 @@ class AuthManager: ObservableObject {
 
 #if canImport(AuthenticationServices)
     func prepareAppleSignIn(_ request: ASAuthorizationAppleIDRequest) {
+        accountUpgradeConflict = nil
+        accountDeletionState = .idle
+        signInError = nil
         request.requestedScopes = [.fullName]
 #if canImport(FirebaseAuth) && canImport(CryptoKit)
         let nonce = randomNonceString()
@@ -538,7 +632,10 @@ class AuthManager: ObservableObject {
 
             Task {
                 do {
-                    let authResult = try await signInWithFirebase(credential: firebaseCredential)
+                    let authResult = try await authenticateWithFirebase(
+                        credential: firebaseCredential,
+                        provider: .apple
+                    )
                     await MainActor.run {
                         self.completeSignIn(
                             accountID: authResult.user.uid,
@@ -549,7 +646,7 @@ class AuthManager: ObservableObject {
                     }
                 } catch {
                     await MainActor.run {
-                        self.signInError = self.friendlyAppleSignInMessage(for: error)
+                        self.presentCredentialError(error, provider: .apple)
                         self.currentNonce = nil
                     }
                 }
@@ -764,41 +861,40 @@ class AuthManager: ObservableObject {
     }
 #endif
 
-    func deleteCurrentAccount() {
-        guard let accountID = currentAccountID, let providerRawValue = currentAuthProviderRawValue else {
-            signOut()
-            return
+    /// Deletes the remote account before touching local state. Every failure
+    /// is retryable and preserves the Keychain identity plus account-scoped
+    /// stores, preventing the old "looked deleted locally" false success.
+    func deleteCurrentAccount() async throws {
+        guard let accountID = currentAccountID,
+              let providerRawValue = currentAuthProviderRawValue else {
+            accountDeletionState = .failed(.noActiveAccount)
+            throw AccountDeletionError.noActiveAccount
         }
 
-        Task {
-            // 1. Delete server-side data (Firebase Firestore or REST backend)
-            await BackendSyncManager.shared.deleteAccount(accountID: accountID, providerRawValue: providerRawValue)
-
-            // 2. Delete Firebase Auth user
-#if canImport(FirebaseAuth)
-            if isFirebaseAuthConfigured, let user = Auth.auth().currentUser {
-                try? await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                    user.delete { error in
-                        if let error {
-                            continuation.resume(throwing: error)
-                        } else {
-                            continuation.resume(returning: ())
-                        }
-                    }
+        accountDeletionState = .deleting
+        do {
+            if !Self.isLocalGuestAccountID(accountID) {
+                let outcome = try await BackendSyncManager.shared.deleteAccount(
+                    accountID: accountID,
+                    providerRawValue: providerRawValue
+                )
+                if outcome == .dataDeleted {
+                    try await deleteFirebaseUserIfNeeded(expectedAccountID: accountID)
                 }
             }
-#endif
 
-            // 3. Clear all per-account UserDefaults data BEFORE signOut
-            await MainActor.run {
-                Self.clearAllUserData(for: accountID)
-                self.signOut()
-            }
+            Self.clearAllUserData(for: accountID)
+            signOut()
+            accountDeletionState = .completed
+        } catch {
+            let mapped = Self.mapAccountDeletionError(error)
+            accountDeletionState = .failed(mapped)
+            throw mapped
         }
     }
 
     /// Removes all per-account UserDefaults keys so no personal data remains on device.
-    private static func clearAllUserData(for accountID: String) {
+    static func clearAllUserData(for accountID: String) {
         let defaults = UserDefaults.standard
         let keysToRemove = [
             "coachingProfile.\(accountID)",
@@ -867,8 +963,26 @@ class AuthManager: ObservableObject {
             "askNoum.thread.\(accountID)",
             // M24 Track 3: Sudden Death run history — bounded per-account
             "suddenDeath.runHistory.\(accountID)",
+            // Account-scoped owners added after the original deletion list.
+            "coachCheckIns.\(accountID)",
+            "coachLetter.archive.\(accountID)",
+            "lastPrimaryFocus.\(accountID)",
+            "roleplayTurns.\(accountID)",
+            "noum.skillProgression.\(accountID)",
+            "noum.dailyChallenges.\(accountID)",
+            "noum.wordOfTheDay.usedDays.\(accountID)",
+            "noum.practiceLocale.\(accountID)",
+            "noum.streakFreeze.lastSeenStreakDay.\(accountID)",
+            "cloudProcessingConsent.\(accountID)",
         ]
-        for key in keysToRemove {
+
+        // Future-proof the deletion inventory. Every per-account owner uses a
+        // dot-delimited account ID; include newly added stores and day-bucketed
+        // keys even if this explicit audit list has not yet been updated.
+        let discoveredKeys = defaults.dictionaryRepresentation().keys.filter {
+            isAccountScopedDefaultsKey($0, accountID: accountID)
+        }
+        for key in Set(keysToRemove + discoveredKeys) {
             defaults.removeObject(forKey: key)
         }
         // Global keys that are not per-account but should be cleared on deletion
@@ -880,6 +994,8 @@ class AuthManager: ObservableObject {
         defaults.removeObject(forKey: "aiMonthlyAnalysisCount")
         defaults.removeObject(forKey: "aiMonthlyAnalysisMonth")
         defaults.removeObject(forKey: "hasAcknowledgedAIDisclosure.\(accountID)")
+        defaults.removeObject(forKey: "noum_achievement_unlocks")
+        defaults.removeObject(forKey: "drillHistory")
         AutoGuidedFirstRep.cancelPendingLaunch()
         // Legacy device-local account sighting flags. They no longer drive any
         // runtime decision, but must not survive account deletion.
@@ -890,6 +1006,89 @@ class AuthManager: ObservableObject {
         // they're cleared via the store's own 30-day rolling sweep
         // rather than enumerated by name here.
         AIRateLimiter.shared.deleteAllData(for: accountID)
+    }
+
+    nonisolated static func isAccountScopedDefaultsKey(
+        _ key: String,
+        accountID: String
+    ) -> Bool {
+        let trimmed = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let token = ".\(trimmed)"
+        return key.hasSuffix(token) || key.contains(token + ".")
+    }
+
+    /// JSON-safe export of every account-scoped UserDefaults value currently
+    /// present. Data values are decoded as JSON when possible and otherwise
+    /// represented as base64 with an explicit encoding marker.
+    nonisolated static func accountScopedDefaultsSnapshot(
+        for accountID: String,
+        defaults: UserDefaults = .standard
+    ) -> [String: Any] {
+        defaults.dictionaryRepresentation().reduce(into: [:]) { result, entry in
+            guard isAccountScopedDefaultsKey(entry.key, accountID: accountID) else { return }
+            result[entry.key] = jsonSafeDefaultsValue(entry.value)
+        }
+    }
+
+    nonisolated private static func jsonSafeDefaultsValue(_ value: Any) -> Any {
+        if let data = value as? Data {
+            if let object = try? JSONSerialization.jsonObject(with: data),
+               JSONSerialization.isValidJSONObject(object) {
+                return object
+            }
+            return [
+                "encoding": "base64",
+                "value": data.base64EncodedString()
+            ]
+        }
+        if let date = value as? Date {
+            return ISO8601DateFormatter().string(from: date)
+        }
+        if JSONSerialization.isValidJSONObject(["value": value]) {
+            return value
+        }
+        return String(describing: value)
+    }
+
+    private static func mapAccountDeletionError(_ error: Error) -> AccountDeletionError {
+        if let error = error as? AccountDeletionError { return error }
+        guard let backendError = error as? BackendAccountDeletionError else {
+            #if canImport(FirebaseAuth)
+            if AuthErrorCode(rawValue: (error as NSError).code) == .requiresRecentLogin {
+                return .requiresRecentAuthentication
+            }
+            #endif
+            return .remoteRejected
+        }
+        switch backendError {
+        case .requiresRecentAuthentication:
+            return .requiresRecentAuthentication
+        case .appleRevocationUnavailable:
+            return .appleRevocationUnavailable
+        case .notConfigured, .serviceUnavailable:
+            return .serviceUnavailable
+        case .rejected, .invalidResponse:
+            return .remoteRejected
+        }
+    }
+
+    private func deleteFirebaseUserIfNeeded(expectedAccountID: String) async throws {
+        #if canImport(FirebaseAuth)
+        guard isFirebaseAuthConfigured, let user = Auth.auth().currentUser else { return }
+        guard user.uid == expectedAccountID else {
+            throw AccountDeletionError.remoteRejected
+        }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            user.delete { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+        #endif
     }
 
     func supportReportPayload() -> String {
@@ -923,6 +1122,9 @@ class AuthManager: ObservableObject {
         #if DEBUG
         print("Saved \(provider.title) user ID: \(accountID)")
         #endif
+        accountUpgradeConflict = nil
+        accountDeletionState = .idle
+        signInError = nil
         signIn()
         authProvider = provider
         isSignedIn = true
@@ -1019,6 +1221,10 @@ class AuthManager: ObservableObject {
     }
 
     private func reloadAccountScopedStores() {
+        NotificationPrePromptManager.shared.pendingPrompt = false
+        DeferredProfileCaptureManager.shared.pendingPrompt = nil
+        GoalRefreshManager.shared.shouldPresent = false
+        AISettingsManager.shared.reloadForCurrentAccount()
         CoachingProfileStore.shared.reloadForCurrentAccount()
         PracticeSessionStore.shared.reloadForCurrentAccount()
         SkillTrendStore.shared.reloadForCurrentAccount()
@@ -1040,6 +1246,15 @@ class AuthManager: ObservableObject {
         }
         AskNoumStore.shared.reloadForCurrentAccount()
         SuddenDeathRunHistoryStore.shared.reloadForCurrentAccount()
+        DailyGoalManager.shared.reloadForCurrentAccount()
+        StreakFreezeManager.shared.reloadForCurrentAccount()
+        PathProgressManager.shared.reloadForCurrentAccount()
+        LessonStore.shared.reloadForCurrentAccount()
+        SkillProgressionStore.shared.reloadForCurrentAccount()
+        DailyChallengesManager.shared.reloadForCurrentAccount()
+        WordOfTheDayManager.shared.reloadForCurrentAccount()
+        LocaleSettingsManager.shared.reloadForCurrentAccount()
+        RoleplayStore.shared.reloadForCurrentAccount()
     }
 
     private var isInitialBootstrapFailure: Bool {
@@ -1257,6 +1472,10 @@ class AuthManager: ObservableObject {
             // next actor turn. Never let a stale signed-out reset erase the
             // newly active account's hydrated stores.
             guard self.currentAccountID == nil else { return }
+            NotificationPrePromptManager.shared.pendingPrompt = false
+            DeferredProfileCaptureManager.shared.pendingPrompt = nil
+            GoalRefreshManager.shared.shouldPresent = false
+            AISettingsManager.shared.endSession()
             CoachingProfileStore.shared.endSession()
             PracticeSessionStore.shared.endSession()
             SkillTrendStore.shared.endSession()
@@ -1277,6 +1496,15 @@ class AuthManager: ObservableObject {
             }
             AskNoumStore.shared.endSession()
             SuddenDeathRunHistoryStore.shared.endSession()
+            DailyGoalManager.shared.reloadForCurrentAccount()
+            StreakFreezeManager.shared.reloadForCurrentAccount()
+            PathProgressManager.shared.reloadForCurrentAccount()
+            LessonStore.shared.reloadForCurrentAccount()
+            SkillProgressionStore.shared.reloadForCurrentAccount()
+            DailyChallengesManager.shared.reloadForCurrentAccount()
+            WordOfTheDayManager.shared.reloadForCurrentAccount()
+            LocaleSettingsManager.shared.reloadForCurrentAccount()
+            RoleplayStore.shared.endSession()
             AIRateLimiter.shared.endSession()
         }
     }
@@ -1508,7 +1736,32 @@ class AuthManager: ObservableObject {
 #endif
 
 #if canImport(FirebaseAuth)
-    private func signInWithFirebase(credential: FirebaseAuth.AuthCredential) async throws -> FirebaseAuth.AuthDataResult {
+    private func authenticateWithFirebase(
+        credential: FirebaseAuth.AuthCredential,
+        provider: AuthProvider
+    ) async throws -> FirebaseAuth.AuthDataResult {
+        let firebaseUser = Auth.auth().currentUser
+        switch Self.firebaseCredentialStrategy(
+            persistedAccountID: currentAccountID,
+            persistedProviderRawValue: currentAuthProviderRawValue,
+            firebaseUID: firebaseUser?.uid,
+            firebaseUserIsAnonymous: firebaseUser?.isAnonymous == true
+        ) {
+        case .linkAnonymousUser:
+            guard let firebaseUser else {
+                throw AccountUpgradeConflict.localGuestMigrationRequired(provider)
+            }
+            return try await linkFirebaseUser(firebaseUser, with: credential)
+        case .preserveLocalGuest:
+            throw AccountUpgradeConflict.localGuestMigrationRequired(provider)
+        case .signIn:
+            return try await signInWithFirebase(credential: credential)
+        }
+    }
+
+    private func signInWithFirebase(
+        credential: FirebaseAuth.AuthCredential
+    ) async throws -> FirebaseAuth.AuthDataResult {
         try await withCheckedThrowingContinuation { continuation in
             Auth.auth().signIn(with: credential) { authResult, error in
                 if let error {
@@ -1527,6 +1780,67 @@ class AuthManager: ObservableObject {
 
                 continuation.resume(returning: authResult)
             }
+        }
+    }
+
+    private func linkFirebaseUser(
+        _ user: FirebaseAuth.User,
+        with credential: FirebaseAuth.AuthCredential
+    ) async throws -> FirebaseAuth.AuthDataResult {
+        try await withCheckedThrowingContinuation { continuation in
+            user.link(with: credential) { authResult, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let authResult else {
+                    continuation.resume(throwing: NSError(
+                        domain: "AuthManager",
+                        code: -2,
+                        userInfo: [NSLocalizedDescriptionKey: "Firebase account linking returned no user."]
+                    ))
+                    return
+                }
+                continuation.resume(returning: authResult)
+            }
+        }
+    }
+
+    private func presentCredentialError(_ error: Error, provider: AuthProvider) {
+        let conflict: AccountUpgradeConflict?
+        if let typed = error as? AccountUpgradeConflict {
+            conflict = typed
+        } else {
+            let code = AuthErrorCode(rawValue: (error as NSError).code)
+            switch code {
+            case .credentialAlreadyInUse, .emailAlreadyInUse, .accountExistsWithDifferentCredential:
+                conflict = .credentialAlreadyInUse(provider)
+            default:
+                conflict = nil
+            }
+        }
+
+        if let conflict {
+            accountUpgradeConflict = conflict
+            signInError = conflict.errorDescription
+            return
+        }
+
+        switch provider {
+        case .apple:
+            #if canImport(AuthenticationServices)
+            signInError = friendlyAppleSignInMessage(for: error)
+            #else
+            signInError = error.localizedDescription
+            #endif
+        case .google:
+            #if canImport(GoogleSignIn)
+            signInError = friendlyGoogleSignInMessage(for: error)
+            #else
+            signInError = error.localizedDescription
+            #endif
+        case .guest:
+            signInError = error.localizedDescription
         }
     }
 

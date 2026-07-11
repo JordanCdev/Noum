@@ -460,7 +460,7 @@ struct CoachingOnboardingView: View {
                     .opacity(0.3)
 
                 Button {
-                    finishOnboarding()
+                    Task { await finishOnboarding() }
                 } label: {
                     HStack(spacing: Spacing.sm) {
                         Text(isEditingExistingProfile ? "Save changes" : "Start first rep")
@@ -1080,17 +1080,18 @@ struct CoachingOnboardingView: View {
         }
     }
 
-    private func finishOnboarding() {
+    @MainActor
+    private func finishOnboarding() async {
         guard !isSaving else { return }
         saveError = nil
         isSaving = true
 
-        let profileSaveSucceeded = saveProfile()
-        guard CoachingOnboardingCompletionPolicy.shouldAdvance(
-            profileSaveSucceeded: profileSaveSucceeded
-        ) else {
+        do {
+            try await saveProfile()
+        } catch {
             isSaving = false
-            saveError = CoachingOnboardingCompletionPolicy.persistenceError
+            saveError = (error as? LocalizedError)?.errorDescription
+                ?? CoachingOnboardingCompletionPolicy.persistenceError
             return
         }
 
@@ -1102,18 +1103,19 @@ struct CoachingOnboardingView: View {
         }
     }
 
-    @discardableResult
-    private func saveProfile() -> Bool {
+    private func saveProfile() async throws {
         // Voice is required to finish onboarding (the continue button on the
         // style stage is gated on it), so a nil here is a programmer error, not
         // a user path — bail rather than persist a phantom default.
-        guard let chosenVoice = speakingStyleGoal else { return false }
+        guard let chosenVoice = speakingStyleGoal else {
+            throw CoachingProfilePersistenceError.encodingFailed
+        }
         let trimmedCustomChallenge = customChallengeText.trimmingCharacters(in: .whitespacesAndNewlines)
         let savedChallenge = usesCustomChallenge
             ? SpeakingChallenge.routingFallback(forCustomText: trimmedCustomChallenge)
             : biggestChallenge
 
-        return coachingProfileStore.save(
+        try await coachingProfileStore.saveForOnboarding(
             CoachingProfile(
                 speakingContext: speakingContext,
                 primaryGoal: savedChallenge.recommendedPriority,

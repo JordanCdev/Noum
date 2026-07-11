@@ -63,6 +63,7 @@ struct SettingsView: View {
     @State private var showLocalePicker = false
     @State private var showYourData = false
     @State private var showPrivacyPolicy = false
+    @State private var showCloudProcessingConsent = false
     @State private var showSoundscape = false
     @State private var showLogin = false
     @State private var showSignOutAlert = false
@@ -187,6 +188,19 @@ struct SettingsView: View {
         .sheet(isPresented: $showPrivacyPolicy) {
             PrivacyPolicyView()
         }
+        .sheet(isPresented: $showCloudProcessingConsent) {
+            CloudProcessingConsentDisclosure(
+                isCurrentlyAllowed: aiSettings.isCloudProcessingAllowed,
+                onAllow: {
+                    aiSettings.recordCloudProcessingDecision(.allowed)
+                    showCloudProcessingConsent = false
+                },
+                onNotNow: {
+                    aiSettings.recordCloudProcessingDecision(.declined)
+                    showCloudProcessingConsent = false
+                }
+            )
+        }
         .sheet(isPresented: $showSoundscape) {
             SoundscapePickerView()
         }
@@ -199,13 +213,18 @@ struct SettingsView: View {
         .sheet(isPresented: $showDeleteSheet) {
             DeleteAccountConfirmationSheet(
                 onConfirm: {
-                    authManager.deleteCurrentAccount()
+                    try await authManager.deleteCurrentAccount()
+                    showDeleteSheet = false
                 },
                 onClose: {
                     showDeleteSheet = false
+                },
+                onReauthenticate: {
+                    showDeleteSheet = false
+                    showLogin = true
                 }
             )
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
         .alert("Sign out of Noum?", isPresented: $showSignOutAlert) {
@@ -1223,6 +1242,27 @@ struct SettingsView: View {
 
             Divider()
 
+            SettingsStatusRow(
+                title: "Cloud processing",
+                value: aiSettings.cloudProcessingStatusTitle,
+                valueTint: aiSettings.isCloudProcessingAllowed ? AppColor.positive : .secondary,
+                icon: "cloud.fill"
+            )
+
+            Button {
+                showCloudProcessingConsent = true
+            } label: {
+                Text(aiSettings.isCloudProcessingAllowed ? "Review permission" : "Choose permission")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 44)
+            .buttonStyle(.pressable)
+            .accessibilityHint("Review what Noum sends to speech and AI providers, then allow or decline cloud processing.")
+
+            Divider()
+
             SettingsNavRow(
                 title: "Your data",
                 icon: "tray.full.fill",
@@ -1286,7 +1326,7 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.pressable)
                 .accessibilityLabel("Delete account")
-                .accessibilityHint("Permanently deletes your account and all data after a typed confirmation.")
+                .accessibilityHint("Requests permanent deletion after a typed confirmation. Local data stays until the remote account service succeeds.")
             } else {
                 SettingsStatusRow(
                     title: "Status",
@@ -2048,16 +2088,126 @@ struct SettingsView: View {
     }
 }
 
+// MARK: - Cloud-processing consent
+
+@available(iOS 17.0, macOS 12.0, *)
+struct CloudProcessingConsentDisclosure: View {
+    let isCurrentlyAllowed: Bool
+    let onAllow: () -> Void
+    let onNotNow: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    Image(systemName: "hand.raised.fill")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(width: 56, height: 56)
+                        .background(AppColor.brandBlue.opacity(0.10), in: Circle())
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("Cloud coaching, with your permission")
+                            .font(Typography.bigStat)
+                            .foregroundStyle(AppColor.textPrimary)
+                        Text("Noum can still show deterministic coaching when cloud processing is off. Some live transcription, conversation, and generated coaching features will be unavailable.")
+                            .font(Typography.body)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    CardView {
+                        VStack(alignment: .leading, spacing: Spacing.md) {
+                            disclosureRow(
+                                icon: "waveform",
+                                title: "Audio and transcripts",
+                                detail: "Production live audio goes to Deepgram for transcription. Noum sets Deepgram's model-improvement opt-out flag; Deepgram says opted-out data is retained only as needed to process the request. Transcripts may then be used for coaching you request."
+                            )
+                            disclosureRow(
+                                icon: "person.text.rectangle.fill",
+                                title: "Personal coaching context",
+                                detail: "Your coaching profile, recent session evidence, and bounded conversation context may go to Google Vertex AI or another configured generative-AI provider to produce coaching."
+                            )
+                            disclosureRow(
+                                icon: "speaker.wave.2.fill",
+                                title: "Spoken coaching",
+                                detail: "Text may go to Google Cloud or OpenAI for speech synthesis. Selected video frames are sent only when you explicitly request visual feedback."
+                            )
+                        }
+                    }
+
+                    Text("Generative-AI provider retention, safety, and model-improvement practices vary by service and account configuration. Noum does not sell this data or use it for advertising.")
+                        .font(Typography.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Link(destination: NoumWebURLs.privacy) {
+                        Label("Read privacy policy", systemImage: "arrow.up.right.square")
+                            .font(Typography.body.weight(.semibold))
+                            .foregroundStyle(AppColor.brandBlue)
+                            .frame(minHeight: 44)
+                    }
+                    .accessibilityHint("Opens Noum's privacy policy in your browser.")
+
+                    VStack(spacing: Spacing.sm) {
+                        PrimaryCTA("Allow", icon: "checkmark.shield.fill", action: onAllow)
+                            .accessibilityHint("Allows the cloud processing described above for this account.")
+                            .accessibilityIdentifier("cloudProcessing.allow")
+
+                        Button(isCurrentlyAllowed ? "Revoke permission" : "Not now") {
+                            onNotNow()
+                        }
+                        .font(Typography.body.weight(.semibold))
+                        .foregroundStyle(isCurrentlyAllowed ? AppColor.warning : AppColor.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 44)
+                        .buttonStyle(.pressable)
+                        .accessibilityHint("Keeps cloud processing off and uses local or deterministic behavior where available.")
+                        .accessibilityIdentifier("cloudProcessing.notNow")
+                    }
+                }
+                .padding(Spacing.lg)
+            }
+            .background(AppColor.screenBackground)
+            .navigationTitle("Cloud processing")
+            .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("cloudProcessing.disclosure")
+        }
+    }
+
+    private func disclosureRow(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: icon)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(AppColor.brandBlue)
+                .frame(width: 28)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(title)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                Text(detail)
+                    .font(Typography.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
 // MARK: - Delete Account Confirmation Sheet
 
 @available(iOS 17.0, macOS 12.0, *)
 private struct DeleteAccountConfirmationSheet: View {
-    let onConfirm: () -> Void
+    let onConfirm: () async throws -> Void
     let onClose: () -> Void
+    let onReauthenticate: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var typedConfirmation: String = ""
     @State private var isDeleting = false
+    @State private var deletionError: AccountDeletionError?
     @FocusState private var fieldFocused: Bool
 
     private let requiredPhrase = "delete"
@@ -2077,10 +2227,44 @@ private struct DeleteAccountConfirmationSheet: View {
                         .foregroundStyle(AppColor.warning)
                     Text("Delete account")
                         .font(Typography.bigStat)
-                    Text("This permanently removes your account and every session, coaching detail, and AI history tied to it. You can't undo this.")
+                    Text("This asks Noum to permanently remove your account, account-scoped practice history, coaching data, and cloud records it controls. You can't undo a completed deletion.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Label("Deleting Noum does not cancel an App Store subscription.", systemImage: "creditcard.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.textPrimary)
+                    Link("Manage App Store subscriptions", destination: NoumWebURLs.manageSubscriptions)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(minHeight: 44)
+                    Link("Contact deletion support", destination: NoumWebURLs.supportMail)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(minHeight: 44)
+                        .accessibilityHint("Opens an email to \(NoumWebURLs.supportEmail).")
+                    Text("For Sign in with Apple, Noum will stop before deleting anything unless its Apple authorization can also be revoked safely.")
+                        .font(.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let deletionError {
+                    ErrorCard(message: deletionError.localizedDescription)
+                        .accessibilityIdentifier("accountDeletion.error")
+                    if deletionError.requiresReauthentication {
+                        Button("Sign in again") {
+                            onReauthenticate()
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 44)
+                        .buttonStyle(.pressable)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -2115,11 +2299,16 @@ private struct DeleteAccountConfirmationSheet: View {
                     Button {
                         guard matchesPhrase else { return }
                         isDeleting = true
-                        // Hold the deletion overlay for 1.5s after firing so the
-                        // user can't dismiss before the auth state flips.
+                        deletionError = nil
                         Task {
-                            onConfirm()
-                            try? await Task.sleep(for: .seconds(1.5))
+                            do {
+                                try await onConfirm()
+                            } catch {
+                                await MainActor.run {
+                                    deletionError = (error as? AccountDeletionError) ?? .remoteRejected
+                                    isDeleting = false
+                                }
+                            }
                         }
                     } label: {
                         HStack(spacing: Spacing.xs) {
@@ -2196,6 +2385,7 @@ struct YourDataView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var profileManager = ProfileManager.shared
     @StateObject private var friendsManager = FriendsManager.shared
+    @StateObject private var aiSettings = AISettingsManager.shared
     @State private var showExportSheet = false
     @State private var exportURL: URL?
 
@@ -2205,7 +2395,7 @@ struct YourDataView: View {
                 Text("Your data")
                     .font(Typography.bigStat)
 
-                Text("Here's what Noum stores and where. Your data is yours — you can export or delete it at any time.")
+                Text("Here's what Noum stores and where. You can export the account-scoped local records Noum can identify or request account deletion at any time.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2262,19 +2452,19 @@ struct YourDataView: View {
             Text("Cloud processing")
                 .font(.headline)
 
-            Text("When you use certain features, data is sent to these services:")
+            Text("Permission: \(aiSettings.cloudProcessingStatusTitle). When allowed and you use a cloud feature, data may be sent to these services:")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
             processorRow(
-                name: "AWS Transcribe",
+                name: "Deepgram",
                 purpose: "Real-time speech-to-text during practice sessions",
-                data: "Audio stream (not stored after transcription)"
+                data: "Live audio stream with Deepgram's model-improvement opt-out enabled; Deepgram says opted-out data is retained only as needed to process the request"
             )
             processorRow(
                 name: "Google Gemini / OpenAI",
                 purpose: "AI coaching analysis (Coach Read)",
-                data: "Speech transcript sent for analysis (not used to train AI models)"
+                data: "Transcript and bounded coaching context; retention and model-improvement terms vary by provider"
             )
             processorRow(
                 name: "Google Cloud TTS",
@@ -2287,6 +2477,18 @@ struct YourDataView: View {
                     purpose: "Syncing sessions and profile across devices",
                     data: "Practice sessions, coaching profile, progress"
                 )
+            }
+
+            if aiSettings.isCloudProcessingAllowed {
+                Button("Revoke cloud-processing permission") {
+                    aiSettings.revokeCloudProcessingConsent()
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppColor.warning)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 44)
+                .buttonStyle(.pressable)
+                .accessibilityHint("Stops future cloud processing for this account. Local and deterministic coaching remains available where supported.")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2304,7 +2506,7 @@ struct YourDataView: View {
             } label: {
                 HStack {
                     Image(systemName: "square.and.arrow.up")
-                    Text("Export all my data")
+                    Text("Export local account data")
                 }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
@@ -2314,7 +2516,7 @@ struct YourDataView: View {
             }
             .buttonStyle(.pressable)
 
-            Text("Exports a JSON file containing all your locally stored data — sessions, coaching profile, preferences, and progress.")
+            Text("Exports a versioned JSON file containing identified account-scoped UserDefaults records plus the device-local friend list. Photos-library recordings and provider-held data are not included.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -2353,34 +2555,21 @@ struct YourDataView: View {
         let defaults = UserDefaults.standard
 
         var export: [String: Any] = [
+            "schemaVersion": 1,
             "exportDate": ISO8601DateFormatter().string(from: Date()),
             "accountID": accountID,
+            "accountScopedLocalStorage": AuthManager.accountScopedDefaultsSnapshot(
+                for: accountID,
+                defaults: defaults
+            ),
+            "limitations": [
+                "Only account-scoped local records Noum can identify are included.",
+                "Recordings saved to Photos and data retained by third-party processors are not included."
+            ]
         ]
-
-        if let data = defaults.data(forKey: "coachingProfile.\(accountID)"),
-           let json = try? JSONSerialization.jsonObject(with: data) {
-            export["coachingProfile"] = json
-        }
-        if let data = defaults.data(forKey: "practiceSessions.\(accountID)"),
-           let json = try? JSONSerialization.jsonObject(with: data) {
-            export["practiceSessions"] = json
-        }
-        if let data = defaults.data(forKey: "imRelationshipProfiles.\(accountID)"),
-           let json = try? JSONSerialization.jsonObject(with: data) {
-            export["relationshipProfiles"] = json
-        }
-        if let data = defaults.data(forKey: "recommendation.pending.\(accountID)"),
-           let json = try? JSONSerialization.jsonObject(with: data) {
-            export["recommendationPending"] = json
-        }
-        if let data = defaults.data(forKey: "recommendation.outcomes.\(accountID)"),
-           let json = try? JSONSerialization.jsonObject(with: data) {
-            export["recommendationOutcomes"] = json
-        }
-        export["xp"] = defaults.integer(forKey: "profileXP.\(accountID)")
         if let data = defaults.data(forKey: "NoumFriendsList"),
            let json = try? JSONSerialization.jsonObject(with: data) {
-            export["friends"] = json
+            export["deviceLocalFriends"] = json
         }
 
         guard let jsonData = try? JSONSerialization.data(
@@ -2389,7 +2578,11 @@ struct YourDataView: View {
         ) else { return }
 
         let tempDir = FileManager.default.temporaryDirectory
-        let fileURL = tempDir.appendingPathComponent("noum-data-export.json")
+        let fileDateFormatter = DateFormatter()
+        fileDateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        fileDateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateStamp = fileDateFormatter.string(from: Date())
+        let fileURL = tempDir.appendingPathComponent("Noum-export-\(dateStamp).json")
         try? jsonData.write(to: fileURL)
         exportURL = fileURL
         showExportSheet = true
@@ -2463,8 +2656,12 @@ private struct ShareSheet: UIViewControllerRepresentable {
 @available(iOS 17.0, *)
 #Preview("Delete confirmation") {
     Color.clear.sheet(isPresented: .constant(true)) {
-        DeleteAccountConfirmationSheet(onConfirm: {}, onClose: {})
-            .presentationDetents([.medium, .large])
+        DeleteAccountConfirmationSheet(
+            onConfirm: {},
+            onClose: {},
+            onReauthenticate: {}
+        )
+        .presentationDetents([.large])
     }
 }
 #endif

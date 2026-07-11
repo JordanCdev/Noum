@@ -21,6 +21,7 @@ struct AISessionDebriefCard: View {
     @StateObject private var streakFreezeManager = StreakFreezeManager.shared
     @StateObject private var clutchWordStore = ClutchWordStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var aiSettings = AISettingsManager.shared
 
     @State private var insight: AIInsight?
     @State private var isLoading: Bool = true
@@ -182,7 +183,12 @@ struct AISessionDebriefCard: View {
             currentStreak: streakFreezeManager.currentStreak,
             goalDistance: goalDistance
         )
-        let next = await AIInsightsService.shared.insight(for: input)
+        let next: AIInsight
+        if aiSettings.isCloudProcessingAllowed {
+            next = await AIInsightsService.shared.insight(for: input)
+        } else {
+            next = AIInsightsService.templatedFallback(for: input)
+        }
         await MainActor.run {
             withAnimation(.standardSpring) {
                 insight = next
