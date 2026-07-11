@@ -25,6 +25,10 @@ if [[ -x /opt/homebrew/opt/openjdk/bin/java ]]; then
 fi
 
 npm --prefix functions run build
+# Keep integration runs deterministic and offline even when a developer has a
+# real project `.env` file. The production function only enters this route when
+# both the Functions emulator flag and this explicit test-only opt-in are set.
+COACH_EMULATOR_STUB=1 \
 COACH_MODEL="${COACH_MODEL:-gemini-2.5-flash}" \
 COACH_ULTRA_MODEL="${COACH_ULTRA_MODEL:-gemini-2.5-pro}" \
 VERTEX_LOCATION="${VERTEX_LOCATION:-europe-west1}" \
