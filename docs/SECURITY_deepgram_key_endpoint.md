@@ -37,17 +37,30 @@ credential remain outside our control.
 
 - The old API Gateway deployment is still reachable and must be disabled or
   hardened across **every route listed in this document**.
-- A full-history Gitleaks scan found the same old Deepgram credential in commit
+- A full-history Gitleaks scan found an old Deepgram credential in commit
   `277e2b388bb17d603011277a819b0bcaae517404`. A redacted live
   `/v1/auth/token` check on 2026-07-11 confirmed that it is still active with
   `account:write` scope. Its key ID is `025571b9-6cf4-4118-8c0d-532944ac0cca`
   in project `1dca5364-3e7c-461a-8b40-bb28bef6e537`.
-- An exact API deletion attempt for that key returned 403. The credential can
-  list its project but cannot list/delete keys or read usage/billing, so it must
-  be revoked through the earlier Deepgram account or Deepgram Support.
+- The two unauthenticated legacy transcription routes currently return a
+  second, static `account:write` key from that same project (key ID
+  `8fd342e3-7aeb-462a-90f4-b962b7c2f20a`). Three consecutive probes returned
+  the same credential. Both keys report the same 2025-06-13 creation timestamp.
+- An exact API deletion attempt for the Git-history key returned 403. These
+  credentials can list their project but cannot list/delete keys or read
+  usage/billing, so both must be revoked through the earlier Deepgram account
+  or Deepgram Support.
 - Historic provider usage and billing for the exposed credential have not been
   audited because all matching management endpoints returned 403.
 - No AWS identity for the legacy deployment is available in this environment.
+- Empty-body POST probes to the documented IM/TTS paths returned 404 on
+  2026-07-11. That is useful current evidence, but it does not prove that every
+  method, stage, alias, or formerly deployed route is disabled; an AWS-side
+  route/integration inventory is still required.
+- `GET /v1/transcribe/credentials` no longer returns the AWS-shaped payload
+  described by the 2026-06-10 audit; it currently returns the same second
+  static Deepgram key as `/v1/transcribe/deepgram-key`. This is still a critical
+  unauthenticated credential leak, not evidence that the route is safe.
 - The full-history scan also found two older AWS access-key pairs. Redacted AWS
   STS checks returned `InvalidClientTokenId` for both, confirming that those
   specific pairs are already invalid or revoked. This does not disable the
