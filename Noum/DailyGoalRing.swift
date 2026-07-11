@@ -109,8 +109,8 @@ struct DailyGoalCard: View {
 
 // MARK: - Goal Hit Celebration
 
-/// Lightweight celebration overlay rendered when the daily goal flips from
-/// "not yet" to "done". Honors reduce-motion.
+/// Non-blocking receipt rendered after the rep that crosses today's target.
+/// It never appears from hydration and never asks the user to dismiss a modal.
 @available(iOS 17.0, macOS 12.0, *)
 struct DailyGoalCelebration: View {
     let onDismiss: () -> Void
@@ -119,51 +119,41 @@ struct DailyGoalCelebration: View {
     @State private var appeared = false
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(appeared ? 0.45 : 0)
-                .ignoresSafeArea()
-                .onTapGesture { dismiss() }
+        VStack {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: "flame.fill")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(AppColor.positive)
+                    .frame(width: 38, height: 38)
+                    .background(AppColor.positive.opacity(0.14), in: Circle())
+                    .accessibilityHidden(true)
 
-            VStack(spacing: Spacing.md) {
-                ZStack {
-                    Circle()
-                        .fill(AppColor.positive.opacity(0.18))
-                        .frame(width: 96, height: 96)
-                        .scaleEffect(appeared ? 1.15 : 0.5)
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 38, weight: .bold))
-                        .foregroundStyle(AppColor.positive)
-                        .scaleEffect(appeared ? 1.0 : 0.4)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Daily rhythm held")
+                        .font(Typography.cardLabel)
+                        .foregroundStyle(.primary)
+                    Text("Today's practice is logged.")
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
                 }
 
-                Text("Today's done")
-                    .font(Typography.bigStat)
-                    .foregroundStyle(.white)
-
-                Text("That's the rep. Streak intact, no break needed.")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.8))
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button {
-                    dismiss()
-                } label: {
-                    Text("Continue")
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(AppColor.positive)
-                        .padding(.horizontal, 32)
-                        .padding(.vertical, Spacing.sm)
-                        .background(.white, in: Capsule())
-                }
-                .buttonStyle(.pressable)
-                .padding(.top, 8)
+                Spacer(minLength: 0)
             }
-            .padding(24)
-            .padding(.horizontal, Spacing.lg)
-            .scaleEffect(appeared ? 1.0 : 0.7)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .background(.regularMaterial, in: Capsule(style: .continuous))
+            .overlay(Capsule(style: .continuous).stroke(.white.opacity(0.65), lineWidth: 1))
+            .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.top, Spacing.sm)
+            .offset(y: appeared ? 0 : -18)
             .opacity(appeared ? 1.0 : 0)
+
+            Spacer()
         }
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Daily rhythm held. Today's practice is logged.")
         .onAppear {
             if reduceMotion {
                 appeared = true
@@ -172,6 +162,10 @@ struct DailyGoalCelebration: View {
                     appeared = true
                 }
             }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2.6))
+                dismiss()
+            }
         }
     }
 
@@ -179,8 +173,8 @@ struct DailyGoalCelebration: View {
         if reduceMotion {
             onDismiss()
         } else {
-            withAnimation(.easeOut(duration: 0.25)) { appeared = false }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { onDismiss() }
+            withAnimation(.easeOut(duration: 0.2)) { appeared = false }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { onDismiss() }
         }
     }
 }

@@ -9346,6 +9346,11 @@ enum PracticeSessionFinalizer {
         }
         let finalized = store.sessions.first(where: { $0.id == session.id }) ?? session
 
+        // Daily-goal acknowledgement is an explicit completion event. The
+        // manager's passive recompute path intentionally never celebrates, so
+        // app launch/hydration cannot cover Home with a stale "done" overlay.
+        DailyGoalManager.shared.recordSessionCompletion(at: finalized.date)
+
         // Speech-backed modes record recommendation outcomes once their
         // delayed evaluation annotates the captured rep. IM Conversation
         // arrives here already evaluated, so it must enter the same

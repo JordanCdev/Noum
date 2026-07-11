@@ -5,6 +5,17 @@ import SwiftUI
 
 #if canImport(SwiftUI)
 @available(iOS 17.0, macOS 12.0, *)
+enum AhCounterRecordingTransitionPolicy {
+    static func shouldStartElapsedTimer(wasRecording: Bool, isRecording: Bool) -> Bool {
+        !wasRecording && isRecording
+    }
+
+    static func shouldStopElapsedTimer(wasRecording: Bool, isRecording: Bool) -> Bool {
+        wasRecording && !isRecording
+    }
+}
+
+@available(iOS 17.0, macOS 12.0, *)
 struct AhCounterView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -414,6 +425,19 @@ struct AhCounterView: View {
                 beginLaunchCountdown()
             }
         }
+        .onChange(of: speechVM.isRecording) { wasRecording, isRecording in
+            if AhCounterRecordingTransitionPolicy.shouldStartElapsedTimer(
+                wasRecording: wasRecording,
+                isRecording: isRecording
+            ) {
+                startElapsedTimer()
+            } else if AhCounterRecordingTransitionPolicy.shouldStopElapsedTimer(
+                wasRecording: wasRecording,
+                isRecording: isRecording
+            ) {
+                stopElapsedTimer()
+            }
+        }
         .onChange(of: speechVM.fillerWordCount) { _, newCount in
             handleFillerCountChange(newCount: newCount)
             trackRapidFillers()
@@ -485,7 +509,7 @@ struct AhCounterView: View {
                 .accessibilityLabel("Speaking prompt: \(currentPrompt)")
 
                 if let error = speechVM.connectionError {
-                    ErrorCard(message: error)
+                    FocusedPracticeErrorStatus(message: error)
                 }
             }
         }
@@ -878,24 +902,7 @@ struct AhCounterView: View {
     }
 
     private func countdownOverlay(value: String, subtitle: String) -> some View {
-        ZStack {
-            Color.black.opacity(0.10)
-                .ignoresSafeArea()
-
-            VStack(spacing: 10) {
-                Text(value)
-                    .font(.system(size: 76, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                Text(subtitle)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.92))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(AppColor.modeAhCounter.opacity(0.92))
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-            .padding(36)
-            .shadow(color: .black.opacity(0.16), radius: 24, y: 18)
-        }
+        FocusedPracticeCountdownOverlay(style: .clarity, value: value, subtitle: subtitle)
     }
 
     // MARK: - Session Control
@@ -903,7 +910,6 @@ struct AhCounterView: View {
     private func startRecording() {
         speechVM.prepareSession(mode: .ahCounter)
         speechVM.startRecording()
-        startElapsedTimer()
     }
 
     private func stopSession() {

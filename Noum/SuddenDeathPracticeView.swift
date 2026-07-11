@@ -413,7 +413,7 @@ struct SuddenDeathPracticeView: View {
                 .accessibilityLabel("A filler, slow start, or short response ends the drill.")
 
                 if let error = speechVM.connectionError {
-                    ErrorCard(message: error)
+                    FocusedPracticeErrorStatus(message: error)
                 }
             }
         }
@@ -501,22 +501,19 @@ struct SuddenDeathPracticeView: View {
     // MARK: - Countdown Screen
 
     private var countdownScreen: some View {
-        ZStack {
-            Color.black.opacity(0.35)
-                .ignoresSafeArea()
-
+        Group {
             if case .countdown(let value) = engine.phase {
-                Text("\(value)")
-                    .font(.system(size: 110, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                    .shadow(color: accentColor.opacity(0.5), radius: 30, y: 8)
-                    .transition(.scale.combined(with: .opacity))
+                FocusedPracticeCountdownOverlay(
+                    style: .pressure,
+                    value: "\(value)",
+                    subtitle: "Get ready"
+                )
             } else if case .go = engine.phase {
-                Text("GO")
-                    .font(.system(size: 110, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                    .shadow(color: Color.green.opacity(0.5), radius: 30, y: 8)
-                    .transition(.scale.combined(with: .opacity))
+                FocusedPracticeCountdownOverlay(
+                    style: .pressure,
+                    value: "GO",
+                    subtitle: "Start speaking"
+                )
             }
         }
     }

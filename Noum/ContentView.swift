@@ -554,33 +554,20 @@ struct ContentView: View {
                 homeBackground
                     .ignoresSafeArea()
 
-                ScrollView(showsIndicators: false) {
-                    GeometryReader { proxy in
-                        Color.clear
-                            .preference(key: HomeScrollOffsetKey.self, value: proxy.frame(in: .named("homeScroll")).minY)
-                    }
-                    .frame(height: 0)
+                GeometryReader { container in
+                    ScrollView(showsIndicators: false) {
+                        GeometryReader { proxy in
+                            Color.clear
+                                .preference(key: HomeScrollOffsetKey.self, value: proxy.frame(in: .named("homeScroll")).minY)
+                        }
+                        .frame(height: 0)
 
-                    VStack(spacing: Spacing.cardGap) {
-                        cohesiveHomeCards
+                        VStack(spacing: 0) {
+                            cohesiveHomeCards(availableHeight: container.size.height)
+                        }
+                        .frame(minHeight: container.size.height, alignment: .top)
+                        .padding(.bottom, isEmbeddedInTabShell ? Spacing.lg : HomeShortcutDockLayout.scrollBottomPadding)
                     }
-                    .padding(.horizontal, Spacing.screenH)
-                    // Generous top padding so when the user scrolls up, the
-                    // first card doesn't render UNDER the
-                    // dynamic island. The home hides its nav bar, so iOS
-                    // doesn't apply a scroll-edge blur — content sits flat
-                    // against the status bar by default. The extra padding
-                    // ensures scrolled content stays below the island.
-                    .padding(.top, Spacing.lg + Spacing.xs)
-                    // Generous bottom inset so the last card never sits
-                    // under the floating shortcut dock. The dock lives
-                    // in `safeAreaInset(edge: .bottom)` further below; if
-                    // we trim this any tighter the populated home's
-                    // bottom card gets clipped on first paint.
-                    .padding(
-                        .bottom,
-                        isEmbeddedInTabShell ? Spacing.lg : HomeShortcutDockLayout.scrollBottomPadding
-                    )
                 }
             }
             .coordinateSpace(name: "homeScroll")
@@ -625,11 +612,35 @@ struct ContentView: View {
     /// transition soft. Reduce-motion: no fade, the new gradient
     /// snaps in but is still subtle enough to be invisible at-a-glance.
     private var homeBackground: some View {
-        LinearGradient(
-            colors: [hourBucket.start, hourBucket.end],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        ZStack {
+            HeroGradient.coach.gradient
+
+            RadialGradient(
+                colors: [.white.opacity(0.30), .white.opacity(0.06), .clear],
+                center: UnitPoint(x: 0.52, y: 0.04),
+                startRadius: 0,
+                endRadius: 390
+            )
+
+            LinearGradient(
+                colors: [hourBucket.start.opacity(0.20), hourBucket.end.opacity(0.04)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            Circle()
+                .stroke(.white.opacity(0.10), lineWidth: 1)
+                .frame(width: 330, height: 330)
+                .offset(x: -185, y: 300)
+
+            LinearGradient(
+                colors: [.white.opacity(0.34), .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 170)
+            .frame(maxHeight: .infinity, alignment: .top)
+        }
         .animation(reduceMotion ? nil : .easeInOut(duration: 1.2), value: hourBucket)
     }
 
@@ -957,44 +968,56 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private var cohesiveHomeCards: some View {
+    private func cohesiveHomeCards(availableHeight: CGFloat) -> some View {
         let presentation = homePrimaryAction
 
         if presentation.kind == .pendingOutcomeCheckIn,
            let moment = bigMomentStore.pendingOutcomeCheckInMoment {
             BigMomentOutcomeInlineCard(moment: moment)
                 .cardEntrance(0)
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.lg)
         } else {
             HomeCoachCard(
                 navigationPath: $navigationPath,
                 scrollOffset: homeScrollOffset,
-                showsPlanArc: false
+                showsPlanArc: false,
+                presentation: .immersive
             )
+            .frame(minHeight: max(500, availableHeight - 148))
             .cardEntrance(0)
         }
 
         if presentation.showsAskNoum {
-            homeAskNoumRow.cardEntrance(1)
+            homeAskNoumRow
+                .padding(.horizontal, Spacing.screenH)
+                .cardEntrance(1)
         }
 
         switch homeConditionalSurface {
         case .goalReview:
             if showGoalReview {
                 GoalRefreshInlineCard()
+                    .padding(.horizontal, Spacing.screenH)
                     .cardEntrance(2)
             } else {
-                homeGoalReviewRow.cardEntrance(2)
+                homeGoalReviewRow
+                    .padding(.horizontal, Spacing.screenH)
+                    .cardEntrance(2)
             }
         case .outcomeAcknowledgement:
             if let report = bigMomentStore.pendingOutcomeAck {
                 BigMomentOutcomeAckCard(report: report) {
                     bigMomentStore.consumeOutcomeAck()
                 }
+                .padding(.horizontal, Spacing.screenH)
                 .cardEntrance(2)
                 .transition(.opacity)
             }
         case .ratingReview:
-            homeRatingReviewRow.cardEntrance(2)
+            homeRatingReviewRow
+                .padding(.horizontal, Spacing.screenH)
+                .cardEntrance(2)
         case nil:
             EmptyView()
         }
@@ -1052,25 +1075,25 @@ struct ContentView: View {
             HStack(spacing: Spacing.md) {
                 Image(systemName: icon)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(.white)
                     .frame(width: 32, height: 32)
-                    .background(tint.opacity(0.10), in: Circle())
+                    .background(.white.opacity(0.14), in: Circle())
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(title)
                         .font(Typography.cardLabel)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.white)
                     Text(body)
                         .font(Typography.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.72))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.white.opacity(0.72))
                     .accessibilityHidden(true)
             }
             .padding(.horizontal, Spacing.md)
@@ -1079,11 +1102,9 @@ struct ContentView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.pressable)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .stroke(AppColor.subtleBorder, lineWidth: 1)
-        )
+        .overlay(alignment: .top) {
+            Rectangle().fill(.white.opacity(0.18)).frame(height: 1)
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title). \(body)")
         .accessibilityIdentifier(accessibilityID)
@@ -1279,18 +1300,19 @@ struct ContentView: View {
             HStack(alignment: .center, spacing: Spacing.md) {
                 Image(systemName: "message.fill")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(.white)
                     .frame(width: 32, height: 32)
-                    .background(tint.opacity(0.10), in: Circle())
+                    .background(tint.opacity(0.55), in: Circle())
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(HomeAskNoumShortcut.title)
-                        .microLabel(tint)
+                        .font(Typography.captionSmall.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.72))
 
                     Text(body)
                         .font(Typography.caption)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.white)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1298,20 +1320,18 @@ struct ContentView: View {
 
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(.white.opacity(0.78))
                     .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.sm)
-            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.pressable)
-        .background(AppColor.cardBackground.opacity(0.82), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .stroke(tint.opacity(0.10), lineWidth: 1)
-        )
+        .overlay(alignment: .top) {
+            Rectangle().fill(.white.opacity(0.20)).frame(height: 1)
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("\(HomeAskNoumShortcut.title). \(body)."))
         .accessibilityIdentifier(HomeAskNoumShortcut.accessibilityIdentifier)

@@ -4,6 +4,12 @@ import CoreLocation
 #endif
 #if canImport(SwiftUI)
 import SwiftUI
+
+enum PathLandscapeSizing {
+    static func treePerspectiveScale(depthInField: Double) -> Double {
+        1.0 + max(0, min(1, depthInField)) * 0.58
+    }
+}
 #endif
 
 #if canImport(SwiftUI)
@@ -1693,8 +1699,8 @@ struct PathJourneyArtwork: View {
         let centerX = size.width * 0.515
         let poleHeight: CGFloat = compact ? 44 : 64
         let poleWidth: CGFloat = compact ? 3.0 : 4.0
-        let flagWidth: CGFloat = compact ? 20 : 28
-        let flagHeight: CGFloat = compact ? 14 : 20
+        let signWidth: CGFloat = compact ? 28 : 42
+        let signHeight: CGFloat = compact ? 13 : 19
         let isComplete = snapshot.revealProgress >= 1.0
         let flagY = pathTopY + (compact ? 2 : 3)
         let poleTopY = flagY - poleHeight
@@ -1717,7 +1723,7 @@ struct PathJourneyArtwork: View {
                     )
                 )
                 .frame(width: compact ? 46 : 64, height: compact ? 46 : 64)
-                .position(x: centerX + flagWidth * 0.35, y: poleTopY + flagHeight * 0.55)
+                .position(x: centerX + signWidth * 0.16, y: poleTopY + signHeight * 0.55)
 
             // Pole
             Capsule(style: .continuous)
@@ -1734,31 +1740,35 @@ struct PathJourneyArtwork: View {
                 .frame(width: poleWidth, height: poleHeight)
                 .position(x: centerX, y: flagY - poleHeight * 0.5)
 
-            // Pennant flag — a triangular banner hanging from the pole top
-            FlagPennantShape()
-                .fill(
-                    LinearGradient(
-                        colors: isComplete
-                            ? [
-                                Color(red: 0.18, green: 0.72, blue: 0.40),
-                                Color(red: 0.36, green: 0.86, blue: 0.52)
-                            ]
-                            : [
-                                Color(red: 0.92, green: 0.30, blue: 0.16),
-                                Color(red: 0.98, green: 0.46, blue: 0.22)
-                            ],
-                        startPoint: .top,
-                        endPoint: .bottom
+            // Quiet trail sign — a grounded landmark rather than a bright
+            // arcade pennant. The destination remains tappable through the
+            // same accessibility contract below.
+            ZStack {
+                RoundedRectangle(cornerRadius: compact ? 2 : 3, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: isComplete
+                                ? [Color(red: 0.18, green: 0.55, blue: 0.30), Color(red: 0.12, green: 0.38, blue: 0.22)]
+                                : [Color(red: 0.48, green: 0.32, blue: 0.17), Color(red: 0.30, green: 0.20, blue: 0.11)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
                     )
-                )
-                .overlay {
-                    FlagPennantShape()
-                        .stroke(Color.white.opacity(0.60), lineWidth: compact ? 0.8 : 1.2)
-                }
-                .frame(width: flagWidth, height: flagHeight)
-                .shadow(color: .black.opacity(0.14), radius: 1.5, y: 1)
-                .position(x: centerX + (flagWidth * 0.5) + (poleWidth * 0.5),
-                          y: poleTopY + flagHeight * 0.5 + (compact ? 1 : 2))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: compact ? 2 : 3, style: .continuous)
+                            .stroke(Color.white.opacity(0.28), lineWidth: compact ? 0.6 : 0.9)
+                    )
+
+                Image(systemName: isComplete ? "checkmark" : "arrow.right")
+                    .font(.system(size: compact ? 7 : 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.88))
+            }
+            .frame(width: signWidth, height: signHeight)
+            .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+            .position(
+                x: centerX + signWidth * 0.42,
+                y: poleTopY + signHeight * 0.50 + (compact ? 1 : 2)
+            )
 
             // Pole cap — small ball on top
             Circle()
@@ -1798,10 +1808,10 @@ struct PathJourneyArtwork: View {
         .allowsHitTesting(false)
     }
 
-    /// Where the current-position marker stands: the frontier of the
-    /// revealed trail, following the path's S-curve and perspective-scaled.
-    /// At day zero it sits at the trailhead so the path has orientation
-    /// before the first rep.
+    /// Where the current-position marker sits: the frontier of the revealed
+    /// trail, following the path's perspective. The visual marker is a pair of
+    /// footprints rather than a decorative cairn, so it reads immediately as
+    /// "you have walked this far."
     private func currentPositionMetrics(for size: CGSize) -> (x: CGFloat, y: CGFloat, size: CGFloat) {
         let field = fieldMetrics(for: size)
         let frontierY = field.top + hiddenDepth(for: size)
@@ -1813,7 +1823,7 @@ struct PathJourneyArtwork: View {
         let curveShift = (1.0 - markerDepth) * 0.015 - markerDepth * 0.01
         let x = size.width * CGFloat(0.5 + curveShift)
 
-        let markerSize = (compact ? 13.0 : 18.0) + (compact ? 14.0 : 22.0) * markerDepth
+        let markerSize = (compact ? 18.0 : 25.0) + (compact ? 18.0 : 26.0) * markerDepth
         let rawY = frontierY - CGFloat(markerSize) * 0.30
         let y = min(rawY, size.height - CGFloat(markerSize) * 0.72)
         return (x, y, CGFloat(markerSize))
@@ -1822,55 +1832,23 @@ struct PathJourneyArtwork: View {
     @ViewBuilder
     private func currentPositionMarker(size: CGSize) -> some View {
         let metrics = currentPositionMetrics(for: size)
-        let stoneSpacing = -max(1.2, metrics.size * 0.055)
 
         ZStack {
             Ellipse()
-                .fill(Color.black.opacity(0.14))
-                .frame(width: metrics.size * 0.95, height: metrics.size * 0.20)
-                .blur(radius: 1.4)
-                .offset(y: metrics.size * 0.45)
+                .fill(Color.black.opacity(0.16))
+                .frame(width: metrics.size * 1.10, height: metrics.size * 0.30)
+                .blur(radius: 2)
+                .offset(y: metrics.size * 0.30)
 
-            VStack(spacing: stoneSpacing) {
-                trailMarkerStone(
-                    width: metrics.size * 0.48,
-                    height: metrics.size * 0.20,
-                    top: Color(red: 0.91, green: 0.85, blue: 0.72),
-                    bottom: Color(red: 0.70, green: 0.61, blue: 0.47)
-                )
-                trailMarkerStone(
-                    width: metrics.size * 0.68,
-                    height: metrics.size * 0.23,
-                    top: Color(red: 0.82, green: 0.74, blue: 0.59),
-                    bottom: Color(red: 0.58, green: 0.49, blue: 0.36)
-                )
-                trailMarkerStone(
-                    width: metrics.size * 0.90,
-                    height: metrics.size * 0.25,
-                    top: Color(red: 0.65, green: 0.56, blue: 0.42),
-                    bottom: Color(red: 0.43, green: 0.35, blue: 0.25)
-                )
-            }
+            Image(systemName: "shoeprints.fill")
+                .font(.system(size: metrics.size * 0.44, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Color(red: 0.28, green: 0.23, blue: 0.16).opacity(0.58))
+                .rotationEffect(.degrees(-4))
+                .blendMode(.multiply)
         }
         .position(x: metrics.x, y: metrics.y)
         .accessibilityHidden(true)
-    }
-
-    private func trailMarkerStone(width: CGFloat, height: CGFloat, top: Color, bottom: Color) -> some View {
-        Capsule(style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [top, bottom],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .frame(width: width, height: height)
-            .overlay {
-                Capsule(style: .continuous)
-                    .stroke(Color.white.opacity(0.20), lineWidth: max(0.6, height * 0.06))
-            }
-            .shadow(color: .black.opacity(0.12), radius: 1.4, y: 0.8)
     }
 
     @ViewBuilder
@@ -2201,6 +2179,8 @@ struct PathJourneyArtwork: View {
                 }
                 .frame(width: tree.crownWidth, height: frameH)
                 .position(tree.position)
+                .shadow(color: .black.opacity(0.12), radius: 2, y: 2)
+                .opacity(tree.opacity)
             }
         }
     }
@@ -2252,8 +2232,8 @@ struct PathJourneyArtwork: View {
         let field = fieldMetrics(for: size)
 
         // (x, scale, depthInField, variety) — depthInField 0 = horizon, >0 = further into field.
-        // Scale range is tight so the line stays cohesive while still feeling organic.
-        // Deeper trees sit closer to the path, creating a corridor/depth effect.
+        // The horizon stays dense while trees lower in the field become larger,
+        // creating actual foreground depth instead of a row of tiny icons.
         let values: [(Double, Double, Double, TreeVariety)] = [
             // Horizon row — the main tree-line
             (0.04,  1.00, 0, .pointed),
@@ -2276,14 +2256,14 @@ struct PathJourneyArtwork: View {
         ]
 
         return values.map { x, scale, depthInField, variety in
-            // Gentle perspective shrink — max 20% reduction at deepest
-            let perspectiveFactor = 1.0 - (depthInField * 0.20)
+            // Trees lower in the field are physically nearer to the viewer.
+            let perspectiveFactor = PathLandscapeSizing.treePerspectiveScale(depthInField: depthInField)
             let effectiveScale = scale * perspectiveFactor
 
-            let crownW = (compact ? 24.0 : 40.0) * effectiveScale
-            let crownH = (compact ? 26.0 : 48.0) * effectiveScale * 1.25
-            let trunkW = (compact ? 3.0 : 5.0) * effectiveScale
-            let trunkH = (compact ? 10.0 : 18.0) * effectiveScale * 1.25
+            let crownW = (compact ? 34.0 : 56.0) * effectiveScale
+            let crownH = (compact ? 42.0 : 68.0) * effectiveScale
+            let trunkW = (compact ? 4.5 : 7.0) * effectiveScale
+            let trunkH = (compact ? 16.0 : 25.0) * effectiveScale
             let totalH = crownH + trunkH
 
             let canopyHalfWidth = crownW * 0.55
@@ -2306,7 +2286,7 @@ struct PathJourneyArtwork: View {
             let centerY = baseY - (totalH * 0.5) + trunkH + (compact ? 4 : 6)
 
             // Slightly lighter/hazier green for trees further into the field
-            let haze = depthInField * 0.10
+            let haze = depthInField * 0.06
             let treeColor = Color(
                 red: 0.20 + haze, green: 0.34 + haze * 0.4, blue: 0.12 + haze * 0.3
             )
@@ -2323,7 +2303,7 @@ struct PathJourneyArtwork: View {
                 color: treeColor,
                 highlight: treeHighlight,
                 trunkColor: Color(red: 0.40, green: 0.28, blue: 0.16),
-                opacity: 1.0,
+                opacity: 1.0 - depthInField * 0.08,
                 variety: variety
             )
         }
