@@ -103,8 +103,17 @@ final class DailyGoalManager: ObservableObject {
         }
         persistDrillCompletions()
         recompute()
+        presentCelebrationForCompletedRep(at: date)
         // Drill completions feed the streak too — keep StreakFreezeManager in sync.
         StreakFreezeManager.shared.recompute()
+    }
+
+    /// Called by the shared session finalizer after a real speech-backed rep
+    /// has been appended. Celebration is tied to this explicit user event,
+    /// never to hydration, account reload, or merely returning to Home.
+    func recordSessionCompletion(at date: Date) {
+        recompute()
+        presentCelebrationForCompletedRep(at: date)
     }
 
     /// Recomputes `repsToday` from PracticeSessionStore + tracked drill completions.
@@ -122,15 +131,8 @@ final class DailyGoalManager: ObservableObject {
             .filter { $0 >= todayStart && $0 < nextDayStart }
             .count
 
-        let previous = repsToday
         let total = sessionRepsToday + drillRepsToday
         repsToday = total
-
-        // Goal-hit celebration: only fire once per calendar day, only on the
-        // transition from below-goal to at-or-above-goal.
-        if previous < goalReps && total >= goalReps {
-            triggerGoalCelebrationIfNeeded()
-        }
 
         // Mirror to App Group so the widget + notifications can read it.
         SharedNoumStateMirror.refresh()
@@ -179,20 +181,30 @@ final class DailyGoalManager: ObservableObject {
             }
     }
 
-    private func triggerGoalCelebrationIfNeeded() {
-        let todayKey = todayKeyString()
-        guard lastCelebrationDayKey != todayKey else { return }
+    private func presentCelebrationForCompletedRep(at date: Date) {
+        let calendar = Calendar.current
+        let todayKey = dayKeyString(for: Date(), calendar: calendar)
+        let completionDayKey = dayKeyString(for: date, calendar: calendar)
+        guard DailyGoalCelebrationPolicy.shouldPresent(
+            source: .completedRep,
+            completionDayKey: completionDayKey,
+            todayKey: todayKey,
+            repsToday: repsToday,
+            goalReps: goalReps,
+            lastCelebrationDayKey: lastCelebrationDayKey
+        ) else { return }
         lastCelebrationDayKey = todayKey
         UserDefaults.standard.set(todayKey, forKey: lastCelebrationKey)
         pendingGoalCelebration = true
         CoachHaptic.skillLevelUp()
     }
 
-    private func todayKeyString() -> String {
+    private func dayKeyString(for date: Date, calendar: Calendar) -> String {
         let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: Date())
+        return formatter.string(from: date)
     }
 
     private func persistGoal() {
@@ -215,5 +227,29 @@ final class DailyGoalManager: ObservableObject {
 
     private func loadLastCelebrationDay() {
         lastCelebrationDayKey = UserDefaults.standard.string(forKey: lastCelebrationKey) ?? ""
+    }
+}
+
+enum DailyGoalCelebrationSource: Equatable {
+    case hydration
+    case completedRep
+}
+
+/// Pure event gate for the daily-goal acknowledgement. A stored session may
+/// make today's goal true during launch hydration, but only a rep completed in
+/// the active user flow is allowed to present an interruption.
+enum DailyGoalCelebrationPolicy {
+    static func shouldPresent(
+        source: DailyGoalCelebrationSource,
+        completionDayKey: String,
+        todayKey: String,
+        repsToday: Int,
+        goalReps: Int,
+        lastCelebrationDayKey: String
+    ) -> Bool {
+        source == .completedRep
+            && completionDayKey == todayKey
+            && repsToday >= goalReps
+            && lastCelebrationDayKey != todayKey
     }
 }

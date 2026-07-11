@@ -236,16 +236,11 @@ struct PaceTrainingView: View {
     // MARK: - Countdown
 
     private func countdownOverlay(_ n: Int, label: String? = nil) -> some View {
-        VStack(spacing: Spacing.md) {
-            Text(label ?? "\(n)")
-                .font(.system(size: 80, weight: .bold, design: .rounded))
-                .foregroundStyle(tint)
-                .contentTransition(.numericText())
-            Text("Get ready to speak")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        FocusedPracticeCountdownOverlay(
+            style: .pace,
+            value: label ?? "\(n)",
+            subtitle: label == nil ? "Get ready" : "Start speaking"
+        )
     }
 
     // MARK: - Active Surface

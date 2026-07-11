@@ -55,7 +55,77 @@ struct FocusedPracticeBackground: View {
     }
 }
 
+/// Shared full-screen pre-rep cue. It replaces mode-specific dimmed boxes so
+/// setup never remains visibly stacked behind the countdown.
+struct FocusedPracticeCountdownOverlay: View {
+    let style: FocusedPracticeStyle
+    let value: String
+    let subtitle: String
+
+    var body: some View {
+        ZStack {
+            FocusedPracticeBackground(style: style)
+
+            VStack(spacing: Spacing.md) {
+                ZStack {
+                    Circle()
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                        .frame(width: 210, height: 210)
+                    Circle()
+                        .fill(.white.opacity(0.08))
+                        .frame(width: 156, height: 156)
+                        .blur(radius: 1)
+
+                    Text(value)
+                        .font(Typography.figtreeNumeric(size: 82, weight: .bold, relativeTo: .largeTitle))
+                        .foregroundStyle(.white)
+                        .contentTransition(.numericText())
+                }
+
+                Text(subtitle)
+                    .font(Typography.headline)
+                    .foregroundStyle(AppColor.focusedTextSecondary)
+            }
+            .padding(.horizontal, Spacing.screenH)
+        }
+        .preferredColorScheme(.dark)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(value). \(subtitle)")
+        .accessibilityIdentifier("focusedPractice.countdown")
+    }
+}
+
+/// A readable, low-noise failure state for dark practice canvases. Generic
+/// error cards use neutral-screen colors and lose contrast over gradients.
+struct FocusedPracticeErrorStatus: View {
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(Color(red: 1.0, green: 0.67, blue: 0.62))
+                .accessibilityHidden(true)
+
+            Text(message)
+                .font(Typography.subheadline)
+                .foregroundStyle(.white.opacity(0.94))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+        .padding(Spacing.md)
+        .background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(.white.opacity(0.14), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct FocusedPracticeScaffold<Accessory: View, Content: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let style: FocusedPracticeStyle
     let status: String
     let title: String
@@ -85,25 +155,7 @@ struct FocusedPracticeScaffold<Accessory: View, Content: View>: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
-                    HStack(alignment: .center, spacing: Spacing.md) {
-                        VStack(alignment: .leading, spacing: Spacing.xs) {
-                            Text(status)
-                                .font(Typography.caption.weight(.semibold))
-                                .foregroundStyle(AppColor.focusedTextSecondary)
-                            Text(title)
-                                .font(Typography.figtree(size: 38, weight: .bold, relativeTo: .largeTitle))
-                                .foregroundStyle(.white)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .accessibilityAddTraits(.isHeader)
-                            Text(subtitle)
-                                .font(Typography.body)
-                                .foregroundStyle(AppColor.focusedTextSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        Spacer(minLength: Spacing.sm)
-                        accessory()
-                    }
+                    practiceHeader
 
                     content()
                 }
@@ -113,6 +165,40 @@ struct FocusedPracticeScaffold<Accessory: View, Content: View>: View {
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private var practiceHeader: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                headerCopy
+                accessory()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(alignment: .center, spacing: Spacing.md) {
+                headerCopy
+                Spacer(minLength: Spacing.sm)
+                accessory()
+            }
+        }
+    }
+
+    private var headerCopy: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text(status)
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(AppColor.focusedTextSecondary)
+            Text(title)
+                .font(Typography.figtree(size: 38, weight: .bold, relativeTo: .largeTitle))
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            Text(subtitle)
+                .font(Typography.body)
+                .foregroundStyle(AppColor.focusedTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

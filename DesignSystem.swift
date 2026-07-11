@@ -464,21 +464,43 @@ struct ReadingScreenScaffold<Content: View>: View {
 /// this component owns only the shared title and container treatment.
 struct GroupedDestinationList<Content: View>: View {
     let title: String
+    let subtitle: String?
+    let tint: Color
     @ViewBuilder let content: () -> Content
 
     init(
         title: String,
+        subtitle: String? = nil,
+        tint: Color = AppColor.brandBlue,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.title = title
+        self.subtitle = subtitle
+        self.tint = tint
         self.content = content
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text(title)
-                .font(Typography.headline)
-                .foregroundStyle(.primary)
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Capsule()
+                    .fill(tint)
+                    .frame(width: 4, height: subtitle == nil ? 22 : 38)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(Typography.headline)
+                        .foregroundStyle(.primary)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .accessibilityElement(children: .combine)
 
             VStack(spacing: 0) {
                 content()
@@ -490,7 +512,7 @@ struct GroupedDestinationList<Content: View>: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                    .stroke(AppColor.subtleBorder, lineWidth: 1)
+                    .stroke(tint.opacity(0.16), lineWidth: 1)
             )
         }
     }

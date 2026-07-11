@@ -99,6 +99,38 @@ enum TrainLibraryAction: Hashable {
     case destination(AppDestination)
 }
 
+enum TrainLibraryGroup: String, CaseIterable, Identifiable {
+    case speakingDrills
+    case conversationPractice
+    case learnAndBuild
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .speakingDrills: return "Speaking drills"
+        case .conversationPractice: return "Conversation practice"
+        case .learnAndBuild: return "Learn and build"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .speakingDrills: return "Focused reps for delivery, pressure, fillers, and pace."
+        case .conversationPractice: return "Rehearse the moments where another person pushes back."
+        case .learnAndBuild: return "Develop skills, prepared talks, and your longer path."
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .speakingDrills: return AppColor.brandBlue
+        case .conversationPractice: return AppColor.modeIM
+        case .learnAndBuild: return AppColor.caution
+        }
+    }
+}
+
 /// Pure, ordered contract for Train's grouped library. Navigation remains
 /// owned by the existing `NavigationPath`; this type only describes rows.
 struct TrainLibraryItem: Identifiable, Equatable {
@@ -108,6 +140,7 @@ struct TrainLibraryItem: Identifiable, Equatable {
     let systemImage: String
     let tint: Color
     let action: TrainLibraryAction
+    let group: TrainLibraryGroup
 
     static let items: [TrainLibraryItem] = [
         TrainLibraryItem(
@@ -116,7 +149,8 @@ struct TrainLibraryItem: Identifiable, Equatable {
             subtitle: "Compare every focused speaking exercise.",
             systemImage: "square.grid.2x2",
             tint: AppColor.brandBlue,
-            action: .expandExercises
+            action: .expandExercises,
+            group: .speakingDrills
         ),
         TrainLibraryItem(
             id: "roleplay",
@@ -124,7 +158,8 @@ struct TrainLibraryItem: Identifiable, Equatable {
             subtitle: "Rehearse a real conversation under rising pressure.",
             systemImage: "person.2.fill",
             tint: AppColor.modeIM,
-            action: .destination(.roleplaySetup)
+            action: .destination(.roleplaySetup),
+            group: .conversationPractice
         ),
         TrainLibraryItem(
             id: "lessons",
@@ -132,7 +167,8 @@ struct TrainLibraryItem: Identifiable, Equatable {
             subtitle: "Learn one communication move at a time.",
             systemImage: "books.vertical.fill",
             tint: AppColor.caution,
-            action: .destination(.lessons)
+            action: .destination(.lessons),
+            group: .learnAndBuild
         ),
         TrainLibraryItem(
             id: "speechProjects",
@@ -140,7 +176,8 @@ struct TrainLibraryItem: Identifiable, Equatable {
             subtitle: "Build a prepared talk around a clear objective.",
             systemImage: "doc.text.fill",
             tint: AppColor.pro,
-            action: .destination(.speechProjects)
+            action: .destination(.speechProjects),
+            group: .learnAndBuild
         ),
         TrainLibraryItem(
             id: "path",
@@ -148,7 +185,8 @@ struct TrainLibraryItem: Identifiable, Equatable {
             subtitle: "Continue your communication curriculum.",
             systemImage: "signpost.right.fill",
             tint: AppColor.positive,
-            action: .destination(.pathJourney)
+            action: .destination(.pathJourney),
+            group: .learnAndBuild
         )
     ]
 }
@@ -520,20 +558,33 @@ struct PracticeModeSelectionView: View {
     // MARK: - Practice library
 
     private var practiceLibrary: some View {
-        GroupedDestinationList(title: PracticeModePrescriptionCopy.practiceLibraryTitle) {
-            ForEach(Array(TrainLibraryItem.items.enumerated()), id: \.element.id) { index, item in
-                if index > 0 {
-                    Divider().padding(.leading, 60)
-                }
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            Text(PracticeModePrescriptionCopy.practiceLibraryTitle)
+                .font(Typography.sectionHero)
+                .foregroundStyle(.primary)
 
-                trainLibraryRow(item)
+            ForEach(TrainLibraryGroup.allCases) { group in
+                let items = TrainLibraryItem.items.filter { $0.group == group }
+                GroupedDestinationList(
+                    title: group.title,
+                    subtitle: group.subtitle,
+                    tint: group.tint
+                ) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        if index > 0 {
+                            Divider().padding(.leading, 60)
+                        }
 
-                if item.action == .expandExercises, showOtherWays {
-                    Divider().padding(.leading, 60)
-                    exerciseLibraryRows
-                        .transition(reduceMotion
-                            ? .opacity
-                            : .opacity.combined(with: .move(edge: .top)))
+                        trainLibraryRow(item)
+
+                        if item.action == .expandExercises, showOtherWays {
+                            Divider().padding(.leading, 60)
+                            exerciseLibraryRows
+                                .transition(reduceMotion
+                                    ? .opacity
+                                    : .opacity.combined(with: .move(edge: .top)))
+                        }
+                    }
                 }
             }
         }

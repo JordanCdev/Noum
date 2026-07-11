@@ -53,7 +53,11 @@ public enum FirebaseBootstrap {
         #endif
 
         #if canImport(FirebaseAppCheck)
-        #if DEBUG
+        #if DEBUG || targetEnvironment(simulator)
+        // DeviceCheck/App Attest are not available in Simulator, including a
+        // Release-configuration simulator build. Keep production attestation
+        // on physical devices while making local verification use Firebase's
+        // explicit debug-provider flow.
         AppCheck.setAppCheckProviderFactory(AppCheckDebugProviderFactory())
         #else
         AppCheck.setAppCheckProviderFactory(NoumAppCheckProviderFactory())

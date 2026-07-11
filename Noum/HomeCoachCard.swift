@@ -75,6 +75,12 @@ enum HomePlanArcLine {
 }
 
 @available(iOS 17.0, macOS 12.0, *)
+enum HomeCoachPresentation {
+    case card
+    case immersive
+}
+
+@available(iOS 17.0, macOS 12.0, *)
 struct HomeCoachCard: View {
 
     @Binding var navigationPath: NavigationPath
@@ -89,6 +95,9 @@ struct HomeCoachCard: View {
     /// additionally self-gates on an actual active plan via
     /// `HomePlanArcLine` — both must hold before anything renders.
     var showsPlanArc: Bool = false
+    /// Home uses the coach gradient as the entire canvas. The legacy card
+    /// presentation remains available for previews and any embedded caller.
+    var presentation: HomeCoachPresentation = .card
 
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
@@ -126,13 +135,13 @@ struct HomeCoachCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: Spacing.xs) {
+        VStack(spacing: presentation == .immersive ? Spacing.md : Spacing.xs) {
             ZStack {
                 emanationRay
                 NoumCharacter(
                     mood: displayedMood,
                     tint: .white,
-                    size: 64
+                    size: presentation == .immersive ? 88 : 64
                 )
                 .accessibilityHidden(true)
             }
@@ -141,7 +150,11 @@ struct HomeCoachCard: View {
             // hierarchy. The earlier "one long coach sentence" pattern
             // read as a paragraph; this reads as a coach speaking.
             Text(coachTitle)
-                .font(Typography.figtree(size: 22, weight: .bold, relativeTo: .title2))
+                .font(Typography.figtree(
+                    size: presentation == .immersive ? 34 : 22,
+                    weight: .bold,
+                    relativeTo: presentation == .immersive ? .largeTitle : .title2
+                ))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -152,7 +165,9 @@ struct HomeCoachCard: View {
             // hides cleanly when the variant only carries a title.
             if let subtitle = coachSubtitle {
                 Text(subtitle)
-                    .font(Typography.body)
+                    .font(presentation == .immersive
+                        ? Typography.manrope(size: 19, weight: .medium, relativeTo: .title3)
+                        : Typography.body)
                     .foregroundStyle(.white.opacity(0.85))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -196,12 +211,22 @@ struct HomeCoachCard: View {
                 planArcRow
             }
         }
-        .padding(Spacing.md)
+        .padding(.horizontal, presentation == .immersive ? Spacing.lg + Spacing.xs : Spacing.md)
+        .padding(.vertical, presentation == .immersive ? Spacing.lg + Spacing.xs : Spacing.md)
         .frame(maxWidth: .infinity)
-        .background(coachCardBackground)
+        .background {
+            if presentation == .card {
+                coachCardBackground
+            }
+        }
         // Tinted elevation in the hero's own gradient family — the ONE
         // vibrant surface on Home (docs/UX_VISUAL_DIRECTION.md).
-        .shadow(color: HeroGradient.coach.shadowTint.opacity(0.32), radius: 22, x: 0, y: 10)
+        .shadow(
+            color: presentation == .card ? HeroGradient.coach.shadowTint.opacity(0.32) : .clear,
+            radius: 22,
+            x: 0,
+            y: 10
+        )
         .onAppear { syncMoodForFreshRecommendation() }
         .onChange(of: recommendationKey) { _, _ in syncMoodForFreshRecommendation() }
         .accessibilityElement(children: .contain)

@@ -256,13 +256,11 @@ struct CutTheCrutchView: View {
     // MARK: - Countdown
 
     private func countdownOverlay(_ n: Int, label: String? = nil) -> some View {
-        ZStack {
-            Color.black.opacity(0.55).ignoresSafeArea()
-            Text(label ?? "\(n)")
-                .font(.system(size: 96, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .accessibilityLabel(label ?? "\(n)")
-        }
+        FocusedPracticeCountdownOverlay(
+            style: .crutch,
+            value: label ?? "\(n)",
+            subtitle: label == nil ? "Get ready" : "Start speaking"
+        )
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale))
     }
 

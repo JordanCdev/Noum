@@ -1,5 +1,29 @@
 # Noum — Current state
 
+## 2026-07-11 — Home, practice, and Path production polish
+
+Branch `codex/home-practice-path-polish` closes the simulator-visible quality
+regressions from the cohesive UI pass without changing practice state machines
+or state ownership. Home now uses its coaching gradient as the full tab canvas,
+with one immersive action and quiet supporting rows instead of a gradient card
+floating in empty space. Daily-goal celebration is event-driven: hydration and
+app entry can never present it, while a newly completed rep may show one brief,
+nonblocking rhythm receipt once per day.
+
+All countdowns used by Filler Control, Pressure Drill, Cut the Crutch, and Pace
+Training share a full-screen focused cue. Filler Control starts its elapsed clock
+only after transcription actually begins, so missing simulator credentials return
+to pristine setup with a readable status rather than exposing the legacy metrics
+dashboard. The shared focused header stacks at accessibility text sizes. Train's
+library has distinct Speaking drills, Conversation practice, and Learn and build
+groups. Path replaces the cairn and bright pennant with grounded footprints and a
+quiet trail marker, and its larger trees now scale naturally toward the viewer.
+
+Simulator-only infrastructure is explicit: App Check uses the debug provider on
+simulator builds, and `scripts/run-noum-with-ai.sh` forwards gitignored Deepgram,
+Google Speech, AI, and optional App Check debug values through `SIMCTL_CHILD_*`.
+No provider values are bundled or persisted by this change.
+
 ## 2026-07-11 — communication curriculum expansion
 
 Branch `codex/communication-curriculum-expansion` extends the existing Lessons
