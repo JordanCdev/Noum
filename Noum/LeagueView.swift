@@ -23,6 +23,7 @@ struct LeagueView: View {
                     case .available:
                         VStack(alignment: .leading, spacing: Spacing.lg) {
                             headerCopy
+                            authorityNotice
                             tierCard
                             membersCard
                             Spacer(minLength: Spacing.lg)
@@ -66,6 +67,8 @@ struct LeagueView: View {
             Text("Peer comparison")
                 .font(Typography.bigStat)
                 .foregroundStyle(.primary)
+
+            authorityNotice
 
             VStack(alignment: .leading, spacing: Spacing.md) {
                 Image(systemName: "person.2.wave.2")
@@ -434,6 +437,46 @@ struct LeagueView: View {
 
     // MARK: - Helpers
 
+    @ViewBuilder
+    private var authorityNotice: some View {
+        if let failure = league.peerSyncFailure {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                ErrorCard(message: failure.message)
+                if failure.isRetryable {
+                    Button {
+                        Task { await league.retryPeerSync() }
+                    } label: {
+                        HStack(spacing: Spacing.xs) {
+                            if league.isRetryingPeerSync {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                            Text(league.isRetryingPeerSync ? "Retrying peer sync" : "Retry peer sync")
+                                .font(Typography.caption.weight(.semibold))
+                        }
+                    }
+                    .buttonStyle(.pressable)
+                    .disabled(league.isRetryingPeerSync)
+                    .accessibilityIdentifier("league.peerSync.retry")
+                }
+            }
+        } else if let divergence = league.ratingDivergence {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(AppColor.caution)
+                    .accessibilityHidden(true)
+                Text("Peer rating \(divergence.serverRating) differs from coaching rating \(divergence.localRating). Both remain unchanged while Noum verifies the history.")
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColor.caution.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            .accessibilityIdentifier("league.ratingDivergence")
+        }
+    }
+
     private var tierTint: Color {
         ratingStore.rating.hasRatedEvidence ? league.tier.tint : AppColor.brandBlue
     }
@@ -468,14 +511,7 @@ struct LeagueView: View {
 
     private func pushSelfAndRefresh(force: Bool) async {
         guard ratingStore.rating.hasRatedEvidence else { return }
-        guard let accountID = authManager.currentAccountID else {
-            await league.refreshMembers(force: force)
-            return
-        }
-        let displayName = authManager.currentAccountName ?? "Speaker"
-        let snapshot = PublicProfileBuilder.build(accountID: accountID, displayName: displayName)
-        await league.syncSelf(snapshot: snapshot)
-        await league.refreshMembers(force: true)
+        await league.refreshMembers(force: force)
     }
 }
 

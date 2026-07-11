@@ -68,7 +68,7 @@ struct AsyncChallengeDetailSheet: View {
                                 .font(Typography.caption.weight(.semibold))
                                 .foregroundStyle(AppColor.brandBlue)
 
-                            Text(challenge.prompt)
+                            Text(displayedChallenge.prompt)
                                 .font(Typography.cardTitle)
                                 .foregroundStyle(.primary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -81,7 +81,7 @@ struct AsyncChallengeDetailSheet: View {
                                 .stroke(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
                         )
 
-                        if challenge.bothHavePlayed {
+                        if displayedChallenge.bothHavePlayed {
                             VStack(spacing: Spacing.md) {
                                 Group {
                                     if dynamicTypeSize.isAccessibilitySize {
@@ -103,7 +103,12 @@ struct AsyncChallengeDetailSheet: View {
                                     HStack(spacing: Spacing.xs) {
                                         ForEach(AsyncChallenge.Reaction.allCases) { reaction in
                                             Button {
-                                                challenges.addReaction(challengeID: challenge.id, reaction: reaction)
+                                                Task {
+                                                    await challenges.addReaction(
+                                                        challengeID: displayedChallenge.id,
+                                                        reaction: reaction
+                                                    )
+                                                }
                                             } label: {
                                                 Image(systemName: reaction.symbolName)
                                                     .font(.system(size: 16, weight: .semibold))
@@ -112,6 +117,7 @@ struct AsyncChallengeDetailSheet: View {
                                                     .background(AppColor.brandBlue.opacity(0.08), in: Circle())
                                             }
                                             .accessibilityLabel(reaction.accessibilityName)
+                                            .disabled(challenges.pendingAuthorityIntent != nil)
                                         }
                                     }
                                 }
@@ -138,10 +144,12 @@ struct AsyncChallengeDetailSheet: View {
                         HStack(spacing: 6) {
                             Image(systemName: "calendar.badge.clock")
                                 .font(.caption2)
-                            Text("Expires \(challenge.expiresAt, style: .relative)")
+                            Text("Expires \(displayedChallenge.expiresAt, style: .relative)")
                                 .font(Typography.caption)
                         }
                         .foregroundStyle(.tertiary)
+
+                        authorityFailureCard
                     }
                     .padding(Spacing.screenH)
                 }
@@ -155,6 +163,29 @@ struct AsyncChallengeDetailSheet: View {
             }
         }
         .accessibilityIdentifier("speakOff.detail")
+    }
+
+    private var displayedChallenge: AsyncChallenge {
+        challenges.asyncChallenges.first(where: { $0.id == challenge.id }) ?? challenge
+    }
+
+    @ViewBuilder
+    private var authorityFailureCard: some View {
+        if let failure = challenges.lastAuthorityFailure,
+           failure.intent.challengeID == displayedChallenge.id.uuidString {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                ErrorCard(message: failure.message)
+                if failure.isRetryable {
+                    Button("Retry") {
+                        Task { await challenges.retryLastFailedAuthorityOperation() }
+                    }
+                    .font(Typography.caption.weight(.semibold))
+                    .buttonStyle(.pressable)
+                    .disabled(challenges.pendingAuthorityIntent != nil)
+                    .accessibilityIdentifier("speakOff.retryAuthority")
+                }
+            }
+        }
     }
 
     private func scoreCard(name: String, score: Int, duration: TimeInterval?, reaction: AsyncChallenge.Reaction?) -> some View {
@@ -199,20 +230,20 @@ struct AsyncChallengeDetailSheet: View {
     @ViewBuilder
     private var comparisonScoreCards: some View {
         scoreCard(
-            name: challenge.creatorName,
-            score: challenge.creatorScore ?? 0,
-            duration: challenge.creatorDuration,
-            reaction: challenge.opponentReaction
+            name: displayedChallenge.creatorName,
+            score: displayedChallenge.creatorScore ?? 0,
+            duration: displayedChallenge.creatorDuration,
+            reaction: displayedChallenge.opponentReaction
         )
         Image(systemName: "arrow.left.arrow.right")
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
             .accessibilityLabel("Compared with")
         scoreCard(
-            name: challenge.opponentName,
-            score: challenge.opponentScore ?? 0,
-            duration: challenge.opponentDuration,
-            reaction: challenge.creatorReaction
+            name: displayedChallenge.opponentName,
+            score: displayedChallenge.opponentScore ?? 0,
+            duration: displayedChallenge.opponentDuration,
+            reaction: displayedChallenge.creatorReaction
         )
     }
 }
@@ -274,6 +305,11 @@ struct ChallengePickFriendSheet: View {
                         Spacer()
 
                         Button {
+                            UserDefaults.standard.set(
+                                challenge.prompt,
+                                forKey: "timedPractice.suggestedPrompt"
+                            )
+                            challenges.armSubmission(for: challenge)
                             speakOffNavPath.append(AppDestination.timedPractice)
                         } label: {
                             HStack(spacing: 8) {
@@ -310,6 +346,30 @@ struct ChallengePickFriendSheet: View {
                     }
                 } else {
                     List {
+                        if let failure = challenges.lastAuthorityFailure,
+                           case .create = failure.intent {
+                            VStack(alignment: .leading, spacing: Spacing.sm) {
+                                ErrorCard(message: failure.message)
+                                if failure.isRetryable {
+                                    Button("Retry challenge") {
+                                        Task {
+                                            if let challenge = await challenges.retryLastFailedAuthorityOperation() {
+                                                withAnimation(reduceMotion ? nil : .standardSpring) {
+                                                    createdChallenge = challenge
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .font(Typography.caption.weight(.semibold))
+                                    .buttonStyle(.pressable)
+                                    .disabled(challenges.pendingAuthorityIntent != nil)
+                                    .accessibilityIdentifier("speakOff.create.retry")
+                                }
+                            }
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                        }
+
                         if linkedFriends.isEmpty {
                             EmptyStateView(
                                 symbol: "person.2.slash",
@@ -324,13 +384,13 @@ struct ChallengePickFriendSheet: View {
                             ForEach(linkedFriends) { friend in
                                 Button {
                                     guard let opponentAccountID = friend.accountID else { return }
-                                    let challenge = challenges.createAsyncChallenge(
-                                        opponentID: friend.id,
-                                        opponentName: friend.displayName,
-                                        opponentAccountID: opponentAccountID
-                                    )
-                                    withAnimation(reduceMotion ? nil : .standardSpring) {
-                                        createdChallenge = challenge
+                                    Task {
+                                        guard let challenge = await challenges.createAsyncChallenge(
+                                            opponentAccountID: opponentAccountID
+                                        ) else { return }
+                                        withAnimation(reduceMotion ? nil : .standardSpring) {
+                                            createdChallenge = challenge
+                                        }
                                     }
                                 } label: {
                                     HStack(spacing: 14) {
@@ -355,6 +415,7 @@ struct ChallengePickFriendSheet: View {
                                     }
                                 }
                                 .accessibilityIdentifier("speakOff.friend.\(friend.id.uuidString)")
+                                .disabled(challenges.pendingAuthorityIntent != nil)
                             }
                         }
                     }

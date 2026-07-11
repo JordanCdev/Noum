@@ -3919,47 +3919,7 @@ struct ProfileView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(friends.friends.prefix(5)) { friend in
-                    HStack(spacing: 12) {
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color.blue.opacity(0.2), Color.purple.opacity(0.2)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 40, height: 40)
-
-                            Text(friend.initials)
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.white)
-                        }
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(friend.displayName)
-                                .font(.subheadline.weight(.medium))
-                            Text("Added \(friend.addedAt, style: .relative) ago")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-
-                        Spacer()
-
-                        Button {
-                            challenges.createAsyncChallenge(
-                                opponentID: friend.id,
-                                opponentName: friend.displayName,
-                                opponentAccountID: friend.accountID
-                            )
-                        } label: {
-                            Image(systemName: "bolt.fill")
-                                .font(.caption)
-                                .foregroundStyle(.teal)
-                                .frame(width: 30, height: 30)
-                                .background(Color.teal.opacity(0.1), in: Circle())
-                        }
-                    }
+                    friendRow(friend)
                 }
 
                 if friends.friendCount > 5 {
@@ -3975,6 +3935,54 @@ struct ProfileView: View {
             RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(Color.black.opacity(0.05), lineWidth: 1)
         )
+    }
+
+    private func friendRow(_ friend: NoumFriend) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.blue.opacity(0.2), Color.purple.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 40, height: 40)
+
+                Text(friend.initials)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(friend.displayName)
+                    .font(.subheadline.weight(.medium))
+                Text("Added \(friend.addedAt, style: .relative) ago")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer()
+
+            Button {
+                createSpeakOff(with: friend)
+            } label: {
+                Image(systemName: "bolt.fill")
+                    .font(.caption)
+                    .foregroundStyle(.teal)
+                    .frame(width: 30, height: 30)
+                    .background(Color.teal.opacity(0.1), in: Circle())
+            }
+            .disabled(friend.accountID == nil || challenges.pendingAuthorityIntent != nil)
+        }
+    }
+
+    private func createSpeakOff(with friend: NoumFriend) {
+        guard let opponentAccountID = friend.accountID else { return }
+        Task {
+            await challenges.createAsyncChallenge(opponentAccountID: opponentAccountID)
+        }
     }
 
     private var inviteSection: some View {

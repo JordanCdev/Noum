@@ -230,7 +230,7 @@ enum SessionFinalizer {
         // Sync the public-readable subset of the user's stats so peers
         // (friends + league) can see updated rating, streak, and weekly reps.
         // Best-effort: any failure is silent. The local UI is unaffected.
-        syncPeerSurfaces()
+        syncPeerSurfaces(latestSessionID: latestSessionID)
 
         // M3: surface the path node celebration if this session unlocked one.
         PathProgressManager.shared.evaluateAfterSession()
@@ -455,17 +455,39 @@ enum SessionFinalizer {
 
     // MARK: - Peer surface sync
 
-    /// Push the user's public-readable snapshot to `profiles_public/{id}`
-    /// and to the current league bucket. Called once after a session is
-    /// fully recorded so rating, streak, and weekly reps reflect the new
-    /// state. Fire-and-forget on a detached task.
-    private static func syncPeerSurfaces() {
-        guard let accountID = AuthManager.shared.currentAccountID else { return }
+    /// Upload the exact finalized session first, then let the callable derive
+    /// the user's public profile and league membership. A failed authority
+    /// write is retained by `LeagueManager` for a visible, idempotent retry;
+    /// the local coaching rating is never overwritten by peer state.
+    private static func syncPeerSurfaces(latestSessionID: UUID?) {
+        guard let latestSessionID,
+              let session = PracticeSessionStore.shared.sessions.first(where: { $0.id == latestSessionID }),
+              let accountID = AuthManager.shared.currentAccountID,
+              let providerRawValue = AuthManager.shared.currentAuthProviderRawValue else { return }
         let displayName = AuthManager.shared.currentAccountName ?? "Speaker"
-        let snapshot = PublicProfileBuilder.build(accountID: accountID, displayName: displayName)
         Task {
-            await BackendSyncManager.shared.syncPublicProfile(snapshot)
-            await LeagueManager.shared.syncSelf(snapshot: snapshot)
+            do {
+                let result = try await BackendSyncManager.shared.recordPeerSession(
+                    session: session,
+                    accountID: accountID,
+                    providerRawValue: providerRawValue,
+                    displayName: displayName
+                )
+                LeagueManager.shared.reconcileAuthoritativeProfile(result.profile)
+            } catch {
+                let authorityError = error as? SocialAuthorityError
+                LeagueManager.shared.recordPeerSyncFailure(
+                    sessionID: latestSessionID,
+                    message: error.localizedDescription,
+                    isRetryable: authorityError?.isRetryable ?? true
+                )
+            }
+            // Speak-off submission is independently retryable. It reuses the
+            // same stored session and therefore does not depend on the peer
+            // profile callable having succeeded first.
+            await ChallengesManager.shared.submitArmedResultIfMatching(
+                sessionID: latestSessionID
+            )
         }
     }
 

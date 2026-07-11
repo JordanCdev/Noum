@@ -11,10 +11,9 @@ import Foundation
 /// - `accountID` is included so the receiver can confirm provenance and
 ///   correlate with the friend graph.
 ///
-/// Firestore home: `profiles_public/{accountID}`. Read by anyone signed in,
-/// written only by the owning user (enforced via security rules; see
-/// `FIRESTORE_RULES.md`).
-struct PublicProfileSnapshot: Codable, Equatable, Identifiable {
+/// Firestore home: `profiles_public/{accountID}`. Read by anyone signed in;
+/// only server-authority callables may write the document.
+struct PublicProfileSnapshot: Codable, Equatable, Identifiable, Sendable {
     let accountID: String
     let displayName: String
     let rating: Int

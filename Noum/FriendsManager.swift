@@ -5,7 +5,7 @@ import SwiftUI
 
 // MARK: - Friend Model
 
-struct NoumFriend: Codable, Identifiable, Equatable {
+struct NoumFriend: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     var displayName: String
     var addedAt: Date
@@ -26,7 +26,7 @@ struct NoumFriend: Codable, Identifiable, Equatable {
     var lastKnownRepsThisWeek: Int?
     var lastSyncedAt: Date?
 
-    enum AddMethod: String, Codable {
+    enum AddMethod: String, Codable, Sendable {
         case invite
         case qrCode
         case contacts
@@ -86,6 +86,10 @@ struct NoumFriend: Codable, Identifiable, Equatable {
     }
 }
 
+struct FriendsAccountDataSnapshot: Codable, Equatable, Sendable {
+    let friends: [NoumFriend]
+}
+
 // MARK: - Friends Manager (local persistence)
 
 #if canImport(SwiftUI)
@@ -106,7 +110,7 @@ final class FriendsManager: ObservableObject {
     private var lastRefreshAttempt: Date?
 
     private init() {
-        friends = Self.loadFriends()
+        friends = Self.loadFriends(accountID: Self.persistedAccountID)
     }
 
     func addFriend(_ friend: NoumFriend) {
@@ -189,15 +193,58 @@ final class FriendsManager: ObservableObject {
 
     private func persist() {
         guard let data = try? JSONEncoder().encode(friends) else { return }
-        UserDefaults.standard.set(data, forKey: storageKey)
+        UserDefaults.standard.set(data, forKey: Self.accountKey(
+            base: storageKey,
+            accountID: Self.persistedAccountID
+        ))
     }
 
-    private static func loadFriends() -> [NoumFriend] {
-        guard let data = UserDefaults.standard.data(forKey: "NoumFriendsList"),
+    private static var persistedAccountID: String {
+        KeychainHelper.load(key: "NoumAccountID") ?? "guest"
+    }
+
+    nonisolated static func accountKey(base: String, accountID: String) -> String {
+        "\(base).\(accountID)"
+    }
+
+    private static func loadFriends(accountID: String) -> [NoumFriend] {
+        let key = accountKey(base: "NoumFriendsList", accountID: accountID)
+        if accountID != "guest",
+           UserDefaults.standard.data(forKey: key) == nil,
+           let legacy = UserDefaults.standard.data(forKey: "NoumFriendsList") {
+            UserDefaults.standard.set(legacy, forKey: key)
+            UserDefaults.standard.removeObject(forKey: "NoumFriendsList")
+        }
+        guard let data = UserDefaults.standard.data(forKey: key),
               let friends = try? JSONDecoder().decode([NoumFriend].self, from: data) else {
             return []
         }
         return friends
+    }
+
+    func reloadForCurrentAccount() {
+        friends = Self.loadFriends(accountID: Self.persistedAccountID)
+        lastRefreshAttempt = nil
+    }
+
+    func endSession() {
+        friends = []
+        isRefreshingPeerStats = false
+        lastRefreshAttempt = nil
+    }
+
+    func exportSnapshot(for accountID: String) -> FriendsAccountDataSnapshot {
+        FriendsAccountDataSnapshot(friends: Self.loadFriends(accountID: accountID))
+    }
+
+    func deleteAllData(for accountID: String) {
+        UserDefaults.standard.removeObject(forKey: Self.accountKey(
+            base: storageKey,
+            accountID: accountID
+        ))
+        if Self.persistedAccountID == accountID {
+            endSession()
+        }
     }
 }
 

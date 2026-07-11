@@ -160,6 +160,24 @@ struct TierPromotion: Codable, Equatable, Identifiable {
     var id: String { newTier.rawValue }
 }
 
+/// A peer/public rating that disagrees with the on-device coaching rating is
+/// evidence of a reconciliation problem, not permission to overwrite either
+/// side silently. Social views use the server envelope; coaching continues to
+/// use `RatingStore` until an explicit migration is designed.
+struct PeerRatingDivergence: Equatable, Sendable {
+    let localRating: Int
+    let serverRating: Int
+    let observedAt: Date
+}
+
+struct PeerSessionSyncFailure: Equatable, Identifiable, Sendable {
+    let sessionID: UUID
+    let message: String
+    let isRetryable: Bool
+
+    var id: UUID { sessionID }
+}
+
 // MARK: - League Manager
 
 #if canImport(SwiftUI)
@@ -169,10 +187,9 @@ struct TierPromotion: Codable, Equatable, Identifiable {
 /// peer list — no server-side matching needed.
 ///
 /// Sync responsibility:
-/// - When the user's rating, streak, or weekly reps change, write a public
-///   profile snapshot AND a league member doc for the current bucket.
+/// - Reconcile the server-authored public profile returned after a real rep.
 /// - When the league view is shown (or pull-to-refresh), fetch the top 20
-///   members of the current bucket.
+///   members of the server-authorized current bucket.
 @MainActor
 @available(iOS 17.0, macOS 12.0, *)
 final class LeagueManager: ObservableObject {
@@ -183,6 +200,10 @@ final class LeagueManager: ObservableObject {
     @Published private(set) var bucketKey: String = ""
     @Published private(set) var lastFetchedAt: Date?
     @Published private(set) var isLoading: Bool = false
+    @Published private(set) var authoritativeSelfProfile: PublicProfileSnapshot?
+    @Published private(set) var ratingDivergence: PeerRatingDivergence?
+    @Published private(set) var peerSyncFailure: PeerSessionSyncFailure?
+    @Published private(set) var isRetryingPeerSync: Bool = false
     /// Tier-promotion event waiting to be celebrated. Set when the user's
     /// rating crosses up into a new tier; cleared once the home screen
     /// has shown the celebration overlay. Persisted across launches so a
@@ -243,8 +264,32 @@ final class LeagueManager: ObservableObject {
     /// tier crossings and queues a promotion celebration.
     func recomputeTierAndBucket() {
         let rating = RatingStore.shared.rating
-        let newTier = LeagueTier.tier(for: rating.overall)
-        let newBucket = Self.bucketKey(for: newTier, rating: rating, on: Date())
+        let localTier = LeagueTier.tier(for: rating.overall)
+
+        // Drop an envelope from a prior signed-in account before deriving any
+        // social bucket. Account switches must never display the previous
+        // user's server-authored placement.
+        if let profile = authoritativeSelfProfile,
+           profile.accountID != AuthManager.shared.currentAccountID {
+            authoritativeSelfProfile = nil
+            ratingDivergence = nil
+            peerSyncFailure = nil
+        }
+
+        let authoritativeTier = authoritativeSelfProfile?.leagueTier
+            .flatMap(LeagueTier.init(rawValue:))
+        let newTier = authoritativeTier ?? localTier
+        // Without a server envelope, keep the local coaching tier available
+        // for non-social presentation but do not issue a peer query derived
+        // from client-authored rating state.
+        let newBucket: String = {
+            guard let authoritativeTier,
+                  let profile = authoritativeSelfProfile,
+                  Self.isoWeekKey(for: profile.updatedAt) == Self.isoWeekKey(for: Date()) else {
+                return ""
+            }
+            return Self.bucketKey(for: authoritativeTier, on: profile.updatedAt)
+        }()
         let bucketChanged = newBucket != bucketKey
 
         // First-ever launch: stamp the user's current tier without
@@ -252,7 +297,7 @@ final class LeagueManager: ObservableObject {
         // mid-tier seeded rating would trigger "Promoted to Silver" on
         // open, which is a lie (they didn't earn it just now).
         if !UserDefaults.standard.bool(forKey: lastSeenTierInitializedKey) {
-            persistLastSeenTier(newTier)
+            persistLastSeenTier(localTier)
             UserDefaults.standard.set(true, forKey: lastSeenTierInitializedKey)
         } else if rating.hasRatedEvidence {
             // Detect promotion: only fire on upward crossings, never on
@@ -263,17 +308,17 @@ final class LeagueManager: ObservableObject {
                 isInitialized: true,
                 hasRatedEvidence: rating.hasRatedEvidence,
                 lastSeenFloor: lastSeen.ratingFloor,
-                newFloor: newTier.ratingFloor
+                newFloor: localTier.ratingFloor
             ) {
-                queuePromotion(from: lastSeen, to: newTier)
+                queuePromotion(from: lastSeen, to: localTier)
             }
-            persistLastSeenTier(newTier)
+            persistLastSeenTier(localTier)
         } else {
             // The visible UI says placement is pending, so the state owner
             // must also avoid silently treating the default 400 as an earned
             // weekly bucket. Keep the last-seen tier stamped for future
             // promotion comparisons, but do not join or fetch a bucket yet.
-            persistLastSeenTier(newTier)
+            persistLastSeenTier(localTier)
         }
 
         tier = newTier
@@ -373,13 +418,106 @@ final class LeagueManager: ObservableObject {
         pendingPromotion = promotion
     }
 
-    /// Write the user's membership in the current bucket. Caller passes in
-    /// the public-profile snapshot so we don't duplicate "what fields go
-    /// public" logic — `PublicProfileBuilder` is the single source.
-    func syncSelf(snapshot: PublicProfileSnapshot) async {
+    /// Reconcile a callable-produced profile into the social surface. The
+    /// server envelope becomes the self row and bucket authority, while a
+    /// differing local rating is recorded rather than overwritten.
+    func reconcileAuthoritativeProfile(_ profile: PublicProfileSnapshot) {
+        guard profile.accountID == AuthManager.shared.currentAccountID else {
+            recordPeerSyncFailure(
+                sessionID: peerSyncFailure?.sessionID ?? UUID(),
+                message: SocialAuthorityError.invalidResponse.localizedDescription
+            )
+            return
+        }
+
+        authoritativeSelfProfile = profile
+        let localRating = RatingStore.shared.rating
+        if localRating.hasRatedEvidence, localRating.overall != profile.rating {
+            ratingDivergence = PeerRatingDivergence(
+                localRating: localRating.overall,
+                serverRating: profile.rating,
+                observedAt: Date()
+            )
+        } else {
+            ratingDivergence = nil
+        }
+        peerSyncFailure = nil
         recomputeTierAndBucket()
-        guard !bucketKey.isEmpty else { return }
-        await BackendSyncManager.shared.syncLeagueMember(snapshot: snapshot, bucket: bucketKey)
+
+        members.removeAll { $0.accountID == profile.accountID }
+        members.append(profile)
+        members.sort {
+            if $0.rating == $1.rating { return $0.updatedAt > $1.updatedAt }
+            return $0.rating > $1.rating
+        }
+    }
+
+    func recordPeerSyncFailure(
+        sessionID: UUID,
+        message: String,
+        isRetryable: Bool = true
+    ) {
+        peerSyncFailure = PeerSessionSyncFailure(
+            sessionID: sessionID,
+            message: message,
+            isRetryable: isRetryable
+        )
+    }
+
+    /// Retry uses the same stored session ID, so the callable's replay guard
+    /// returns `processed: false` after a lost response instead of applying a
+    /// second rating/league mutation.
+    @discardableResult
+    func retryPeerSync() async -> Bool {
+        guard !isRetryingPeerSync,
+              let failure = peerSyncFailure,
+              let session = PracticeSessionStore.shared.sessions.first(where: { $0.id == failure.sessionID }),
+              let accountID = AuthManager.shared.currentAccountID,
+              let providerRawValue = AuthManager.shared.currentAuthProviderRawValue else {
+            return false
+        }
+        isRetryingPeerSync = true
+        defer { isRetryingPeerSync = false }
+        do {
+            let result = try await BackendSyncManager.shared.recordPeerSession(
+                session: session,
+                accountID: accountID,
+                providerRawValue: providerRawValue,
+                displayName: AuthManager.shared.currentAccountName ?? "Speaker"
+            )
+            reconcileAuthoritativeProfile(result.profile)
+            return true
+        } catch {
+            let authorityError = error as? SocialAuthorityError
+            recordPeerSyncFailure(
+                sessionID: failure.sessionID,
+                message: error.localizedDescription,
+                isRetryable: authorityError?.isRetryable ?? true
+            )
+            return false
+        }
+    }
+
+    /// Read-only hydration for a league view opened before this process has
+    /// received a `recordPeerSession` response.
+    func refreshAuthoritativeSelfProfile() async {
+        guard let accountID = AuthManager.shared.currentAccountID else { return }
+        if authoritativeSelfProfile?.accountID == accountID { return }
+        if let profile = await BackendSyncManager.shared.fetchPublicProfile(accountID: accountID) {
+            reconcileAuthoritativeProfile(profile)
+        }
+    }
+
+    /// Account-registry adapter: clears only in-memory social state. Durable
+    /// server data is owned by the deletion callable.
+    func resetForAccountTransition() {
+        members = []
+        authoritativeSelfProfile = nil
+        ratingDivergence = nil
+        peerSyncFailure = nil
+        lastFetchedAt = nil
+        lastFetchAttempt = nil
+        recomputeTierAndBucket()
     }
 
     /// Refresh the visible top-20 of the current bucket. Throttled.
@@ -387,13 +525,21 @@ final class LeagueManager: ObservableObject {
     func refreshMembers(force: Bool = false) async {
         if !force, let last = lastFetchAttempt,
            Date().timeIntervalSince(last) < Self.refreshThrottle { return }
+        await refreshAuthoritativeSelfProfile()
         recomputeTierAndBucket()
         guard !bucketKey.isEmpty else { return }
         lastFetchAttempt = Date()
         isLoading = true
         defer { isLoading = false }
-        let fetched = await BackendSyncManager.shared.fetchLeagueMembers(bucket: bucketKey, limit: 20)
-        members = fetched
+        var fetched = await BackendSyncManager.shared.fetchLeagueMembers(bucket: bucketKey, limit: 20)
+        if let selfProfile = authoritativeSelfProfile,
+           !fetched.contains(where: { $0.accountID == selfProfile.accountID }) {
+            fetched.append(selfProfile)
+        }
+        members = fetched.sorted {
+            if $0.rating == $1.rating { return $0.updatedAt > $1.updatedAt }
+            return $0.rating > $1.rating
+        }
         lastFetchedAt = Date()
     }
 
@@ -425,7 +571,8 @@ final class LeagueManager: ObservableObject {
     /// Rating headroom to next tier. Nil if at the top.
     var ratingToNextTier: Int? {
         guard let next = tier.nextTier else { return nil }
-        return max(0, next.ratingFloor - RatingStore.shared.rating.overall)
+        let socialRating = authoritativeSelfProfile?.rating ?? RatingStore.shared.rating.overall
+        return max(0, next.ratingFloor - socialRating)
     }
 
     // MARK: - Internals
@@ -541,39 +688,6 @@ extension LeagueManager {
             entries
                 .sorted { $0.peakRating > $1.peakRating }
                 .prefix(limit)
-        )
-    }
-}
-
-// MARK: - Public profile builder
-
-/// Pure function: pulls the current user's stats into a public snapshot
-/// suitable for `profiles_public/{accountID}` and league member docs.
-/// Lives outside the manager so the same shape can be assembled from
-/// `SessionFinalizer` without going through any singleton.
-@MainActor
-@available(iOS 17.0, macOS 12.0, *)
-enum PublicProfileBuilder {
-    static func build(accountID: String, displayName: String) -> PublicProfileSnapshot {
-        let rating = RatingStore.shared.rating
-        let now = Date()
-        let weeklyReps = LeagueActivityPresentation.weeklySessionCount(
-            from: PracticeSessionStore.shared.sessions,
-            now: now
-        )
-        let streak = StreakFreezeManager.shared.currentStreak
-        let tier = LeagueTier.tier(for: rating.overall)
-
-        return PublicProfileSnapshot(
-            accountID: accountID,
-            displayName: displayName,
-            rating: rating.overall,
-            peakRating: rating.peakRating,
-            currentStreak: streak,
-            weeklyReps: weeklyReps,
-            weeklyDelta: rating.weeklyDelta,
-            leagueTier: rating.hasRatedEvidence ? tier.rawValue : nil,
-            updatedAt: now
         )
     }
 }

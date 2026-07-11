@@ -5,7 +5,7 @@ import SwiftUI
 
 // MARK: - Challenge Model (daily/weekly/streak; social is legacy)
 
-struct SpeakingChallenge2: Codable, Identifiable, Equatable {
+struct SpeakingChallenge2: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     var title: String
     var description: String
@@ -17,7 +17,7 @@ struct SpeakingChallenge2: Codable, Identifiable, Equatable {
     var endDate: Date
     var isCompleted: Bool
 
-    enum Category: String, Codable, CaseIterable, Identifiable {
+    enum Category: String, Codable, CaseIterable, Identifiable, Sendable {
         case daily
         case weekly
         case streak
@@ -53,7 +53,7 @@ struct SpeakingChallenge2: Codable, Identifiable, Equatable {
         }
     }
 
-    struct Reward: Codable, Equatable {
+    struct Reward: Codable, Equatable, Sendable {
         var xp: Int
         var badge: String?
     }
@@ -78,7 +78,7 @@ struct SpeakingChallenge2: Codable, Identifiable, Equatable {
 
 // MARK: - Async Challenge Model (friend-vs-friend)
 
-struct AsyncChallenge: Codable, Identifiable, Equatable {
+struct AsyncChallenge: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     let prompt: String
     let createdAt: Date
@@ -104,7 +104,7 @@ struct AsyncChallenge: Codable, Identifiable, Equatable {
     var creatorReaction: Reaction?
     var opponentReaction: Reaction?
 
-    enum Reaction: String, Codable, CaseIterable, Identifiable {
+    enum Reaction: String, Codable, CaseIterable, Identifiable, Sendable {
         case fire = "🔥"
         case clap = "👏"
         case strong = "💪"
@@ -235,6 +235,19 @@ struct AsyncChallenge: Codable, Identifiable, Equatable {
     }
 }
 
+struct ChallengesAccountDataSnapshot: Codable, Equatable, Sendable {
+    let active: [SpeakingChallenge2]
+    let completed: [SpeakingChallenge2]
+    let asyncChallenges: [AsyncChallenge]
+    let armedRep: ArmedAsyncChallengeRep?
+}
+
+struct ArmedAsyncChallengeRep: Codable, Equatable, Sendable {
+    let challengeID: UUID
+    let prompt: String
+    let armedAt: Date
+}
+
 // MARK: - Challenges Manager
 
 #if canImport(SwiftUI)
@@ -249,34 +262,29 @@ final class ChallengesManager: ObservableObject {
 
     // Async friend challenges
     @Published private(set) var asyncChallenges: [AsyncChallenge] = []
+    @Published private(set) var pendingAuthorityIntent: AsyncChallengeAuthorityIntent?
+    @Published private(set) var lastAuthorityFailure: AsyncChallengeAuthorityFailure?
+    @Published private(set) var armedRep: ArmedAsyncChallengeRep?
 
     private let storageKey = "NoumChallenges"
     private let completedKey = "NoumCompletedChallenges"
     private let asyncKey = "NoumAsyncChallenges"
+    private let armedRepKey = "NoumAsyncChallengeArmedRep"
 
     private init() {
-        activeChallenges = Self.load(key: "NoumChallenges")
-        completedChallenges = Self.load(key: "NoumCompletedChallenges")
-        asyncChallenges = Self.loadAsync()
+        let accountID = KeychainHelper.load(key: "NoumAccountID") ?? "guest"
+        Self.migrateLegacyDataIfNeeded(accountID: accountID)
+        activeChallenges = Self.load(key: Self.accountKey(base: "NoumChallenges", accountID: accountID))
+        completedChallenges = Self.load(key: Self.accountKey(base: "NoumCompletedChallenges", accountID: accountID))
+        asyncChallenges = Self.loadAsync(key: Self.accountKey(base: "NoumAsyncChallenges", accountID: accountID))
+        armedRep = Self.loadArmedRep(key: Self.accountKey(base: "NoumAsyncChallengeArmedRep", accountID: accountID))
         refreshChallengesIfNeeded()
     }
 
     // MARK: - Current User ID (local reference)
 
-    private var currentUserID: UUID {
-        if let idString = KeychainHelper.load(key: "NoumAccountID"),
-           let uuid = UUID(uuidString: idString) {
-            return uuid
-        }
-        return UUID()
-    }
-
     private var currentParticipantID: String {
-        KeychainHelper.load(key: "NoumAccountID") ?? currentUserID.uuidString
-    }
-
-    private var currentUserName: String {
-        AuthManager.shared.currentAccountName ?? "You"
+        KeychainHelper.load(key: "NoumAccountID") ?? ""
     }
 
     // MARK: - Session Progress
@@ -386,71 +394,149 @@ final class ChallengesManager: ObservableObject {
 
     // MARK: - Async Friend Challenges
 
-    /// Create a new async challenge with a friend. Both get the same prompt.
-    /// The challenge is mirrored to the backend so the opponent can pick it
-    /// up on their device.
+    /// Create a challenge only after the server has derived both participant
+    /// identities and timestamps. A failed create never produces a local
+    /// "ready" card; its stable request is retained for retry.
     @discardableResult
-    func createAsyncChallenge(opponentID: UUID, opponentName: String, opponentAccountID: String? = nil) -> AsyncChallenge {
-        let creatorID = currentUserID
-        let creatorAccountID = KeychainHelper.load(key: "NoumAccountID") ?? creatorID.uuidString
-        let challenge = AsyncChallenge(
-            id: UUID(),
-            prompt: PracticeTopics.random(),
-            createdAt: Date(),
-            expiresAt: Calendar.current.date(byAdding: .day, value: 3, to: Date())!,
-            creatorID: creatorID,
-            creatorName: currentUserName,
-            creatorAccountID: creatorAccountID,
-            opponentID: opponentID,
-            opponentName: opponentName,
-            opponentAccountID: opponentAccountID
+    func createAsyncChallenge(
+        opponentAccountID: String,
+        challengeID: UUID = UUID(),
+        prompt: String? = nil
+    ) async -> AsyncChallenge? {
+        let request = CreateChallengeRequest(
+            challengeID: challengeID,
+            opponentAccountID: opponentAccountID,
+            prompt: prompt ?? PracticeTopics.random()
         )
-        asyncChallenges.insert(challenge, at: 0)
-        persistAsync()
-        Task { await BackendSyncManager.shared.syncAsyncChallenge(challenge) }
-        return challenge
+        return await performAuthorityIntent(.create(request))
     }
 
-    /// Record the current user's score after completing an async challenge.
-    /// Writes the local cache and pushes the slice the user is allowed to
-    /// edit (their own fields) to the backend. The other side stays nil until
-    /// a real opponent submission arrives through `refreshFromBackend()`.
-    func recordAsyncResult(challengeID: UUID, score: Int, duration: TimeInterval, summary: String?) {
-        guard let index = asyncChallenges.firstIndex(where: { $0.id == challengeID }) else { return }
-        let isCreator = asyncChallenges[index].isCreatorPerspective(participantID: currentParticipantID)
-
-        if isCreator {
-            asyncChallenges[index].creatorScore = score
-            asyncChallenges[index].creatorDuration = duration
-            asyncChallenges[index].creatorSummary = summary
-        } else {
-            asyncChallenges[index].opponentScore = score
-            asyncChallenges[index].opponentDuration = duration
-            asyncChallenges[index].opponentSummary = summary
-        }
-
-        let updated = asyncChallenges[index]
-        persistAsync()
-        Task { await BackendSyncManager.shared.syncAsyncChallenge(updated) }
-
-        // No opponent fabrication: a real rep must never be resolved against a
-        // generated opponent score. The challenge stays honestly pending until
-        // real Firestore data arrives via refreshFromBackend().
+    /// Submit a stored session ID; score, duration, summary, participant side,
+    /// and server timestamp are intentionally absent. The local result fields
+    /// change only after an authoritative challenge envelope returns.
+    @discardableResult
+    func recordAsyncResult(challengeID: UUID, sessionID: UUID) async -> Bool {
+        let request = SubmitChallengeResultRequest(
+            challengeID: challengeID,
+            sessionID: sessionID
+        )
+        return await performAuthorityIntent(.submit(request)) != nil
     }
 
-    /// Add a reaction to a completed challenge. Synced server-side.
-    func addReaction(challengeID: UUID, reaction: AsyncChallenge.Reaction) {
-        guard let index = asyncChallenges.firstIndex(where: { $0.id == challengeID }) else { return }
-        let isCreator = asyncChallenges[index].isCreatorPerspective(participantID: currentParticipantID)
+    /// Reactions are optimistic only at the interaction level (the button can
+    /// remain responsive); the displayed challenge mutates after server ack.
+    @discardableResult
+    func addReaction(
+        challengeID: UUID,
+        reaction: AsyncChallenge.Reaction
+    ) async -> Bool {
+        let request = SetChallengeReactionRequest(
+            challengeID: challengeID,
+            reaction: reaction
+        )
+        return await performAuthorityIntent(.reaction(request)) != nil
+    }
 
-        if isCreator {
-            asyncChallenges[index].creatorReaction = reaction
-        } else {
-            asyncChallenges[index].opponentReaction = reaction
+    @discardableResult
+    func retryLastFailedAuthorityOperation() async -> AsyncChallenge? {
+        guard let failure = lastAuthorityFailure else { return nil }
+        return await performAuthorityIntent(failure.intent)
+    }
+
+    private func performAuthorityIntent(
+        _ intent: AsyncChallengeAuthorityIntent
+    ) async -> AsyncChallenge? {
+        guard pendingAuthorityIntent == nil else { return nil }
+        pendingAuthorityIntent = intent
+        lastAuthorityFailure = nil
+        defer { pendingAuthorityIntent = nil }
+
+        do {
+            let result: ChallengeMutationAuthorityResult
+            switch intent {
+            case .create(let request):
+                result = try await BackendSyncManager.shared.createChallenge(request)
+
+            case .submit(let request):
+                guard let sessionID = UUID(uuidString: request.sessionID),
+                      let session = PracticeSessionStore.shared.sessions.first(where: { $0.id == sessionID }),
+                      let accountID = AuthManager.shared.currentAccountID,
+                      let providerRawValue = AuthManager.shared.currentAuthProviderRawValue else {
+                    throw SocialAuthorityError.sessionUnavailable
+                }
+                result = try await BackendSyncManager.shared.submitChallengeResult(
+                    request,
+                    session: session,
+                    accountID: accountID,
+                    providerRawValue: providerRawValue
+                )
+
+            case .reaction(let request):
+                result = try await BackendSyncManager.shared.setChallengeReaction(request)
+            }
+
+            upsertAuthoritativeChallenge(result.challenge)
+            return result.challenge
+        } catch {
+            let authorityError = error as? SocialAuthorityError
+            lastAuthorityFailure = AsyncChallengeAuthorityFailure(
+                intent: intent,
+                message: error.localizedDescription,
+                isRetryable: authorityError?.isRetryable ?? true
+            )
+            return nil
         }
-        let updated = asyncChallenges[index]
+    }
+
+    private func upsertAuthoritativeChallenge(_ challenge: AsyncChallenge) {
+        asyncChallenges.removeAll { $0.id == challenge.id }
+        asyncChallenges.append(challenge)
+        asyncChallenges.sort { $0.createdAt > $1.createdAt }
         persistAsync()
-        Task { await BackendSyncManager.shared.syncAsyncChallenge(updated) }
+    }
+
+    /// Arms the exact server-created prompt before navigating into Timed
+    /// Practice. The resulting session must carry the same prompt or it cannot
+    /// be submitted to the speak-off.
+    func armSubmission(for challenge: AsyncChallenge) {
+        armedRep = ArmedAsyncChallengeRep(
+            challengeID: challenge.id,
+            prompt: challenge.prompt,
+            armedAt: Date()
+        )
+        persistArmedRep()
+    }
+
+    @discardableResult
+    func submitArmedResultIfMatching(sessionID: UUID) async -> Bool {
+        guard let armedRep,
+              let session = PracticeSessionStore.shared.sessions.first(where: { $0.id == sessionID }),
+              Self.repMatchesArmedPrompt(sessionPrompt: session.prompt, armedPrompt: armedRep.prompt) else {
+            return false
+        }
+        let submitted = await recordAsyncResult(
+            challengeID: armedRep.challengeID,
+            sessionID: session.id
+        )
+        if submitted {
+            self.armedRep = nil
+            persistArmedRep()
+        }
+        return submitted
+    }
+
+    nonisolated static func repMatchesArmedPrompt(
+        sessionPrompt: String?,
+        armedPrompt: String
+    ) -> Bool {
+        guard let sessionPrompt else { return false }
+        let normalize: (String) -> String = {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+                .lowercased()
+        }
+        let expected = normalize(armedPrompt)
+        return !expected.isEmpty && normalize(sessionPrompt) == expected
     }
 
     /// Pull challenges where the current user is a participant. Used at
@@ -461,25 +547,15 @@ final class ChallengesManager: ObservableObject {
         let remote = await BackendSyncManager.shared.fetchAsyncChallenges(forParticipant: participantID)
         guard !remote.isEmpty else { return }
 
-        // Merge: server-side wins for fields already set there. Local wins
-        // for fields not yet known to the backend (e.g. user just played and
-        // the network is still in flight).
+        // The server envelope replaces every field for a matching challenge,
+        // including nil results. Retaining a client-cached score after the
+        // server says that side has not submitted would create a false result.
+        // Local-only legacy rows remain until a successful server copy for the
+        // same ID arrives; writes never originate from those rows.
         var merged: [UUID: AsyncChallenge] = [:]
         for local in asyncChallenges { merged[local.id] = local }
         for remoteChallenge in remote {
-            if var existing = merged[remoteChallenge.id] {
-                existing.creatorScore = remoteChallenge.creatorScore ?? existing.creatorScore
-                existing.creatorDuration = remoteChallenge.creatorDuration ?? existing.creatorDuration
-                existing.creatorSummary = remoteChallenge.creatorSummary ?? existing.creatorSummary
-                existing.creatorReaction = remoteChallenge.creatorReaction ?? existing.creatorReaction
-                existing.opponentScore = remoteChallenge.opponentScore ?? existing.opponentScore
-                existing.opponentDuration = remoteChallenge.opponentDuration ?? existing.opponentDuration
-                existing.opponentSummary = remoteChallenge.opponentSummary ?? existing.opponentSummary
-                existing.opponentReaction = remoteChallenge.opponentReaction ?? existing.opponentReaction
-                merged[remoteChallenge.id] = existing
-            } else {
-                merged[remoteChallenge.id] = remoteChallenge
-            }
+            merged[remoteChallenge.id] = remoteChallenge
         }
         asyncChallenges = merged.values.sorted { $0.createdAt > $1.createdAt }
         persistAsync()
@@ -508,17 +584,27 @@ final class ChallengesManager: ObservableObject {
 
     private func persistActive() {
         guard let data = try? JSONEncoder().encode(activeChallenges) else { return }
-        UserDefaults.standard.set(data, forKey: storageKey)
+        UserDefaults.standard.set(data, forKey: scopedKey(storageKey))
     }
 
     private func persistCompleted() {
         guard let data = try? JSONEncoder().encode(completedChallenges) else { return }
-        UserDefaults.standard.set(data, forKey: completedKey)
+        UserDefaults.standard.set(data, forKey: scopedKey(completedKey))
     }
 
     private func persistAsync() {
         guard let data = try? JSONEncoder().encode(asyncChallenges) else { return }
-        UserDefaults.standard.set(data, forKey: asyncKey)
+        UserDefaults.standard.set(data, forKey: scopedKey(asyncKey))
+    }
+
+    private func persistArmedRep() {
+        let key = scopedKey(armedRepKey)
+        guard let armedRep else {
+            UserDefaults.standard.removeObject(forKey: key)
+            return
+        }
+        guard let data = try? JSONEncoder().encode(armedRep) else { return }
+        UserDefaults.standard.set(data, forKey: key)
     }
 
     private static func load(key: String) -> [SpeakingChallenge2] {
@@ -529,12 +615,74 @@ final class ChallengesManager: ObservableObject {
         return challenges
     }
 
-    private static func loadAsync() -> [AsyncChallenge] {
-        guard let data = UserDefaults.standard.data(forKey: "NoumAsyncChallenges"),
+    private static func loadAsync(key: String) -> [AsyncChallenge] {
+        guard let data = UserDefaults.standard.data(forKey: key),
               let challenges = try? JSONDecoder().decode([AsyncChallenge].self, from: data) else {
             return []
         }
         return challenges
+    }
+
+    private static func loadArmedRep(key: String) -> ArmedAsyncChallengeRep? {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(ArmedAsyncChallengeRep.self, from: data)
+    }
+
+    private func scopedKey(_ base: String) -> String {
+        Self.accountKey(base: base, accountID: currentParticipantID.isEmpty ? "guest" : currentParticipantID)
+    }
+
+    nonisolated static func accountKey(base: String, accountID: String) -> String {
+        "\(base).\(accountID)"
+    }
+
+    private static func migrateLegacyDataIfNeeded(accountID: String) {
+        guard accountID != "guest" else { return }
+        for base in ["NoumChallenges", "NoumCompletedChallenges", "NoumAsyncChallenges", "NoumAsyncChallengeArmedRep"] {
+            let scoped = accountKey(base: base, accountID: accountID)
+            guard UserDefaults.standard.data(forKey: scoped) == nil,
+                  let legacy = UserDefaults.standard.data(forKey: base) else { continue }
+            UserDefaults.standard.set(legacy, forKey: scoped)
+            UserDefaults.standard.removeObject(forKey: base)
+        }
+    }
+
+    func reloadForCurrentAccount() {
+        Self.migrateLegacyDataIfNeeded(accountID: currentParticipantID.isEmpty ? "guest" : currentParticipantID)
+        activeChallenges = Self.load(key: scopedKey(storageKey))
+        completedChallenges = Self.load(key: scopedKey(completedKey))
+        asyncChallenges = Self.loadAsync(key: scopedKey(asyncKey))
+        armedRep = Self.loadArmedRep(key: scopedKey(armedRepKey))
+        pendingAuthorityIntent = nil
+        lastAuthorityFailure = nil
+        refreshChallengesIfNeeded()
+    }
+
+    func endSession() {
+        activeChallenges = []
+        completedChallenges = []
+        asyncChallenges = []
+        armedRep = nil
+        pendingAuthorityIntent = nil
+        lastAuthorityFailure = nil
+    }
+
+    func exportSnapshot(for accountID: String) -> ChallengesAccountDataSnapshot {
+        ChallengesAccountDataSnapshot(
+            active: Self.load(key: Self.accountKey(base: storageKey, accountID: accountID)),
+            completed: Self.load(key: Self.accountKey(base: completedKey, accountID: accountID)),
+            asyncChallenges: Self.loadAsync(key: Self.accountKey(base: asyncKey, accountID: accountID)),
+            armedRep: Self.loadArmedRep(key: Self.accountKey(base: armedRepKey, accountID: accountID))
+        )
+    }
+
+    func deleteAllData(for accountID: String) {
+        for base in [storageKey, completedKey, asyncKey, armedRepKey] {
+            UserDefaults.standard.removeObject(forKey: Self.accountKey(base: base, accountID: accountID))
+        }
+        if currentParticipantID == accountID {
+            endSession()
+        }
     }
 }
 

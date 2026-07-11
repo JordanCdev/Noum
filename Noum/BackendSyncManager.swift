@@ -69,8 +69,12 @@ private struct RecommendationSyncPayload: Codable {
 
 actor BackendSyncManager {
     static let shared = BackendSyncManager()
-    static let functionsRegion = "europe-west2"
+    static let functionsRegion = SocialAuthorityCallable.region
     static let deleteAccountFunctionName = "deleteAccount"
+    static let recordPeerSessionFunctionName = SocialAuthorityCallable.recordPeerSession
+    static let createChallengeFunctionName = SocialAuthorityCallable.createChallenge
+    static let submitChallengeResultFunctionName = SocialAuthorityCallable.submitChallengeResult
+    static let setChallengeReactionFunctionName = SocialAuthorityCallable.setChallengeReaction
 
     private init() {}
 
@@ -271,15 +275,36 @@ actor BackendSyncManager {
 
     // MARK: - Peer (M2: Peer Pull v1)
 
-    /// Write the public-readable subset of the user's stats. Called whenever
-    /// a session changes rating, streak, or weekly reps.
-    func syncPublicProfile(_ snapshot: PublicProfileSnapshot) async {
-#if canImport(FirebaseFirestore)
-        if firebaseIsConfigured {
-            await syncFirebasePublicProfile(snapshot)
-            return
-        }
-#endif
+    /// Upload a fully annotated session, wait for the Firestore commit, then
+    /// ask the server to derive every public statistic from that stored rep.
+    /// The ordering is deliberate: the callable never races the background
+    /// sync launched by `PracticeSessionStore`.
+    func recordPeerSession(
+        session: PracticeSession,
+        accountID: String,
+        providerRawValue: String,
+        displayName: String
+    ) async throws -> PeerSessionAuthorityResult {
+        #if canImport(FirebaseCore) && canImport(FirebaseFirestore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
+        guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
+        try requireFirebaseAccount(accountID)
+        try await syncFirebaseSessionForAuthority(
+            session,
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        )
+        let request = RecordPeerSessionRequest(
+            sessionID: session.id,
+            displayName: displayName
+        )
+        let response: RecordPeerSessionResponse = try await callSocialAuthority(
+            Self.recordPeerSessionFunctionName,
+            request: request
+        )
+        return try response.result(expectedSessionID: session.id)
+        #else
+        throw SocialAuthorityError.notConfigured
+        #endif
     }
 
     /// Fetch a peer's public-readable snapshot. Returns nil if the peer
@@ -293,16 +318,6 @@ actor BackendSyncManager {
         return nil
     }
 
-    /// Write the user's league snapshot for the current tier+week bucket.
-    func syncLeagueMember(snapshot: PublicProfileSnapshot, bucket: String) async {
-#if canImport(FirebaseFirestore)
-        if firebaseIsConfigured {
-            await syncFirebaseLeagueMember(snapshot, bucket: bucket)
-            return
-        }
-#endif
-    }
-
     /// Read the top members of a league bucket, ordered by rating descending.
     /// Caller is responsible for clamping to a UI-friendly count.
     func fetchLeagueMembers(bucket: String, limit: Int = 20) async -> [PublicProfileSnapshot] {
@@ -314,16 +329,77 @@ actor BackendSyncManager {
         return []
     }
 
-    /// Write the user's own slice of an async challenge. The doc is shared
-    /// between two participants and writers are limited (by Firestore rules)
-    /// to setting only their own fields.
-    func syncAsyncChallenge(_ challenge: AsyncChallenge) async {
-#if canImport(FirebaseFirestore)
-        if firebaseIsConfigured {
-            await syncFirebaseAsyncChallenge(challenge)
-            return
+    func createChallenge(_ request: CreateChallengeRequest) async throws -> ChallengeMutationAuthorityResult {
+        #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
+        guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
+        try requireFirebaseAccount()
+        guard request.isValid else { throw SocialAuthorityError.invalidRequest }
+        let response: CreateChallengeResponse = try await callSocialAuthority(
+            Self.createChallengeFunctionName,
+            request: request
+        )
+        guard let challengeID = UUID(uuidString: request.challengeID) else {
+            throw SocialAuthorityError.invalidRequest
         }
-#endif
+        return try response.result(expectedChallengeID: challengeID)
+        #else
+        throw SocialAuthorityError.notConfigured
+        #endif
+    }
+
+    /// A challenge result can reference a rep only after the final annotated
+    /// session document has committed. No client-authored score or summary is
+    /// present in the callable request.
+    func submitChallengeResult(
+        _ request: SubmitChallengeResultRequest,
+        session: PracticeSession,
+        accountID: String,
+        providerRawValue: String
+    ) async throws -> ChallengeMutationAuthorityResult {
+        #if canImport(FirebaseCore) && canImport(FirebaseFirestore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
+        guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
+        try requireFirebaseAccount(accountID)
+        guard request.sessionID == session.id.uuidString,
+              let challengeID = UUID(uuidString: request.challengeID),
+              let sessionID = UUID(uuidString: request.sessionID) else {
+            throw SocialAuthorityError.invalidRequest
+        }
+        try await syncFirebaseSessionForAuthority(
+            session,
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        )
+        let response: SubmitChallengeResultResponse = try await callSocialAuthority(
+            Self.submitChallengeResultFunctionName,
+            request: request
+        )
+        return try response.result(
+            expectedChallengeID: challengeID,
+            expectedSessionID: sessionID
+        )
+        #else
+        throw SocialAuthorityError.notConfigured
+        #endif
+    }
+
+    func setChallengeReaction(
+        _ request: SetChallengeReactionRequest
+    ) async throws -> ChallengeMutationAuthorityResult {
+        #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
+        guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
+        try requireFirebaseAccount()
+        guard let challengeID = UUID(uuidString: request.challengeID),
+              AsyncChallenge.Reaction(rawValue: request.reaction) != nil else {
+            throw SocialAuthorityError.invalidRequest
+        }
+        let response: SetChallengeReactionResponse = try await callSocialAuthority(
+            Self.setChallengeReactionFunctionName,
+            request: request
+        )
+        return try response.result(expectedChallengeID: challengeID)
+        #else
+        throw SocialAuthorityError.notConfigured
+        #endif
     }
 
     /// Fetch all async challenges where the given accountID is a participant.
@@ -336,6 +412,72 @@ actor BackendSyncManager {
 #endif
         return []
     }
+
+    #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
+    private func requireFirebaseAccount(_ expectedAccountID: String? = nil) throws {
+        guard FirebaseApp.app() != nil,
+              let firebaseUID = Auth.auth().currentUser?.uid else {
+            throw SocialAuthorityError.unauthenticated
+        }
+        if let expectedAccountID, firebaseUID != expectedAccountID {
+            throw SocialAuthorityError.unauthenticated
+        }
+    }
+
+    private func callSocialAuthority<Request, Response>(
+        _ name: String,
+        request: Request
+    ) async throws -> Response where Request: Encodable, Response: Decodable {
+        do {
+            let functions = Functions.functions(region: Self.functionsRegion)
+            let callable: Callable<Request, Response> = functions.httpsCallable(name)
+            return try await callable.call(request)
+        } catch let error as SocialAuthorityError {
+            throw error
+        } catch {
+            throw Self.socialAuthorityError(from: error)
+        }
+    }
+
+    nonisolated private static func socialAuthorityError(from error: Error) -> SocialAuthorityError {
+        let nsError = error as NSError
+        guard nsError.domain == FunctionsErrorDomain,
+              let code = FunctionsErrorCode(rawValue: nsError.code) else {
+            return .serviceUnavailable
+        }
+        if code == .failedPrecondition,
+           let capabilityFailure = SocialAuthorityError.capabilityFailure(
+               reason: socialAuthorityFailureReason(from: nsError)
+           ) {
+            return capabilityFailure
+        }
+        switch code {
+        case .unauthenticated:
+            return .unauthenticated
+        case .invalidArgument:
+            return .invalidRequest
+        case .alreadyExists, .failedPrecondition, .aborted:
+            return .conflict
+        case .resourceExhausted:
+            return .rateLimited
+        case .unavailable, .deadlineExceeded, .cancelled:
+            return .serviceUnavailable
+        default:
+            return .rejected
+        }
+    }
+
+    nonisolated private static func socialAuthorityFailureReason(from error: NSError) -> String? {
+        guard let details = error.userInfo[FunctionsErrorDetailsKey] else { return nil }
+        if let dictionary = details as? [String: Any] {
+            return dictionary["reason"] as? String
+        }
+        if let dictionary = details as? NSDictionary {
+            return dictionary["reason"] as? String
+        }
+        return nil
+    }
+    #endif
 
     private func send<Payload: Encodable>(
         _ payload: Payload,
@@ -482,14 +624,36 @@ private extension BackendSyncManager {
 
     func syncFirebaseSession(_ session: PracticeSession, accountID: String, providerRawValue: String) async {
         do {
-            await ensureFirebaseUserDocument(accountID: accountID, providerRawValue: providerRawValue)
-            let data = try encodeDocument(session)
-            try await setDocument(
-                userDocument(accountID: accountID).collection("sessions").document(session.id.uuidString),
-                data: data,
-                merge: true
+            try await syncFirebaseSessionForAuthority(
+                session,
+                accountID: accountID,
+                providerRawValue: providerRawValue
             )
         } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
+    }
+
+    /// Throwing form reserved for a server-authority callable that must not
+    /// run until its referenced session is durably visible to Functions.
+    func syncFirebaseSessionForAuthority(
+        _ session: PracticeSession,
+        accountID: String,
+        providerRawValue: String
+    ) async throws {
+        try await setDocument(
+            userDocument(accountID: accountID),
+            data: [
+                "accountID": accountID,
+                "provider": providerRawValue,
+                "updatedAt": Date().timeIntervalSince1970
+            ],
+            merge: true
+        )
+        let data = try encodeDocument(session)
+        try await setDocument(
+            userDocument(accountID: accountID).collection("sessions").document(session.id.uuidString),
+            data: data,
+            merge: true
+        )
     }
 
     func syncFirebaseRecommendationState(
@@ -510,69 +674,6 @@ private extension BackendSyncManager {
                 ],
                 merge: true
             )
-        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
-    }
-
-    func deleteFirebaseAccount(accountID: String) async {
-        let userRef = userDocument(accountID: accountID)
-        do {
-            // Paginate session deletion to handle accounts with >200 sessions
-            let sessionsCollection = userRef.collection("sessions")
-            var hasMore = true
-            while hasMore {
-                let batch = try await getDocuments(sessionsCollection.limit(to: 200))
-                guard !batch.isEmpty else { break }
-                try await deleteDocuments(batch.map(\.reference))
-                hasMore = batch.count == 200
-            }
-            try await deleteDocument(userRef.collection("profile").document("main"))
-            try await deleteDocument(userRef.collection("progress").document("main"))
-            try await deleteDocument(userRef.collection("recommendations").document("state"))
-            try await deleteDocument(userRef)
-
-            // M2 peer surfaces. The public profile is the user's own doc.
-            // League membership across past buckets and challenges where they
-            // were a participant are pruned by best-effort delete: any doc
-            // missing a participant becomes the opponent's snapshot only and
-            // should be GC'd by a server-side cleanup job.
-            try await deleteDocument(
-                Firestore.firestore().collection("profiles_public").document(accountID)
-            )
-            await deleteParticipantSliceFromChallenges(accountID: accountID)
-        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
-    }
-
-    /// Strip the user's own slice (scores, summary, reaction) from any
-    /// shared challenge doc where they were a participant. We don't delete
-    /// the challenge entirely — the opponent's data is still theirs.
-    func deleteParticipantSliceFromChallenges(accountID: String) async {
-        do {
-            let documents = try await getDocuments(
-                Firestore.firestore().collection("challenges")
-                    .whereField("participantIDs", arrayContains: accountID)
-                    .limit(to: 200)
-            )
-            for document in documents {
-                let data = document.data()
-                let creatorIDString = data["creatorAccountID"] as? String ?? data["creatorID"] as? String
-                let isCreator = creatorIDString == accountID
-                let nullifiedFields: [String: Any] = isCreator
-                    ? [
-                        "creatorScore": NSNull(),
-                        "creatorDuration": NSNull(),
-                        "creatorSummary": NSNull(),
-                        "creatorReaction": NSNull(),
-                        "creatorName": "Removed user"
-                    ]
-                    : [
-                        "opponentScore": NSNull(),
-                        "opponentDuration": NSNull(),
-                        "opponentSummary": NSNull(),
-                        "opponentReaction": NSNull(),
-                        "opponentName": "Removed user"
-                    ]
-                try await setDocument(document.reference, data: nullifiedFields, merge: true)
-            }
         } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
@@ -661,59 +762,18 @@ private extension BackendSyncManager {
         }
     }
 
-    func deleteDocument(_ reference: DocumentReference) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            reference.delete { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: ())
-                }
-            }
-        }
-    }
-
-    func deleteDocuments(_ references: [DocumentReference]) async throws {
-        for reference in references {
-            try await deleteDocument(reference)
-        }
-    }
-
     // MARK: - Peer (M2: Peer Pull v1)
-
-    func syncFirebasePublicProfile(_ snapshot: PublicProfileSnapshot) async {
-        do {
-            let data = try encodeDocument(snapshot)
-            try await setDocument(
-                Firestore.firestore().collection("profiles_public").document(snapshot.accountID),
-                data: data,
-                merge: true
-            )
-        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
-    }
 
     func fetchFirebasePublicProfile(accountID: String) async -> PublicProfileSnapshot? {
         do {
             let snapshot = try await getDocument(
                 Firestore.firestore().collection("profiles_public").document(accountID)
             )
-            return try decodeDocument(PublicProfileSnapshot.self, from: snapshot?.data())
+            let data = snapshot?.data().map { normalizeTimestamps(in: $0, fields: ["updatedAt"]) }
+            return try decodeDocument(PublicProfileSnapshot.self, from: data)
         } catch {
             return nil
         }
-    }
-
-    func syncFirebaseLeagueMember(_ snapshot: PublicProfileSnapshot, bucket: String) async {
-        do {
-            let data = try encodeDocument(snapshot)
-            try await setDocument(
-                Firestore.firestore()
-                    .collection("leagues").document(bucket)
-                    .collection("members").document(snapshot.accountID),
-                data: data,
-                merge: true
-            )
-        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
     func fetchFirebaseLeagueMembers(bucket: String, limit: Int) async -> [PublicProfileSnapshot] {
@@ -725,23 +785,13 @@ private extension BackendSyncManager {
                     .order(by: "rating", descending: true)
                     .limit(to: limit)
             )
-            return documents.compactMap { try? decodeDocument(PublicProfileSnapshot.self, from: $0.data()) }.compactMap { $0 }
+            return documents.compactMap {
+                let data = normalizeTimestamps(in: $0.data(), fields: ["updatedAt"])
+                return try? decodeDocument(PublicProfileSnapshot.self, from: data)
+            }.compactMap { $0 }
         } catch {
             return []
         }
-    }
-
-    func syncFirebaseAsyncChallenge(_ challenge: AsyncChallenge) async {
-        do {
-            var data = try encodeDocument(challenge)
-            // Index field so query-by-participant works without a composite index.
-            data["participantIDs"] = challenge.participantIDs
-            try await setDocument(
-                Firestore.firestore().collection("challenges").document(challenge.id.uuidString),
-                data: data,
-                merge: true
-            )
-        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
     func fetchFirebaseAsyncChallenges(forParticipant participantID: String) async -> [AsyncChallenge] {
@@ -762,13 +812,32 @@ private extension BackendSyncManager {
                     .limit(to: 50)
             )
             return documents.compactMap { document -> AsyncChallenge? in
-                var raw = document.data()
+                var raw = normalizeTimestamps(
+                    in: document.data(),
+                    fields: ["createdAt", "expiresAt"]
+                )
                 raw.removeValue(forKey: "participantIDs")
                 return (try? decodeDocument(AsyncChallenge.self, from: raw)) ?? nil
             }
         } catch {
             return []
         }
+    }
+
+    /// Admin-authored documents use Firestore Timestamp while legacy client
+    /// documents stored numeric seconds. Normalize both to the numeric wire
+    /// representation consumed by the existing JSON decoder.
+    func normalizeTimestamps(
+        in document: [String: Any],
+        fields: [String]
+    ) -> [String: Any] {
+        var normalized = document
+        for field in fields {
+            if let timestamp = normalized[field] as? Timestamp {
+                normalized[field] = timestamp.dateValue().timeIntervalSince1970
+            }
+        }
+        return normalized
     }
 }
 #endif

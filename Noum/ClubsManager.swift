@@ -11,7 +11,7 @@ import MapKit
 
 // MARK: - Speaking Club Model
 
-struct SpeakingClub: Codable, Identifiable, Equatable {
+struct SpeakingClub: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     var name: String
     var clubDescription: String
@@ -25,7 +25,7 @@ struct SpeakingClub: Codable, Identifiable, Equatable {
     var websiteURL: String?
     var phoneNumber: String?
 
-    enum MeetingDay: String, Codable, CaseIterable, Identifiable {
+    enum MeetingDay: String, Codable, CaseIterable, Identifiable, Sendable {
         case monday, tuesday, wednesday, thursday, friday, saturday, sunday
 
         var id: String { rawValue }
@@ -62,6 +62,10 @@ struct SpeakingClub: Codable, Identifiable, Equatable {
             return String(format: "%.1f km away", km)
         }
     }
+}
+
+struct ClubsAccountDataSnapshot: Codable, Equatable, Sendable {
+    let savedClubs: [SpeakingClub]
 }
 
 // MARK: - Location Manager (wraps CLLocationManager for async access)
@@ -153,7 +157,7 @@ final class ClubsManager: ObservableObject {
     private let locationService = LocationService.shared
 
     private init() {
-        savedClubs = Self.loadSaved()
+        savedClubs = Self.loadSaved(accountID: Self.persistedAccountID)
     }
 
     // MARK: - Save / Unsave
@@ -320,15 +324,64 @@ final class ClubsManager: ObservableObject {
 
     private func persistSaved() {
         guard let data = try? JSONEncoder().encode(savedClubs) else { return }
-        UserDefaults.standard.set(data, forKey: savedKey)
+        UserDefaults.standard.set(data, forKey: Self.accountKey(
+            base: savedKey,
+            accountID: Self.persistedAccountID
+        ))
     }
 
-    private static func loadSaved() -> [SpeakingClub] {
-        guard let data = UserDefaults.standard.data(forKey: "NoumSavedClubs"),
+    private static var persistedAccountID: String {
+        KeychainHelper.load(key: "NoumAccountID") ?? "guest"
+    }
+
+    nonisolated static func accountKey(base: String, accountID: String) -> String {
+        "\(base).\(accountID)"
+    }
+
+    private static func loadSaved(accountID: String) -> [SpeakingClub] {
+        let key = accountKey(base: "NoumSavedClubs", accountID: accountID)
+        if accountID != "guest",
+           UserDefaults.standard.data(forKey: key) == nil,
+           let legacy = UserDefaults.standard.data(forKey: "NoumSavedClubs") {
+            UserDefaults.standard.set(legacy, forKey: key)
+            UserDefaults.standard.removeObject(forKey: "NoumSavedClubs")
+        }
+        guard let data = UserDefaults.standard.data(forKey: key),
               let clubs = try? JSONDecoder().decode([SpeakingClub].self, from: data) else {
             return []
         }
         return clubs
+    }
+
+    func reloadForCurrentAccount() {
+        savedClubs = Self.loadSaved(accountID: Self.persistedAccountID)
+        nearbyClubs = []
+        searchQuery = ""
+        lastSearchArea = nil
+        searchError = nil
+    }
+
+    func endSession() {
+        savedClubs = []
+        nearbyClubs = []
+        searchQuery = ""
+        lastSearchArea = nil
+        searchError = nil
+        isLoading = false
+    }
+
+    func exportSnapshot(for accountID: String) -> ClubsAccountDataSnapshot {
+        ClubsAccountDataSnapshot(savedClubs: Self.loadSaved(accountID: accountID))
+    }
+
+    func deleteAllData(for accountID: String) {
+        UserDefaults.standard.removeObject(forKey: Self.accountKey(
+            base: savedKey,
+            accountID: accountID
+        ))
+        if Self.persistedAccountID == accountID {
+            endSession()
+        }
     }
 }
 
