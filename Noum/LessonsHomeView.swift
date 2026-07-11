@@ -11,7 +11,6 @@ import SwiftUI
 struct LessonsHomeView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var lessonStore = LessonStore.shared
-    @StateObject private var ratingStore = RatingStore.shared
     @Binding var navigationPath: NavigationPath
 
     init(navigationPath: Binding<NavigationPath>) {
@@ -31,6 +30,8 @@ struct LessonsHomeView: View {
                     headerCopy
                     if let recommendedLesson {
                         recommendedLessonSection(recommendedLesson)
+                    } else {
+                        transferSection
                     }
                     if !showsFirstTimeEmptyState {
                         summaryStrip
@@ -67,7 +68,7 @@ struct LessonsHomeView: View {
             Text("Lessons")
                 .font(Typography.screenTitle)
                 .foregroundStyle(.primary)
-            Text("Learn one speaking move, then use it in a rep.")
+            Text("Learn it, practice it, use it, then revisit it.")
                 .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -86,12 +87,12 @@ struct LessonsHomeView: View {
     }
 
     private var recommendedLesson: Lesson? {
-        lessonStore.nextRecommendedLesson ?? LessonsCatalog.all.first
+        lessonStore.nextRecommendedLesson
     }
 
     private func recommendedLessonSection(_ lesson: Lesson) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text("Recommended lesson")
+            Text(recommendedEyebrow(for: lesson))
                 .font(Typography.caption.weight(.semibold))
                 .foregroundStyle(AppColor.brandBlue)
             lessonRow(lesson)
@@ -104,11 +105,35 @@ struct LessonsHomeView: View {
         .accessibilityIdentifier("emptyState.lessons")
     }
 
+    private func recommendedEyebrow(for lesson: Lesson) -> String {
+        switch lessonStore.reviewState(for: lesson.id) {
+        case .new: return "Learn next"
+        case .ready: return "Ready to revisit"
+        case .waiting: return "Recommended lesson"
+        }
+    }
+
+    private var transferSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Label("Practice it in the room", systemImage: "arrow.up.right")
+                .font(Typography.headline)
+                .foregroundStyle(.primary)
+            Text("Nothing is due right now. Use one learned move in a real conversation; Noum will bring it back when a spaced review is useful.")
+                .font(Typography.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.brandBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .accessibilityIdentifier("lessons.transferWindow")
+    }
+
     // MARK: - Summary strip
 
     private var summaryStrip: some View {
-        let totalPasses = lessonStore.totalPracticePasses
-        let totalAvailablePasses = LessonsCatalog.all.count * LessonProgressPresentation.masteryPassCap
+        let practicedSkills = LessonsCatalog.all.filter { lessonStore.isCleared($0.id) }.count
+        let reviewsReady = lessonStore.reviewsReadyCount
         return HStack(alignment: .top, spacing: Spacing.sm) {
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 17, weight: .semibold))
@@ -116,10 +141,12 @@ struct LessonsHomeView: View {
                 .frame(width: 28, height: 28)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("\(totalPasses) of \(totalAvailablePasses) practice passes")
+                Text("\(practicedSkills) \(practicedSkills == 1 ? "skill" : "skills") practiced")
                     .font(Typography.headline)
                     .foregroundStyle(.primary)
-                Text(LedgerRoleLines.crownsRole(hasRatedEvidence: ratingStore.rating.hasRatedEvidence))
+                Text(reviewsReady == 0
+                    ? "Spaced reviews appear when they can test retention."
+                    : "\(reviewsReady) \(reviewsReady == 1 ? "review is" : "reviews are") ready now.")
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -133,7 +160,7 @@ struct LessonsHomeView: View {
                 .stroke(Color.white.opacity(0.72), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(totalPasses) of \(totalAvailablePasses) practice passes. \(LedgerRoleLines.crownsRole(hasRatedEvidence: ratingStore.rating.hasRatedEvidence))")
+        .accessibilityLabel("\(practicedSkills) skills practiced. \(reviewsReady) reviews ready.")
     }
 
     // MARK: - Catalog grouped by category
@@ -192,7 +219,9 @@ struct LessonsHomeView: View {
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    practicePassRow(completedPasses: lessonStore.practicePassCount(for: lesson.id))
+                    Text(LessonReviewPresentation(progress: lessonStore.progress(for: lesson.id)).rowLabel)
+                        .font(Typography.caption.weight(.medium))
+                        .foregroundStyle(lessonStatusColor(for: lesson.id))
                         .padding(.top, 2)
                 }
 
@@ -211,16 +240,11 @@ struct LessonsHomeView: View {
         .accessibilityIdentifier("lessons.row.\(lesson.id)")
     }
 
-    private func practicePassRow(completedPasses: Int) -> some View {
-        let progress = LessonProgressPresentation(completedPasses: completedPasses)
-        return HStack(spacing: 4) {
-            ForEach(0..<LessonStore.masteryPassCap, id: \.self) { i in
-                Image(systemName: i < progress.completedPasses ? "checkmark.seal.fill" : "circle")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(i < progress.completedPasses ? AppColor.brandBlue : Color.secondary.opacity(0.3))
-            }
+    private func lessonStatusColor(for lessonID: String) -> Color {
+        switch lessonStore.reviewState(for: lessonID) {
+        case .ready: return AppColor.brandBlue
+        case .new, .waiting: return .secondary
         }
-        .accessibilityLabel(progress.accessibilityLabel)
     }
 }
 

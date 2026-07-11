@@ -47480,14 +47480,14 @@ struct LessonProgressPresentationTests {
         #expect(low.completedPasses == 0)
         #expect(high.completedPasses == LessonProgressPresentation.masteryPassCap)
         #expect(high.fractionText == "5/5")
-        #expect(high.accessibilityLabel == "5 of 5 practice passes complete")
+        #expect(high.accessibilityLabel == "5 of 5 spaced practice rounds complete")
     }
 
     @Test func lessonSummaryAvoidsLegacyRewardLanguage() {
         let summary = LessonProgressPresentation(completedPasses: 2)
             .lessonSummaryLine(title: "Rule of Three")
 
-        #expect(summary == "2 of 5 practice passes on Rule of Three.")
+        #expect(summary == "2 of 5 spaced rounds on Rule of Three.")
         #expect(!summary.localizedCaseInsensitiveContains("crown"))
         #expect(!summary.localizedCaseInsensitiveContains("XP"))
     }
@@ -49045,9 +49045,18 @@ struct RoleplayEngineTests {
 
     // MARK: Catalog integrity
 
-    @Test func catalogHasFourNamedScenarios() {
+    @Test func catalogCoversPressureAndInterpersonalScenarios() {
         let ids = Set(RoleplayCatalog.all.map { $0.scenarioId })
-        #expect(ids == ["interview", "leadershipUpdate", "stakeholderPushback", "difficultQA"])
+        #expect(ids == [
+            "interview",
+            "leadershipUpdate",
+            "stakeholderPushback",
+            "difficultQA",
+            "feedbackConversation",
+            "boundaryConversation",
+            "repairTrust",
+            "discoveryConversation"
+        ])
     }
 
     @Test func everyObjectionIdIsGloballyUnique() {

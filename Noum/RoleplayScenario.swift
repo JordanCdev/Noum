@@ -71,10 +71,9 @@ struct RoleplayObjection: Codable, Identifiable, Equatable, Hashable {
 // MARK: - Rubric
 
 /// A single scored axis of a response. `label` is looked up by `RoleplayEngine`
-/// against a fixed set of axis names ("Directness", "Evidence", "Composure") —
-/// every scenario's rubric uses those three labels (weights vary per scenario
-/// to reflect what that conversation actually rewards) so the same scoring
-/// heuristic can drive every scenario without per-scenario special-casing.
+/// against its shared observable-signal axes. Scenarios can weight speaking,
+/// listening, ownership, inquiry, and constructive next steps differently
+/// without adding per-scenario state or provider calls.
 struct RoleplayRubricCriterion: Codable, Identifiable, Equatable, Hashable {
     var id: String
     var label: String
@@ -108,7 +107,7 @@ struct RoleplayScenario: Codable, Identifiable, Equatable, Hashable {
 
 // MARK: - Catalog
 
-/// Authored content for the four roadmap-named entry points. Objection text
+/// Authored content for the core pressure and interpersonal entry points. Objection text
 /// is written in the persona's voice directly (no AI generation needed to
 /// "deliver" it) so the pressure ladder works fully offline and
 /// deterministically — see RoleplayEngine's doc-comment for why this was
@@ -210,7 +209,112 @@ enum RoleplayCatalog {
         ]
     )
 
-    static let all: [RoleplayScenario] = [interview, leadershipUpdate, stakeholderPushback, difficultQA]
+    static let feedbackConversation = RoleplayScenario(
+        scenarioId: "feedbackConversation",
+        title: "Give feedback",
+        personaName: "Alex Chen",
+        personaRole: "Teammate receiving your feedback",
+        objective: "Stay specific, explain the impact, and leave the other person with one workable next step.",
+        objectionSet: [
+            RoleplayObjection(id: "feedbackConversation.easy.0", pressureLevel: .easy, type: .clarifyingQuestion, text: "What did I do that caused a problem."),
+            RoleplayObjection(id: "feedbackConversation.easy.1", pressureLevel: .easy, type: .clarifyingQuestion, text: "What would you like me to do differently next time."),
+            RoleplayObjection(id: "feedbackConversation.easy.2", pressureLevel: .easy, type: .clarifyingQuestion, text: "Can you give me a specific example."),
+            RoleplayObjection(id: "feedbackConversation.realistic.0", pressureLevel: .realistic, type: .skepticalPushback, text: "I followed the process we agreed. Why is this suddenly on me."),
+            RoleplayObjection(id: "feedbackConversation.realistic.1", pressureLevel: .realistic, type: .scopeChallenge, text: "You're asking me to slow down, but you also keep pushing for speed."),
+            RoleplayObjection(id: "feedbackConversation.realistic.2", pressureLevel: .realistic, type: .redirect, text: "Other people do the same thing. Have you spoken to them."),
+            RoleplayObjection(id: "feedbackConversation.hostile.0", pressureLevel: .hostile, type: .credibilityChallenge, text: "This feels personal, not useful. What exactly are you basing it on."),
+            RoleplayObjection(id: "feedbackConversation.hostile.1", pressureLevel: .hostile, type: .skepticalPushback, text: "You change your expectations every week. Why should I trust this version."),
+            RoleplayObjection(id: "feedbackConversation.hostile.2", pressureLevel: .hostile, type: .redirect, text: "Before you criticize me, maybe look at how unclear your own direction was.")
+        ],
+        rubric: [
+            RoleplayRubricCriterion(id: "feedbackConversation.directness", label: "Directness", weight: 0.30, lowSignalHint: "The behavior stayed vague — name the specific moment you want to discuss.", strongSignalHint: "You named the issue without labeling the person."),
+            RoleplayRubricCriterion(id: "feedbackConversation.evidence", label: "Evidence", weight: 0.30, lowSignalHint: "The feedback needs one observable example or impact.", strongSignalHint: "You grounded the feedback in a concrete example."),
+            RoleplayRubricCriterion(id: "feedbackConversation.constructiveness", label: "Constructiveness", weight: 0.40, lowSignalHint: "Finish with one realistic request for next time.", strongSignalHint: "You turned the feedback into a clear next step.")
+        ]
+    )
+
+    static let boundaryConversation = RoleplayScenario(
+        scenarioId: "boundaryConversation",
+        title: "Set a boundary",
+        personaName: "Riley Morgan",
+        personaRole: "Manager asking for more work",
+        objective: "State the limit, protect the important commitment, and offer only what you can actually deliver.",
+        objectionSet: [
+            RoleplayObjection(id: "boundaryConversation.easy.0", pressureLevel: .easy, type: .clarifyingQuestion, text: "Can you take this on before the end of today."),
+            RoleplayObjection(id: "boundaryConversation.easy.1", pressureLevel: .easy, type: .clarifyingQuestion, text: "If today is not possible, what can you commit to."),
+            RoleplayObjection(id: "boundaryConversation.easy.2", pressureLevel: .easy, type: .clarifyingQuestion, text: "Which current priority would this displace."),
+            RoleplayObjection(id: "boundaryConversation.realistic.0", pressureLevel: .realistic, type: .scopeChallenge, text: "Everyone is stretched. I need you to find a way."),
+            RoleplayObjection(id: "boundaryConversation.realistic.1", pressureLevel: .realistic, type: .skepticalPushback, text: "This should only take an hour. Why are you making it difficult."),
+            RoleplayObjection(id: "boundaryConversation.realistic.2", pressureLevel: .realistic, type: .redirect, text: "Can you just work later tonight and get both done."),
+            RoleplayObjection(id: "boundaryConversation.hostile.0", pressureLevel: .hostile, type: .credibilityChallenge, text: "I need people who solve problems, not people who tell me what they cannot do."),
+            RoleplayObjection(id: "boundaryConversation.hostile.1", pressureLevel: .hostile, type: .scopeChallenge, text: "This is not optional. Are you refusing a direct request."),
+            RoleplayObjection(id: "boundaryConversation.hostile.2", pressureLevel: .hostile, type: .redirect, text: "If you cannot handle this workload, perhaps we need to discuss your role.")
+        ],
+        rubric: [
+            RoleplayRubricCriterion(id: "boundaryConversation.directness", label: "Directness", weight: 0.40, lowSignalHint: "The limit is still unclear — say what you can or cannot commit to.", strongSignalHint: "You made the limit unambiguous."),
+            RoleplayRubricCriterion(id: "boundaryConversation.composure", label: "Composure", weight: 0.25, lowSignalHint: "The pressure pulled you into hedging — keep the boundary factual.", strongSignalHint: "You held the boundary without turning combative."),
+            RoleplayRubricCriterion(id: "boundaryConversation.constructiveness", label: "Constructiveness", weight: 0.35, lowSignalHint: "Offer one alternative you can genuinely deliver.", strongSignalHint: "You paired the limit with a workable option.")
+        ]
+    )
+
+    static let repairTrust = RoleplayScenario(
+        scenarioId: "repairTrust",
+        title: "Repair trust",
+        personaName: "Jordan Ellis",
+        personaRole: "Colleague affected by your decision",
+        objective: "Hear the impact, own your part without qualification, and propose a concrete change.",
+        objectionSet: [
+            RoleplayObjection(id: "repairTrust.easy.0", pressureLevel: .easy, type: .clarifyingQuestion, text: "Do you understand why that decision left me out of the loop."),
+            RoleplayObjection(id: "repairTrust.easy.1", pressureLevel: .easy, type: .clarifyingQuestion, text: "What do you think you should have done differently."),
+            RoleplayObjection(id: "repairTrust.easy.2", pressureLevel: .easy, type: .clarifyingQuestion, text: "How will you stop this happening again."),
+            RoleplayObjection(id: "repairTrust.realistic.0", pressureLevel: .realistic, type: .skepticalPushback, text: "You apologized last time too. What is actually changing."),
+            RoleplayObjection(id: "repairTrust.realistic.1", pressureLevel: .realistic, type: .credibilityChallenge, text: "You say you value my input, but your actions keep saying otherwise."),
+            RoleplayObjection(id: "repairTrust.realistic.2", pressureLevel: .realistic, type: .redirect, text: "Please do not explain the deadline again. I need you to address what you did."),
+            RoleplayObjection(id: "repairTrust.hostile.0", pressureLevel: .hostile, type: .credibilityChallenge, text: "I do not trust that you will include me when it matters."),
+            RoleplayObjection(id: "repairTrust.hostile.1", pressureLevel: .hostile, type: .skepticalPushback, text: "This sounds like another polished apology with no consequence."),
+            RoleplayObjection(id: "repairTrust.hostile.2", pressureLevel: .hostile, type: .redirect, text: "Why should I keep investing in a working relationship you do not protect.")
+        ],
+        rubric: [
+            RoleplayRubricCriterion(id: "repairTrust.listening", label: "Listening", weight: 0.30, lowSignalHint: "Reflect the impact before you explain or solve.", strongSignalHint: "You showed that the other person's experience registered."),
+            RoleplayRubricCriterion(id: "repairTrust.ownership", label: "Ownership", weight: 0.40, lowSignalHint: "Name your specific part without adding a defense.", strongSignalHint: "You owned the behavior plainly."),
+            RoleplayRubricCriterion(id: "repairTrust.constructiveness", label: "Constructiveness", weight: 0.30, lowSignalHint: "Make the repair concrete by naming what changes next time.", strongSignalHint: "You gave the repair a specific next step.")
+        ]
+    )
+
+    static let discoveryConversation = RoleplayScenario(
+        scenarioId: "discoveryConversation",
+        title: "Discovery conversation",
+        personaName: "Taylor Brooks",
+        personaRole: "Client with an unclear concern",
+        objective: "Reflect what you heard, ask useful follow-ups, and resist solving before the real need is clear.",
+        objectionSet: [
+            RoleplayObjection(id: "discoveryConversation.easy.0", pressureLevel: .easy, type: .clarifyingQuestion, text: "The new process is not really working for my team."),
+            RoleplayObjection(id: "discoveryConversation.easy.1", pressureLevel: .easy, type: .clarifyingQuestion, text: "People keep finding workarounds instead of using it."),
+            RoleplayObjection(id: "discoveryConversation.easy.2", pressureLevel: .easy, type: .clarifyingQuestion, text: "I am not sure whether the problem is training or the process itself."),
+            RoleplayObjection(id: "discoveryConversation.realistic.0", pressureLevel: .realistic, type: .skepticalPushback, text: "You keep asking questions, but I need this fixed."),
+            RoleplayObjection(id: "discoveryConversation.realistic.1", pressureLevel: .realistic, type: .scopeChallenge, text: "Every team complains about something different. Which problem are you trying to solve."),
+            RoleplayObjection(id: "discoveryConversation.realistic.2", pressureLevel: .realistic, type: .redirect, text: "Can you just tell me what other clients do and skip the interview."),
+            RoleplayObjection(id: "discoveryConversation.hostile.0", pressureLevel: .hostile, type: .credibilityChallenge, text: "This feels like you are making me diagnose the product for you."),
+            RoleplayObjection(id: "discoveryConversation.hostile.1", pressureLevel: .hostile, type: .skepticalPushback, text: "I have answered this three times. Are you actually listening."),
+            RoleplayObjection(id: "discoveryConversation.hostile.2", pressureLevel: .hostile, type: .redirect, text: "If you understood our business, you would already know what matters.")
+        ],
+        rubric: [
+            RoleplayRubricCriterion(id: "discoveryConversation.listening", label: "Listening", weight: 0.35, lowSignalHint: "Reflect the concern so the next question has a clear anchor.", strongSignalHint: "You showed what you heard before moving forward."),
+            RoleplayRubricCriterion(id: "discoveryConversation.inquiry", label: "Inquiry", weight: 0.45, lowSignalHint: "Ask a focused question that could change your understanding.", strongSignalHint: "Your question opened useful new information."),
+            RoleplayRubricCriterion(id: "discoveryConversation.constructiveness", label: "Constructiveness", weight: 0.20, lowSignalHint: "Explain briefly how the question helps reach a useful next step.", strongSignalHint: "You kept the discovery tied to progress, not interrogation.")
+        ]
+    )
+
+    static let all: [RoleplayScenario] = [
+        interview,
+        leadershipUpdate,
+        stakeholderPushback,
+        difficultQA,
+        feedbackConversation,
+        boundaryConversation,
+        repairTrust,
+        discoveryConversation
+    ]
 
     static func scenario(id: String) -> RoleplayScenario? {
         all.first { $0.scenarioId == id }

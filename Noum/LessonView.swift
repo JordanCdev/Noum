@@ -36,10 +36,12 @@ struct LessonView: View {
     @State private var applyPhase: ApplyPhase = .ready
     @State private var applyTranscript: String = ""
     @State private var applyFindings: [EloquenceFinding] = []
+    @State private var applyEvaluation: LessonApplyEvaluation?
     @State private var applyElapsed: TimeInterval = 0
     @State private var applyTimer: Timer?
     @State private var applyStart: Date?
     @State private var didShowSummary: Bool = false
+    @State private var progressUpdate: LessonProgressUpdate?
 
     init(lesson: Lesson, navigationPath: Binding<NavigationPath>) {
         self.lesson = lesson
@@ -168,6 +170,8 @@ struct LessonView: View {
         switch lesson.category {
         case .delivery:  return AppColor.modeAhCounter
         case .structure: return AppColor.brandBlue
+        case .interaction: return AppColor.modeIM
+        case .explanation: return AppColor.positive
         case .rhetoric:  return AppColor.pro
         }
     }
@@ -184,6 +188,8 @@ struct LessonView: View {
             switch lesson.category {
             case .delivery:  return AppColor.modeAhCounter
             case .structure: return AppColor.brandBlueLight
+            case .interaction: return AppColor.modeIM
+            case .explanation: return AppColor.positive
             case .rhetoric:  return AppColor.proLight
             }
         }()
@@ -212,7 +218,7 @@ struct LessonView: View {
         case .spotIt(let question, let options):
             spotItCard(question: question, options: options)
         case .apply(let prompt, _, let durationTarget):
-            applyCard(prompt: prompt, durationTarget: durationTarget)
+            applyCard(prompt: reviewPrompt(fallback: prompt), durationTarget: durationTarget)
         }
     }
 
@@ -479,17 +485,17 @@ struct LessonView: View {
         case .evaluating:
             ProgressView().scaleEffect(0.7)
         case .done:
-            if applyOutcomeUsedDevice {
+            if applyEvaluation?.passed == true {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.seal.fill")
-                    Text("Detected")
+                    Text("Skill shown")
                 }
                 .font(Typography.caption.weight(.bold))
                 .foregroundStyle(AppColor.positive)
-            } else if let device = applyExpectedDevice {
+            } else {
                 HStack(spacing: 4) {
                     Image(systemName: "exclamationmark.circle.fill")
-                    Text("\(device.title) not detected")
+                    Text("Try once more")
                 }
                 .font(Typography.caption.weight(.bold))
                 .foregroundStyle(AppColor.caution)
@@ -531,6 +537,29 @@ struct LessonView: View {
                     .font(Typography.caption)
                     .foregroundStyle(AppColor.positive)
             }
+            if let evaluation = applyEvaluation {
+                Divider()
+                    .padding(.vertical, 4)
+                ForEach(evaluation.results) { result in
+                    HStack(alignment: .top, spacing: 9) {
+                        Image(systemName: result.passed ? "checkmark.circle.fill" : "arrow.counterclockwise.circle.fill")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(result.passed ? AppColor.positive : AppColor.caution)
+                            .frame(width: 18)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(result.title)
+                                .font(Typography.caption.weight(.semibold))
+                                .foregroundStyle(.primary)
+                            Text(result.feedback)
+                                .font(Typography.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(result.title). \(result.passed ? "Met" : "Try again"). \(result.feedback)")
+                }
+            }
         }
         .padding(.top, 4)
     }
@@ -538,14 +567,6 @@ struct LessonView: View {
     private var applyExpectedDevice: EloquenceDevice? {
         guard case .apply(_, let device, _) = lesson.steps[currentStep] else { return nil }
         return device
-    }
-
-    private var applyOutcomeUsedDevice: Bool {
-        guard let expected = applyExpectedDevice else {
-            // Delivery-only lessons — pass on any non-trivial transcript.
-            return applyTranscript.split(separator: " ").count >= 12
-        }
-        return applyFindings.contains(where: { $0.device == expected })
     }
 
     // MARK: - Primary CTA (dispatches by step)
@@ -570,7 +591,11 @@ struct LessonView: View {
             case .evaluating:
                 ctaButton(title: "Evaluating…", enabled: false, action: {})
             case .done:
-                ctaButton(title: "Continue", action: advance)
+                if applyEvaluation?.passed == true {
+                    ctaButton(title: "Continue", action: advance)
+                } else {
+                    ctaButton(title: "Try again", action: resetApplyForRetry)
+                }
             }
         }
     }
@@ -613,6 +638,7 @@ struct LessonView: View {
         applyPhase = .recording
         applyTranscript = ""
         applyFindings = []
+        applyEvaluation = nil
         applyElapsed = 0
         applyStart = Date()
 
@@ -653,23 +679,43 @@ struct LessonView: View {
             let transcript = speech.transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
             applyTranscript = transcript
             applyFindings = EloquenceEngine.analyse(transcript: transcript)
+            applyEvaluation = LessonApplyEvaluator.evaluate(
+                transcript: transcript,
+                findings: applyFindings,
+                lesson: lesson
+            )
             applyPhase = .done
 
-            let didUseDevice: Bool
-            if let expected = applyExpectedDevice {
-                didUseDevice = applyFindings.contains(where: { $0.device == expected })
-            } else {
-                didUseDevice = transcript.split(separator: " ").count >= 12
-            }
-            let passed = didUseDevice
+            let didUseDevice = applyExpectedDevice.map { expected in
+                applyFindings.contains(where: { $0.device == expected })
+            } ?? (applyEvaluation?.passed == true)
+            let passed = applyEvaluation?.passed == true
+            stepResults.removeAll(where: { $0.kind == .apply })
             stepResults.append(.apply(passed: passed, didUseDevice: didUseDevice))
             if passed { CoachHaptic.trendBreakthrough() }
         }
     }
 
+    private func resetApplyForRetry() {
+        applyPhase = .ready
+        applyTranscript = ""
+        applyFindings = []
+        applyEvaluation = nil
+        applyElapsed = 0
+        stepResults.removeAll(where: { $0.kind == .apply })
+        CoachHaptic.selectionTap()
+    }
+
     private var applyPrompt: String {
         guard case .apply(let prompt, _, _) = lesson.steps[currentStep] else { return "" }
-        return prompt
+        return reviewPrompt(fallback: prompt)
+    }
+
+    private func reviewPrompt(fallback: String) -> String {
+        let completedRounds = lessonStore.practicePassCount(for: lesson.id)
+        guard completedRounds > 0, !lesson.reviewPrompts.isEmpty else { return fallback }
+        let promptPool = lesson.reviewPrompts + [fallback]
+        return promptPool[(completedRounds - 1) % promptPool.count]
     }
 
     private var applyDurationTarget: TimeInterval {
@@ -700,6 +746,7 @@ struct LessonView: View {
             applyPhase = .ready
             applyTranscript = ""
             applyFindings = []
+            applyEvaluation = nil
         }
         if reduceMotion { update() }
         else {
@@ -720,8 +767,11 @@ struct LessonView: View {
             xpEarned: xp
         )
         // Apply mastery progress + XP accounting.
-        lessonStore.apply(outcome: final)
-        profileManager.addXP(xp)
+        let update = lessonStore.apply(outcome: final)
+        progressUpdate = update
+        if update.earnsXP {
+            profileManager.addXP(xp)
+        }
 
         if reduceMotion { didShowSummary = true }
         else {
@@ -746,6 +796,19 @@ struct LessonView: View {
             }
 
             practicePassRow
+
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Use it live", systemImage: "arrow.up.right")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+                Text(lesson.transferPrompt)
+                    .font(Typography.body)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColor.brandBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
 
             Spacer()
 
@@ -773,13 +836,17 @@ struct LessonView: View {
             stepResults: stepResults,
             xpEarned: 0
         )
-        if outcome.isPerfect { return "Perfect run" }
-        if outcome.passed { return "Lesson cleared" }
-        return "Try again next time"
+        if outcome.passed { return "Practice complete" }
+        return "Keep working the move"
     }
 
     private var passedSubhead: String {
-        LessonProgressPresentation(completedPasses: lessonStore.practicePassCount(for: lesson.id))
+        if progressUpdate?.outcomePassed == true,
+           progressUpdate?.didAdvanceRetention == false,
+           progressUpdate?.didCompleteMaintenanceReview == false {
+            return "The move landed. Its next spaced round is not due yet."
+        }
+        return LessonProgressPresentation(completedPasses: lessonStore.practicePassCount(for: lesson.id))
             .lessonSummaryLine(title: lesson.title)
     }
 
