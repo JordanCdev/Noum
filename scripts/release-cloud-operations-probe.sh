@@ -189,6 +189,16 @@ check(
     not dangerous_default_roles,
     "The default compute identity has no Editor or Vertex AI role",
 )
+appspot = f"serviceAccount:{project}@appspot.gserviceaccount.com"
+appspot_editor = any(
+    binding.get("role") == "roles/editor"
+    and appspot in binding.get("members", [])
+    for binding in project_policy.get("bindings", [])
+)
+check(
+    not appspot_editor,
+    "The default App Engine identity has no Editor role",
+)
 
 for label in passes:
     print(f"PASS: {label}")
