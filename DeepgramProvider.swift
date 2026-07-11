@@ -1,131 +1,155 @@
 import Foundation
+#if canImport(FirebaseCore)
+import FirebaseCore
+#endif
+#if canImport(FirebaseAuth)
+import FirebaseAuth
+#endif
+#if canImport(FirebaseFunctions)
+import FirebaseFunctions
+#endif
 
 // MARK: - Deepgram Nova-2 Provider
 
-/// Production: fetches a short-lived scoped key from your backend (Option A).
-/// Dev: falls back to environment variable or local TranscriptionProviders.plist.
-///
-/// Backend endpoint: GET /v1/transcribe/deepgram-key
-/// Expected response: { "apiKey": "dg_...", "expiresAt": "ISO8601" }
-/// The backend creates a scoped key via Deepgram's API: POST https://api.deepgram.com/v1/keys/{projectId}
-/// with `time_to_live_in_seconds` and limited scopes (e.g. ["usage:write"]).
+/// Production sessions receive a short-lived Deepgram JWT from the trusted
+/// Firebase callable. Long-lived provider credentials are never read from the
+/// production process environment or app bundle.
 final class DeepgramProvider: TranscriptionProvider, @unchecked Sendable {
+    static let region = "europe-west2"
+    static let tokenFunctionName = "transcriptionToken"
+
     let name = "Deepgram Nova-2"
     let identifier = "deepgram"
 
-    private var cachedKey: (key: String, expiresAt: Date)?
+    private let cacheLock = NSLock()
+    private var cachedToken: DeepgramAccessToken?
 
     func startSession(config: TranscriptionConfig) async throws -> any TranscriptionSession {
-        let apiKey = try await resolveAPIKey()
-        return DeepgramSession(apiKey: apiKey, config: config)
+        try await CloudTranscriptionConsentGate.requireAllowed()
+        let token = try await resolveAccessToken()
+        let session = DeepgramSession(credential: token, config: config)
+        do {
+            try await session.waitUntilReady()
+            return session
+        } catch {
+            session.abort(error)
+            throw error
+        }
     }
 
-    private func resolveAPIKey() async throws -> String {
-        // 1. Use cached backend key if still valid (refresh 30s before expiry)
-        if let cached = cachedKey,
-           Date().addingTimeInterval(30) < cached.expiresAt {
-            return cached.key
+    private func resolveAccessToken() async throws -> DeepgramAccessToken {
+        if let cached: DeepgramAccessToken = cacheLock.withLock({ cachedToken }),
+           Date().addingTimeInterval(5) < cached.expiresAt {
+            return cached
         }
 
-        // 2. Try backend-vended scoped key (production path)
-        if let backendKey = try? await fetchBackendScopedKey() {
-            cachedKey = backendKey
-            return backendKey.key
-        }
-
-        // 3. Fall back to local dev credentials
-        return try loadLocalAPIKey()
-    }
-
-    /// Fetches a short-lived Deepgram scoped key from your backend.
-    /// Backend should call Deepgram's key management API to create a temporary key
-    /// with limited scopes and TTL (e.g. 30 minutes).
-    private func fetchBackendScopedKey() async throws -> (key: String, expiresAt: Date)? {
-        let authManager = await AuthManager.shared
-        guard let accountID = await authManager.currentAccountID,
-              let providerRaw = await authManager.currentAuthProviderRawValue else {
-            return nil
-        }
-
-        let baseURLString = ProcessInfo.processInfo.environment["BACKEND_BASE_URL"]
-            ?? LocalConfigLoader.value(forKey: "BACKEND_BASE_URL", plistNamed: "BackendConfig")
-
-        guard let baseURLString, !baseURLString.isEmpty,
-              let baseURL = URL(string: baseURLString) else {
-            return nil
-        }
-
-        let endpoint = baseURL.appending(path: "/v1/transcribe/deepgram-key")
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "GET"
-        await BackendAuthHeaders.applyCurrent(
-            to: &request,
-            accountID: accountID,
-            providerRawValue: providerRaw
-        )
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200..<300).contains(httpResponse.statusCode) else {
-            return nil
-        }
-
-        let decoded = try JSONDecoder().decode(DeepgramKeyResponse.self, from: data)
-        return (key: decoded.apiKey, expiresAt: decoded.expiresAt)
-    }
-
-    private func loadLocalAPIKey() throws -> String {
-        // Priority: 1) Environment variable, 2) TranscriptionProviders.plist
-        if let envKey = ProcessInfo.processInfo.environment["DEEPGRAM_API_KEY"], !envKey.isEmpty {
-            return envKey
-        }
-
-        if let plistPath = Bundle.main.path(forResource: "TranscriptionProviders", ofType: "plist"),
-           let dict = NSDictionary(contentsOfFile: plistPath),
-           let key = dict["DEEPGRAM_API_KEY"] as? String, !key.isEmpty, key != "YOUR_DEEPGRAM_KEY" {
-            return key
-        }
-
-        throw DeepgramError.missingAPIKey
-    }
-}
-
-private struct DeepgramKeyResponse: Decodable {
-    let apiKey: String
-    let expiresAt: Date
-
-    enum CodingKeys: String, CodingKey {
-        case apiKey
-        case expiresAt, expiration
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        apiKey = try container.decode(String.self, forKey: .apiKey)
-        let dateString = try (container.decodeIfPresent(String.self, forKey: .expiresAt)
-            ?? container.decode(String.self, forKey: .expiration))
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = formatter.date(from: dateString)
-                ?? ISO8601DateFormatter().date(from: dateString) else {
-            throw DecodingError.dataCorrupted(
-                .init(codingPath: [CodingKeys.expiresAt], debugDescription: "Invalid ISO8601 date")
+        #if DEBUG
+        // Developer scripts explicitly inject this value into the simulator.
+        // No plist fallback is intentional: a copied local file must never
+        // become a release-build credential source by target-membership drift.
+        if let local = ProcessInfo.processInfo.environment["DEEPGRAM_API_KEY"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !local.isEmpty {
+            return DeepgramAccessToken(
+                value: local,
+                expiresAt: Date().addingTimeInterval(30 * 60),
+                authorizationScheme: .apiKey
             )
         }
-        expiresAt = date
+        #endif
+
+        let token = try await fetchCallableToken()
+        cacheLock.withLock { cachedToken = token }
+        return token
+    }
+
+    private func fetchCallableToken() async throws -> DeepgramAccessToken {
+        #if canImport(FirebaseCore) && canImport(FirebaseAuth) && canImport(FirebaseFunctions)
+        guard FirebaseApp.app() != nil, Auth.auth().currentUser != nil else {
+            throw DeepgramError.authenticationRequired
+        }
+
+        let functions = Functions.functions(region: Self.region)
+        let callable: Callable<TranscriptionTokenRequest, TranscriptionTokenResponse> = functions
+            .httpsCallable(Self.tokenFunctionName)
+        let response: TranscriptionTokenResponse
+        do {
+            response = try await callable.call(TranscriptionTokenRequest())
+        } catch {
+            throw DeepgramError.tokenServiceUnavailable
+        }
+
+        return try response.validatedToken(now: Date())
+        #else
+        throw DeepgramError.tokenServiceUnavailable
+        #endif
     }
 }
 
-enum DeepgramError: LocalizedError {
-    case missingAPIKey
+private struct TranscriptionTokenRequest: Encodable, Sendable {
+    let schemaVersion = 1
+}
+
+/// Exact callable response contract. Keep this shape deliberately narrow so a
+/// backend cannot accidentally expose management-key metadata to the client.
+struct TranscriptionTokenResponse: Decodable, Sendable, Equatable {
+    let provider: String
+    let accessToken: String
+    let expiresAt: String
+
+    func validatedToken(now: Date) throws -> DeepgramAccessToken {
+        guard provider == "deepgram" else { throw DeepgramError.invalidTokenResponse }
+        let cleanToken = accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanToken.isEmpty else { throw DeepgramError.invalidTokenResponse }
+
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let expiry = fractional.date(from: expiresAt)
+                ?? ISO8601DateFormatter().date(from: expiresAt),
+              expiry > now else {
+            throw DeepgramError.expiredToken
+        }
+        return DeepgramAccessToken(
+            value: cleanToken,
+            expiresAt: expiry,
+            authorizationScheme: .temporaryJWT
+        )
+    }
+}
+
+struct DeepgramAccessToken: Sendable, Equatable {
+    enum AuthorizationScheme: String, Sendable, Equatable {
+        case apiKey = "Token"
+        case temporaryJWT = "Bearer"
+    }
+
+    let value: String
+    let expiresAt: Date
+    let authorizationScheme: AuthorizationScheme
+}
+
+enum DeepgramError: LocalizedError, Sendable, Equatable {
+    case authenticationRequired
+    case tokenServiceUnavailable
+    case invalidTokenResponse
+    case expiredToken
     case connectionFailed(String)
     case invalidResponse
 
     var errorDescription: String? {
         switch self {
-        case .missingAPIKey: return "Deepgram API key not found. Set DEEPGRAM_API_KEY in environment or TranscriptionProviders.plist."
-        case .connectionFailed(let reason): return "Deepgram connection failed: \(reason)"
-        case .invalidResponse: return "Deepgram returned an invalid response."
+        case .authenticationRequired:
+            return "A secure Noum session is required before live transcription can start."
+        case .tokenServiceUnavailable:
+            return "Live transcription could not establish a secure connection."
+        case .invalidTokenResponse:
+            return "Live transcription received an invalid access token."
+        case .expiredToken:
+            return "Live transcription received an expired access token."
+        case .connectionFailed(let reason):
+            return "Deepgram connection failed: \(reason)"
+        case .invalidResponse:
+            return "Deepgram returned an unreadable response."
         }
     }
 }
@@ -133,49 +157,114 @@ enum DeepgramError: LocalizedError {
 // MARK: - Deepgram Session (WebSocket)
 
 final class DeepgramSession: NSObject, TranscriptionSession, URLSessionWebSocketDelegate, @unchecked Sendable {
+    static let streamingEndpoint = "wss://api.deepgram.com/v1/listen"
+
+    private struct ConnectionState {
+        var didOpen = false
+        var finishRequested = false
+        var didComplete = false
+    }
+
+    private let connectionLock = NSLock()
+    private var connectionState = ConnectionState()
+    private let readiness = TranscriptionReadinessGate()
+    private let terminal = TranscriptionTerminalState()
+    private let updateContinuation: AsyncThrowingStream<TranscriptUpdate, Error>.Continuation
+    let transcriptUpdates: AsyncThrowingStream<TranscriptUpdate, Error>
+
     private var webSocket: URLSessionWebSocketTask?
-    private let updateContinuation: AsyncStream<TranscriptUpdate>.Continuation
-    let transcriptUpdates: AsyncStream<TranscriptUpdate>
     private var urlSession: URLSession?
 
-    init(apiKey: String, config: TranscriptionConfig) {
-        var continuation: AsyncStream<TranscriptUpdate>.Continuation!
-        self.transcriptUpdates = AsyncStream { continuation = $0 }
+    init(credential: DeepgramAccessToken, config: TranscriptionConfig) {
+        var continuation: AsyncThrowingStream<TranscriptUpdate, Error>.Continuation!
+        self.transcriptUpdates = AsyncThrowingStream { continuation = $0 }
         self.updateContinuation = continuation
         super.init()
 
-        let params = [
-            "model=nova-2",
-            "language=\(config.languageCode.replacingOccurrences(of: "_", with: "-"))",
-            "filler_words=true",
-            "interim_results=true",
-            "encoding=linear16",
-            "sample_rate=\(config.sampleRate)",
-            "channels=1",
-            "punctuate=true",
-            "smart_format=true"
-        ].joined(separator: "&")
-
-        let url = URL(string: "wss://api.deepgram.com/v1/listen?\(params)")!
+        let url = Self.streamingURL(config: config)
         var request = URLRequest(url: url)
-        request.setValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue(
+            "\(credential.authorizationScheme.rawValue) \(credential.value)",
+            forHTTPHeaderField: "Authorization"
+        )
 
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-        self.urlSession = session
+        urlSession = session
         let task = session.webSocketTask(with: request)
-        self.webSocket = task
+        webSocket = task
         task.resume()
         startReceiveLoop()
     }
 
-    func sendAudio(_ data: Data) async throws {
-        try await webSocket?.send(.data(data))
+    static func streamingURL(config: TranscriptionConfig) -> URL {
+        var components = URLComponents(string: streamingEndpoint)!
+        components.queryItems = [
+            URLQueryItem(name: "model", value: "nova-2"),
+            URLQueryItem(
+                name: "language",
+                value: config.languageCode.replacingOccurrences(of: "_", with: "-")
+            ),
+            URLQueryItem(
+                name: "filler_words",
+                value: config.enableFillerWordDetection ? "true" : "false"
+            ),
+            URLQueryItem(name: "interim_results", value: "true"),
+            URLQueryItem(name: "encoding", value: "linear16"),
+            URLQueryItem(name: "sample_rate", value: String(config.sampleRate)),
+            URLQueryItem(name: "channels", value: "1"),
+            URLQueryItem(name: "punctuate", value: "true"),
+            URLQueryItem(name: "smart_format", value: "true"),
+            // Stable product-level attribution only. Never include account,
+            // session, transcript, or other personal identifiers in tags.
+            URLQueryItem(name: "tag", value: "noum-production"),
+            // Deepgram's request-level model-improvement opt-out. Consent to
+            // processing is not consent to provider model training.
+            URLQueryItem(name: "mip_opt_out", value: "true"),
+        ]
+        return components.url!
     }
 
-    func endAudio() async throws {
-        // Send empty byte to signal end-of-stream per Deepgram protocol
-        try await webSocket?.send(.data(Data()))
-        webSocket?.cancel(with: .normalClosure, reason: nil)
+    func waitUntilReady() async throws {
+        try await readiness.wait(timeout: .seconds(8))
+    }
+
+    func abort(_ error: Error) {
+        fail(error)
+    }
+
+    func sendAudio(_ data: Data) async throws {
+        guard !data.isEmpty else { return }
+        let canSend = connectionLock.withLock {
+            connectionState.didOpen && !connectionState.finishRequested && !connectionState.didComplete
+        }
+        guard canSend, let webSocket else { throw TranscriptionSessionError.notReady }
+        do {
+            try await webSocket.send(.data(data))
+            terminal.noteAudio(bytes: data.count)
+        } catch {
+            fail(error)
+            throw error
+        }
+    }
+
+    func finish() async throws -> FinalizedTranscript {
+        let mayFinish = connectionLock.withLock { () -> Bool in
+            guard connectionState.didOpen,
+                  !connectionState.finishRequested,
+                  !connectionState.didComplete else { return false }
+            connectionState.finishRequested = true
+            return true
+        }
+        guard mayFinish, let webSocket else { throw TranscriptionSessionError.alreadyFinished }
+
+        do {
+            try await webSocket.send(.string("{\"type\":\"CloseStream\"}"))
+            return try await terminal.wait(timeout: .seconds(5))
+        } catch {
+            fail(error)
+            webSocket.cancel(with: .goingAway, reason: nil)
+            throw error
+        }
     }
 
     private func startReceiveLoop() {
@@ -184,23 +273,32 @@ final class DeepgramSession: NSObject, TranscriptionSession, URLSessionWebSocket
             switch result {
             case .success(let message):
                 self.handleMessage(message)
-                self.startReceiveLoop()
+                let completed = self.connectionLock.withLock { self.connectionState.didComplete }
+                if !completed { self.startReceiveLoop() }
             case .failure(let error):
-                print("[DeepgramSession] Receive error: \(error)")
-                self.updateContinuation.finish()
+                self.fail(error)
             }
         }
     }
 
     private func handleMessage(_ message: URLSessionWebSocketTask.Message) {
         guard case .string(let text) = message,
-              let data = text.data(using: .utf8) else { return }
+              let data = text.data(using: .utf8) else {
+            fail(DeepgramError.invalidResponse)
+            return
+        }
 
         do {
             let response = try JSONDecoder().decode(DeepgramResponse.self, from: data)
-            guard response.type == "Results",
-                  let channel = response.channel,
-                  let alternative = channel.alternatives.first else { return }
+            if response.type == "Metadata" {
+                completeSuccessfully()
+                return
+            }
+            guard response.type == "Results" else { return }
+            guard let channel = response.channel,
+                  let alternative = channel.alternatives.first else {
+                throw DeepgramError.invalidResponse
+            }
 
             let providerFillers = alternative.words?
                 .filter { $0.type == "filler" }
@@ -223,15 +321,71 @@ final class DeepgramSession: NSObject, TranscriptionSession, URLSessionWebSocket
                 providerFillerWords: providerFillers,
                 latencyMs: nil
             )
+            terminal.note(update)
             updateContinuation.yield(update)
         } catch {
-            print("[DeepgramSession] Parse error: \(error)")
+            fail(error)
         }
     }
 
-    // URLSessionWebSocketDelegate
-    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+    private func completeSuccessfully() {
+        let shouldComplete = connectionLock.withLock { () -> Bool in
+            guard !connectionState.didComplete else { return false }
+            connectionState.didComplete = true
+            return true
+        }
+        guard shouldComplete else { return }
         updateContinuation.finish()
+        terminal.succeed()
+        webSocket?.cancel(with: .normalClosure, reason: nil)
+        urlSession?.finishTasksAndInvalidate()
+    }
+
+    private func fail(_ error: Error) {
+        let shouldFail = connectionLock.withLock { () -> Bool in
+            guard !connectionState.didComplete else { return false }
+            connectionState.didComplete = true
+            return true
+        }
+        guard shouldFail else { return }
+        readiness.fail(error)
+        terminal.fail(error)
+        updateContinuation.finish(throwing: error)
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        urlSession?.invalidateAndCancel()
+    }
+
+    // MARK: URLSessionWebSocketDelegate
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didOpenWithProtocol protocol: String?
+    ) {
+        connectionLock.withLock { connectionState.didOpen = true }
+        readiness.succeed()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+        reason: Data?
+    ) {
+        let finishRequested = connectionLock.withLock { connectionState.finishRequested }
+        if finishRequested && closeCode == .normalClosure {
+            completeSuccessfully()
+        } else {
+            fail(DeepgramError.connectionFailed("socket closed with code \(closeCode.rawValue)"))
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        if let error { fail(error) }
     }
 }
 
@@ -264,5 +418,5 @@ private struct DeepgramWord: Decodable {
     let start: TimeInterval
     let end: TimeInterval
     let confidence: Double?
-    let type: String?  // "filler" for filler words when filler_words=true
+    let type: String?
 }

@@ -44,6 +44,39 @@ enum PracticeMicrophonePermissionState: Equatable {
     }
 }
 
+enum RecordingLifecycleState: Equatable, Sendable {
+    case idle
+    case connecting
+    case recording
+    case finalizing
+    case completed(FinalizedTranscript)
+    case failed(String)
+
+    var isRecording: Bool {
+        if case .recording = self { return true }
+        return false
+    }
+
+    var isBusy: Bool {
+        switch self {
+        case .connecting, .recording, .finalizing: return true
+        case .idle, .completed, .failed: return false
+        }
+    }
+
+    var completedUsableCapture: Bool {
+        if case .completed(let result) = self { return result.hasUsableSpeech }
+        return false
+    }
+
+    var expectsProviderStreamOpen: Bool {
+        switch self {
+        case .connecting, .recording: return true
+        case .idle, .finalizing, .completed, .failed: return false
+        }
+    }
+}
+
 @MainActor
 class SpeechRecognizerViewModel: ObservableObject {
     @Published var transcribedText: String = ""
@@ -63,6 +96,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var connectionError: String?
     @Published var activeProviderName: String = ""
     @Published var microphonePermissionState: PracticeMicrophonePermissionState = .current()
+    @Published private(set) var recordingLifecycle: RecordingLifecycleState = .idle
 
     /// The session prompt (topic). Used by ALL modes for prompt-echo exclusion
     /// in semantic filler detection. Set this before recording starts.
@@ -113,15 +147,11 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var provider: any TranscriptionProvider
     private var activeSession: (any TranscriptionSession)?
     private var transcriptListenerTask: Task<Void, Never>?
+    private var audioSendPump: TranscriptionAudioPump?
 
-    /// Monotonic session token. `stopRecording()` finalizes on a 500ms delay to
-    /// let trailing transcripts land; if a NEW session starts inside that window
-    /// (rapid push-to-talk re-tap in the live coach call, back-to-back Sudden
-    /// Death rounds), the stale finalize must NOT run — `startRecordingWithProvider`
-    /// has already reset the transcript buffers, so finalizing would save the new
-    /// rep's (or empty) data against the old stop and blend quality metrics across
-    /// two reps. Bumped when a new session commits; the delayed teardown/finalize
-    /// captures the token and bails if it no longer matches.
+    /// Monotonic session token. A terminal provider callback can race a discard
+    /// or the next rep; stale callbacks must never persist or annotate the new
+    /// buffers. Bumped when a session commits or is invalidated.
     private var sessionGeneration: Int = 0
 
     /// Pure predicate for the delayed-finalize guard (unit-testable without the
@@ -131,6 +161,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     private var audioEngine: AVAudioEngine?
+    private var audioSessionObserverTokens: [NSObjectProtocol] = []
     /// Captures audio samples in parallel with transcription so we can
     /// emit `PitchMetrics` at session end. Created fresh per recording;
     /// reset whenever a new session starts.
@@ -224,9 +255,14 @@ class SpeechRecognizerViewModel: ObservableObject {
     init(preloadOnInit: Bool = true) {
         self.provider = Self.resolveProvider()
         self.activeProviderName = provider.name
+        installAudioSessionObservers()
         guard preloadOnInit else { return }
         loadSessions()
         prepareForInteractiveUse()
+    }
+
+    deinit {
+        audioSessionObserverTokens.forEach(NotificationCenter.default.removeObserver)
     }
 
     private static func resolveProvider() -> any TranscriptionProvider {
@@ -267,6 +303,10 @@ class SpeechRecognizerViewModel: ObservableObject {
         await ensureRecordPermission()
     }
 
+    var hasUsableCompletedCapture: Bool {
+        recordingLifecycle.completedUsableCapture
+    }
+
     func annotateLatestSession(
         score: Int? = nil,
         xpEarned: Int? = nil,
@@ -305,29 +345,49 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     func startRecording() {
-        guard !isRecording else { return }
+        guard !recordingLifecycle.isBusy else { return }
+        Task { await startRecordingAwaitingReadiness() }
+    }
+
+    /// Awaitable recording start used by practice modes that own timers or
+    /// engines. A `true` result guarantees that both the provider session and
+    /// the microphone tap are live; callers must not advance before then.
+    @discardableResult
+    func startRecordingAwaitingReadiness() async -> Bool {
+        guard !recordingLifecycle.isBusy else { return isRecording }
         prepareForInteractiveUse()
         refreshRecordPermission()
         if microphonePermissionState.blocksRecording {
             connectionError = microphonePermissionState.userFacingRecoveryMessage
-            return
+            transition(to: .failed(connectionError ?? "Microphone access is unavailable."))
+            return false
         }
+
+        guard AISettingsManager.shared.isCloudProcessingAllowed else {
+            failStartRecording(with: TranscriptionSessionError.cloudProcessingConsentRequired)
+            return false
+        }
+
+        transition(to: .connecting)
 
         // Re-resolve provider in case user changed settings
         provider = Self.resolveProvider()
         activeProviderName = provider.name
 
-        Task {
-            guard await ensureRecordPermission() else { return }
-            print("Starting transcription with \(provider.name)")
-            await startRecordingWithProvider()
+        guard await ensureRecordPermission() else {
+            guard recordingLifecycle == .connecting else { return false }
+            transition(to: .failed(connectionError ?? "Microphone access is unavailable."))
+            return false
         }
+        guard recordingLifecycle == .connecting else { return false }
+        return await startRecordingWithProvider()
     }
 
-    private func startRecordingWithProvider() async {
+    private func startRecordingWithProvider() async -> Bool {
         // A new session is committing — invalidate any pending delayed finalize
         // from a prior stop (its transcript buffers are about to be reset).
         sessionGeneration &+= 1
+        let generation = sessionGeneration
         let shouldRestorePressureMode = _pressureDrillMode
         let promptBeforeReset = sessionPrompt
         resetCurrentSession()
@@ -335,7 +395,6 @@ class SpeechRecognizerViewModel: ObservableObject {
             _pressureDrillMode = true
             sessionPrompt = promptBeforeReset
         }
-        sessionStart = Date()
         lastSavedSessionID = nil
         currentRepCorrelationID = UUID()
         sessionUpdateCount = 0
@@ -360,7 +419,8 @@ class SpeechRecognizerViewModel: ObservableObject {
             )
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            print("Audio session error: \(error)")
+            failStartRecording(with: error)
+            return false
         }
 
         let sampleRate = Int(AVAudioSession.sharedInstance().sampleRate)
@@ -374,60 +434,129 @@ class SpeechRecognizerViewModel: ObservableObject {
 
         do {
             let session = try await provider.startSession(config: config)
+            guard Self.shouldFinalize(captured: generation, current: sessionGeneration),
+                  recordingLifecycle == .connecting else {
+                Task { _ = try? await session.finish() }
+                return false
+            }
             self.activeSession = session
 
-            // Start audio capture and feed into the session
-            try startAudioStream(sendingTo: session)
-            isRecording = true
-
-            // Listen for transcript updates
-            transcriptListenerTask = Task { [weak self] in
-                for await update in session.transcriptUpdates {
-                    self?.handleTranscriptUpdate(update)
+            transcriptListenerTask = Task { @MainActor [weak self] in
+                do {
+                    for try await update in session.transcriptUpdates {
+                        guard let self,
+                              Self.shouldFinalize(captured: generation, current: self.sessionGeneration) else { return }
+                        self.handleTranscriptUpdate(update)
+                    }
+                    guard let self,
+                          Self.shouldFinalize(captured: generation, current: self.sessionGeneration),
+                          self.recordingLifecycle.expectsProviderStreamOpen else { return }
+                    self.failActiveRecording(
+                        with: TranscriptionSessionError.transport("The transcription connection closed before the rep finished."),
+                        generation: generation
+                    )
+                } catch {
+                    guard let self else { return }
+                    self.failActiveRecording(with: error, generation: generation)
                 }
             }
+
+            // Start audio capture and feed into the session
+            try startAudioStream(sendingTo: session, generation: generation)
+            sessionStart = Date()
+            transition(to: .recording)
+            return true
         } catch {
-            print("Failed to start \(provider.name) session: \(error)")
+            guard Self.shouldFinalize(captured: generation, current: sessionGeneration),
+                  recordingLifecycle == .connecting else { return false }
             failStartRecording(with: error)
+            return false
         }
     }
 
     func stopRecording() {
         guard isRecording else { return }
-        print("Stopping transcription")
+        Task { _ = await stopRecordingAwaitingFinalization() }
+    }
+
+    /// Tears down a rep without producing a terminal app result. Used for
+    /// explicit discard/navigation paths so backing out can never persist or
+    /// score a half-finished recording.
+    func cancelRecording() {
+        guard recordingLifecycle.isBusy else { return }
+        let session = activeSession
+        sessionGeneration &+= 1
         teardownAudioStream()
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        activeSession = nil
+        transcriptListenerTask?.cancel()
+        transcriptListenerTask = nil
+        sessionStart = nil
+        lastSavedSessionID = nil
+        if let session { Task { _ = try? await session.finish() } }
+        transition(to: .idle)
+    }
+
+    /// Stops microphone capture and waits for the provider's real terminal
+    /// response. Returns nil on transport/finalization failure; callers must
+    /// require `result.hasUsableSpeech` before scoring or awarding progress.
+    @discardableResult
+    func stopRecordingAwaitingFinalization() async -> FinalizedTranscript? {
+        guard isRecording else { return nil }
+        transition(to: .finalizing)
+        let audioPump = audioSendPump
+        audioSendPump = nil
+        teardownAudioStream(cancelPendingAudio: false)
         try? AVAudioSession.sharedInstance().setActive(false)
-        isRecording = false
 
         // Capture this stop's generation + session so a session started during
         // the teardown/finalize window can't have its state torn down or its
         // transcript overwritten by this (now stale) tail.
         let gen = sessionGeneration
         let sessionToEnd = activeSession
-        Task {
-            try? await sessionToEnd?.endAudio()
-            guard Self.shouldFinalize(captured: gen, current: sessionGeneration) else { return }
+        do {
+            guard let sessionToEnd else {
+                throw TranscriptionSessionError.notReady
+            }
+            // Drain every callback-enqueued buffer before telling the provider
+            // to finalize; otherwise the last syllable can race CloseStream.
+            try await audioPump?.finish()
+            let providerResult = try await sessionToEnd.finish()
+            await transcriptListenerTask?.value
+            guard Self.shouldFinalize(captured: gen, current: sessionGeneration) else { return nil }
             activeSession = nil
             transcriptListenerTask?.cancel()
             transcriptListenerTask = nil
 
-            // Allow time for any final transcripts to arrive before finalizing
-            try? await Task.sleep(for: .milliseconds(500))
-            guard Self.shouldFinalize(captured: gen, current: sessionGeneration) else { return }
-            finalizeTranscript()
-            recordQualityMetrics()
-        }
-    }
-
-    private func finalizeTranscript() {
-        if !partialTranscript.isEmpty {
-            if !finalTranscript.isEmpty { finalTranscript += " " }
-            finalTranscript += partialTranscript
+            // The provider's terminal receipt is authoritative. Never promote
+            // an interim fragment merely because an earlier segment happened
+            // to be final; CloseStream/finish must explicitly finalize the
+            // trailing words before they can be scored or persisted.
+            finalTranscript = providerResult.text.trimmingCharacters(in: .whitespacesAndNewlines)
             partialTranscript = ""
             transcribedText = finalTranscript
             highlightAndCountFillerWords(in: finalTranscript)
+            let completion = FinalizedTranscript(
+                text: finalTranscript,
+                receivedFinalResult: providerResult.receivedFinalResult,
+                audioByteCount: providerResult.audioByteCount
+            )
+            recordQualityMetrics()
+            if RecordingCompletionGate.allowsScoringAndProgress(completion) {
+                saveCurrentSession()
+                connectionError = nil
+            } else {
+                sessionStart = nil
+                lastSavedSessionID = nil
+                connectionError = "Noum didn’t hear enough speech to complete that rep. Try again when you’re ready."
+            }
+            transition(to: .completed(completion))
+            return completion
+        } catch {
+            audioPump?.cancel()
+            failActiveRecording(with: error, generation: gen)
+            return nil
         }
-        saveCurrentSession()
     }
 
     // MARK: - Transcript Update Handling (provider-agnostic)
@@ -500,7 +629,10 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
     }
 
-    private func startAudioStream(sendingTo session: any TranscriptionSession) throws {
+    private func startAudioStream(
+        sendingTo session: any TranscriptionSession,
+        generation: Int
+    ) throws {
         audioEngine = AVAudioEngine()
         let inputNode = audioEngine!.inputNode
         let inputFormat = inputNode.inputFormat(forBus: 0)
@@ -521,8 +653,14 @@ class SpeechRecognizerViewModel: ObservableObject {
         let analyzer = PitchAnalyzer()
         pitchAnalyzer = analyzer
         let captureSampleRate = inputFormat.sampleRate
+        let pump = TranscriptionAudioPump(session: session) { [weak self] error in
+            Task { @MainActor [weak self] in
+                self?.failActiveRecording(with: error, generation: generation)
+            }
+        }
+        audioSendPump = pump
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self, analyzer] buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self, analyzer, pump] buffer, _ in
             // Capture samples for pitch analysis (cheap append, no DSP here).
             analyzer.appendBuffer(buffer, sampleRate: captureSampleRate)
             guard let self else { return }
@@ -541,18 +679,30 @@ class SpeechRecognizerViewModel: ObservableObject {
                 self.audioLevel = min(max(blended, 0), 1)
             }
             let data = Self.pcm16Data(from: buffer)
-            Task { try? await session.sendAudio(data) }
+            if !pump.enqueue(data) {
+                Task { @MainActor [weak self] in
+                    self?.failActiveRecording(
+                        with: TranscriptionSessionError.transport("The audio stream stopped accepting microphone data."),
+                        generation: generation
+                    )
+                }
+            }
         }
 
         audioEngine!.prepare()
         try audioEngine!.start()
     }
 
-    private func teardownAudioStream() {
-        guard let audioEngine else { return }
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
-        self.audioEngine = nil
+    private func teardownAudioStream(cancelPendingAudio: Bool = true) {
+        if let audioEngine {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            audioEngine.stop()
+            self.audioEngine = nil
+        }
+        if cancelPendingAudio {
+            audioSendPump?.cancel()
+            audioSendPump = nil
+        }
         // Drop the live envelope to silence so any orb bound to it
         // visibly settles instead of holding the last spoken level.
         audioLevel = 0.0
@@ -579,14 +729,117 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     private func failStartRecording(with error: Error) {
-        connectionError = "Live transcription is temporarily unavailable. Your rep hasn’t started."
+        let message = userFacingRecordingError(for: error, started: false)
+        connectionError = message
         teardownAudioStream()
         try? AVAudioSession.sharedInstance().setActive(false)
+        let session = activeSession
         activeSession = nil
         transcriptListenerTask?.cancel()
         transcriptListenerTask = nil
-        isRecording = false
+        if let session { Task { _ = try? await session.finish() } }
         sessionStart = nil
+        lastSavedSessionID = nil
+        transition(to: .failed(message))
+    }
+
+    private func failActiveRecording(with error: Error, generation: Int) {
+        guard Self.shouldFinalize(captured: generation, current: sessionGeneration),
+              recordingLifecycle.isBusy else { return }
+
+        let message = userFacingRecordingError(for: error, started: true)
+        connectionError = message
+        let session = activeSession
+        sessionGeneration &+= 1
+        teardownAudioStream()
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        activeSession = nil
+        transcriptListenerTask?.cancel()
+        transcriptListenerTask = nil
+        sessionStart = nil
+        lastSavedSessionID = nil
+        if let session { Task { _ = try? await session.finish() } }
+        transition(to: .failed(message))
+    }
+
+    private func userFacingRecordingError(for error: Error, started: Bool) -> String {
+        if let sessionError = error as? TranscriptionSessionError,
+           sessionError == .cloudProcessingConsentRequired,
+           let description = sessionError.errorDescription {
+            return description
+        }
+        if let localized = error as? LocalizedError,
+           let description = localized.errorDescription,
+           !description.isEmpty,
+           error is AudioStreamError {
+            return description
+        }
+        return started
+            ? "Live transcription was interrupted. That rep wasn’t saved — start again when the connection is ready."
+            : "Live transcription is temporarily unavailable. Your rep hasn’t started."
+    }
+
+    private func transition(to state: RecordingLifecycleState) {
+        recordingLifecycle = state
+        isRecording = state.isRecording
+    }
+
+    private func installAudioSessionObservers() {
+        let center = NotificationCenter.default
+        audioSessionObserverTokens = [
+            center.addObserver(
+                forName: AVAudioSession.interruptionNotification,
+                object: AVAudioSession.sharedInstance(),
+                queue: .main
+            ) { [weak self] note in
+                Task { @MainActor [weak self] in self?.handleAudioSessionInterruption(note) }
+            },
+            center.addObserver(
+                forName: AVAudioSession.routeChangeNotification,
+                object: AVAudioSession.sharedInstance(),
+                queue: .main
+            ) { [weak self] note in
+                Task { @MainActor [weak self] in self?.handleAudioRouteChange(note) }
+            },
+            center.addObserver(
+                forName: AVAudioSession.mediaServicesWereResetNotification,
+                object: AVAudioSession.sharedInstance(),
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, self.recordingLifecycle.isRecording else { return }
+                    self.failActiveRecording(
+                        with: TranscriptionSessionError.transport("The device audio service restarted."),
+                        generation: self.sessionGeneration
+                    )
+                }
+            },
+        ]
+    }
+
+    private func handleAudioSessionInterruption(_ notification: Notification) {
+        guard recordingLifecycle.isRecording,
+              let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              AVAudioSession.InterruptionType(rawValue: raw) == .began else { return }
+        failActiveRecording(
+            with: TranscriptionSessionError.transport("Recording was interrupted by another audio session."),
+            generation: sessionGeneration
+        )
+    }
+
+    private func handleAudioRouteChange(_ notification: Notification) {
+        guard recordingLifecycle.isRecording,
+              let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return }
+        switch reason {
+        case .oldDeviceUnavailable, .noSuitableRouteForCategory, .routeConfigurationChange:
+            failActiveRecording(
+                with: TranscriptionSessionError.transport("The microphone route changed during the rep."),
+                generation: sessionGeneration
+            )
+        default:
+            break
+        }
     }
 
     /// Float mic buffer → 16-bit signed PCM, the wire format every

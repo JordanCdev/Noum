@@ -16,6 +16,7 @@ struct CutTheCrutchView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var didAwardXP = false
+    @State private var hasValidatedResult = false
     @State private var showAdjustments = false
 
     private let tint: Color = AppColor.modeCrutch
@@ -26,7 +27,7 @@ struct CutTheCrutchView: View {
     }
 
     private var isResultPhase: Bool {
-        if case .ended = engine.phase { return true }
+        if case .ended = engine.phase, hasValidatedResult { return true }
         return false
     }
 
@@ -45,7 +46,7 @@ struct CutTheCrutchView: View {
 
     var body: some View {
         ZStack {
-            if case .ended = engine.phase {
+            if case .ended = engine.phase, hasValidatedResult {
                 AppColor.screenBackground.ignoresSafeArea()
             } else {
                 FocusedPracticeBackground(style: .crutch)
@@ -58,11 +59,17 @@ struct CutTheCrutchView: View {
                 countdownOverlay(n)
             case .go:
                 countdownOverlay(0, label: "GO")
+            case .connecting:
+                connectingSurface
             case .active:
                 activeSurface
                     .environment(\.colorScheme, .dark)
             case .ended(let result):
-                resultSurface(result)
+                if hasValidatedResult {
+                    resultSurface(result)
+                } else {
+                    finalizingSurface
+                }
             }
         }
         .navigationTitle("")
@@ -70,7 +77,7 @@ struct CutTheCrutchView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(role: .cancel) {
-                    speechVM.stopRecording()
+                    speechVM.cancelRecording()
                     dismiss()
                 } label: {
                     Image(systemName: "xmark")
@@ -86,8 +93,14 @@ struct CutTheCrutchView: View {
         .onChange(of: engine.phase) { _, newPhase in
             handlePhase(newPhase)
         }
+        .onChange(of: speechVM.recordingLifecycle) { _, lifecycle in
+            guard case .failed = lifecycle,
+                  engine.phase != .setup else { return }
+            engine.reset(avoidedWord: engine.avoidedWord, prompt: engine.prompt)
+        }
         .onDisappear {
-            speechVM.stopRecording()
+            speechVM.cancelRecording()
+            engine.cancel()
         }
         .task {
             // Quick Start handshake — picker armed Cut the Crutch for a
@@ -95,7 +108,7 @@ struct CutTheCrutchView: View {
             // user crutch (or "actually") + a random prompt, so the
             // countdown can fire immediately with sensible defaults.
             if case .setup = engine.phase, PracticeModeQuickStart.consumeCrutch() {
-                engine.beginCountdown()
+                beginCountdown()
             }
         }
         .sheet(isPresented: $showAdjustments) {
@@ -105,19 +118,73 @@ struct CutTheCrutchView: View {
 
     private func handlePhase(_ phase: CutTheCrutchPhase) {
         switch phase {
+        case .connecting:
+            connectRecorderAndStartRound()
         case .active:
-            speechVM.shouldRecordPracticeSession = false
-            speechVM.sessionPrompt = engine.prompt
-            speechVM.startRecording()
+            guard speechVM.isRecording else {
+                engine.reset(avoidedWord: engine.avoidedWord, prompt: engine.prompt)
+                return
+            }
         case .ended(let result):
-            speechVM.stopRecording()
-            if !didAwardXP {
-                profileManager.addXP(result.xpEarned)
-                didAwardXP = true
+            Task { @MainActor in
+                let completion = await speechVM.stopRecordingAwaitingFinalization()
+                guard RecordingCompletionGate.allowsScoringAndProgress(completion) else {
+                    engine.reset(avoidedWord: engine.avoidedWord, prompt: engine.prompt)
+                    hasValidatedResult = false
+                    return
+                }
+                guard engine.confirmCompletedCapture() else { return }
+                if !didAwardXP {
+                    profileManager.addXP(result.xpEarned)
+                    didAwardXP = true
+                }
+                hasValidatedResult = true
             }
         default:
             break
         }
+    }
+
+    private func beginCountdown() {
+        guard case .setup = engine.phase else { return }
+        hasValidatedResult = false
+        didAwardXP = false
+        speechVM.connectionError = nil
+        engine.beginCountdown()
+    }
+
+    private func connectRecorderAndStartRound() {
+        Task { @MainActor in
+            speechVM.shouldRecordPracticeSession = false
+            speechVM.sessionPrompt = engine.prompt
+            guard await speechVM.startRecordingAwaitingReadiness(),
+                  case .connecting = engine.phase else { return }
+            engine.confirmCaptureReady(captureReady: true)
+        }
+    }
+
+    private var connectingSurface: some View {
+        VStack(spacing: Spacing.md) {
+            ProgressView()
+                .tint(.white)
+            Text("Connecting live transcription…")
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(.white)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Connecting live transcription")
+    }
+
+    private var finalizingSurface: some View {
+        VStack(spacing: Spacing.md) {
+            ProgressView()
+                .tint(.white)
+            Text("Finishing your recording…")
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(.white)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Finishing your recording")
     }
 
     // MARK: - Setup
@@ -144,7 +211,12 @@ struct CutTheCrutchView: View {
             .accessibilityIdentifier("cutTheCrutch.adjust")
             .accessibilityLabel("Adjust Cut the Crutch")
         } content: {
-            crutchSetupCue
+            VStack(spacing: Spacing.md) {
+                crutchSetupCue
+                if let error = speechVM.connectionError {
+                    FocusedPracticeErrorStatus(message: error)
+                }
+            }
         }
         .accessibilityIdentifier("cutTheCrutch.screen")
         .safeAreaInset(edge: .bottom) {
@@ -213,7 +285,7 @@ struct CutTheCrutchView: View {
 
     private var beginCTA: some View {
         Button {
-            engine.beginCountdown()
+            beginCountdown()
         } label: {
             Text("Start Cut the Crutch")
                 .font(.headline.weight(.semibold))

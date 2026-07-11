@@ -25,6 +25,8 @@ enum PaceTrainingPhase: Equatable {
     case setup
     case countdown(Int)
     case go
+    /// Countdown finished; response clock remains stopped until capture is live.
+    case connecting
     case active
     case ended(PaceTrainingResult)
 }
@@ -208,8 +210,14 @@ final class PaceTrainingEngine: ObservableObject {
             CoachHaptic.drillSuccess()
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled else { return }
-            startActive()
+            phase = .connecting
         }
+    }
+
+    func confirmCaptureReady(captureReady: Bool) {
+        guard case .connecting = phase,
+              RecordingStartGate.allowsTimerStart(captureReady: captureReady) else { return }
+        startActive()
     }
 
     func reset() {

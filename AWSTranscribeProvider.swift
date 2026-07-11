@@ -23,13 +23,21 @@ final class AWSTranscribeProvider: TranscriptionProvider, @unchecked Sendable {
     }
 
     func startSession(config: TranscriptionConfig) async throws -> any TranscriptionSession {
+        try await CloudTranscriptionConsentGate.requireAllowed()
         _ = try await authManager.currentCredentials()
         let clientConfig = try await TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
             awsCredentialIdentityResolver: authManager.credentialResolver(),
             region: authManager.region
         )
         let client = TranscribeStreamingClient(config: clientConfig)
-        return AWSTranscribeSession(client: client, config: config)
+        let session = AWSTranscribeSession(client: client, config: config)
+        do {
+            try await session.waitUntilReady()
+            return session
+        } catch {
+            session.abort(error)
+            throw error
+        }
     }
 }
 
@@ -40,15 +48,17 @@ final class AWSTranscribeSession: TranscriptionSession, @unchecked Sendable {
     private let config: TranscriptionConfig
     private var requestStreamContinuation: AsyncThrowingStream<TranscribeStreamingClientTypes.AudioStream, Error>.Continuation?
     private var streamConnection: StartStreamTranscriptionOutput?
-    private let updateContinuation: AsyncStream<TranscriptUpdate>.Continuation
-    let transcriptUpdates: AsyncStream<TranscriptUpdate>
+    private let readiness = TranscriptionReadinessGate()
+    private let terminal = TranscriptionTerminalState()
+    private let updateContinuation: AsyncThrowingStream<TranscriptUpdate, Error>.Continuation
+    let transcriptUpdates: AsyncThrowingStream<TranscriptUpdate, Error>
 
     init(client: TranscribeStreamingClient, config: TranscriptionConfig) {
         self.client = client
         self.config = config
 
-        var continuation: AsyncStream<TranscriptUpdate>.Continuation!
-        self.transcriptUpdates = AsyncStream { continuation = $0 }
+        var continuation: AsyncThrowingStream<TranscriptUpdate, Error>.Continuation!
+        self.transcriptUpdates = AsyncThrowingStream { continuation = $0 }
         self.updateContinuation = continuation
 
         Task { await self.startStreaming() }
@@ -81,26 +91,66 @@ final class AWSTranscribeSession: TranscriptionSession, @unchecked Sendable {
         do {
             let output = try await client.startStreamTranscription(input: request)
             self.streamConnection = output
+            readiness.succeed()
             if let events = output.transcriptResultStream {
                 for try await event in events {
                     handleEvent(event)
                 }
             }
+            terminal.succeed()
+            updateContinuation.finish()
         } catch {
-            print("[AWSTranscribeSession] Streaming error: \(error)")
+            readiness.fail(error)
+            terminal.fail(error)
+            updateContinuation.finish(throwing: error)
         }
-        updateContinuation.finish()
+    }
+
+    func waitUntilReady() async throws {
+        try await readiness.wait(timeout: .seconds(8))
+    }
+
+    func abort(_ error: Error) {
+        requestStreamContinuation?.finish(throwing: error)
+        requestStreamContinuation = nil
+        readiness.fail(error)
+        terminal.fail(error)
+        updateContinuation.finish(throwing: error)
     }
 
     func sendAudio(_ data: Data) async throws {
-        requestStreamContinuation?.yield(
+        guard !data.isEmpty else { return }
+        guard let requestStreamContinuation else {
+            throw TranscriptionSessionError.notReady
+        }
+        let result = requestStreamContinuation.yield(
             .audioevent(TranscribeStreamingClientTypes.AudioEvent(audioChunk: data))
         )
+        switch result {
+        case .enqueued:
+            terminal.noteAudio(bytes: data.count)
+        case .dropped:
+            let error = TranscriptionSessionError.transport("AWS Transcribe dropped an audio chunk.")
+            abort(error)
+            throw error
+        case .terminated:
+            let error = TranscriptionSessionError.transport("The AWS transcription stream closed early.")
+            abort(error)
+            throw error
+        @unknown default:
+            let error = TranscriptionSessionError.transport("The AWS transcription stream became unavailable.")
+            abort(error)
+            throw error
+        }
     }
 
-    func endAudio() async throws {
-        requestStreamContinuation?.finish()
-        requestStreamContinuation = nil
+    func finish() async throws -> FinalizedTranscript {
+        guard requestStreamContinuation != nil else {
+            throw TranscriptionSessionError.alreadyFinished
+        }
+        self.requestStreamContinuation?.finish()
+        self.requestStreamContinuation = nil
+        return try await terminal.wait(timeout: .seconds(8))
     }
 
     private func handleEvent(_ event: TranscribeStreamingClientTypes.TranscriptResultStream) {
@@ -119,6 +169,7 @@ final class AWSTranscribeSession: TranscriptionSession, @unchecked Sendable {
                     providerFillerWords: nil,  // AWS has no native filler detection
                     latencyMs: nil
                 )
+                terminal.note(update)
                 updateContinuation.yield(update)
             }
         default: break

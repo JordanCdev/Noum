@@ -31,6 +31,8 @@ enum CutTheCrutchPhase: Equatable {
     /// 3 / 2 / 1 / GO before recording starts.
     case countdown(Int)
     case go
+    /// Countdown finished; response clock remains stopped until capture is live.
+    case connecting
     /// Live: transcript flowing, allowed slips and composure mutating.
     case active
     /// Round complete with a result.
@@ -122,7 +124,9 @@ final class CutTheCrutchEngine: ObservableObject {
     let config: CutTheCrutchConfig
     private var lastSeenCount: Int = 0
     private var roundStart: Date?
+    private var countdownTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
+    private(set) var hasCommittedValidCapture = false
 
     // MARK: Init
 
@@ -141,6 +145,8 @@ final class CutTheCrutchEngine: ObservableObject {
 
     /// Reset to setup phase with a new word and prompt.
     func reset(avoidedWord: String, prompt: String) {
+        countdownTask?.cancel()
+        countdownTask = nil
         tickTask?.cancel()
         self.avoidedWord = avoidedWord
         self.prompt = prompt
@@ -150,30 +156,66 @@ final class CutTheCrutchEngine: ObservableObject {
         self.violations = []
         self.lastSeenCount = 0
         self.roundStart = nil
+        self.hasCommittedValidCapture = false
         self.phase = .setup
     }
 
-    /// Run countdown then transition to .active. View should start its
-    /// SpeechRecognizerViewModel when phase becomes `.active`.
+    /// Run the visual countdown, then wait in `.connecting`. The view starts
+    /// capture there and calls `confirmCaptureReady` before active time moves.
     func beginCountdown() {
         guard case .setup = phase else { return }
-        Task {
+        countdownTask?.cancel()
+        countdownTask = Task {
             for n in [3, 2, 1] {
+                guard !Task.isCancelled else { return }
                 phase = .countdown(n)
                 CoachHaptic.countdownBeat()
                 try? await Task.sleep(for: .seconds(1))
             }
+            guard !Task.isCancelled else { return }
             phase = .go
             CoachHaptic.drillSuccess()
             try? await Task.sleep(for: .milliseconds(500))
-            startActive()
+            guard !Task.isCancelled else { return }
+            phase = .connecting
         }
+    }
+
+    /// Opens the scored response window only after provider and microphone
+    /// readiness. Countdown time is deliberately not recorded as rep audio.
+    func confirmCaptureReady(captureReady: Bool) {
+        guard case .connecting = phase,
+              RecordingStartGate.allowsTimerStart(captureReady: captureReady) else { return }
+        startActive()
+    }
+
+    func cancel() {
+        countdownTask?.cancel()
+        countdownTask = nil
+        tickTask?.cancel()
+        tickTask = nil
     }
 
     /// User force-stopped the round — finalize as not-cleanCut with current state.
     func userEnded() {
         guard case .active = phase else { return }
         finalize(cleanCut: false)
+    }
+
+    /// Commits progression only after the transcription boundary returns a
+    /// usable terminal receipt. The engine may calculate a candidate result
+    /// first, but an empty or failed capture never counts as a completed drill.
+    @discardableResult
+    func confirmCompletedCapture() -> Bool {
+        guard case .ended(let result) = phase, !hasCommittedValidCapture else { return false }
+        hasCommittedValidCapture = true
+        if result.cleanCut {
+            CoachHaptic.drillSuccess()
+        } else {
+            CoachHaptic.gameOver()
+        }
+        DailyGoalManager.shared.recordDrillCompletion(at: Date())
+        return true
     }
 
     // MARK: Active Loop
@@ -257,15 +299,6 @@ final class CutTheCrutchEngine: ObservableObject {
             cleanCut: cleanCut
         )
         phase = .ended(result)
-        if cleanCut {
-            CoachHaptic.drillSuccess()
-        } else {
-            CoachHaptic.gameOver()
-        }
-        // Credit the daily goal. Both clean cuts and partial runs count — the
-        // intent is to reward the *attempt*, not just the perfect outcome.
-        // Daily-goal value is "did you show up", not "were you flawless".
-        DailyGoalManager.shared.recordDrillCompletion(at: now)
     }
 
     // MARK: - Word Detection

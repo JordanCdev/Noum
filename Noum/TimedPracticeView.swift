@@ -924,6 +924,7 @@ struct TimedPracticeView: View {
             guard error != nil, phase == .speaking else { return }
             speakingTask?.cancel()
             speakingTask = nil
+            if videoManager.isRecording { videoManager.stopRecording() }
         }
         .sheet(isPresented: $showPaywall) {
             PaywallView()
@@ -2788,7 +2789,7 @@ struct TimedPracticeView: View {
     }
 
     private func startSpeaking() {
-        guard !speechVM.isRecording else { return }
+        guard !speechVM.recordingLifecycle.isBusy else { return }
         speechVM.refreshRecordPermission()
         if speechVM.microphonePermissionState == .undetermined {
             Task { @MainActor in
@@ -2834,37 +2835,39 @@ struct TimedPracticeView: View {
 
         speechVM.sessionPrompt = question
         speechVM.prepareSession(mode: .timed)
-        speechVM.startRecording()
-        if !speechVM.isRecording, speechVM.connectionError != nil {
-            speakingTask?.cancel()
-            speakingTask = nil
-            return
-        }
+        Task { @MainActor in
+            guard await speechVM.startRecordingAwaitingReadiness() else {
+                speakingTask?.cancel()
+                speakingTask = nil
+                return
+            }
 
-        // Start video recording if enabled (any mode)
-        // Camera session was already prepared when the user toggled the switch
-        if enableVideoRecording {
-            Task {
+            // Camera capture and the speaking clock begin only after the mic
+            // and transcription provider are both live.
+            if enableVideoRecording {
+                var cameraReady = videoManager.captureSession != nil
                 if videoManager.captureSession == nil {
                     let hasPermission = await VideoRecordingManager.requestCameraPermission()
-                    guard hasPermission else { return }
-                    let ready = await videoManager.prepareSession()
-                    guard ready else { return }
+                    if hasPermission {
+                        cameraReady = await videoManager.prepareSession()
+                    }
                 }
-                videoManager.startRecording()
+                if cameraReady {
+                    videoManager.startRecording()
+                }
             }
-        }
 
-        speakingTask?.cancel()
-        speakingTask = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                if Task.isCancelled { return }
-                await MainActor.run {
-                    elapsedSeconds += 1
-                    refreshTimingState()
-                    if elapsedSeconds >= ImpromptuTimingState.hardStopSeconds {
-                        stopSession()
+            speakingTask?.cancel()
+            speakingTask = Task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(1))
+                    if Task.isCancelled { return }
+                    await MainActor.run {
+                        elapsedSeconds += 1
+                        refreshTimingState()
+                        if elapsedSeconds >= ImpromptuTimingState.hardStopSeconds {
+                            stopSession()
+                        }
                     }
                 }
             }
@@ -2985,56 +2988,57 @@ struct TimedPracticeView: View {
     private func stopSession() {
         guard !isStopping else { return }
         isStopping = true
-        CoachHaptic.sessionComplete()
         speakingTask?.cancel()
         speakingTask = nil
-        speechVM.stopRecording()
         if videoManager.isRecording { videoManager.stopRecording() }
 
-        Task {
+        Task { @MainActor in
+            let completion = await speechVM.stopRecordingAwaitingFinalization()
             // Wait for video recording delegate to finish writing the file
             // The delegate publishes an explicit terminal state when the file is ready or failed.
             if enableVideoRecording {
                 _ = await videoManager.waitForRecordingFinalization()
             }
-            try? await Task.sleep(for: .milliseconds(650))
-            await MainActor.run {
-                let result = PracticeEvaluator.evaluateTimedPractice(
-                    transcript: speechVM.transcribedText,
-                    fillerCount: speechVM.fillerWordCount,
-                    duration: speechVM.lastSessionDuration,
-                    difficulty: practiceSettings.timedDifficulty,
-                    recentSessions: speechVM.pastSessions,
-                    profile: coachingProfileStore.profile,
-                    question: question.isEmpty ? nil : question
-                )
-                evaluation = result
-                speechVM.annotateLatestSession(
-                    score: result.score,
-                    xpEarned: result.xpEarned,
-                    headline: result.headline,
-                    insights: result.insights,
-                    coachSummary: result.feedback,
-                    prompt: question,
-                    theme: selectedTheme
-                )
 
-                // Celebration haptic for good scores
-                if result.score >= 70 {
-                    let gen = UINotificationFeedbackGenerator()
-                    gen.prepare()
-                    gen.notificationOccurred(.success)
-                    updateWithMotion(.bouncySpring) {
-                        showCelebration = true
-                    }
-                    // Auto-dismiss celebration
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-                        updateWithMotion(.easeOut(duration: 0.5)) { showCelebration = false }
-                    }
-                }
-
-                pushSummary()
+            guard RecordingCompletionGate.allowsScoringAndProgress(completion) else {
+                isStopping = false
+                return
             }
+            CoachHaptic.sessionComplete()
+            let result = PracticeEvaluator.evaluateTimedPractice(
+                transcript: speechVM.transcribedText,
+                fillerCount: speechVM.fillerWordCount,
+                duration: speechVM.lastSessionDuration,
+                difficulty: practiceSettings.timedDifficulty,
+                recentSessions: speechVM.pastSessions,
+                profile: coachingProfileStore.profile,
+                question: question.isEmpty ? nil : question
+            )
+            evaluation = result
+            speechVM.annotateLatestSession(
+                score: result.score,
+                xpEarned: result.xpEarned,
+                headline: result.headline,
+                insights: result.insights,
+                coachSummary: result.feedback,
+                prompt: question,
+                theme: selectedTheme
+            )
+
+            // Celebration haptic for good scores
+            if result.score >= 70 {
+                let gen = UINotificationFeedbackGenerator()
+                gen.prepare()
+                gen.notificationOccurred(.success)
+                updateWithMotion(.bouncySpring) {
+                    showCelebration = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                    updateWithMotion(.easeOut(duration: 0.5)) { showCelebration = false }
+                }
+            }
+
+            pushSummary()
         }
     }
 
@@ -3126,6 +3130,7 @@ struct TimedPracticeView: View {
         // If the user backs out mid-thinking-window, stop ambience so
         // it doesn't leak into the next surface.
         SoundscapeEngine.shared.stop()
+        speechVM.cancelRecording()
     }
 
     // MARK: - Navigation

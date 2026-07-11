@@ -82,12 +82,12 @@ struct RoleplayView: View {
         }
         .onDisappear {
             submissionTask?.cancel()
-            speechVM.stopRecording()
+            speechVM.cancelRecording()
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("End") {
-                    if speechVM.isRecording { speechVM.stopRecording() }
+                    speechVM.cancelRecording()
                     if !navigationPath.isEmpty { navigationPath.removeLast() }
                 }
                 .foregroundStyle(isCompletePhase ? Color.secondary : Color.white)
@@ -138,6 +138,9 @@ struct RoleplayView: View {
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
             }
+            if let message = speechVM.connectionError {
+                FocusedPracticeErrorStatus(message: message)
+            }
         }
     }
 
@@ -175,11 +178,11 @@ struct RoleplayView: View {
                 }
             }
             .buttonStyle(.plain)
-            .disabled(currentObjection == nil)
+            .disabled(currentObjection == nil || (speechVM.recordingLifecycle.isBusy && !speechVM.isRecording))
             .accessibilityIdentifier("roleplay.micButton")
             .accessibilityLabel(speechVM.isRecording ? "Stop responding" : "Start responding")
 
-            Text(speechVM.isRecording ? "Listening — tap to finish" : "Tap the mic and respond to the objection")
+            Text(roleplayRecordingStatus)
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
 
@@ -196,16 +199,28 @@ struct RoleplayView: View {
 
     private func toggleRecording() {
         if speechVM.isRecording {
-            speechVM.stopRecording()
             submissionTask?.cancel()
-            submissionTask = Task {
-                try? await Task.sleep(for: .milliseconds(400))
-                guard !Task.isCancelled else { return }
+            submissionTask = Task { @MainActor in
+                let completion = await speechVM.stopRecordingAwaitingFinalization()
+                guard RecordingCompletionGate.allowsScoringAndProgress(completion),
+                      !Task.isCancelled else { return }
                 submitTurn()
             }
         } else {
-            speechVM.resetCurrentSession()
-            speechVM.startRecording()
+            submissionTask?.cancel()
+            submissionTask = Task { @MainActor in
+                speechVM.resetCurrentSession()
+                _ = await speechVM.startRecordingAwaitingReadiness()
+            }
+        }
+    }
+
+    private var roleplayRecordingStatus: String {
+        switch speechVM.recordingLifecycle {
+        case .connecting: return "Connecting to live transcription"
+        case .recording: return "Listening — tap to finish"
+        case .finalizing: return "Finishing your response"
+        case .idle, .completed, .failed: return "Tap the mic and respond to the objection"
         }
     }
 

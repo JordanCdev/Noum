@@ -63,6 +63,8 @@ struct SuddenDeathPracticeView: View {
     @State private var enrichedResult: PressureSessionResult?
     @State private var committedFinalization: SessionFinalizationResult?
     @State private var didCommitCompletedRun = false
+    @State private var runHadUsableCapture = false
+    @State private var isPreparingPressureRecorder = false
     #if DEBUG
     @State private var isPresentingResultFixture = false
     #endif
@@ -170,8 +172,9 @@ struct SuddenDeathPracticeView: View {
         .alert("End session?", isPresented: $showExitConfirmation) {
             Button("Keep Going", role: .cancel) { }
             Button("End", role: .destructive) {
-                speechVM.stopRecording()
-                engine.forceStop()
+                speechVM.cancelRecording()
+                engine.reset()
+                dismiss()
             }
         } message: {
             Text("Your progress in this run will be lost.")
@@ -251,12 +254,23 @@ struct SuddenDeathPracticeView: View {
         }
         .onChange(of: engine.pendingUserWaitingRound) { _, pending in
             guard pending != nil else { return }
+            guard !speechVM.recordingLifecycle.isBusy else { return }
             // If TTS is still speaking, confirmBeginUserWaiting() will be called
             // from the ttsDelegate.onFinish callback instead. If TTS has already
             // finished (or was never started), unblock immediately.
             if !isSpeakingPrompt {
-                engine.confirmBeginUserWaiting()
+                prepareRecorderThenBeginUserWaiting()
             }
+        }
+        .onChange(of: engine.pendingCaptureEnd) { _, pending in
+            guard pending != nil else { return }
+            finalizeAutomaticPressureEnd()
+        }
+        .onChange(of: speechVM.recordingLifecycle) { _, lifecycle in
+            guard case .failed = lifecycle, engine.phase != .setup else { return }
+            SoundscapeEngine.shared.stop()
+            stopPromptReadout()
+            engine.reset()
         }
         .onChange(of: engine.currentPromptText) { _, newText in
             // Follow-up prompts land asynchronously after the engine
@@ -265,9 +279,13 @@ struct SuddenDeathPracticeView: View {
             // prompt is already speaking so we don't double-trigger
             // for round 1 (where `npcTurn` and the text both land at
             // once).
-            guard !newText.isEmpty else { return }
+            guard !newText.isEmpty,
+                  !speechVM.recordingLifecycle.isBusy else { return }
             if case .npcTurn(let round) = engine.phase {
                 speakCurrentPromptIfReady(round: round)
+                if engine.pendingUserWaitingRound != nil, !isSpeakingPrompt {
+                    prepareRecorderThenBeginUserWaiting()
+                }
             }
         }
         .onDisappear {
@@ -280,6 +298,8 @@ struct SuddenDeathPracticeView: View {
             // Same guard for TTS — never leave the synthesizer
             // speaking after the screen is gone.
             stopPromptReadout()
+            speechVM.cancelRecording()
+            engine.reset()
             // Drop any pending intent that wasn't consumed by a finalize.
             SessionIntentStore.shared.clearPending()
         }
@@ -329,8 +349,13 @@ struct SuddenDeathPracticeView: View {
                 .transition(.opacity)
 
         case .sessionComplete(let result):
-            resultScreen(result: enrichedResult ?? result)
-                .transition(.opacity.combined(with: .move(edge: .trailing)))
+            if canPresentPressureResult {
+                resultScreen(result: enrichedResult ?? result)
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+            } else {
+                pressureFinalizingSurface
+                    .transition(.opacity)
+            }
         }
     }
 
@@ -948,8 +973,21 @@ struct SuddenDeathPracticeView: View {
 
     private var doneButton: some View {
         Button {
-            speechVM.stopRecording()
-            engine.userEndedTurn()
+            Task { @MainActor in
+                guard engine.pendingCaptureEnd == nil, speechVM.isRecording else { return }
+                engine.pauseForCaptureFinalization()
+                let completion = await speechVM.stopRecordingAwaitingFinalization()
+                guard RecordingCompletionGate.allowsScoringAndProgress(completion) else {
+                    engine.reset()
+                    return
+                }
+                if let completion {
+                    engine.reconcileFinalizedTranscript(completion.text)
+                }
+                engine.currentFillerCount = speechVM.pressureDrillFillerCount
+                runHadUsableCapture = true
+                engine.userEndedTurn()
+            }
         } label: {
             Text("Done")
                 .font(.headline.weight(.bold))
@@ -959,6 +997,7 @@ struct SuddenDeathPracticeView: View {
                 .background(Color.green.gradient, in: Capsule())
         }
         .buttonStyle(.pressable)
+        .disabled(!speechVM.isRecording || engine.pendingCaptureEnd != nil)
         .padding(.horizontal, Spacing.screenH)
         .padding(.bottom, 16)
         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -972,10 +1011,12 @@ struct SuddenDeathPracticeView: View {
             highScoreStore: .shared,
             runHistoryStore: .shared,
             onRetry: {
+                guard canPresentPressureResult else { return }
                 finalizeSession(result: result)
                 retrySession()
             },
             onSeeFullSummary: {
+                guard canPresentPressureResult else { return }
                 finalizeSession(result: result)
                 pushSummary(result: result)
             }
@@ -1028,14 +1069,17 @@ struct SuddenDeathPracticeView: View {
     }
 
     private func resetSpeechState() {
-        speechVM.stopRecording()
+        speechVM.cancelRecording()
         speechVM.resetCurrentSession()
+        speechVM.shouldRecordPracticeSession = false
         roundTranscript = ""
         hasDetectedSpeechThisRound = false
         evaluation = nil
         enrichedResult = nil
         committedFinalization = nil
         didCommitCompletedRun = false
+        runHadUsableCapture = false
+        isPreparingPressureRecorder = false
     }
 
     // MARK: - Phase Change Handler
@@ -1077,8 +1121,24 @@ struct SuddenDeathPracticeView: View {
 
         case .npcTurn(let round):
             // Reset transcript for new round
-            speechVM.stopRecording()
-            speechVM.resetCurrentSession()
+            if speechVM.isRecording {
+                Task { @MainActor in
+                    let completion = await speechVM.stopRecordingAwaitingFinalization()
+                    guard RecordingCompletionGate.allowsScoringAndProgress(completion) else {
+                        engine.reset()
+                        return
+                    }
+                    if let completion {
+                        engine.reconcileFinalizedTranscript(completion.text)
+                    }
+                    runHadUsableCapture = true
+                    speechVM.resetCurrentSession()
+                    prepareNpcTurnAfterRecorderStopped(round: round)
+                }
+            } else {
+                speechVM.resetCurrentSession()
+                prepareNpcTurnAfterRecorderStopped(round: round)
+            }
             roundTranscript = ""
             hasDetectedSpeechThisRound = false
             // M24 fix — do NOT blank lastSpokenPromptText here. On round 2+,
@@ -1091,18 +1151,6 @@ struct SuddenDeathPracticeView: View {
             // detect the new prompt arrival.
             wordThresholdHapticFired = false
 
-            // Animate typing dots
-            startTypingAnimation()
-
-            // Auto-read the prompt the moment the NPC turn lands.
-            // Fires only when (a) the engine isn't still generating a
-            // follow-up — we'd be reading "" — and (b) the user
-            // hasn't muted IM voice playback. The actual readout is
-            // also dispatched again from onChange(currentPromptText)
-            // because follow-ups arrive asynchronously after this
-            // phase change.
-            speakCurrentPromptIfReady(round: round)
-
         case .userTurnWaiting:
             // Start recording for this round; cut soundscape if it's
             // still running so it doesn't compete with the user's voice.
@@ -1112,30 +1160,141 @@ struct SuddenDeathPracticeView: View {
             // synthesizer's `.duckOthers` audio session would dip the
             // mic input otherwise.
             stopPromptReadout()
-            speechVM.prepareSession(mode: .suddenDeath)
-            speechVM.pressureDrillPrompt = engine.currentPromptText
-            speechVM.startRecording()
+            // The recorder was connected before this phase was allowed to
+            // start, so the pressure countdown never spends connection time.
+            guard speechVM.isRecording else {
+                engine.reset()
+                return
+            }
 
         case .sessionComplete(let result):
-            speechVM.stopRecording()
             SoundscapeEngine.shared.stop()
             stopPromptReadout()
-
-            // Enrich with quality signals before the result screen reads gamePoints.
-            var enriched = result
-            enriched.pitchMetrics = speechVM.currentSessionPitchMetrics()
-            enriched.wordChoiceMetrics = WordChoiceMetrics.compute(transcript: engine.sessionTranscript)
-            enriched.eloquenceFindings = EloquenceEngine.analyse(transcript: engine.sessionTranscript)
-            if result.totalDuration > 0 {
-                enriched.sessionWPM = Double(result.totalWords) / (result.totalDuration / 60.0)
+            #if DEBUG
+            if isPresentingResultFixture {
+                enrichedResult = result
+                return
             }
-            enrichedResult = enriched
+            #endif
+            let pitchMetrics = speechVM.currentSessionPitchMetrics()
+            Task { @MainActor in
+                var resolvedResult = result
+                if speechVM.isRecording {
+                    let completion = await speechVM.stopRecordingAwaitingFinalization()
+                    guard RecordingCompletionGate.allowsScoringAndProgress(completion) else {
+                        engine.reset()
+                        return
+                    }
+                    if let completion,
+                       let reconciled = engine.reconcileFinalizedTranscript(completion.text) {
+                        resolvedResult = reconciled
+                    }
+                    runHadUsableCapture = true
+                }
+                guard runHadUsableCapture,
+                      !engine.sessionTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    engine.reset()
+                    return
+                }
 
-            finalizeSession(result: enriched)
+                var enriched = resolvedResult
+                enriched.pitchMetrics = pitchMetrics
+                enriched.wordChoiceMetrics = WordChoiceMetrics.compute(transcript: engine.sessionTranscript)
+                enriched.eloquenceFindings = EloquenceEngine.analyse(transcript: engine.sessionTranscript)
+                if resolvedResult.totalDuration > 0 {
+                    enriched.sessionWPM = Double(resolvedResult.totalWords) / (resolvedResult.totalDuration / 60.0)
+                }
+                enrichedResult = enriched
+                finalizeSession(result: enriched)
+            }
 
         default:
             break
         }
+    }
+
+    /// Starts NPC UI/TTS only after the prior microphone stream has returned
+    /// its terminal receipt. A follow-up voice must never enter the tail of the
+    /// user's transcript or compete for the active audio session.
+    private func prepareNpcTurnAfterRecorderStopped(round: Int) {
+        guard case .npcTurn(let currentRound) = engine.phase,
+              currentRound == round,
+              !speechVM.recordingLifecycle.isBusy else { return }
+        startTypingAnimation()
+        speakCurrentPromptIfReady(round: round)
+        if engine.pendingUserWaitingRound != nil, !isSpeakingPrompt {
+            prepareRecorderThenBeginUserWaiting()
+        }
+    }
+
+    private func finalizeAutomaticPressureEnd() {
+        guard engine.pendingCaptureEnd != nil, speechVM.isRecording else { return }
+        Task { @MainActor in
+            let completion = await speechVM.stopRecordingAwaitingFinalization()
+            guard RecordingCompletionGate.allowsScoringAndProgress(completion) else {
+                engine.reset()
+                return
+            }
+            if let completion {
+                engine.reconcileFinalizedTranscript(completion.text)
+            }
+            engine.currentFillerCount = speechVM.pressureDrillFillerCount
+            runHadUsableCapture = true
+            engine.confirmPendingCaptureEnd()
+        }
+    }
+
+    /// Connect the provider and microphone before opening the pressure start
+    /// window. The engine keeps `pendingUserWaitingRound` armed until this
+    /// succeeds, so network latency can never count as a slow start.
+    private func prepareRecorderThenBeginUserWaiting() {
+        guard engine.pendingUserWaitingRound != nil, !isPreparingPressureRecorder else { return }
+        isPreparingPressureRecorder = true
+        Task { @MainActor in
+            defer { isPreparingPressureRecorder = false }
+
+            // A prior round may still be returning its provider receipt while
+            // the next prompt is being read. Give that bounded finalization
+            // the same window as the provider contract before opening a new mic.
+            let deadline = ContinuousClock.now + .seconds(6)
+            while speechVM.recordingLifecycle.isBusy {
+                guard ContinuousClock.now < deadline else {
+                    engine.reset()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+
+            guard engine.pendingUserWaitingRound != nil else { return }
+            speechVM.resetCurrentSession()
+            speechVM.shouldRecordPracticeSession = false
+            speechVM.prepareSession(mode: .suddenDeath)
+            speechVM.pressureDrillPrompt = engine.currentPromptText
+            guard await speechVM.startRecordingAwaitingReadiness() else {
+                engine.reset()
+                return
+            }
+            engine.confirmBeginUserWaiting(captureReady: true)
+        }
+    }
+
+    private var canPresentPressureResult: Bool {
+        #if DEBUG
+        if isPresentingResultFixture { return true }
+        #endif
+        return didCommitCompletedRun && runHadUsableCapture
+    }
+
+    private var pressureFinalizingSurface: some View {
+        VStack(spacing: Spacing.md) {
+            ProgressView()
+                .tint(accentColor)
+            Text("Finishing your recording…")
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Finishing your recording")
     }
 
     private func startTypingAnimation() {
@@ -1154,6 +1313,15 @@ struct SuddenDeathPracticeView: View {
     }
 
     private func finalizeSession(result: PressureSessionResult) {
+        #if DEBUG
+        if !isPresentingResultFixture {
+            guard runHadUsableCapture,
+                  !engine.sessionTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        }
+        #else
+        guard runHadUsableCapture,
+              !engine.sessionTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        #endif
         guard !didCommitCompletedRun else { return }
         didCommitCompletedRun = true
 
@@ -1289,14 +1457,14 @@ struct SuddenDeathPracticeView: View {
                 isSpeakingPrompt = false
                 deactivateTTSAudioSession()
                 // Unblock the user-waiting phase if the engine was holding for TTS.
-                engine.confirmBeginUserWaiting()
+                prepareRecorderThenBeginUserWaiting()
             }
         }
         ttsDelegate.onCancel = {
             Task { @MainActor in
                 isSpeakingPrompt = false
                 deactivateTTSAudioSession()
-                engine.confirmBeginUserWaiting()
+                prepareRecorderThenBeginUserWaiting()
             }
         }
     }
@@ -1394,7 +1562,7 @@ struct SuddenDeathPracticeView: View {
                     // Only clear and unblock if TTS wasn't stopped mid-flight.
                     guard isSpeakingPrompt else { return }
                     isSpeakingPrompt = false
-                    engine.confirmBeginUserWaiting()
+                    prepareRecorderThenBeginUserWaiting()
                 }
                 return
             }

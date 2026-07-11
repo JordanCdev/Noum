@@ -173,6 +173,16 @@ enum RoundOutcome: Equatable {
     case tooShort
 }
 
+enum PressureCaptureEndReason: Equatable {
+    case responseCap
+    case fillerThreshold
+}
+
+struct PendingPressureCaptureEnd: Equatable {
+    let round: Int
+    let reason: PressureCaptureEndReason
+}
+
 extension RoundOutcome {
     var label: String {
         switch self {
@@ -217,6 +227,12 @@ struct PressureSessionTotals: Equatable {
         self.words += max(0, words)
         bestRoundWords = max(bestRoundWords, max(0, words))
     }
+
+    mutating func reconcileWordCounts(_ counts: [Int]) {
+        let safe = counts.map { max(0, $0) }
+        words = safe.reduce(0, +)
+        bestRoundWords = safe.max() ?? 0
+    }
 }
 
 /// Preserves the spoken evidence from each completed tier so a multi-tier
@@ -228,6 +244,16 @@ struct PressureSessionTranscriptLog: Equatable {
         let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         responses.append(trimmed)
+    }
+
+    mutating func reconcileMostRecent(_ response: String) {
+        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if responses.isEmpty {
+            responses.append(trimmed)
+        } else {
+            responses[responses.index(before: responses.endIndex)] = trimmed
+        }
     }
 
     var combinedText: String {
@@ -500,6 +526,11 @@ final class PressureTimerEngine: ObservableObject {
     /// has finished, which clears this and starts the actual start timer.
     @Published private(set) var pendingUserWaitingRound: Int? = nil
 
+    /// Automatic engine endings pause here until the provider returns its
+    /// terminal receipt. The view owns audio finalization, then confirms this
+    /// request so evaluation/follow-up generation sees canonical words.
+    @Published private(set) var pendingCaptureEnd: PendingPressureCaptureEnd? = nil
+
     /// The transcript from the most recent user turn (for follow-up generation).
     @Published var lastUserTranscript: String = ""
 
@@ -509,6 +540,7 @@ final class PressureTimerEngine: ObservableObject {
     private var roundStartDate: Date?
     private var timerTask: Task<Void, Never>?
     private var responseLimitTask: Task<Void, Never>?
+    private var transitionTask: Task<Void, Never>?
     private(set) var roundConfig: PressureRoundConfig = .config(for: 1)
     private(set) var previousBestRounds: Int = 0
     /// Difficulty for the current session. Set in `configure()`.
@@ -547,6 +579,8 @@ final class PressureTimerEngine: ObservableObject {
     func reset() {
         timerTask?.cancel()
         responseLimitTask?.cancel()
+        transitionTask?.cancel()
+        transitionTask = nil
         phase = .setup
         currentRound = 0
         roundOutcomes = []
@@ -565,6 +599,7 @@ final class PressureTimerEngine: ObservableObject {
         roundWordCounts = []
         roundMinimumWords = []
         pendingUserWaitingRound = nil
+        pendingCaptureEnd = nil
         print("[PressureEngine] Reset complete")
     }
 
@@ -580,15 +615,19 @@ final class PressureTimerEngine: ObservableObject {
     /// Begin the countdown sequence.
     func beginCountdown() {
         sessionStartDate = Date()
-        Task {
+        transitionTask?.cancel()
+        transitionTask = Task {
             for count in [3, 2, 1] {
+                guard !Task.isCancelled else { return }
                 phase = .countdown(count)
                 CoachHaptic.countdownBeat()
                 try? await Task.sleep(for: .seconds(1))
             }
+            guard !Task.isCancelled else { return }
             phase = .go
             CoachHaptic.drillSuccess()
             try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
             advanceToNextRound()
         }
     }
@@ -609,10 +648,72 @@ final class PressureTimerEngine: ObservableObject {
         evaluateRound(round: round)
     }
 
+    /// Freezes the active response while the provider flushes its terminal
+    /// transcript. Without this hook the soft response-cap task can score and
+    /// advance a round during the bounded CloseStream wait.
+    func pauseForCaptureFinalization() {
+        guard case .userTurnActive = phase else { return }
+        timerTask?.cancel()
+        timerTask = nil
+        responseLimitTask?.cancel()
+        responseLimitTask = nil
+    }
+
+    func confirmPendingCaptureEnd() {
+        guard let pendingCaptureEnd,
+              case .userTurnActive(let round) = phase,
+              round == pendingCaptureEnd.round else { return }
+        self.pendingCaptureEnd = nil
+        switch pendingCaptureEnd.reason {
+        case .responseCap:
+            evaluateRound(round: round)
+        case .fillerThreshold:
+            if currentFillerCount > roundConfig.fillerTolerance {
+                endRound(round: round, outcome: .fillerOverload)
+            } else {
+                // Interim recognition can revise an apparent filler. Once the
+                // terminal transcript clears it, evaluate the actual words
+                // instead of preserving a false sudden-death failure.
+                evaluateRound(round: round)
+            }
+        }
+    }
+
+    /// Replaces interim speech evidence with the provider's terminal text.
+    /// Returns a rebuilt result when the engine had already entered its final
+    /// phase before CloseStream delivered trailing words.
+    @discardableResult
+    func reconcileFinalizedTranscript(_ transcript: String) -> PressureSessionResult? {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        lastUserTranscript = trimmed
+        let finalWordCount = trimmed.split { !$0.isLetter && !$0.isNumber }.count
+
+        switch phase {
+        case .userTurnWaiting, .userTurnActive:
+            currentWordCount = finalWordCount
+        case .roundResult, .npcTurn, .sessionComplete:
+            transcriptLog.reconcileMostRecent(trimmed)
+            if !roundWordCounts.isEmpty {
+                roundWordCounts[roundWordCounts.index(before: roundWordCounts.endIndex)] = finalWordCount
+                totals.reconcileWordCounts(roundWordCounts)
+            }
+        case .setup, .countdown, .go:
+            break
+        }
+
+        guard case .sessionComplete(let result) = phase else { return nil }
+        return buildSessionResult(
+            finalOutcome: result.finalOutcome,
+            roundsSurvived: result.roundsSurvived
+        )
+    }
+
     /// Force-stop the session (user quit).
     func forceStop() {
         timerTask?.cancel()
         responseLimitTask?.cancel()
+        transitionTask?.cancel()
         let survived = roundOutcomes.filter { !$0.isFailed }.count
         let result = buildSessionResult(finalOutcome: roundOutcomes.last ?? .timeoutBeforeStart, roundsSurvived: survived)
         phase = .sessionComplete(result: result)
@@ -643,9 +744,13 @@ final class PressureTimerEngine: ObservableObject {
             // Signal the view that this round is ready to begin the user waiting
             // phase. The view will call confirmBeginUserWaiting() once TTS has
             // finished reading the prompt so the card stays expanded mid-readout.
-            Task {
+            transitionTask?.cancel()
+            transitionTask = Task {
                 let displayTime: TimeInterval = nextRound == 1 ? 2.5 : 2.0
                 try? await Task.sleep(for: .seconds(displayTime))
+                guard !Task.isCancelled,
+                      case .npcTurn(let activeRound) = phase,
+                      activeRound == nextRound else { return }
                 pendingUserWaitingRound = nextRound
             }
         } else {
@@ -656,8 +761,11 @@ final class PressureTimerEngine: ObservableObject {
 
     /// Called by the view once TTS has finished for the current NPC turn.
     /// Clears `pendingUserWaitingRound` and starts the actual start-window timer.
-    func confirmBeginUserWaiting() {
-        guard let round = pendingUserWaitingRound else { return }
+    func confirmBeginUserWaiting(captureReady: Bool = false) {
+        guard RecordingStartGate.allowsTimerStart(captureReady: captureReady),
+              let round = pendingUserWaitingRound,
+              case .npcTurn(let activeRound) = phase,
+              activeRound == round else { return }
         pendingUserWaitingRound = nil
         beginUserWaiting(round: round)
     }
@@ -667,7 +775,8 @@ final class PressureTimerEngine: ObservableObject {
         let transcript = lastUserTranscript
         let previousPrompt = currentPromptText
 
-        Task {
+        transitionTask?.cancel()
+        transitionTask = Task {
             let followUp: String
             if let provider = followUpProvider, !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 followUp = await provider.generateFollowUp(
@@ -681,6 +790,10 @@ final class PressureTimerEngine: ObservableObject {
                 followUp = PressureFollowUpTemplates.random()
             }
 
+            guard !Task.isCancelled,
+                  case .npcTurn(let activeRound) = phase,
+                  activeRound == round else { return }
+
             await MainActor.run {
                 currentPromptText = followUp
                 isGeneratingFollowUp = false
@@ -689,6 +802,9 @@ final class PressureTimerEngine: ObservableObject {
             // Brief display, then signal the view to start the user waiting
             // phase once TTS finishes the follow-up readout.
             try? await Task.sleep(for: .seconds(1.8))
+            guard !Task.isCancelled,
+                  case .npcTurn(let activeRound) = phase,
+                  activeRound == round else { return }
             pendingUserWaitingRound = round
         }
     }
@@ -751,7 +867,7 @@ final class PressureTimerEngine: ObservableObject {
             try? await Task.sleep(for: .seconds(roundConfig.responseCap))
             guard !Task.isCancelled else { return }
             print("[PressureEngine] Response cap reached, auto-ending round \(round)")
-            evaluateRound(round: round)
+            requestCaptureEnd(round: round, reason: .responseCap)
         }
 
         // Filler monitoring tick
@@ -762,9 +878,7 @@ final class PressureTimerEngine: ObservableObject {
                 guard !Task.isCancelled else { return }
 
                 if currentFillerCount > roundConfig.fillerTolerance {
-                    timerTask?.cancel()
-                    responseLimitTask?.cancel()
-                    endRound(round: round, outcome: .fillerOverload)
+                    requestCaptureEnd(round: round, reason: .fillerThreshold)
                     return
                 }
             }
@@ -772,6 +886,14 @@ final class PressureTimerEngine: ObservableObject {
     }
 
     // MARK: - Round Evaluation
+
+    private func requestCaptureEnd(round: Int, reason: PressureCaptureEndReason) {
+        guard case .userTurnActive(let activeRound) = phase,
+              activeRound == round,
+              pendingCaptureEnd == nil else { return }
+        pauseForCaptureFinalization()
+        pendingCaptureEnd = PendingPressureCaptureEnd(round: round, reason: reason)
+    }
 
     private func handleStartTimeout(round: Int) {
         print("[PressureEngine] Start timeout in round \(round)")
@@ -816,16 +938,27 @@ final class PressureTimerEngine: ObservableObject {
 
         if outcome.isFailed {
             // Session over on failure — Sudden Death
-            Task {
+            transitionTask?.cancel()
+            transitionTask = Task {
                 try? await Task.sleep(for: .seconds(0.3))
+                guard !Task.isCancelled,
+                      case .roundResult(let activeRound, _) = phase,
+                      activeRound == round else { return }
                 CoachHaptic.gameOver()
                 try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled,
+                      case .roundResult(let activeRound, _) = phase,
+                      activeRound == round else { return }
                 completeSession()
             }
         } else {
             CoachHaptic.roundSurvived()
-            Task {
+            transitionTask?.cancel()
+            transitionTask = Task {
                 try? await Task.sleep(for: .seconds(1.0))
+                guard !Task.isCancelled,
+                      case .roundResult(let activeRound, _) = phase,
+                      activeRound == round else { return }
                 advanceToNextRound()
             }
         }

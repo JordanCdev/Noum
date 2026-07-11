@@ -410,6 +410,11 @@ struct AhCounterView: View {
         .sheet(isPresented: $showSetupAdjustments) {
             setupAdjustmentsSheet
         }
+        .onDisappear {
+            speechVM.cancelRecording()
+            stopElapsedTimer()
+            SoundscapeEngine.shared.stop()
+        }
         .task {
             speechVM.prepareForInteractiveUse()
 
@@ -908,34 +913,35 @@ struct AhCounterView: View {
     // MARK: - Session Control
 
     private func startRecording() {
+        guard !speechVM.recordingLifecycle.isBusy else { return }
         speechVM.prepareSession(mode: .ahCounter)
-        speechVM.startRecording()
+        Task { @MainActor in
+            _ = await speechVM.startRecordingAwaitingReadiness()
+        }
     }
 
     private func stopSession() {
-        speechVM.stopRecording()
         stopElapsedTimer()
-        CoachHaptic.sessionComplete()
-        Task {
-            try? await Task.sleep(for: .milliseconds(650))
-            await MainActor.run {
-                let result = PracticeEvaluator.evaluateAhCounterPractice(
-                    transcript: speechVM.transcribedText,
-                    fillerCount: speechVM.fillerWordCount,
-                    duration: speechVM.lastSessionDuration,
-                    recentSessions: speechVM.pastSessions,
-                    profile: coachingProfileStore.profile
-                )
-                evaluation = result
-                speechVM.annotateLatestSession(
-                    score: result.score,
-                    xpEarned: result.xpEarned,
-                    headline: result.headline,
-                    insights: result.insights,
-                    coachSummary: result.feedback
-                )
-                pushSummary()
-            }
+        Task { @MainActor in
+            let completion = await speechVM.stopRecordingAwaitingFinalization()
+            guard RecordingCompletionGate.allowsScoringAndProgress(completion) else { return }
+            CoachHaptic.sessionComplete()
+            let result = PracticeEvaluator.evaluateAhCounterPractice(
+                transcript: speechVM.transcribedText,
+                fillerCount: speechVM.fillerWordCount,
+                duration: speechVM.lastSessionDuration,
+                recentSessions: speechVM.pastSessions,
+                profile: coachingProfileStore.profile
+            )
+            evaluation = result
+            speechVM.annotateLatestSession(
+                score: result.score,
+                xpEarned: result.xpEarned,
+                headline: result.headline,
+                insights: result.insights,
+                coachSummary: result.feedback
+            )
+            pushSummary()
         }
     }
 

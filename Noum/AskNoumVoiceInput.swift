@@ -46,10 +46,11 @@ enum LiveCallSTTChain {
     static func engineOrder(
         configuredProviderRawValue: String?,
         cloudMarkedUnhealthy: Bool,
-        nativeAvailable: Bool
+        nativeAvailable: Bool,
+        cloudProcessingAllowed: Bool = true
     ) -> [Engine] {
         var order: [Engine] = []
-        if !cloudMarkedUnhealthy {
+        if cloudProcessingAllowed, !cloudMarkedUnhealthy {
             order.append(.cloud(TranscriptionProviderID.resolved(fromStoredValue: configuredProviderRawValue)))
         }
         if nativeAvailable {
@@ -135,6 +136,9 @@ final class AskNoumVoiceInput: ObservableObject {
         /// failed AND native recognition unavailable/errored). Will retry
         /// on next press.
         case temporarilyUnavailable
+        /// Cloud processing is declined and this device cannot provide an
+        /// on-device recognition model for the selected locale.
+        case cloudProcessingDisabled
     }
 
     @Published private(set) var state: State = .idle
@@ -176,6 +180,7 @@ final class AskNoumVoiceInput: ObservableObject {
     // Cloud-engine state (the leading link of `LiveCallSTTChain`).
     private var cloudSession: (any TranscriptionSession)?
     private var cloudListenerTask: Task<Void, Never>?
+    private var cloudAudioPump: TranscriptionAudioPump?
     /// Finalised cloud segments accumulated so far. Cloud providers emit
     /// rolling per-segment partials (not a cumulative transcript), so the
     /// published `partialTranscript` is always `cloudFinalText` + the live
@@ -188,6 +193,8 @@ final class AskNoumVoiceInput: ObservableObject {
     private var cloudUnhealthy = false
     /// Which engine is serving the current recording, if any.
     private var activeEngine: LiveCallSTTChain.Engine?
+    private var recognitionGeneration = 0
+    private var isStartingRecognition = false
 
     /// Called exactly once per successful utterance with the final
     /// transcript. The view turns this into a user turn (same path as
@@ -255,6 +262,8 @@ final class AskNoumVoiceInput: ObservableObject {
             return "Mic access is off. Turn it on in Settings, or type your question."
         case .temporarilyUnavailable:
             return "Voice isn't ready just now — try again in a moment, or type your question."
+        case .cloudProcessingDisabled:
+            return "On-device transcription isn't available for this language. Turn on Cloud Processing in Settings, or type your question."
         }
     }
 
@@ -262,7 +271,7 @@ final class AskNoumVoiceInput: ObservableObject {
     /// state. Permission/locale failures hide the mic because another tap
     /// cannot fix them inside the app.
     nonisolated static func reasonAllowsRetry(_ reason: UnavailableReason?) -> Bool {
-        reason == nil || reason == .temporarilyUnavailable
+        reason == nil || reason == .temporarilyUnavailable || reason == .cloudProcessingDisabled
     }
 
     // MARK: - Tap-to-toggle lifecycle
@@ -274,12 +283,7 @@ final class AskNoumVoiceInput: ObservableObject {
     func toggle() {
         switch state {
         case .idle:
-            Task { @MainActor in
-                clearTransientUnavailableIfNeeded()
-                await requestPermissionsIfNeeded()
-                guard unavailableReason == nil else { return }
-                await startRecognition()
-            }
+            beginRecognitionAttempt()
         case .recording:
             stopAndSend()
         case .processing:
@@ -299,9 +303,27 @@ final class AskNoumVoiceInput: ObservableObject {
             // Stop feeding audio, then signal end-of-stream; the listener
             // task delivers the accumulated transcript when the stream
             // closes (see `handleCloudStreamEnded`).
-            stopAudioEngine()
+            let audioPump = cloudAudioPump
+            cloudAudioPump = nil
+            stopAudioEngine(cancelPendingCloudAudio: false)
             let session = cloudSession
-            Task { try? await session?.endAudio() }
+            Task { @MainActor [weak self] in
+                guard let self, let session, self.cloudSession === session else { return }
+                do {
+                    try await audioPump?.finish()
+                    let result = try await session.finish()
+                    guard self.cloudSession === session else { return }
+                    guard RecordingCompletionGate.allowsScoringAndProgress(result) else {
+                        self.handleCloudFailure()
+                        return
+                    }
+                    self.deliverFinalIfAble(textOverride: result.text)
+                    self.resetToIdle()
+                } catch {
+                    guard self.cloudSession === session else { return }
+                    self.handleCloudFailure()
+                }
+            }
         case .native, nil:
             #if canImport(Speech)
             request?.endAudio()
@@ -310,11 +332,18 @@ final class AskNoumVoiceInput: ObservableObject {
         }
         // Defensive timeout — if finalisation hangs (either engine),
         // surface whatever partial we have and reset.
+        let finalizationTimeout: UInt64 = activeEngine == nil || activeEngine == .native
+            ? 1_500_000_000
+            : 5_500_000_000
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            try? await Task.sleep(nanoseconds: finalizationTimeout)
             if state == .processing {
-                deliverFinalIfAble(textOverride: partialTranscript)
-                resetToIdle()
+                if case .cloud = activeEngine {
+                    handleCloudFailure()
+                } else {
+                    deliverFinalIfAble(textOverride: partialTranscript)
+                    resetToIdle()
+                }
             }
         }
     }
@@ -323,6 +352,8 @@ final class AskNoumVoiceInput: ObservableObject {
     /// thread. Exposed for cases where the view needs to clean up (e.g.
     /// view disappears while recording).
     func cancelRecording() {
+        recognitionGeneration &+= 1
+        isStartingRecognition = false
         #if canImport(Speech)
         task?.cancel()
         request = nil
@@ -333,7 +364,7 @@ final class AskNoumVoiceInput: ObservableObject {
         cloudListenerTask = nil
         if let session = cloudSession {
             cloudSession = nil
-            Task { try? await session.endAudio() }
+            Task { _ = try? await session.finish() }
         }
         cloudFinalText = ""
         activeEngine = nil
@@ -348,11 +379,24 @@ final class AskNoumVoiceInput: ObservableObject {
 
     func beginPress() {
         guard state == .idle else { return }
+        beginRecognitionAttempt()
+    }
+
+    private func beginRecognitionAttempt() {
+        guard state == .idle, !isStartingRecognition else { return }
+        isStartingRecognition = true
+        recognitionGeneration &+= 1
+        let generation = recognitionGeneration
         Task { @MainActor in
             clearTransientUnavailableIfNeeded()
             await requestPermissionsIfNeeded()
-            guard unavailableReason == nil else { return }
-            await startRecognition()
+            guard generation == recognitionGeneration,
+                  isStartingRecognition,
+                  unavailableReason == nil else {
+                if generation == recognitionGeneration { isStartingRecognition = false }
+                return
+            }
+            await startRecognition(generation: generation)
         }
     }
 
@@ -419,28 +463,48 @@ final class AskNoumVoiceInput: ObservableObject {
     /// Cloud first (same provider practice reps use), native Apple
     /// recognition terminal. Exhausting the chain surfaces an honest
     /// `.temporarilyUnavailable` — never a silent dead mic.
-    private func startRecognition() async {
+    private func startRecognition(generation: Int) async {
         #if canImport(Speech) && canImport(AVFoundation)
+        guard generation == recognitionGeneration, isStartingRecognition else { return }
         // New utterance — re-arm the single-delivery latch (see
         // `deliverFinalIfAble`).
         hasDeliveredFinal = false
+        let cloudProcessingAllowed = AISettingsManager.shared.isCloudProcessingAllowed
+        let nativeAvailable = recognizer.map {
+            $0.isAvailable && (cloudProcessingAllowed || $0.supportsOnDeviceRecognition)
+        } == true
         let order = LiveCallSTTChain.engineOrder(
             configuredProviderRawValue: UserDefaults.standard.string(forKey: "transcriptionProvider"),
             cloudMarkedUnhealthy: cloudUnhealthy,
-            nativeAvailable: recognizer?.isAvailable == true
+            nativeAvailable: nativeAvailable,
+            cloudProcessingAllowed: cloudProcessingAllowed
         )
         for engine in order {
+            guard generation == recognitionGeneration, isStartingRecognition else { return }
             switch engine {
             case .cloud(let providerID):
-                if await startCloudRecognition(providerID: providerID) { return }
+                if await startCloudRecognition(providerID: providerID, generation: generation) {
+                    isStartingRecognition = false
+                    return
+                }
                 // Key missing / quota exhausted / backend down — remember
                 // and degrade to native for the rest of this surface session.
                 cloudUnhealthy = true
             case .native:
-                if startNativeRecognition() { return }
+                let requireOnDevice = !AISettingsManager.shared.isCloudProcessingAllowed
+                if startNativeRecognition(requireOnDevice: requireOnDevice) {
+                    isStartingRecognition = false
+                    return
+                }
             }
         }
-        unavailableReason = .temporarilyUnavailable
+        guard generation == recognitionGeneration else { return }
+        isStartingRecognition = false
+        unavailableReason = AISettingsManager.shared.isCloudProcessingAllowed
+            ? .temporarilyUnavailable
+            : .cloudProcessingDisabled
+        #else
+        isStartingRecognition = false
         #endif
     }
 
@@ -449,7 +513,10 @@ final class AskNoumVoiceInput: ObservableObject {
     /// Start a streaming session on the configured cloud provider. Returns
     /// false on ANY setup failure (key resolution throw, dead input format,
     /// engine start throw) so the chain can fall through to native.
-    private func startCloudRecognition(providerID: TranscriptionProviderID) async -> Bool {
+    private func startCloudRecognition(
+        providerID: TranscriptionProviderID,
+        generation: Int
+    ) async -> Bool {
         #if canImport(AVFoundation)
         let provider = SpeechRecognizerViewModel.makeProvider(for: providerID)
         let config = TranscriptionConfig(
@@ -464,17 +531,34 @@ final class AskNoumVoiceInput: ObservableObject {
         } catch {
             return false
         }
+        guard generation == recognitionGeneration, isStartingRecognition else {
+            Task { _ = try? await session.finish() }
+            return false
+        }
 
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
         guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
-            Task { try? await session.endAudio() }
+            Task { _ = try? await session.finish() }
             return false
         }
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+        let pump = TranscriptionAudioPump(session: session) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.cloudSession === session else { return }
+                self.handleCloudFailure()
+            }
+        }
+        cloudSession = session
+        cloudAudioPump = pump
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self, pump] buffer, _ in
             let data = SpeechRecognizerViewModel.pcm16Data(from: buffer)
-            Task { try? await session.sendAudio(data) }
+            if !pump.enqueue(data) {
+                Task { @MainActor [weak self] in
+                    guard let self, self.cloudSession === session else { return }
+                    self.handleCloudFailure()
+                }
+            }
         }
         do {
             engine.prepare()
@@ -486,12 +570,14 @@ final class AskNoumVoiceInput: ObservableObject {
             InteractionSoundEngine.noteRecordingActive(true)
         } catch {
             inputNode.removeTap(onBus: 0)
-            Task { try? await session.endAudio() }
+            pump.cancel()
+            cloudAudioPump = nil
+            cloudSession = nil
+            Task { _ = try? await session.finish() }
             return false
         }
 
         audioEngine = engine
-        cloudSession = session
         cloudFinalText = ""
         partialTranscript = ""
         unavailableReason = nil
@@ -500,12 +586,17 @@ final class AskNoumVoiceInput: ObservableObject {
         state = .recording
 
         cloudListenerTask = Task { @MainActor [weak self] in
-            for await update in session.transcriptUpdates {
+            do {
+                for try await update in session.transcriptUpdates {
+                    guard let self, self.cloudSession === session else { return }
+                    self.handleCloudUpdate(update)
+                }
                 guard let self, self.cloudSession === session else { return }
-                self.handleCloudUpdate(update)
+                self.handleCloudStreamEnded()
+            } catch {
+                guard let self, self.cloudSession === session else { return }
+                self.handleCloudFailure()
             }
-            guard let self, self.cloudSession === session else { return }
-            self.handleCloudStreamEnded()
         }
 
         armMaxDurationTimer()
@@ -534,21 +625,23 @@ final class AskNoumVoiceInput: ObservableObject {
     private func handleCloudStreamEnded() {
         switch state {
         case .processing:
-            deliverFinalIfAble(textOverride: partialTranscript)
-            resetToIdle()
+            // `finish()` owns delivery after it receives the typed terminal
+            // receipt. A stream-end callback alone is not completion proof.
+            break
         case .recording:
-            cloudUnhealthy = true
-            stopAudioEngine()
-            let heard = partialTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-            if heard.count >= Self.minUtteranceCharacters {
-                deliverFinalIfAble(textOverride: heard)
-            } else {
-                unavailableReason = .temporarilyUnavailable
-            }
-            resetToIdle()
+            handleCloudFailure()
         case .idle:
             break
         }
+    }
+
+    private func handleCloudFailure() {
+        cloudUnhealthy = true
+        stopAudioEngine()
+        unavailableReason = .temporarilyUnavailable
+        // A failed stream is not a successful user turn. Keep any partial
+        // visible only until reset; never dispatch it as a complete question.
+        resetToIdle()
     }
 
     // MARK: - Native engine (terminal fallback)
@@ -557,23 +650,20 @@ final class AskNoumVoiceInput: ObservableObject {
     /// caller (the chain walker) owns the "nothing could serve" decision;
     /// mid-utterance task errors still surface `.temporarilyUnavailable`
     /// directly because native is the terminal engine.
-    private func startNativeRecognition() -> Bool {
+    private func startNativeRecognition(requireOnDevice: Bool = false) -> Bool {
         #if canImport(Speech) && canImport(AVFoundation)
-        guard let recognizer = recognizer, recognizer.isAvailable else {
+        guard let recognizer = recognizer,
+              recognizer.isAvailable,
+              !requireOnDevice || recognizer.supportsOnDeviceRecognition else {
             return false
         }
 
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
-        // Prefer on-device recognition WITHOUT hard-requiring it. Leaving
-        // `requiresOnDeviceRecognition` at its default (false) lets the system
-        // use on-device when it's available/ready (the common case on a warmed-
-        // up device — keeps the user's coaching questions off the network) AND
-        // fall back to cloud when the on-device model isn't ready yet (first
-        // use, still downloading, or the simulator). Previously this HARD-
-        // required on-device (`= true`), which DEFEATED the documented cloud
-        // fallback: when the model wasn't ready, recognition failed silently
-        // and the mic appeared to "do nothing". We no longer force the flag.
+        // A consent decline is a hard network boundary. In that state the
+        // Apple recognizer may run only with an installed on-device model;
+        // otherwise the attempt fails with a Settings recovery message.
+        req.requiresOnDeviceRecognition = requireOnDevice
         request = req
 
         let engine = AVAudioEngine()
@@ -601,7 +691,9 @@ final class AskNoumVoiceInput: ObservableObject {
         partialTranscript = ""
         unavailableReason = nil
         activeEngine = .native
-        activeEngineDescription = LiveCallSTTChain.engineDescription(for: .native)
+        activeEngineDescription = requireOnDevice
+            ? "On-device transcription"
+            : LiveCallSTTChain.engineDescription(for: .native)
         state = .recording
 
         task = recognizer.recognitionTask(with: req) { [weak self] result, error in
@@ -651,13 +743,17 @@ final class AskNoumVoiceInput: ObservableObject {
     /// so it reactivates the session on its own terms. Without this release the
     /// session stayed held in `.playAndRecord`+`.duckOthers` for the instance
     /// lifetime, leaving the soundscape ducked after the first dictation.
-    private func stopAudioEngine() {
+    private func stopAudioEngine(cancelPendingCloudAudio: Bool = true) {
         #if canImport(AVFoundation)
         if let engine = audioEngine {
             engine.stop()
             engine.inputNode.removeTap(onBus: 0)
         }
         audioEngine = nil
+        if cancelPendingCloudAudio {
+            cloudAudioPump?.cancel()
+            cloudAudioPump = nil
+        }
         InteractionSoundEngine.noteRecordingActive(false)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif
@@ -689,7 +785,7 @@ final class AskNoumVoiceInput: ObservableObject {
     }
 
     private func clearTransientUnavailableIfNeeded() {
-        if unavailableReason == .temporarilyUnavailable {
+        if unavailableReason == .temporarilyUnavailable || unavailableReason == .cloudProcessingDisabled {
             unavailableReason = nil
         }
     }

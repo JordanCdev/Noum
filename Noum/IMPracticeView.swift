@@ -284,7 +284,7 @@ struct IMPracticeView: View {
             replyTask?.cancel()
             evaluationTask?.cancel()
             stopSessionTimer()
-            speechVM.stopRecording()
+            speechVM.cancelRecording()
 #if canImport(AVFAudio)
             messageSpeaker.stop()
 #endif
@@ -806,7 +806,7 @@ struct IMPracticeView: View {
             HStack(alignment: .center, spacing: 12) {
                 Button {
                     if speechVM.isRecording {
-                        speechVM.stopRecording()
+                        finishUserReply()
                     } else {
                         Task { await startReply() }
                     }
@@ -821,7 +821,7 @@ struct IMPracticeView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .disabled(isAwaitingNPC)
+                .disabled(isAwaitingNPC || (speechVM.recordingLifecycle.isBusy && !speechVM.isRecording))
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(
@@ -1130,16 +1130,19 @@ struct IMPracticeView: View {
         speechVM.resetCurrentSession()
         try? await Task.sleep(for: .milliseconds(180))
         speechVM.prepareSession(mode: .imConversation)
-        speechVM.startRecording()
+        let started = await speechVM.startRecordingAwaitingReadiness()
+        if !started {
+            serviceErrorMessage = speechVM.connectionError
+        }
     }
 
     private func finishUserReply() {
         guard speechVM.isRecording else { return }
-        speechVM.stopRecording()
         replyTask?.cancel()
-        replyTask = Task {
-            try? await Task.sleep(for: .milliseconds(650))
-            guard !Task.isCancelled else { return }
+        replyTask = Task { @MainActor in
+            let completion = await speechVM.stopRecordingAwaitingFinalization()
+            guard RecordingCompletionGate.allowsScoringAndProgress(completion),
+                  !Task.isCancelled else { return }
             let text = sanitizedUserReplyText(from: draftReplyText)
             guard !text.isEmpty else { return }
             await processReply(text)

@@ -12,12 +12,13 @@ struct PaceTrainingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var didAwardXP = false
+    @State private var hasValidatedResult = false
     @State private var showAdjustments = false
 
     private let tint = AppColor.modePace
 
     private var isResultPhase: Bool {
-        if case .ended = engine.phase { return true }
+        if case .ended = engine.phase, hasValidatedResult { return true }
         return false
     }
 
@@ -25,7 +26,7 @@ struct PaceTrainingView: View {
 
     var body: some View {
         ZStack {
-            if case .ended = engine.phase {
+            if case .ended = engine.phase, hasValidatedResult {
                 AppColor.screenBackground
                     .ignoresSafeArea()
             } else {
@@ -40,7 +41,7 @@ struct PaceTrainingView: View {
             if !isSetupPhase && !isResultPhase {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        speechVM.stopRecording()
+                        speechVM.cancelRecording()
                         engine.cancel()
                         dismiss()
                     } label: {
@@ -61,12 +62,17 @@ struct PaceTrainingView: View {
         .onChange(of: engine.phase) { _, newPhase in
             handlePhase(newPhase)
         }
+        .onChange(of: speechVM.recordingLifecycle) { _, lifecycle in
+            guard case .failed = lifecycle,
+                  engine.phase != .setup else { return }
+            engine.reset()
+        }
         .onAppear {
             engine.prompt = PaceTrainingEngine.randomPrompt()
             engine.passage = PaceTrainingEngine.passages.randomElement() ?? PaceTrainingEngine.passages[0]
         }
         .onDisappear {
-            speechVM.stopRecording()
+            speechVM.cancelRecording()
             engine.cancel()
         }
         .sheet(isPresented: $showAdjustments) {
@@ -88,13 +94,21 @@ struct PaceTrainingView: View {
         case .go:
             countdownOverlay(0, label: "GO")
                 .transition(.opacity)
+        case .connecting:
+            connectingSurface
+                .transition(.opacity)
         case .active:
             activeSurface
                 .environment(\.colorScheme, .dark)
                 .transition(.opacity)
         case .ended(let result):
-            resultSurface(result)
-                .transition(.opacity)
+            if hasValidatedResult {
+                resultSurface(result)
+                    .transition(.opacity)
+            } else {
+                finalizingSurface
+                    .transition(.opacity)
+            }
         }
     }
 
@@ -102,20 +116,73 @@ struct PaceTrainingView: View {
 
     private func handlePhase(_ phase: PaceTrainingPhase) {
         switch phase {
+        case .connecting:
+            connectRecorderAndStartRound()
         case .active:
-            speechVM.shouldRecordPracticeSession = false
-            speechVM.sessionPrompt = engine.subMode == .freestyle ? engine.prompt : engine.passage.title
-            speechVM.prepareSession(mode: .timed)
-            speechVM.startRecording()
+            guard speechVM.isRecording else {
+                engine.reset()
+                return
+            }
         case .ended(let result):
-            speechVM.stopRecording()
-            if !didAwardXP {
-                profileManager.addXP(result.xpEarned)
-                didAwardXP = true
+            Task { @MainActor in
+                let completion = await speechVM.stopRecordingAwaitingFinalization()
+                guard RecordingCompletionGate.allowsScoringAndProgress(completion) else {
+                    engine.reset()
+                    hasValidatedResult = false
+                    return
+                }
+                if !didAwardXP {
+                    profileManager.addXP(result.xpEarned)
+                    didAwardXP = true
+                }
+                hasValidatedResult = true
             }
         default:
             break
         }
+    }
+
+    private func beginCountdown() {
+        guard engine.phase == .setup else { return }
+        hasValidatedResult = false
+        didAwardXP = false
+        speechVM.connectionError = nil
+        engine.beginCountdown()
+    }
+
+    private func connectRecorderAndStartRound() {
+        Task { @MainActor in
+            speechVM.shouldRecordPracticeSession = false
+            speechVM.sessionPrompt = engine.subMode == .freestyle ? engine.prompt : engine.passage.title
+            speechVM.prepareSession(mode: .timed)
+            guard await speechVM.startRecordingAwaitingReadiness(),
+                  engine.phase == .connecting else { return }
+            engine.confirmCaptureReady(captureReady: true)
+        }
+    }
+
+    private var connectingSurface: some View {
+        VStack(spacing: Spacing.md) {
+            ProgressView()
+                .tint(.white)
+            Text("Connecting live transcription…")
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(.white)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Connecting live transcription")
+    }
+
+    private var finalizingSurface: some View {
+        VStack(spacing: Spacing.md) {
+            ProgressView()
+                .tint(.white)
+            Text("Finishing your recording…")
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(.white)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Finishing your recording")
     }
 
     // MARK: - Setup Surface
@@ -142,7 +209,12 @@ struct PaceTrainingView: View {
             .accessibilityIdentifier("paceTraining.adjust")
             .accessibilityLabel("Adjust pace training")
         } content: {
-            paceSetupCue
+            VStack(spacing: Spacing.md) {
+                paceSetupCue
+                if let error = speechVM.connectionError {
+                    FocusedPracticeErrorStatus(message: error)
+                }
+            }
         }
         .accessibilityIdentifier("paceTraining.screen")
         .safeAreaInset(edge: .bottom) {
@@ -218,7 +290,7 @@ struct PaceTrainingView: View {
     private var beginButton: some View {
         Button {
             CoachHaptic.selectionTap()
-            engine.beginCountdown()
+            beginCountdown()
         } label: {
             Text("Start pace training")
                 .font(.headline.weight(.semibold))
