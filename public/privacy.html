@@ -155,15 +155,19 @@
     <h3>Speech Transcripts and Session Data</h3>
     <p>When you use a practice mode, the app:</p>
     <ul>
-      <li>Streams your audio to the configured speech-to-text provider for real-time transcription. The shipping providers are <strong>Deepgram</strong> (the default), <strong>Amazon Web Services (AWS) Transcribe</strong>, and <strong>Google Cloud Speech-to-Text</strong></li>
+      <li>After you permit cloud processing, streams your audio to the configured speech-to-text provider for real-time transcription. The shipping providers are <strong>Deepgram</strong> (the default), <strong>Amazon Web Services (AWS) Transcribe</strong>, and <strong>Google Cloud Speech-to-Text</strong></li>
       <li>Stores the resulting text transcript, filler-word count, session duration, score, and practice mode on your device</li>
       <li>May send the transcript and relevant session evidence to a generative-AI provider when you use a cloud coaching feature, such as Coach Read, conversation simulation, or Ask Noum</li>
     </ul>
     <p>For short Ask Noum voice questions, the app first uses the configured cloud transcription provider and may fall back to Apple Speech Recognition. Apple determines whether that fallback is processed on-device or by Apple for the device, language, and system configuration.</p>
     <p>Noum does not save the streamed microphone audio as an audio file on your device or Noum's servers. Speech-to-text providers process the stream under their own terms and retention practices.</p>
 
+    <h3>Your Cloud Processing Choice</h3>
+    <p>Before Noum sends microphone audio, a transcript, coaching-profile details, or session evidence to a non-Apple cloud speech or generative-AI provider, the app explains the categories of data involved, identifies the processing purpose, and asks for your permission. Microphone permission from iOS is separate and does not by itself permit Noum to share that data with a cloud AI provider.</p>
+    <p>You can decline or later withdraw cloud-processing permission in Settings. When you decline or withdraw it, Noum does not send new speech or coaching data to those cloud services. Noum uses an on-device or deterministic local path where one is available; a feature that has no suitable local path remains unavailable and explains why. Withdrawing permission does not recall data already processed under a provider's terms.</p>
+
     <h3>AI Coaching Feedback</h3>
-    <p>When you use a cloud AI coaching feature, Noum sends the information needed to answer that request. Depending on the feature, configuration, and fallback routing, a request may be processed by one or more of the following providers:</p>
+    <p>When you have permitted cloud processing and use a cloud AI coaching feature, Noum sends the information needed to answer that request. Depending on the feature, configuration, and fallback routing, a request may be processed by one or more of the following providers:</p>
     <ul>
       <li><strong>Google Gemini</strong></li>
       <li><strong>Anthropic Claude</strong></li>
@@ -215,8 +219,8 @@
     <table>
       <thead><tr><th>Purpose</th><th>Data Used</th></tr></thead>
       <tbody>
-        <tr><td>Real-time speech-to-text</td><td>Audio stream (sent to Deepgram, AWS Transcribe, or Google Cloud Speech-to-Text; Ask Noum voice input may use Apple Speech Recognition as a fallback)</td></tr>
-        <tr><td>AI coaching feedback</td><td>Speech transcript or Ask Noum message, recent conversation turns, bounded coaching context and session evidence, and optionally selected video frames. Production Ask Noum requests pass through Firebase Functions with Firebase Authentication and App Check tokens before reaching Google Vertex AI; other cloud coaching features use the configured Google, Anthropic, OpenAI, or DeepSeek service</td></tr>
+        <tr><td>Real-time speech-to-text</td><td>After cloud-processing permission, an audio stream sent to Deepgram, AWS Transcribe, or Google Cloud Speech-to-Text; Ask Noum voice input may use Apple Speech Recognition as a fallback</td></tr>
+        <tr><td>AI coaching feedback</td><td>After cloud-processing permission, a speech transcript or Ask Noum message, recent conversation turns, bounded coaching context and session evidence, and optionally selected video frames. Production Ask Noum requests pass through Firebase Functions with Firebase Authentication and App Check tokens before reaching Google Vertex AI; other cloud coaching features use the configured Google, Anthropic, OpenAI, or DeepSeek service</td></tr>
         <tr><td>Personalised coaching</td><td>Coaching profile, session history</td></tr>
         <tr><td>Progress tracking</td><td>Session scores, XP, streaks, challenge completion</td></tr>
         <tr><td>Conversation simulation</td><td>IM conversation turns and relevant relationship/context fields sent to the configured AI provider</td></tr>
@@ -274,14 +278,14 @@
     <p>Cloud-synced data is stored in Firebase Firestore and is associated with your account ID.</p>
 
     <h3>Temporary Credentials</h3>
-    <p>Some speech-to-text paths use short-lived provider credentials obtained from Noum's backend. Their lifetime and scope depend on the selected provider. The app keeps these temporary credentials in memory for the active service window and does not intentionally persist them to disk.</p>
+    <p>The default Deepgram speech path requests a temporary provider token from a protected Noum backend immediately before a connection. That token has a 30-second connection-start lifetime and core voice-API usage permission; it cannot access Deepgram's management APIs. The app keeps temporary credentials in memory for the active service window and does not intentionally persist them to disk. Broader provider credentials remain in server-side secret storage and are not returned to the app.</p>
 
     <hr>
 
     <h2>5. Data Retention</h2>
     <ul>
       <li><strong>On-device data</strong> is retained until you delete it (via session deletion, account deletion, or app uninstall).</li>
-      <li><strong>Noum-controlled Firebase data</strong> is retained while your account is active and is submitted for deletion when you delete your account. Shared records and operational backups may follow different deletion windows.</li>
+      <li><strong>Noum-controlled Firebase data</strong> is retained while your account is active. A completed account-deletion request removes the active user tree, public profile, league memberships, challenges containing the account, server rate-limit state, and Firebase Authentication user. Operational backups may age out on a different schedule.</li>
       <li><strong>Streamed audio</strong> is not retained by Noum as an audio file. Speech-to-text providers handle the stream under their own service terms and retention practices.</li>
       <li><strong>AI-provider inputs and outputs</strong> are handled under the selected provider's terms, privacy policy, service tier, and account settings. Retention and model-improvement practices differ across Google, Anthropic, OpenAI, and DeepSeek and may change; review the links above for current details.</li>
     </ul>
@@ -294,7 +298,7 @@
     <p>Go to <strong>Settings → Your Data</strong> in the app to see a summary of all data stored on your device and which cloud services process your data.</p>
 
     <h3>Export Your Data</h3>
-    <p>In <strong>Settings → Your Data → Export All My Data</strong>, you can export all locally-stored data as a JSON file.</p>
+    <p>In <strong>Settings → Your Data → Export All My Data</strong>, you can export the locally stored categories listed by the app. Review the export summary before relying on it as a complete archive.</p>
 
     <h3>Delete Individual Sessions</h3>
     <p>Long-press any session in your Session History to delete it.</p>
@@ -302,12 +306,12 @@
     <h3>Delete Your Account</h3>
     <p>Go to <strong>Settings → Delete Account</strong>. This will:</p>
     <ul>
-      <li>Delete account-scoped data that Noum controls from our backend and Firebase</li>
+      <li>Delete the account's private Firebase data, public profile, league memberships, shared challenges containing the account, and server rate-limit state</li>
       <li>Remove all per-account data from your device (coaching profile, sessions, XP, friends, AI settings)</li>
       <li>Delete your Firebase Authentication account, if one exists</li>
       <li>Sign you out</li>
     </ul>
-    <p>Account deletion is irreversible. Noum removes per-account data from the device and starts deletion of account-scoped backend records it controls. Third-party processors may retain request data for their published retention periods, safety or abuse-prevention needs, legal obligations, or configured service features. Shared challenge or league records and backups may also require separate cleanup or retention windows.</p>
+    <p>Account deletion is irreversible. Noum reports completion only after its active backend cleanup and Firebase Authentication deletion succeed; a partial or uncertain failure is reported and cleanup can be retried. Apple-linked accounts also require a fresh Sign in with Apple authorization and verified token-revocation flow before deletion can start. Third-party processors may retain request data for their published retention periods, safety or abuse-prevention needs, legal obligations, or configured service features. Operational backups may age out separately.</p>
 
     <h3>Notification Privacy</h3>
     <p>Practice reminder notifications reference your coaching context (e.g., "Your conversation practice is waiting") but never display your personal text (goals, coaching brief, etc.) on the lock screen.</p>
@@ -322,7 +326,7 @@
     <h2>8. Security</h2>
     <ul>
       <li>Apple and Google account sign-in is handled through Firebase Authentication using industry-standard OAuth flows; guest access uses anonymous Firebase Authentication when it completes during the bounded launch window or a Keychain-backed local identifier when Firebase is unconfigured, unavailable, or cannot complete during that window.</li>
-      <li>Cloud-speech credentials intended for client use are short-lived and are not intentionally persisted; broader provider secrets are not intended to be distributed in the app.</li>
+      <li>Deepgram client tokens are short-lived and limited to core voice-API usage. Broader provider credentials remain in server-side secret storage and are not returned to the app.</li>
       <li>All network communication uses HTTPS/TLS.</li>
       <li>On-device credentials are stored in the iOS Keychain (hardware-encrypted).</li>
     </ul>
@@ -336,7 +340,7 @@
 
     <h2>10. Contact</h2>
     <p>If you have questions about this privacy policy or your data, contact us at:</p>
-    <p><strong>Email:</strong> <a href="mailto:hello@noum.app">hello@noum.app</a></p>
+    <p><strong>Email:</strong> <a href="mailto:noumsupport@gmail.com">noumsupport@gmail.com</a></p>
 
     <hr>
 

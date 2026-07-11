@@ -1,0 +1,121 @@
+name: Release readiness
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+    inputs:
+      run_live_privacy_probe:
+        description: Probe the deployed privacy policy
+        required: true
+        type: boolean
+        default: false
+      privacy_url:
+        description: HTTPS privacy-policy URL
+        required: true
+        type: string
+        default: https://noum-d0b6f.web.app/privacy
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-readiness-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  functions-unit:
+    name: Functions lint and unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - name: Install locked Functions dependencies
+        run: npm --prefix functions ci
+      - name: Lint Functions
+        run: npm --prefix functions run lint
+      - name: Test Functions
+        run: npm --prefix functions test
+
+  functions-emulator:
+    name: Auth, Firestore, and Functions integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install locked Functions dependencies
+        run: npm --prefix functions ci
+      - name: Run emulator integration suite
+        run: ./scripts/release-functions-emulator.sh
+
+  static-readiness:
+    name: Static release boundaries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test bundle scanner
+        run: ./scripts/release-test-bundle-scan.sh
+      - name: Enforce operational static readiness
+        run: ./scripts/release-static-readiness.sh
+
+  xcode-release:
+    name: Xcode Release build and unit suite
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26.3
+        run: |
+          xcode_path=/Applications/Xcode_26.3.app/Contents/Developer
+          if [[ ! -d "$xcode_path" ]]; then
+            echo "Xcode 26.3 is unavailable on the macos-26 runner." >&2
+            exit 1
+          fi
+          sudo xcode-select --switch "$xcode_path"
+          xcodebuild -version
+      - name: Materialize required plist secrets
+        env:
+          NOUM_INFO_PLIST_BASE64: ${{ secrets.NOUM_INFO_PLIST_BASE64 }}
+          NOUM_GOOGLE_SERVICE_INFO_PLIST_BASE64: ${{ secrets.NOUM_GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
+        run: ./scripts/release-materialize-ci-config.sh
+      - name: Build Release, inspect bundle, and run unit suite
+        run: ./scripts/release-xcode-ci.sh
+      - name: Remove materialized plist secrets
+        if: always()
+        run: ./scripts/release-materialize-ci-config.sh --clean
+
+  live-privacy:
+    name: Live privacy policy release gate
+    if: >-
+      ${{ github.event_name != 'workflow_dispatch' ||
+          inputs.run_live_privacy_probe }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe deployed policy
+        env:
+          PRIVACY_URL: >-
+            ${{ github.event_name == 'workflow_dispatch' &&
+                inputs.privacy_url ||
+                'https://noum-d0b6f.web.app/privacy' }}
+        run: ./scripts/release-live-privacy-probe.sh "$PRIVACY_URL"

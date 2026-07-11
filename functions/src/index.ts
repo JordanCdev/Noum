@@ -1,13 +1,41 @@
 import {GoogleGenAI} from "@google/genai";
 import {initializeApp} from "firebase-admin/app";
-import {getFirestore} from "firebase-admin/firestore";
-import {defineString} from "firebase-functions/params";
+import {getAuth} from "firebase-admin/auth";
+import {getFirestore, type Query} from "firebase-admin/firestore";
+import {defineSecret, defineString} from "firebase-functions/params";
 import {setGlobalOptions} from "firebase-functions/v2";
 import {HttpsError, onCall} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
+import {
+  AccountDeletionPartialError,
+  type AccountDeletionWork,
+  accountDeletionLogMetadata,
+  assertAppleRevocationSupported,
+  assertRecentAuthentication,
+  deletionAuthenticationTime,
+  executeAccountDeletionPlan,
+  grantDeepgramTranscriptionToken,
+  nextWindowRateState,
+  ProviderGrantError,
+  TRANSCRIPTION_TOKEN_HOUR_LIMIT,
+  TRANSCRIPTION_TOKEN_MINUTE_LIMIT,
+  transcriptionTokenLogMetadata,
+  validateDeleteAccountRequest,
+  validateTranscriptionTokenRequest,
+  type WindowRateState,
+} from "./releaseSecurity.js";
 
 initializeApp();
-setGlobalOptions({maxInstances: 10, region: "europe-west2"});
+setGlobalOptions({
+  maxInstances: 10,
+  region: "europe-west2",
+});
+const COACH_RUNTIME_SERVICE_ACCOUNT =
+  "noum-coach-runtime@noum-d0b6f.iam.gserviceaccount.com";
+const TRANSCRIPTION_RUNTIME_SERVICE_ACCOUNT =
+  "noum-transcription-runtime@noum-d0b6f.iam.gserviceaccount.com";
+const ACCOUNT_RUNTIME_SERVICE_ACCOUNT =
+  "noum-account-runtime@noum-d0b6f.iam.gserviceaccount.com";
 
 const coachModel = defineString("COACH_MODEL", {
   default: "gemini-2.5-flash",
@@ -21,6 +49,7 @@ const vertexLocation = defineString("VERTEX_LOCATION", {
   default: "europe-west1",
   description: "Vertex region that serves the configured coach model.",
 });
+const deepgramManagementKey = defineSecret("DEEPGRAM_MANAGEMENT_KEY");
 
 const MAX_MESSAGES = 12;
 const MAX_MESSAGE_CHARS = 4_000;
@@ -73,17 +102,9 @@ export interface CoachChatInput {
   messages: CoachChatWireMessage[];
 }
 
-interface RateState {
-  minuteBucket: number;
-  minuteCount: number;
-  hourBucket: number;
-  hourCount: number;
-  updatedAtMs: number;
-}
-
 export interface RateDecision {
   allowed: boolean;
-  state: RateState;
+  state: WindowRateState;
 }
 
 /**
@@ -468,7 +489,12 @@ export function validateCoachChatRequest(data: unknown): CoachChatInput {
 }
 
 export const coachChatAvailability = onCall(
-  {enforceAppCheck: true, timeoutSeconds: 10, memory: "256MiB"},
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 10,
+    memory: "256MiB",
+    serviceAccount: COACH_RUNTIME_SERVICE_ACCOUNT,
+  },
   async (request) => {
     assertTrustedCaller(request.auth, request.app);
     if (!isRecord(request.data) || request.data.schemaVersion !== 1) {
@@ -490,21 +516,10 @@ export const coachChatAvailability = onCall(
  * @return {RateDecision} Next counters and whether the call is allowed.
  */
 export function nextRateState(
-  current: Partial<RateState> | undefined,
+  current: Partial<WindowRateState> | undefined,
   nowMs: number
 ): RateDecision {
-  const minuteBucket = Math.floor(nowMs / 60_000);
-  const hourBucket = Math.floor(nowMs / 3_600_000);
-  const minuteCount = current?.minuteBucket === minuteBucket ?
-    (current.minuteCount ?? 0) + 1 : 1;
-  const hourCount = current?.hourBucket === hourBucket ?
-    (current.hourCount ?? 0) + 1 : 1;
-  return {
-    allowed: minuteCount <= MINUTE_LIMIT && hourCount <= HOUR_LIMIT,
-    state: {
-      minuteBucket, minuteCount, hourBucket, hourCount, updatedAtMs: nowMs,
-    },
-  };
+  return nextWindowRateState(current, nowMs, MINUTE_LIMIT, HOUR_LIMIT);
 }
 
 /**
@@ -517,8 +532,12 @@ export async function enforceRateLimit(uid: string): Promise<void> {
   const ref = firestore.collection("_serverRateLimits").doc(uid);
   await firestore.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(ref);
+    const data = snapshot.exists ? snapshot.data() : undefined;
+    const current = isRecord(data?.coachChat) ?
+      data.coachChat as Partial<WindowRateState> :
+      data as Partial<WindowRateState> | undefined;
     const decision = nextRateState(
-      snapshot.exists ? snapshot.data() as Partial<RateState> : undefined,
+      current,
       Date.now()
     );
     if (!decision.allowed) {
@@ -527,7 +546,7 @@ export async function enforceRateLimit(uid: string): Promise<void> {
         "Live coaching is taking a short pause."
       );
     }
-    transaction.set(ref, decision.state, {merge: false});
+    transaction.set(ref, {coachChat: decision.state}, {merge: true});
   });
 }
 
@@ -536,6 +555,7 @@ export const coachChat = onCall(
     enforceAppCheck: true,
     timeoutSeconds: 120,
     memory: "512MiB",
+    serviceAccount: COACH_RUNTIME_SERVICE_ACCOUNT,
   },
   async (request, response) => {
     assertTrustedCaller(request.auth, request.app);
@@ -630,6 +650,236 @@ export const coachChat = onCall(
       });
       if (error instanceof HttpsError) throw error;
       throw new HttpsError("unavailable", "Live coaching is unavailable.");
+    }
+  }
+);
+
+/**
+ * Atomically consumes one short-lived speech-token budget for a Firebase UID.
+ * Token counters live beside, but never overwrite, Ask Noum counters.
+ * @param {string} uid Authenticated Firebase account ID.
+ * @return {Promise<void>} Resolves after the budget is consumed.
+ */
+async function enforceTranscriptionTokenRateLimit(uid: string): Promise<void> {
+  const firestore = getFirestore();
+  const ref = firestore.collection("_serverRateLimits").doc(uid);
+  await firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    const data = snapshot.exists ? snapshot.data() : undefined;
+    const current = isRecord(data?.transcriptionToken) ?
+      data.transcriptionToken as Partial<WindowRateState> : undefined;
+    const decision = nextWindowRateState(
+      current,
+      Date.now(),
+      TRANSCRIPTION_TOKEN_MINUTE_LIMIT,
+      TRANSCRIPTION_TOKEN_HOUR_LIMIT
+    );
+    if (!decision.allowed) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "Speech connection requests are taking a short pause."
+      );
+    }
+    transaction.set(
+      ref,
+      {transcriptionToken: decision.state},
+      {merge: true}
+    );
+  });
+}
+
+export const transcriptionToken = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    serviceAccount: TRANSCRIPTION_RUNTIME_SERVICE_ACCOUNT,
+    secrets: [deepgramManagementKey],
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    validateTranscriptionTokenRequest(request.data);
+    await enforceTranscriptionTokenRateLimit(uid);
+
+    const startedAt = Date.now();
+    try {
+      const token = await grantDeepgramTranscriptionToken(
+        deepgramManagementKey.value(),
+        {
+          nowMs: startedAt,
+          signal: AbortSignal.timeout(8_000),
+        }
+      );
+      logger.info(
+        "transcriptionToken completed",
+        transcriptionTokenLogMetadata(
+          "ok",
+          Date.now() - startedAt,
+          Math.max(
+            0,
+            Math.round((Date.parse(token.expiresAt) - startedAt) / 1_000)
+          )
+        )
+      );
+      return token;
+    } catch (error) {
+      const status = error instanceof ProviderGrantError ?
+        error.reason : "unavailable";
+      logger.error(
+        "transcriptionToken failed",
+        transcriptionTokenLogMetadata(status, Date.now() - startedAt)
+      );
+      if (error instanceof ProviderGrantError &&
+          error.reason === "configuration") {
+        throw new HttpsError(
+          "failed-precondition",
+          "Speech service is not configured."
+        );
+      }
+      throw new HttpsError(
+        "unavailable",
+        "Speech connection is unavailable. Try again."
+      );
+    }
+  }
+);
+
+/**
+ * Deletes every document returned by a bounded query, then repeats until the
+ * query is empty. Re-querying avoids skipped documents while deleting pages.
+ * @param {Function} makeQuery Fresh query without a limit.
+ * @return {Promise<void>} Resolves when no matching documents remain.
+ */
+async function deleteQueryMatches(makeQuery: () => Query): Promise<void> {
+  const firestore = getFirestore();
+  let snapshot = await makeQuery().limit(200).get();
+  while (!snapshot.empty) {
+    const batch = firestore.batch();
+    for (const document of snapshot.docs) {
+      batch.delete(document.ref);
+    }
+    await batch.commit();
+    snapshot = await makeQuery().limit(200).get();
+  }
+}
+
+/**
+ * True only when an Admin Auth error reports a missing user.
+ * @param {unknown} error Candidate Admin SDK error.
+ * @return {boolean} Whether the code is auth/user-not-found.
+ */
+function isAuthUserNotFound(error: unknown): boolean {
+  return isRecord(error) && error.code === "auth/user-not-found";
+}
+
+export const deleteAccount = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 540,
+    memory: "512MiB",
+    serviceAccount: ACCOUNT_RUNTIME_SERVICE_ACCOUNT,
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    const requestID = validateDeleteAccountRequest(request.data);
+    const startedAt = Date.now();
+    assertRecentAuthentication(
+      deletionAuthenticationTime(request.auth?.token),
+      startedAt
+    );
+
+    const auth = getAuth();
+    let authUserExists = true;
+    let providerIDs: string[] = [];
+    try {
+      const user = await auth.getUser(uid);
+      providerIDs = user.providerData.map((provider) => provider.providerId);
+    } catch (error) {
+      if (isAuthUserNotFound(error)) {
+        authUserExists = false;
+      } else {
+        logger.error(
+          "deleteAccount auth lookup failed",
+          accountDeletionLogMetadata(
+            requestID,
+            "auth-lookup-failed",
+            Date.now() - startedAt
+          )
+        );
+        throw new HttpsError(
+          "unavailable",
+          "Account deletion could not start. Try again."
+        );
+      }
+    }
+
+    assertAppleRevocationSupported(providerIDs);
+    const firestore = getFirestore();
+    const work: AccountDeletionWork = {
+      userTree: async () => {
+        await firestore.recursiveDelete(
+          firestore.collection("users").doc(uid)
+        );
+      },
+      publicProfile: async () => {
+        await firestore.collection("profiles_public").doc(uid).delete();
+      },
+      leagueMemberships: async () => {
+        await deleteQueryMatches(() => firestore.collectionGroup("members")
+          .where("accountID", "==", uid));
+      },
+      challenges: async () => {
+        await deleteQueryMatches(() => firestore.collection("challenges")
+          .where("participantIDs", "array-contains", uid));
+      },
+      rateLimits: async () => {
+        await firestore.collection("_serverRateLimits").doc(uid).delete();
+      },
+      authUser: async () => {
+        if (!authUserExists) return;
+        try {
+          await auth.deleteUser(uid);
+        } catch (error) {
+          if (!isAuthUserNotFound(error)) throw error;
+        }
+      },
+    };
+
+    try {
+      await executeAccountDeletionPlan(work);
+      logger.info(
+        "deleteAccount completed",
+        accountDeletionLogMetadata(
+          requestID,
+          "ok",
+          Date.now() - startedAt
+        )
+      );
+      return {deleted: true, requestID};
+    } catch (error) {
+      const failedSteps = error instanceof AccountDeletionPartialError ?
+        error.failedSteps : [];
+      logger.error(
+        "deleteAccount failed",
+        accountDeletionLogMetadata(
+          requestID,
+          "partial-failure",
+          Date.now() - startedAt,
+          failedSteps
+        )
+      );
+      throw new HttpsError(
+        "internal",
+        "Account deletion did not complete. Try again."
+      );
     }
   }
 );

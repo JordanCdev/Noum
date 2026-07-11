@@ -9,6 +9,10 @@ const region = "europe-west2";
 const preflightURL =
   `http://${functionsHost}/${projectID}/${region}/coachChatAvailability`;
 const coachURL = `http://${functionsHost}/${projectID}/${region}/coachChat`;
+const transcriptionURL =
+  `http://${functionsHost}/${projectID}/${region}/transcriptionToken`;
+const deletionURL =
+  `http://${functionsHost}/${projectID}/${region}/deleteAccount`;
 
 interface EmulatorIdentity {
   idToken: string;
@@ -159,6 +163,74 @@ test("callable emulator accepts verified Auth and App Check", async () => {
   );
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {result: {available: true}});
+});
+
+test(
+  "release callables enforce Auth, App Check, and strict input",
+  async () => {
+    const identity = await anonymousIdentity();
+    const requests = [
+      {
+        url: transcriptionURL,
+        validShape: {schemaVersion: 1},
+        invalidShape: {schemaVersion: 1, accountID: identity.localId},
+      },
+      {
+        url: deletionURL,
+        validShape: {
+          schemaVersion: 1,
+          requestID: "783ab966-e91b-4ca4-8f7a-7e50113fa2c6",
+        },
+        invalidShape: {
+          schemaVersion: 1,
+          requestID: "783ab966-e91b-4ca4-8f7a-7e50113fa2c6",
+          accountID: identity.localId,
+        },
+      },
+    ];
+    for (const request of requests) {
+      assert.equal(
+        (await callable(request.url, request.validShape)).status,
+        401
+      );
+      assert.equal((await callable(
+        request.url,
+        request.validShape,
+        identity
+      )).status, 401);
+      const malformed = await callable(
+        request.url,
+        request.invalidShape,
+        identity,
+        true
+      );
+      assert.equal(malformed.status, 400);
+      assert.equal(
+        JSON.stringify(await malformed.json()).includes("INVALID_ARGUMENT"),
+        true
+      );
+    }
+  }
+);
+
+test("anonymous deletion is complete and retry-safe", async () => {
+  const identity = await anonymousIdentity();
+  const request = {
+    schemaVersion: 1,
+    requestID: "a713738e-d9ed-4337-986e-09205089d42e",
+  };
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await callable(
+      deletionURL,
+      request,
+      identity,
+      true
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      result: {deleted: true, requestID: request.requestID},
+    });
+  }
 });
 
 test("coach emulator rejects oversized input early", async () => {
