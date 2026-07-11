@@ -330,6 +330,89 @@ struct SessionHistoryDetailPresentationTests {
     }
 }
 
+// MARK: - Detail replay action
+
+struct SessionHistoryDetailReplayPresentationTests {
+
+    @Test func everyPlainModeRoutesToItsFreshRep() {
+        let expectations: [(PracticeMode, AppDestination)] = [
+            (.timed, .timedPractice),
+            (.suddenDeath, .suddenDeathPractice),
+            (.ahCounter, .ahCounterPractice),
+        ]
+
+        for (mode, expectedDestination) in expectations {
+            let presentation = SessionHistoryDetailReplayPresentation.make(
+                for: makeSession(mode: mode)
+            )
+            #expect(presentation.destination == expectedDestination)
+        }
+    }
+
+    @Test func imReplayPreservesScenarioAndTone() {
+        let setup = IMConversationSetup(
+            scenario: .difficultConversation,
+            targetTone: .calm
+        )
+        let session = PracticeSession(
+            transcript: "A calm response with a clear boundary.",
+            fillerWordCount: 0,
+            duration: 42,
+            date: Date(),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: setup,
+                turns: [],
+                actualTone: nil,
+                finalState: nil,
+                outcome: nil
+            )
+        )
+
+        let presentation = SessionHistoryDetailReplayPresentation.make(for: session)
+
+        #expect(presentation.destination == .imPractice(
+            scenario: .difficultConversation,
+            tone: .calm
+        ))
+    }
+
+    @Test func imReplayWithoutSetupFallsBackToUnprefilledPractice() {
+        let presentation = SessionHistoryDetailReplayPresentation.make(
+            for: makeSession(mode: .imConversation)
+        )
+
+        #expect(presentation.destination == .imPractice(scenario: nil, tone: nil))
+    }
+
+    @Test func copyPromisesOnlyAFreshRepAndStaysInCoachVoice() {
+        let modes: [PracticeMode] = [.timed, .suddenDeath, .ahCounter, .imConversation]
+        for mode in modes {
+            let presentation = SessionHistoryDetailReplayPresentation.make(
+                for: makeSession(mode: mode)
+            )
+            let visibleCopy = [
+                presentation.title,
+                presentation.supportingCopy,
+                presentation.accessibilityLabel,
+            ].joined(separator: " ")
+            let lowered = visibleCopy.lowercased()
+
+            #expect(presentation.title == "Practice this mode")
+            #expect(presentation.supportingCopy == "Start a fresh \(mode.displayLabel) rep.")
+            #expect(lowered.contains("fresh"))
+            #expect(!lowered.contains("same prompt"))
+            #expect(!visibleCopy.contains("!"))
+            #expect(!lowered.contains("let's"))
+            #expect(!lowered.contains("let’s"))
+            #expect(!lowered.contains("hurry"))
+            #expect(!lowered.contains("urgent"))
+            #expect(!lowered.contains("immediately"))
+            #expect(!lowered.contains("right now"))
+        }
+    }
+}
+
 // MARK: - Coach read selection
 
 struct ReviewCoachReadTests {

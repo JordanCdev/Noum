@@ -468,6 +468,27 @@ struct SessionHistoryView: View {
 /// quote-card deep link) so the source-session detail can be pushed from
 /// anywhere. The view is otherwise unchanged — same heroCard, focusCard,
 /// transcript card, AI coach read, IM conversation card.
+struct SessionHistoryDetailReplayPresentation: Equatable {
+    let title: String
+    let supportingCopy: String
+    let accessibilityLabel: String
+    let destination: AppDestination
+
+    static func make(for session: PracticeSession) -> SessionHistoryDetailReplayPresentation {
+        let title = "Practice this mode"
+        let supportingCopy = "Start a fresh \(session.mode.displayLabel) rep."
+        return SessionHistoryDetailReplayPresentation(
+            title: title,
+            supportingCopy: supportingCopy,
+            accessibilityLabel: "\(title). \(supportingCopy)",
+            destination: SummaryPracticeAgainRouter.destination(
+                for: session.mode,
+                imSetup: session.imConversationDetails?.setup
+            )
+        )
+    }
+}
+
 struct SessionHistoryDetailView: View {
     let session: PracticeSession
     let insights: [String]
@@ -633,9 +654,59 @@ struct SessionHistoryDetailView: View {
                     detailMetric(title: "WPM", value: "\(session.wordsPerMinute)", tint: .indigo)
                 }
             }
+
+            practiceThisModeLink
         }
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+    }
+
+    private var practiceThisModeLink: some View {
+        let presentation = SessionHistoryDetailReplayPresentation.make(for: session)
+        let tint = AppColor.tint(for: session.mode)
+
+        return NavigationLink(value: presentation.destination) {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: session.mode.iconName)
+                    .font(Typography.subheadline.weight(.bold))
+                    .foregroundStyle(tint)
+                    .frame(width: 32, height: 32)
+                    .background(tint.opacity(0.12), in: Circle())
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(presentation.title)
+                        .font(Typography.subheadline.weight(.bold))
+                        .foregroundStyle(.primary)
+                    Text(presentation.supportingCopy)
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: Spacing.xs)
+
+                Image(systemName: "chevron.right")
+                    .font(Typography.captionSmall.weight(.bold))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
+            .background(
+                tint.opacity(0.10),
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                    .stroke(tint.opacity(0.16), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(presentation.accessibilityLabel)
+        .accessibilityIdentifier("history.detail.practiceAgain")
     }
 
     private var fullReviewToggle: some View {
