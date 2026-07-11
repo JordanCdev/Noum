@@ -3,156 +3,96 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Server-only rate-limit state for the Ask Noum callable. Admin SDK
-    // bypasses rules; no client may inspect or mutate another user's budget.
+    // Assumed public data model:
+    // - profiles_public/{uid} and leagues/{bucket}/members/{uid} contain only
+    //   bounded display data plus server-authored rating/streak/repetition
+    //   aggregates and a server timestamp.
+    // - challenges/{uuid} contains two immutable Firebase UIDs, bounded names
+    //   and prompt, server timestamps, and optional server-derived results.
+    // - _serverRateLimits and _socialState are callable-only state. The Admin
+    //   SDK bypasses these rules; no client may inspect or mutate them.
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(accountID) {
+      return isAuthenticated() && request.auth.uid == accountID;
+    }
+
+    function validDisplayName(value) {
+      return value is string && value.size() > 0 && value.size() <= 60;
+    }
+
+    function validPublicProfile(data, accountID) {
+      return data.keys().hasOnly([
+               'accountID', 'displayName',
+               'rating', 'peakRating',
+               'currentStreak', 'weeklyReps', 'weeklyDelta',
+               'leagueTier', 'updatedAt'
+             ])
+             && data.accountID == accountID
+             && validDisplayName(data.displayName)
+             && data.rating is int
+             && data.rating >= 100
+             && data.rating <= 1000
+             && data.peakRating is int
+             && data.peakRating >= data.rating
+             && data.peakRating <= 1000
+             && data.currentStreak is int
+             && data.currentStreak >= 0
+             && data.currentStreak <= 10000
+             && data.weeklyReps is int
+             && data.weeklyReps >= 0
+             && data.weeklyReps <= 10000
+             && data.weeklyDelta is int
+             && data.weeklyDelta >= -10000
+             && data.weeklyDelta <= 10000
+             && (data.leagueTier == null
+                 || data.leagueTier in [
+                   'bronze', 'silver', 'gold', 'platinum', 'diamond'
+                 ])
+             && data.updatedAt is timestamp;
+    }
+
+    function updatesOnlyDisplayName(accountID) {
+      return isOwner(accountID)
+             && validPublicProfile(request.resource.data, accountID)
+             && request.resource.data.diff(resource.data)
+                  .affectedKeys().hasOnly(['displayName']);
+    }
+
     match /_serverRateLimits/{accountID} {
       allow read, write: if false;
     }
 
-    // ─── Per-user private data ────────────────────────────────────────
-    // Owners only — already covered by the existing rules. Listed here
-    // for completeness so reviewers see the full picture.
+    match /_socialState/{document=**} {
+      allow read, write: if false;
+    }
+
+    // Private account data remains owner-scoped. The social callables read a
+    // completed session from this subtree but never take its score from input.
     match /users/{accountID}/{document=**} {
-      allow read, write: if request.auth != null
-                         && request.auth.uid == accountID;
+      allow read, write: if isOwner(accountID);
     }
 
-    // ─── Public profile (peer-readable subset) ─────────────────────────
-    // Any signed-in user can read; only the owner can write or delete their
-    // own doc. Delete is separate because request.resource is absent then.
-    // Schema enforced on write — fields kept tight so a rogue client can't
-    // dump arbitrary data into the public surface.
     match /profiles_public/{accountID} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null
-                            && request.auth.uid == accountID
-                            && validPublicProfile(accountID);
-      allow delete: if request.auth != null
-                    && request.auth.uid == accountID;
+      allow read: if isAuthenticated();
+      allow create, delete: if false;
+      allow update: if updatesOnlyDisplayName(accountID);
     }
 
-    // ─── League membership ────────────────────────────────────────────
-    // Bucket key shape: `{tier}_{ISO-year}-W{week}` e.g. `silver_2026-W19`.
-    // Any signed-in user can read all members of a bucket (peer ranking).
-    // Only the owning user can write their own member doc, and only with
-    // the same shape as profiles_public.
     match /leagues/{bucket}/members/{accountID} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null
-                            && request.auth.uid == accountID
-                            && validPublicProfile(accountID);
-      allow delete: if request.auth != null
-                    && request.auth.uid == accountID;
+      allow read: if isAuthenticated();
+      allow create, delete: if false;
+      allow update: if updatesOnlyDisplayName(accountID);
     }
 
-    // ─── Async challenges (two-participant docs) ──────────────────────
-    // Both participants can read the whole doc. Each can only write the
-    // fields that belong to "their" side of the challenge.
     match /challenges/{challengeID} {
-      allow read: if request.auth != null
-                  && resource != null
+      allow read: if isAuthenticated()
+                  && resource.data.participantIDs is list
                   && request.auth.uid in resource.data.participantIDs;
-
-      // Creator: full write while the doc is being created (initial sync).
-      // After creation, only their own slice.
-      allow create: if request.auth != null
-                    && request.resource.data.id == challengeID
-                    && request.resource.data.creatorAccountID == request.auth.uid
-                    && validChallengeCreateShape()
-                    && validChallengeParticipants();
-
-      allow update: if request.auth != null
-                    && resource != null
-                    && request.auth.uid in resource.data.participantIDs
-                    && updateOnlyOwnSlice();
-    }
-
-    function validPublicProfile(accountID) {
-      return request.resource.data.accountID == accountID
-             && request.resource.data.keys().hasOnly([
-                  'accountID', 'displayName',
-                  'rating', 'peakRating',
-                  'currentStreak', 'weeklyReps', 'weeklyDelta',
-                  'leagueTier', 'updatedAt'
-                ])
-             && request.resource.data.displayName is string
-             && request.resource.data.displayName.size() <= 60
-             && request.resource.data.rating is int
-             && request.resource.data.rating >= 100
-             && request.resource.data.rating <= 1000;
-    }
-
-    // The app indexes each challenge under both durable Firebase account IDs
-    // and its legacy local UUIDs. Require exactly those identities so a creator
-    // cannot grant an unrelated account read access through participantIDs.
-    function validChallengeParticipants() {
-      let participantIDs = request.resource.data.participantIDs;
-      let expectedIDs = [
-        request.resource.data.creatorAccountID,
-        request.resource.data.opponentAccountID,
-        request.resource.data.creatorID,
-        request.resource.data.opponentID
-      ];
-      return request.resource.data.creatorAccountID is string
-             && request.resource.data.opponentAccountID is string
-             && request.resource.data.creatorID is string
-             && request.resource.data.opponentID is string
-             && request.resource.data.creatorAccountID
-                != request.resource.data.opponentAccountID
-             && participantIDs is list
-             && participantIDs.hasAll(expectedIDs)
-             && participantIDs.hasOnly(expectedIDs);
-    }
-
-    function validChallengeCreateShape() {
-      let keys = request.resource.data.keys();
-      return keys.hasOnly([
-               'id', 'prompt', 'createdAt', 'expiresAt',
-               'creatorID', 'creatorName', 'creatorAccountID',
-               'opponentID', 'opponentName', 'opponentAccountID',
-               'participantIDs',
-               'creatorScore', 'creatorDuration', 'creatorSummary',
-               'creatorReaction'
-             ])
-             && request.resource.data.prompt is string
-             && request.resource.data.prompt.size() > 0
-             && request.resource.data.prompt.size() <= 500
-             && request.resource.data.creatorName is string
-             && request.resource.data.creatorName.size() <= 60
-             && request.resource.data.opponentName is string
-             && request.resource.data.opponentName.size() <= 60;
-    }
-
-    // An update from the creator may only touch the creator-* result fields,
-    // and an update from the opponent may only touch the opponent-* result
-    // fields. The sole identity-field exception lets account deletion replace
-    // the departing participant's own display name with "Removed user".
-    function updateOnlyOwnSlice() {
-      let isCreator = request.auth.uid == resource.data.creatorAccountID;
-      let isOpponent = request.auth.uid == resource.data.opponentAccountID;
-      let opponentResultFields = [
-        'opponentScore', 'opponentDuration',
-        'opponentSummary', 'opponentReaction'
-      ];
-      let creatorResultFields = [
-        'creatorScore', 'creatorDuration',
-        'creatorSummary', 'creatorReaction'
-      ];
-      let resultFields = isCreator ? creatorResultFields : opponentResultFields;
-      let nameFields = isCreator ? ['creatorName'] : ['opponentName'];
-      let allowedFields = resultFields.concat(nameFields);
-      let immutableFields = ['id', 'prompt', 'createdAt', 'expiresAt',
-                             'creatorID', 'creatorAccountID',
-                             'opponentID', 'opponentAccountID',
-                             'participantIDs'];
-      let changedFields = request.resource.data.diff(resource.data).affectedKeys();
-      let nameRedactionIsValid = !changedFields.hasAny(nameFields)
-        || (isCreator && request.resource.data.creatorName == 'Removed user')
-        || (isOpponent && request.resource.data.opponentName == 'Removed user');
-      return (isCreator || isOpponent)
-             && changedFields.hasOnly(allowedFields)
-             && !changedFields.hasAny(immutableFields)
-             && nameRedactionIsValid;
+      allow create, update, delete: if false;
     }
   }
 }

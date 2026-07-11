@@ -1,7 +1,7 @@
 import {GoogleGenAI} from "@google/genai";
 import {initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
-import {getFirestore, type Query} from "firebase-admin/firestore";
+import {getFirestore, Timestamp, type Query} from "firebase-admin/firestore";
 import {defineSecret, defineString} from "firebase-functions/params";
 import {setGlobalOptions} from "firebase-functions/v2";
 import {HttpsError, onCall} from "firebase-functions/v2/https";
@@ -24,6 +24,24 @@ import {
   validateTranscriptionTokenRequest,
   type WindowRateState,
 } from "./releaseSecurity.js";
+import {
+  CHALLENGE_LIFETIME_MS,
+  SOCIAL_SCHEMA_VERSION,
+  advanceSocialState,
+  challengeEnvelope,
+  challengeSide,
+  profileFromSocialState,
+  socialDateMilliseconds,
+  stableLegacyUUID,
+  storedSocialState,
+  validateCreateChallengeRequest,
+  validateRecordPeerSessionRequest,
+  validateSetChallengeReactionRequest,
+  validateStoredChallenge,
+  validateStoredSocialSession,
+  validateSubmitChallengeResultRequest,
+  type PublicProfileEnvelope,
+} from "./socialAuthority.js";
 
 initializeApp();
 setGlobalOptions({
@@ -36,6 +54,8 @@ const TRANSCRIPTION_RUNTIME_SERVICE_ACCOUNT =
   "noum-transcription-runtime@noum-d0b6f.iam.gserviceaccount.com";
 const ACCOUNT_RUNTIME_SERVICE_ACCOUNT =
   "noum-account-runtime@noum-d0b6f.iam.gserviceaccount.com";
+const SOCIAL_RUNTIME_SERVICE_ACCOUNT =
+  "noum-social-runtime@noum-d0b6f.iam.gserviceaccount.com";
 
 const coachModel = defineString("COACH_MODEL", {
   default: "gemini-2.5-flash",
@@ -749,6 +769,405 @@ export const transcriptionToken = onCall(
 );
 
 /**
+ * Firestore representation of the public, non-PII peer profile.
+ * @param {PublicProfileEnvelope} profile Raw public profile values.
+ * @param {Timestamp} updatedAt Server-authored update timestamp.
+ * @return {Record<string, unknown>} Firestore document data.
+ */
+function publicProfileDocument(
+  profile: PublicProfileEnvelope,
+  updatedAt: Timestamp
+): Record<string, unknown> {
+  return {
+    accountID: profile.accountID,
+    displayName: profile.displayName,
+    rating: profile.rating,
+    peakRating: profile.peakRating,
+    currentStreak: profile.currentStreak,
+    weeklyReps: profile.weeklyReps,
+    weeklyDelta: profile.weeklyDelta,
+    leagueTier: profile.leagueTier,
+    updatedAt,
+  };
+}
+
+/**
+ * Reads a strict display name from an existing server-authored profile.
+ * @param {unknown} value Public profile document data.
+ * @return {string} Validated display name.
+ */
+function socialProfileDisplayName(value: unknown): string {
+  if (!isRecord(value) || typeof value.displayName !== "string" ||
+      value.displayName.length < 1 || value.displayName.length > 60) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Both speakers need a public profile before starting a challenge."
+    );
+  }
+  return value.displayName;
+}
+
+export const recordPeerSession = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    serviceAccount: SOCIAL_RUNTIME_SERVICE_ACCOUNT,
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    const input = validateRecordPeerSessionRequest(request.data);
+    const firestore = getFirestore();
+    const nowMs = Date.now();
+    const updatedAt = Timestamp.fromMillis(nowMs);
+    const stateRef = firestore.collection("_socialState").doc(uid);
+    const markerRef = stateRef.collection("processedSessions")
+      .doc(input.sessionID);
+    const sessionRef = firestore.collection("users").doc(uid)
+      .collection("sessions").doc(input.sessionID);
+    const publicProfileRef = firestore.collection("profiles_public").doc(uid);
+
+    return firestore.runTransaction(async (transaction) => {
+      const sessionSnapshot = await transaction.get(sessionRef);
+      const stateSnapshot = await transaction.get(stateRef);
+      const markerSnapshot = await transaction.get(markerRef);
+      const previous = storedSocialState(
+        stateSnapshot.exists ? stateSnapshot.data() : null,
+        input.displayName,
+        nowMs
+      );
+      if (markerSnapshot.exists) {
+        return {
+          schemaVersion: SOCIAL_SCHEMA_VERSION,
+          sessionID: input.sessionID,
+          processed: false,
+          profile: profileFromSocialState(previous, uid, nowMs),
+        };
+      }
+      if (!sessionSnapshot.exists) {
+        throw new HttpsError(
+          "not-found",
+          "The completed session was not found."
+        );
+      }
+
+      const session = validateStoredSocialSession(
+        sessionSnapshot.data(),
+        input.sessionID,
+        nowMs
+      );
+      const advanced = advanceSocialState(
+        previous,
+        session,
+        uid,
+        input.displayName,
+        nowMs
+      );
+      const profileData = publicProfileDocument(advanced.profile, updatedAt);
+
+      if (previous.currentBucket &&
+          previous.currentBucket !== advanced.state.currentBucket) {
+        transaction.delete(
+          firestore.collection("leagues").doc(previous.currentBucket)
+            .collection("members").doc(uid)
+        );
+      }
+      transaction.set(stateRef, {
+        ...advanced.state,
+        updatedAt,
+      });
+      transaction.create(markerRef, {
+        schemaVersion: SOCIAL_SCHEMA_VERSION,
+        sessionID: input.sessionID,
+        sessionDate: Timestamp.fromMillis(session.dateMs),
+        isRated: session.isRated,
+        ratingDelta: advanced.ratingDelta,
+        processedAt: updatedAt,
+      });
+      transaction.set(publicProfileRef, profileData);
+      if (advanced.state.currentBucket) {
+        transaction.set(
+          firestore.collection("leagues").doc(advanced.state.currentBucket)
+            .collection("members").doc(uid),
+          profileData
+        );
+      }
+      return {
+        schemaVersion: SOCIAL_SCHEMA_VERSION,
+        sessionID: input.sessionID,
+        processed: true,
+        profile: advanced.profile,
+      };
+    });
+  }
+);
+
+export const createChallenge = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    serviceAccount: SOCIAL_RUNTIME_SERVICE_ACCOUNT,
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    const input = validateCreateChallengeRequest(request.data);
+    if (input.opponentAccountID === uid) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Choose another speaker for this challenge."
+      );
+    }
+    const firestore = getFirestore();
+    const challengeRef = firestore.collection("challenges")
+      .doc(input.challengeID);
+
+    return firestore.runTransaction(async (transaction) => {
+      const existing = await transaction.get(challengeRef);
+      if (existing.exists) {
+        const challenge = validateStoredChallenge(
+          existing.data(),
+          input.challengeID
+        );
+        if (challenge.creatorAccountID !== uid ||
+            challenge.opponentAccountID !== input.opponentAccountID ||
+            challenge.prompt !== input.prompt) {
+          throw new HttpsError(
+            "already-exists",
+            "That challenge identifier is already in use."
+          );
+        }
+        return {
+          schemaVersion: SOCIAL_SCHEMA_VERSION,
+          created: false,
+          challenge: challengeEnvelope(challenge),
+        };
+      }
+
+      const creatorProfile = await transaction.get(
+        firestore.collection("profiles_public").doc(uid)
+      );
+      const opponentProfile = await transaction.get(
+        firestore.collection("profiles_public").doc(input.opponentAccountID)
+      );
+      if (!creatorProfile.exists || !opponentProfile.exists) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Both speakers need a public profile before starting a challenge."
+        );
+      }
+      const nowMs = Date.now();
+      const challenge: Record<string, unknown> = {
+        schemaVersion: SOCIAL_SCHEMA_VERSION,
+        id: input.challengeID,
+        prompt: input.prompt,
+        createdAt: Timestamp.fromMillis(nowMs),
+        expiresAt: Timestamp.fromMillis(nowMs + CHALLENGE_LIFETIME_MS),
+        creatorID: stableLegacyUUID(uid),
+        creatorName: socialProfileDisplayName(creatorProfile.data()),
+        creatorAccountID: uid,
+        opponentID: stableLegacyUUID(input.opponentAccountID),
+        opponentName: socialProfileDisplayName(opponentProfile.data()),
+        opponentAccountID: input.opponentAccountID,
+        participantIDs: [uid, input.opponentAccountID],
+        creatorScore: null,
+        creatorDuration: null,
+        creatorSummary: null,
+        creatorSessionID: null,
+        creatorSubmittedAt: null,
+        creatorReaction: null,
+        creatorReactedAt: null,
+        opponentScore: null,
+        opponentDuration: null,
+        opponentSummary: null,
+        opponentSessionID: null,
+        opponentSubmittedAt: null,
+        opponentReaction: null,
+        opponentReactedAt: null,
+      };
+      transaction.create(challengeRef, challenge);
+      return {
+        schemaVersion: SOCIAL_SCHEMA_VERSION,
+        created: true,
+        challenge: challengeEnvelope(challenge),
+      };
+    });
+  }
+);
+
+export const submitChallengeResult = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    serviceAccount: SOCIAL_RUNTIME_SERVICE_ACCOUNT,
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    const input = validateSubmitChallengeResultRequest(request.data);
+    const firestore = getFirestore();
+    const challengeRef = firestore.collection("challenges")
+      .doc(input.challengeID);
+    const sessionRef = firestore.collection("users").doc(uid)
+      .collection("sessions").doc(input.sessionID);
+    const replayRef = firestore.collection("_socialState").doc(uid)
+      .collection("challengeResults").doc(input.sessionID);
+
+    return firestore.runTransaction(async (transaction) => {
+      const challengeSnapshot = await transaction.get(challengeRef);
+      const sessionSnapshot = await transaction.get(sessionRef);
+      const replaySnapshot = await transaction.get(replayRef);
+      if (!challengeSnapshot.exists) {
+        throw new HttpsError("not-found", "Challenge not found.");
+      }
+      const challenge = validateStoredChallenge(
+        challengeSnapshot.data(),
+        input.challengeID
+      );
+      const side = challengeSide(challenge, uid);
+      const sideSessionField = `${side}SessionID`;
+      const existingSideSession = challenge[sideSessionField];
+      if (replaySnapshot.exists) {
+        const replay = replaySnapshot.data() ?? {};
+        if (replay.challengeID === input.challengeID && replay.side === side &&
+            existingSideSession === input.sessionID) {
+          return {
+            schemaVersion: SOCIAL_SCHEMA_VERSION,
+            sessionID: input.sessionID,
+            submitted: false,
+            challenge: challengeEnvelope(challenge),
+          };
+        }
+        throw new HttpsError(
+          "already-exists",
+          "That session has already been used for a challenge."
+        );
+      }
+      if (!sessionSnapshot.exists) {
+        throw new HttpsError(
+          "not-found",
+          "The completed session was not found."
+        );
+      }
+      if (existingSideSession !== null && existingSideSession !== undefined) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Your result for this challenge is already recorded."
+        );
+      }
+
+      const nowMs = Date.now();
+      const session = validateStoredSocialSession(
+        sessionSnapshot.data(),
+        input.sessionID,
+        nowMs
+      );
+      const createdAt = socialDateMilliseconds(challenge.createdAt);
+      const expiresAt = socialDateMilliseconds(challenge.expiresAt);
+      if (createdAt === null || expiresAt === null ||
+          session.dateMs < createdAt || session.dateMs > expiresAt) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Use a completed rep recorded during this challenge."
+        );
+      }
+      const submittedAt = Timestamp.fromMillis(nowMs);
+      const updates: Record<string, unknown> = {
+        [`${side}Score`]: session.score,
+        [`${side}Duration`]: session.duration,
+        [`${side}Summary`]: session.summary,
+        [sideSessionField]: input.sessionID,
+        [`${side}SubmittedAt`]: submittedAt,
+      };
+      transaction.update(challengeRef, updates);
+      transaction.create(replayRef, {
+        schemaVersion: SOCIAL_SCHEMA_VERSION,
+        challengeID: input.challengeID,
+        sessionID: input.sessionID,
+        side,
+        submittedAt,
+      });
+      const updatedChallenge = {...challenge, ...updates};
+      return {
+        schemaVersion: SOCIAL_SCHEMA_VERSION,
+        sessionID: input.sessionID,
+        submitted: true,
+        challenge: challengeEnvelope(updatedChallenge),
+      };
+    });
+  }
+);
+
+export const setChallengeReaction = onCall(
+  {
+    enforceAppCheck: true,
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    serviceAccount: SOCIAL_RUNTIME_SERVICE_ACCOUNT,
+  },
+  async (request) => {
+    assertTrustedCaller(request.auth, request.app);
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "A secure session is required.");
+    }
+    const input = validateSetChallengeReactionRequest(request.data);
+    const firestore = getFirestore();
+    const challengeRef = firestore.collection("challenges")
+      .doc(input.challengeID);
+
+    return firestore.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(challengeRef);
+      if (!snapshot.exists) {
+        throw new HttpsError("not-found", "Challenge not found.");
+      }
+      const challenge = validateStoredChallenge(
+        snapshot.data(),
+        input.challengeID
+      );
+      const side = challengeSide(challenge, uid);
+      if (!Number.isInteger(challenge.creatorScore) ||
+          !Number.isInteger(challenge.opponentScore)) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Reactions unlock after both speakers finish."
+        );
+      }
+      const reactionField = `${side}Reaction`;
+      if (challenge[reactionField] === input.reaction) {
+        return {
+          schemaVersion: SOCIAL_SCHEMA_VERSION,
+          updated: false,
+          challenge: challengeEnvelope(challenge),
+        };
+      }
+      const updates: Record<string, unknown> = {
+        [reactionField]: input.reaction,
+        [`${side}ReactedAt`]: Timestamp.now(),
+      };
+      transaction.update(challengeRef, updates);
+      return {
+        schemaVersion: SOCIAL_SCHEMA_VERSION,
+        updated: true,
+        challenge: challengeEnvelope({...challenge, ...updates}),
+      };
+    });
+  }
+);
+
+/**
  * Deletes every document returned by a bounded query, then repeats until the
  * query is empty. Re-querying avoids skipped documents while deleting pages.
  * @param {Function} makeQuery Fresh query without a limit.
@@ -841,7 +1260,12 @@ export const deleteAccount = onCall(
           .where("participantIDs", "array-contains", uid));
       },
       rateLimits: async () => {
-        await firestore.collection("_serverRateLimits").doc(uid).delete();
+        await Promise.all([
+          firestore.collection("_serverRateLimits").doc(uid).delete(),
+          firestore.recursiveDelete(
+            firestore.collection("_socialState").doc(uid)
+          ),
+        ]);
       },
       authUser: async () => {
         if (!authUserExists) return;
