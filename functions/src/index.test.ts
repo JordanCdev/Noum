@@ -198,6 +198,15 @@ test("client rules deny every rate-limit collection operation", () => {
   );
 });
 
+test("account deletion uses exact server-owned social references", () => {
+  const source = readFileSync(resolve(process.cwd(), "src/index.ts"), "utf8");
+  assert.equal(source.includes("collectionGroup("), false);
+  assert.match(source, /collection\("_socialReferences"\)/);
+  assert.match(source, /validateSocialReferenceManifest\(/);
+  assert.match(source, /references\.leagueMembershipPaths/);
+  assert.match(source, /references\.challengeIDs/);
+});
+
 test("only complete STOP generations are accepted", () => {
   assert.equal(isAcceptableFinishReason("STOP"), true);
   const rejected = [

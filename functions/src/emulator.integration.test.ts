@@ -2,6 +2,12 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import {createHash} from "node:crypto";
+import {initializeApp} from "firebase-admin/app";
+import {
+  getFirestore as getAdminFirestore,
+  Timestamp as AdminTimestamp,
+} from "firebase-admin/firestore";
 
 const projectID = process.env.GCLOUD_PROJECT ?? "noum-d0b6f";
 const functionsHost = process.env.FUNCTIONS_EMULATOR_HOST ?? "127.0.0.1:5001";
@@ -23,6 +29,8 @@ const submitChallengeResultURL =
   `http://${functionsHost}/${projectID}/${region}/submitChallengeResult`;
 const setChallengeReactionURL =
   `http://${functionsHost}/${projectID}/${region}/setChallengeReaction`;
+const adminApp = initializeApp({projectId: projectID}, "social-emulator-tests");
+const adminFirestore = getAdminFirestore(adminApp);
 
 interface EmulatorIdentity {
   idToken: string;
@@ -173,6 +181,16 @@ function readFirestoreDocument(
   return fetch(firestoreDocumentURL(path), {headers});
 }
 
+/** Performs an authenticated Firestore REST collection list. */
+function listFirestoreCollection(
+  path: string,
+  identity: EmulatorIdentity
+): Promise<Response> {
+  return fetch(`${firestoreDocumentURL(path)}?pageSize=50`, {
+    headers: {authorization: `Bearer ${identity.idToken}`},
+  });
+}
+
 /** Builds the persisted fields for one complete non-fixture session. */
 function socialSessionFields(
   id: string,
@@ -224,6 +242,91 @@ async function recordSocialSession(
   );
   assert.equal(response.status, 200);
   return await response.json() as Record<string, unknown>;
+}
+
+/** Returns a lowercase SHA-256 prompt digest. */
+function promptHash(prompt: string): string {
+  return createHash("sha256").update(prompt, "utf8").digest("hex");
+}
+
+interface EvidenceOptions {
+  score?: number;
+  completedAtSeconds?: number;
+  challengeID?: string | null;
+  prompt?: string | null;
+  promptDigestOverride?: string | null;
+}
+
+/** Seeds the client-denied namespace as a future trusted producer would. */
+async function seedVerifiedEvidence(
+  identity: EmulatorIdentity,
+  sessionID: string,
+  options: EvidenceOptions = {}
+): Promise<void> {
+  const completedAtMs = Math.round(
+    (options.completedAtSeconds ?? Date.now() / 1_000) * 1_000
+  );
+  const digest = options.promptDigestOverride !== undefined ?
+    options.promptDigestOverride :
+    options.prompt ? promptHash(options.prompt) : null;
+  await adminFirestore.collection("_verifiedSessionEvidence")
+    .doc(identity.localId).collection("sessions").doc(sessionID).set({
+      schemaVersion: 1,
+      evidenceSource: "noum-server-evaluator",
+      evaluatorVersion: 1,
+      competitiveEligible: true,
+      sessionID,
+      score: options.score ?? 8,
+      duration: 42,
+      completedAt: AdminTimestamp.fromMillis(completedAtMs),
+      attestedAt: AdminTimestamp.fromMillis(completedAtMs + 1),
+      isRated: true,
+      summary: "Clear structure",
+      challengeID: options.challengeID ?? null,
+      promptDigest: digest,
+    });
+}
+
+/** Seeds reciprocal server-only friendship authorization. */
+async function seedReciprocalFriendLink(
+  creator: EmulatorIdentity,
+  opponent: EmulatorIdentity
+): Promise<void> {
+  const pairID = "C713738E-D9ED-4337-986E-09205089D42E";
+  const linkedAt = AdminTimestamp.now();
+  const batch = adminFirestore.batch();
+  batch.set(
+    adminFirestore.collection("_socialFriendLinks").doc(creator.localId)
+      .collection("friends").doc(opponent.localId),
+    {
+      status: "active",
+      accountID: creator.localId,
+      friendAccountID: opponent.localId,
+      pairID,
+      linkedAt,
+    }
+  );
+  batch.set(
+    adminFirestore.collection("_socialFriendLinks").doc(opponent.localId)
+      .collection("friends").doc(creator.localId),
+    {
+      status: "active",
+      accountID: opponent.localId,
+      friendAccountID: creator.localId,
+      pairID,
+      linkedAt,
+    }
+  );
+  await batch.commit();
+}
+
+/** Reads typed callable error details without depending on copy text. */
+async function callableFailureReason(response: Response): Promise<string | null> {
+  const body = await response.json() as {
+    error?: {details?: {reason?: unknown}};
+  };
+  return typeof body.error?.details?.reason === "string" ?
+    body.error.details.reason : null;
 }
 
 const validPreflight = {
@@ -368,18 +471,54 @@ test(
   }
 );
 
-test("peer profile derives once from a stored session and rejects forgery", async () => {
+test("owner sessions cannot become competitive evidence", async () => {
   const identity = await anonymousIdentity();
   const other = await anonymousIdentity();
   const peerSessionID = "A713738E-D9ED-4337-986E-09205089D42E";
-  await seedSocialSession(identity, peerSessionID);
+  await seedSocialSession(identity, peerSessionID, Date.now() / 1_000, 10);
 
-  const first = await recordSocialSession(identity, peerSessionID, "Jordan") as {
-    result?: {processed?: boolean; profile?: Record<string, unknown>};
-  };
+  const unverified = await callable(
+    recordPeerSessionURL,
+    {schemaVersion: 1, sessionID: peerSessionID, displayName: "Jordan"},
+    identity,
+    true
+  );
+  assert.equal(unverified.status, 400);
+  assert.equal(
+    await callableFailureReason(unverified),
+    "verified-evidence-unavailable"
+  );
+  assert.equal((await readFirestoreDocument(
+    `profiles_public/${identity.localId}`,
+    identity
+  )).status, 404);
+
+  const evidencePath = `_verifiedSessionEvidence/${identity.localId}/` +
+    `sessions/${peerSessionID}`;
+  assert.equal((await writeFirestoreDocument(
+    evidencePath,
+    socialSessionFields(peerSessionID, Date.now() / 1_000, 10),
+    identity
+  )).status, 403);
+  assert.equal((await readFirestoreDocument(evidencePath, identity)).status, 403);
+  assert.equal((await listFirestoreCollection(
+    `_verifiedSessionEvidence/${identity.localId}/sessions`,
+    identity
+  )).status, 403);
+
+  await seedVerifiedEvidence(identity, peerSessionID, {score: 8});
+  const first = await recordSocialSession(
+    identity,
+    peerSessionID,
+    "Jordan"
+  ) as {result?: {processed?: boolean; profile?: Record<string, unknown>}};
   assert.equal(first.result?.processed, true);
   assert.equal(first.result?.profile?.rating, 413);
   assert.equal(first.result?.profile?.weeklyReps, 1);
+  const references = await adminFirestore.collection("_socialReferences")
+    .doc(identity.localId).get();
+  assert.deepEqual(references.data()?.challengeIDs, []);
+  assert.equal(references.data()?.leagueMembershipPaths?.length, 1);
   const replay = await recordSocialSession(identity, peerSessionID, "Jordan") as {
     result?: {processed?: boolean; profile?: Record<string, unknown>};
   };
@@ -393,6 +532,10 @@ test("peer profile derives once from a stored session and rejects forgery", asyn
     fields?: Record<string, FirestoreValue>;
   };
   assert.ok(profile.fields);
+  assert.equal((await listFirestoreCollection(
+    "profiles_public",
+    identity
+  )).status, 403);
   const forgedFields = {...profile.fields};
   forgedFields.rating = {integerValue: "1000"};
   assert.equal((await writeFirestoreDocument(
@@ -419,29 +562,69 @@ test("peer profile derives once from a stored session and rejects forgery", asyn
     `_socialState/${identity.localId}`,
     identity
   )).status, 403);
-  const missing = await callable(
-    recordPeerSessionURL,
-    {
-      schemaVersion: 1,
-      sessionID: "783AB966-E91B-4CA4-8F7A-7E50113FA2C6",
-      displayName: "Jordan",
-    },
-    identity,
-    true
-  );
-  assert.equal(missing.status, 404);
+  assert.equal((await readFirestoreDocument(
+    `_socialReferences/${identity.localId}`,
+    identity
+  )).status, 403);
 });
 
-test("challenge writes are server-derived, immutable, and replay-safe", async () => {
+test("challenge creation fails closed and is rate limited without friend proof", async () => {
+  const creator = await anonymousIdentity();
+  const opponent = await anonymousIdentity();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const prefix = String(attempt + 1).repeat(8);
+    const challengeID = `${prefix}-${String(attempt + 1).repeat(4)}-4` +
+      `${String(attempt + 1).repeat(3)}-8${String(attempt + 1).repeat(3)}-` +
+      `${String(attempt + 1).repeat(12)}`;
+    const response = await callable(
+      createChallengeURL,
+      {
+        schemaVersion: 1,
+        challengeID,
+        opponentAccountID: opponent.localId,
+        prompt: "Give a concise update.",
+      },
+      creator,
+      true
+    );
+    assert.equal(response.status, 400);
+    assert.equal(
+      await callableFailureReason(response),
+      "friend-authorization-unavailable"
+    );
+  }
+  const limited = await callable(
+    createChallengeURL,
+    {
+      schemaVersion: 1,
+      challengeID: "44444444-4444-4444-8444-444444444444",
+      opponentAccountID: opponent.localId,
+      prompt: "Give a concise update.",
+    },
+    creator,
+    true
+  );
+  assert.equal(limited.status, 429);
+  const friendPath = `_socialFriendLinks/${creator.localId}/friends/` +
+    opponent.localId;
+  assert.equal((await writeFirestoreDocument(
+    friendPath,
+    {status: {stringValue: "active"}},
+    creator
+  )).status, 403);
+});
+
+test("challenge submissions remain private until both are verified", async () => {
   const creator = await anonymousIdentity();
   const opponent = await anonymousIdentity();
   const outsider = await anonymousIdentity();
   const creatorProfileSession = "11111111-1111-4111-8111-111111111111";
   const opponentProfileSession = "22222222-2222-4222-8222-222222222222";
-  await seedSocialSession(creator, creatorProfileSession, Date.now() / 1_000, 7);
-  await seedSocialSession(opponent, opponentProfileSession, Date.now() / 1_000, 7);
+  await seedVerifiedEvidence(creator, creatorProfileSession, {score: 7});
+  await seedVerifiedEvidence(opponent, opponentProfileSession, {score: 7});
   await recordSocialSession(creator, creatorProfileSession, "Creator");
   await recordSocialSession(opponent, opponentProfileSession, "Opponent");
+  await seedReciprocalFriendLink(creator, opponent);
 
   const firstChallengeID = "33333333-3333-4333-8333-333333333333";
   const prompt = "Give a concise project update.";
@@ -465,30 +648,6 @@ test("challenge writes are server-derived, immutable, and replay-safe", async ()
   };
   assert.equal(created.result?.created, true);
   assert.equal(created.result?.challenge?.creatorAccountID, creator.localId);
-  assert.equal((await callable(
-    createChallengeURL,
-    {
-      schemaVersion: 1,
-      challengeID: firstChallengeID,
-      opponentAccountID: opponent.localId,
-      prompt,
-    },
-    creator,
-    true
-  )).status, 200);
-
-  const oversized = await callable(
-    createChallengeURL,
-    {
-      schemaVersion: 1,
-      challengeID: "44444444-4444-4444-8444-444444444444",
-      opponentAccountID: opponent.localId,
-      prompt: "p".repeat(501),
-    },
-    creator,
-    true
-  );
-  assert.equal(oversized.status, 400);
 
   const challengePath = `challenges/${firstChallengeID}`;
   const directChallengeWrite = await writeFirestoreDocument(
@@ -500,14 +659,40 @@ test("challenge writes are server-derived, immutable, and replay-safe", async ()
   assert.equal((await readFirestoreDocument(challengePath, creator)).status, 200);
   assert.equal((await readFirestoreDocument(challengePath, opponent)).status, 200);
   assert.equal((await readFirestoreDocument(challengePath, outsider)).status, 403);
+  const metadata = await adminFirestore.collection("challenges")
+    .doc(firstChallengeID).get();
+  assert.equal(metadata.exists, true);
+  assert.equal("creatorScore" in (metadata.data() ?? {}), false);
+  assert.equal("opponentScore" in (metadata.data() ?? {}), false);
 
   const challengeStart = created.result?.challenge?.createdAt ??
     Date.now() / 1_000;
   const creatorResultSession = "55555555-5555-4555-8555-555555555555";
   const opponentResultSession = "66666666-6666-4666-8666-666666666666";
-  await seedSocialSession(creator, creatorResultSession, challengeStart + 1, 9);
-  await seedSocialSession(opponent, opponentResultSession, challengeStart + 1, 6);
+  await seedSocialSession(creator, creatorResultSession, challengeStart + 1, 10);
 
+  const clientOnlySubmit = await callable(
+    submitChallengeResultURL,
+    {
+      schemaVersion: 1,
+      challengeID: firstChallengeID,
+      sessionID: creatorResultSession,
+    },
+    creator,
+    true
+  );
+  assert.equal(clientOnlySubmit.status, 400);
+  assert.equal(
+    await callableFailureReason(clientOnlySubmit),
+    "verified-evidence-unavailable"
+  );
+
+  await seedVerifiedEvidence(creator, creatorResultSession, {
+    score: 9,
+    completedAtSeconds: challengeStart + 1,
+    challengeID: firstChallengeID,
+    prompt,
+  });
   const creatorSubmit = await callable(
     submitChallengeResultURL,
     {
@@ -520,10 +705,14 @@ test("challenge writes are server-derived, immutable, and replay-safe", async ()
   );
   assert.equal(creatorSubmit.status, 200);
   const creatorResult = await creatorSubmit.json() as {
-    result?: {submitted?: boolean; challenge?: {creatorScore?: number}};
+    result?: {
+      submitted?: boolean;
+      challenge?: {creatorScore?: number; opponentScore?: number | null};
+    };
   };
   assert.equal(creatorResult.result?.submitted, true);
   assert.equal(creatorResult.result?.challenge?.creatorScore, 9);
+  assert.equal(creatorResult.result?.challenge?.opponentScore, null);
   const replay = await callable(
     submitChallengeResultURL,
     {
@@ -539,7 +728,31 @@ test("challenge writes are server-derived, immutable, and replay-safe", async ()
     result?: {submitted?: boolean};
   }).result?.submitted, false);
 
-  assert.equal((await callable(
+  const creatorSubmissionPath = `${challengePath}/submissions/${creator.localId}`;
+  assert.equal((await readFirestoreDocument(
+    creatorSubmissionPath,
+    creator
+  )).status, 200);
+  assert.equal((await readFirestoreDocument(
+    creatorSubmissionPath,
+    opponent
+  )).status, 403);
+  assert.equal((await listFirestoreCollection(
+    `${challengePath}/submissions`,
+    creator
+  )).status, 403);
+  assert.equal((await readFirestoreDocument(
+    `${challengePath}/combined/result`,
+    creator
+  )).status, 404);
+
+  await seedVerifiedEvidence(opponent, opponentResultSession, {
+    score: 6,
+    completedAtSeconds: challengeStart + 1,
+    challengeID: firstChallengeID,
+    prompt,
+  });
+  const opponentSubmit = await callable(
     submitChallengeResultURL,
     {
       schemaVersion: 1,
@@ -548,54 +761,19 @@ test("challenge writes are server-derived, immutable, and replay-safe", async ()
     },
     opponent,
     true
-  )).status, 200);
-  const reacted = await callable(
-    setChallengeReactionURL,
-    {schemaVersion: 1, challengeID: firstChallengeID, reaction: "👏"},
-    creator,
-    true
   );
-  assert.equal(reacted.status, 200);
-  assert.equal((await reacted.json() as {
-    result?: {updated?: boolean};
-  }).result?.updated, true);
-  const reactionReplay = await callable(
-    setChallengeReactionURL,
-    {schemaVersion: 1, challengeID: firstChallengeID, reaction: "👏"},
-    creator,
-    true
-  );
-  assert.equal((await reactionReplay.json() as {
-    result?: {updated?: boolean};
-  }).result?.updated, false);
-
-  const secondChallengeID = "77777777-7777-4777-8777-777777777777";
-  assert.equal((await callable(
-    createChallengeURL,
-    {
-      schemaVersion: 1,
-      challengeID: secondChallengeID,
-      opponentAccountID: opponent.localId,
-      prompt: "State the decision and one reason.",
-    },
-    creator,
-    true
-  )).status, 200);
-  const reused = await callable(
-    submitChallengeResultURL,
-    {
-      schemaVersion: 1,
-      challengeID: secondChallengeID,
-      sessionID: creatorResultSession,
-    },
-    creator,
-    true
-  );
-  assert.equal(reused.status, 409);
-  assert.equal(
-    JSON.stringify(await reused.json()).includes("ALREADY_EXISTS"),
-    true
-  );
+  assert.equal(opponentSubmit.status, 200);
+  const opponentResult = await opponentSubmit.json() as {
+    result?: {
+      challenge?: {creatorScore?: number; opponentScore?: number};
+    };
+  };
+  assert.equal(opponentResult.result?.challenge?.creatorScore, 9);
+  assert.equal(opponentResult.result?.challenge?.opponentScore, 6);
+  const combinedPath = `${challengePath}/combined/result`;
+  assert.equal((await readFirestoreDocument(combinedPath, creator)).status, 200);
+  assert.equal((await readFirestoreDocument(combinedPath, opponent)).status, 200);
+  assert.equal((await readFirestoreDocument(combinedPath, outsider)).status, 403);
 
   const malformedChallenge = await writeFirestoreDocument(
     "challenges/88888888-8888-4888-8888-888888888888",
@@ -607,10 +785,136 @@ test("challenge writes are server-derived, immutable, and replay-safe", async ()
     creator
   );
   assert.equal(malformedChallenge.status, 403);
+
+  for (let count = 0; count < 10; count += 1) {
+    const reacted = await callable(
+      setChallengeReactionURL,
+      {schemaVersion: 1, challengeID: firstChallengeID, reaction: "👏"},
+      creator,
+      true
+    );
+    assert.equal(reacted.status, 200);
+  }
+  const reactionLimited = await callable(
+    setChallengeReactionURL,
+    {schemaVersion: 1, challengeID: firstChallengeID, reaction: "👏"},
+    creator,
+    true
+  );
+  assert.equal(reactionLimited.status, 429);
+});
+
+test("challenge result rejects prompt mismatch and expiry", async () => {
+  const creator = await anonymousIdentity();
+  const opponent = await anonymousIdentity();
+  const creatorProfileSession = "91111111-1111-4111-8111-111111111111";
+  const opponentProfileSession = "92222222-2222-4222-8222-222222222222";
+  await seedVerifiedEvidence(creator, creatorProfileSession);
+  await seedVerifiedEvidence(opponent, opponentProfileSession);
+  await recordSocialSession(creator, creatorProfileSession, "Creator");
+  await recordSocialSession(opponent, opponentProfileSession, "Opponent");
+  await seedReciprocalFriendLink(creator, opponent);
+  const boundChallengeID = "99999999-9999-4999-8999-999999999999";
+  const prompt = "State the decision and one reason.";
+  const createdResponse = await callable(
+    createChallengeURL,
+    {
+      schemaVersion: 1,
+      challengeID: boundChallengeID,
+      opponentAccountID: opponent.localId,
+      prompt,
+    },
+    creator,
+    true
+  );
+  assert.equal(createdResponse.status, 200);
+  const created = await createdResponse.json() as {
+    result?: {challenge?: {createdAt?: number}};
+  };
+  const challengeStart = created.result?.challenge?.createdAt ??
+    Date.now() / 1_000;
+  const resultSessionID = "93333333-3333-4333-8333-333333333333";
+  await seedVerifiedEvidence(creator, resultSessionID, {
+    score: 8,
+    completedAtSeconds: challengeStart + 1,
+    challengeID: boundChallengeID,
+    promptDigestOverride: "0".repeat(64),
+  });
+  const mismatched = await callable(
+    submitChallengeResultURL,
+    {
+      schemaVersion: 1,
+      challengeID: boundChallengeID,
+      sessionID: resultSessionID,
+    },
+    creator,
+    true
+  );
+  assert.equal(mismatched.status, 400);
+  assert.equal(await callableFailureReason(mismatched), "prompt-unbound-evidence");
+
+  await seedVerifiedEvidence(creator, resultSessionID, {
+    score: 8,
+    completedAtSeconds: challengeStart + 1,
+    challengeID: boundChallengeID,
+    prompt,
+  });
+  await adminFirestore.collection("challenges").doc(boundChallengeID).update({
+    expiresAt: AdminTimestamp.fromMillis(Date.now() - 1),
+  });
+  const expired = await callable(
+    submitChallengeResultURL,
+    {
+      schemaVersion: 1,
+      challengeID: boundChallengeID,
+      sessionID: resultSessionID,
+    },
+    creator,
+    true
+  );
+  assert.equal(expired.status, 400);
+  assert.equal(await callableFailureReason(expired), "challenge-expired");
 });
 
 test("anonymous deletion is complete and retry-safe", async () => {
   const identity = await anonymousIdentity();
+  const opponent = await anonymousIdentity();
+  const challengeID = "D713738E-D9ED-4337-986E-09205089D42E";
+  const leaguePath = `leagues/silver_2026-W28/members/${identity.localId}`;
+  const challengeRef = adminFirestore.collection("challenges").doc(challengeID);
+  const seededAt = AdminTimestamp.now();
+  await adminFirestore.doc(leaguePath).set({accountID: identity.localId});
+  await challengeRef.set({
+    schemaVersion: 2,
+    id: challengeID,
+    prompt: "Give a concise update.",
+    promptDigest: promptHash("Give a concise update."),
+    createdAt: seededAt,
+    expiresAt: AdminTimestamp.fromMillis(seededAt.toMillis() + 86_400_000),
+    creatorID: "E713738E-D9ED-4337-986E-09205089D42E",
+    creatorName: "Delete Me",
+    creatorAccountID: identity.localId,
+    opponentID: "F713738E-D9ED-4337-986E-09205089D42E",
+    opponentName: "Keep Me",
+    opponentAccountID: opponent.localId,
+    participantIDs: [identity.localId, opponent.localId],
+    completedAt: null,
+  });
+  await challengeRef.collection("submissions").doc(identity.localId).set({
+    deletionFixture: true,
+  });
+  await adminFirestore.collection("_socialReferences")
+    .doc(identity.localId).set({
+      leagueMembershipPaths: [leaguePath],
+      challengeIDs: [challengeID],
+      updatedAt: seededAt,
+    });
+  await adminFirestore.collection("_socialReferences")
+    .doc(opponent.localId).set({
+      leagueMembershipPaths: [],
+      challengeIDs: [challengeID],
+      updatedAt: seededAt,
+    });
   const request = {
     schemaVersion: 1,
     requestID: "a713738e-d9ed-4337-986e-09205089d42e",
@@ -626,6 +930,17 @@ test("anonymous deletion is complete and retry-safe", async () => {
     assert.deepEqual(await response.json(), {
       result: {deleted: true, requestID: request.requestID},
     });
+    if (attempt === 0) {
+      assert.equal((await adminFirestore.doc(leaguePath).get()).exists, false);
+      assert.equal((await challengeRef.get()).exists, false);
+      assert.equal((await challengeRef.collection("submissions")
+        .doc(identity.localId).get()).exists, false);
+      assert.equal((await adminFirestore.collection("_socialReferences")
+        .doc(identity.localId).get()).exists, false);
+      const opponentReferences = await adminFirestore
+        .collection("_socialReferences").doc(opponent.localId).get();
+      assert.deepEqual(opponentReferences.data()?.challengeIDs, []);
+    }
   }
 });
 

@@ -1,7 +1,7 @@
 import {GoogleGenAI} from "@google/genai";
 import {initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
-import {getFirestore, Timestamp, type Query} from "firebase-admin/firestore";
+import {getFirestore, Timestamp} from "firebase-admin/firestore";
 import {defineSecret, defineString} from "firebase-functions/params";
 import {setGlobalOptions} from "firebase-functions/v2";
 import {HttpsError, onCall} from "firebase-functions/v2/https";
@@ -26,20 +26,35 @@ import {
 } from "./releaseSecurity.js";
 import {
   CHALLENGE_LIFETIME_MS,
+  CHALLENGE_CREATE_HOUR_LIMIT,
+  CHALLENGE_CREATE_MINUTE_LIMIT,
+  CHALLENGE_DOCUMENT_SCHEMA_VERSION,
+  CHALLENGE_REACTION_HOUR_LIMIT,
+  CHALLENGE_REACTION_MINUTE_LIMIT,
   SOCIAL_SCHEMA_VERSION,
   advanceSocialState,
+  assertEvidenceBoundToChallenge,
   challengeEnvelope,
   challengeSide,
+  challengeSubmissionDocument,
+  combinedChallengeDocument,
   profileFromSocialState,
+  promptDigest,
   socialDateMilliseconds,
+  socialReferenceManifestIncludingChallenge,
   stableLegacyUUID,
   storedSocialState,
+  validateChallengeSubmission,
+  validateCombinedChallengeResult,
   validateCreateChallengeRequest,
+  validateReciprocalFriendLinks,
   validateRecordPeerSessionRequest,
   validateSetChallengeReactionRequest,
+  validateSocialReferenceManifest,
   validateStoredChallenge,
-  validateStoredSocialSession,
   validateSubmitChallengeResultRequest,
+  validateVerifiedSessionEvidence,
+  type ChallengeSubmission,
   type PublicProfileEnvelope,
 } from "./socialAuthority.js";
 
@@ -807,6 +822,45 @@ function socialProfileDisplayName(value: unknown): string {
   return value.displayName;
 }
 
+type SocialRateOperation = "challengeCreate" | "challengeReaction";
+
+/**
+ * Consumes a server-only fixed-window social-operation budget.
+ * @param {string} uid Verified Firebase account ID.
+ * @param {SocialRateOperation} operation Protected operation name.
+ * @param {number} minuteLimit Per-minute ceiling.
+ * @param {number} hourLimit Per-hour ceiling.
+ * @return {Promise<void>} Resolves after the budget is consumed.
+ */
+async function enforceSocialRateLimit(
+  uid: string,
+  operation: SocialRateOperation,
+  minuteLimit: number,
+  hourLimit: number
+): Promise<void> {
+  const firestore = getFirestore();
+  const ref = firestore.collection("_serverRateLimits").doc(uid);
+  await firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    const data = snapshot.data();
+    const current = isRecord(data?.[operation]) ?
+      data?.[operation] as Partial<WindowRateState> : undefined;
+    const decision = nextWindowRateState(
+      current,
+      Date.now(),
+      minuteLimit,
+      hourLimit
+    );
+    if (!decision.allowed) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "Social requests are taking a short pause. Try again later."
+      );
+    }
+    transaction.set(ref, {[operation]: decision.state}, {merge: true});
+  });
+}
+
 export const recordPeerSession = onCall(
   {
     enforceAppCheck: true,
@@ -827,20 +881,34 @@ export const recordPeerSession = onCall(
     const stateRef = firestore.collection("_socialState").doc(uid);
     const markerRef = stateRef.collection("processedSessions")
       .doc(input.sessionID);
-    const sessionRef = firestore.collection("users").doc(uid)
-      .collection("sessions").doc(input.sessionID);
+    const evidenceRef = firestore.collection("_verifiedSessionEvidence")
+      .doc(uid).collection("sessions").doc(input.sessionID);
+    const referencesRef = firestore.collection("_socialReferences").doc(uid);
     const publicProfileRef = firestore.collection("profiles_public").doc(uid);
 
     return firestore.runTransaction(async (transaction) => {
-      const sessionSnapshot = await transaction.get(sessionRef);
+      const evidenceSnapshot = await transaction.get(evidenceRef);
       const stateSnapshot = await transaction.get(stateRef);
       const markerSnapshot = await transaction.get(markerRef);
+      const referencesSnapshot = await transaction.get(referencesRef);
+      const evidence = validateVerifiedSessionEvidence(
+        evidenceSnapshot.data(),
+        input.sessionID,
+        nowMs
+      );
+      const stateData = stateSnapshot.data();
       const previous = storedSocialState(
-        stateSnapshot.exists ? stateSnapshot.data() : null,
+        isRecord(stateData) && stateData.schemaVersion === 2 ? stateData : null,
         input.displayName,
         nowMs
       );
-      if (markerSnapshot.exists) {
+      const marker = markerSnapshot.data();
+      const references = validateSocialReferenceManifest(
+        referencesSnapshot.data(),
+        uid
+      );
+      if (isRecord(marker) && marker.schemaVersion === 2 &&
+          marker.evidenceSource === "noum-server-evaluator") {
         return {
           schemaVersion: SOCIAL_SCHEMA_VERSION,
           sessionID: input.sessionID,
@@ -848,21 +916,9 @@ export const recordPeerSession = onCall(
           profile: profileFromSocialState(previous, uid, nowMs),
         };
       }
-      if (!sessionSnapshot.exists) {
-        throw new HttpsError(
-          "not-found",
-          "The completed session was not found."
-        );
-      }
-
-      const session = validateStoredSocialSession(
-        sessionSnapshot.data(),
-        input.sessionID,
-        nowMs
-      );
       const advanced = advanceSocialState(
         previous,
-        session,
+        evidence,
         uid,
         input.displayName,
         nowMs
@@ -880,15 +936,23 @@ export const recordPeerSession = onCall(
         ...advanced.state,
         updatedAt,
       });
-      transaction.create(markerRef, {
-        schemaVersion: SOCIAL_SCHEMA_VERSION,
+      transaction.set(markerRef, {
+        schemaVersion: 2,
         sessionID: input.sessionID,
-        sessionDate: Timestamp.fromMillis(session.dateMs),
-        isRated: session.isRated,
+        evidenceSource: "noum-server-evaluator",
+        sessionDate: Timestamp.fromMillis(evidence.dateMs),
+        isRated: evidence.isRated,
         ratingDelta: advanced.ratingDelta,
         processedAt: updatedAt,
       });
       transaction.set(publicProfileRef, profileData);
+      const membershipPath = advanced.state.currentBucket ?
+        `leagues/${advanced.state.currentBucket}/members/${uid}` : null;
+      transaction.set(referencesRef, {
+        leagueMembershipPaths: membershipPath ? [membershipPath] : [],
+        challengeIDs: references.challengeIDs,
+        updatedAt,
+      });
       if (advanced.state.currentBucket) {
         transaction.set(
           firestore.collection("leagues").doc(advanced.state.currentBucket)
@@ -926,6 +990,12 @@ export const createChallenge = onCall(
         "Choose another speaker for this challenge."
       );
     }
+    await enforceSocialRateLimit(
+      uid,
+      "challengeCreate",
+      CHALLENGE_CREATE_MINUTE_LIMIT,
+      CHALLENGE_CREATE_HOUR_LIMIT
+    );
     const firestore = getFirestore();
     const challengeRef = firestore.collection("challenges")
       .doc(input.challengeID);
@@ -948,15 +1018,39 @@ export const createChallenge = onCall(
         return {
           schemaVersion: SOCIAL_SCHEMA_VERSION,
           created: false,
-          challenge: challengeEnvelope(challenge),
+          challenge: challengeEnvelope(challenge, uid),
         };
       }
 
+      const creatorFriendLink = await transaction.get(
+        firestore.collection("_socialFriendLinks").doc(uid)
+          .collection("friends").doc(input.opponentAccountID)
+      );
+      const opponentFriendLink = await transaction.get(
+        firestore.collection("_socialFriendLinks").doc(input.opponentAccountID)
+          .collection("friends").doc(uid)
+      );
+      validateReciprocalFriendLinks(
+        creatorFriendLink.data(),
+        opponentFriendLink.data(),
+        uid,
+        input.opponentAccountID
+      );
       const creatorProfile = await transaction.get(
         firestore.collection("profiles_public").doc(uid)
       );
       const opponentProfile = await transaction.get(
         firestore.collection("profiles_public").doc(input.opponentAccountID)
+      );
+      const creatorReferencesRef = firestore.collection("_socialReferences")
+        .doc(uid);
+      const opponentReferencesRef = firestore.collection("_socialReferences")
+        .doc(input.opponentAccountID);
+      const creatorReferencesSnapshot = await transaction.get(
+        creatorReferencesRef
+      );
+      const opponentReferencesSnapshot = await transaction.get(
+        opponentReferencesRef
       );
       if (!creatorProfile.exists || !opponentProfile.exists) {
         throw new HttpsError(
@@ -966,9 +1060,10 @@ export const createChallenge = onCall(
       }
       const nowMs = Date.now();
       const challenge: Record<string, unknown> = {
-        schemaVersion: SOCIAL_SCHEMA_VERSION,
+        schemaVersion: CHALLENGE_DOCUMENT_SCHEMA_VERSION,
         id: input.challengeID,
         prompt: input.prompt,
+        promptDigest: promptDigest(input.prompt),
         createdAt: Timestamp.fromMillis(nowMs),
         expiresAt: Timestamp.fromMillis(nowMs + CHALLENGE_LIFETIME_MS),
         creatorID: stableLegacyUUID(uid),
@@ -978,26 +1073,31 @@ export const createChallenge = onCall(
         opponentName: socialProfileDisplayName(opponentProfile.data()),
         opponentAccountID: input.opponentAccountID,
         participantIDs: [uid, input.opponentAccountID],
-        creatorScore: null,
-        creatorDuration: null,
-        creatorSummary: null,
-        creatorSessionID: null,
-        creatorSubmittedAt: null,
-        creatorReaction: null,
-        creatorReactedAt: null,
-        opponentScore: null,
-        opponentDuration: null,
-        opponentSummary: null,
-        opponentSessionID: null,
-        opponentSubmittedAt: null,
-        opponentReaction: null,
-        opponentReactedAt: null,
+        completedAt: null,
       };
+      const creatorReferences = socialReferenceManifestIncludingChallenge(
+        creatorReferencesSnapshot.data(),
+        uid,
+        input.challengeID
+      );
+      const opponentReferences = socialReferenceManifestIncludingChallenge(
+        opponentReferencesSnapshot.data(),
+        input.opponentAccountID,
+        input.challengeID
+      );
       transaction.create(challengeRef, challenge);
+      transaction.set(creatorReferencesRef, {
+        ...creatorReferences,
+        updatedAt: Timestamp.fromMillis(nowMs),
+      });
+      transaction.set(opponentReferencesRef, {
+        ...opponentReferences,
+        updatedAt: Timestamp.fromMillis(nowMs),
+      });
       return {
         schemaVersion: SOCIAL_SCHEMA_VERSION,
         created: true,
-        challenge: challengeEnvelope(challenge),
+        challenge: challengeEnvelope(challenge, uid),
       };
     });
   }
@@ -1020,15 +1120,13 @@ export const submitChallengeResult = onCall(
     const firestore = getFirestore();
     const challengeRef = firestore.collection("challenges")
       .doc(input.challengeID);
-    const sessionRef = firestore.collection("users").doc(uid)
-      .collection("sessions").doc(input.sessionID);
+    const evidenceRef = firestore.collection("_verifiedSessionEvidence")
+      .doc(uid).collection("sessions").doc(input.sessionID);
     const replayRef = firestore.collection("_socialState").doc(uid)
       .collection("challengeResults").doc(input.sessionID);
 
     return firestore.runTransaction(async (transaction) => {
       const challengeSnapshot = await transaction.get(challengeRef);
-      const sessionSnapshot = await transaction.get(sessionRef);
-      const replaySnapshot = await transaction.get(replayRef);
       if (!challengeSnapshot.exists) {
         throw new HttpsError("not-found", "Challenge not found.");
       }
@@ -1037,74 +1135,127 @@ export const submitChallengeResult = onCall(
         input.challengeID
       );
       const side = challengeSide(challenge, uid);
-      const sideSessionField = `${side}SessionID`;
-      const existingSideSession = challenge[sideSessionField];
-      if (replaySnapshot.exists) {
-        const replay = replaySnapshot.data() ?? {};
-        if (replay.challengeID === input.challengeID && replay.side === side &&
-            existingSideSession === input.sessionID) {
+      const otherSide = side === "creator" ? "opponent" : "creator";
+      const otherAccountID = challenge[`${otherSide}AccountID`];
+      if (typeof otherAccountID !== "string") {
+        throw new Error("Corrupt challenge participant identity.");
+      }
+      const submissions = challengeRef.collection("submissions");
+      const ownSubmissionRef = submissions.doc(uid);
+      const otherSubmissionRef = submissions.doc(otherAccountID);
+      const combinedRef = challengeRef.collection("combined").doc("result");
+      const evidenceSnapshot = await transaction.get(evidenceRef);
+      const replaySnapshot = await transaction.get(replayRef);
+      const ownSubmissionSnapshot = await transaction.get(ownSubmissionRef);
+      const otherSubmissionSnapshot = await transaction.get(otherSubmissionRef);
+      const combinedSnapshot = await transaction.get(combinedRef);
+
+      if (ownSubmissionSnapshot.exists) {
+        const ownSubmission = validateChallengeSubmission(
+          ownSubmissionSnapshot.data(),
+          input.challengeID,
+          uid,
+          side
+        );
+        const replay = replaySnapshot.data();
+        if (ownSubmission.sessionID === input.sessionID &&
+            isRecord(replay) && replay.schemaVersion === 2 &&
+            replay.challengeID === input.challengeID && replay.side === side) {
+          const combined = combinedSnapshot.exists ?
+            validateCombinedChallengeResult(
+              combinedSnapshot.data(),
+              input.challengeID
+            ) : undefined;
           return {
             schemaVersion: SOCIAL_SCHEMA_VERSION,
             sessionID: input.sessionID,
             submitted: false,
-            challenge: challengeEnvelope(challenge),
+            challenge: challengeEnvelope(
+              challenge,
+              uid,
+              ownSubmission,
+              combined
+            ),
           };
         }
-        throw new HttpsError(
-          "already-exists",
-          "That session has already been used for a challenge."
-        );
-      }
-      if (!sessionSnapshot.exists) {
-        throw new HttpsError(
-          "not-found",
-          "The completed session was not found."
-        );
-      }
-      if (existingSideSession !== null && existingSideSession !== undefined) {
         throw new HttpsError(
           "failed-precondition",
           "Your result for this challenge is already recorded."
         );
       }
+      if (combinedSnapshot.exists) {
+        throw new Error("Combined result exists without caller submission.");
+      }
+      if (replaySnapshot.exists) {
+        throw new HttpsError(
+          "already-exists",
+          "That session has already been used for a challenge."
+        );
+      }
 
       const nowMs = Date.now();
-      const session = validateStoredSocialSession(
-        sessionSnapshot.data(),
+      const expiresAt = socialDateMilliseconds(challenge.expiresAt);
+      if (expiresAt === null || nowMs > expiresAt) {
+        throw new HttpsError(
+          "failed-precondition",
+          "This challenge has expired.",
+          {reason: "challenge-expired"}
+        );
+      }
+      const evidence = validateVerifiedSessionEvidence(
+        evidenceSnapshot.data(),
         input.sessionID,
         nowMs
       );
-      const createdAt = socialDateMilliseconds(challenge.createdAt);
-      const expiresAt = socialDateMilliseconds(challenge.expiresAt);
-      if (createdAt === null || expiresAt === null ||
-          session.dateMs < createdAt || session.dateMs > expiresAt) {
-        throw new HttpsError(
-          "failed-precondition",
-          "Use a completed rep recorded during this challenge."
-        );
-      }
+      assertEvidenceBoundToChallenge(evidence, challenge, nowMs);
       const submittedAt = Timestamp.fromMillis(nowMs);
-      const updates: Record<string, unknown> = {
-        [`${side}Score`]: session.score,
-        [`${side}Duration`]: session.duration,
-        [`${side}Summary`]: session.summary,
-        [sideSessionField]: input.sessionID,
-        [`${side}SubmittedAt`]: submittedAt,
-      };
-      transaction.update(challengeRef, updates);
-      transaction.create(replayRef, {
-        schemaVersion: SOCIAL_SCHEMA_VERSION,
+      const ownSubmission = challengeSubmissionDocument(
+        input.challengeID,
+        uid,
+        side,
+        evidence,
+        submittedAt
+      );
+      const otherSubmission = otherSubmissionSnapshot.exists ?
+        validateChallengeSubmission(
+          otherSubmissionSnapshot.data(),
+          input.challengeID,
+          otherAccountID,
+          otherSide
+        ) : null;
+      transaction.create(ownSubmissionRef, ownSubmission);
+      transaction.set(replayRef, {
+        schemaVersion: 2,
         challengeID: input.challengeID,
         sessionID: input.sessionID,
         side,
         submittedAt,
       });
-      const updatedChallenge = {...challenge, ...updates};
+      let combined: ReturnType<typeof combinedChallengeDocument> | undefined;
+      if (otherSubmission) {
+        const creatorSubmission: ChallengeSubmission = side === "creator" ?
+          ownSubmission : otherSubmission;
+        const opponentSubmission: ChallengeSubmission = side === "opponent" ?
+          ownSubmission : otherSubmission;
+        combined = combinedChallengeDocument(
+          input.challengeID,
+          creatorSubmission,
+          opponentSubmission,
+          submittedAt
+        );
+        transaction.create(combinedRef, combined);
+        transaction.update(challengeRef, {completedAt: submittedAt});
+      }
       return {
         schemaVersion: SOCIAL_SCHEMA_VERSION,
         sessionID: input.sessionID,
         submitted: true,
-        challenge: challengeEnvelope(updatedChallenge),
+        challenge: challengeEnvelope(
+          challenge,
+          uid,
+          ownSubmission,
+          combined
+        ),
       };
     });
   }
@@ -1124,67 +1275,92 @@ export const setChallengeReaction = onCall(
       throw new HttpsError("unauthenticated", "A secure session is required.");
     }
     const input = validateSetChallengeReactionRequest(request.data);
+    await enforceSocialRateLimit(
+      uid,
+      "challengeReaction",
+      CHALLENGE_REACTION_MINUTE_LIMIT,
+      CHALLENGE_REACTION_HOUR_LIMIT
+    );
     const firestore = getFirestore();
     const challengeRef = firestore.collection("challenges")
       .doc(input.challengeID);
 
     return firestore.runTransaction(async (transaction) => {
-      const snapshot = await transaction.get(challengeRef);
-      if (!snapshot.exists) {
+      const challengeSnapshot = await transaction.get(challengeRef);
+      if (!challengeSnapshot.exists) {
         throw new HttpsError("not-found", "Challenge not found.");
       }
       const challenge = validateStoredChallenge(
-        snapshot.data(),
+        challengeSnapshot.data(),
         input.challengeID
       );
       const side = challengeSide(challenge, uid);
-      if (!Number.isInteger(challenge.creatorScore) ||
-          !Number.isInteger(challenge.opponentScore)) {
+      const otherSide = side === "creator" ? "opponent" : "creator";
+      const otherAccountID = challenge[`${otherSide}AccountID`];
+      if (typeof otherAccountID !== "string") {
+        throw new Error("Corrupt challenge participant identity.");
+      }
+      const ownSubmissionRef = challengeRef.collection("submissions").doc(uid);
+      const otherSubmissionRef = challengeRef.collection("submissions")
+        .doc(otherAccountID);
+      const combinedRef = challengeRef.collection("combined").doc("result");
+      const ownSnapshot = await transaction.get(ownSubmissionRef);
+      const otherSnapshot = await transaction.get(otherSubmissionRef);
+      const combinedSnapshot = await transaction.get(combinedRef);
+      if (!ownSnapshot.exists || !otherSnapshot.exists ||
+          !combinedSnapshot.exists) {
         throw new HttpsError(
           "failed-precondition",
           "Reactions unlock after both speakers finish."
         );
       }
-      const reactionField = `${side}Reaction`;
-      if (challenge[reactionField] === input.reaction) {
+      const ownSubmission = validateChallengeSubmission(
+        ownSnapshot.data(),
+        input.challengeID,
+        uid,
+        side
+      );
+      validateChallengeSubmission(
+        otherSnapshot.data(),
+        input.challengeID,
+        otherAccountID,
+        otherSide
+      );
+      const combined = validateCombinedChallengeResult(
+        combinedSnapshot.data(),
+        input.challengeID
+      );
+      if (ownSubmission.reaction === input.reaction) {
         return {
           schemaVersion: SOCIAL_SCHEMA_VERSION,
           updated: false,
-          challenge: challengeEnvelope(challenge),
+          challenge: challengeEnvelope(challenge, uid, ownSubmission, combined),
         };
       }
-      const updates: Record<string, unknown> = {
-        [reactionField]: input.reaction,
-        [`${side}ReactedAt`]: Timestamp.now(),
+      const reactedAt = Timestamp.now();
+      const submissionUpdates = {
+        reaction: input.reaction,
+        reactedAt,
       };
-      transaction.update(challengeRef, updates);
+      const combinedUpdates = {
+        [`${side}Reaction`]: input.reaction,
+        [`${side}ReactedAt`]: reactedAt,
+      };
+      transaction.update(ownSubmissionRef, submissionUpdates);
+      transaction.update(combinedRef, combinedUpdates);
       return {
         schemaVersion: SOCIAL_SCHEMA_VERSION,
         updated: true,
-        challenge: challengeEnvelope({...challenge, ...updates}),
+        challenge: challengeEnvelope(
+          challenge,
+          uid,
+          {...ownSubmission, ...submissionUpdates},
+          {...combined, ...combinedUpdates}
+        ),
       };
     });
   }
 );
-
-/**
- * Deletes every document returned by a bounded query, then repeats until the
- * query is empty. Re-querying avoids skipped documents while deleting pages.
- * @param {Function} makeQuery Fresh query without a limit.
- * @return {Promise<void>} Resolves when no matching documents remain.
- */
-async function deleteQueryMatches(makeQuery: () => Query): Promise<void> {
-  const firestore = getFirestore();
-  let snapshot = await makeQuery().limit(200).get();
-  while (!snapshot.empty) {
-    const batch = firestore.batch();
-    for (const document of snapshot.docs) {
-      batch.delete(document.ref);
-    }
-    await batch.commit();
-    snapshot = await makeQuery().limit(200).get();
-  }
-}
 
 /**
  * True only when an Admin Auth error reports a missing user.
@@ -1252,18 +1428,78 @@ export const deleteAccount = onCall(
         await firestore.collection("profiles_public").doc(uid).delete();
       },
       leagueMemberships: async () => {
-        await deleteQueryMatches(() => firestore.collectionGroup("members")
-          .where("accountID", "==", uid));
+        const snapshot = await firestore.collection("_socialReferences")
+          .doc(uid).get();
+        const references = validateSocialReferenceManifest(
+          snapshot.data(),
+          uid
+        );
+        const batch = firestore.batch();
+        for (const path of references.leagueMembershipPaths) {
+          batch.delete(firestore.doc(path));
+        }
+        await batch.commit();
       },
       challenges: async () => {
-        await deleteQueryMatches(() => firestore.collection("challenges")
-          .where("participantIDs", "array-contains", uid));
+        const snapshot = await firestore.collection("_socialReferences")
+          .doc(uid).get();
+        const references = validateSocialReferenceManifest(
+          snapshot.data(),
+          uid
+        );
+        for (const challengeID of references.challengeIDs) {
+          const challengeRef = firestore.collection("challenges")
+            .doc(challengeID);
+          const challengeSnapshot = await challengeRef.get();
+          let otherAccountID: string | null = null;
+          if (challengeSnapshot.exists) {
+            const challenge = validateStoredChallenge(
+              challengeSnapshot.data(),
+              challengeID
+            );
+            const side = challengeSide(challenge, uid);
+            const otherSide = side === "creator" ? "opponent" : "creator";
+            const candidate = challenge[`${otherSide}AccountID`];
+            otherAccountID = typeof candidate === "string" ? candidate : null;
+          }
+          await firestore.recursiveDelete(challengeRef);
+          if (otherAccountID) {
+            const otherReferencesRef = firestore
+              .collection("_socialReferences").doc(otherAccountID);
+            await firestore.runTransaction(async (transaction) => {
+              const otherReferencesSnapshot = await transaction.get(
+                otherReferencesRef
+              );
+              if (!otherReferencesSnapshot.exists) return;
+              const otherReferences = validateSocialReferenceManifest(
+                otherReferencesSnapshot.data(),
+                otherAccountID
+              );
+              transaction.set(otherReferencesRef, {
+                ...otherReferences,
+                challengeIDs: otherReferences.challengeIDs.filter(
+                  (candidate) => candidate !== challengeID
+                ),
+                updatedAt: Timestamp.now(),
+              });
+            });
+          }
+        }
       },
       rateLimits: async () => {
         await Promise.all([
           firestore.collection("_serverRateLimits").doc(uid).delete(),
           firestore.recursiveDelete(
             firestore.collection("_socialState").doc(uid)
+          ),
+          firestore.recursiveDelete(
+            firestore.collection("_socialReferences").doc(uid)
+          ),
+          firestore.recursiveDelete(
+            firestore.collection("_verifiedSessionEvidence").doc(uid)
+          ),
+          firestore.recursiveDelete(
+            firestore.collection("_socialFriendLinks").doc(uid)
           ),
         ]);
       },

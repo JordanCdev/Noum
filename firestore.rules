@@ -3,14 +3,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Assumed public data model:
-    // - profiles_public/{uid} and leagues/{bucket}/members/{uid} contain only
-    //   bounded display data plus server-authored rating/streak/repetition
-    //   aggregates and a server timestamp.
-    // - challenges/{uuid} contains two immutable Firebase UIDs, bounded names
-    //   and prompt, server timestamps, and optional server-derived results.
-    // - _serverRateLimits and _socialState are callable-only state. The Admin
-    //   SDK bypasses these rules; no client may inspect or mutate them.
+    // Assumed social data model:
+    // - profiles_public/{uid}: bounded display name plus server-authored
+    //   competitive aggregates. Authenticated direct-get only; never list.
+    // - leagues/{bucket}/members/{uid}: the same non-PII aggregate shape,
+    //   queryable only inside one explicit league bucket.
+    // - challenges/{uuid}: immutable participant metadata and prompt only.
+    // - challenges/{uuid}/submissions/{uid}: that participant's private result.
+    // - challenges/{uuid}/combined/result: materialized only after both private
+    //   submissions exist; both participants may then read the combined result.
+    // - underscore-prefixed social collections: callable/runtime-only evidence,
+    //   replay, rate-limit, relationship, and exact-deletion reference state.
 
     function isAuthenticated() {
       return request.auth != null;
@@ -62,7 +65,16 @@ service cloud.firestore {
                   .affectedKeys().hasOnly(['displayName']);
     }
 
-    match /_serverRateLimits/{accountID} {
+    function challengeParticipant(challengeID) {
+      let challenge = get(
+        /databases/$(database)/documents/challenges/$(challengeID)
+      );
+      return isAuthenticated()
+             && challenge.data.participantIDs is list
+             && request.auth.uid in challenge.data.participantIDs;
+    }
+
+    match /_serverRateLimits/{document=**} {
       allow read, write: if false;
     }
 
@@ -70,29 +82,62 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Private account data remains owner-scoped. The social callables read a
-    // completed session from this subtree but never take its score from input.
+    match /_socialReferences/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /_verifiedSessionEvidence/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /_socialFriendLinks/{document=**} {
+      allow read, write: if false;
+    }
+
+    // Existing private account ownership remains unchanged in this slice.
+    // Per-path user-subtree schemas are a separate hardening change because
+    // profile, progress, session, and recommendation documents differ.
     match /users/{accountID}/{document=**} {
       allow read, write: if isOwner(accountID);
     }
 
     match /profiles_public/{accountID} {
-      allow read: if isAuthenticated();
-      allow create, delete: if false;
+      allow get: if isAuthenticated();
+      allow list, create, delete: if false;
       allow update: if updatesOnlyDisplayName(accountID);
     }
 
     match /leagues/{bucket}/members/{accountID} {
-      allow read: if isAuthenticated();
+      allow get: if isAuthenticated();
+      allow list: if isAuthenticated()
+                  && request.query.limit != null
+                  && request.query.limit <= 50;
       allow create, delete: if false;
       allow update: if updatesOnlyDisplayName(accountID);
     }
 
     match /challenges/{challengeID} {
-      allow read: if isAuthenticated()
+      allow get: if isAuthenticated()
+                 && resource.data.participantIDs is list
+                 && request.auth.uid in resource.data.participantIDs;
+      allow list: if isAuthenticated()
+                  && request.query.limit != null
+                  && request.query.limit <= 50
                   && resource.data.participantIDs is list
                   && request.auth.uid in resource.data.participantIDs;
       allow create, update, delete: if false;
+
+      match /submissions/{accountID} {
+        allow get: if isOwner(accountID)
+                   && challengeParticipant(challengeID);
+        allow list, create, update, delete: if false;
+      }
+
+      match /combined/{resultID} {
+        allow get: if resultID == 'result'
+                   && challengeParticipant(challengeID);
+        allow list, create, update, delete: if false;
+      }
     }
   }
 }

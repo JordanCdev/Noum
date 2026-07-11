@@ -4,6 +4,7 @@ import {createHash} from "node:crypto";
 import {HttpsError} from "firebase-functions/v2/https";
 
 export const SOCIAL_SCHEMA_VERSION = 1;
+export const CHALLENGE_DOCUMENT_SCHEMA_VERSION = 2;
 export const INITIAL_RATING = 400;
 export const MAX_DISPLAY_NAME_CHARS = 60;
 export const MAX_PROMPT_CHARS = 500;
@@ -11,16 +12,24 @@ export const MAX_RESULT_SUMMARY_CHARS = 240;
 export const CHALLENGE_LIFETIME_MS = 3 * 24 * 60 * 60 * 1_000;
 export const SOCIAL_PRACTICE_DAY_LIMIT = 400;
 export const SOCIAL_RATING_EVENT_LIMIT = 100;
+export const CHALLENGE_CREATE_MINUTE_LIMIT = 3;
+export const CHALLENGE_CREATE_HOUR_LIMIT = 20;
+export const CHALLENGE_REACTION_MINUTE_LIMIT = 10;
+export const CHALLENGE_REACTION_HOUR_LIMIT = 100;
+export const VERIFIED_EVIDENCE_SOURCE = "noum-server-evaluator";
 export const CHALLENGE_REACTIONS = [
   "🔥", "👏", "💪", "🤯", "🏆", "❤️",
 ] as const;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1_000;
 const MIN_SESSION_DATE_MS = Date.UTC(2020, 0, 1);
 const MAX_SESSION_DURATION_SECONDS = 4 * 60 * 60;
 const ROLLING_WEEK_MS = 7 * 24 * 60 * 60 * 1_000;
+const MAX_REFERENCE_CHALLENGES = 100;
+const MAX_REFERENCE_LEAGUES = 4;
 
 export type LeagueTier =
   "bronze" | "silver" | "gold" | "platinum" | "diamond";
@@ -52,13 +61,15 @@ export interface SetChallengeReactionInput {
   reaction: ChallengeReaction;
 }
 
-export interface ValidatedSocialSession {
+export interface VerifiedSessionEvidence {
   sessionID: string;
   score: number;
   dateMs: number;
   duration: number;
   isRated: boolean;
   summary: string | null;
+  challengeID: string | null;
+  promptDigest: string | null;
 }
 
 export interface RatingEvent {
@@ -68,7 +79,7 @@ export interface RatingEvent {
 }
 
 export interface StoredSocialState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   rating: number;
   peakRating: number;
   totalRatedSessions: number;
@@ -99,6 +110,40 @@ export interface AdvancedSocialState {
   ratingDelta: number;
 }
 
+export interface ChallengeSubmission {
+  schemaVersion: 1;
+  challengeID: string;
+  accountID: string;
+  side: ChallengeSide;
+  sessionID: string;
+  score: number;
+  duration: number;
+  summary: string | null;
+  submittedAt: unknown;
+  reaction: ChallengeReaction | null;
+  reactedAt: unknown | null;
+}
+
+export interface CombinedChallengeResult {
+  schemaVersion: 1;
+  challengeID: string;
+  creatorSessionID: string;
+  creatorScore: number;
+  creatorDuration: number;
+  creatorSummary: string | null;
+  creatorSubmittedAt: unknown;
+  creatorReaction: ChallengeReaction | null;
+  creatorReactedAt: unknown | null;
+  opponentSessionID: string;
+  opponentScore: number;
+  opponentDuration: number;
+  opponentSummary: string | null;
+  opponentSubmittedAt: unknown;
+  opponentReaction: ChallengeReaction | null;
+  opponentReactedAt: unknown | null;
+  completedAt: unknown;
+}
+
 export interface ChallengeEnvelope {
   id: string;
   prompt: string;
@@ -120,14 +165,17 @@ export interface ChallengeEnvelope {
   opponentReaction: ChallengeReaction | null;
 }
 
-/** True only for an unboxed JSON object. */
+export interface SocialReferenceManifest {
+  leagueMembershipPaths: string[];
+  challengeIDs: string[];
+}
+
 export function isSocialRecord(
   value: unknown
 ): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Enforces an exact request key set before public data reaches a handler. */
 function hasExactKeys(
   value: Record<string, unknown>,
   expected: string[]
@@ -138,7 +186,6 @@ function hasExactKeys(
     actual.every((key, index) => key === sortedExpected[index]);
 }
 
-/** Returns a normalized UUID or rejects the public request. */
 function validatedUUID(value: unknown, label: string): string {
   if (typeof value !== "string" || !UUID_PATTERN.test(value)) {
     throw new HttpsError("invalid-argument", `Invalid ${label}.`);
@@ -146,7 +193,6 @@ function validatedUUID(value: unknown, label: string): string {
   return value.toUpperCase();
 }
 
-/** Returns a bounded, non-blank string without silently trimming it. */
 function validatedBoundedString(
   value: unknown,
   label: string,
@@ -159,7 +205,6 @@ function validatedBoundedString(
   return value;
 }
 
-/** Firebase UIDs are opaque but cannot be blank, huge, or contain a slash. */
 export function validateFirebaseUID(value: unknown): string {
   const hasControlCharacter = typeof value === "string" &&
     Array.from(value).some((character) => {
@@ -174,7 +219,6 @@ export function validateFirebaseUID(value: unknown): string {
   return value;
 }
 
-/** Validates the exact v1 record-peer-session request. */
 export function validateRecordPeerSessionRequest(
   data: unknown
 ): RecordPeerSessionInput {
@@ -193,7 +237,6 @@ export function validateRecordPeerSessionRequest(
   };
 }
 
-/** Validates the exact v1 challenge-creation request. */
 export function validateCreateChallengeRequest(
   data: unknown
 ): CreateChallengeInput {
@@ -211,7 +254,6 @@ export function validateCreateChallengeRequest(
   };
 }
 
-/** Validates the exact v1 challenge-result request. */
 export function validateSubmitChallengeResultRequest(
   data: unknown
 ): SubmitChallengeResultInput {
@@ -226,7 +268,6 @@ export function validateSubmitChallengeResultRequest(
   };
 }
 
-/** Validates the exact v1 reaction request and its closed enum. */
 export function validateSetChallengeReactionRequest(
   data: unknown
 ): SetChallengeReactionInput {
@@ -243,7 +284,6 @@ export function validateSetChallengeReactionRequest(
   };
 }
 
-/** Converts supported persisted date representations to Unix milliseconds. */
 export function socialDateMilliseconds(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value > 10_000_000_000 ? value : value * 1_000;
@@ -260,54 +300,102 @@ export function socialDateMilliseconds(value: unknown): number | null {
   return null;
 }
 
-/**
- * Validates that a social result comes from a complete, non-fixture session.
- * The callable never accepts score, duration, date, or rating flags directly.
- */
-export function validateStoredSocialSession(
+function isServerTimestamp(value: unknown): boolean {
+  return isSocialRecord(value) && typeof value.toMillis === "function" &&
+    socialDateMilliseconds(value) !== null;
+}
+
+export function verifiedEvidenceUnavailable(): never {
+  throw new HttpsError(
+    "failed-precondition",
+    "Verified competitive evidence is not available for this rep.",
+    {reason: "verified-evidence-unavailable"}
+  );
+}
+
+export function validateVerifiedSessionEvidence(
   value: unknown,
   sessionID: string,
   nowMs: number
-): ValidatedSocialSession {
-  if (!isSocialRecord(value) ||
-      typeof value.id !== "string" || value.id.toUpperCase() !== sessionID ||
-      typeof value.transcript !== "string" || value.transcript.trim().length < 1 ||
+): VerifiedSessionEvidence {
+  if (!isSocialRecord(value) || value.schemaVersion !== 1 ||
+      value.evidenceSource !== VERIFIED_EVIDENCE_SOURCE ||
+      typeof value.evaluatorVersion !== "number" ||
+      !Number.isInteger(value.evaluatorVersion) || value.evaluatorVersion < 1 ||
+      value.competitiveEligible !== true ||
+      typeof value.sessionID !== "string" ||
+      value.sessionID.toUpperCase() !== sessionID ||
       typeof value.duration !== "number" || !Number.isFinite(value.duration) ||
       value.duration < 1 || value.duration > MAX_SESSION_DURATION_SECONDS ||
       typeof value.score !== "number" || !Number.isInteger(value.score) ||
       value.score < 0 || value.score > 10 ||
       typeof value.isRated !== "boolean" ||
-      value.isEvaluationFixture !== false ||
-      (value.fixtureID !== undefined && value.fixtureID !== null)) {
-    throw new HttpsError(
-      "failed-precondition",
-      "This session is not a complete real recording."
-    );
+      !(value.summary === null ||
+        (typeof value.summary === "string" &&
+         value.summary.length <= MAX_RESULT_SUMMARY_CHARS)) ||
+      !(value.challengeID === null ||
+        (typeof value.challengeID === "string" &&
+         UUID_PATTERN.test(value.challengeID))) ||
+      !(value.promptDigest === null ||
+        (typeof value.promptDigest === "string" &&
+         SHA256_PATTERN.test(value.promptDigest))) ||
+      !isServerTimestamp(value.completedAt) ||
+      !isServerTimestamp(value.attestedAt)) {
+    return verifiedEvidenceUnavailable();
   }
-  const dateMs = socialDateMilliseconds(value.date);
-  if (dateMs === null || dateMs < MIN_SESSION_DATE_MS ||
-      dateMs > nowMs + MAX_CLOCK_SKEW_MS) {
-    throw new HttpsError(
-      "failed-precondition",
-      "This session does not have a valid completion date."
-    );
+  const completedAt = socialDateMilliseconds(value.completedAt);
+  const attestedAt = socialDateMilliseconds(value.attestedAt);
+  if (completedAt === null || attestedAt === null ||
+      completedAt < MIN_SESSION_DATE_MS ||
+      completedAt > nowMs + MAX_CLOCK_SKEW_MS ||
+      attestedAt < completedAt || attestedAt > nowMs + MAX_CLOCK_SKEW_MS) {
+    return verifiedEvidenceUnavailable();
   }
-  const summaryValue = [value.headline, value.coachSummary]
-    .find((candidate) => typeof candidate === "string" && candidate.trim().length > 0);
-  const summary = typeof summaryValue === "string" ?
-    Array.from(summaryValue.trim()).slice(0, MAX_RESULT_SUMMARY_CHARS).join("") :
-    null;
   return {
     sessionID,
-    score: value.score,
-    dateMs,
-    duration: value.duration,
-    isRated: value.isRated,
-    summary,
+    score: value.score as number,
+    dateMs: completedAt,
+    duration: value.duration as number,
+    isRated: value.isRated as boolean,
+    summary: value.summary as string | null,
+    challengeID: typeof value.challengeID === "string" ?
+      value.challengeID.toUpperCase() : null,
+    promptDigest: value.promptDigest as string | null,
   };
 }
 
-/** Swift's default `.rounded()` is nearest-or-away-from-zero on exact ties. */
+export function promptDigest(prompt: string): string {
+  return createHash("sha256").update(prompt, "utf8").digest("hex");
+}
+
+export function assertEvidenceBoundToChallenge(
+  evidence: VerifiedSessionEvidence,
+  challenge: Record<string, unknown>,
+  nowMs: number
+): void {
+  const createdAt = socialDateMilliseconds(challenge.createdAt);
+  const expiresAt = socialDateMilliseconds(challenge.expiresAt);
+  if (createdAt === null || expiresAt === null || nowMs > expiresAt) {
+    throw new HttpsError(
+      "failed-precondition",
+      "This challenge has expired.",
+      {reason: "challenge-expired"}
+    );
+  }
+  if (evidence.dateMs < createdAt || evidence.dateMs > expiresAt ||
+      evidence.challengeID !== challenge.id ||
+      typeof challenge.prompt !== "string" ||
+      typeof challenge.promptDigest !== "string" ||
+      promptDigest(challenge.prompt) !== challenge.promptDigest ||
+      evidence.promptDigest !== challenge.promptDigest) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Use verified evidence recorded for this exact prompt.",
+      {reason: "prompt-unbound-evidence"}
+    );
+  }
+}
+
 export function calculateRatingDelta(
   currentRating: number,
   sessionScore: number
@@ -319,7 +407,6 @@ export function calculateRatingDelta(
   return raw >= 0 ? Math.floor(raw + 0.5) : Math.ceil(raw - 0.5);
 }
 
-/** UTC ISO-week key used by both the state reducer and league bucket. */
 export function isoWeekKey(dateMs: number): string {
   const date = new Date(dateMs);
   const day = date.getUTCDay() || 7;
@@ -335,12 +422,10 @@ export function isoWeekKey(dateMs: number): string {
   return `${thursday.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
 
-/** UTC calendar-day key, avoiding server locale and daylight-saving drift. */
 export function socialDayKey(dateMs: number): string {
   return new Date(dateMs).toISOString().slice(0, 10);
 }
 
-/** Returns the rating tier for a server-owned rating. */
 export function leagueTierForRating(rating: number): LeagueTier {
   if (rating < 300) return "bronze";
   if (rating < 500) return "silver";
@@ -349,7 +434,6 @@ export function leagueTierForRating(rating: number): LeagueTier {
   return "diamond";
 }
 
-/** Mirrors the app's one-grace-day streak over a bounded UTC day set. */
 export function calculateCurrentStreak(
   dayKeys: string[],
   nowMs: number
@@ -376,7 +460,6 @@ export function calculateCurrentStreak(
   return streak;
 }
 
-/** Strictly restores server-only social state or initializes it once. */
 export function storedSocialState(
   value: unknown,
   displayName: string,
@@ -384,7 +467,7 @@ export function storedSocialState(
 ): StoredSocialState {
   if (value === undefined || value === null) {
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       rating: INITIAL_RATING,
       peakRating: INITIAL_RATING,
       totalRatedSessions: 0,
@@ -397,7 +480,7 @@ export function storedSocialState(
       updatedAtMs: nowMs,
     };
   }
-  if (!isSocialRecord(value) || value.schemaVersion !== 1 ||
+  if (!isSocialRecord(value) || value.schemaVersion !== 2 ||
       typeof value.rating !== "number" || !Number.isInteger(value.rating) ||
       value.rating < 100 || value.rating > 1_000 ||
       typeof value.peakRating !== "number" || !Number.isInteger(value.peakRating) ||
@@ -418,7 +501,6 @@ export function storedSocialState(
   return value as unknown as StoredSocialState;
 }
 
-/** Validates one bounded server-owned rating-history item. */
 function validRatingEvent(value: unknown): value is RatingEvent {
   return isSocialRecord(value) && typeof value.sessionID === "string" &&
     UUID_PATTERN.test(value.sessionID) && typeof value.dateMs === "number" &&
@@ -426,41 +508,40 @@ function validRatingEvent(value: unknown): value is RatingEvent {
     Number.isInteger(value.delta) && Math.abs(value.delta) <= 32;
 }
 
-/** Advances public statistics from exactly one already-validated session. */
 export function advanceSocialState(
   previous: StoredSocialState,
-  session: ValidatedSocialSession,
+  evidence: VerifiedSessionEvidence,
   accountID: string,
   displayName: string,
   nowMs: number
 ): AdvancedSocialState {
   const currentWeekKey = isoWeekKey(nowMs);
-  const sessionWeekKey = isoWeekKey(session.dateMs);
+  const sessionWeekKey = isoWeekKey(evidence.dateMs);
   const weeklyReps = (previous.weekKey === currentWeekKey ?
     previous.weeklyReps : 0) + (sessionWeekKey === currentWeekKey ? 1 : 0);
-  const ratingDelta = session.isRated ?
-    calculateRatingDelta(previous.rating, session.score) : 0;
-  const rating = session.isRated ?
+  const ratingDelta = evidence.isRated ?
+    calculateRatingDelta(previous.rating, evidence.score) : 0;
+  const rating = evidence.isRated ?
     Math.max(100, Math.min(1_000, previous.rating + ratingDelta)) :
     previous.rating;
   const peakRating = Math.max(previous.peakRating, rating);
   const totalRatedSessions = previous.totalRatedSessions +
-    (session.isRated ? 1 : 0);
-
+    (evidence.isRated ? 1 : 0);
   const oldestDayMs = nowMs - SOCIAL_PRACTICE_DAY_LIMIT * 86_400_000;
+  const newDay = evidence.dateMs >= oldestDayMs ?
+    [socialDayKey(evidence.dateMs)] : [];
   const practiceDays = Array.from(new Set([
     ...previous.practiceDays.filter((day) => {
       const parsed = Date.parse(`${day}T00:00:00.000Z`);
       return Number.isFinite(parsed) && parsed >= oldestDayMs;
     }),
-    socialDayKey(session.dateMs),
+    ...newDay,
   ])).sort().slice(-SOCIAL_PRACTICE_DAY_LIMIT);
-
   const ratingEvents = [
     ...previous.ratingEvents,
-    ...(session.isRated ? [{
-      sessionID: session.sessionID,
-      dateMs: session.dateMs,
+    ...(evidence.isRated ? [{
+      sessionID: evidence.sessionID,
+      dateMs: evidence.dateMs,
       delta: ratingDelta,
     }] : []),
   ]
@@ -470,12 +551,10 @@ export function advanceSocialState(
   const weeklyDelta = ratingEvents.reduce((sum, event) => sum + event.delta, 0);
   const leagueTier = totalRatedSessions > 0 ? leagueTierForRating(rating) : null;
   const currentBucket = leagueTier ? `${leagueTier}_${currentWeekKey}` : null;
-  const updatedAt = nowMs / 1_000;
-
   return {
     ratingDelta,
     state: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       rating,
       peakRating,
       totalRatedSessions,
@@ -496,12 +575,11 @@ export function advanceSocialState(
       weeklyReps,
       weeklyDelta,
       leagueTier,
-      updatedAt,
+      updatedAt: nowMs / 1_000,
     },
   };
 }
 
-/** Reconstructs the latest profile on an idempotent record-session replay. */
 export function profileFromSocialState(
   state: StoredSocialState,
   accountID: string,
@@ -525,9 +603,10 @@ export function profileFromSocialState(
   };
 }
 
-/** Stable presentation-only UUID for legacy Swift challenge fields. */
 export function stableLegacyUUID(accountID: string): string {
-  const bytes = Buffer.from(createHash("sha256").update(accountID).digest().subarray(0, 16));
+  const bytes = Buffer.from(
+    createHash("sha256").update(accountID).digest().subarray(0, 16)
+  );
   bytes[6] = (bytes[6] & 0x0f) | 0x50;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const hex = bytes.toString("hex");
@@ -535,7 +614,6 @@ export function stableLegacyUUID(accountID: string): string {
     `${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-/** Returns which immutable side of a challenge belongs to the caller. */
 export function challengeSide(
   challenge: Record<string, unknown>,
   uid: string
@@ -545,15 +623,18 @@ export function challengeSide(
   throw new HttpsError("permission-denied", "You are not part of this challenge.");
 }
 
-/** Validates a server-owned challenge enough for safe updates and responses. */
 export function validateStoredChallenge(
   value: unknown,
   challengeID: string
 ): Record<string, unknown> {
-  if (!isSocialRecord(value) || value.schemaVersion !== 1 ||
+  if (!isSocialRecord(value) ||
+      value.schemaVersion !== CHALLENGE_DOCUMENT_SCHEMA_VERSION ||
       value.id !== challengeID || typeof value.prompt !== "string" ||
-      socialDateMilliseconds(value.createdAt) === null ||
-      socialDateMilliseconds(value.expiresAt) === null ||
+      value.prompt.length < 1 || value.prompt.length > MAX_PROMPT_CHARS ||
+      typeof value.promptDigest !== "string" ||
+      promptDigest(value.prompt) !== value.promptDigest ||
+      !isServerTimestamp(value.createdAt) ||
+      !isServerTimestamp(value.expiresAt) ||
       typeof value.creatorAccountID !== "string" ||
       typeof value.opponentAccountID !== "string" ||
       value.creatorAccountID === value.opponentAccountID ||
@@ -564,14 +645,135 @@ export function validateStoredChallenge(
       !Array.isArray(value.participantIDs) ||
       value.participantIDs.length !== 2 ||
       !value.participantIDs.includes(value.creatorAccountID) ||
-      !value.participantIDs.includes(value.opponentAccountID)) {
+      !value.participantIDs.includes(value.opponentAccountID) ||
+      !(value.completedAt === null || isServerTimestamp(value.completedAt))) {
     throw new Error("Corrupt server challenge.");
   }
   return value;
 }
 
-/** Serializes Firestore timestamps and optional fields into the locked wire DTO. */
-export function challengeEnvelope(value: unknown): ChallengeEnvelope {
+export function challengeSubmissionDocument(
+  challengeID: string,
+  accountID: string,
+  side: ChallengeSide,
+  evidence: VerifiedSessionEvidence,
+  submittedAt: unknown
+): ChallengeSubmission {
+  return {
+    schemaVersion: 1,
+    challengeID,
+    accountID,
+    side,
+    sessionID: evidence.sessionID,
+    score: evidence.score,
+    duration: evidence.duration,
+    summary: evidence.summary,
+    submittedAt,
+    reaction: null,
+    reactedAt: null,
+  };
+}
+
+export function validateChallengeSubmission(
+  value: unknown,
+  challengeID: string,
+  accountID: string,
+  side: ChallengeSide
+): ChallengeSubmission {
+  if (!isSocialRecord(value) || value.schemaVersion !== 1 ||
+      value.challengeID !== challengeID || value.accountID !== accountID ||
+      value.side !== side || typeof value.sessionID !== "string" ||
+      !UUID_PATTERN.test(value.sessionID) ||
+      typeof value.score !== "number" || !Number.isInteger(value.score) ||
+      value.score < 0 || value.score > 10 ||
+      typeof value.duration !== "number" || !Number.isFinite(value.duration) ||
+      value.duration < 1 || value.duration > MAX_SESSION_DURATION_SECONDS ||
+      !(value.summary === null ||
+        (typeof value.summary === "string" &&
+         value.summary.length <= MAX_RESULT_SUMMARY_CHARS)) ||
+      !isServerTimestamp(value.submittedAt) ||
+      !(value.reaction === null ||
+        (typeof value.reaction === "string" &&
+         CHALLENGE_REACTIONS.includes(value.reaction as ChallengeReaction))) ||
+      !(value.reactedAt === null || isServerTimestamp(value.reactedAt))) {
+    throw new Error("Corrupt server challenge submission.");
+  }
+  return value as unknown as ChallengeSubmission;
+}
+
+export function combinedChallengeDocument(
+  challengeID: string,
+  creator: ChallengeSubmission,
+  opponent: ChallengeSubmission,
+  completedAt: unknown
+): CombinedChallengeResult {
+  return {
+    schemaVersion: 1,
+    challengeID,
+    creatorSessionID: creator.sessionID,
+    creatorScore: creator.score,
+    creatorDuration: creator.duration,
+    creatorSummary: creator.summary,
+    creatorSubmittedAt: creator.submittedAt,
+    creatorReaction: creator.reaction,
+    creatorReactedAt: creator.reactedAt,
+    opponentSessionID: opponent.sessionID,
+    opponentScore: opponent.score,
+    opponentDuration: opponent.duration,
+    opponentSummary: opponent.summary,
+    opponentSubmittedAt: opponent.submittedAt,
+    opponentReaction: opponent.reaction,
+    opponentReactedAt: opponent.reactedAt,
+    completedAt,
+  };
+}
+
+export function validateCombinedChallengeResult(
+  value: unknown,
+  challengeID: string
+): CombinedChallengeResult {
+  if (!isSocialRecord(value) || value.schemaVersion !== 1 ||
+      value.challengeID !== challengeID ||
+      typeof value.creatorSessionID !== "string" ||
+      !UUID_PATTERN.test(value.creatorSessionID) ||
+      typeof value.opponentSessionID !== "string" ||
+      !UUID_PATTERN.test(value.opponentSessionID) ||
+      !validCombinedSide(value, "creator") ||
+      !validCombinedSide(value, "opponent") ||
+      !isServerTimestamp(value.completedAt)) {
+    throw new Error("Corrupt combined challenge result.");
+  }
+  return value as unknown as CombinedChallengeResult;
+}
+
+function validCombinedSide(
+  value: Record<string, unknown>,
+  side: ChallengeSide
+): boolean {
+  const score = value[`${side}Score`];
+  const duration = value[`${side}Duration`];
+  const summary = value[`${side}Summary`];
+  const submittedAt = value[`${side}SubmittedAt`];
+  const reaction = value[`${side}Reaction`];
+  const reactedAt = value[`${side}ReactedAt`];
+  return typeof score === "number" && Number.isInteger(score) &&
+    score >= 0 && score <= 10 &&
+    typeof duration === "number" && Number.isFinite(duration) && duration >= 1 &&
+    (summary === null ||
+      (typeof summary === "string" && summary.length <= MAX_RESULT_SUMMARY_CHARS)) &&
+    isServerTimestamp(submittedAt) &&
+    (reaction === null ||
+      (typeof reaction === "string" &&
+       CHALLENGE_REACTIONS.includes(reaction as ChallengeReaction))) &&
+    (reactedAt === null || isServerTimestamp(reactedAt));
+}
+
+export function challengeEnvelope(
+  value: unknown,
+  viewerAccountID?: string,
+  ownSubmissionValue?: unknown,
+  combinedValue?: unknown
+): ChallengeEnvelope {
   if (!isSocialRecord(value) || typeof value.id !== "string") {
     throw new Error("Invalid challenge envelope source.");
   }
@@ -580,6 +782,23 @@ export function challengeEnvelope(value: unknown): ChallengeEnvelope {
   const expiresAt = socialDateMilliseconds(challenge.expiresAt);
   if (createdAt === null || expiresAt === null) {
     throw new Error("Invalid challenge timestamps.");
+  }
+  let creator: ChallengeSubmission | null = null;
+  let opponent: ChallengeSubmission | null = null;
+  if (combinedValue !== undefined && combinedValue !== null) {
+    const combined = validateCombinedChallengeResult(combinedValue, value.id);
+    creator = combinedSideAsSubmission(combined, challenge, "creator");
+    opponent = combinedSideAsSubmission(combined, challenge, "opponent");
+  } else if (viewerAccountID && ownSubmissionValue) {
+    const side = challengeSide(challenge, viewerAccountID);
+    const submission = validateChallengeSubmission(
+      ownSubmissionValue,
+      value.id,
+      viewerAccountID,
+      side
+    );
+    if (side === "creator") creator = submission;
+    else opponent = submission;
   }
   return {
     id: challenge.id as string,
@@ -592,31 +811,129 @@ export function challengeEnvelope(value: unknown): ChallengeEnvelope {
     opponentID: challenge.opponentID as string,
     opponentName: challenge.opponentName as string,
     opponentAccountID: challenge.opponentAccountID as string,
-    creatorScore: optionalInteger(challenge.creatorScore),
-    creatorDuration: optionalNumber(challenge.creatorDuration),
-    creatorSummary: optionalString(challenge.creatorSummary),
-    opponentScore: optionalInteger(challenge.opponentScore),
-    opponentDuration: optionalNumber(challenge.opponentDuration),
-    opponentSummary: optionalString(challenge.opponentSummary),
-    creatorReaction: optionalReaction(challenge.creatorReaction),
-    opponentReaction: optionalReaction(challenge.opponentReaction),
+    creatorScore: creator?.score ?? null,
+    creatorDuration: creator?.duration ?? null,
+    creatorSummary: creator?.summary ?? null,
+    opponentScore: opponent?.score ?? null,
+    opponentDuration: opponent?.duration ?? null,
+    opponentSummary: opponent?.summary ?? null,
+    creatorReaction: creator?.reaction ?? null,
+    opponentReaction: opponent?.reaction ?? null,
   };
 }
 
-function optionalInteger(value: unknown): number | null {
-  return typeof value === "number" && Number.isInteger(value) ? value : null;
+function combinedSideAsSubmission(
+  combined: CombinedChallengeResult,
+  challenge: Record<string, unknown>,
+  side: ChallengeSide
+): ChallengeSubmission {
+  const accountID = challenge[`${side}AccountID`];
+  if (typeof accountID !== "string") {
+    throw new Error("Corrupt challenge participant.");
+  }
+  return {
+    schemaVersion: 1,
+    challengeID: combined.challengeID,
+    accountID,
+    side,
+    sessionID: combined[`${side}SessionID`],
+    score: combined[`${side}Score`],
+    duration: combined[`${side}Duration`],
+    summary: combined[`${side}Summary`],
+    submittedAt: combined[`${side}SubmittedAt`],
+    reaction: combined[`${side}Reaction`],
+    reactedAt: combined[`${side}ReactedAt`],
+  };
 }
 
-function optionalNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+export function validateReciprocalFriendLinks(
+  creatorLinkValue: unknown,
+  opponentLinkValue: unknown,
+  creatorAccountID: string,
+  opponentAccountID: string
+): void {
+  const valid = isSocialRecord(creatorLinkValue) &&
+    isSocialRecord(opponentLinkValue) &&
+    creatorLinkValue.status === "active" &&
+    opponentLinkValue.status === "active" &&
+    creatorLinkValue.accountID === creatorAccountID &&
+    creatorLinkValue.friendAccountID === opponentAccountID &&
+    opponentLinkValue.accountID === opponentAccountID &&
+    opponentLinkValue.friendAccountID === creatorAccountID &&
+    typeof creatorLinkValue.pairID === "string" &&
+    UUID_PATTERN.test(creatorLinkValue.pairID) &&
+    opponentLinkValue.pairID === creatorLinkValue.pairID &&
+    isServerTimestamp(creatorLinkValue.linkedAt) &&
+    isServerTimestamp(opponentLinkValue.linkedAt);
+  if (!valid) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Challenges require a server-verified friend link.",
+      {reason: "friend-authorization-unavailable"}
+    );
+  }
 }
 
-function optionalString(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
+export function validateSocialReferenceManifest(
+  value: unknown,
+  accountID: string
+): SocialReferenceManifest {
+  if (value === undefined || value === null) {
+    return {leagueMembershipPaths: [], challengeIDs: []};
+  }
+  if (!isSocialRecord(value)) {
+    throw new Error("Corrupt server social references.");
+  }
+  const leagueMembershipPaths = value.leagueMembershipPaths;
+  const challengeIDs = value.challengeIDs;
+  if (!Array.isArray(leagueMembershipPaths) ||
+      leagueMembershipPaths.length > MAX_REFERENCE_LEAGUES ||
+      !leagueMembershipPaths.every((path) =>
+        validLeagueMembershipPath(path, accountID)) ||
+      !Array.isArray(challengeIDs) ||
+      challengeIDs.length > MAX_REFERENCE_CHALLENGES ||
+      !challengeIDs.every((id) =>
+        typeof id === "string" && UUID_PATTERN.test(id))) {
+    throw new Error("Corrupt server social references.");
+  }
+  return {
+    leagueMembershipPaths: [...new Set(leagueMembershipPaths as string[])],
+    challengeIDs: [...new Set(
+      (challengeIDs as string[]).map((id) => id.toUpperCase())
+    )],
+  };
 }
 
-function optionalReaction(value: unknown): ChallengeReaction | null {
-  return typeof value === "string" &&
-    CHALLENGE_REACTIONS.includes(value as ChallengeReaction) ?
-    value as ChallengeReaction : null;
+export function socialReferenceManifestIncludingChallenge(
+  value: unknown,
+  accountID: string,
+  challengeID: string
+): SocialReferenceManifest {
+  const references = validateSocialReferenceManifest(value, accountID);
+  const canonicalChallengeID = challengeID.toUpperCase();
+  if (!UUID_PATTERN.test(canonicalChallengeID)) {
+    throw new Error("Invalid server challenge reference.");
+  }
+  if (references.challengeIDs.includes(canonicalChallengeID)) {
+    return references;
+  }
+  if (references.challengeIDs.length >= MAX_REFERENCE_CHALLENGES) {
+    throw new HttpsError(
+      "resource-exhausted",
+      "Too many retained challenges. Try again later.",
+      {reason: "challenge-reference-capacity"}
+    );
+  }
+  return {
+    leagueMembershipPaths: references.leagueMembershipPaths,
+    challengeIDs: [...references.challengeIDs, canonicalChallengeID],
+  };
+}
+
+function validLeagueMembershipPath(value: unknown, accountID: string): boolean {
+  if (typeof value !== "string") return false;
+  const parts = value.split("/");
+  return parts.length === 4 && parts[0] === "leagues" &&
+    /^[a-z]+_\d{4}-W\d{2}$/.test(parts[1]) &&
+    parts[2] === "members" && parts[3] === accountID;
 }
