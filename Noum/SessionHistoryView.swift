@@ -37,12 +37,7 @@ struct SessionHistoryRowPreview: Equatable {
     }
 
     private static func modeLabel(for mode: PracticeMode) -> String {
-        switch mode {
-        case .timed: return "Timed"
-        case .suddenDeath: return "Pressure Drill"
-        case .ahCounter: return "Ah-Counter"
-        case .imConversation: return "Conversation practice"
-        }
+        mode.displayLabel
     }
 }
 
@@ -107,12 +102,7 @@ struct SessionHistoryDetailPresentation: Equatable {
     }
 
     private static func modeLabel(for mode: PracticeMode) -> String {
-        switch mode {
-        case .timed: return "Timed"
-        case .suddenDeath: return "Pressure Drill"
-        case .ahCounter: return "Ah-Counter"
-        case .imConversation: return "Conversation practice"
-        }
+        mode.displayLabel
     }
 
     private static func clean(_ text: String?) -> String? {
@@ -459,8 +449,8 @@ struct SessionHistoryView: View {
     private var emptyState: some View {
         EmptyStateView(
             symbol: "clock.arrow.circlepath",
-            title: "Your first session is the hardest",
-            body: "One short rep populates this view with score, pacing, and filler trends.",
+            title: "Your progress starts with one rep",
+            body: "Complete a short rep to see your first score, pace, and filler count.",
             tint: AppColor.brandBlue,
             cta: EmptyStateView.CTA(label: "Start a rep", icon: "mic.fill") {
                 navigationPath.append(AppDestination.practiceSelection)
@@ -904,12 +894,7 @@ struct SessionHistoryDetailView: View {
     }
 
     private var modeLabel: String {
-        switch session.mode {
-        case .timed: return "Timed"
-        case .suddenDeath: return "Pressure Drill"
-        case .ahCounter: return "Ah-Counter"
-        case .imConversation: return "Conversation practice"
-        }
+        session.mode.displayLabel
     }
 }
 #endif

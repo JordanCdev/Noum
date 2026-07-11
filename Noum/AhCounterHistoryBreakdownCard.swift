@@ -66,7 +66,7 @@ struct AhCounterHistoryBreakdownCard: View {
                 Image(systemName: "waveform.path")
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(accent)
-                Text("Ah-Counter history")
+                Text("Filler Control history")
                     .font(.headline)
                     .foregroundStyle(.primary)
                 Spacer()

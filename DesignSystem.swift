@@ -717,12 +717,22 @@ enum CoachDisplayCopy {
     static func normalized(_ value: String) -> String {
         var result = value
         let replacements: [(String, String)] = [
+            ("highest-leverage", "main"),
+            ("strongest lever", "main focus"),
+            ("leverage point", "focus"),
+            ("the rolling baseline makes", "recent reps make"),
+            ("the rolling baseline", "recent reps"),
             ("rolling baseline", "recent reps"),
             ("rehearsal shapes", "practice rounds"),
             ("read gets sharper", "coaching gets more specific"),
+            ("case-file intervention", "coaching focus"),
+            ("case file's next move", "coaching plan's next move"),
+            ("case file", "coaching plan"),
+            ("active intervention", "current coaching focus"),
+            ("followed rep", "completed rep"),
+            ("proof point", "concrete example"),
             ("rule-based", ""),
-            ("using:", ""),
-            ("lever", "focus")
+            ("using:", "")
         ]
         for (source, replacement) in replacements {
             result = result.replacingOccurrences(
@@ -731,8 +741,18 @@ enum CoachDisplayCopy {
                 options: [.caseInsensitive]
             )
         }
+        result = result.replacingOccurrences(
+            of: "\\blever\\b",
+            with: "focus",
+            options: [.regularExpression, .caseInsensitive]
+        )
         return result
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .components(separatedBy: .newlines)
+            .map {
+                $0.replacingOccurrences(of: "[\\t ]+", with: " ", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespaces)
+            }
+            .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

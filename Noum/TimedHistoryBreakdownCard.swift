@@ -134,7 +134,7 @@ struct TimedHistoryBreakdownCard: View {
                 Image(systemName: "timer")
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(accent)
-                Text("Timed history")
+                Text("Timed Practice history")
                     .font(.headline)
                     .foregroundStyle(.primary)
                 Spacer()

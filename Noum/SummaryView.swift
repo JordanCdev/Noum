@@ -45,6 +45,15 @@ struct SummaryInterstitialPolicy {
     }
 }
 
+/// Keeps the status-area cover tied to the container's measured safe area.
+/// The clamp is defensive for previews or transient layout passes that can
+/// briefly report a negative inset while a navigation transition settles.
+enum SummaryTopSafeAreaCoverLayout {
+    static func height(for topInset: CGFloat) -> CGFloat {
+        max(0, topInset)
+    }
+}
+
 // MARK: - SummaryView (Redesigned)
 
 struct SummaryView: View {
@@ -494,12 +503,7 @@ struct SummaryView: View {
         guard !recentWindow.isEmpty else { return "No recent sessions yet." }
         return recentWindow.map { session in
             let label: String
-            switch session.mode {
-            case .timed: label = "Timed"
-            case .suddenDeath: label = "Pressure Drill"
-            case .ahCounter: label = "Ah-Counter"
-            case .imConversation: label = "Conversation"
-            }
+            label = session.mode.displayLabel
             return "\(label): \(session.fillerWordCount) fillers, \(Int(session.duration))s"
         }.joined(separator: " • ")
     }
@@ -550,7 +554,7 @@ struct SummaryView: View {
         if !insights.isEmpty { return insights }
         let previousSessions = Array(recentSessions.dropFirst())
         guard !previousSessions.isEmpty else {
-            return ["First rep complete — your baseline is set. From here, every session gives you something to compare against."]
+            return ["First rep saved. Complete another rep to start comparing."]
         }
         let averageDuration = previousSessions.map(\.duration).reduce(0, +) / Double(previousSessions.count)
         let averageFillers = previousSessions.map(\.fillerWordCount).reduce(0, +) / previousSessions.count
@@ -774,7 +778,7 @@ struct SummaryView: View {
                                 showFeedbackRequestSheet = true
                             }
                         } label: {
-                            Label("Request Feedback", systemImage: "person.2.fill")
+                            Label("Request feedback", systemImage: "person.2.fill")
                         }
                     }
                 } message: {
@@ -819,6 +823,28 @@ struct SummaryView: View {
                         .transition(.opacity)
                 }
 
+            }
+        }
+        .overlay {
+            if selectedInterstitial == nil {
+                // Summary intentionally hides navigation chrome. Keep a
+                // quiet, persistent safe-area scrim so scrolled coaching
+                // never competes with the status-bar clock and indicators.
+                GeometryReader { geometry in
+                    VStack(spacing: 0) {
+                        AppColor.screenBackground
+                            .frame(maxWidth: .infinity)
+                            .frame(
+                                height: SummaryTopSafeAreaCoverLayout.height(
+                                    for: geometry.safeAreaInsets.top
+                                )
+                            )
+                        Spacer(minLength: 0)
+                    }
+                    .ignoresSafeArea(edges: .top)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
         }
         .navigationTitle("")
@@ -1532,10 +1558,12 @@ struct SummaryView: View {
 
     private var talkToNoumOpener: String {
         if let change = freshRevisedReadChange {
-            return CoachContextBuilder.revisedReadOpener(
-                for: change,
-                workingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis,
-                voice: coachingProfileStore.profile?.speakingStyleGoal
+            return CoachDisplayCopy.normalized(
+                CoachContextBuilder.revisedReadOpener(
+                    for: change,
+                    workingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis,
+                    voice: coachingProfileStore.profile?.speakingStyleGoal
+                )
             )
         }
         return sessionAnchoredOpener
@@ -1583,10 +1611,12 @@ struct SummaryView: View {
     /// voice-mapping contract lives next to the existing
     /// `sessionOpener` voice mapping — one home for both.
     private func interventionReviewOpener(for intervention: CoachIntervention) -> String {
-        CoachContextBuilder.interventionReviewOpener(
-            intervention: intervention,
-            voice: coachingProfileStore.profile?.speakingStyleGoal,
-            reflectionPattern: coachMemoryStore.currentMemory?.reflectionPattern
+        CoachDisplayCopy.normalized(
+            CoachContextBuilder.interventionReviewOpener(
+                intervention: intervention,
+                voice: coachingProfileStore.profile?.speakingStyleGoal,
+                reflectionPattern: coachMemoryStore.currentMemory?.reflectionPattern
+            )
         )
     }
 
@@ -2351,7 +2381,7 @@ extension SummaryView {
         score: 8,
         progressSegments: 3,
         xpEarned: 74,
-        practiceTitle: "Impromptu Practice",
+        practiceTitle: PracticeMode.timed.displayLabel,
         feedbackOverride: "Clear answer overall. Push for a little more depth or time on the next rep.",
         headlineOverride: "Solid response",
         scoreBreakdown: [

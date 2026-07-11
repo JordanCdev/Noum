@@ -54,6 +54,13 @@ struct LeagueView: View {
         )
     }
 
+    private var visibleMembers: [PublicProfileSnapshot] {
+        PeerComparisonVisibility.visibleMembers(
+            league.members,
+            currentAccountID: authManager.currentAccountID
+        )
+    }
+
     private var formingState: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
             Text("Peer comparison")
@@ -232,7 +239,7 @@ struct LeagueView: View {
     private var tierMetrics: some View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                metricColumn(label: "Reset", value: league.resetCopy, icon: "calendar")
+                metricColumn(label: "Reset", value: resetMetricCopy, icon: "calendar")
                 Divider()
                 metricColumn(label: "Streak", value: streakValue, icon: "flame.fill")
                 Divider()
@@ -240,7 +247,7 @@ struct LeagueView: View {
             }
         } else {
             HStack(spacing: 16) {
-                metricColumn(label: "Reset", value: league.resetCopy, icon: "calendar")
+                metricColumn(label: "Reset", value: resetMetricCopy, icon: "calendar")
                 Divider().frame(height: 28)
                 metricColumn(label: "Streak", value: streakValue, icon: "flame.fill")
                 Divider().frame(height: 28)
@@ -266,6 +273,12 @@ struct LeagueView: View {
         return "\(s)d"
     }
 
+    private var resetMetricCopy: String {
+        let value = league.resetCopy.replacingOccurrences(of: "Resets ", with: "")
+        guard let first = value.first else { return value }
+        return first.uppercased() + String(value.dropFirst())
+    }
+
     private var weeklyActivityCopy: String {
         LeagueActivityPresentation.weeklyActivityValue(
             sessionCount: LeagueActivityPresentation.weeklySessionCount(
@@ -281,7 +294,10 @@ struct LeagueView: View {
     private var membersCard: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
-                SettingsSectionLabel(title: "This week")
+                Text("This week")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if league.isLoading {
                     ProgressView()
@@ -292,12 +308,12 @@ struct LeagueView: View {
             VStack(spacing: 0) {
                 if !ratingStore.rating.hasRatedEvidence {
                     placementPendingMembersRow
-                } else if league.members.isEmpty {
+                } else if visibleMembers.isEmpty {
                     emptyMembersRow
                 } else {
-                    ForEach(Array(league.members.enumerated()), id: \.element.id) { index, member in
+                    ForEach(Array(visibleMembers.enumerated()), id: \.element.id) { index, member in
                         memberRow(rank: index + 1, member: member, isYou: member.accountID == authManager.currentAccountID)
-                        if index < league.members.count - 1 {
+                        if index < visibleMembers.count - 1 {
                             Divider().padding(.leading, 56)
                         }
                     }
@@ -334,7 +350,7 @@ struct LeagueView: View {
                     Text(member.displayName.isEmpty ? "Speaker" : member.displayName)
                         .font(.subheadline.weight(isYou ? .bold : .semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                     if isYou {
                         Text("You")
                             .font(.caption2.weight(.bold))

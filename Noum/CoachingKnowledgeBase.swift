@@ -533,7 +533,7 @@ enum CoachKnowledgeBase {
             why: "situation, task, action, result keeps an anecdote from wandering and makes sure it lands on a concrete outcome",
             howToApply: "set the situation and your task in a line each, spend most of it on the action you took, and finish on the result",
             successMarker: "examples arrive at a concrete result instead of fading out",
-            whenToUse: "for behavioral examples, case stories, or proof points",
+            whenToUse: "for behavioral examples, case stories, or concrete examples",
             voiceAlignment: [.storytelling, .persuasive],
             leverTags: [.answerDevelopment, .structure],
             evidenceTier: .practitioner,

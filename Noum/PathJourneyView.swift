@@ -353,8 +353,14 @@ struct PathJourneyView: View {
         .padding(.horizontal, 4)
         .padding(.vertical, Spacing.xs)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(snapshot.practicedDays) of the last 21 days practiced. Streak: \(snapshot.streakLabel).")
+        .accessibilityLabel(consistencyAccessibilityLabel)
         .accessibilityIdentifier("journey.consistency")
+    }
+
+    private var consistencyAccessibilityLabel: String {
+        let practiced = "\(snapshot.practicedDays) of the last 21 days practiced."
+        guard snapshot.streak > 0 else { return practiced }
+        return "\(practiced) Current rhythm: \(snapshot.streak) days."
     }
 
     private var practiceDayCount: some View {
@@ -369,18 +375,17 @@ struct PathJourneyView: View {
         }
     }
 
+    @ViewBuilder
     private var pathStreakChip: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "flame.fill")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.orange.opacity(0.85))
-            Text(snapshot.streakLabel)
-                .font(Typography.cardLabel)
-                .foregroundStyle(.orange.opacity(0.92))
+        if snapshot.streak > 0 {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("\(snapshot.streak)-day rhythm")
+                    .font(Typography.caption.weight(.semibold))
+            }
+            .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.orange.opacity(0.10), in: Capsule(style: .continuous))
     }
 
     /// The page's one call to action. Pre-rep it points at practice;
@@ -469,6 +474,7 @@ struct PathJourneyView: View {
                         Label("Review goal", systemImage: "scope")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(AppColor.brandBlue.opacity(0.9))
+                            .frame(minHeight: 44)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("journey.why.refresh")
@@ -488,9 +494,9 @@ struct PathJourneyView: View {
                     Label("Add your reason", systemImage: "arrow.right")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(AppColor.brandBlue)
+                        .frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
-                .padding(.top, 2)
                 .accessibilityIdentifier("journey.why.capture")
             }
 
@@ -983,7 +989,7 @@ enum RetentionLoopEngine {
             PracticeAchievementStatus(
                 id: "im_connector",
                 title: "Connection Builder",
-                summary: "Complete three conversation practice sessions.",
+                summary: "Complete three Conversation Practice sessions.",
                 progress: min(Double(imSessions), 3) / 3,
                 progressLabel: imSessions >= 3 ? "Unlocked" : "\(imSessions)/3 chats",
                 isUnlocked: imSessions >= 3,

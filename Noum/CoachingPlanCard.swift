@@ -196,11 +196,6 @@ struct CoachingPlanCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
                         eyebrow("WEEK \(week.weekIndex) OF 4")
-                        Spacer()
-                        if !plan.isAIBacked {
-                            tag("RULE-BASED")
-                                .accessibilityLabel(Text("Rule-based plan, not AI-generated."))
-                        }
                     }
                     Text(week.focusSkillArea.displayName)
                         .font(Typography.body.weight(.semibold))

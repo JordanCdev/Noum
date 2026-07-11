@@ -1250,14 +1250,36 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   audited. A unit test (`typographyRolesResolveToFonts`) locks the catalog
   contract so a future refactor that drops `relativeTo:` fails the test
   suite.
-- **Firebase deploy tooling unavailable in this shell** —
-  `firestore.rules`, `public/privacy.html`, `public/index.html`, and
-  the `firebase.json` hosting/rules pointers are staged, but the local
-  Codex shell lacks `npm`, `npx`, and `firebase`, so Firestore rules
-  and Hosting could not be deployed here. Run
-  `firebase deploy --only firestore:rules,hosting --project noum-d0b6f`
-  from an authenticated Firebase CLI environment before treating M14
-  as launch-ready.
+- **Firebase tooling is available; local emulators still need Java** —
+  Node 22, npm, and Firebase CLI 15.23.0 are available and authenticated for
+  `noum-d0b6f`. Functions lint, build, and the 22-test transport suite pass.
+  The Auth/Firestore/Functions emulator integration command cannot start on
+  this Mac until a Java runtime is installed; deployment remains a deliberate
+  release action rather than part of local UI verification.
+
+## 2026-07-11 — cohesive UI, language, and journey pass
+
+- Home now resolves one evidence-backed next action, then exposes Ask Noum and
+  at most one quiet conditional row. Train owns the practice library, Roleplay,
+  Lessons, Speech Projects, and Path beneath one recommended rep.
+- Review opens with one movement story and keeps charts collapsed. Profile has
+  a compact identity line, one rating hero, one evidence-scaled coaching brief,
+  and one library disclosure. Settings uses native grouped rows.
+- Summary renders one verdict, one combined “What held” / “Next move” debrief,
+  one next-rep action, and quiet Ask Noum, details, and Done affordances.
+- Timed Practice, Pressure Drill, Filler Control, Conversation Practice, Cut
+  the Crutch, Pace Training, and Roleplay keep their existing state machines
+  while sharing the focused full-screen practice language. Codable mode values
+  and stored sessions are unchanged.
+- Presentation copy normalizes internal coaching terms at the rendering and
+  Ask Noum persistence boundary; backend prompts, quality fixtures, Fast/Ultra
+  routing, and wire contracts remain intact.
+- Peer Comparison remains hidden without a genuine non-self member. Direct
+  links show a forming state instead of fabricated standings.
+- The detailed iPhone 17 tour covers tab roots, practice setup, Summary,
+  onboarding, paywall, supporting sheets, and evidence-density states. The
+  screenshot handoff for this pass lives under
+  `.screenshots/2026-07-11_cohesive-ui-language-pass/`.
 
 ## Conventions to preserve
 
@@ -1282,8 +1304,9 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   No literal hex, no magic spacing numbers.
 - **Voice:** trusted speaking-coach tone. No "Let's", no chirpy
   copy, no emoji in user-facing strings, no exclamation marks
-  except on celebration overlays. Sentence case for body, Title
-  Case + uppercase + 0.8 tracking for micro-labels.
+  except on celebration overlays. Use sentence case for body, section,
+  navigation, and micro-label copy; uppercase is reserved for genuinely
+  fixed-format technical or live-status readouts.
 - **Haptics:** every haptic pattern routes through `CoachHaptic.*`,
   which honors `HapticsSettings.isEnabledSync`. SwiftUI rows with
   `.sensoryFeedback` gate on `HapticsSettings.shared.isEnabled` in

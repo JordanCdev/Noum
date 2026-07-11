@@ -139,7 +139,7 @@ struct RevisedReadCard: View {
               !raw.isEmpty else {
             return "The coach noted it and is forming the next read."
         }
-        let stripped = strippedHypothesis(raw)
+        let stripped = CoachDisplayCopy.normalized(strippedHypothesis(raw))
         return "Here's the revised read: \(stripped)."
     }
 
@@ -159,8 +159,8 @@ struct RevisedReadCard: View {
               !raw.isEmpty else {
             return "The coach noted the repeated adapt and is forming a new read."
         }
-        let stripped = strippedHypothesis(raw)
-        return "Here's the next read: \(stripped). Expect one focused question, not the same intervention again."
+        let stripped = CoachDisplayCopy.normalized(strippedHypothesis(raw))
+        return "Here's the next read: \(stripped). Expect one focused question, not the same exercise again."
     }
 
     /// Round-34 body router. Reads `documentsSecondCyclePushback` on the

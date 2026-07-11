@@ -54,10 +54,10 @@ enum AskNoumModeSuggestion {
     /// Short, action-shaped label for the launch card per destination.
     static func label(for destination: AppDestination) -> String {
         switch destination {
-        case .timedPractice:       return "Start a Timed rep"
-        case .suddenDeathPractice: return "Try a Pressure Drill round"
-        case .ahCounterPractice:   return "Start an Ah-Counter round"
-        case .imPractice:          return "Open a conversation rep"
+        case .timedPractice:       return "Start Timed Practice"
+        case .suddenDeathPractice: return "Start Pressure Drill"
+        case .ahCounterPractice:   return "Start Filler Control"
+        case .imPractice:          return "Start Conversation Practice"
         default:                   return "Start this exercise"
         }
     }

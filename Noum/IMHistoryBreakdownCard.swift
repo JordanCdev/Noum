@@ -82,7 +82,7 @@ struct IMHistoryBreakdownCard: View {
                 Image(systemName: "bubble.left.and.bubble.right.fill")
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(accent)
-                Text("Conversation history")
+                Text("Conversation Practice history")
                     .font(.headline)
                     .foregroundStyle(.primary)
                 Spacer()

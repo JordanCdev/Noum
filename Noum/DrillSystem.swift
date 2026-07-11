@@ -847,7 +847,7 @@ enum DrillCatalog {
         DrillVariation(
             id: "story.starTurn",
             skillArea: .answerDevelopment,
-            title: "STAR — Find the Turn",
+            title: "Story Arc",
             constraint: "Tell a real story: set the scene, then hit the turn — the moment it changed (\"…but then…\", \"…until…\", \"that's when…\") — and land the takeaway.",
             coachingPrinciple: "A story without a turn is just a description. The pivot from setup to change is what makes a STAR answer land.",
             format: .miniDrill,

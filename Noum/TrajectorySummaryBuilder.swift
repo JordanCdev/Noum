@@ -269,7 +269,7 @@ enum TrajectorySummaryBuilder {
 
         guard !clauses.isEmpty else { return notEnoughYetLine }
 
-        var line = "Using: " + clauses.joined(separator: " + ") + "."
+        var line = "Based on " + clauses.joined(separator: " and ") + "."
         if isStale, let freshnessDays {
             line += " Your most recent rep was \(freshnessDays) days ago — this may be out of date."
         }

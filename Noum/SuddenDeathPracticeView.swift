@@ -371,7 +371,7 @@ struct SuddenDeathPracticeView: View {
     private var setupScreen: some View {
         FocusedPracticeScaffold(
             style: .pressure,
-            status: "Pressure drill",
+            status: "Pressure Drill",
             title: "Stay direct under pressure.",
             subtitle: "Each round gives you less time to respond."
         ) {
@@ -400,7 +400,7 @@ struct SuddenDeathPracticeView: View {
                         .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                         .accessibilityHidden(true)
 
-                    Text("A filler, slow start, or short response ends the run.")
+                    Text("A filler, slow start, or short response ends the drill.")
                         .font(Typography.body.weight(.semibold))
                         .foregroundStyle(AppColor.focusedTextSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -410,7 +410,7 @@ struct SuddenDeathPracticeView: View {
                 .padding(Spacing.md)
                 .focusedGlassSurface()
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("A filler, slow start, or short response ends the run.")
+                .accessibilityLabel("A filler, slow start, or short response ends the drill.")
 
                 if let error = speechVM.connectionError {
                     ErrorCard(message: error)
@@ -446,7 +446,7 @@ struct SuddenDeathPracticeView: View {
                 Section("How the drill works") {
                     ruleRow(icon: "timer", text: "A prompt appears. You have seconds to start speaking.")
                     ruleRow(icon: "arrow.turn.right.up", text: "Noum follows up based on your answer.")
-                    ruleRow(icon: "waveform.badge.exclamationmark", text: "One filler, a slow start, or a short response ends the run.")
+                    ruleRow(icon: "waveform.badge.exclamationmark", text: "One filler, a slow start, or a short response ends the drill.")
                     ruleRow(icon: "flame.fill", text: "Pressure increases every round.")
                 }
 
@@ -666,7 +666,6 @@ struct SuddenDeathPracticeView: View {
                 Text(engine.roundConfig.isFollowUp && round > 1 ? "Follow-up" : "Prompt")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
 
                 Spacer()
 
@@ -750,7 +749,7 @@ struct SuddenDeathPracticeView: View {
             Capsule()
                 .fill(Color.secondary.opacity(0.08))
         )
-        .accessibilityLabel("Aim for at least \(engine.roundConfig.minimumWords) words; shorter answers end the run.")
+        .accessibilityLabel("Aim for at least \(engine.roundConfig.minimumWords) words; shorter answers end the drill.")
     }
 
     /// Replay button for the prompt-read-aloud. Mirrors Timed's
@@ -830,7 +829,6 @@ struct SuddenDeathPracticeView: View {
                 Text("You")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
 
                 Spacer()
 
@@ -935,7 +933,7 @@ struct SuddenDeathPracticeView: View {
                 Text(outcome.label)
                     .font(.headline.weight(.bold))
                     .foregroundStyle(outcome.isFailed ? .red : .green)
-                Text(outcome.isFailed ? "Run over" : "Next round...")
+                Text(outcome.isFailed ? "Round over" : "Next round…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

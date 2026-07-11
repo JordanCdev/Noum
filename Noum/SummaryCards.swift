@@ -83,10 +83,9 @@ struct HeroScoreCard: View {
     var body: some View {
         VStack(spacing: 16) {
             // Mode label
-            Text(practiceTitle.uppercased())
-                .font(.caption2.weight(.bold))
+            Text(practiceTitle)
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.8))
-                .tracking(1.4)
 
             // Score ring — white-on-gradient (verdict hero register).
             // Draws in from zero on appear (see `revealScore`).
@@ -1396,7 +1395,7 @@ struct IMOneMoveCard: View {
                 }
                 .buttonStyle(.pressable)
                 .accessibilityIdentifier("summary.interventionReview.cta")
-                .accessibilityHint("Opens Ask Noum to review whether the active intervention is working.")
+                .accessibilityHint("Opens Ask Noum to review whether this focus is working.")
             } else {
                 Text(coachNote.nextStep)
                     .font(.subheadline.weight(.medium))

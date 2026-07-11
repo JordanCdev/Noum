@@ -1001,7 +1001,7 @@ struct AskNoumView: View {
         if let target = caseFile.observableTarget?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !target.isEmpty {
-            return Self.shortCaseLine(target, maxLength: 64)
+            return Self.shortCaseLine(CoachDisplayCopy.normalized(target), maxLength: 64)
         }
         if let focus = caseFile.focus {
             return focus.displayName
@@ -1009,7 +1009,7 @@ struct AskNoumView: View {
         if let intervention = caseFile.activeIntervention?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !intervention.isEmpty {
-            return Self.shortCaseLine(intervention, maxLength: 64)
+            return Self.shortCaseLine(CoachDisplayCopy.normalized(intervention), maxLength: 64)
         }
         return nil
     }
@@ -1236,10 +1236,12 @@ struct AskNoumView: View {
            let intervention = memory.activeIntervention,
            intervention.isReviewDue(at: Date()) {
             Button {
-                let opener = CoachContextBuilder.interventionReviewOpener(
-                    intervention: intervention,
-                    voice: voice,
-                    reflectionPattern: memory.reflectionPattern
+                let opener = CoachDisplayCopy.normalized(
+                    CoachContextBuilder.interventionReviewOpener(
+                        intervention: intervention,
+                        voice: voice,
+                        reflectionPattern: memory.reflectionPattern
+                    )
                 )
                 send(opener)
             } label: {
@@ -1317,10 +1319,8 @@ struct AskNoumView: View {
                             .foregroundStyle(AppColor.pro)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Recommended ask")
-                                .font(Typography.micro.weight(.bold))
+                                .font(Typography.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-                                .tracking(0.7)
                             Text(primary)
                                 .font(Typography.body.weight(.semibold))
                                 .foregroundStyle(.primary)
@@ -1362,8 +1362,7 @@ struct AskNoumView: View {
             Label("Other useful asks", systemImage: "ellipsis.circle")
                 .font(Typography.caption.weight(.semibold))
                 .foregroundStyle(AppColor.pro)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 2)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         }
         .accessibilityLabel("Other useful asks")
     }
@@ -1638,10 +1637,8 @@ struct AskNoumView: View {
         if shouldShowHypothesisAck {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text("Does this read match?")
-                    .font(Typography.micro.weight(.bold))
+                    .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
                     .accessibilityLabel("Does this coaching read match?")
 
                 FlowLayout(spacing: 8, runSpacing: 6) {
@@ -1775,10 +1772,8 @@ struct AskNoumView: View {
         if shouldShowRevisedReadFollowUp {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text("Where does the new read land?")
-                    .font(Typography.micro.weight(.bold))
+                    .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
                     .accessibilityLabel("Does the revised coaching read match?")
 
                 FlowLayout(spacing: 8, runSpacing: 6) {
@@ -1865,10 +1860,8 @@ struct AskNoumView: View {
         if shouldShowGoalProposal, let intent = pendingGoalIntent {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(goalProposalEyebrow(for: intent))
-                    .font(Typography.micro.weight(.bold))
+                    .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
                     .accessibilityLabel("Confirm a change to your speaking voice")
 
                 if let detail = goalProposalDetail(for: intent) {
@@ -2120,10 +2113,8 @@ struct AskNoumView: View {
         if destination != nil || layout.primary != nil {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text("Next move")
-                    .font(Typography.micro.weight(.bold))
+                    .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
                     .accessibilityHidden(true)
 
                 Button {
@@ -2175,8 +2166,7 @@ struct AskNoumView: View {
                         Label("Other directions", systemImage: "ellipsis.circle")
                             .font(Typography.caption.weight(.semibold))
                             .foregroundStyle(AppColor.pro)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 2)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     }
                     .accessibilityIdentifier("askNoum.nextMove.more")
                     .accessibilityLabel("Other directions")
@@ -2227,7 +2217,7 @@ struct AskNoumView: View {
             HStack(spacing: Spacing.xs) {
                 Image(systemName: "arrow.uturn.left")
                     .font(.caption.weight(.semibold))
-                Text("End chat")
+                Text("Done")
                     .font(Typography.caption.weight(.semibold))
             }
             .foregroundStyle(.secondary)
@@ -2238,7 +2228,7 @@ struct AskNoumView: View {
         .buttonStyle(.pressable)
         .frame(maxWidth: .infinity)
         .padding(.top, Spacing.xs)
-        .accessibilityLabel("End chat and return home")
+        .accessibilityLabel("Done. Return home")
         .accessibilityIdentifier("askNoum.endChat")
     }
 
@@ -2372,10 +2362,8 @@ struct AskNoumView: View {
                     stage: characterStage
                 )
                 Text("Coach read")
-                    .font(Typography.micro.weight(.bold))
-                    .tracking(0.7)
+                    .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(accent.opacity(0.72))
-                    .textCase(.uppercase)
             }
             .accessibilityHidden(true)
 
@@ -2523,6 +2511,7 @@ struct AskNoumView: View {
                 Button("Try again") { retryLastTurn() }
                     .font(Typography.caption.weight(.bold))
                     .foregroundStyle(AppColor.brandBlue)
+                    .frame(minHeight: 44)
             }
             .padding(.horizontal, Spacing.md)
             .padding(.top, Spacing.xs)
@@ -2555,6 +2544,7 @@ struct AskNoumView: View {
                 }
                 .font(Typography.caption.weight(.bold))
                 .foregroundStyle(AppColor.brandBlue)
+                .frame(minHeight: 44)
             }
             .padding(.horizontal, Spacing.md)
             .padding(.top, Spacing.xs)

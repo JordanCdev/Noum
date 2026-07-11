@@ -302,14 +302,14 @@ struct LiveCoachCallView: View {
 
     // V5 — the live bar carries call identity with a single quiet status pill.
     // The owner found the old trailing "with Noum" text awkward and floating;
-    // it's dropped. The centered "Noum" under the orb and this LIVE/COACH pill
+    // it's dropped. The centered "Noum" under the orb and this Live/Coach pill
     // already name who you're talking to, so the bar stays clean and leading.
     private var liveBar: some View {
         HStack(spacing: 8) {
             Circle()
                 .fill((loopActive ? Color.red : AppColor.pro).opacity(loopActive ? 0.9 : 0.65))
                 .frame(width: 8, height: 8)
-            Text(loopActive ? "LIVE" : "COACH")
+            Text(loopActive ? "Live" : "Coach")
                 .font(Typography.micro.weight(.bold))
                 .tracking(1.5)
                 .foregroundStyle(.white.opacity(0.85))
@@ -460,17 +460,14 @@ struct LiveCoachCallView: View {
     /// name, so the landing stays "Tap Talk").
     private var coachingFocusLine: String? {
         if let caseFile = coachMemoryStore.currentMemory?.caseFile {
-            // Rank 2 — a standing prescribed plan anchors the landing as
-            // continuity ("picking up where we left off"), the move a human
-            // coach opens with. This is the *plan*; the *read* (hypothesis)
-            // is surfaced in the spoken reply at the trust moment (Rank 1), so
-            // the landing leads with the plan and only falls back to the
-            // earned read / lever when no prescription is standing yet.
-            if let anchor = bounded(caseFile.callLandingAnchor) {
-                return anchor
+            // Lead with the observable target, not the internal continuity
+            // sentence. The live landing has room for one short directive;
+            // the full plan remains available to the reply pipeline.
+            if let target = bounded(caseFile.observableTarget, maximumLength: 72) {
+                return target
             }
             if let earned = bounded(caseFile.hypothesis)
-                ?? caseFile.focus.map({ "Today's lever: \($0.displayName.lowercased())." })
+                ?? caseFile.focus.map({ "Today's focus: \($0.displayName.lowercased())." })
                 ?? bounded(caseFile.activeIntervention) {
                 return earned
             }
@@ -511,12 +508,16 @@ struct LiveCoachCallView: View {
     private func bounded(_ value: String?, maximumLength: Int = 96) -> String? {
         guard let raw = value,
               !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        let cleaned = CoachReplyTextSanitizer.liveLandingText(from: raw)
+        let cleaned = CoachDisplayCopy.normalized(
+            CoachReplyTextSanitizer.liveLandingText(from: raw)
+        )
         let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         if trimmed.count <= maximumLength { return trimmed }
-        let clipped = String(trimmed.prefix(maximumLength)).trimmingCharacters(in: .whitespacesAndNewlines)
-        return clipped + "..."
+        let prefix = trimmed.prefix(maximumLength)
+        let clipped = prefix.lastIndex(of: " ").map { String(prefix[..<$0]) }
+            ?? String(prefix)
+        return clipped.trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 
     private func seedDebugCaptionIfNeeded() {

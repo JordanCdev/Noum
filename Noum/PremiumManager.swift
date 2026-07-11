@@ -376,6 +376,14 @@ struct PaywallView: View {
         return "Save \(percentage)%"
     }
 
+    private var selectedProduct: Product? {
+        selectedPlan == .annual ? premium.annualProduct : premium.monthlyProduct
+    }
+
+    private var plansAvailable: Bool {
+        premium.monthlyProduct != nil && premium.annualProduct != nil
+    }
+
     var body: some View {
         ZStack {
             AppColor.screenBackground
@@ -453,42 +461,37 @@ struct PaywallView: View {
                         )
 
                         CardView(cornerRadius: CornerRadius.large, padding: Spacing.lg) {
-                            DisclosureGroup(isExpanded: $showFeatureDetails) {
-                                VStack(spacing: 0) {
-                                    featureRow(icon: "text.magnifyingglass", title: "Ask Noum", description: "A coaching thread grounded in your recent reps")
-                                    featureRow(icon: "chart.line.uptrend.xyaxis", title: "Deeper review", description: "See meaningful change and the next move")
-                                    featureRow(icon: "tray.full.fill", title: "Practice history", description: "Return to transcripts, delivery reads, and saved evidence")
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text("What Pro adds")
+                                    .font(.headline.weight(.semibold))
+                                    .foregroundStyle(AppColor.textPrimary)
 
-                                    Divider()
-                                        .padding(.vertical, Spacing.sm)
+                                featureRow(icon: "text.magnifyingglass", title: "Ask Noum", description: "A coaching thread grounded in your recent reps")
+                                featureRow(icon: "chart.line.uptrend.xyaxis", title: "Deeper review", description: "See meaningful change and the next move")
+                                featureRow(icon: "tray.full.fill", title: "Practice history", description: "Return to transcripts, delivery reads, and saved evidence")
 
+                                Divider()
+                                    .padding(.vertical, Spacing.xs)
+
+                                DisclosureGroup(isExpanded: $showFeatureDetails) {
                                     VStack(alignment: .leading, spacing: Spacing.xs) {
                                         Text("Core practice stays free")
                                             .font(.subheadline.weight(.semibold))
                                             .foregroundStyle(AppColor.textPrimary)
-                                        freeFeatureRow(icon: "mic.fill", text: "Timed practice")
+                                        freeFeatureRow(icon: "mic.fill", text: "Timed Practice")
                                         freeFeatureRow(icon: "brain.head.profile", text: "Session scoring")
                                         freeFeatureRow(icon: "clock.arrow.circlepath", text: "Session history")
                                         freeFeatureRow(icon: "person.fill.checkmark", text: "Coaching profile")
                                     }
+                                    .padding(.top, Spacing.sm)
+                                } label: {
+                                    Text("See details")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(AppColor.textPrimary)
+                                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                                 }
-                                .padding(.top, Spacing.sm)
-                            } label: {
-                                HStack(spacing: Spacing.sm) {
-                                    Image(systemName: "checkmark.seal.fill")
-                                        .foregroundStyle(proColor)
-                                    VStack(alignment: .leading, spacing: Spacing.xxs) {
-                                        Text("What Pro adds")
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(AppColor.textPrimary)
-                                        Text("Coaching, review, and continuity")
-                                            .font(.caption)
-                                            .foregroundStyle(AppColor.textSecondary)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .tint(AppColor.textSecondary)
                             }
-                            .tint(AppColor.textSecondary)
                         }
 
                         Spacer(minLength: Spacing.md)
@@ -498,17 +501,21 @@ struct PaywallView: View {
 
                 VStack(spacing: Spacing.sm) {
                     Button {
-                        purchasePremium()
+                        if selectedProduct == nil {
+                            reloadPlans()
+                        } else {
+                            purchasePremium()
+                        }
                     } label: {
                         HStack(spacing: 8) {
                             if isPurchasing {
                                 ProgressView()
                                     .tint(.white)
                             } else {
-                                Image(systemName: "crown.fill")
+                                Image(systemName: selectedProduct == nil ? "arrow.clockwise" : "crown.fill")
                                     .font(.headline)
                             }
-                            Text(isPurchasing ? "Processing\u{2026}" : "Subscribe")
+                            Text(isPurchasing ? "Loading\u{2026}" : selectedProduct == nil ? "Reload plans" : "Subscribe")
                                 .font(.headline.weight(.bold))
                         }
                         .frame(maxWidth: .infinity)
@@ -526,7 +533,14 @@ struct PaywallView: View {
                     }
                     .buttonStyle(.pressable)
                     .disabled(isPurchasing)
-                    .accessibilityLabel(isPurchasing ? "Processing purchase" : "Subscribe to Noum Pro")
+                    .accessibilityLabel(isPurchasing ? "Loading plans" : selectedProduct == nil ? "Reload subscription plans" : "Subscribe to Noum Pro")
+
+                    if !plansAvailable, errorMessage == nil {
+                        Text("Plans are temporarily unavailable. Reload to try again.")
+                            .font(.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .multilineTextAlignment(.center)
+                    }
 
                     if let errorMessage {
                         Text(errorMessage)
@@ -712,6 +726,21 @@ struct PaywallView: View {
                     isPurchasing = false
                 }
                 #endif
+            }
+        }
+    }
+
+    private func reloadPlans() {
+        isPurchasing = true
+        errorMessage = nil
+
+        Task {
+            await premium.loadProducts()
+            await MainActor.run {
+                isPurchasing = false
+                if selectedProduct == nil {
+                    errorMessage = "Plans are still unavailable. Please try again later."
+                }
             }
         }
     }

@@ -87,9 +87,9 @@ struct PrepSessionReadiness: Equatable {
         case .underway:
             let remaining = plannedModes.filter { !coveredModes.contains($0) }
             let remainingNames = remaining.map(Self.shapeName(for:)).joined(separator: " and ")
-            return "You've rehearsed \(coveredCount) of \(plannedModes.count) shapes. Still open: the \(remainingNames)."
+            return "You've completed \(coveredCount) of \(plannedModes.count) practice rounds. Next: \(remainingNames)."
         case .rehearsed:
-            return "You've run all \(plannedModes.count) rehearsal shapes. One more pass close to the day can test what still holds."
+            return "You've completed all \(plannedModes.count) practice rounds. One more pass close to the day can test what still holds."
         }
     }
 
@@ -146,7 +146,7 @@ enum PrepSessionPlanner {
             ),
             PrepRepStep(
                 mode: .imConversation,
-                displayLabel: "Audience simulation: conversation practice",
+                displayLabel: "Audience simulation: Conversation Practice",
                 rationale: "Hard questions from the kind of audience you're walking into. Stay grounded."
             ),
         ]

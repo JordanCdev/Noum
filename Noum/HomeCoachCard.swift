@@ -96,6 +96,7 @@ struct HomeCoachCard: View {
     @StateObject private var streakFreeze = StreakFreezeManager.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
+    @StateObject private var skillTrendStore = SkillTrendStore.shared
     @StateObject private var forwardPlanStore = ForwardPlanStore.shared
     // Path progress drives the "Landmark within reach" coach variant — when
     // the current path node is one rep / one score-point / one day from
@@ -366,35 +367,6 @@ struct HomeCoachCard: View {
             return HomeMomentCopy.title(momentTitle: moment.title, days: days)
         }
 
-        if recommendationBlueprint.source == .caseIntervention {
-            return "Keep building the case."
-        }
-
-        // Consecutive clean reps — trajectory signal. "Three in a row"
-        // feels like a coach who notices patterns, not a dashboard.
-        let cleanRun = consecutiveCleanReps
-        if cleanRun >= 3, sessionStore.sessions.count >= 5 {
-            return cleanRun == 3 ? "Three in a row." : "\(cleanRun) clean."
-        }
-
-        // Landmark within reach — wins over tier-holding because the path
-        // node is a concrete next action the user can complete this rep,
-        // while "Hold {tier}" is a steady-state nudge. When the user is
-        // one rep / one score-point / one day from unlocking their next
-        // node, surface that explicitly. See `landmarkWithinReach` for the
-        // predicate. Never fires for boolean-trigger criteria the user
-        // hasn't engaged with at all — restraint over coverage.
-        if landmarkWithinReach {
-            return "Landmark within reach."
-        }
-
-        let tier = LeagueTier.tier(for: ratingStore.rating.overall)
-        let tierHolding = tier == .gold || tier == .platinum || tier == .diamond
-        let reps = sessionStore.sessions.count
-        if tierHolding && reps >= 8 {
-            return "Hold \(tier.title)."
-        }
-
         let focus = CoachDisplayCopy.normalized(recommendationBlueprint.focus)
         if !focus.isEmpty {
             // Ensure punctuation closure — title reads as a complete
@@ -442,15 +414,6 @@ struct HomeCoachCard: View {
             return CoachDisplayCopy.normalized(recommendationBlueprint.whyNow)
         }
 
-        // Landmark within reach — subtitle is the gating line itself so the
-        // user reads the concrete bar ("One rep from unlocked.") right
-        // under the headline. The gating phrase is sourced from
-        // `PathProgressManager.currentNodeGatingPhrase`, which never
-        // punish-shames a regression.
-        if landmarkWithinReach, let phrase = pathProgress.currentNodeGatingPhrase {
-            return phrase
-        }
-
         // Recurring positional read — the longitudinal "the coach remembers"
         // line. Until now this longitudinal signal reached only the coach prompt
         // (`CoachContextBuilder`'s POSITIONAL TREND block) and the dedicated
@@ -469,28 +432,8 @@ struct HomeCoachCard: View {
             return RepEventTrendCopy.homeSubtitle(for: trend)
         }
 
-        // Weekly rhythm milestone — fires at 3, 5, 7 reps per week.
-        // Reinforces cadence between landmark and tier variants.
-        let weekReps = weeklyRepCount
-        if [3, 5, 7].contains(weekReps), sessionStore.sessions.count >= 5 {
-            switch weekReps {
-            case 3: return "Third rep this week — rhythm is building."
-            case 5: return "Five this week — strong rhythm."
-            case 7: return "Seven reps this week — serious commitment."
-            default: break
-            }
-        }
-
         let blueprint = recommendationBlueprint
-        let focus = CoachDisplayCopy.normalized(blueprint.focus)
         let why = CoachDisplayCopy.normalized(blueprint.whyNow)
-
-        let tier = LeagueTier.tier(for: ratingStore.rating.overall)
-        let tierHolding = tier == .gold || tier == .platinum || tier == .diamond
-        let reps = sessionStore.sessions.count
-        if tierHolding && reps >= 8 {
-            return "One clean rep keeps the ladder moving \u{2014} \(focus.lowercased())."
-        }
 
         if !why.isEmpty {
             return why
@@ -572,15 +515,14 @@ struct HomeCoachCard: View {
                     Text(line)
                         .font(Typography.captionSmall.weight(.semibold))
                         .foregroundStyle(.white.opacity(0.92))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+                        .fixedSize(horizontal: false, vertical: true)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(.white.opacity(0.7))
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal, Spacing.sm)
-                .frame(minHeight: 36)
+                .frame(minHeight: 44)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -629,10 +571,10 @@ struct HomeCoachCard: View {
 
     private func modeMicroLabel(for mode: PracticeMode) -> String {
         switch mode {
-        case .timed:          return "TIMED"
+        case .timed:          return "TIMED PRACTICE"
         case .suddenDeath:    return "PRESSURE DRILL"
-        case .ahCounter:      return "AH-COUNTER"
-        case .imConversation: return "CONVERSATION"
+        case .ahCounter:      return "FILLER CONTROL"
+        case .imConversation: return "CONVERSATION PRACTICE"
         }
     }
 
@@ -783,7 +725,7 @@ struct HomeCoachCard: View {
     // MARK: - Recommendation blueprint
 
     private var recommendationBlueprint: RecommendationBiasBlueprint {
-        RecommendationBiasContextBuilder.context(
+        let base = RecommendationBiasContextBuilder.context(
             profile: coachingProfileStore.profile,
             sessions: sessionStore.sessions,
             sessionStreak: sessionStreak,
@@ -793,6 +735,14 @@ struct HomeCoachCard: View {
             recommendationOutcomes: recommendationLearningStore.outcomes,
             summaryStyle: .compact
         ).blueprint
+        let trends = TrendAnalyzer.analyze(snapshots: skillTrendStore.snapshots)
+        guard let currentFocus = CurrentCoachingFocusPresentation.make(
+            trends: trends,
+            sessionCount: sessionStore.sessions.count
+        ) else {
+            return base
+        }
+        return currentFocus.applying(to: base)
     }
 
     // MARK: - Momentum helpers (inline, pure)

@@ -209,7 +209,7 @@ actor ForwardPlanService {
         let mode = bestModeForVoice(voice) ?? modeFor(skillArea: skill)
         let target = sessionTarget(weeklyReps: input.weeklyReps, base: 3)
         let voiceLabel = voice?.shortVoiceLabel ?? "your voice"
-        let rationale = "Shift toward shape. \(mode.displayLabel) reps push \(skill.displayName.lowercased()), the most direct lever toward \(voiceLabel)."
+        let rationale = "Shift toward shape. \(mode.displayLabel) reps build \(skill.displayName.lowercased()), the clearest focus for reaching \(voiceLabel)."
         return PlanWeek(
             weekIndex: 2,
             focus: focus,
@@ -768,9 +768,7 @@ enum ForwardPlanRenderer {
         } else {
             frame = "Here is your four-week program."
         }
-        let provenance = isAIBacked
-            ? "I shaped it around your last few reps and the voice you're training."
-            : "Built from your recent evidence using Noum's standard coaching rules."
+        let provenance = "I shaped it around your recent reps and the voice you're training."
         return "\(frame) \(provenance)"
     }
 
@@ -780,23 +778,23 @@ enum ForwardPlanRenderer {
 
     private static func closingLine(plan: ForwardPlan, voice: SpeakingStyleGoal?) -> String {
         guard let first = plan.weeks.first(where: { $0.weekIndex == 1 }) else {
-            return "Open the practice picker and start when you're ready."
+            return "Start a practice rep when you're ready."
         }
         switch voice {
         case .authoritative:
             return "First move: a \(first.suggestedMode.displayLabel) rep on \(first.focusSkillArea.displayName.lowercased())."
         case .warm:
-            return "When you're ready, open a \(first.suggestedMode.displayLabel) rep — that's the gentlest place to begin."
+            return "When you're ready, start \(first.suggestedMode.displayLabel) — that's the gentlest first step."
         case .concise:
             return "Start: \(first.suggestedMode.displayLabel). \(first.focusSkillArea.displayName)."
         case .persuasive:
-            return "Begin with \(first.suggestedMode.displayLabel) — Week 1 builds the case for the program."
+            return "Start \(first.suggestedMode.displayLabel) — Week 1 builds the case for the program."
         case .executive:
-            return "Recommend: open with \(first.suggestedMode.displayLabel) this week."
+            return "Recommendation: start \(first.suggestedMode.displayLabel) this week."
         case .storytelling:
             return "Chapter one is \(first.suggestedMode.displayLabel) — that's where the arc begins."
         case .none:
-            return "Open a \(first.suggestedMode.displayLabel) rep when you're ready to begin."
+            return "Start \(first.suggestedMode.displayLabel) when you're ready."
         }
     }
 }

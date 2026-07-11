@@ -164,14 +164,11 @@ struct CoachingOnboardingView: View {
     }
 
     private func introScreen(size: CGSize) -> some View {
-        VStack(spacing: 16) {
-            Spacer(minLength: 0)
-
+        ScrollView(showsIndicators: false) {
             introHeroCard
-                .frame(height: min(size.height * 0.62, 450))
                 .padding(.horizontal, 20)
-
-            Spacer(minLength: 0)
+                .padding(.vertical, Spacing.lg)
+                .frame(minHeight: max(0, size.height - 88), alignment: .center)
         }
     }
 
@@ -180,9 +177,8 @@ struct CoachingOnboardingView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(isEditingExistingProfile ? "Coaching profile" : "Your coaching")
-                        .font(Typography.caption)
+                        .font(Typography.caption.weight(.semibold))
                         .foregroundStyle(AppColor.brandBlue)
-                        .textCase(.uppercase)
 
                     Text(isEditingExistingProfile
                         ? "Refine how Noum guides your practice."
@@ -286,7 +282,7 @@ struct CoachingOnboardingView: View {
             progressRing(step: progressStep, total: OnboardingStage.allCases.count, compact: true)
                 .matchedGeometryEffect(id: "progressRing", in: headerNamespace)
         }
-        .frame(height: 82)
+        .frame(minHeight: 82)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(Color.clear.matchedGeometryEffect(id: "heroCard", in: headerNamespace))
@@ -450,10 +446,9 @@ struct CoachingOnboardingView: View {
                 Button {
                     if !isEditingExistingProfile {
                         // First-run: don't drop the brand-new user on a cold Home.
-                        // Route straight to their prescribed first rep (the picker
-                        // leads with the Coach Pick + Begin). Iteration 3 — first
-                        // felt value before Home. (Editing from Settings just saves.)
-                        DeepLinkRouter.shared.pending = URL(string: "noum://train")
+                        // Route straight to the first focused rep. Editing from
+                        // Settings still saves without changing destinations.
+                        DeepLinkRouter.shared.pending = URL(string: "noum://practice/timed")
                     }
                     saveProfile()
                     onComplete?()
@@ -519,8 +514,8 @@ struct CoachingOnboardingView: View {
             }
 
             VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(label.uppercased())
-                    .font(.caption2.weight(.bold))
+                Text(label)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(AppColor.textSecondary)
 
                 Text(value)

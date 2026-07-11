@@ -70,7 +70,7 @@ struct PeakRatingWallView: View {
             Text("Where you peak")
                 .font(Typography.bigStat)
                 .foregroundStyle(.primary)
-            Text("Your best this week, your best ever, and how that lines up with your league.")
+            Text("Your best this week, your best ever, and how that compares with active peers.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -87,7 +87,7 @@ struct PeakRatingWallView: View {
             Text("No peak rating yet")
                 .font(Typography.cardTitle)
                 .foregroundStyle(.primary)
-            Text("One rated rep sets the first mark. After that, this wall shows your best this week, your best ever, and your league comparison.")
+            Text("One rated rep sets the first mark. After that, this view shows your best this week, your best ever, and your peer comparison.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -197,7 +197,7 @@ struct PeakRatingWallView: View {
                     .stroke(Color.white.opacity(0.72), lineWidth: 1)
             )
 
-            Text("Top peaks in your \(league.tier.title.lowercased()) bucket this week.")
+            Text("Top peaks in your \(league.tier.title.lowercased()) peer group this week.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }

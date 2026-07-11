@@ -77,7 +77,7 @@ struct TierPromotionOverlay: View {
                         .foregroundStyle(.white.opacity(0.78))
                         .textCase(.uppercase)
                         .tracking(1.0)
-                    Text(promotion.newTier.title.uppercased() + " LEAGUE")
+                    Text(promotion.newTier.title.uppercased() + " PEER GROUP")
                         .font(Typography.figtree(size: 36, weight: .black, relativeTo: .largeTitle))
                         .foregroundStyle(.white)
                         .kerning(1.4)
@@ -109,7 +109,7 @@ struct TierPromotionOverlay: View {
         }
         .onAppear { runSequence() }
         .accessibilityIdentifier("tier.promotion.overlay")
-        .accessibilityLabel("Promoted to \(promotion.newTier.title) league")
+        .accessibilityLabel("Moved to the \(promotion.newTier.title) peer group")
     }
 
     private func runSequence() {
@@ -140,15 +140,15 @@ struct TierPromotionOverlay: View {
         // earn motion + sparkle, not punctuation.
         switch promotion.newTier {
         case .bronze:
-            return "Your first league. The path is real now."
+            return "Your first peer group is forming from real rated reps."
         case .silver:
-            return "Bronze stayed behind. Silver is where the climb gets noticed."
+            return "Your recent rated reps now place you with the Silver group."
         case .gold:
-            return "You're in the room with the consistent ones. Gold is hard to leave."
+            return "Your recent consistency now places you with the Gold group."
         case .platinum:
-            return "Composure across pressure. Platinum is what that looks like in numbers."
+            return "Composure under pressure now places you with the Platinum group."
         case .diamond:
-            return "Top tier. Defend the rating; the league forms around you now."
+            return "Your rating now places you in the highest comparison group."
         }
     }
 }

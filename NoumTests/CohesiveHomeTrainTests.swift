@@ -90,9 +90,11 @@ struct CohesivePracticeNamingTests {
         #expect(!line.contains("rolling baseline"))
         #expect(!line.contains("lever"))
         #expect(!line.contains("rehearsal shapes"))
+        #expect(!line.contains("focusage"))
         #expect(line.contains("recent reps"))
         #expect(line.contains("focus"))
         #expect(line.contains("practice rounds"))
+        #expect(line == "recent reps make fillers the main focus across practice rounds.")
     }
 }
 

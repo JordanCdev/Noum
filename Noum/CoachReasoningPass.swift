@@ -600,7 +600,7 @@ enum CoachReasoningPass {
         let lower = trimmed.lowercased()
         if lower.contains("timed") { return "Timed" }
         if lower.contains("pressure") || lower.contains("sudden") { return "pressure" }
-        if lower.contains("ah") { return "Ah-Counter" }
+        if lower.contains("ah") { return "Filler Control" }
         if lower.contains("im") || lower.contains("interaction") { return "conversation" }
         if lower.contains("free") { return "free practice" }
         return trimmed

@@ -319,7 +319,7 @@ struct PathNodeCelebration: View {
             HStack(spacing: Spacing.xs) {
                 Image(systemName: "map")
                     .font(Typography.caption.weight(.bold))
-                Text("Open the Path")
+                Text("See Path")
                     .font(Typography.caption.weight(.bold))
             }
             .foregroundStyle(.white.opacity(0.78))
@@ -519,12 +519,7 @@ struct PathNodeCelebration: View {
     }
 
     private func modeName(_ mode: PracticeMode) -> String {
-        switch mode {
-        case .timed:          return "Timed"
-        case .suddenDeath:    return "Pressure Drill"
-        case .ahCounter:      return "Ah-Counter"
-        case .imConversation: return "Conversation Practice"
-        }
+        mode.displayLabel
     }
 
     /// Resolves the mode label for both `modeMasteryLevel(mode, level)` and

@@ -208,7 +208,7 @@ struct IMPracticeView: View {
         } message: {
             Text("Your current session will be lost.")
         }
-        .alert("Conversation practice unavailable", isPresented: .constant(serviceErrorMessage != nil), actions: {
+        .alert("Conversation Practice unavailable", isPresented: .constant(serviceErrorMessage != nil), actions: {
             Button("OK", role: .cancel) { serviceErrorMessage = nil }
         }, message: {
             Text(serviceErrorMessage ?? "")
@@ -299,7 +299,7 @@ struct IMPracticeView: View {
             FocusedPracticeScaffold(
                 style: .conversation,
                 status: setupStep == .scenario ? "Step 1 of 2" : "Step 2 of 2",
-                title: "Conversation practice",
+                title: "Conversation Practice",
                 subtitle: "Choose the situation, then decide how you want to sound."
             ) {
                 NoumCharacter(
@@ -338,7 +338,7 @@ struct IMPracticeView: View {
 
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("Conversation practice", systemImage: "message.badge.waveform.fill")
+            Label("Conversation Practice", systemImage: "message.badge.waveform.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.blue)
 
@@ -760,7 +760,6 @@ struct IMPracticeView: View {
             Text("Conversation snapshot")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .textCase(.uppercase)
 
             HStack(spacing: 10) {
                 wrapUpChip(title: "Turns", value: "\(userTurnCount)", tint: .blue)

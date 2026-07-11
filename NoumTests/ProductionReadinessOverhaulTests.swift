@@ -15,6 +15,7 @@ struct ProductionAppShellRoutingTests {
             ("noum://growth", .review),
             ("noum://profile", .profile),
             ("noum://league", .profile),
+            ("noum://friend/example-account", .profile),
             ("noum://settings", .settings)
         ]
 
@@ -22,6 +23,12 @@ struct ProductionAppShellRoutingTests {
             let url = try #require(URL(string: rawURL))
             #expect(AppTab.topLevelRoute(for: url) == tab)
         }
+    }
+
+    @Test func singularFriendDeepLinkKeepsTheFeatureReachable() throws {
+        let url = try #require(URL(string: "noum://friend/example-account"))
+        #expect(AppTab.topLevelRoute(for: url) == .profile)
+        #expect(AppTab.rootDestination(for: url) == .friendLeaderboard)
     }
 
     @Test func nestedDeepLinksResolveWithoutDuplicatingRouters() throws {

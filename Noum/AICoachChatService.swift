@@ -2531,7 +2531,7 @@ actor AICoachChatService {
             return "I would not diagnose fear from the latest rep alone. Treat fear as a hypothesis only: the observable pattern is delay, with reassurance before disagreement. Test disagreement in sentence one, so you find out whether that read feels accurate."
         }
         if containsAny(latest, ["lack conviction", "lacking conviction"]) {
-            return "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline support one narrow read: the hedge before the recommendation is the best place to work, not a verdict about your identity. I still need repeated answers under pressure before making a stronger call. Repeat the answer and replace the first hedge with a direct verb."
+            return "There is not enough evidence to call this lack of conviction overall. The same focus keeps showing up across recent reps. The latest rep and pace estimate point to one narrow read: the hedge before the recommendation is the best place to work, not a verdict about your identity. I still need repeated answers under pressure before making a stronger call. Repeat the answer and replace the first hedge with a direct verb."
         }
         if containsAny(latest, ["polished but evasive", "sound polished but evasive", "evasive"]) {
             return "Yes, it could, but keep it as a structure read, not a claim about you. The latest rep and pace estimate point to an answer that arrives after too much setup. The structure is usable, but I have not seen it hold under pressure. I still need repeated pressure reps and a listener's read before making a stronger call. Put the direct answer in sentence one, then use one polished reason after it."

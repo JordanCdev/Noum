@@ -118,7 +118,8 @@ enum PeerComparisonVisibility: Equatable {
 
     static func make(
         members: [PublicProfileSnapshot],
-        currentAccountID: String?
+        currentAccountID: String?,
+        now: Date = Date()
     ) -> PeerComparisonVisibility {
         guard let currentAccountID,
               !currentAccountID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -127,13 +128,55 @@ enum PeerComparisonVisibility: Equatable {
 
         let peerIDs = Set(
             members.compactMap { member -> String? in
-                let accountID = member.accountID.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !accountID.isEmpty, accountID != currentAccountID else { return nil }
-                return accountID
+                guard isGenuinePeer(member, currentAccountID: currentAccountID, now: now) else {
+                    return nil
+                }
+                return member.accountID.trimmingCharacters(in: .whitespacesAndNewlines)
             }
         )
         guard !peerIDs.isEmpty else { return .forming }
         return .available(peerCount: peerIDs.count)
+    }
+
+    /// A Firestore bucket document alone is not enough to present a person.
+    /// Old test rows, inactive accounts, and anonymous placeholder names stay
+    /// out of this trust-sensitive social surface.
+    static func isGenuinePeer(
+        _ member: PublicProfileSnapshot,
+        currentAccountID: String,
+        now: Date = Date()
+    ) -> Bool {
+        let accountID = member.accountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accountID.isEmpty, accountID != currentAccountID else { return false }
+        guard member.weeklyReps > 0 else { return false }
+        guard currentWeek(containing: now)?.contains(member.updatedAt) == true else { return false }
+
+        let name = member.displayName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let placeholders: Set<String> = ["", "speaker", "guest speaker", "noum speaker"]
+        return !placeholders.contains(name)
+    }
+
+    /// Peer rows live in an ISO-week Firestore bucket and `weeklyReps` is
+    /// computed for that same interval. Keep freshness aligned with that
+    /// source-of-truth instead of hiding a valid weekly peer after 24 hours.
+    private static func currentWeek(containing date: Date) -> DateInterval? {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.firstWeekday = 2
+        return calendar.dateInterval(of: .weekOfYear, for: date)
+    }
+
+    static func visibleMembers(
+        _ members: [PublicProfileSnapshot],
+        currentAccountID: String?,
+        now: Date = Date()
+    ) -> [PublicProfileSnapshot] {
+        guard let currentAccountID else { return [] }
+        return members.filter { member in
+            member.accountID == currentAccountID
+                || isGenuinePeer(member, currentAccountID: currentAccountID, now: now)
+        }
     }
 
     var showsProfileEntry: Bool {
@@ -848,12 +891,30 @@ struct ProfileCoachReadContent: Equatable {
         let trimmed = hypothesis.trimmingCharacters(in: .whitespacesAndNewlines)
         if let parts = splitHypothesis(
             trimmed,
+            marker: " appears to be the main focus because ",
+            suffix: "; keep checking against future reps."
+        ) {
+            let topic = userFacingTopic(parts.topic)
+            let basis = sentenceCased(userFacingBasis(parts.basis))
+            return "\(topic) looks like the main focus right now. \(basis), so keep checking it in future reps."
+        }
+        if let parts = splitHypothesis(
+            trimmed,
+            marker: " may be the main focus because ",
+            suffix: "; verify over more reps."
+        ) {
+            let topic = userFacingTopic(parts.topic)
+            let basis = sentenceCased(userFacingBasis(parts.basis))
+            return "\(topic) may be the main focus. \(basis), but Noum needs a few more reps before treating it as a pattern."
+        }
+        if let parts = splitHypothesis(
+            trimmed,
             marker: " appears to be the highest-leverage focus because ",
             suffix: "; keep checking against future reps."
         ) {
             let topic = userFacingTopic(parts.topic)
             let basis = sentenceCased(userFacingBasis(parts.basis))
-            return "\(topic) looks like the strongest lever right now. \(basis), so keep testing it against future reps."
+            return "\(topic) looks like the main focus right now. \(basis), so keep checking it in future reps."
         }
         if let parts = splitHypothesis(
             trimmed,
@@ -862,12 +923,12 @@ struct ProfileCoachReadContent: Equatable {
         ) {
             let topic = userFacingTopic(parts.topic)
             let basis = sentenceCased(userFacingBasis(parts.basis))
-            return "\(topic) may be the strongest lever. \(basis), but Noum needs a few more reps before treating it as the main case."
+            return "\(topic) may be the main focus. \(basis), but Noum needs a few more reps before treating it as a pattern."
         }
         return trimmed
             .replacingOccurrences(
                 of: "persistent blocker in the rolling baseline",
-                with: "it keeps showing up in the rolling baseline"
+                with: "it keeps showing up in recent reps"
             )
     }
 
@@ -902,7 +963,7 @@ struct ProfileCoachReadContent: Equatable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "."))
         if trimmed.localizedCaseInsensitiveCompare("persistent blocker in the rolling baseline") == .orderedSame {
-            return "it keeps showing up in the rolling baseline"
+            return "it keeps showing up in recent reps"
         }
         if trimmed.localizedCaseInsensitiveCompare("stable at developing") == .orderedSame {
             return "the pattern is steady, but not yet moving"
@@ -934,9 +995,21 @@ struct ProfileCoachBriefPresentation: Equatable {
         sessionCount: Int,
         plan: CoachingPlan?,
         memory: CoachMemory?,
+        trends: [SkillTrend] = [],
         proof: ProofMomentRecord? = nil,
         now: Date = Date()
     ) -> ProfileCoachBriefPresentation {
+        if let currentFocus = CurrentCoachingFocusPresentation.make(
+            trends: trends,
+            sessionCount: sessionCount
+        ) {
+            return ProfileCoachBriefPresentation(
+                observation: currentFocus.observation,
+                nextMove: currentFocus.instruction,
+                evidenceCaption: currentFocus.evidenceCaption
+            )
+        }
+
         let content = ProfileCoachReadContent.make(
             sessionCount: sessionCount,
             plan: plan,
@@ -1157,7 +1230,7 @@ struct ProfileTransferStatusContent: Equatable {
                 eyebrow: "Real-world prep",
                 title: "\(activeMoment.title) \(daysText)",
                 detail: readiness.line,
-                actionTitle: "Prep now",
+                actionTitle: "Continue prep",
                 destination: .prepSession,
                 moment: activeMoment
             )
@@ -1525,6 +1598,7 @@ struct ProfileView: View {
             sessionCount: sessions.count,
             plan: CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile),
             memory: coachMemoryStore.currentMemory,
+            trends: TrendAnalyzer.analyze(snapshots: trendStore.snapshots),
             proof: proofStore.recent(limit: 1).first
         )
 
@@ -2598,10 +2672,10 @@ struct ProfileView: View {
                         Text("See your peak wall")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
-                        Text("Best this week, best ever, best in your league.")
+                        Text("Best this week, best ever, and your peer comparison.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer(minLength: Spacing.xs)
@@ -3193,16 +3267,8 @@ struct ProfileView: View {
     /// catalogues so all three coach entry points sound like the same
     /// voice. Phrasing is ambient ("about your goal", "what to drill
     /// next") because Profile isn't anchored to a specific rep.
-    private func askNoumProfileLabel(for voice: SpeakingStyleGoal?) -> String {
-        switch voice {
-        case .authoritative: return "Ask Noum what to drill next"
-        case .warm: return "Talk to Noum about your goal"
-        case .concise: return "Ask Noum — one move"
-        case .persuasive: return "Ask Noum where to leverage"
-        case .executive: return "Brief Noum on what's next"
-        case .storytelling: return "Tell Noum what's next"
-        case .none: return "Ask Noum about your goal"
-        }
+    private func askNoumProfileLabel(for _: SpeakingStyleGoal?) -> String {
+        "Ask Noum"
     }
 
     // MARK: - Active Challenge

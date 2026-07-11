@@ -4,6 +4,13 @@ import Testing
 
 @Suite("Cohesive summary interstitial policy")
 struct CohesiveSummaryInterstitialPolicyTests {
+    @Test func statusAreaCoverUsesTheMeasuredTopInset() {
+        #expect(SummaryTopSafeAreaCoverLayout.height(for: 59) == 59)
+        #expect(SummaryTopSafeAreaCoverLayout.height(for: 24) == 24)
+        #expect(SummaryTopSafeAreaCoverLayout.height(for: 0) == 0)
+        #expect(SummaryTopSafeAreaCoverLayout.height(for: -1) == 0)
+    }
+
     @Test func firstRepSuppressesEveryInterstitialCandidate() {
         for count in [0, 1] {
             let selected = SummaryInterstitialPolicy.select(
@@ -117,6 +124,34 @@ struct CohesivePostRepDebriefTests {
 
 @Suite("Cohesive summary and Ask Noum copy")
 struct CohesiveSummaryAskCopyTests {
+    @Test func deterministicWarmProofDoesNotInferPaceOrToneFromFillers() {
+        let session = PracticeSession(
+            id: UUID(),
+            transcript: "We will focus on the customer problem before proposing the next move.",
+            fillerWordCount: 0,
+            duration: 68,
+            date: Date(),
+            mode: .timed,
+            score: 9
+        )
+        let input = ProofMomentInput(
+            session: session,
+            voice: .warm,
+            goalParaphrase: nil,
+            baselineFillerRate: nil,
+            baselinePace: nil
+        )
+
+        let proof = ProofMomentService.deterministicProof(for: input)
+        let claim = proof?.claim.lowercased() ?? ""
+
+        #expect(proof?.technique == "Clean Delivery")
+        #expect(claim.contains("no fillers across this rep"))
+        #expect(!claim.contains("calm"))
+        #expect(!claim.contains("unhurried"))
+        #expect(!claim.contains("reads as warmth"))
+    }
+
     @Test func summaryUsesOneStandardActionVocabulary() {
         let labels = [
             SummaryDrillActionCard.primaryCTALabel(drillTitle: "Land the pause"),

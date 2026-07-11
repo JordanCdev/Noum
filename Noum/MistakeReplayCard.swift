@@ -338,10 +338,10 @@ struct MistakeReplayCard: View {
     private func lowScoreLine(for session: PracticeSession, score: Int) -> String {
         let when = relativeWhen(session.date)
         switch session.mode {
-        case .timed:        return "Timed rep to revisit · \(when)"
-        case .suddenDeath:  return "Pressure rep to revisit · \(when)"
-        case .ahCounter:    return "Ah-Counter rep to revisit · \(when)"
-        case .imConversation: return "Conversation rep to revisit — \(when)"
+        case .timed:        return "Timed Practice rep to revisit · \(when)"
+        case .suddenDeath:  return "Pressure Drill rep to revisit · \(when)"
+        case .ahCounter:    return "Filler Control rep to revisit · \(when)"
+        case .imConversation: return "Conversation Practice rep to revisit · \(when)"
         }
     }
 

@@ -172,6 +172,7 @@ struct SpeechProjectDetailSheet: View {
                     Text("Not now")
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
+                        .frame(minHeight: 44)
                 }
             }
             .padding(.horizontal, Spacing.lg)

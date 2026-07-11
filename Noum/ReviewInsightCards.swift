@@ -73,6 +73,99 @@ enum ReviewCoachRead {
 
 // MARK: - Review Story
 
+/// One presentation-only focus shared by Home, Train, Review, and Profile.
+/// The trend store remains the owner of evidence; this resolver only turns its
+/// strongest supported focus into consistent user-facing copy and a suitable
+/// existing practice mode.
+struct CurrentCoachingFocusPresentation: Equatable {
+    let skillArea: SkillArea
+    let observation: String
+    let instruction: String
+    let recommendedMode: PracticeMode
+    let evidenceCaption: String
+
+    static func make(
+        trends: [SkillTrend],
+        sessionCount: Int
+    ) -> CurrentCoachingFocusPresentation? {
+        guard sessionCount >= 3,
+              let focus = ReviewCoachRead.focusTrend(in: trends) else {
+            return nil
+        }
+
+        let evidenceCount = min(sessionCount, min(max(1, focus.windowSize), 12))
+        let focusName = focus.skillArea.displayName.lowercased()
+        let observation = evidenceCount <= 4
+            ? "An early read points to \(focusName)."
+            : "Recent reps point to \(focusName) as the clearest next focus."
+
+        return CurrentCoachingFocusPresentation(
+            skillArea: focus.skillArea,
+            observation: observation,
+            instruction: instruction(for: focus.skillArea),
+            recommendedMode: recommendedMode(for: focus.skillArea),
+            evidenceCaption: ReviewStoryPresentation.evidenceCaption(for: evidenceCount)
+        )
+    }
+
+    func applying(to blueprint: RecommendationBiasBlueprint) -> RecommendationBiasBlueprint {
+        let modeChanged = recommendedMode != blueprint.recommendedMode
+        let playbook = RecommendationBiasEngine.playbook.first { entry in
+            entry.mode == recommendedMode
+        }
+        return RecommendationBiasBlueprint(
+            recommendedMode: recommendedMode,
+            recommendedTone: nil,
+            recommendedScenario: nil,
+            focus: skillArea.displayName,
+            target: instruction,
+            modeBenefit: modeChanged ? (playbook?.benefit ?? "") : blueprint.modeBenefit,
+            whyMode: observation,
+            whyNow: observation,
+            suggestedTimedDifficulty: recommendedMode == .timed
+                ? (modeChanged ? .medium : blueprint.suggestedTimedDifficulty)
+                : nil,
+            suggestedTheme: modeChanged ? .all : blueprint.suggestedTheme,
+            source: blueprint.source
+        )
+    }
+
+    private static func recommendedMode(for skillArea: SkillArea) -> PracticeMode {
+        switch skillArea {
+        case .fillerReduction, .pauseUsage:
+            return .ahCounter
+        case .openingStrength, .closingStrength, .paceControl, .structure,
+             .answerDevelopment, .conciseSpeaking, .vocalEmphasis, .confidence:
+            return .timed
+        }
+    }
+
+    private static func instruction(for skillArea: SkillArea) -> String {
+        switch skillArea {
+        case .fillerReduction:
+            return "Replace the next filler with a silent beat."
+        case .openingStrength:
+            return "Open with the answer in the first sentence."
+        case .closingStrength:
+            return "End on the decision, then stop."
+        case .paceControl:
+            return "Leave one full beat before the explanation."
+        case .structure:
+            return "Give the answer, one reason, then the next step."
+        case .answerDevelopment:
+            return "Develop one idea with one concrete example."
+        case .conciseSpeaking:
+            return "Make the point in one sentence, then stop."
+        case .pauseUsage:
+            return "Use one silent beat before the key point."
+        case .vocalEmphasis:
+            return "Stress the key phrase and soften the setup."
+        case .confidence:
+            return "State the point without a hedge."
+        }
+    }
+}
+
 /// One bounded story for the Review root: what moved, what that means, and
 /// the next focus. It deliberately reads only the trend engine's supported
 /// rows plus saved-session depth; no view owns or recomputes coaching state.
@@ -96,7 +189,13 @@ struct ReviewStoryPresentation: Equatable {
         let supportedWindows = [improving?.windowSize, focus?.windowSize]
             .compactMap { $0 }
             .filter { $0 > 0 }
-        let evidenceCount = supportedWindows.max() ?? min(sessions.count, 12)
+        // A trend window can outlive locally retained history (or be seeded
+        // independently in UI tests). Never claim more visible evidence than
+        // the user can actually open from Review.
+        let evidenceCount = min(
+            sessions.count,
+            min(supportedWindows.max() ?? sessions.count, 12)
+        )
 
         let movement: String
         let meaning: String
@@ -106,7 +205,7 @@ struct ReviewStoryPresentation: Equatable {
         case let (improving?, focus?):
             movement = sentence(ReviewCoachRead.improvingLine(for: improving))
             meaning = "That gain creates room to work on \(focus.skillArea.displayName.lowercased())."
-            nextFocus = "Next focus: \(focus.skillArea.displayName)."
+            nextFocus = "Next focus: \(focus.skillArea.displayName.lowercased())."
 
         case let (improving?, nil):
             movement = sentence(ReviewCoachRead.improvingLine(for: improving))
@@ -118,7 +217,7 @@ struct ReviewStoryPresentation: Equatable {
                 ? "The picture is still forming."
                 : "Your recent reps are holding mostly steady."
             meaning = sentence(ReviewCoachRead.focusLine(for: focus))
-            nextFocus = "Next focus: \(focus.skillArea.displayName)."
+            nextFocus = "Next focus: \(focus.skillArea.displayName.lowercased())."
 
         case (nil, nil):
             if evidenceCount <= 2 {
@@ -334,11 +433,11 @@ struct ReviewHighlightRow: View {
                     Text(highlight.title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(highlight.line)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 8)

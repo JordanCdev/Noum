@@ -52,18 +52,16 @@ struct PracticeModeExpansionCopy {
 }
 
 struct PracticeModePrescriptionCopy {
-    // Compatibility constants retained for older pure-contract tests. The
-    // cohesive Train surface uses the sentence-case display constants below.
-    static let heroEyebrow = "Coach pick"
-    static let alternateSectionTitle = "Other ways to practice"
-    static let displayHeroEyebrow = "Recommended rep"
+    static let heroEyebrow = "Recommended rep"
+    static let alternateSectionTitle = "Choose another exercise"
+    static let displayHeroEyebrow = heroEyebrow
     static let practiceLibraryTitle = "Practice library"
     static let chooseExerciseTitle = "Choose another exercise"
     static let adjustLabel = "Adjust"
-    static let pressureLockedHint = "Run one rated rep before Pressure Drill."
-    static let pressureLockedDisplayHint = "Complete one rated rep before Pressure Drill."
+    static let pressureLockedHint = "Complete one rated rep before Pressure Drill."
+    static let pressureLockedDisplayHint = pressureLockedHint
     static let cutTheCrutchTitle = "Cut the Crutch"
-    static let cutTheCrutchSubtitle = "Avoid one specific word for 60 seconds. Three slips ends the rep."
+    static let cutTheCrutchSubtitle = "Avoid one specific word for 60 seconds. Three slips end the rep."
 
     static func beginLabel(for title: String) -> String {
         "Start \(title)"
@@ -76,9 +74,10 @@ struct PracticeModePrescriptionCopy {
         let focusValue = cleanFocus.flatMap { $0.isEmpty ? nil : $0 }
 
         switch (targetValue, focusValue) {
-        case let (target?, focus?) where target.localizedCaseInsensitiveCompare(focus) != .orderedSame:
-            return "\(target) — \(focus)"
         case let (target?, _):
+            // The target is the concrete instruction. The broader focus can
+            // explain why this exercise was chosen, but appending it here
+            // turns one clear move into a second, competing thought.
             return target
         case let (nil, focus?):
             return focus
@@ -193,6 +192,7 @@ struct PracticeModeSelectionView: View {
     @StateObject private var masteryStore = ModeMasteryStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    @StateObject private var skillTrendStore = SkillTrendStore.shared
     @StateObject private var streakFreeze = StreakFreezeManager.shared
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var goalRefresh = GoalRefreshManager.shared
@@ -377,6 +377,12 @@ struct PracticeModeSelectionView: View {
             PracticeModeQuickStart.clear()
             PracticeModeQuickStart.clearCrutch()
         }
+        .onChange(of: skillTrendStore.snapshots.count) { _, _ in
+            computeRecommendation()
+            selectedMode = recommendedMode
+            crutchSelected = false
+            paceSelected = false
+        }
     }
 
     // MARK: - Recommended Rep
@@ -411,23 +417,20 @@ struct PracticeModeSelectionView: View {
                 tint: option.tint
             )
 
-            PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: option.title), tint: option.tint) {
-                selectedMode = option.mode
-                crutchSelected = false
-                paceSelected = false
-                recommendationLearningStore.markTapped(mode: option.mode)
-                // The recommended rep is a prescription: one tap launches it.
-                // Arm quick-start so the destination auto-begins instead of
-                // flashing its own setup page + a second Begin (the acquisition /
-                // time-to-first-word lever). `beginSession` re-reads the persisted
-                // theme + tool config, so the user's last settings still apply —
-                // one-tap saves taps, not preferences. The destination consumes-
-                // and-clears the flag in its `.task`; the picker's own `.task`
-                // clears any stale flag on re-entry so a back-out can't re-trigger.
-                PracticeModeQuickStart.arm(for: option.mode)
-                navigationPath.append(appDestination(for: option.mode))
+            if !showsFloatingStartCTA {
+                PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: option.title), tint: option.tint) {
+                    selectedMode = option.mode
+                    crutchSelected = false
+                    paceSelected = false
+                    recommendationLearningStore.markTapped(mode: option.mode)
+                    // The recommended rep is a prescription: one tap launches it.
+                    // Quick start preserves the user's saved setup while avoiding
+                    // another confirmation screen.
+                    PracticeModeQuickStart.arm(for: option.mode)
+                    navigationPath.append(appDestination(for: option.mode))
+                }
+                .accessibilityIdentifier("practiceModes.recommendedHero.begin")
             }
-            .accessibilityIdentifier("practiceModes.recommendedHero.begin")
 
             // Config access for the recommended mode WITHOUT losing the one-tap
             // Begin above. The recommended mode has no row in "other ways", so
@@ -534,7 +537,6 @@ struct PracticeModeSelectionView: View {
                 }
             }
         }
-        .accessibilityIdentifier("train.practiceLibrary")
     }
 
     private func trainLibraryRow(_ item: TrainLibraryItem) -> some View {
@@ -1487,7 +1489,12 @@ struct PracticeModeSelectionView: View {
             recommendationOutcomes: recommendationLearningStore.outcomes,
             summaryStyle: .compact
         )
-        let blueprint = visibleBlueprint(from: context.blueprint)
+        let trends = TrendAnalyzer.analyze(snapshots: skillTrendStore.snapshots)
+        let coherentBlueprint = CurrentCoachingFocusPresentation.make(
+            trends: trends,
+            sessionCount: sessionStore.sessions.count
+        )?.applying(to: context.blueprint) ?? context.blueprint
+        let blueprint = visibleBlueprint(from: coherentBlueprint)
         cachedRecommendedMode = blueprint.recommendedMode
         cachedRecommendedFocus = blueprint.focus
         cachedRecommendedTarget = blueprint.target
@@ -1511,13 +1518,13 @@ struct PracticeModeSelectionView: View {
                 recommendedMode: .timed,
                 recommendedTone: nil,
                 recommendedScenario: nil,
-                focus: "Baseline control",
-                target: "One rated rep",
+                focus: "First clear read",
+                target: "Complete one rated rep",
                 modeBenefit: timedBenefit?.benefit ?? "Builds a clean, rated speaking baseline.",
-                whyMode: timedBenefit?.bestFor ?? "Timed Practice gives Noum the cleanest rated evidence.",
+                whyMode: timedBenefit?.bestFor ?? "Timed Practice creates a clear rated starting point.",
                 whyNow: canShowMode
                     ? PracticeModePrescriptionCopy.pressureLockedDisplayHint
-                    : "Start with a spoken rep while that practice mode is unavailable.",
+                    : "Timed Practice is ready now.",
                 suggestedTimedDifficulty: nil,
                 suggestedTheme: blueprint.suggestedTheme,
                 source: blueprint.source

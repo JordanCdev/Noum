@@ -99,24 +99,18 @@ enum Typography {
 // MARK: - View extensions
 
 extension View {
-    /// Apply the canonical Noum micro-label treatment in one line:
-    /// uppercase, 0.8 tracking, secondary tint.
+    /// Apply the canonical quiet label treatment in sentence case.
     func microLabel(_ tint: Color = .secondary) -> some View {
         self
-            .font(Typography.micro)
+            .font(Typography.captionSmall.weight(.semibold))
             .foregroundStyle(tint)
-            .textCase(.uppercase)
-            .tracking(0.8)
     }
 
-    /// Apply the canonical Noum nav-label treatment:
-    /// uppercase, 0.4 tracking.
+    /// Apply the canonical navigation label treatment in sentence case.
     func navLabel(_ tint: Color = .primary) -> some View {
         self
             .font(Typography.nav)
             .foregroundStyle(tint)
-            .textCase(.uppercase)
-            .tracking(0.4)
     }
 }
 

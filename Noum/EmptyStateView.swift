@@ -107,8 +107,8 @@ struct EmptyStateView: View {
         AppColor.screenBackground.ignoresSafeArea()
         EmptyStateView(
             symbol: "clock.arrow.circlepath",
-            title: "Your first session is the hardest",
-            body: "One short rep populates this view with score, pacing, and filler trends.",
+            title: "Your progress starts with one rep",
+            body: "Complete a short rep to see your first score, pace, and filler count.",
             tint: AppColor.brandBlue,
             cta: EmptyStateView.CTA(label: "Start a rep", icon: "mic.fill", action: {})
         )

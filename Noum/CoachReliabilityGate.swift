@@ -2251,13 +2251,13 @@ enum CoachReliabilityGate {
     static func vulnerablePushbackEvidenceAnchor(from evidence: [String]) -> String? {
         let lowered = normalize(evidence.joined(separator: " "))
         if containsAny(lowered, ["held composure", "through an interruption", "handled an interruption"]) {
-            return "There is already one earned proof point: this week you held composure through an interruption."
+            return "There is already one concrete example: this week you held composure through an interruption."
         }
         if containsAny(lowered, ["clean under pressure", "stayed clean under pressure"]) {
-            return "There is already one earned proof point: you have stayed clean under pressure once."
+            return "There is already one concrete example: you have stayed clean under pressure once."
         }
         if containsAny(lowered, ["landed clean", "clean rep", "reps you keep landing clean"]) {
-            return "There is already one earned proof point: you have landed clean reps before."
+            return "There is already one concrete example: you have landed clean reps before."
         }
         return nil
     }

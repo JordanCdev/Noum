@@ -3,7 +3,7 @@ import SwiftUI
 
 // MARK: - Section Micro-Label
 
-/// Uppercase tracked micro-label rendered above each card group.
+/// Quiet sentence-case label rendered above each grouped section.
 /// Uses the canonical `Typography.micro` role so Settings labels inherit the
 /// app-wide Dynamic Type contract.
 ///
@@ -21,10 +21,8 @@ struct SettingsSectionLabel: View {
 
     var body: some View {
         Text(title)
-            .font(Typography.micro)
+            .font(Typography.caption.weight(.semibold))
             .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .tracking(0.8)
             .padding(.horizontal, 4)
             .accessibilityAddTraits(.isHeader)
     }
@@ -89,33 +87,65 @@ struct SettingsNavRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: Spacing.sm) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
                 if let icon {
                     Image(systemName: icon)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(tint)
                         .frame(width: 22)
+                        .padding(.top, 2)
                 }
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Spacer(minLength: Spacing.xs)
-                if let value {
-                    Text(value)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                rowContent
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.tertiary)
+                    .padding(.top, 4)
             }
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.pressable)
         .accessibilityLabel(title)
+        .accessibilityValue(value ?? "")
         .accessibilityHint(accessibilityHint ?? "")
+    }
+
+    @ViewBuilder
+    private var rowContent: some View {
+        if let value, !value.isEmpty {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                    titleText
+                        .fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: Spacing.xs)
+                    valueText(value)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    titleText
+                    valueText(value)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            titleText
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var titleText: some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
+    }
+
+    private func valueText(_ value: String) -> some View {
+        Text(value)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
     }
 }
 
@@ -131,25 +161,48 @@ struct SettingsStatusRow: View {
     var icon: String?
 
     var body: some View {
-        HStack(spacing: Spacing.sm) {
+        HStack(alignment: .top, spacing: Spacing.sm) {
             if let icon {
                 Image(systemName: icon)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 22)
+                    .padding(.top, 2)
             }
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-            Spacer(minLength: Spacing.xs)
-            Text(value)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(valueTint)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                    titleText
+                        .fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: Spacing.xs)
+                    valueText
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    titleText
+                    valueText
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(minHeight: 44)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(value)
+    }
+
+    private var titleText: some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
+    }
+
+    private var valueText: some View {
+        Text(value)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(valueTint)
     }
 }
 #endif

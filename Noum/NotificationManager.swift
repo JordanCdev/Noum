@@ -565,7 +565,7 @@ final class NotificationManager: ObservableObject {
         challenge: PracticeChallengeStatus
     ) -> String {
         if relationship != nil {
-            return "Your conversation practice is waiting"
+            return "Your Conversation Practice rep is ready"
         }
         if challenge.progress < 1 {
             return challenge.title

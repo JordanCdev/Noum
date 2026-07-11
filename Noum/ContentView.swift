@@ -1465,7 +1465,7 @@ struct ContentView: View {
                 suggestion(
                     from: bias,
                     title: bias.source == .caseIntervention
-                        ? "Continue the current intervention"
+                        ? "Continue the current focus"
                         : defaultSuggestionTitle(for: bias)
                 )
             )
@@ -1625,7 +1625,7 @@ struct ContentView: View {
                     suddenDeathMultiplierLabels: [],
                     suddenDeathTotalWords: nil,
                     showDuration: true,
-                    practiceTitle: "Impromptu Practice",
+                    practiceTitle: PracticeMode.timed.displayLabel,
                     feedbackOverride: nil,
                     headlineOverride: nil,
                     scoreBreakdown: [],

@@ -63,8 +63,8 @@ struct PostRepVerdictContent: Equatable {
     ) -> PostRepVerdictContent {
         PostRepVerdictContent(
             readText: readText(note: note, coachNote: coachNote, isMinimalEffort: isMinimalEffort),
-            provenanceLabel: note?.isAIBacked == false ? "RULE-BASED" : nil,
-            thinEvidenceCopy: isMinimalEffort ? "Early read: one longer rep will sharpen the diagnosis." : nil,
+            provenanceLabel: nil,
+            thinEvidenceCopy: isMinimalEffort ? "Early read: one longer rep will make the next read clearer." : nil,
             deliveryReadLine: isMinimalEffort ? nil : deliveryReadLine,
             win: isMinimalEffort ? nil : win(proof: proof, bullets: winBullets),
             fix: isMinimalEffort ? nil : fix(coachNote: coachNote, bullets: fixBullets)
@@ -98,7 +98,10 @@ struct PostRepVerdictContent: Equatable {
             return Win(
                 headline: proof.claim,
                 quote: proof.quote,
-                support: proof.technique,
+                // The verified quote and its plain-language claim are the
+                // evidence. Internal technique taxonomy adds a third label
+                // without helping the user decide what to repeat.
+                support: nil,
                 quoteIsVerified: true
             )
         }
@@ -184,16 +187,19 @@ struct PostRepDebriefCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            coachRead
+            if !visibility.showsWhatHeld && !visibility.showsNextMove {
+                coachRead
+            }
 
             if visibility.showsWhatHeld, let win = content.win {
-                Divider()
                 whatHeld(win)
                     .accessibilityIdentifier("summary.win.card")
             }
 
             if visibility.showsNextMove {
-                Divider()
+                if visibility.showsWhatHeld {
+                    Divider()
+                }
                 nextMove
                     .accessibilityIdentifier("summary.fix.card")
             }
@@ -640,7 +646,7 @@ struct PostRepFixCard: View {
                     }
                     .buttonStyle(.pressable)
                     .accessibilityIdentifier("summary.interventionReview.cta")
-                    .accessibilityHint("Opens Ask Noum to review whether the active intervention is working.")
+                    .accessibilityHint("Opens Ask Noum to review whether this focus is working.")
                 }
             } else if let nextMove = fix?.nextMove, !nextMove.isEmpty {
                 nextMoveLine(nextMove)

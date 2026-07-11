@@ -2443,7 +2443,7 @@ struct CoachTypedFallbackTests {
             Spec(
                 userTurn: "Do I lack conviction?",
                 depth: .deepAssessment,
-                expectedFragments: ["not enough evidence", "rolling baseline", "hedge before the recommendation", "not a verdict about your identity", "repeated answers under pressure"],
+                expectedFragments: ["not enough evidence", "recent reps", "hedge before the recommendation", "not a verdict about your identity", "repeated answers under pressure"],
                 rejectedFragments: ["you lack conviction", "proof test", "goal readiness"]
             ),
             Spec(
@@ -3095,7 +3095,7 @@ struct CoachTypedFallbackTests {
             evidenceUsed: [
                 "latest rep: Timed, 7/10, 1 fillers, 50s",
                 "pace estimate: 145 WPM",
-                "case summary: hypothesis: Filler Words appears to be the highest-leverage focus because it keeps showing up in the rolling baseline; keep checking against future reps."
+                "case summary: hypothesis: Filler Words appears to be the highest-leverage focus because it keeps showing up in recent reps; keep checking against future reps."
             ],
             rubricScores: [],
             missingEvidence: [
@@ -3119,8 +3119,8 @@ struct CoachTypedFallbackTests {
         switch outcome {
         case .reply(let text):
             let lower = text.lowercased()
-            #expect(lower.contains("rolling baseline"))
-            #expect(lower.contains("support one narrow read"))
+            #expect(lower.contains("recent reps"))
+            #expect(lower.contains("point to one narrow read"))
             #expect(lower.contains("hedge before the recommendation"))
             #expect(!lower.contains("proof test"))
             #expect(!lower.contains("goal readiness"))

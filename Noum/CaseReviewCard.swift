@@ -66,7 +66,7 @@ struct CaseReviewCard: View {
                 caseRow(
                     icon: "eye",
                     label: confidenceQualifier,
-                    text: hypothesis
+                    text: CoachDisplayCopy.normalized(hypothesis)
                 )
             } else if let lever = memory.currentLever {
                 caseRow(
@@ -221,11 +221,9 @@ struct CaseReviewCard: View {
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Active intervention")
-                    .font(Typography.micro.weight(.semibold))
+                Text("Current coaching plan")
+                    .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
 
                 Text(interventionSummary(intervention))
                     .font(Typography.caption)
@@ -241,7 +239,7 @@ struct CaseReviewCard: View {
                     if intervention.followedRepCount > 0 {
                         Text("·")
                             .foregroundStyle(.quaternary)
-                        Text("\(intervention.followedRepCount) rep\(intervention.followedRepCount == 1 ? "" : "s") observed")
+                        Text("\(intervention.followedRepCount) completed rep\(intervention.followedRepCount == 1 ? "" : "s")")
                             .font(Typography.micro)
                             .foregroundStyle(.tertiary)
                     }
@@ -275,12 +273,11 @@ struct CaseReviewCard: View {
     // MARK: - Computed Helpers
 
     private var confidenceQualifier: String {
-        switch memory.evidenceConfidence {
-        case .insufficient: return "Early signal"
-        case .tentative: return "Early read"
-        case .moderate: return "Working read"
-        case .established: return "Coaching read"
-        case .stable: return "Established read"
+        switch memory.evidenceCount {
+        case ...2: return "Latest rep"
+        case 3...4: return "Early read"
+        case 5...9: return "Seen across \(memory.evidenceCount) recent reps"
+        default: return "Repeated across \(memory.evidenceCount) recent reps"
         }
     }
 

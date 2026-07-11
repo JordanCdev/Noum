@@ -32,20 +32,65 @@ struct CohesiveReviewStoryTests {
     }
 
     @Test func storyCombinesMovementMeaningAndNextFocus() throws {
-        let latest = session(daysAgo: 0)
+        let sessions = (0..<8).map { session(daysAgo: Double($0)) }
+        let latest = try #require(sessions.first)
         let story = try #require(ReviewStoryPresentation.make(
             trends: [
                 trend(.structure, direction: .improving, confidence: .high, windowSize: 8),
                 trend(.paceControl, direction: .declining, confidence: .medium, windowSize: 8)
             ],
-            sessions: [session(daysAgo: 2), latest]
+            sessions: sessions
         ))
 
         #expect(story.latestSessionID == latest.id)
         #expect(story.movement.localizedCaseInsensitiveContains("structure"))
         #expect(story.meaning.localizedCaseInsensitiveContains("pace"))
-        #expect(story.nextFocus == "Next focus: Pace.")
+        #expect(story.nextFocus == "Next focus: pace.")
         #expect(story.evidenceCaption == "Seen across 8 recent reps.")
+    }
+
+    @Test func storyNeverClaimsMoreEvidenceThanReviewCanOpen() throws {
+        let story = try #require(ReviewStoryPresentation.make(
+            trends: [trend(.paceControl, direction: .declining, confidence: .medium, windowSize: 8)],
+            sessions: (0..<5).map { session(daysAgo: Double($0)) }
+        ))
+
+        #expect(story.evidenceCaption == "Seen across 5 recent reps.")
+    }
+
+    @Test func sharedFocusKeepsCoreJourneyOnOneInstruction() throws {
+        let focus = try #require(CurrentCoachingFocusPresentation.make(
+            trends: [trend(.fillerReduction, direction: .declining, confidence: .medium, windowSize: 8)],
+            sessionCount: 5
+        ))
+
+        #expect(focus.skillArea == .fillerReduction)
+        #expect(focus.recommendedMode == .ahCounter)
+        #expect(focus.instruction == "Replace the next filler with a silent beat.")
+        #expect(focus.observation == "Recent reps point to filler words as the clearest next focus.")
+        #expect(focus.evidenceCaption == "Seen across 5 recent reps.")
+
+        let base = RecommendationBiasBlueprint(
+            recommendedMode: .timed,
+            recommendedTone: nil,
+            recommendedScenario: nil,
+            focus: "Structure",
+            target: "Open with the answer.",
+            modeBenefit: "Builds complete answers.",
+            whyMode: "A clear structure rep.",
+            whyNow: "The next rep needs structure.",
+            suggestedTimedDifficulty: .medium,
+            suggestedTheme: .all,
+            source: .goalBias
+        )
+        let aligned = focus.applying(to: base)
+        #expect(aligned.recommendedMode == .ahCounter)
+        #expect(aligned.target == focus.instruction)
+        #expect(aligned.focus == "Filler Words")
+        #expect(aligned.modeBenefit.localizedCaseInsensitiveContains("filler"))
+        #expect(!aligned.modeBenefit.contains("complete answers"))
+        #expect(aligned.suggestedTimedDifficulty == nil)
+        #expect(aligned.suggestedTheme == .all)
     }
 
     @Test func thinStoryDoesNotClaimAPattern() throws {
@@ -57,6 +102,33 @@ struct CohesiveReviewStoryTests {
         #expect(story.meaning == "There is not enough evidence to call a pattern yet.")
         #expect(story.evidenceCaption == "Based on your latest two reps.")
         #expect(!story.movement.localizedCaseInsensitiveContains("trend"))
+    }
+
+    @Test func changedTimedRecommendationGetsNeutralTimedConfiguration() throws {
+        let focus = try #require(CurrentCoachingFocusPresentation.make(
+            trends: [trend(.structure, direction: .declining, confidence: .medium, windowSize: 5)],
+            sessionCount: 5
+        ))
+        let base = RecommendationBiasBlueprint(
+            recommendedMode: .ahCounter,
+            recommendedTone: nil,
+            recommendedScenario: nil,
+            focus: "Fillers",
+            target: "Pause instead of filling the space.",
+            modeBenefit: "Builds filler awareness.",
+            whyMode: "Use a focused filler rep.",
+            whyNow: "Fillers are the current focus.",
+            suggestedTimedDifficulty: nil,
+            suggestedTheme: .ethicsOpinions,
+            source: .goalBias
+        )
+
+        let aligned = focus.applying(to: base)
+        #expect(aligned.recommendedMode == .timed)
+        #expect(aligned.modeBenefit.localizedCaseInsensitiveContains("structure"))
+        #expect(!aligned.modeBenefit.localizedCaseInsensitiveContains("filler awareness"))
+        #expect(aligned.suggestedTimedDifficulty == .medium)
+        #expect(aligned.suggestedTheme == .all)
     }
 
     @Test func progressDisclosureStartsCollapsed() {
@@ -125,6 +197,25 @@ struct CohesiveProfileCompositionTests {
         #expect(ProfileCoachBriefPresentation.evidenceCaption(for: 12) == "Repeated across 12 recent reps.")
     }
 
+    @Test func sharedFocusBriefDoesNotRepeatTheExerciseName() {
+        let brief = ProfileCoachBriefPresentation.make(
+            sessionCount: 5,
+            plan: plan(),
+            memory: nil,
+            trends: [SkillTrend(
+                skillArea: .fillerReduction,
+                direction: .declining,
+                confidence: .medium,
+                windowSize: 5,
+                currentLevel: .developing
+            )]
+        )
+
+        #expect(brief.observation == "Recent reps point to filler words as the clearest next focus.")
+        #expect(brief.nextMove == "Replace the next filler with a silent beat.")
+        #expect(!brief.nextMove.contains(":"))
+    }
+
     @Test func establishedBriefRemovesInternalCoachingJargon() {
         let memory = CoachMemory(
             updatedAt: Date(),
@@ -157,22 +248,45 @@ struct CohesiveProfileCompositionTests {
 
 @Suite("Peer comparison visibility")
 struct PeerComparisonVisibilityTests {
-    private func member(_ accountID: String, name: String) -> PublicProfileSnapshot {
-        .empty(accountID: accountID, displayName: name)
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func member(
+        _ accountID: String,
+        name: String,
+        weeklyReps: Int = 1,
+        updatedAt: Date? = nil
+    ) -> PublicProfileSnapshot {
+        PublicProfileSnapshot(
+            accountID: accountID,
+            displayName: name,
+            rating: 620,
+            peakRating: 640,
+            currentStreak: 2,
+            weeklyReps: weeklyReps,
+            weeklyDelta: 8,
+            leagueTier: LeagueTier.gold.rawValue,
+            updatedAt: updatedAt ?? now
+        )
     }
 
     @Test func emptyAndSelfOnlyBucketsStayForming() {
-        #expect(PeerComparisonVisibility.make(members: [], currentAccountID: "me") == .forming)
+        #expect(PeerComparisonVisibility.make(
+            members: [],
+            currentAccountID: "me",
+            now: now
+        ) == .forming)
         #expect(PeerComparisonVisibility.make(
             members: [member("me", name: "Me")],
-            currentAccountID: "me"
+            currentAccountID: "me",
+            now: now
         ) == .forming)
     }
 
     @Test func missingCurrentAccountNeverTreatsRowsAsPeers() {
         #expect(PeerComparisonVisibility.make(
             members: [member("someone", name: "Someone")],
-            currentAccountID: nil
+            currentAccountID: nil,
+            now: now
         ) == .forming)
     }
 
@@ -180,10 +294,11 @@ struct PeerComparisonVisibilityTests {
         let visibility = PeerComparisonVisibility.make(
             members: [
                 member("me", name: "Me"),
-                member("peer", name: "Peer"),
-                member("peer", name: "Peer duplicate")
+                member("peer", name: "Alex Morgan"),
+                member("peer", name: "Alex Morgan")
             ],
-            currentAccountID: "me"
+            currentAccountID: "me",
+            now: now
         )
 
         #expect(visibility == .available(peerCount: 1))
@@ -194,6 +309,61 @@ struct PeerComparisonVisibilityTests {
         ).rows.contains(.peerComparison))
     }
 
+    @Test func inactivePriorWeekAndPlaceholderRowsNeverCreateStandings() throws {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.firstWeekday = 2
+        let week = try #require(calendar.dateInterval(of: .weekOfYear, for: now))
+        let priorWeek = week.start.addingTimeInterval(-1)
+        let members = [
+            member("inactive", name: "Alex Morgan", weeklyReps: 0),
+            member("prior-week", name: "Taylor Reed", updatedAt: priorWeek),
+            member("placeholder", name: "Guest Speaker")
+        ]
+
+        #expect(PeerComparisonVisibility.make(
+            members: members,
+            currentAccountID: "me",
+            now: now
+        ) == .forming)
+        #expect(PeerComparisonVisibility.visibleMembers(
+            members,
+            currentAccountID: "me",
+            now: now
+        ).isEmpty)
+    }
+
+    @Test func currentWeekPeerRemainsVisibleAfterTwentyFourHours() throws {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.firstWeekday = 2
+        let week = try #require(calendar.dateInterval(of: .weekOfYear, for: now))
+        let earlyWeekUpdate = week.start.addingTimeInterval(60 * 60)
+        let lateWeekNow = week.end.addingTimeInterval(-(60 * 60))
+        let peer = member("peer", name: "Taylor Reed", updatedAt: earlyWeekUpdate)
+
+        #expect(lateWeekNow.timeIntervalSince(earlyWeekUpdate) > 24 * 60 * 60)
+        #expect(PeerComparisonVisibility.isGenuinePeer(
+            peer,
+            currentAccountID: "me",
+            now: lateWeekNow
+        ))
+    }
+
+    @Test func priorWeekPeerExpiresAtBoundaryEvenWhenUpdatedWithinTwentyFourHours() throws {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.firstWeekday = 2
+        let week = try #require(calendar.dateInterval(of: .weekOfYear, for: now))
+        let justAfterBoundary = week.start.addingTimeInterval(30 * 60)
+        let justBeforeBoundary = week.start.addingTimeInterval(-(30 * 60))
+        let peer = member("peer", name: "Taylor Reed", updatedAt: justBeforeBoundary)
+
+        #expect(justAfterBoundary.timeIntervalSince(justBeforeBoundary) < 24 * 60 * 60)
+        #expect(!PeerComparisonVisibility.isGenuinePeer(
+            peer,
+            currentAccountID: "me",
+            now: justAfterBoundary
+        ))
+    }
+
     @Test func formingStateKeepsPeerRouteOutOfProfile() {
         let presentation = ProfileLibraryPresentation.make(
             showsPeerComparison: PeerComparisonVisibility.forming.showsProfileEntry,
@@ -201,5 +371,75 @@ struct PeerComparisonVisibilityTests {
         )
         #expect(!presentation.rows.contains(.peerComparison))
         #expect(presentation.rows.last == .upgrade)
+    }
+}
+
+@Suite("Account-scoped coaching trends")
+struct AccountScopedCoachingTrendTests {
+    @Test func switchingAccountsNeverReusesAnotherAccountsEvidence() throws {
+        let suiteName = "AccountScopedCoachingTrendTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        var activeAccountID: String? = "account-a"
+        let store = SkillTrendStore(
+            defaults: defaults,
+            accountIDProvider: { activeAccountID }
+        )
+        let accountASnapshot = snapshot(score: 4)
+        store.record(accountASnapshot)
+
+        activeAccountID = "account-b"
+        store.reloadForCurrentAccount()
+        #expect(store.snapshots.isEmpty)
+
+        let accountBSnapshot = snapshot(score: 8)
+        store.record(accountBSnapshot)
+
+        activeAccountID = "account-a"
+        store.reloadForCurrentAccount()
+        #expect(store.snapshots.map(\.id) == [accountASnapshot.id])
+
+        activeAccountID = "account-b"
+        store.reloadForCurrentAccount()
+        #expect(store.snapshots.map(\.id) == [accountBSnapshot.id])
+    }
+
+    @Test func legacyEvidenceMigratesOnlyIntoTheActiveAccount() throws {
+        let suiteName = "AccountScopedCoachingTrendMigrationTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let legacySnapshot = snapshot(score: 6)
+        defaults.set(
+            try JSONEncoder().encode([legacySnapshot]),
+            forKey: "skillTrendSnapshots"
+        )
+
+        var activeAccountID: String? = "upgrading-account"
+        let store = SkillTrendStore(
+            defaults: defaults,
+            accountIDProvider: { activeAccountID }
+        )
+        #expect(store.snapshots.map(\.id) == [legacySnapshot.id])
+        #expect(defaults.data(forKey: "skillTrendSnapshots") == nil)
+        #expect(defaults.data(
+            forKey: SkillTrendStore.storageKey(for: activeAccountID)
+        ) != nil)
+
+        activeAccountID = "different-account"
+        store.reloadForCurrentAccount()
+        #expect(store.snapshots.isEmpty)
+    }
+
+    private func snapshot(score: Int) -> SkillSnapshot {
+        SkillSnapshot(
+            sessionId: UUID(),
+            fillerCount: 2,
+            duration: 30,
+            wordCount: 70,
+            wpm: 140,
+            score: score
+        )
     }
 }
