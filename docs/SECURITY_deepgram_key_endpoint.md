@@ -8,6 +8,50 @@
 
 ---
 
+## Recovery update — 2026-07-11
+
+Noum now has a separate, production-safe transcription path, but this incident
+is **not contained yet** because the legacy AWS route and its previously exposed
+credential remain outside our control.
+
+### Completed for the replacement path
+
+- Created a dedicated Deepgram project for Noum production and a server-only
+  management credential. The credential is stored in Google Secret Manager and
+  is accessible only to the dedicated transcription function identity.
+- Deployed the authenticated, App Check-enforced Firebase callable
+  `transcriptionToken` in `europe-west2`. It derives the UID from Firebase Auth,
+  applies a per-UID rate limit, and returns only
+  `{ provider, accessToken, expiresAt }`.
+- The callable uses Deepgram `POST /v1/auth/grant` to issue a 30-second
+  `usage::write` temporary JWT. A redacted live probe confirmed the grant; no
+  credential or JWT value was written to this document or repository.
+- [`DeepgramProvider.swift`](../DeepgramProvider.swift) now uses only that
+  callable in production. Long-lived local API keys are DEBUG-only.
+- Release target membership excludes the legacy backend/provider configuration
+  plists, CI scans the built bundle for secrets, and Cloud Monitoring now alerts
+  the Noum operations address on token failures, unusual token volume, App
+  Check rejection spikes, account-deletion failures, and function 5xx spikes.
+
+### Still open — external release remains blocked
+
+- The old API Gateway deployment is still reachable and must be disabled or
+  hardened across **every route listed in this document**.
+- The old Deepgram credential has not been revoked because it belongs to the
+  earlier Deepgram account, not the new Noum production project.
+- Historic provider usage and billing for the exposed credential have not been
+  audited.
+- No AWS identity for the legacy deployment is available in this environment.
+
+Containment requires access to the old Deepgram account and legacy AWS account,
+or an incident request to their support teams. Closure evidence must include:
+the legacy credential returning 401, every legacy credential/IM/TTS route
+returning 401 or 404 without a verified identity, and the usage/billing audit.
+The new Firebase path reduces future app exposure; it does not revoke or disable
+the already-exposed legacy infrastructure.
+
+---
+
 > **Scope — this is not one endpoint.** A follow-up audit (2026-06-10) found the **same spoofable-header
 > auth pattern across the whole backend**, including a **second credential-vending endpoint**:
 > `GET /v1/transcribe/credentials` ([`AuthManager.swift:356`](../Noum/AuthManager.swift)) returns live
@@ -95,7 +139,12 @@ The deployed backend does **none** of that — it returns a static account-level
 
 ---
 
-## 3. Required backend fix
+## 3. Required legacy-backend fix
+
+> **Current implementation note:** the replacement iOS transcription path now
+> uses the deployed Firebase callable described in the recovery update. The AWS
+> guidance below remains applicable only to containing or decommissioning the
+> still-live legacy system; do not reconnect the release app to it.
 
 The endpoint must do three things it currently doesn't:
 
