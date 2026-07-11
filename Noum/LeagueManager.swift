@@ -11,7 +11,7 @@ import SwiftUI
 /// week's worth of climbing naturally promotes you. Vision says "climbing
 /// a rung at week's end"; in practice that rung is your rating delta over
 /// the week, surfaced via `LeagueManager.weeklyDelta`.
-enum LeagueTier: String, CaseIterable, Codable, Identifiable {
+enum LeagueTier: String, CaseIterable, Codable, Identifiable, Sendable {
     case bronze
     case silver
     case gold
@@ -149,7 +149,7 @@ enum LeagueActivityPresentation {
 /// Captures a tier-up event so the home screen can celebrate it on next
 /// open. Codable so it survives across launches — a rating bump
 /// mid-session shouldn't get swallowed by a sudden app close.
-struct TierPromotion: Codable, Equatable, Identifiable {
+struct TierPromotion: Codable, Equatable, Identifiable, Sendable {
     let previousTier: LeagueTier
     let newTier: LeagueTier
     let date: Date
@@ -176,6 +176,17 @@ struct PeerSessionSyncFailure: Equatable, Identifiable, Sendable {
     let isRetryable: Bool
 
     var id: UUID { sessionID }
+}
+
+/// Account-owned league state included in export and deletion parity.
+/// Transient peer rows and callable errors are intentionally absent; they are
+/// server reads, not durable local user data.
+struct LeagueAccountDataSnapshot: Codable, Equatable, Sendable {
+    let lastSeenTier: LeagueTier?
+    let lastSeenTierInitialized: Bool
+    let pendingPromotion: TierPromotion?
+    let dailyChallengeISOWeek: String?
+    let dailyChallengeCompletions: Int
 }
 
 // MARK: - League Manager
@@ -218,18 +229,31 @@ final class LeagueManager: ObservableObject {
     /// week boundary so an old week's count never carries over.
     @Published private(set) var weeklyDailyChallengeCompletions: Int = 0
 
-    private let lastSeenTierKey = "league.lastSeenTier"
-    private let lastSeenTierInitializedKey = "league.lastSeenTierInitialized"
-    private let pendingPromotionKey = "league.pendingPromotion"
-    private let dailyChallengeWeekKey = "league.dailyChallenges.isoWeek"
-    private let dailyChallengeCountKey = "league.dailyChallenges.count"
+    nonisolated static let lastSeenTierKey = "league.lastSeenTier"
+    nonisolated static let lastSeenTierInitializedKey = "league.lastSeenTierInitialized"
+    nonisolated static let pendingPromotionKey = "league.pendingPromotion"
+    nonisolated static let dailyChallengeWeekKey = "league.dailyChallenges.isoWeek"
+    nonisolated static let dailyChallengeCountKey = "league.dailyChallenges.count"
+
+    nonisolated static let accountDataKeyBases = [
+        lastSeenTierKey,
+        lastSeenTierInitializedKey,
+        pendingPromotionKey,
+        dailyChallengeWeekKey,
+        dailyChallengeCountKey,
+    ]
 
     private static let refreshThrottle: TimeInterval = 60
     private var lastFetchAttempt: Date?
     private var sessionsSubscription: AnyCancellable?
     private var ratingSubscription: AnyCancellable?
+    private var isSessionActive = true
 
     private init() {
+        Self.migrateLegacyDataIfNeeded(
+            accountID: Self.persistedAccountID,
+            defaults: .standard
+        )
         loadPendingPromotion()
         loadWeeklyDailyChallengeCompletions()
         recomputeTierAndBucket()
@@ -259,10 +283,72 @@ final class LeagueManager: ObservableObject {
         isInitialized && hasRatedEvidence && newFloor > lastSeenFloor
     }
 
+    /// Deterministic account key used by lifecycle, export, deletion, and the
+    /// account-data registry. Keeping it testable avoids exercising the
+    /// process-wide singleton or Keychain in isolation tests.
+    nonisolated static func accountKey(base: String, accountID: String) -> String {
+        "\(base).\(accountID)"
+    }
+
+    /// Claims the five pre-registry global values for the first real account
+    /// that loads them. Existing scoped values win; legacy values are still
+    /// removed so they cannot migrate into a later account.
+    @discardableResult
+    nonisolated static func migrateLegacyDataIfNeeded(
+        accountID: String,
+        defaults: UserDefaults
+    ) -> Set<String> {
+        guard !accountID.isEmpty, accountID != "guest" else { return [] }
+        var removedLegacyKeys: Set<String> = []
+        for base in accountDataKeyBases {
+            guard let legacyValue = defaults.object(forKey: base) else { continue }
+            let target = accountKey(base: base, accountID: accountID)
+            if defaults.object(forKey: target) == nil {
+                defaults.set(legacyValue, forKey: target)
+            }
+            defaults.removeObject(forKey: base)
+            removedLegacyKeys.insert(base)
+        }
+        return removedLegacyKeys
+    }
+
+    /// Pure defaults-backed snapshot loader used by export and focused tests.
+    /// It never falls back to another account or to the old global keys.
+    nonisolated static func persistedSnapshot(
+        for accountID: String,
+        defaults: UserDefaults
+    ) -> LeagueAccountDataSnapshot {
+        func key(_ base: String) -> String {
+            accountKey(base: base, accountID: accountID)
+        }
+
+        let tier = defaults.string(forKey: key(lastSeenTierKey))
+            .flatMap(LeagueTier.init(rawValue:))
+        let promotion = defaults.data(forKey: key(pendingPromotionKey))
+            .flatMap { try? JSONDecoder().decode(TierPromotion.self, from: $0) }
+        return LeagueAccountDataSnapshot(
+            lastSeenTier: tier,
+            lastSeenTierInitialized: defaults.bool(forKey: key(lastSeenTierInitializedKey)),
+            pendingPromotion: promotion,
+            dailyChallengeISOWeek: defaults.string(forKey: key(dailyChallengeWeekKey)),
+            dailyChallengeCompletions: max(0, defaults.integer(forKey: key(dailyChallengeCountKey)))
+        )
+    }
+
+    nonisolated static func deletePersistedData(
+        for accountID: String,
+        defaults: UserDefaults
+    ) {
+        for base in accountDataKeyBases {
+            defaults.removeObject(forKey: accountKey(base: base, accountID: accountID))
+        }
+    }
+
     /// Recompute the tier/bucket from the current rating. Called when the
     /// user's rating changes or a new ISO week starts. Detects upward
     /// tier crossings and queues a promotion celebration.
     func recomputeTierAndBucket() {
+        guard isSessionActive else { return }
         let rating = RatingStore.shared.rating
         let localTier = LeagueTier.tier(for: rating.overall)
 
@@ -296,9 +382,9 @@ final class LeagueManager: ObservableObject {
         // queuing a celebration. Otherwise every new install with a
         // mid-tier seeded rating would trigger "Promoted to Silver" on
         // open, which is a lie (they didn't earn it just now).
-        if !UserDefaults.standard.bool(forKey: lastSeenTierInitializedKey) {
+        if !UserDefaults.standard.bool(forKey: scopedKey(Self.lastSeenTierInitializedKey)) {
             persistLastSeenTier(localTier)
-            UserDefaults.standard.set(true, forKey: lastSeenTierInitializedKey)
+            UserDefaults.standard.set(true, forKey: scopedKey(Self.lastSeenTierInitializedKey))
         } else if rating.hasRatedEvidence {
             // Detect promotion: only fire on upward crossings, never on
             // demotion (downward changes happen quietly so we don't
@@ -333,7 +419,7 @@ final class LeagueManager: ObservableObject {
     /// once the celebration overlay has been shown and dismissed.
     func consumePendingPromotion() {
         pendingPromotion = nil
-        UserDefaults.standard.removeObject(forKey: pendingPromotionKey)
+        UserDefaults.standard.removeObject(forKey: scopedKey(Self.pendingPromotionKey))
     }
 
     /// Record that the user claimed a daily challenge. Counts toward the
@@ -349,14 +435,22 @@ final class LeagueManager: ObservableObject {
     /// is a presence signal for league surfaces.
     func recordDailyChallengeCompletion(_ kind: DailyChallengeKind) {
         let nowWeekKey = Self.isoWeekKey(for: Date())
-        let storedWeek = UserDefaults.standard.string(forKey: dailyChallengeWeekKey) ?? ""
+        let storedWeek = UserDefaults.standard.string(
+            forKey: scopedKey(Self.dailyChallengeWeekKey)
+        ) ?? ""
         if storedWeek != nowWeekKey {
             // New week — zero the counter before adding this claim.
-            UserDefaults.standard.set(nowWeekKey, forKey: dailyChallengeWeekKey)
+            UserDefaults.standard.set(
+                nowWeekKey,
+                forKey: scopedKey(Self.dailyChallengeWeekKey)
+            )
             weeklyDailyChallengeCompletions = 0
         }
         weeklyDailyChallengeCompletions += 1
-        UserDefaults.standard.set(weeklyDailyChallengeCompletions, forKey: dailyChallengeCountKey)
+        UserDefaults.standard.set(
+            weeklyDailyChallengeCompletions,
+            forKey: scopedKey(Self.dailyChallengeCountKey)
+        )
 
         // Trigger a tier+bucket recompute so any rating mutation that
         // landed alongside this claim (rating store updates ripple to
@@ -370,9 +464,44 @@ final class LeagueManager: ObservableObject {
                   // difficulty-of-claim.
     }
 
-    /// Reload the per-account weekly daily-challenge counter — called from
-    /// `reloadForCurrentAccount()` lifecycle paths so a switched-into
-    /// account doesn't inherit the previous one's tally.
+    /// Reload every account-owned league value after AuthManager has switched
+    /// the Keychain account ID. Transient server reads are cleared first so
+    /// neither persisted nor in-memory state can cross the account boundary.
+    func reloadForCurrentAccount() {
+        let accountID = Self.persistedAccountID
+        Self.migrateLegacyDataIfNeeded(accountID: accountID, defaults: .standard)
+        clearTransientState()
+        isSessionActive = true
+        loadPendingPromotion()
+        loadWeeklyDailyChallengeCompletions()
+        recomputeTierAndBucket()
+    }
+
+    /// Clear in-memory state without writing defaults. The inactive guard
+    /// prevents RatingStore/PracticeSessionStore publisher emissions during an
+    /// account switch from recreating old-account values after teardown.
+    func endSession() {
+        isSessionActive = false
+        clearTransientState()
+        tier = .bronze
+        bucketKey = ""
+        pendingPromotion = nil
+        weeklyDailyChallengeCompletions = 0
+    }
+
+    func exportSnapshot(for accountID: String) -> LeagueAccountDataSnapshot {
+        Self.persistedSnapshot(for: accountID, defaults: .standard)
+    }
+
+    func deleteAllData(for accountID: String) {
+        Self.deletePersistedData(for: accountID, defaults: .standard)
+        if Self.persistedAccountID == accountID {
+            endSession()
+        }
+    }
+
+    /// Compatibility entry point for the daily challenge owner. Full account
+    /// switches should use `reloadForCurrentAccount()` through the registry.
     func reloadDailyChallengeCompletionsForCurrentAccount() {
         loadWeeklyDailyChallengeCompletions()
     }
@@ -384,9 +513,12 @@ final class LeagueManager: ObservableObject {
     /// fresh launch (the seed's rating change crosses tiers vs. baseline).
     func suppressCelebrationsForTesting() {
         pendingPromotion = nil
-        UserDefaults.standard.removeObject(forKey: pendingPromotionKey)
+        UserDefaults.standard.removeObject(forKey: scopedKey(Self.pendingPromotionKey))
         persistLastSeenTier(tier)
-        UserDefaults.standard.set(true, forKey: lastSeenTierInitializedKey)
+        UserDefaults.standard.set(
+            true,
+            forKey: scopedKey(Self.lastSeenTierInitializedKey)
+        )
     }
     #endif
 
@@ -394,12 +526,14 @@ final class LeagueManager: ObservableObject {
         let promotion = TierPromotion(previousTier: previous, newTier: next, date: Date())
         pendingPromotion = promotion
         if let data = try? JSONEncoder().encode(promotion) {
-            UserDefaults.standard.set(data, forKey: pendingPromotionKey)
+            UserDefaults.standard.set(data, forKey: scopedKey(Self.pendingPromotionKey))
         }
     }
 
     private func lastSeenTier() -> LeagueTier {
-        guard let raw = UserDefaults.standard.string(forKey: lastSeenTierKey),
+        guard let raw = UserDefaults.standard.string(
+            forKey: scopedKey(Self.lastSeenTierKey)
+        ),
               let tier = LeagueTier(rawValue: raw) else {
             return .bronze
         }
@@ -407,12 +541,15 @@ final class LeagueManager: ObservableObject {
     }
 
     private func persistLastSeenTier(_ tier: LeagueTier) {
-        UserDefaults.standard.set(tier.rawValue, forKey: lastSeenTierKey)
+        UserDefaults.standard.set(tier.rawValue, forKey: scopedKey(Self.lastSeenTierKey))
     }
 
     private func loadPendingPromotion() {
-        guard let data = UserDefaults.standard.data(forKey: pendingPromotionKey),
+        guard let data = UserDefaults.standard.data(
+            forKey: scopedKey(Self.pendingPromotionKey)
+        ),
               let promotion = try? JSONDecoder().decode(TierPromotion.self, from: data) else {
+            pendingPromotion = nil
             return
         }
         pendingPromotion = promotion
@@ -508,16 +645,11 @@ final class LeagueManager: ObservableObject {
         }
     }
 
-    /// Account-registry adapter: clears only in-memory social state. Durable
-    /// server data is owned by the deletion callable.
+    /// Compatibility alias for older account-switch call sites. Registry
+    /// ownership now uses the explicit `endSession`/`reloadForCurrentAccount`
+    /// pair so persisted account state is reloaded at the correct phase.
     func resetForAccountTransition() {
-        members = []
-        authoritativeSelfProfile = nil
-        ratingDivergence = nil
-        peerSyncFailure = nil
-        lastFetchedAt = nil
-        lastFetchAttempt = nil
-        recomputeTierAndBucket()
+        endSession()
     }
 
     /// Refresh the visible top-20 of the current bucket. Throttled.
@@ -577,6 +709,25 @@ final class LeagueManager: ObservableObject {
 
     // MARK: - Internals
 
+    private static var persistedAccountID: String {
+        KeychainHelper.load(key: "NoumAccountID") ?? "guest"
+    }
+
+    private func scopedKey(_ base: String) -> String {
+        Self.accountKey(base: base, accountID: Self.persistedAccountID)
+    }
+
+    private func clearTransientState() {
+        members = []
+        authoritativeSelfProfile = nil
+        ratingDivergence = nil
+        peerSyncFailure = nil
+        lastFetchedAt = nil
+        lastFetchAttempt = nil
+        isLoading = false
+        isRetryingPeerSync = false
+    }
+
     private func observeStateChanges() {
         // Re-evaluate tier when the user's rating changes during a session.
         ratingSubscription = RatingStore.shared.$rating
@@ -604,7 +755,7 @@ final class LeagueManager: ObservableObject {
     /// ISO-week-of-year key used to scope the weekly daily-challenge
     /// counter. Shape: "2026-W21" — purely a comparison string, never
     /// surfaced in copy.
-    static func isoWeekKey(for date: Date) -> String {
+    nonisolated static func isoWeekKey(for date: Date) -> String {
         var calendar = Calendar(identifier: .iso8601)
         calendar.firstWeekday = 2
         let comps = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
@@ -615,9 +766,14 @@ final class LeagueManager: ObservableObject {
 
     private func loadWeeklyDailyChallengeCompletions() {
         let nowWeekKey = Self.isoWeekKey(for: Date())
-        let storedWeek = UserDefaults.standard.string(forKey: dailyChallengeWeekKey) ?? ""
+        let storedWeek = UserDefaults.standard.string(
+            forKey: scopedKey(Self.dailyChallengeWeekKey)
+        ) ?? ""
         if storedWeek == nowWeekKey {
-            weeklyDailyChallengeCompletions = UserDefaults.standard.integer(forKey: dailyChallengeCountKey)
+            weeklyDailyChallengeCompletions = max(
+                0,
+                UserDefaults.standard.integer(forKey: scopedKey(Self.dailyChallengeCountKey))
+            )
         } else {
             // Stale or absent — clear the persisted count without writing
             // a fresh zero (it'll be written on the next claim).
