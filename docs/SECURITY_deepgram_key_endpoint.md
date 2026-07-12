@@ -17,8 +17,13 @@ credential remain outside our control.
 ### Completed for the replacement path
 
 - Created a dedicated Deepgram project for Noum production and a server-only
-  management credential. The credential is stored in Google Secret Manager and
-  is accessible only to the dedicated transcription function identity.
+  management credential under the monitored `noumsupport@gmail.com` account.
+  The project is named `Noum Production`; the credential is labelled
+  `noum-firebase-token-grant`, is limited to the project Member role, and expires
+  on 2027-07-11. Its value is stored in Google Secret Manager and is accessible
+  only to the dedicated transcription function identity. The Deepgram account
+  accepts Google sign-in only, and automatic balance reload is disabled while
+  production usage is being validated.
 - Deployed the authenticated, App Check-enforced Firebase callable
   `transcriptionToken` in `europe-west2`. It derives the UID from Firebase Auth,
   applies a per-UID rate limit, and returns only
