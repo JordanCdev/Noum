@@ -117,7 +117,10 @@ struct AsyncChallengeDetailSheet: View {
                                                     .background(AppColor.brandBlue.opacity(0.08), in: Circle())
                                             }
                                             .accessibilityLabel(reaction.accessibilityName)
-                                            .disabled(challenges.pendingAuthorityIntent != nil)
+                                            .disabled(
+                                                !SocialReleaseCapabilities.speakOffs.isAvailable
+                                                    || challenges.pendingAuthorityIntent != nil
+                                            )
                                         }
                                     }
                                 }
@@ -171,7 +174,9 @@ struct AsyncChallengeDetailSheet: View {
 
     @ViewBuilder
     private var authorityFailureCard: some View {
-        if let failure = challenges.lastAuthorityFailure,
+        if !SocialReleaseCapabilities.speakOffs.isAvailable {
+            capabilityUnavailableCard
+        } else if let failure = challenges.lastAuthorityFailure,
            failure.intent.challengeID == displayedChallenge.id.uuidString {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 ErrorCard(message: failure.message)
@@ -186,6 +191,22 @@ struct AsyncChallengeDetailSheet: View {
                 }
             }
         }
+    }
+
+    private var capabilityUnavailableCard: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: "lock.shield")
+                .foregroundStyle(AppColor.brandBlue)
+                .accessibilityHidden(true)
+            Text(SocialReleaseCapabilities.speakOffs.message)
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .accessibilityIdentifier("speakOff.capabilityUnavailable")
     }
 
     private func scoreCard(name: String, score: Int, duration: TimeInterval?, reaction: AsyncChallenge.Reaction?) -> some View {
@@ -325,6 +346,7 @@ struct ChallengePickFriendSheet: View {
                         }
                         .padding(.horizontal, Spacing.screenH)
                         .accessibilityIdentifier("speakOff.start")
+                        .disabled(!SocialReleaseCapabilities.speakOffs.isAvailable)
 
                         Button("Not now") { dismiss() }
                             .font(.subheadline.weight(.medium))
@@ -346,7 +368,18 @@ struct ChallengePickFriendSheet: View {
                     }
                 } else {
                     List {
-                        if let failure = challenges.lastAuthorityFailure,
+                        if !SocialReleaseCapabilities.speakOffs.isAvailable {
+                            EmptyStateView(
+                                symbol: "lock.shield",
+                                title: "Speak-offs unavailable",
+                                body: SocialReleaseCapabilities.speakOffs.message,
+                                tint: AppColor.brandBlue
+                            )
+                            .padding(.vertical, Spacing.lg)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .accessibilityIdentifier("speakOff.create.capabilityUnavailable")
+                        } else if let failure = challenges.lastAuthorityFailure,
                            case .create = failure.intent {
                             VStack(alignment: .leading, spacing: Spacing.sm) {
                                 ErrorCard(message: failure.message)
@@ -370,18 +403,19 @@ struct ChallengePickFriendSheet: View {
                             .listRowBackground(Color.clear)
                         }
 
-                        if linkedFriends.isEmpty {
-                            EmptyStateView(
-                                symbol: "person.2.slash",
-                                title: "No connected partners yet",
-                                body: "Speak-offs become available when a friend's Noum account is connected.",
-                                tint: AppColor.brandBlue
-                            )
-                            .padding(.vertical, Spacing.lg)
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                        } else {
-                            ForEach(linkedFriends) { friend in
+                        if SocialReleaseCapabilities.speakOffs.isAvailable {
+                            if linkedFriends.isEmpty {
+                                EmptyStateView(
+                                    symbol: "person.2.slash",
+                                    title: "No connected partners yet",
+                                    body: "Speak-offs become available when a friend's Noum account is connected.",
+                                    tint: AppColor.brandBlue
+                                )
+                                .padding(.vertical, Spacing.lg)
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                            } else {
+                                ForEach(linkedFriends) { friend in
                                 Button {
                                     guard let opponentAccountID = friend.accountID else { return }
                                     Task {
@@ -415,7 +449,11 @@ struct ChallengePickFriendSheet: View {
                                     }
                                 }
                                 .accessibilityIdentifier("speakOff.friend.\(friend.id.uuidString)")
-                                .disabled(challenges.pendingAuthorityIntent != nil)
+                                .disabled(
+                                    !SocialReleaseCapabilities.speakOffs.isAvailable
+                                        || challenges.pendingAuthorityIntent != nil
+                                )
+                                }
                             }
                         }
                     }

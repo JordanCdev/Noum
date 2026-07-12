@@ -455,39 +455,57 @@ enum SessionFinalizer {
 
     // MARK: - Peer surface sync
 
-    /// Upload the exact finalized session first, then let the callable derive
-    /// the user's public profile and league membership. A failed authority
-    /// write is retained by `LeagueManager` for a visible, idempotent retry;
-    /// the local coaching rating is never overwritten by peer state.
+    /// Upload only when the server-side evidence/friend producers are enabled.
+    /// Release-disabled social capabilities do not create one predictable
+    /// failure per rep. Captured manager generations silently discard any
+    /// response that returns after an account transition.
     private static func syncPeerSurfaces(latestSessionID: UUID?) {
+        let shouldSyncPeerProgress = SocialReleaseCapabilities.peerProgress.isAvailable
+        let shouldSubmitSpeakOff = SocialReleaseCapabilities.speakOffs.isAvailable
+        guard shouldSyncPeerProgress || shouldSubmitSpeakOff else { return }
         guard let latestSessionID,
-              let session = PracticeSessionStore.shared.sessions.first(where: { $0.id == latestSessionID }),
-              let accountID = AuthManager.shared.currentAccountID,
-              let providerRawValue = AuthManager.shared.currentAuthProviderRawValue else { return }
+              let session = PracticeSessionStore.shared.sessions.first(where: { $0.id == latestSessionID }) else {
+            return
+        }
+        let leagueContext = shouldSyncPeerProgress
+            ? LeagueManager.shared.captureSocialOperationContext()
+            : nil
+        let providerRawValue = AuthManager.shared.currentAuthProviderRawValue
         let displayName = AuthManager.shared.currentAccountName ?? "Speaker"
         Task {
-            do {
-                let result = try await BackendSyncManager.shared.recordPeerSession(
-                    session: session,
-                    accountID: accountID,
-                    providerRawValue: providerRawValue,
-                    displayName: displayName
-                )
-                LeagueManager.shared.reconcileAuthoritativeProfile(result.profile)
-            } catch {
-                let authorityError = error as? SocialAuthorityError
-                LeagueManager.shared.recordPeerSyncFailure(
-                    sessionID: latestSessionID,
-                    message: error.localizedDescription,
-                    isRetryable: authorityError?.isRetryable ?? true
+            if let context = leagueContext, let providerRawValue {
+                do {
+                    let result = try await BackendSyncManager.shared.recordPeerSession(
+                        session: session,
+                        accountID: context.accountID,
+                        providerRawValue: providerRawValue,
+                        displayName: displayName
+                    )
+                    guard LeagueManager.shared.isSocialOperationContextCurrent(context) else {
+                        return
+                    }
+                    LeagueManager.shared.reconcileAuthoritativeProfile(
+                        result.profile,
+                        context: context
+                    )
+                } catch {
+                    guard LeagueManager.shared.isSocialOperationContextCurrent(context) else {
+                        return
+                    }
+                    let authorityError = error as? SocialAuthorityError
+                    LeagueManager.shared.recordPeerSyncFailure(
+                        sessionID: latestSessionID,
+                        message: error.localizedDescription,
+                        isRetryable: authorityError?.isRetryable ?? true,
+                        context: context
+                    )
+                }
+            }
+            if shouldSubmitSpeakOff {
+                await ChallengesManager.shared.submitArmedResultIfMatching(
+                    sessionID: latestSessionID
                 )
             }
-            // Speak-off submission is independently retryable. It reuses the
-            // same stored session and therefore does not depend on the peer
-            // profile callable having succeeded first.
-            await ChallengesManager.shared.submitArmedResultIfMatching(
-                sessionID: latestSessionID
-            )
         }
     }
 

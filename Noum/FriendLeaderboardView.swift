@@ -10,7 +10,8 @@ import SwiftUI
 /// - The current user's row is always built from local stores
 ///   (`RatingStore`, `StreakFreezeManager`, `PracticeSessionStore`).
 /// - Friends with a known `accountID` are populated via
-///   `FriendsManager.refreshPeerStats()` which reads `profiles_public/{id}`.
+///   `FriendsManager.refreshPeerStats()` through the reciprocal-friend
+///   authorized `getPeerProfile` callable.
 ///   Friends added before M2 (no `accountID`) render with an "Awaiting sync"
 ///   tag and a one-line explainer card so the empty state is honest.
 struct FriendLeaderboardSelfRowPresentation: Equatable {
@@ -39,6 +40,9 @@ struct FriendLeaderboardView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
                     headerCopy
+                    if !SocialReleaseCapabilities.friendProfiles.isAvailable {
+                        capabilityNotice
+                    }
                     leaderboardCard
                     if showsLegacyFriendNote {
                         legacyFriendNoteCard
@@ -85,6 +89,22 @@ struct FriendLeaderboardView: View {
     }
 
     // MARK: - Leaderboard
+
+    private var capabilityNotice: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: "lock.shield")
+                .foregroundStyle(AppColor.brandBlue)
+                .accessibilityHidden(true)
+            Text(SocialReleaseCapabilities.friendProfiles.message)
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .accessibilityIdentifier("leaderboard.capabilityUnavailable")
+    }
 
     private var leaderboardCard: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -210,7 +230,8 @@ struct FriendLeaderboardView: View {
     /// manual name entry. The explainer tells the user how to get them synced
     /// rather than hiding the gap.
     private var showsLegacyFriendNote: Bool {
-        friendsManager.friends.contains { $0.accountID == nil }
+        SocialReleaseCapabilities.friendProfiles.isAvailable
+            && friendsManager.friends.contains { $0.accountID == nil }
     }
 
     private var legacyFriendNoteCard: some View {
@@ -303,14 +324,15 @@ struct FriendLeaderboardView: View {
         }
 
         for friend in sortedWithRating + sortedWithoutRating {
+            let sharedStatsAvailable = SocialReleaseCapabilities.friendProfiles.isAvailable
             rows.append(
                 LeaderboardRow(
                     id: friend.id.uuidString,
                     displayName: friend.displayName,
                     initials: friend.initials,
-                    rating: friend.lastKnownRating,
-                    streak: friend.lastKnownStreak,
-                    repsThisWeek: friend.lastKnownRepsThisWeek,
+                    rating: sharedStatsAvailable ? friend.lastKnownRating : nil,
+                    streak: sharedStatsAvailable ? friend.lastKnownStreak : nil,
+                    repsThisWeek: sharedStatsAvailable ? friend.lastKnownRepsThisWeek : nil,
                     isCurrentUser: false
                 )
             )

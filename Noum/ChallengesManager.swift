@@ -270,9 +270,13 @@ final class ChallengesManager: ObservableObject {
     private let completedKey = "NoumCompletedChallenges"
     private let asyncKey = "NoumAsyncChallenges"
     private let armedRepKey = "NoumAsyncChallengeArmedRep"
+    private var activeAccountID: String?
+    private var accountGeneration: UInt64 = 0
+    private var isSessionActive = true
 
     private init() {
         let accountID = KeychainHelper.load(key: "NoumAccountID") ?? "guest"
+        activeAccountID = accountID
         Self.migrateLegacyDataIfNeeded(accountID: accountID)
         activeChallenges = Self.load(key: Self.accountKey(base: "NoumChallenges", accountID: accountID))
         completedChallenges = Self.load(key: Self.accountKey(base: "NoumCompletedChallenges", accountID: accountID))
@@ -284,12 +288,13 @@ final class ChallengesManager: ObservableObject {
     // MARK: - Current User ID (local reference)
 
     private var currentParticipantID: String {
-        KeychainHelper.load(key: "NoumAccountID") ?? ""
+        activeAccountID ?? ""
     }
 
     // MARK: - Session Progress
 
     func recordSession(mode: PracticeMode, fillerCount: Int, duration: TimeInterval) {
+        guard isSessionActive, activeAccountID != nil else { return }
         for index in activeChallenges.indices {
             var challenge = activeChallenges[index]
             guard !challenge.isCompleted && !challenge.isExpired else { continue }
@@ -439,6 +444,10 @@ final class ChallengesManager: ObservableObject {
 
     @discardableResult
     func retryLastFailedAuthorityOperation() async -> AsyncChallenge? {
+        guard SocialReleaseCapabilities.speakOffs.isAvailable else {
+            lastAuthorityFailure = nil
+            return nil
+        }
         guard let failure = lastAuthorityFailure else { return nil }
         return await performAuthorityIntent(failure.intent)
     }
@@ -446,10 +455,19 @@ final class ChallengesManager: ObservableObject {
     private func performAuthorityIntent(
         _ intent: AsyncChallengeAuthorityIntent
     ) async -> AsyncChallenge? {
-        guard pendingAuthorityIntent == nil else { return nil }
+        guard SocialReleaseCapabilities.speakOffs.isAvailable else {
+            lastAuthorityFailure = nil
+            return nil
+        }
+        guard let context = captureOperationContext(),
+              pendingAuthorityIntent == nil else { return nil }
         pendingAuthorityIntent = intent
         lastAuthorityFailure = nil
-        defer { pendingAuthorityIntent = nil }
+        defer {
+            if isOperationContextCurrent(context), pendingAuthorityIntent == intent {
+                pendingAuthorityIntent = nil
+            }
+        }
 
         do {
             let result: ChallengeMutationAuthorityResult
@@ -460,14 +478,13 @@ final class ChallengesManager: ObservableObject {
             case .submit(let request):
                 guard let sessionID = UUID(uuidString: request.sessionID),
                       let session = PracticeSessionStore.shared.sessions.first(where: { $0.id == sessionID }),
-                      let accountID = AuthManager.shared.currentAccountID,
                       let providerRawValue = AuthManager.shared.currentAuthProviderRawValue else {
                     throw SocialAuthorityError.sessionUnavailable
                 }
                 result = try await BackendSyncManager.shared.submitChallengeResult(
                     request,
                     session: session,
-                    accountID: accountID,
+                    accountID: context.accountID,
                     providerRawValue: providerRawValue
                 )
 
@@ -475,9 +492,11 @@ final class ChallengesManager: ObservableObject {
                 result = try await BackendSyncManager.shared.setChallengeReaction(request)
             }
 
-            upsertAuthoritativeChallenge(result.challenge)
+            guard isOperationContextCurrent(context) else { return nil }
+            upsertAuthoritativeChallenge(result.challenge, context: context)
             return result.challenge
         } catch {
+            guard isOperationContextCurrent(context) else { return nil }
             let authorityError = error as? SocialAuthorityError
             lastAuthorityFailure = AsyncChallengeAuthorityFailure(
                 intent: intent,
@@ -488,17 +507,24 @@ final class ChallengesManager: ObservableObject {
         }
     }
 
-    private func upsertAuthoritativeChallenge(_ challenge: AsyncChallenge) {
+    private func upsertAuthoritativeChallenge(
+        _ challenge: AsyncChallenge,
+        context: SocialAccountOperationContext
+    ) {
+        guard isOperationContextCurrent(context) else { return }
         asyncChallenges.removeAll { $0.id == challenge.id }
         asyncChallenges.append(challenge)
         asyncChallenges.sort { $0.createdAt > $1.createdAt }
-        persistAsync()
+        persistAsync(context: context)
     }
 
     /// Arms the exact server-created prompt before navigating into Timed
     /// Practice. The resulting session must carry the same prompt or it cannot
     /// be submitted to the speak-off.
     func armSubmission(for challenge: AsyncChallenge) {
+        guard SocialReleaseCapabilities.speakOffs.isAvailable,
+              isSessionActive,
+              activeAccountID != nil else { return }
         armedRep = ArmedAsyncChallengeRep(
             challengeID: challenge.id,
             prompt: challenge.prompt,
@@ -509,7 +535,9 @@ final class ChallengesManager: ObservableObject {
 
     @discardableResult
     func submitArmedResultIfMatching(sessionID: UUID) async -> Bool {
-        guard let armedRep,
+        guard SocialReleaseCapabilities.speakOffs.isAvailable,
+              let context = captureOperationContext(),
+              let armedRep,
               let session = PracticeSessionStore.shared.sessions.first(where: { $0.id == sessionID }),
               Self.repMatchesArmedPrompt(sessionPrompt: session.prompt, armedPrompt: armedRep.prompt) else {
             return false
@@ -518,9 +546,9 @@ final class ChallengesManager: ObservableObject {
             challengeID: armedRep.challengeID,
             sessionID: session.id
         )
-        if submitted {
+        if submitted, isOperationContextCurrent(context) {
             self.armedRep = nil
-            persistArmedRep()
+            persistArmedRep(context: context)
         }
         return submitted
     }
@@ -543,22 +571,50 @@ final class ChallengesManager: ObservableObject {
     /// app launch and when the social profile screen appears, so the
     /// opponent's submission and reactions show up without a round-trip.
     func refreshFromBackend() async {
-        let participantID = currentParticipantID
-        let remote = await BackendSyncManager.shared.fetchAsyncChallenges(forParticipant: participantID)
+        guard let context = captureOperationContext() else { return }
+        let remote = await BackendSyncManager.shared.fetchAsyncChallenges(
+            forParticipant: context.accountID
+        )
+        guard isOperationContextCurrent(context) else { return }
         guard !remote.isEmpty else { return }
 
-        // The server envelope replaces every field for a matching challenge,
-        // including nil results. Retaining a client-cached score after the
-        // server says that side has not submitted would create a false result.
-        // Local-only legacy rows remain until a successful server copy for the
-        // same ID arrives; writes never originate from those rows.
-        var merged: [UUID: AsyncChallenge] = [:]
-        for local in asyncChallenges { merged[local.id] = local }
-        for remoteChallenge in remote {
-            merged[remoteChallenge.id] = remoteChallenge
+        // Backend hydration returns a row only after metadata plus the
+        // caller-private/combined reads all succeeded. Missing rows therefore
+        // preserve their last authoritative cache instead of regressing a
+        // completed challenge to metadata-only pending state.
+        asyncChallenges = Self.mergeHydratedChallenges(
+            cached: asyncChallenges,
+            remote: remote
+        )
+        persistAsync(context: context)
+    }
+
+    nonisolated static func mergeHydratedChallenges(
+        cached: [AsyncChallenge],
+        remote: [AsyncChallenge]
+    ) -> [AsyncChallenge] {
+        var merged = Dictionary(uniqueKeysWithValues: cached.map { ($0.id, $0) })
+        for challenge in remote {
+            if let existing = merged[challenge.id],
+               authorityEvidenceCount(challenge) < authorityEvidenceCount(existing) {
+                continue
+            }
+            merged[challenge.id] = challenge
         }
-        asyncChallenges = merged.values.sorted { $0.createdAt > $1.createdAt }
-        persistAsync()
+        return merged.values.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    nonisolated private static func authorityEvidenceCount(_ challenge: AsyncChallenge) -> Int {
+        [
+            challenge.creatorScore != nil,
+            challenge.creatorDuration != nil,
+            challenge.creatorSummary != nil,
+            challenge.opponentScore != nil,
+            challenge.opponentDuration != nil,
+            challenge.opponentSummary != nil,
+            challenge.creatorReaction != nil,
+            challenge.opponentReaction != nil,
+        ].filter { $0 }.count
     }
 
     /// Active async challenges (not expired, not both completed)
@@ -582,23 +638,26 @@ final class ChallengesManager: ObservableObject {
 
     // MARK: - Persistence
 
-    private func persistActive() {
+    private func persistActive(context: SocialAccountOperationContext? = nil) {
+        guard canPersist(context: context), let key = scopedKey(storageKey) else { return }
         guard let data = try? JSONEncoder().encode(activeChallenges) else { return }
-        UserDefaults.standard.set(data, forKey: scopedKey(storageKey))
+        UserDefaults.standard.set(data, forKey: key)
     }
 
-    private func persistCompleted() {
+    private func persistCompleted(context: SocialAccountOperationContext? = nil) {
+        guard canPersist(context: context), let key = scopedKey(completedKey) else { return }
         guard let data = try? JSONEncoder().encode(completedChallenges) else { return }
-        UserDefaults.standard.set(data, forKey: scopedKey(completedKey))
+        UserDefaults.standard.set(data, forKey: key)
     }
 
-    private func persistAsync() {
+    private func persistAsync(context: SocialAccountOperationContext? = nil) {
+        guard canPersist(context: context), let key = scopedKey(asyncKey) else { return }
         guard let data = try? JSONEncoder().encode(asyncChallenges) else { return }
-        UserDefaults.standard.set(data, forKey: scopedKey(asyncKey))
+        UserDefaults.standard.set(data, forKey: key)
     }
 
-    private func persistArmedRep() {
-        let key = scopedKey(armedRepKey)
+    private func persistArmedRep(context: SocialAccountOperationContext? = nil) {
+        guard canPersist(context: context), let key = scopedKey(armedRepKey) else { return }
         guard let armedRep else {
             UserDefaults.standard.removeObject(forKey: key)
             return
@@ -628,8 +687,14 @@ final class ChallengesManager: ObservableObject {
         return try? JSONDecoder().decode(ArmedAsyncChallengeRep.self, from: data)
     }
 
-    private func scopedKey(_ base: String) -> String {
-        Self.accountKey(base: base, accountID: currentParticipantID.isEmpty ? "guest" : currentParticipantID)
+    private func scopedKey(_ base: String) -> String? {
+        guard let activeAccountID else { return nil }
+        return Self.accountKey(base: base, accountID: activeAccountID)
+    }
+
+    private func canPersist(context: SocialAccountOperationContext?) -> Bool {
+        guard isSessionActive, activeAccountID != nil else { return false }
+        return context.map(isOperationContextCurrent) ?? true
     }
 
     nonisolated static func accountKey(base: String, accountID: String) -> String {
@@ -648,17 +713,24 @@ final class ChallengesManager: ObservableObject {
     }
 
     func reloadForCurrentAccount() {
-        Self.migrateLegacyDataIfNeeded(accountID: currentParticipantID.isEmpty ? "guest" : currentParticipantID)
-        activeChallenges = Self.load(key: scopedKey(storageKey))
-        completedChallenges = Self.load(key: scopedKey(completedKey))
-        asyncChallenges = Self.loadAsync(key: scopedKey(asyncKey))
-        armedRep = Self.loadArmedRep(key: scopedKey(armedRepKey))
+        let accountID = KeychainHelper.load(key: "NoumAccountID") ?? "guest"
+        accountGeneration &+= 1
+        activeAccountID = accountID
+        isSessionActive = true
+        Self.migrateLegacyDataIfNeeded(accountID: accountID)
+        activeChallenges = Self.load(key: Self.accountKey(base: storageKey, accountID: accountID))
+        completedChallenges = Self.load(key: Self.accountKey(base: completedKey, accountID: accountID))
+        asyncChallenges = Self.loadAsync(key: Self.accountKey(base: asyncKey, accountID: accountID))
+        armedRep = Self.loadArmedRep(key: Self.accountKey(base: armedRepKey, accountID: accountID))
         pendingAuthorityIntent = nil
         lastAuthorityFailure = nil
         refreshChallengesIfNeeded()
     }
 
     func endSession() {
+        accountGeneration &+= 1
+        activeAccountID = nil
+        isSessionActive = false
         activeChallenges = []
         completedChallenges = []
         asyncChallenges = []
@@ -680,9 +752,25 @@ final class ChallengesManager: ObservableObject {
         for base in [storageKey, completedKey, asyncKey, armedRepKey] {
             UserDefaults.standard.removeObject(forKey: Self.accountKey(base: base, accountID: accountID))
         }
-        if currentParticipantID == accountID {
+        if activeAccountID == accountID {
             endSession()
         }
+    }
+
+    func captureOperationContext() -> SocialAccountOperationContext? {
+        guard isSessionActive,
+              let activeAccountID,
+              AuthManager.shared.currentAccountID == activeAccountID else { return nil }
+        return SocialAccountOperationContext(
+            accountID: activeAccountID,
+            generation: accountGeneration
+        )
+    }
+
+    func isOperationContextCurrent(_ context: SocialAccountOperationContext) -> Bool {
+        isSessionActive
+            && context.matches(accountID: activeAccountID, generation: accountGeneration)
+            && AuthManager.shared.currentAccountID == context.accountID
     }
 }
 

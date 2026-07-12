@@ -72,6 +72,8 @@ actor BackendSyncManager {
     static let functionsRegion = SocialAuthorityCallable.region
     static let deleteAccountFunctionName = "deleteAccount"
     static let recordPeerSessionFunctionName = SocialAuthorityCallable.recordPeerSession
+    static let getPeerProfileFunctionName = SocialAuthorityCallable.getPeerProfile
+    static let listLeagueMembersFunctionName = SocialAuthorityCallable.listLeagueMembers
     static let createChallengeFunctionName = SocialAuthorityCallable.createChallenge
     static let submitChallengeResultFunctionName = SocialAuthorityCallable.submitChallengeResult
     static let setChallengeReactionFunctionName = SocialAuthorityCallable.setChallengeReaction
@@ -285,6 +287,9 @@ actor BackendSyncManager {
         providerRawValue: String,
         displayName: String
     ) async throws -> PeerSessionAuthorityResult {
+        guard SocialReleaseCapabilities.peerProgress.isAvailable else {
+            throw SocialAuthorityError.verifiedEvidenceUnavailable
+        }
         #if canImport(FirebaseCore) && canImport(FirebaseFirestore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
         guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
         try requireFirebaseAccount(accountID)
@@ -307,29 +312,53 @@ actor BackendSyncManager {
         #endif
     }
 
-    /// Fetch a peer's public-readable snapshot. Returns nil if the peer
-    /// hasn't synced yet, the network failed, or the doc is missing.
-    func fetchPublicProfile(accountID: String) async -> PublicProfileSnapshot? {
-#if canImport(FirebaseFirestore)
-        if firebaseIsConfigured {
-            return await fetchFirebasePublicProfile(accountID: accountID)
+    /// Reciprocal-friend-authorized replacement for direct public-profile
+    /// reads. The release capability gate prevents a callable attempt until
+    /// the server-only friendship producer exists.
+    func fetchPeerProfile(accountID: String) async throws -> PublicProfileSnapshot {
+        guard SocialReleaseCapabilities.friendProfiles.isAvailable else {
+            throw SocialAuthorityError.friendAuthorizationUnavailable
         }
-#endif
-        return nil
+        #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
+        guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
+        try requireFirebaseAccount()
+        let request = GetPeerProfileRequest(accountID: accountID)
+        guard request.isValid else { throw SocialAuthorityError.invalidRequest }
+        let response: GetPeerProfileResponse = try await callSocialAuthority(
+            Self.getPeerProfileFunctionName,
+            request: request
+        )
+        return try response.result(expectedAccountID: request.accountID)
+        #else
+        throw SocialAuthorityError.notConfigured
+        #endif
     }
 
-    /// Read the top members of a league bucket, ordered by rating descending.
-    /// Caller is responsible for clamping to a UI-friendly count.
-    func fetchLeagueMembers(bucket: String, limit: Int = 20) async -> [PublicProfileSnapshot] {
-#if canImport(FirebaseFirestore)
-        if firebaseIsConfigured {
-            return await fetchFirebaseLeagueMembers(bucket: bucket, limit: limit)
+    /// Server-derived current-bucket replacement for direct league reads.
+    /// No bucket or rating state is accepted from the client.
+    func fetchLeagueMembers(limit: Int = 20) async throws -> LeagueMembersAuthorityResult {
+        guard SocialReleaseCapabilities.peerProgress.isAvailable else {
+            throw SocialAuthorityError.trustedSocialStateUnavailable
         }
-#endif
-        return []
+        #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
+        guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
+        try requireFirebaseAccount()
+        let request = ListLeagueMembersRequest(limit: limit)
+        guard request.isValid else { throw SocialAuthorityError.invalidRequest }
+        let response: ListLeagueMembersResponse = try await callSocialAuthority(
+            Self.listLeagueMembersFunctionName,
+            request: request
+        )
+        return try response.result(requestedLimit: request.limit)
+        #else
+        throw SocialAuthorityError.notConfigured
+        #endif
     }
 
     func createChallenge(_ request: CreateChallengeRequest) async throws -> ChallengeMutationAuthorityResult {
+        guard SocialReleaseCapabilities.speakOffs.isAvailable else {
+            throw SocialAuthorityError.friendAuthorizationUnavailable
+        }
         #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
         guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
         try requireFirebaseAccount()
@@ -356,6 +385,9 @@ actor BackendSyncManager {
         accountID: String,
         providerRawValue: String
     ) async throws -> ChallengeMutationAuthorityResult {
+        guard SocialReleaseCapabilities.speakOffs.isAvailable else {
+            throw SocialAuthorityError.verifiedEvidenceUnavailable
+        }
         #if canImport(FirebaseCore) && canImport(FirebaseFirestore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
         guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
         try requireFirebaseAccount(accountID)
@@ -385,6 +417,9 @@ actor BackendSyncManager {
     func setChallengeReaction(
         _ request: SetChallengeReactionRequest
     ) async throws -> ChallengeMutationAuthorityResult {
+        guard SocialReleaseCapabilities.speakOffs.isAvailable else {
+            throw SocialAuthorityError.friendAuthorizationUnavailable
+        }
         #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
         guard firebaseIsConfigured else { throw SocialAuthorityError.notConfigured }
         try requireFirebaseAccount()
@@ -456,6 +491,8 @@ actor BackendSyncManager {
             return .unauthenticated
         case .invalidArgument:
             return .invalidRequest
+        case .notFound:
+            return .notFound
         case .alreadyExists, .failedPrecondition, .aborted:
             return .conflict
         case .resourceExhausted:
@@ -712,6 +749,18 @@ private extension BackendSyncManager {
         return try decoder.decode(T.self, from: data)
     }
 
+    func decodeExactDocument<T: Decodable>(
+        _ type: T.Type,
+        from dictionary: [String: Any],
+        expectedKeys: Set<String>
+    ) throws -> T {
+        guard Set(dictionary.keys) == expectedKeys,
+              let decoded = try decodeDocument(type, from: dictionary) else {
+            throw SocialAuthorityError.invalidResponse
+        }
+        return decoded
+    }
+
     func decodeArray<T: Decodable>(_ type: T.Type, from array: [[String: Any]]?) throws -> [T] {
         guard let array else { return [] }
         let data = try JSONSerialization.data(withJSONObject: array)
@@ -762,38 +811,6 @@ private extension BackendSyncManager {
         }
     }
 
-    // MARK: - Peer (M2: Peer Pull v1)
-
-    func fetchFirebasePublicProfile(accountID: String) async -> PublicProfileSnapshot? {
-        do {
-            let snapshot = try await getDocument(
-                Firestore.firestore().collection("profiles_public").document(accountID)
-            )
-            let data = snapshot?.data().map { normalizeTimestamps(in: $0, fields: ["updatedAt"]) }
-            return try decodeDocument(PublicProfileSnapshot.self, from: data)
-        } catch {
-            return nil
-        }
-    }
-
-    func fetchFirebaseLeagueMembers(bucket: String, limit: Int) async -> [PublicProfileSnapshot] {
-        do {
-            let documents = try await getDocuments(
-                Firestore.firestore()
-                    .collection("leagues").document(bucket)
-                    .collection("members")
-                    .order(by: "rating", descending: true)
-                    .limit(to: limit)
-            )
-            return documents.compactMap {
-                let data = normalizeTimestamps(in: $0.data(), fields: ["updatedAt"])
-                return try? decodeDocument(PublicProfileSnapshot.self, from: data)
-            }.compactMap { $0 }
-        } catch {
-            return []
-        }
-    }
-
     func fetchFirebaseAsyncChallenges(forParticipant participantID: String) async -> [AsyncChallenge] {
         #if canImport(FirebaseAuth)
         // Firestore rules prove query safety from `request.auth.uid in
@@ -811,16 +828,106 @@ private extension BackendSyncManager {
                     .order(by: "createdAt", descending: true)
                     .limit(to: 50)
             )
-            return documents.compactMap { document -> AsyncChallenge? in
-                var raw = normalizeTimestamps(
-                    in: document.data(),
-                    fields: ["createdAt", "expiresAt"]
-                )
-                raw.removeValue(forKey: "participantIDs")
-                return (try? decodeDocument(AsyncChallenge.self, from: raw)) ?? nil
+            return await withTaskGroup(of: (Int, AsyncChallenge?).self) { group in
+                for (index, document) in documents.enumerated() {
+                    let documentID = document.documentID
+                    let metadata = document.data()
+                    group.addTask {
+                        let challenge = await self.hydrateFirebaseChallenge(
+                            documentID: documentID,
+                            metadata: metadata,
+                            participantID: participantID
+                        )
+                        return (index, challenge)
+                    }
+                }
+                var hydrated: [(Int, AsyncChallenge)] = []
+                for await (index, challenge) in group {
+                    if let challenge { hydrated.append((index, challenge)) }
+                }
+                return hydrated.sorted { $0.0 < $1.0 }.map(\.1)
             }
         } catch {
             return []
+        }
+    }
+
+    /// Hydrates metadata with exactly the caller's private submission and the
+    /// participant-readable combined result. Any non-absence read/decode
+    /// failure omits this row so the manager preserves its last authoritative
+    /// cache rather than replacing it with incomplete metadata.
+    func hydrateFirebaseChallenge(
+        documentID: String,
+        metadata: [String: Any],
+        participantID: String
+    ) async -> AsyncChallenge? {
+        do {
+            let normalizedMetadata = normalizeTimestamps(
+                in: metadata,
+                fields: ["createdAt", "expiresAt", "completedAt"]
+            )
+            let metadataDocument = try decodeExactDocument(
+                ChallengeMetadataDocument.self,
+                from: normalizedMetadata,
+                expectedKeys: ChallengeMetadataDocument.expectedKeys
+            )
+            try metadataDocument.validate(
+                forDocumentID: documentID,
+                accountID: participantID
+            )
+
+            let challengeReference = Firestore.firestore()
+                .collection("challenges")
+                .document(documentID)
+            async let ownSnapshot = getDocument(
+                challengeReference.collection("submissions").document(participantID)
+            )
+            async let combinedSnapshot = getDocument(
+                challengeReference.collection("combined").document("result")
+            )
+            guard let ownDocumentSnapshot = try await ownSnapshot,
+                  let combinedDocumentSnapshot = try await combinedSnapshot else {
+                throw SocialAuthorityError.invalidResponse
+            }
+
+            let ownSubmission: ChallengeOwnSubmissionDocument? = try ownDocumentSnapshot
+                .data()
+                .map {
+                    let normalized = normalizeTimestamps(
+                        in: $0,
+                        fields: ["submittedAt", "reactedAt"]
+                    )
+                    return try decodeExactDocument(
+                        ChallengeOwnSubmissionDocument.self,
+                        from: normalized,
+                        expectedKeys: ChallengeOwnSubmissionDocument.expectedKeys
+                    )
+                }
+            let combinedResult: ChallengeCombinedResultDocument? = try combinedDocumentSnapshot
+                .data()
+                .map {
+                    let normalized = normalizeTimestamps(
+                        in: $0,
+                        fields: [
+                            "creatorSubmittedAt", "creatorReactedAt",
+                            "opponentSubmittedAt", "opponentReactedAt",
+                            "completedAt",
+                        ]
+                    )
+                    return try decodeExactDocument(
+                        ChallengeCombinedResultDocument.self,
+                        from: normalized,
+                        expectedKeys: ChallengeCombinedResultDocument.expectedKeys
+                    )
+                }
+            return try ChallengeDocumentHydrator.hydrate(
+                metadata: metadataDocument,
+                ownSubmission: ownSubmission,
+                combinedResult: combinedResult,
+                accountID: participantID
+            )
+        } catch {
+            return nil
         }
     }
 

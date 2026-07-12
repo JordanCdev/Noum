@@ -3974,12 +3974,17 @@ struct ProfileView: View {
                     .frame(width: 30, height: 30)
                     .background(Color.teal.opacity(0.1), in: Circle())
             }
-            .disabled(friend.accountID == nil || challenges.pendingAuthorityIntent != nil)
+            .disabled(
+                !SocialReleaseCapabilities.speakOffs.isAvailable
+                    || friend.accountID == nil
+                    || challenges.pendingAuthorityIntent != nil
+            )
         }
     }
 
     private func createSpeakOff(with friend: NoumFriend) {
-        guard let opponentAccountID = friend.accountID else { return }
+        guard SocialReleaseCapabilities.speakOffs.isAvailable,
+              let opponentAccountID = friend.accountID else { return }
         Task {
             await challenges.createAsyncChallenge(opponentAccountID: opponentAccountID)
         }

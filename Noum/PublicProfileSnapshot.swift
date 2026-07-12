@@ -11,8 +11,9 @@ import Foundation
 /// - `accountID` is included so the receiver can confirm provenance and
 ///   correlate with the friend graph.
 ///
-/// Firestore home: `profiles_public/{accountID}`. Read by anyone signed in;
-/// only server-authority callables may write the document.
+/// Firestore home: `profiles_public/{accountID}`. Clients cannot read or write
+/// it directly; reciprocal-friend and current-league callables return this
+/// bounded envelope after server authorization.
 struct PublicProfileSnapshot: Codable, Equatable, Identifiable, Sendable {
     let accountID: String
     let displayName: String

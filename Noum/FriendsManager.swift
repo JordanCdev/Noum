@@ -108,12 +108,17 @@ final class FriendsManager: ObservableObject {
     private static let refreshThrottle: TimeInterval = 60
 
     private var lastRefreshAttempt: Date?
+    private var activeAccountID: String?
+    private var accountGeneration: UInt64 = 0
+    private var isSessionActive = true
 
     private init() {
-        friends = Self.loadFriends(accountID: Self.persistedAccountID)
+        activeAccountID = Self.persistedAccountID
+        friends = Self.loadFriends(accountID: activeAccountID ?? "guest")
     }
 
     func addFriend(_ friend: NoumFriend) {
+        guard isSessionActive, activeAccountID != nil else { return }
         guard !friends.contains(where: { $0.id == friend.id }) else { return }
         if let accountID = friend.accountID,
            friends.contains(where: { $0.accountID == accountID }) {
@@ -135,6 +140,7 @@ final class FriendsManager: ObservableObject {
     }
 
     func removeFriend(id: UUID) {
+        guard isSessionActive, activeAccountID != nil else { return }
         friends.removeAll { $0.id == id }
         persist()
     }
@@ -153,26 +159,36 @@ final class FriendsManager: ObservableObject {
     /// `lastKnown*` fields in place. Throttled so rapid view re-entry is cheap.
     /// `force: true` bypasses the throttle (e.g., pull-to-refresh).
     func refreshPeerStats(force: Bool = false) async {
+        guard SocialReleaseCapabilities.friendProfiles.isAvailable,
+              let context = captureOperationContext() else {
+            isRefreshingPeerStats = false
+            return
+        }
         if !force, let last = lastRefreshAttempt,
            Date().timeIntervalSince(last) < Self.refreshThrottle { return }
         let targets = friends.filter { $0.accountID != nil }
         guard !targets.isEmpty else { return }
         lastRefreshAttempt = Date()
         isRefreshingPeerStats = true
-        defer { isRefreshingPeerStats = false }
+        defer {
+            if isOperationContextCurrent(context) {
+                isRefreshingPeerStats = false
+            }
+        }
 
         var fetched: [String: PublicProfileSnapshot] = [:]
         await withTaskGroup(of: PublicProfileSnapshot?.self) { group in
             for friend in targets {
                 guard let accountID = friend.accountID else { continue }
                 group.addTask {
-                    await BackendSyncManager.shared.fetchPublicProfile(accountID: accountID)
+                    try? await BackendSyncManager.shared.fetchPeerProfile(accountID: accountID)
                 }
             }
             for await snapshot in group {
                 if let snapshot { fetched[snapshot.accountID] = snapshot }
             }
         }
+        guard isOperationContextCurrent(context) else { return }
         guard !fetched.isEmpty else { return }
 
         var didChange = false
@@ -186,16 +202,19 @@ final class FriendsManager: ObservableObject {
             friends[index].lastSyncedAt = snapshot.updatedAt
             didChange = true
         }
-        if didChange { persist() }
+        if didChange { persist(context: context) }
     }
 
     // MARK: - Persistence
 
-    private func persist() {
+    private func persist(context: SocialAccountOperationContext? = nil) {
+        guard isSessionActive,
+              let activeAccountID,
+              context.map(isOperationContextCurrent) ?? true else { return }
         guard let data = try? JSONEncoder().encode(friends) else { return }
         UserDefaults.standard.set(data, forKey: Self.accountKey(
             base: storageKey,
-            accountID: Self.persistedAccountID
+            accountID: activeAccountID
         ))
     }
 
@@ -223,11 +242,18 @@ final class FriendsManager: ObservableObject {
     }
 
     func reloadForCurrentAccount() {
-        friends = Self.loadFriends(accountID: Self.persistedAccountID)
+        accountGeneration &+= 1
+        activeAccountID = Self.persistedAccountID
+        isSessionActive = true
+        friends = Self.loadFriends(accountID: activeAccountID ?? "guest")
+        isRefreshingPeerStats = false
         lastRefreshAttempt = nil
     }
 
     func endSession() {
+        accountGeneration &+= 1
+        activeAccountID = nil
+        isSessionActive = false
         friends = []
         isRefreshingPeerStats = false
         lastRefreshAttempt = nil
@@ -245,6 +271,22 @@ final class FriendsManager: ObservableObject {
         if Self.persistedAccountID == accountID {
             endSession()
         }
+    }
+
+    private func captureOperationContext() -> SocialAccountOperationContext? {
+        guard isSessionActive,
+              let activeAccountID,
+              AuthManager.shared.currentAccountID == activeAccountID else { return nil }
+        return SocialAccountOperationContext(
+            accountID: activeAccountID,
+            generation: accountGeneration
+        )
+    }
+
+    private func isOperationContextCurrent(_ context: SocialAccountOperationContext) -> Bool {
+        isSessionActive
+            && context.matches(accountID: activeAccountID, generation: accountGeneration)
+            && AuthManager.shared.currentAccountID == context.accountID
     }
 }
 

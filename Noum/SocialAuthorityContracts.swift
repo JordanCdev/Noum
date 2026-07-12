@@ -8,9 +8,49 @@ import Foundation
 enum SocialAuthorityCallable {
     static let region = "europe-west2"
     static let recordPeerSession = "recordPeerSession"
+    static let getPeerProfile = "getPeerProfile"
+    static let listLeagueMembers = "listLeagueMembers"
     static let createChallenge = "createChallenge"
     static let submitChallengeResult = "submitChallengeResult"
     static let setChallengeReaction = "setChallengeReaction"
+}
+
+struct SocialCapabilityAvailability: Equatable, Sendable {
+    let isAvailable: Bool
+    let message: String
+}
+
+/// Release gate for server-authoritative social features. The backend correctly
+/// rejects client-owned evidence and local-only friendships, but their trusted
+/// producers do not exist yet. Keeping these gates false prevents every rep or
+/// tap from generating a predictable failed callable and one-off error card.
+enum SocialReleaseCapabilities {
+    static let peerProgress = SocialCapabilityAvailability(
+        isAvailable: false,
+        message: "Peer comparisons are unavailable while Noum finishes secure evidence verification. Your private coaching progress is unaffected."
+    )
+
+    static let friendProfiles = SocialCapabilityAvailability(
+        isAvailable: false,
+        message: "Shared friend stats are unavailable while Noum finishes secure connection verification."
+    )
+
+    static let speakOffs = SocialCapabilityAvailability(
+        isAvailable: false,
+        message: "Speak-offs are unavailable while Noum finishes secure evidence and friend verification."
+    )
+}
+
+/// Captured before an async social operation. Managers increment their local
+/// generation on both teardown and reload; a response may mutate state only
+/// when both the durable account ID and generation still match.
+struct SocialAccountOperationContext: Equatable, Sendable {
+    let accountID: String
+    let generation: UInt64
+
+    func matches(accountID: String?, generation: UInt64) -> Bool {
+        self.accountID == accountID && self.generation == generation
+    }
 }
 
 enum SocialAuthorityError: Error, Equatable, LocalizedError {
@@ -19,6 +59,9 @@ enum SocialAuthorityError: Error, Equatable, LocalizedError {
     case sessionUnavailable
     case verifiedEvidenceUnavailable
     case friendAuthorizationUnavailable
+    case trustedSocialStateUnavailable
+    case accountDeletionPending
+    case notFound
     case invalidRequest
     case invalidResponse
     case conflict
@@ -38,6 +81,12 @@ enum SocialAuthorityError: Error, Equatable, LocalizedError {
             return "Competitive peer results are unavailable because this rep does not yet have server-verified evidence. Your private coaching history is unchanged."
         case .friendAuthorizationUnavailable:
             return "Speak-offs are unavailable for this connection because Noum cannot yet verify a reciprocal friend link."
+        case .trustedSocialStateUnavailable:
+            return "Peer comparisons are unavailable until Noum has server-verified progress for this account."
+        case .accountDeletionPending:
+            return "This peer action is unavailable while account deletion is pending."
+        case .notFound:
+            return "The requested peer data is no longer available."
         case .invalidRequest:
             return "This peer action is incomplete. Review it and try again."
         case .invalidResponse:
@@ -62,7 +111,8 @@ enum SocialAuthorityError: Error, Equatable, LocalizedError {
             return true
         case .notConfigured, .unauthenticated, .sessionUnavailable,
              .verifiedEvidenceUnavailable, .friendAuthorizationUnavailable,
-             .invalidRequest, .conflict, .rejected:
+             .trustedSocialStateUnavailable, .accountDeletionPending,
+             .notFound, .invalidRequest, .conflict, .rejected:
             return false
         }
     }
@@ -73,6 +123,10 @@ enum SocialAuthorityError: Error, Equatable, LocalizedError {
             return .verifiedEvidenceUnavailable
         case "friend-authorization-unavailable":
             return .friendAuthorizationUnavailable
+        case "trusted-social-state-unavailable":
+            return .trustedSocialStateUnavailable
+        case "account-deletion-pending":
+            return .accountDeletionPending
         default:
             return nil
         }
@@ -113,6 +167,7 @@ struct PublicProfileAuthorityEnvelope: Codable, Equatable, Sendable {
               !displayName.isEmpty,
               (100...1000).contains(rating),
               (100...1000).contains(peakRating),
+              peakRating >= rating,
               currentStreak >= 0,
               weeklyReps >= 0,
               updatedAt.isFinite,
@@ -161,6 +216,81 @@ struct PeerSessionAuthorityResult: Equatable, Sendable {
     let sessionID: UUID
     let profile: PublicProfileSnapshot
     let processedNow: Bool
+}
+
+/// Reciprocal-friend-authorized profile read. The caller identity is derived
+/// from Firebase Auth and is deliberately absent from the request.
+struct GetPeerProfileRequest: Codable, Equatable, Sendable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let accountID: String
+
+    init(accountID: String) {
+        schemaVersion = Self.currentSchemaVersion
+        self.accountID = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var isValid: Bool {
+        !accountID.isEmpty && accountID.count <= 128 && !accountID.contains("/")
+    }
+}
+
+struct GetPeerProfileResponse: Codable, Equatable, Sendable {
+    let schemaVersion: Int
+    let profile: PublicProfileAuthorityEnvelope
+
+    func result(expectedAccountID: String) throws -> PublicProfileSnapshot {
+        guard schemaVersion == GetPeerProfileRequest.currentSchemaVersion else {
+            throw SocialAuthorityError.invalidResponse
+        }
+        let snapshot = try profile.snapshot()
+        guard snapshot.accountID == expectedAccountID else {
+            throw SocialAuthorityError.invalidResponse
+        }
+        return snapshot
+    }
+}
+
+/// The server derives the only league bucket the caller may read. No client
+/// tier, rating, week, or bucket identifier crosses the callable boundary.
+struct ListLeagueMembersRequest: Codable, Equatable, Sendable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let limit: Int
+
+    init(limit: Int) {
+        schemaVersion = Self.currentSchemaVersion
+        self.limit = limit
+    }
+
+    var isValid: Bool { (1...50).contains(limit) }
+}
+
+struct ListLeagueMembersResponse: Codable, Equatable, Sendable {
+    let schemaVersion: Int
+    let bucket: String
+    let members: [PublicProfileAuthorityEnvelope]
+
+    func result(requestedLimit: Int) throws -> LeagueMembersAuthorityResult {
+        guard schemaVersion == ListLeagueMembersRequest.currentSchemaVersion,
+              !bucket.isEmpty,
+              bucket.count <= 128,
+              members.count <= requestedLimit else {
+            throw SocialAuthorityError.invalidResponse
+        }
+        let snapshots = try members.map { try $0.snapshot() }
+        guard Set(snapshots.map(\.accountID)).count == snapshots.count else {
+            throw SocialAuthorityError.invalidResponse
+        }
+        return LeagueMembersAuthorityResult(bucket: bucket, members: snapshots)
+    }
+}
+
+struct LeagueMembersAuthorityResult: Equatable, Sendable {
+    let bucket: String
+    let members: [PublicProfileSnapshot]
 }
 
 // MARK: - Challenge authority

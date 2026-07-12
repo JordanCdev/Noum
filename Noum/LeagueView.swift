@@ -439,7 +439,21 @@ struct LeagueView: View {
 
     @ViewBuilder
     private var authorityNotice: some View {
-        if let failure = league.peerSyncFailure {
+        if !SocialReleaseCapabilities.peerProgress.isAvailable {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: "lock.shield")
+                    .foregroundStyle(AppColor.brandBlue)
+                    .accessibilityHidden(true)
+                Text(SocialReleaseCapabilities.peerProgress.message)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            .accessibilityIdentifier("league.capabilityUnavailable")
+        } else if let failure = league.peerSyncFailure {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 ErrorCard(message: failure.message)
                 if failure.isRetryable {
