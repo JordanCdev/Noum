@@ -1393,6 +1393,80 @@ struct CoachReliabilityGateTests {
         #expect(!fallbackVerdict.blocked)
     }
 
+    @Test func naturalnessDiscourseLoopFallbackKeepsTheReportedResultAndPassesReliability() {
+        let assessment = Self.quickMoveAssessment(
+            proofTest: "Run the next rep with a one-beat pause before the reason and no restart."
+        )
+        let previous = "In your latest rep, the close pause reduced fillers but cost warmth, so keep the beat only before the final sentence and add one natural phrase after it in the next rep."
+        let recent = [
+            previous,
+            "Use the same prompt and timer. Success is fewer fillers after the pause and a final sentence that lands cleanly.",
+            "Pause before the close only, because that is where the pressure leaks."
+        ]
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: assessment.immediateCoachRead,
+            previousCoachReply: previous,
+            recentCoachReplies: recent,
+            latestUserTurn: "How do I make that natural tomorrow?",
+            turnDepth: .quickMove,
+            assessment: assessment,
+            evidenceCoverage: 0.5
+        )
+
+        #expect(verdict.issues.contains(.repetitiveDiscourseMove))
+        let fallback = verdict.fallbackText ?? ""
+        #expect(fallback.contains("Fillers dropped but you sounded stiff"))
+        let fallbackVerdict = CoachReliabilityGate.evaluate(
+            replyText: fallback,
+            previousCoachReply: previous,
+            recentCoachReplies: recent,
+            latestUserTurn: "How do I make that natural tomorrow?",
+            turnDepth: .quickMove,
+            assessment: assessment,
+            evidenceCoverage: 0.5
+        )
+        #expect(fallbackVerdict.issues.isEmpty)
+        #expect(!fallbackVerdict.blocked)
+    }
+
+    @Test func thinGenericRepairDoesNotReemitTheAssessmentScaffold() {
+        let assessment = CoachAssessment(
+            turnDepth: .trustRepair,
+            surface: .text,
+            questionRestatement: "Why did that feel generic?",
+            directVerdict: "The repair is to name the miss first, then answer with one useful move.",
+            confidence: 0.33,
+            evidenceUsed: [],
+            rubricScores: [],
+            missingEvidence: [],
+            nextProofTest: "Use one user-specific signal first, then prescribe exactly one coach move.",
+            responseMode: .expandable
+        )
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Fair push. I heard you, and I will do better next time.",
+            previousCoachReply: "Here are several general communication tips.",
+            latestUserTurn: "This still sounds cold and overexplained, like generic AI tips.",
+            turnDepth: .trustRepair,
+            assessment: assessment,
+            evidenceCoverage: 0.5
+        )
+
+        #expect(verdict.blocked)
+        let fallback = verdict.fallbackText ?? ""
+        #expect(fallback.contains("One safe signal is your feedback"))
+        #expect(!fallback.contains(assessment.immediateCoachRead))
+        let fallbackVerdict = CoachReliabilityGate.evaluate(
+            replyText: fallback,
+            previousCoachReply: "Here are several general communication tips.",
+            latestUserTurn: "This still sounds cold and overexplained, like generic AI tips.",
+            turnDepth: .trustRepair,
+            assessment: assessment,
+            evidenceCoverage: 0.5
+        )
+        #expect(fallbackVerdict.issues.isEmpty)
+        #expect(!fallbackVerdict.blocked)
+    }
+
     @Test func narrowedRepeatFollowUpDoesNotTripDiscourseLoopWhenReplyNamesExactLine() {
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "Repeat the final sentence only: ask, period, because that isolates the confidence leak. If you add a qualifier after it, rewrite that same line until it ends cleanly.",

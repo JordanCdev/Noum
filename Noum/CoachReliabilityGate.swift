@@ -660,7 +660,11 @@ enum CoachReliabilityGate {
         } else if issues.contains(.offTopicTestWithDrill) {
             fallback = offTopicTestFallback(surface: surface)
         } else if issues.contains(.genericRepairScaffolded) {
-            fallback = genericRepairFallback(surface: surface, replyText: trimmed)
+            fallback = genericRepairFallback(
+                surface: surface,
+                replyText: trimmed,
+                latestUserTurn: latestUserTurn
+            )
         } else if issues.contains(.notInformativeRepairScaffold) {
             fallback = notInformativeRepairFallback(surface: surface)
         } else if issues.contains(.straightAnswerSplitMissing) {
@@ -736,8 +740,8 @@ enum CoachReliabilityGate {
         let turn = normalize(latestUserTurn ?? "")
         if containsAny(turn, ["natural", "stiff", "forced", "managed"]) {
             return surface == .live
-                ? "Keep the change that helped; drop the managed rhythm everywhere else. Use the pause only at the pressure point."
-                : "Keep the change that helped; drop the managed rhythm everywhere else. Tomorrow, let the rest of the answer run normally and use the pause only at the pressure point."
+                ? "Fillers dropped but you sounded stiff, so the pause point is right and the rhythm around it is too managed. Keep your normal rhythm and use one beat before the final sentence."
+                : "Fillers dropped but you sounded stiff, so the pause point is right and the rhythm around it is too managed. Tomorrow, keep your normal rhythm and leave one beat only before the final sentence; it worked if the close stays clean without sounding rehearsed."
         }
         if containsAny(turn, ["real coach", "not like a coach", "robotic", "generic"]) {
             return surface == .live
@@ -959,13 +963,23 @@ enum CoachReliabilityGate {
     /// give one behavioural move without raw counts or scaffold labels.
     static func genericRepairFallback(
         surface: CoachReplySurface,
-        replyText: String
+        replyText: String,
+        latestUserTurn: String? = nil
     ) -> String {
         let normalized = normalize(replyText)
+        let turn = normalize(latestUserTurn ?? "")
         if containsAny(normalized, ["ask", "raise", "number", "qualifier", "hoping to maybe"]) {
             return surface == .live
                 ? "Fair. That was too generic. The specific pattern is the ask itself. State the number flat, no qualifier, then stop."
                 : "Fair. That was too generic. The specific pattern is the ask itself. You softened the number instead of stating it. State the raise as one flat sentence, no qualifier, then stop."
+        }
+        if containsAny(
+            normalized + " " + turn,
+            ["cold", "overexplain", "human coach", "user-specific signal"]
+        ) {
+            return surface == .live
+                ? "Fair. I gave you another template. One safe signal is your feedback that the reply felt cold and overexplained, so I should name the behaviour, explain why it matters, and give one move."
+                : "Fair. I gave you another template. One safe signal is your feedback that the reply felt cold and overexplained, so the repair is to name the behaviour from your rep, explain why it matters, and give one move — nothing more."
         }
         if normalized.contains("recommendation") {
             return surface == .live
@@ -1195,6 +1209,21 @@ enum CoachReliabilityGate {
         }
         if let assessment {
             let read = assessment.immediateCoachRead.trimmingCharacters(in: .whitespacesAndNewlines)
+            if genericRepairUserTurn(latestUserTurn),
+               genericRepairNeedsSpecificPattern(read) {
+                let repair = genericRepairFallback(
+                    surface: surface,
+                    replyText: read,
+                    latestUserTurn: latestUserTurn
+                )
+                if isCleanCandidate(
+                    repair,
+                    previousCoachReply: previousCoachReply,
+                    recentCoachReplies: recentCoachReplies
+                ) {
+                    return repair
+                }
+            }
             if isCleanCandidate(
                 read,
                 previousCoachReply: previousCoachReply,
