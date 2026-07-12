@@ -1,11 +1,44 @@
 # Noum — Current state
 
+## 2026-07-12 — Production-evidence truth pass
+
+Two research-loop trust gaps are now closed in the shipping implementation.
+Provider-backed rewrites pass a deterministic semantic-preservation guard before
+they can reach the UI: negation polarity, numeric and currency facts, percentages,
+and high-signal names/acronyms/product labels must survive unchanged. A rejected
+provider rewrite uses the existing conservative on-device edit instead of
+presenting altered meaning. Transformation KPIs now also match their names:
+prescription acceptance is a content-free shown-to-tap pair, and cloud-to-local
+fallback includes only cloud-requested sessions that actually resolved locally,
+not deliberate local-only use.
+
+The coach live-evaluation harness now scores the same final-visible path as the
+app, including content-rejection recovery, reliability fallback, and final copy
+normalization. Canonical readiness runs cover 20 required fixtures plus all 11
+long-form conversations, with two-second inter-turn pacing to avoid manufacturing
+provider pressure. The current local app-path artifact at commit `bb9674e0` and
+coach fingerprint
+`sha256:81a33a1fd6c37e515537c5ae8bbdfe3a8ebb36ba31accfbe90ada8a9b4151f64`
+passes 50/50 scored fixtures at a 79.76 average, including local score, coverage,
+real-pipeline, trace-quality, and source-freshness gates.
+
+Launch readiness remains **NO-GO at 18/100**, capped at 20/100. The available
+`coach-live-eval-v1` artifact belongs to the earlier `967acf22` source and is
+correctly rejected as stale after the final-visible fixes. That run also recorded
+real operational pressure—Gemini HTTP 429 `RESOURCE_EXHAUSTED` and DeepSeek HTTP
+402—so a fresh zero-refusal current-source sweep cannot be claimed until provider
+capacity/account configuration is healthy. Four independent artifacts also remain
+unearned: blinded professional-coach calibration, longitudinal real-user transfer
+outcomes, physical-device TestFlight QA, and the completed operational launch
+checklist. Repository static preflight passes 18/18; it is not a substitute for
+those release artifacts.
+
 ## 2026-07-12 — Research-loop refinement: rewrites, explicit goal choice, and safe provider defaults
 
 The goal-aware rewrite path now lets a user choose a light, medium, or strong
-editorial movement, while preserving the same vocabulary and semantic-intent
-gates. When an AI provider is unavailable or its response fails the existing
-voice-preservation filter, the same service can make a clearly labelled,
+editorial movement, while preserving the same vocabulary, voice, and deterministic
+semantic-intent gates. When an AI provider is unavailable or its response fails
+those filters, the same service can make a clearly labelled,
 conservative on-device edit. That fallback only removes transcript-derived
 disfluencies, duplicate wording, and context-free lead-ins; it never adds a
 claim and withholds an edit when it cannot safely improve the selected slice.
@@ -38,7 +71,7 @@ light iPhone 17 five-tab screenshot sweep rendered Home, Train, Review,
 Profile, and Settings without a launch or navigation regression; handoff is at
 `.screenshots/2026-07-12_rewrite-phrase-bank/HANDOFF.md`. A deterministic
 Summary UI test now captures the private on-device rewrite card and a saved
-Phrase Bank row end-to-end. Provider-backed rewrite acceptance and physical
+Phrase Bank row end-to-end. Live-provider acceptance-corpus results and physical
 device behavior remain release evidence, not simulator substitutes.
 
 The local production-readiness command still correctly returns **NO-GO**, but
@@ -111,8 +144,9 @@ existing flow log owns active-day, review-open, typed-to-live, notification, and
 qualitative outcome events; `TransformationKPIReport` combines those with
 sessions and recommendation outcomes without transcript text or a third-party
 analytics SDK. Settings diagnostics can inspect first-rep time, review and
-prescription conversion, typed-to-live upgrade, and 28-day qualitative goal
-movement. After three reps, Profile asks the report's recommended single
+shown-to-tap prescription acceptance, requested-cloud-to-resolved-local fallback,
+typed-to-live upgrade, and 28-day qualitative goal movement. After three reps,
+Profile asks the report's recommended single
 qualitative question once and stores only the bounded response event. Flow data
 participates in account export/deletion and preserves the first-value anchor and
 qualitative response when its bounded ring trims older diagnostics.

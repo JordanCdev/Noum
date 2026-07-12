@@ -2139,9 +2139,10 @@ def evidence_artifact_audit(dump_dir, readiness=None):
         "dumpDir": str(root),
         "dumpDirExists": root.is_dir(),
         "validationBoundary": (
-            "Python mirrors the Swift row-level evidence contracts, validates "
-            "source freshness, and requires the current Swift readiness manifest "
-            "to agree before launch readiness can pass."
+            "Python performs structured JSON/schema validation, mirrors the "
+            "Swift row-level evidence contracts, validates source freshness, "
+            "and requires the current Swift readiness manifest to agree before "
+            "launch readiness can pass."
         ),
         "requiredArtifactCount": len(required),
         "presentArtifactCount": len(required) - len(missing),

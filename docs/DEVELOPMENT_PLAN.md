@@ -16,9 +16,9 @@ export/deletion, and navigation owners. Do not create the proposed parallel
 | Research phase | Current status | Remaining closure |
 |---|---|---|
 | Baseline and contracts | Implemented locally | Keep event names and cohort claims honest; population analytics still requires a privacy decision |
-| Fast-lane activation | Implemented behind a default-off flag | Signed-device permission, consent, interruption, relaunch, and elapsed-time matrix before enablement |
+| Fast-lane activation | Partial: a spoken auto-guided first rep exists behind a default-off flag | The report's permissionless typed/structured route is not implemented; decide whether to build it, then complete signed-device permission, consent, interruption, relaunch, and elapsed-time validation |
 | Goal-style scoring | Implemented as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections | Human calibration; suppress unsupported locale and identity precision |
-| Actionable coaching | Rewrite, phrase bank, and adaptive recommendation loop implemented | Provider semantic-preservation corpus; unify remaining prescription projections |
+| Actionable coaching | Rewrite, deterministic semantic-preservation guard, phrase bank, and adaptive recommendation loop implemented | Live-provider acceptance corpus; phrase-to-practice reuse; unify remaining prescription projections |
 | Trust and reliability | Local speech, consent routing, privacy, export, and deletion implemented | Physical-device and release-policy verification |
 | Retention and expansion | Local KPI, weekly check-in, reminder, and goal-movement substrate implemented | Real cohort validation, experiment assignment decision, and calibrated language expansion |
 
@@ -29,7 +29,10 @@ The supported local evidence refresh is:
 ```
 
 Production readiness still requires independently sourced professional-coach,
-longitudinal real-user, physical TestFlight, and operational release evidence.
+longitudinal real-user, physical TestFlight, and operational release evidence,
+plus a fresh current-source zero-refusal live-provider sweep. The current provider
+environment has returned Gemini HTTP 429 and DeepSeek HTTP 402; those operational
+failures must be resolved rather than hidden by a generated artifact.
 
 ## 1. Product outcome
 
@@ -81,6 +84,11 @@ The existing five-tab shell, practice modes, session history, coach, and account
 ### Scope
 
 Create a shortened path that asks only for one speaking goal and one context, then routes to the easiest viable practice mode. Start with typed or structured practice; request microphone access only when the user chooses live coaching and understands its value. Resume the full coaching profile after the first rep.
+
+Current gap: `AutoGuidedFirstRep` is a default-off spoken path and still depends
+on usable microphone permission. It does not satisfy this permissionless
+activation contract. Treat the implementation list below as remaining work unless
+the product deliberately replaces the research requirement.
 
 ### Implementation
 
@@ -199,7 +207,7 @@ Track these as the release scorecard:
 - Median time-to-first-rep and first-rep completion rate.
 - Typed-to-live upgrade rate.
 - Practice sessions per active user per week.
-- Session-review open rate and prescription acceptance rate.
+- Session-review open rate and content-free shown-to-tap prescription acceptance rate.
 - Goal-score improvement after 7 and 28 days.
 - D1, D7, and D28 retention.
 - Cloud-to-local fallback rate and provider failure rate.
@@ -219,4 +227,13 @@ Track these as the release scorecard:
 
 ## 12. Definition of done for the first validated release
 
-The release is ready when a new user can choose a goal, complete a rep, see an explainable score, receive one actionable next drill, and complete that drill with or without cloud transcription. The path must be measurable end-to-end, privacy behavior must match the UI, and the experiment must show improved activation or next-rep conversion before expanding into additional modes or social features.
+The release is ready when a new user can choose a goal, complete a rep, see an
+explainable qualitative outcome, receive one actionable next drill, and complete
+that drill with or without cloud transcription. The path must be measurable
+end-to-end, privacy behavior must match the UI, and the experiment must show
+improved activation or next-rep conversion before expanding into additional modes
+or social features. Production-ready status additionally requires a fresh
+zero-refusal current-source live-provider sweep, blinded professional-coach
+calibration, longitudinal real-user transfer evidence, physical TestFlight QA,
+and a completed operational launch checklist; simulator fixtures cannot replace
+any of those gates.
