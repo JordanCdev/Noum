@@ -1,36 +1,40 @@
 # Noum
 
-This app demonstrates speech recognition with filler word highlighting using
+Noum is a communication-training app for deliberate speaking practice,
+evidence-bounded coaching, and progress review.
 
-Amazon Transcribe for streaming speech recognition.
+## Speech processing and privacy
 
-Configure the app with AWS credentials using the environment variables
-`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (plus `AWS_SESSION_TOKEN` if
-you are using temporary credentials). A `Transcribe.plist` file can also provide
-these values when running on Apple platforms. The region defaults to
-`eu-west-2` but can be overridden with the `AWS_REGION` variable. The
+Production live transcription uses an authenticated, App Check-enforced
+Firebase callable to obtain a short-lived Deepgram credential. Long-lived
+provider secrets are never bundled in the app. Users explicitly choose whether
+cloud processing is allowed; when it is off, or cloud setup fails before audio
+starts streaming, Noum uses Apple's on-device Speech framework for practice
+where available.
 
-Settings screen displays whether credentials are configured and lets you reload
-them from these locations.
+The app records the provider that actually handled each rep. It does not route
+one recording to both cloud and local providers. See the in-app Privacy & Data
+section and [Privacy Policy](Noum/PrivacyPolicy.md) for the current data-flow
+description.
 
-Supply AWS credentials either through environment variables or a matching
-`Transcribe.plist` file. These credentials are used to sign the WebSocket
-request to Amazon Transcribe.
+AWS Transcribe remains a legacy development-only provider. Do not put
+long-lived AWS credentials in an app target, plist, repository, or release
+environment. Development credentials, if needed for a local legacy test, must
+be short-lived and injected outside the app bundle.
 
-Google Sign-In also requires an OAuth client ID. Set the `GOOGLE_CLIENT_ID`
-environment variable before building so the app can configure its Google
-authentication.
+Google Sign-In requires its normal OAuth configuration. Production Firebase,
+App Check, and backend configuration are supplied through the app's
+gitignored configuration files and deployed service environment.
 
-Common disfluencies such as "umm" or "hmm" are detected using a regex so
-variants are matched dynamically.
+## Product behavior
 
-Each recording session is saved with the total filler count and duration. Use
-the **History** button to review previous sessions.
-
-After supplying the credentials, build the Xcode project to run the demo.
+Noum detects common disfluencies with locale-aware heuristics, retains session
+history for review, and uses an evidence-bounded goal read to prescribe the
+next practice action. It intentionally labels weak evidence as incomplete
+rather than presenting a precise personality or identity score.
 
 ## Requirements
 
 Building Noum requires Xcode 15 or later with Swift 6.1 or newer. The package
 manifest uses tools version 6.0 for compatibility, but the app depends on
-SwiftUI which is only available on Apple platforms.
+SwiftUI and Apple platform frameworks.

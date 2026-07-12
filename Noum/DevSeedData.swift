@@ -645,6 +645,8 @@ enum DevSeedData {
         let target: String
         let scoreDeltas: [Double]
         let fillerDeltas: [Double]
+        let goal: SpeakingStyleGoal
+        let targetDimensionID: String
         switch profile {
         case .beginner:
             mode = .timed
@@ -653,6 +655,8 @@ enum DevSeedData {
             target = "One clean opening sentence before any explanation."
             scoreDeltas = [0.4, -0.2]
             fillerDeltas = [-0.5, 0.4]
+            goal = .warm
+            targetDimensionID = "controlled_pacing"
         case .improvingIntermediate:
             mode = .timed
             title = "One-sentence answer structure"
@@ -660,6 +664,12 @@ enum DevSeedData {
             target = "Open with the answer, then add one proof point."
             scoreDeltas = [1.2, 1.0, 0.8, 0.6]
             fillerDeltas = [-2.0, -1.5, -1.0, -0.8]
+            goal = .warm
+            // The seeded warm persona's live read is deliberately weakest on
+            // salience. Keep the historical fixture on that same target so
+            // the UI can demonstrate repeated, comparable evidence rather
+            // than treating one good follow-up as a shareable milestone.
+            targetDimensionID = "salience"
         case .plateauedAdvanced:
             mode = .timed
             title = "Thesis-first opening"
@@ -667,6 +677,8 @@ enum DevSeedData {
             target = "Lead with the claim before context."
             scoreDeltas = [0.1, -0.1, 0.2, 0.0]
             fillerDeltas = [0.0, -0.2, 0.1, 0.0]
+            goal = .authoritative
+            targetDimensionID = "verdict_first"
         case .pressureVulnerable:
             mode = .suddenDeath
             title = "Pressure pace hold"
@@ -674,6 +686,8 @@ enum DevSeedData {
             target = "Answer hard questions without a pace spike."
             scoreDeltas = [-1.1, -0.8, -0.4, 0.2]
             fillerDeltas = [2.0, 1.4, 0.9, -0.2]
+            goal = .executive
+            targetDimensionID = "pressure_stability"
         case .fillerFree:
             mode = .timed
             title = "Cut one extra clause"
@@ -681,6 +695,8 @@ enum DevSeedData {
             target = "Keep the proof point while removing one qualifier."
             scoreDeltas = [0.6, 0.3, 0.4, 0.5]
             fillerDeltas = [-0.1, 0.0, -0.2, 0.0]
+            goal = .concise
+            targetDimensionID = "clean_close"
         }
 
         let scopedSessions = newest.filter { $0.mode == mode }
@@ -699,7 +715,15 @@ enum DevSeedData {
                 scoreDelta: scoreDeltas[index],
                 hasComparableScore: true,
                 fillerDelta: fillerDeltas[index],
-                durationDelta: 4
+                durationDelta: 4,
+                goal: goal,
+                targetDimensionID: targetDimensionID,
+                goalFollowUpResult: RecommendationLearningStore.goalFollowUpResult(
+                    followed: session.mode == mode,
+                    comparableScoreDelta: scoreDeltas[index],
+                    fillerDelta: fillerDeltas[index],
+                    comparablePaceDelta: nil
+                )
             )
         }
     }

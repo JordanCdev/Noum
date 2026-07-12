@@ -419,7 +419,7 @@ struct SummaryView: View {
     }
 
     private var summaryRecommendation: RecommendationBiasBlueprint {
-        RecommendationBiasEngine.blueprint(
+        let resolved = RecommendationBiasEngine.blueprint(
             profile: coachingProfileStore.profile,
             input: AIHomeRecommendationInput(
                 recentSessionSummary: recentWindowSummary,
@@ -445,6 +445,35 @@ struct SummaryView: View {
             imToneSignal: imToneDrillSignal,
             coachMemory: coachMemoryStore.currentMemory,
             recommendationOutcomes: recommendationLearningStore.outcomes
+        )
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_GOAL_OUTCOME_TIMED") {
+            return RecommendationBiasBlueprint(
+                recommendedMode: .timed,
+                recommendedTone: nil,
+                recommendedScenario: nil,
+                focus: resolved.focus,
+                target: resolved.target,
+                modeBenefit: resolved.modeBenefit,
+                whyMode: resolved.whyMode,
+                whyNow: resolved.whyNow,
+                suggestedTimedDifficulty: resolved.suggestedTimedDifficulty ?? .easy,
+                suggestedTheme: resolved.suggestedTheme,
+                source: resolved.source
+            )
+        }
+        #endif
+        return resolved
+    }
+
+    private var goalOutcomeRead: GoalOutcomeRead? {
+        GoalOutcomeEngine.read(
+            profile: coachingProfileStore.profile,
+            baseline: baselineStore.baseline,
+            rating: ratingStore.rating,
+            sessions: sessionStore.sessions,
+            coachMemory: coachMemoryStore.currentMemory,
+            outcomes: recommendationLearningStore.outcomes
         )
     }
 
@@ -975,7 +1004,7 @@ struct SummaryView: View {
             // None of these are wrong to see — they just shouldn't fight
             // the coach's read, the score, and the next move for the
             // user's first three seconds.
-            DisclosureGroup(isExpanded: $showSecondaryDetails) {
+            if showSecondaryDetails {
                 VStack(spacing: 14) {
                     // Practice credit — visible-but-demoted (progression
                     // spine): the verdict above the fold stays score +
@@ -1121,10 +1150,17 @@ struct SummaryView: View {
                         // voice instead of producing AI-default coaching
                         // text. Only renders when there's a clear
                         // weakness category to act on AND the user is Pro.
-                        if let weakness = primaryWeakness, premium.isPremium {
+                        if let weakness = primaryWeakness,
+                           premium.isPremium,
+                           AIRewriteService.eligibility(
+                               transcript: transcriptText,
+                               confidence: sessionStore.sessions.first?.transcriptConfidence
+                           ) == .eligible {
                             RewriteSuggestionCard(
                                 transcript: transcriptText,
-                                weakness: weakness
+                                weakness: weakness,
+                                targetDimension: goalOutcomeRead?.nextDimension?.label,
+                                transcriptConfidence: sessionStore.sessions.first?.transcriptConfidence
                             )
                         }
 
@@ -1180,6 +1216,34 @@ struct SummaryView: View {
                         }
                     }
 
+                    if let goalOutcomeRead {
+                        GoalOutcomeCard(
+                            read: goalOutcomeRead,
+                            actionTitle: onStartLookingAhead == nil ? nil : "Practice the next target",
+                            onPractice: onStartLookingAhead.map { callback in
+                                {
+                                    let blueprint = summaryRecommendation
+                                    recommendationLearningStore.recordShown(
+                                        fingerprint: "goal-outcome|\(blueprint.recommendedMode.rawValue)|\(goalOutcomeRead.nextDimension?.dimensionID ?? "general")",
+                                        title: blueprint.focus,
+                                        focus: goalOutcomeRead.nextDimension?.label ?? blueprint.focus,
+                                        target: goalOutcomeRead.prescribedNextAction,
+                                        mode: blueprint.recommendedMode,
+                                        isAIBacked: false,
+                                        goal: goalOutcomeRead.style,
+                                        targetDimensionID: goalOutcomeRead.nextDimension?.dimensionID,
+                                        sourceSessionID: sessionStore.sessions.first?.id
+                                    )
+                                    recommendationLearningStore.markTapped(mode: blueprint.recommendedMode)
+                                    callback(SummaryLookingAheadRouter.destination(
+                                        for: blueprint,
+                                        imAvailable: IMModeAvailability.isAvailable
+                                    ))
+                                }
+                            }
+                        )
+                    }
+
                     // Session comparison
                     sessionComparisonCard
 
@@ -1217,6 +1281,14 @@ struct SummaryView: View {
                     }
                 }
                 .padding(.top, 8)
+            }
+
+            Button {
+                if reduceMotion {
+                    showSecondaryDetails.toggle()
+                } else {
+                    withAnimation(.standardSpring) { showSecondaryDetails.toggle() }
+                }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "doc.text.magnifyingglass")
@@ -1225,8 +1297,17 @@ struct SummaryView: View {
                     Text(CohesiveSummaryCopy.seeDetails)
                         .font(Typography.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Image(systemName: showSecondaryDetails ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
                 }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("summary.details.toggle")
+            .accessibilityLabel(showSecondaryDetails ? "Hide details" : CohesiveSummaryCopy.seeDetails)
             .tint(.secondary)
             .padding(.horizontal, Spacing.xs)
         }

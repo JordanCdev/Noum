@@ -27659,6 +27659,30 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == nil)
     }
 
+    @Test func visionRecognizesNaturalMeantConsequenceBridge() {
+        let reply = "Good call. That read exactly like a generic report instead of a human coach. In your last rep, you wanted to reassure the client first, but that warmth meant your actual recommendation arrived too late. For the next one, say the recommendation in your very first sentence, then follow it with your reassurance."
+        let vision = AICoachChatService.coachVisionEvaluation(
+            reply: reply,
+            latestUserTurn: "That sounded generic. What did you actually notice?",
+            turnDepth: .trustRepair,
+            surface: .text
+        )
+
+        #expect(!vision.missed.contains(.insightBridge))
+    }
+
+    @Test func visionRecognizesWhenClauseListenerEffectBridge() {
+        let reply = "Listen for whether your first sentence actually gave the verdict, or if you warmed up first. When you hear the point land right away, stop the tape and notice how much easier it is to follow."
+        let vision = AICoachChatService.coachVisionEvaluation(
+            reply: reply,
+            latestUserTurn: "What should I listen for in the replay?",
+            turnDepth: .quickMove,
+            surface: .text
+        )
+
+        #expect(!vision.missed.contains(.insightBridge))
+    }
+
     @Test func turnAwareGateAcceptsPressureMechanicBridge() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Your last rep gives one usable signal: under pressure, the close needs one silent beat after the verdict. Use that beat, then finish the answer without speeding up.",
@@ -48951,7 +48975,8 @@ struct C5LiveCallSTTChainTests {
 
     /// The canonical stored-value → provider mapping, shared with
     /// `SpeechRecognizerViewModel`: unset → Deepgram (the default),
-    /// "deepgram"/"google" → themselves, anything unknown → AWS. Pinned so
+    /// "deepgram"/"google" → themselves, and malformed legacy values fall
+    /// back to the authenticated default rather than AWS. Pinned so
     /// the live call and practice reps can never resolve different providers
     /// from the same persisted setting.
     @Test func storedValueResolutionMatchesPracticeRepSemantics() {
@@ -48959,9 +48984,8 @@ struct C5LiveCallSTTChainTests {
         #expect(TranscriptionProviderID.resolved(fromStoredValue: "deepgram") == .deepgram)
         #expect(TranscriptionProviderID.resolved(fromStoredValue: "google") == .google)
         #expect(TranscriptionProviderID.resolved(fromStoredValue: "aws") == .aws)
-        // Historic behavior: any unknown string falls through to AWS.
-        #expect(TranscriptionProviderID.resolved(fromStoredValue: "garbage") == .aws)
-        #expect(TranscriptionProviderID.resolved(fromStoredValue: "") == .aws)
+        #expect(TranscriptionProviderID.resolved(fromStoredValue: "garbage") == .deepgram)
+        #expect(TranscriptionProviderID.resolved(fromStoredValue: "") == .deepgram)
     }
 
     /// Healthy chain: cloud leads, native is terminal — the order that makes

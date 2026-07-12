@@ -1,6 +1,6 @@
 # Noum Privacy Policy
 
-**Last updated:** July 11, 2026
+**Last updated:** July 12, 2026
 
 Noum ("we", "us", "our") is a speaking practice app that helps you improve your communication skills through guided exercises, AI coaching, and conversation simulations. This policy explains what data we collect, why, who processes it, and how you can control it.
 
@@ -42,6 +42,8 @@ Before Noum sends live audio, transcripts, coaching-profile fields, session cont
 
 ### AI Coaching Feedback
 When you use a production cloud AI coaching feature, Noum sends the information needed to answer that request to **Google Vertex AI (Gemini)** through a protected Firebase callable. Developer-only provider configurations are excluded from the Release bundle and are not production processors.
+
+If you explicitly save a suggested rewrite to your Phrase Bank, Noum stores only that saved phrase and its coaching labels on your device. It does not save an additional copy of the source transcript to the Phrase Bank, and Phrase Bank entries are included in account export and deletion.
 
 For **Ask Noum**, this includes your current message, a bounded number of recent conversation turns, and bounded coaching context and session evidence. When available and relevant, that context may include your coaching profile and goals, recent session metrics or transcript evidence, saved proof quotes, coaching memory, plans, reflections, or an upcoming speaking moment. Noum limits the context assembled for each request; it does not send an unbounded copy of your on-device history.
 
@@ -125,7 +127,7 @@ Noum does not include a dedicated Firebase Analytics SDK, advertising SDK, or cr
 ### On Your Device
 Most of your data is stored locally on your device using:
 - **iOS Keychain** — account credentials (encrypted by iOS)
-- **UserDefaults** — coaching profile, session history, friend names, XP, settings
+- **UserDefaults** — coaching profile, session history, saved Phrase Bank entries, friend names, XP, settings
 
 ### Cloud Storage (Optional)
 If Firebase is configured, the following may be synced:

@@ -245,13 +245,6 @@ enum SessionFinalizer {
             )
         }
 
-        // Deferred profile capture — fire the goal / why-now / success
-        // prompts after the user has done a rep, not during onboarding.
-        DeferredProfileCaptureManager.shared.consider(
-            sessionCount: sessionStore.sessions.count,
-            profile: coachingProfileStore.profile
-        )
-
         // Goal refresh — every 14 days, surface a lightweight "still your
         // goal?" confirmation so coach memory stays current.
         GoalRefreshManager.shared.consider(

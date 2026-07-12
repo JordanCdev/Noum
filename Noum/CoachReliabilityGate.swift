@@ -200,6 +200,14 @@ enum CoachReliabilityGate {
     /// user citing their own filler count is never touched.
     static let coldStartCoverageCeiling: Double = 0.051
 
+    /// Coverage below this is deliberately pinned to the 0.20 confidence
+    /// floor by `CoachReasoningPass`. A floor-confidence assessment is only a
+    /// calibration smell once the trajectory has enough breadth that the
+    /// reasoning pass should have moved off that floor. Without this guard,
+    /// one honest first rep is reported as defective merely because it supplies
+    /// a local evidence line.
+    static let floorConfidenceEvidenceCoverageFloor: Double = 0.15
+
     /// How many leading characters of a trust-repair reply are scanned for an
     /// acknowledgement marker.
     static let attunementWindow: Int = 140
@@ -269,7 +277,7 @@ enum CoachReliabilityGate {
     /// turn. Absence (not presence of a banned word) is what the gate records.
     static let acknowledgementMarkers: [String] = [
         "fair", "you're right", "youre right", "you are right",
-        "i hear", "good push", "that's fair", "thats fair",
+        "i hear", "good push", "good call", "that's fair", "thats fair",
         "i missed", "i owe you", "right to push", "right to call",
         "makes sense", "i get it", "valid", "my read was off",
         "let me repair", "let me fix", "let me correct",
@@ -288,9 +296,14 @@ enum CoachReliabilityGate {
         "i gave advice",
         "i used too much",
         "i sounded cold",
+        "i sounded robotic",
+        "i sounded generic",
         "i leaned on generic",
+        "i leaned on a generic",
         "i was too generic",
         "that read was",
+        "that read too much like a report",
+        "that read like a report",
         "that sounded cold",
         "robotic and cold",
         "too much writing",
@@ -299,6 +312,7 @@ enum CoachReliabilityGate {
         "specific thing",
         "specific pattern",
         "generic ai wrapper",
+        "generic report",
         "not a coach read",
         "generic advice",
         "too generic",
@@ -483,7 +497,9 @@ enum CoachReliabilityGate {
         // --- RECORDED ISSUES ---
         if let assessment,
            assessment.confidence <= floorConfidence,
-           assessment.evidenceReferenceCount > 0 {
+           assessment.evidenceReferenceCount > 0,
+           let evidenceCoverage,
+           evidenceCoverage >= floorConfidenceEvidenceCoverageFloor {
             issues.append(.floorConfidenceWithEvidence)
         }
         if turnDepth == .trustRepair,
@@ -1834,6 +1850,12 @@ enum CoachReliabilityGate {
         "practice summarizing"
     ]
 
+    /// A rambling repair still needs to model concise delivery, but the reply
+    /// may spend a short sentence naming an evidence limitation before giving
+    /// the concrete stop rule. Keep a hard ceiling while leaving enough room
+    /// for that honest calibration plus one bounded prescription.
+    static let rambleStoppingRuleAbsoluteWordCeiling = 65
+
     static let rambleStoppingRuleScaffoldMarkers: [String] = [
         "next rep:",
         "try this next:",
@@ -1878,10 +1900,10 @@ enum CoachReliabilityGate {
 
     static func rambleStoppingRuleNeedsRepair(replyText: String) -> Bool {
         let normalized = normalize(replyText)
-        if containsAny(normalized, rambleStoppingRuleScaffoldMarkers) {
+        if rambleStoppingRuleHasScaffoldLabel(normalized) {
             return true
         }
-        if wordCount(normalized) > 55 {
+        if wordCount(normalized) > rambleStoppingRuleAbsoluteWordCeiling {
             return true
         }
         if containsAny(normalized, rambleStoppingRuleGenericAdviceMarkers) {
@@ -1889,6 +1911,20 @@ enum CoachReliabilityGate {
         }
         return !containsAny(normalized, rambleStoppingRuleMechanismMarkers)
             && !rambleStoppingRuleHasBoundedMechanism(normalized)
+    }
+
+    /// Detect colon-led coaching labels at a sentence boundary without
+    /// misclassifying a natural sentence such as "Test this on your next rep:"
+    /// merely because it contains the substring `next rep:`.
+    static func rambleStoppingRuleHasScaffoldLabel(_ normalized: String) -> Bool {
+        rambleStoppingRuleScaffoldMarkers.contains { marker in
+            normalized.hasPrefix(marker) ||
+                containsAny(normalized, [
+                    ". \(marker)",
+                    "! \(marker)",
+                    "? \(marker)"
+                ])
+        }
     }
 
     /// Accepts concrete answer shapes that bound the response even when they do

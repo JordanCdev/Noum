@@ -1,9 +1,9 @@
 # Coach Arena Latest Report
 
-- Generated: `2026-07-10T21:05:16+00:00`
+- Generated: `2026-07-12T17:07:08+00:00`
 - Candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Fixtures: `50`
-- Average: `79.78/100`
+- Average: `79.76/100`
 - Passes score/coverage thresholds: `True`
 - Real-pipeline evidence passes: `True`
 - Evidence claim: `realPipelineEvidence`
@@ -22,7 +22,7 @@
 ## Type Averages
 
 - `deepAssessment`: `80.67/100`
-- `groundedRead`: `80.5/100`
+- `groundedRead`: `80.44/100`
 - `quickMove`: `78.76/100`
 - `trustRepair`: `79.67/100`
 
@@ -63,7 +63,7 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 ## Previous Run
 
 - Status: `compared`
-- Previous generated: `2026-07-10T07:13:28+00:00`
+- Previous generated: `2026-07-12T16:06:05+00:00`
 - Previous candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Candidate changed: `False`
 - Fixture count changed: `False`
@@ -85,14 +85,14 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 - App-path local fixture floor: `True`
 - Source target-reply mismatches: `0`
 - Source app-path failure samples: `0` of `0`
-- Source trace git commits: `e502cb3c`
+- Source trace git commits: `b9258cb7`
 - Source traces missing git commit: `0`
-- Current git commit: `e502cb3c`
-- Source trace coach fingerprints: `sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201`
+- Current git commit: `b9258cb7`
+- Source trace coach fingerprints: `sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce`
 - Source traces missing coach fingerprint: `0`
-- Current coach source fingerprint: `sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201`
+- Current coach source fingerprint: `sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce`
 - Source fingerprint matches current: `True`
-- Dirty coach source files: `0`
+- Dirty coach source files: `11`
 - Source freshness passes: `True`
 - Coverage passes: `True`
 - Requested fixtures: `50`
@@ -105,10 +105,10 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 - `confidence-clean-stop-025` `quickMove`: `70/100` - no local failure reason
 - `not-informative-trust-repair-002` `trustRepair`: `71/100` - no local failure reason
 - `quote-guard-043` `groundedRead`: `71/100` - no local failure reason
+- `confidence-ending-009` `groundedRead`: `72/100` - no local failure reason
 - `leadership-transfer-capture-026` `quickMove`: `72/100` - no local failure reason
 - `semantic-filler-use-040` `groundedRead`: `72/100` - no local failure reason
 - `prompt-echo-041` `groundedRead`: `72/100` - no local failure reason
-- `confidence-ending-009` `groundedRead`: `73/100` - no local failure reason
 - `grammar-leak-048` `quickMove`: `73/100` - no local failure reason
 - `leadership-update-008` `quickMove`: `74/100` - no local failure reason
 - `closing-ask-020` `quickMove`: `74/100` - no local failure reason

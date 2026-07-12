@@ -35,7 +35,15 @@ actor AIRewriteService {
 
     private init() {}
 
-    enum Weakness: String, Sendable {
+    /// Rewrite register is optional coaching context, never an inferred
+    /// identity. The profile's effective style has a legacy fallback so older
+    /// screens can render; only an explicit choice is safe to inject into a
+    /// user-facing rewrite prompt.
+    nonisolated static func selectedVoice(from profile: CoachingProfile?) -> SpeakingStyleGoal? {
+        profile?.chosenStyleGoal
+    }
+
+    enum Weakness: String, Sendable, Codable {
         case opening
         case closing
         case structure
@@ -65,6 +73,75 @@ actor AIRewriteService {
         }
     }
 
+    /// The amount of editorial movement a user asks the rewrite to make.
+    /// It controls arrangement and directness, never whether their intent or
+    /// vocabulary is preserved. The medium option retains the original
+    /// behavior for callers that have not yet exposed the control.
+    enum Intensity: String, CaseIterable, Codable, Sendable {
+        case light
+        case medium
+        case strong
+
+        var title: String {
+            switch self {
+            case .light: return "Light"
+            case .medium: return "Medium"
+            case .strong: return "Strong"
+            }
+        }
+
+        var instruction: String {
+            switch self {
+            case .light:
+                return "Make the smallest useful edit. Preserve the user's sentence shape whenever possible and change only the words that block the target."
+            case .medium:
+                return "Make a clear, practical edit while preserving the user's wording, rhythm, and meaning."
+            case .strong:
+                return "Make the clearest version that still sounds like this user. You may reorder the targeted slice, but do not add a new claim, example, or point."
+            }
+        }
+    }
+
+    enum Eligibility: Equatable, Sendable {
+        case eligible
+        case tooShort
+        case lowConfidence
+        case semanticallyAmbiguous
+        case containsSensitiveIdentifier
+    }
+
+    /// Conservative, deterministic gate used by both the surface and service.
+    /// A rewrite is optional coaching depth, so withholding it is safer than
+    /// uploading a fragment, garbled recognition, or likely personal identifier.
+    nonisolated static func eligibility(
+        transcript: String,
+        confidence: Double?
+    ) -> Eligibility {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 40 else { return .tooShort }
+        guard confidence.map({ $0 >= 0.55 }) ?? true else { return .lowConfidence }
+
+        let sensitivePatterns = [
+            #"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}"#,
+            #"(?:\+?\d[\s().-]*){8,}"#,
+            #"\b\d{3}[- ]?\d{2}[- ]?\d{4}\b"#
+        ]
+        if sensitivePatterns.contains(where: {
+            trimmed.range(of: $0, options: [.regularExpression, .caseInsensitive]) != nil
+        }) {
+            return .containsSensitiveIdentifier
+        }
+
+        let words = trimmed.lowercased().split(whereSeparator: { !$0.isLetter })
+        guard words.count >= 8 else { return .semanticallyAmbiguous }
+        let distinct = Set(words)
+        guard distinct.count >= 5,
+              Double(distinct.count) / Double(words.count) >= 0.30 else {
+            return .semanticallyAmbiguous
+        }
+        return .eligible
+    }
+
     // MARK: - Public API
 
     /// Generate a rewritten version of the targeted weak section.
@@ -80,7 +157,10 @@ actor AIRewriteService {
     func rewrite(
         transcript: String,
         weakness: Weakness,
-        voice: SpeakingStyleGoal? = nil
+        voice: SpeakingStyleGoal? = nil,
+        targetDimension: String? = nil,
+        transcriptConfidence: Double? = nil,
+        intensity: Intensity = .medium
     ) async -> Rewrite? {
         func record(
             _ outcome: AICallDiagnosticOutcome,
@@ -100,20 +180,36 @@ actor AIRewriteService {
         }
 
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 40 else {
-            record(.skipped, "Transcript below rewrite floor")
+        guard Self.eligibility(transcript: trimmed, confidence: transcriptConfidence) == .eligible else {
+            record(.skipped, "Transcript failed deterministic rewrite eligibility")
             return nil
         }
+        let onDeviceFallback = Self.onDeviceRewrite(
+            transcript: trimmed,
+            weakness: weakness,
+            voice: voice,
+            intensity: intensity,
+            confidence: transcriptConfidence
+        )
         let configuredProvider = await currentProvider()
         guard let provider = configuredProvider,
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider) else {
-            record(.skipped, configuredProvider == nil ? "No active provider" : "Missing key or endpoint", provider: configuredProvider)
-            return nil
+            record(
+                onDeviceFallback == nil ? .skipped : .fallback,
+                configuredProvider == nil ? "No active provider; using on-device rewrite when safe" : "Missing key or endpoint; using on-device rewrite when safe",
+                provider: configuredProvider
+            )
+            return onDeviceFallback
         }
 
         let signals = VoiceSignals.compute(transcript: trimmed)
-        let userPrompt = buildUserPrompt(transcript: trimmed, weakness: weakness, signals: signals)
+        let userPrompt = buildUserPrompt(
+            transcript: trimmed,
+            weakness: weakness,
+            signals: signals,
+            targetDimension: targetDimension
+        )
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
@@ -131,7 +227,7 @@ actor AIRewriteService {
                     "model": provider.model,
                     "temperature": 0.5,  // lower than prompt-gen — we want fidelity, not creativity
                     "messages": [
-                        ["role": "system", "content": Self.systemPrompt(for: weakness, voice: voice)],
+                        ["role": "system", "content": Self.systemPrompt(for: weakness, voice: voice, intensity: intensity)],
                         ["role": "user", "content": userPrompt]
                     ]
                 ]
@@ -139,7 +235,7 @@ actor AIRewriteService {
             case .gemini:
                 request.setGoogleAPIKey(key)
                 let body: [String: Any] = [
-                    "systemInstruction": ["parts": [["text": Self.systemPrompt(for: weakness, voice: voice)]]],
+                    "systemInstruction": ["parts": [["text": Self.systemPrompt(for: weakness, voice: voice, intensity: intensity)]]],
                     "contents": [["role": "user", "parts": [["text": userPrompt]]]],
                     "generationConfig": [
                         "temperature": 0.5,
@@ -160,29 +256,65 @@ actor AIRewriteService {
                     statusCode: statusCode,
                     startedAt: startedAt
                 )
-                return nil
+                return onDeviceFallback
             }
             guard let raw = decodeText(from: data, provider: provider) else {
                 record(.fallback, "Missing response content", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
-                return nil
+                return onDeviceFallback
             }
             guard let cleaned = RewriteContentFilter.accept(raw, signals: signals) else {
                 record(.fallback, "Rewrite failed voice-preservation filter", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
-                return nil
+                return onDeviceFallback
             }
             record(.success, "Rewrite accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
-            return Rewrite(text: cleaned, weakness: weakness)
+            return Rewrite(text: cleaned, weakness: weakness, intensity: intensity)
         } catch {
             record(.failure, "Transport or decode error", provider: provider)
+            return onDeviceFallback
+        }
+    }
+
+    /// Conservative, deterministic rewrite for a no-provider or failed-provider
+    /// path. It only removes transcript-derived disfluencies, duplicate words,
+    /// and context-free lead-ins; it never adds vocabulary or a new claim.
+    /// Returning nil is intentional when no safe edit can be made.
+    nonisolated static func onDeviceRewrite(
+        transcript: String,
+        weakness: Weakness,
+        voice: SpeakingStyleGoal?,
+        intensity: Intensity,
+        confidence: Double? = nil
+    ) -> Rewrite? {
+        guard eligibility(transcript: transcript, confidence: confidence) == .eligible,
+              let candidate = OnDeviceRewriteHeuristics.rewrite(
+                  transcript: transcript,
+                  weakness: weakness,
+                  voice: voice,
+                  intensity: intensity
+              ),
+              let cleaned = RewriteContentFilter.accept(
+                  candidate,
+                  signals: VoiceSignals.compute(transcript: transcript)
+              ) else {
             return nil
         }
+        return Rewrite(
+            text: cleaned,
+            weakness: weakness,
+            intensity: intensity,
+            source: .onDevice
+        )
     }
 
     // MARK: - Prompts
 
     /// Exposed `static` + `internal` so the test suite can assert that
     /// the voice register clause is present per voice.
-    static func systemPrompt(for weakness: Weakness, voice: SpeakingStyleGoal?) -> String {
+    static func systemPrompt(
+        for weakness: Weakness,
+        voice: SpeakingStyleGoal?,
+        intensity: Intensity = .medium
+    ) -> String {
         let voiceRegister = voiceRegisterClause(for: voice)
         return """
         You are a speaking coach who rewrites a small slice of a user's transcript to fix a specific weakness — without making them sound like a different person. The user's existing voice is the asset; you protect it. The user is also training a specific voice goal — you nudge the rewrite toward that goal while keeping their vocabulary intact.
@@ -195,8 +327,9 @@ actor AIRewriteService {
         3. Match their formality. If they use contractions, you use contractions. If they use casual fillers like "kind of", you can keep them where they actually help.
         4. Fix only the targeted slice. Do not rewrite the whole rep. Do not generalise the topic. Stay on the exact subject the user was talking about.
         5. Voice nudge takes second place to vocabulary fidelity. The voice register colours how you arrange the words, never which words you use.
-        6. \(weakness.fixInstruction)
-        7. Output ONLY the rewritten slice. No preface, no explanation, no quotes. Plain text. 8-26 words maximum.
+        6. Rewrite strength: \(intensity.instruction)
+        7. \(weakness.fixInstruction)
+        8. Output ONLY the rewritten slice. No preface, no explanation, no quotes. Plain text. 8-26 words maximum.
         """
     }
 
@@ -224,10 +357,19 @@ actor AIRewriteService {
         }
     }
 
-    private func buildUserPrompt(transcript: String, weakness: Weakness, signals: VoiceSignals) -> String {
+    private func buildUserPrompt(
+        transcript: String,
+        weakness: Weakness,
+        signals: VoiceSignals,
+        targetDimension: String?
+    ) -> String {
         var lines: [String] = []
         lines.append("Original transcript:")
         lines.append("---")
+        if let targetDimension,
+           !targetDimension.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lines.append("Coaching target: \(String(targetDimension.prefix(80)))")
+        }
         lines.append(transcript)
         lines.append("---")
         lines.append("")
@@ -279,8 +421,188 @@ actor AIRewriteService {
 // MARK: - Output type
 
 struct Rewrite: Sendable, Equatable {
+    enum Source: String, Sendable, Equatable {
+        case provider
+        case onDevice
+    }
+
     let text: String
     let weakness: AIRewriteService.Weakness
+    let intensity: AIRewriteService.Intensity
+    let source: Source
+
+    init(
+        text: String,
+        weakness: AIRewriteService.Weakness,
+        intensity: AIRewriteService.Intensity,
+        source: Source = .provider
+    ) {
+        self.text = text
+        self.weakness = weakness
+        self.intensity = intensity
+        self.source = source
+    }
+}
+
+// MARK: - On-device rewrite fallback
+
+/// This is deliberately narrower than the provider-backed rewrite. It avoids
+/// treating semantic hedges or a distinctive speaking rhythm as "filler" and
+/// only makes a suggestion when a textual edit is clearly safe.
+private enum OnDeviceRewriteHeuristics {
+    static func rewrite(
+        transcript: String,
+        weakness: AIRewriteService.Weakness,
+        voice: SpeakingStyleGoal?,
+        intensity: AIRewriteService.Intensity
+    ) -> String? {
+        let source = targetSlice(from: transcript, weakness: weakness)
+        guard !source.isEmpty else { return nil }
+
+        var candidate = source
+        candidate = removeDisfluencies(from: candidate)
+        candidate = collapseImmediateDuplicates(in: candidate)
+
+        if intensity != .light {
+            candidate = removeContextFreeLeadIn(from: candidate)
+            if weakness == .closing {
+                candidate = removeContextFreeClosing(from: candidate)
+            }
+        }
+
+        if intensity == .strong,
+           directnessGoal(voice),
+           weakness == .opening || weakness == .closing {
+            candidate = removeDirectnessHedge(from: candidate)
+        }
+
+        if weakness == .structure, intensity != .light {
+            candidate = moveMostInformativeSentenceFirst(in: candidate)
+        }
+
+        candidate = normalizedSentence(candidate)
+        guard meaningfullyDiffers(candidate, from: source) else { return nil }
+        return candidate
+    }
+
+    private static func targetSlice(
+        from transcript: String,
+        weakness: AIRewriteService.Weakness
+    ) -> String {
+        let sentences = transcript
+            .split(whereSeparator: { ".!?".contains($0) })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !sentences.isEmpty else { return "" }
+
+        switch weakness {
+        case .opening:
+            return Array(sentences.prefix(2)).joined(separator: ". ")
+        case .closing:
+            return Array(sentences.suffix(2)).joined(separator: ". ")
+        case .structure, .concise:
+            return Array(sentences.prefix(2)).joined(separator: ". ")
+        }
+    }
+
+    private static func removeDisfluencies(from value: String) -> String {
+        value.replacingOccurrences(
+            of: #"\b(?:um+|uh+|erm|er|ah+)\b[,.\s]*"#,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+    }
+
+    private static func collapseImmediateDuplicates(in value: String) -> String {
+        let words = value.split(whereSeparator: { $0.isWhitespace })
+        var result: [String] = []
+        for word in words {
+            let normalized = word
+                .lowercased()
+                .trimmingCharacters(in: .punctuationCharacters)
+            if let previous = result.last,
+               previous.lowercased().trimmingCharacters(in: .punctuationCharacters) == normalized,
+               !normalized.isEmpty {
+                continue
+            }
+            result.append(String(word))
+        }
+        return result.joined(separator: " ")
+    }
+
+    private static func removeContextFreeLeadIn(from value: String) -> String {
+        value.replacingOccurrences(
+            of: #"^\s*(?:so|well|okay|ok|right|basically|actually)[,\s]+"#,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+    }
+
+    private static func removeContextFreeClosing(from value: String) -> String {
+        value.replacingOccurrences(
+            of: #"(?:[,\s]+(?:and\s+)?yeah|[,\s]+so\s+yeah)\.?\s*$"#,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+    }
+
+    private static func removeDirectnessHedge(from value: String) -> String {
+        value.replacingOccurrences(
+            of: #"^\s*(?:i\s+(?:think|guess)\s+|maybe\s+|probably\s+)"#,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+    }
+
+    private static func directnessGoal(_ voice: SpeakingStyleGoal?) -> Bool {
+        switch voice {
+        case .authoritative, .executive, .persuasive:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func moveMostInformativeSentenceFirst(in value: String) -> String {
+        var sentences = value
+            .split(whereSeparator: { ".!?".contains($0) })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard sentences.count > 1 else { return value }
+
+        let bestIndex = sentences.indices.max { lhs, rhs in
+            informationScore(sentences[lhs]) < informationScore(sentences[rhs])
+        } ?? sentences.startIndex
+        let best = sentences.remove(at: bestIndex)
+        return ([best] + sentences).joined(separator: ". ")
+    }
+
+    private static func informationScore(_ value: String) -> Int {
+        value.split(whereSeparator: { !$0.isLetter }).reduce(into: 0) { score, word in
+            if word.count >= 4 { score += 1 }
+        }
+    }
+
+    private static func normalizedSentence(_ value: String) -> String {
+        let collapsed = value
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        guard !collapsed.isEmpty else { return "" }
+        return collapsed + "."
+    }
+
+    private static func meaningfullyDiffers(_ candidate: String, from original: String) -> Bool {
+        normalizedComparison(candidate) != normalizedComparison(original)
+    }
+
+    private static func normalizedComparison(_ value: String) -> String {
+        value
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+    }
 }
 
 // MARK: - Voice signals

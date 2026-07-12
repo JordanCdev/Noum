@@ -1358,6 +1358,7 @@ struct ProfileView: View {
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var coachCheckInStore = CoachCheckInStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    @StateObject private var flowEvents = FlowEventLog.shared
 
     @State private var showAchievementsTree = false
     @State private var showPaywall = false
@@ -1553,6 +1554,10 @@ struct ProfileView: View {
 
                 profileCoachReadCard
 
+                if shouldAskTransformationQuestion {
+                    transformationQuestionCard
+                }
+
                 profileEvidenceHub
             }
             .padding(.horizontal, Spacing.screenH)
@@ -1589,6 +1594,53 @@ struct ProfileView: View {
         .navigationDestination(isPresented: $showAchievementsTree) {
             AchievementsTreeView()
         }
+    }
+
+    private var shouldAskTransformationQuestion: Bool {
+        TransformationQuestionEligibility.shouldShow(
+            sessionCount: sessions.count,
+            events: flowEvents.events
+        )
+    }
+
+    private var transformationQuestionCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text("A quick reality check")
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text("Did Noum help you move toward the speaker you want to be?")
+                .font(Typography.body.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: Spacing.sm) {
+                transformationResponseButton(title: "Yes", value: "yes")
+                transformationResponseButton(title: "Not yet", value: "notYet")
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("profile.transformationQuestion")
+    }
+
+    private func transformationResponseButton(title: String, value: String) -> some View {
+        Button {
+            FlowEventLog.shared.log(FlowEvent.make(
+                correlationId: UUID(),
+                flow: .other,
+                stage: "transformation.helpfulness.\(value)",
+                reason: "three-plus-rep qualitative outcome response"
+            ))
+        } label: {
+            Text(title)
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityHint("Records an account-local response without transcript text.")
     }
 
     // MARK: - Collapsed Profile
@@ -3021,6 +3073,17 @@ struct ProfileView: View {
                         baseline: baselineStore.baseline,
                         snapshots: trendStore.snapshots
                     )
+
+                    if let read = GoalOutcomeEngine.read(
+                        profile: profile,
+                        baseline: baselineStore.baseline,
+                        rating: ratingStore.rating,
+                        sessions: sessionStore.sessions,
+                        coachMemory: coachMemoryStore.currentMemory,
+                        outcomes: recommendationLearningStore.outcomes
+                    ) {
+                        GoalOutcomeCard(read: read)
+                    }
                 }
 
                 // M14: surface the user's own captured reflection text so

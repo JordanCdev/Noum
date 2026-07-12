@@ -126,7 +126,7 @@
 
   <div class="card">
     <h1>Privacy Policy</h1>
-    <p class="muted"><strong>Last updated:</strong> July 11, 2026</p>
+    <p class="muted"><strong>Last updated:</strong> July 12, 2026</p>
     <p>Noum ("we", "us", "our") is a speaking practice app that helps you improve your communication skills through guided exercises, AI coaching, and conversation simulations. This policy explains what data we collect, why, who processes it, and how you can control it.</p>
 
     <hr>
@@ -173,6 +173,7 @@
       <li><strong>Google Vertex AI (Gemini)</strong></li>
     </ul>
     <p>For <strong>Ask Noum</strong>, this includes your current message, a bounded number of recent conversation turns, and bounded coaching context and session evidence. When available and relevant, that context may include your coaching profile and goals, recent session metrics or transcript evidence, saved proof quotes, coaching memory, plans, reflections, or an upcoming speaking moment. Noum limits the context assembled for each request; it does not send an unbounded copy of your on-device history.</p>
+    <p>If you explicitly save a suggested rewrite to your Phrase Bank, Noum stores only that saved phrase and its coaching labels on your device. It does not save an additional copy of the source transcript to the Phrase Bank, and Phrase Bank entries are included in account export and deletion.</p>
     <p>In production, Ask Noum sends your current message, bounded recent conversation turns, and bounded coaching context and session evidence through a Firebase Functions endpoint. The function then sends the bounded request to Google Vertex AI (Gemini). Firebase Authentication and Firebase App Check tokens accompany that request to authenticate the caller, verify the app request, and protect the service from abuse. Firebase Functions processes the bounded request as an application-service intermediary; Noum does not use this transport for advertising or cross-app tracking.</p>
     <p>This covers production Ask Noum messages, bounded recent turns, and bounded coaching context/session evidence sent through Firebase Functions; Firebase Authentication and App Check tokens or attestation data used to secure that transport.</p>
     <p>Other supported production AI features may send a speech transcript and related coaching context, and may send selected video frames only when you explicitly request visual feedback. Google and Firebase process data under their API terms, privacy policies, account settings, and retention practices. Those practices can include retention for service operation, safety, abuse prevention, or legal compliance; Noum does not promise zero provider-side retention.</p>
@@ -259,7 +260,7 @@
     <p>Most of your data is stored locally on your device using:</p>
     <ul>
       <li><strong>iOS Keychain</strong> — account credentials (encrypted by iOS)</li>
-      <li><strong>UserDefaults</strong> — coaching profile, session history, friend names, XP, settings</li>
+      <li><strong>UserDefaults</strong> — coaching profile, session history, saved Phrase Bank entries, friend names, XP, settings</li>
     </ul>
 
     <h3>Cloud Storage (Optional)</h3>

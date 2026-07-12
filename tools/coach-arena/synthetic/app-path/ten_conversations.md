@@ -8,12 +8,12 @@ These are fixture-backed synthetic conversations for done-state review.
 > Real-pipeline evidence passes: `True`.
 > Report-internal source freshness passes: `True`.
 > Sidecar source freshness passes: `True`.
-> Current git commit: `e502cb3c`.
-> Report trace git commit(s): `e502cb3c`.
-> Current coach source fingerprint: `sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201`.
-> Report trace coach source fingerprint(s): `sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201`.
-> Sidecar git commit: `e502cb3c`.
-> Sidecar coach source fingerprint: `sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201`.
+> Current git commit: `b9258cb7`.
+> Report trace git commit(s): `b9258cb7`.
+> Current coach source fingerprint: `sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce`.
+> Report trace coach source fingerprint(s): `sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce`.
+> Sidecar git commit: `b9258cb7`.
+> Sidecar coach source fingerprint: `sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce`.
 
 ## authoritative-distance-001
 
@@ -147,9 +147,9 @@ Prior chat:
 
 User: Why does my ending sound less confident?
 
-Noum: The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.
+Noum: The confidence leak is the extra softener after the recommendation. Your closing-strength focus is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.
 
-Arena score: 73/100
+Arena score: 72/100
 
 ## examples-from-sessions-010
 

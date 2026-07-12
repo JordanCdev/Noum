@@ -22,15 +22,22 @@ import SwiftUI
 struct RewriteSuggestionCard: View {
     let transcript: String
     let weakness: AIRewriteService.Weakness
+    var targetDimension: String? = nil
+    var transcriptConfidence: Double? = nil
 
+    @StateObject private var phraseBank = PhraseBankStore.shared
     @State private var rewrite: Rewrite?
+    @State private var intensity: AIRewriteService.Intensity = .medium
     @State private var isLoading = false
     @State private var didFail = false
+    @State private var didSave = false
     @State private var showOriginal = false
+    @State private var showPhraseBank = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+            intensityPicker
 
             if isLoading {
                 loadingState
@@ -42,7 +49,10 @@ struct RewriteSuggestionCard: View {
                 emptyState
             }
 
-            voicePreservationFootnote
+            phraseBankLink
+            if rewrite?.source != .onDevice {
+                voicePreservationFootnote
+            }
         }
         .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -64,9 +74,18 @@ struct RewriteSuggestionCard: View {
         .task(id: rewriteID) {
             await loadRewrite()
         }
+        .onChange(of: intensity) { _, _ in
+            rewrite = nil
+            didFail = false
+            didSave = false
+            showOriginal = false
+        }
+        .sheet(isPresented: $showPhraseBank) {
+            PhraseBankSheet(store: phraseBank)
+        }
     }
 
-    private var rewriteID: String { "\(weakness.rawValue)-\(transcript.hashValue)" }
+    private var rewriteID: String { "\(weakness.rawValue)-\(intensity.rawValue)-\(transcript.hashValue)" }
 
     // MARK: - Header
 
@@ -85,6 +104,23 @@ struct RewriteSuggestionCard: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(AppColor.pro, in: Capsule())
+        }
+    }
+
+    private var intensityPicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Change level")
+                .font(Typography.micro.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Picker("Change level", selection: $intensity) {
+                ForEach(AIRewriteService.Intensity.allCases, id: \.self) { option in
+                    Text(option.title).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(isLoading)
+            .accessibilityIdentifier("rewrite.intensity")
+            .accessibilityHint("Choose how lightly or strongly Noum reshapes the selected phrase.")
         }
     }
 
@@ -115,6 +151,14 @@ struct RewriteSuggestionCard: View {
                         .stroke(AppColor.pro.opacity(0.22), lineWidth: 1)
                 )
 
+            if rewrite.source == .onDevice {
+                Label("Private on-device edit", systemImage: "lock.fill")
+                    .font(Typography.micro.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("rewrite.onDevice")
+                    .accessibilityLabel("Private on-device edit, built from your own words without an AI provider.")
+            }
+
             HStack(spacing: 8) {
                 Button {
                     withAnimation(.standardSpring) { showOriginal.toggle() }
@@ -132,8 +176,27 @@ struct RewriteSuggestionCard: View {
                 }
                 .buttonStyle(.plain)
 
+                Button {
+                    save(rewrite)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: didSave ? "checkmark" : "bookmark")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(didSave ? "Saved" : "Save phrase")
+                            .font(Typography.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(AppColor.pro)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(AppColor.pro.opacity(0.10), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("rewrite.savePhrase")
+                .accessibilityHint("Saves this rewrite to your on-device phrase bank.")
+
                 Spacer()
             }
+
         }
     }
 
@@ -158,6 +221,24 @@ struct RewriteSuggestionCard: View {
         Text("Tap retry once the rep finishes processing.")
             .font(Typography.caption)
             .foregroundStyle(.secondary)
+    }
+
+    private var phraseBankLink: some View {
+        Button {
+            showPhraseBank = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "bookmark")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("Phrase bank\(phraseBank.entries.isEmpty ? "" : " (\(phraseBank.entries.count))")")
+                    .font(Typography.caption.weight(.semibold))
+            }
+            .foregroundStyle(.secondary)
+            .frame(minHeight: 32, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("rewrite.phraseBank")
+        .accessibilityHint("Shows phrases you saved for later practice.")
     }
 
     // MARK: - Voice-preservation footnote
@@ -196,13 +277,27 @@ struct RewriteSuggestionCard: View {
 
     private func loadRewrite() async {
         guard rewrite == nil, !isLoading else { return }
+        guard transcript.count >= 40,
+              transcriptConfidence.map({ $0 >= 0.55 }) ?? true else {
+            didFail = true
+            return
+        }
         isLoading = true
         didFail = false
         // Voice from the live profile so the rewrite nudges toward the
         // user's voice goal while still anchored to their vocabulary.
         // Read off the main actor since CoachingProfileStore is main-isolated.
-        let voice = await MainActor.run { CoachingProfileStore.shared.profile?.speakingStyleGoal }
-        let result = await AIRewriteService.shared.rewrite(transcript: transcript, weakness: weakness, voice: voice)
+        let voice = await MainActor.run {
+            AIRewriteService.selectedVoice(from: CoachingProfileStore.shared.profile)
+        }
+        let result = await AIRewriteService.shared.rewrite(
+            transcript: transcript,
+            weakness: weakness,
+            voice: voice,
+            targetDimension: targetDimension,
+            transcriptConfidence: transcriptConfidence,
+            intensity: intensity
+        )
         await MainActor.run {
             isLoading = false
             if let result {
@@ -211,6 +306,68 @@ struct RewriteSuggestionCard: View {
                 didFail = true
             }
         }
+    }
+
+    private func save(_ rewrite: Rewrite) {
+        let voice = AIRewriteService.selectedVoice(from: CoachingProfileStore.shared.profile)
+        didSave = phraseBank.save(
+            text: rewrite.text,
+            voice: voice,
+            weakness: rewrite.weakness,
+            intensity: rewrite.intensity
+        ) != nil
+    }
+}
+
+@available(iOS 17.0, *)
+private struct PhraseBankSheet: View {
+    @ObservedObject var store: PhraseBankStore
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if store.entries.isEmpty {
+                    ContentUnavailableView(
+                        "No saved phrases",
+                        systemImage: "bookmark",
+                        description: Text("Save a rewrite you want to practise again.")
+                    )
+                } else {
+                    ForEach(store.entries) { entry in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(entry.text)
+                                .font(Typography.body.weight(.medium))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                            Text(metadata(for: entry))
+                                .font(Typography.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                        .swipeActions {
+                            Button(role: .destructive) {
+                                store.remove(id: entry.id)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Phrase bank")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func metadata(for entry: PhraseBankEntry) -> String {
+        let voice = entry.voice?.title ?? "General"
+        return "\(voice) · \(entry.intensity.title) change · \(entry.weakness.humanLabel)"
     }
 }
 

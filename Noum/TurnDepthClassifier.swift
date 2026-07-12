@@ -147,6 +147,8 @@ enum TurnDepthClassifier {
             "you already said that",
             "too much writing", "too long", "get to the point",
             "too generic", "generic ai", "generic tips",
+            "stop saying practice more", "stop telling me to practice",
+            "do not just tell me to practice", "don't just tell me to practice",
             "robotic", "low eq", "not high eq",
             "try again", "you are just saying", "you're just saying",
             "that doesn't mean", "that does not mean",

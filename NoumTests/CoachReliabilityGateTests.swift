@@ -322,6 +322,20 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.issues.contains(.floorConfidenceWithEvidence))
     }
 
+    @Test func floorConfidenceWithOnlyThinCoverageDoesNotFire() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "One rep gives us a local signal, not a broad verdict.",
+            previousCoachReply: nil,
+            turnDepth: .quickMove,
+            assessment: Self.deepAssessment(
+                confidence: 0.20,
+                evidence: ["latest rep: Timed, 7/10"]
+            ),
+            evidenceCoverage: 0.14
+        )
+        #expect(!verdict.issues.contains(.floorConfidenceWithEvidence))
+    }
+
     @Test func trustRepairWithoutAcknowledgementBlocksWithFallback() {
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "Run a 60-second rep and put the verdict first, then stop.",
@@ -345,6 +359,66 @@ struct CoachReliabilityGateTests {
             evidenceCoverage: 0.5
         )
         #expect(!verdict.issues.contains(.noAttunementOnPushback))
+    }
+
+    @Test func trustRepairGoodCallAndGenericReportNamesTheRepair() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Good call. That read exactly like a generic report instead of a human coach. Your recommendation arrived late, so put it in sentence one next time.",
+            previousCoachReply: "Earlier generic advice.",
+            latestUserTurn: "This still feels too generic.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.noAttunementOnPushback))
+        #expect(!verdict.issues.contains(.thinTrustRepair))
+        #expect(!verdict.issues.contains(.genericRepairScaffolded))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func trustRepairNaturalReportOwnershipNamesTheRepair() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Fair push. That read too much like a report instead of a human coach. Your recommendation arrived late, so put it in sentence one next time.",
+            previousCoachReply: "Earlier generic advice.",
+            latestUserTurn: "This is robotic and too much writing.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.noAttunementOnPushback))
+        #expect(!verdict.issues.contains(.thinTrustRepair))
+        #expect(!verdict.issues.contains(.genericRepairScaffolded))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func trustRepairNamesGenericDrillAsTheMiss() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Fair push. I leaned on a generic drill instead of coaching how you sound. In your last rep, the recommendation arrived late, so put it in sentence one.",
+            previousCoachReply: "Run another generic drill.",
+            latestUserTurn: "That advice could go to anyone.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.noAttunementOnPushback))
+        #expect(!verdict.issues.contains(.thinTrustRepair))
+        #expect(!verdict.issues.contains(.genericRepairScaffolded))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func typedTrustRepairFallbackOwnsColdGenericMiss() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Fair push. I sounded cold or generic instead of giving you a specific coaching read. The ordering signal is warmth before the recommendation, so put the recommendation first, add one reassurance after it, then stop.",
+            previousCoachReply: "Earlier generic advice.",
+            latestUserTurn: "This still sounds cold and overexplained, like generic AI tips.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+        #expect(!verdict.issues.contains(.noAttunementOnPushback))
+        #expect(!verdict.issues.contains(.thinTrustRepair))
+        #expect(!verdict.issues.contains(.genericRepairScaffolded))
+        #expect(!verdict.blocked)
     }
 
     @Test func trustRepairLetMePrescribeDoesNotCountAsAcknowledgement() {
@@ -744,6 +818,67 @@ struct CoachReliabilityGateTests {
             #expect(!verdict.issues.contains(.rambleStoppingRuleMiss))
             #expect(!verdict.blocked)
         }
+    }
+
+    @Test func calibratedRambleReadCanNameMissingEvidenceBeforeConcreteStopRule() {
+        let reply = "We do not have your recorded rep in our session history yet, so I cannot hear where the structure loosened. To test why it rambled after sentence two, record 60 seconds on that same question because stating your direct answer and giving exactly one supporting reason before a hard stop will show if the rush is what is pulling you off track."
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: reply,
+            previousCoachReply: "Earlier read.",
+            latestUserTurn: "What happened in that rep? It rambled after sentence two.",
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.2
+        )
+
+        #expect(CoachReliabilityGate.wordCount(CoachReliabilityGate.normalize(reply)) == 62)
+        #expect(!verdict.issues.contains(.rambleStoppingRuleMiss))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func overlongRambleReadStillBlocksEvenWhenItEventuallyNamesAStopRule() {
+        let reply = "You kept the main point visible, but then you added context about the team, the earlier decision, the meeting history, two alternative explanations, and another example before you returned to the claim. That made the answer feel longer than the idea required and put the listener in charge of deciding which detail mattered. Keep the direct answer, give exactly one supporting reason, and use a hard stop before any second example or extra background."
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: reply,
+            previousCoachReply: "Earlier read.",
+            latestUserTurn: "What happened in that rep? It rambled after sentence two.",
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+
+        #expect(CoachReliabilityGate.wordCount(CoachReliabilityGate.normalize(reply)) > CoachReliabilityGate.rambleStoppingRuleAbsoluteWordCeiling)
+        #expect(verdict.issues.contains(.rambleStoppingRuleMiss))
+        #expect(verdict.blocked)
+    }
+
+    @Test func naturalNextRepSentenceWithBoundedStopRuleDoesNotLookLikeScaffold() {
+        let reply = "That ramble usually happens when you try to prove your point twice. The fix is to state your verdict, give one supporting reason, and then stop speaking. Test this on your next rep: speak for only thirty seconds, give your one reason, and hold a silent beat to close."
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: reply,
+            previousCoachReply: "Earlier read.",
+            latestUserTurn: "What happened in that rep? It rambled after sentence two.",
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+
+        #expect(!verdict.issues.contains(.rambleStoppingRuleMiss))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func sentenceBoundaryNextRepLabelStillBlocksRambleReply() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "You kept reopening the point after the first reason. Next rep: state the verdict, give one reason, then stop.",
+            previousCoachReply: "Earlier read.",
+            latestUserTurn: "How do I stop rambling?",
+            turnDepth: .groundedRead,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+
+        #expect(verdict.issues.contains(.rambleStoppingRuleMiss))
+        #expect(verdict.blocked)
     }
 
     @Test func leadershipStatusReportWithRawScoreAndNoTonightRehearsalBlocks() {

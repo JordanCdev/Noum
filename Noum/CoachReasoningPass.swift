@@ -784,7 +784,11 @@ enum CoachReasoningPass {
         if containsAny(lower, ["not informative", "not helpful", "not useful", "missed the point", "doesn't answer", "does not answer"]) {
             return "I missed the actual question before prescribing"
         }
-        if containsAny(lower, ["generic", "generic ai", "generic tips"]) ||
+        if containsAny(lower, [
+            "generic", "generic ai", "generic tips",
+            "stop saying practice more", "stop telling me to practice",
+            "do not just tell me to practice", "don't just tell me to practice"
+        ]) ||
             containsAny(previous, ["keep practicing", "practice more", "communicate clearly", "be clear and concise"]) {
             return "I leaned on generic advice instead of evidence"
         }
@@ -803,7 +807,11 @@ enum CoachReasoningPass {
         if containsAny(lower, ["markdown", "tts", "formatting", "**"]) {
             return "Repair the same answer in plain speech: no markdown, one specific read, one move."
         }
-        if containsAny(lower, ["generic", "generic ai", "ai tips", "ai wrapper", "assistant wrapper"]) {
+        if containsAny(lower, [
+            "generic", "generic ai", "ai tips", "ai wrapper", "assistant wrapper",
+            "stop saying practice more", "stop telling me to practice",
+            "do not just tell me to practice", "don't just tell me to practice"
+        ]) {
             return "Use one user-specific signal first, then prescribe exactly one coach move."
         }
         if containsAny(lower, ["cold", "robotic", "not human", "low eq", "not high eq"]) {

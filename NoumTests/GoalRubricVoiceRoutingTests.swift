@@ -58,13 +58,11 @@ struct GoalRubricVoiceRoutingTests {
         #expect(!rubric.displayName.lowercased().contains("authoritative"))
     }
 
-    @Test func authoritativeSpineVoicesMapToAuthoritativeDeliberately() {
-        // executive / persuasive / concise / authoritative / nil share the
-        // verdict-first spine and are mapped on purpose (documented), so they
-        // stay on the authoritative rubric.
-        for voice: SpeakingStyleGoal? in [.authoritative, .executive, .persuasive, .concise, nil] {
-            #expect(GoalRubricStore.rubric(for: voice).goalID == "authoritative")
+    @Test func everyChosenVoiceOwnsAnExplicitRubric() {
+        for voice in SpeakingStyleGoal.allCases {
+            #expect(GoalRubricStore.rubric(for: voice).goalID == voice.rawValue)
         }
+        #expect(GoalRubricStore.rubric(for: nil).goalID == "authoritative")
     }
 
     @Test func everyVoiceResolvesToARubric() {
@@ -80,6 +78,9 @@ struct GoalRubricVoiceRoutingTests {
     @Test func allRubricsReuseTheSameScoredDimensionIDs() {
         let rubrics = [
             GoalRubricStore.authoritativeRubric,
+            GoalRubricStore.executiveRubric,
+            GoalRubricStore.persuasiveRubric,
+            GoalRubricStore.conciseRubric,
             GoalRubricStore.warmRubric,
             GoalRubricStore.storytellingRubric
         ]
@@ -98,6 +99,9 @@ struct GoalRubricVoiceRoutingTests {
         #expect(GoalRubricStore.warmRubric.dimensions == GoalRubricStore.coreDimensions)
         #expect(GoalRubricStore.storytellingRubric.dimensions == GoalRubricStore.coreDimensions)
         #expect(GoalRubricStore.authoritativeRubric.dimensions == GoalRubricStore.coreDimensions)
+        #expect(GoalRubricStore.executiveRubric.dimensions == GoalRubricStore.coreDimensions)
+        #expect(GoalRubricStore.persuasiveRubric.dimensions == GoalRubricStore.coreDimensions)
+        #expect(GoalRubricStore.conciseRubric.dimensions == GoalRubricStore.coreDimensions)
     }
 
     // MARK: - Weight maps stay well-formed
@@ -105,6 +109,9 @@ struct GoalRubricVoiceRoutingTests {
     @Test func everyRubricWeightMapIsNormalizedAndCoversScoredIDs() {
         let rubrics = [
             GoalRubricStore.authoritativeRubric,
+            GoalRubricStore.executiveRubric,
+            GoalRubricStore.persuasiveRubric,
+            GoalRubricStore.conciseRubric,
             GoalRubricStore.warmRubric,
             GoalRubricStore.storytellingRubric
         ]

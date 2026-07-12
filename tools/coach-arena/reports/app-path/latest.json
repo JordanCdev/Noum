@@ -12,7 +12,7 @@
     "passesChanged": false,
     "placeholderLeaksDelta": 0,
     "previousCandidate": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
-    "previousGeneratedAt": "2026-07-10T07:13:28+00:00",
+    "previousGeneratedAt": "2026-07-12T16:06:05+00:00",
     "status": "compared",
     "typeAverageDeltas": {
       "deepAssessment": 0.0,
@@ -25,9 +25,21 @@
     "ambiguousFixtureIDs": [],
     "coverageFailures": [],
     "coveragePasses": true,
-    "currentCoachSourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
-    "currentDirtyCoachSourceFiles": [],
-    "currentGitCommit": "e502cb3c",
+    "currentCoachSourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
+    "currentDirtyCoachSourceFiles": [
+      "Noum/AICoachChatService.swift",
+      "Noum/CoachReliabilityGate.swift",
+      "Noum/GoalRubric.swift",
+      "Noum/GoalRubricStore.swift",
+      "NoumTests/CoachChatConversationEvaluationTests.swift",
+      "NoumTests/CoachChatEvaluationFixtures.swift",
+      "NoumTests/CoachLiveEvaluationTests.swift",
+      "NoumTests/CoachProviderChainTests.swift",
+      "NoumTests/CoachReliabilityGateTests.swift",
+      "NoumTests/GoalRubricVoiceRoutingTests.swift",
+      "NoumTests/NoumTests.swift"
+    ],
+    "currentGitCommit": "b9258cb7",
     "matchedFixtureCount": 50,
     "matchedFixtureIDs": [
       "authoritative-distance-001",
@@ -96,15 +108,15 @@
     "sourcePassesAppPathFloor": true,
     "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
     "sourceReadinessWarnings": [],
-    "sourceReliabilityIssueTurnCount": 31,
+    "sourceReliabilityIssueTurnCount": 0,
     "sourceSchemaVersion": "coach-chat-conversation-app-path-eval-v1",
     "sourceSurface": "text",
     "sourceTargetReplyMismatchCount": 0,
     "sourceTraceCoachSourceFingerprints": [
-      "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201"
+      "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce"
     ],
     "sourceTraceGitCommits": [
-      "e502cb3c"
+      "b9258cb7"
     ],
     "sourceTraceMissingCoachSourceFingerprintCount": 0,
     "sourceTraceMissingGitCommitCount": 0,
@@ -127,7 +139,7 @@
     "unmatchedFixtureCount": 0,
     "unmatchedFixtureIDs": []
   },
-  "generatedAt": "2026-07-10T21:05:16+00:00",
+  "generatedAt": "2026-07-12T17:07:08+00:00",
   "reportFamily": "app-path",
   "reportPathWarnings": [],
   "reportPaths": {
@@ -206,7 +218,7 @@
       "reply": "You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 61,
+          "assessmentCacheAgeMs": 35,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -226,11 +238,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "You are closer mechanically than you are to sounding authoritative overall. The transcript opens with a recommendation, and the latest timed rep was 7/10 with 1 filler, so the mechanics are partly landing, but goal readiness still needs repeated pressure evidence. Missing: more than one clean rep under stakes. Proof test: record a 75-second answer with the verdict in sentence one, one reason, and a clean stop.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 82,
-          "timeToFirstVisibleTokenMs": 21,
+          "timeToCompleteReplyMs": 37,
+          "timeToFirstVisibleTokenMs": 1,
           "timeToFirstVisibleTokenSource": "localImmediateRead"
         },
         "memory": {
@@ -251,9 +263,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 15475,
+              "characterCount": 16078,
               "name": "userContext",
-              "nonEmptyLineCount": 154
+              "nonEmptyLineCount": 157
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -275,21 +287,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-silent-reset, voice-authoritative",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: voice-authoritative, structure-land-the-close",
           "hasDiagnosis": true,
           "queryCharacterCount": 45,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-silent-reset",
-            "voice-authoritative"
+            "voice-authoritative",
+            "structure-land-the-close"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -374,7 +386,7 @@
       "reply": "Fair push: I missed the actual question and answered around the useful read. The specific read is order: warmth is arriving before the recommendation, so the point lands late. Next rep, put the recommendation first, add one reassurance, then stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 51,
+          "assessmentCacheAgeMs": 27,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -394,11 +406,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I missed the actual question and answered around the useful read. The specific read is order: warmth is arriving before the recommendation, so the point lands late. Next rep, put the recommendation first, add one reassurance, then stop.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 70,
-          "timeToFirstVisibleTokenMs": 19,
+          "timeToCompleteReplyMs": 29,
+          "timeToFirstVisibleTokenMs": 1,
           "timeToFirstVisibleTokenSource": "localImmediateRead"
         },
         "memory": {
@@ -419,9 +431,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 15887,
+              "characterCount": 16445,
               "name": "userContext",
-              "nonEmptyLineCount": 160
+              "nonEmptyLineCount": 163
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -443,21 +455,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, filler-anchor-word",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 30,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "filler-anchor-word"
+            "interview-answer-first",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -541,7 +553,7 @@
       "reply": "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The specific read is order: warmth is arriving before the recommendation, so the listener waits for the point. Next rep, put the recommendation first, add one reassurance, then stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 46,
+          "assessmentCacheAgeMs": 25,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -561,11 +573,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: that was generic advice instead of evidence, and there is friction underneath the polite pushback. The specific read is order: warmth is arriving before the recommendation, so the listener waits for the point. Next rep, put the recommendation first, add one reassurance, then stop.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 64,
-          "timeToFirstVisibleTokenMs": 64,
+          "timeToCompleteReplyMs": 27,
+          "timeToFirstVisibleTokenMs": 27,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -586,9 +598,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 14738,
+              "characterCount": 15301,
               "name": "userContext",
-              "nonEmptyLineCount": 150
+              "nonEmptyLineCount": 153
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -610,21 +622,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-give-the-pause-a-job, interview-answer-first",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 76,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-give-the-pause-a-job",
-            "interview-answer-first"
+            "interview-answer-first",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -708,7 +720,7 @@
       "reply": "Fair push: no, it is not easy. The hard part is that sentence one carries the social risk, so test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 45,
+          "assessmentCacheAgeMs": 25,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -728,11 +740,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: no, it is not easy. The hard part is that sentence one carries the social risk, so test a smaller version in the next rep: say only the disagreement and one calm reason, then stop before defending it.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 66,
-          "timeToFirstVisibleTokenMs": 20,
+          "timeToCompleteReplyMs": 27,
+          "timeToFirstVisibleTokenMs": 1,
           "timeToFirstVisibleTokenSource": "localImmediateRead"
         },
         "memory": {
@@ -753,9 +765,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 15536,
+              "characterCount": 16094,
               "name": "userContext",
-              "nonEmptyLineCount": 155
+              "nonEmptyLineCount": 158
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -777,21 +789,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, filler-anchor-word",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 14,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "filler-anchor-word"
+            "interview-answer-first",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -879,7 +891,7 @@
       "reply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 43,
+          "assessmentCacheAgeMs": 26,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -899,11 +911,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I repeated the same coaching move instead of advancing the read. Keep the close as the target, but change the proof test: compare whether the filler appears before or after the final sentence.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 62,
-          "timeToFirstVisibleTokenMs": 19,
+          "timeToCompleteReplyMs": 28,
+          "timeToFirstVisibleTokenMs": 1,
           "timeToFirstVisibleTokenSource": "localImmediateRead"
         },
         "memory": {
@@ -924,9 +936,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 15531,
+              "characterCount": 16096,
               "name": "userContext",
-              "nonEmptyLineCount": 155
+              "nonEmptyLineCount": 158
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -948,21 +960,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: interview-tell-me-about-yourself, filler-end-of-sentence",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-tell-me-about-yourself, interview-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 26,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
             "interview-tell-me-about-yourself",
-            "filler-end-of-sentence"
+            "interview-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -1041,7 +1053,7 @@
       "reply": "No baseline yet, so start there. Record 60 seconds on 'Why should we hire you?' and check whether sentence one answers before you polish anything else. Want to go now?",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 59,
+          "assessmentCacheAgeMs": 31,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -1061,13 +1073,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "No baseline yet, so start there. Record 60 seconds on 'Why should we hire you?' and check whether sentence one answers before you polish anything else. Want to go now?",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 61,
-          "timeToFirstVisibleTokenMs": 61,
+          "timeToCompleteReplyMs": 32,
+          "timeToFirstVisibleTokenMs": 32,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -1088,9 +1098,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13362,
+              "characterCount": 14458,
               "name": "userContext",
-              "nonEmptyLineCount": 133
+              "nonEmptyLineCount": 140
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -1112,21 +1122,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, interview-buy-thinking-time",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, interview-star-under-pressure",
           "hasDiagnosis": true,
           "queryCharacterCount": 40,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
             "interview-answer-first",
-            "interview-buy-thinking-time"
+            "interview-star-under-pressure"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -1205,7 +1215,7 @@
       "reply": "Your last pressure rep had 6 fillers, mostly before the close, so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 63,
+          "assessmentCacheAgeMs": 37,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -1225,11 +1235,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your last pressure rep had 6 fillers, mostly before the close, so the pressure leak is the final sentence. Do not fight the urge; replace it with one silent beat before the final sentence, then finish the ask.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 81,
-          "timeToFirstVisibleTokenMs": 81,
+          "timeToCompleteReplyMs": 38,
+          "timeToFirstVisibleTokenMs": 38,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -1250,9 +1260,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 14918,
+              "characterCount": 15612,
               "name": "userContext",
-              "nonEmptyLineCount": 151
+              "nonEmptyLineCount": 154
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -1274,21 +1284,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-pause-beats-filler, composure-sudden-death-one-line",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: composure-sudden-death-one-line, interview-star-under-pressure",
           "hasDiagnosis": true,
           "queryCharacterCount": 39,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-pause-beats-filler",
-            "composure-sudden-death-one-line"
+            "composure-sudden-death-one-line",
+            "interview-star-under-pressure"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -1367,7 +1377,7 @@
       "reply": "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 43,
+          "assessmentCacheAgeMs": 26,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -1387,11 +1397,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your recent timed rep was solid on fillers but light on the close. Record a 75-second leadership update and make the final sentence the ask, not a summary.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 60,
-          "timeToFirstVisibleTokenMs": 60,
+          "timeToCompleteReplyMs": 27,
+          "timeToFirstVisibleTokenMs": 27,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -1412,9 +1422,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 14510,
+              "characterCount": 15158,
               "name": "userContext",
-              "nonEmptyLineCount": 150
+              "nonEmptyLineCount": 153
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -1436,7 +1446,7 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
+          "activeLever": "answerDevelopment",
           "diagnosticReason": "Retrieved 2 cards: leadership-summary-first-update, structure-thirty-second-update",
           "hasDiagnosis": true,
           "queryCharacterCount": 60,
@@ -1450,7 +1460,7 @@
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -1517,19 +1527,19 @@
         "eqAttunement": 13,
         "failureReasons": [],
         "interventionQuality": 15,
-        "overall": 73,
-        "personalMemory": 18,
-        "rawOverall": 73,
+        "overall": 72,
+        "personalMemory": 17,
+        "rawOverall": 72,
         "similarity": {
           "badAnswerExample": 0.0,
           "excellentAnswerExample": 0.45
         },
         "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.",
+      "reply": "The confidence leak is the extra softener after the recommendation. Your closing-strength focus is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 50,
+          "assessmentCacheAgeMs": 26,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -1548,12 +1558,12 @@
           "qualityGateAcceptedFallback": false,
           "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.",
-        "gitCommit": "e502cb3c",
+        "finalReply": "The confidence leak is the extra softener after the recommendation. Your closing-strength focus is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 67,
-          "timeToFirstVisibleTokenMs": 67,
+          "timeToCompleteReplyMs": 28,
+          "timeToFirstVisibleTokenMs": 28,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -1574,20 +1584,20 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 14137,
+              "characterCount": 14758,
               "name": "userContext",
-              "nonEmptyLineCount": 145
+              "nonEmptyLineCount": 148
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
-          "targetCoachReply": "The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask."
+          "targetCoachReply": "The confidence leak is the extra softener after the recommendation. Your closing-strength focus is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask."
         },
         "provider": {
           "model": "gpt-4o-mini",
           "name": "OpenAI",
           "tierRequested": "geminiFast"
         },
-        "rawReply": "The confidence leak is the extra softener after the recommendation. Your closing-strength lever is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.",
+        "rawReply": "The confidence leak is the extra softener after the recommendation. Your closing-strength focus is the ask: it starts sounding optional, so keep the recommendation, cut the final qualifier, and end on the ask.",
         "reasoning": {
           "qualityGateEvents": [
             "passed"
@@ -1598,21 +1608,21 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, leadership-gravity-fewer-words",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: structure-prep, leadership-gravity-fewer-words",
           "hasDiagnosis": true,
           "queryCharacterCount": 40,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
+            "structure-prep",
             "leadership-gravity-fewer-words"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -1696,7 +1706,7 @@
       "reply": "One example is the rep where you said 'we focused on three priorities.' The reasons were clear, but the listener had no scene to picture, so add one concrete example after the first reason next time.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 43,
+          "assessmentCacheAgeMs": 24,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -1716,13 +1726,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "One example is the rep where you said 'we focused on three priorities.' The reasons were clear, but the listener had no scene to picture, so add one concrete example after the first reason next time.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 60,
-          "timeToFirstVisibleTokenMs": 60,
+          "timeToCompleteReplyMs": 26,
+          "timeToFirstVisibleTokenMs": 26,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -1743,9 +1751,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13124,
+              "characterCount": 14140,
               "name": "userContext",
-              "nonEmptyLineCount": 130
+              "nonEmptyLineCount": 137
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -1767,21 +1775,21 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: structure-star, filler-anchor-word",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: structure-prep, interview-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 56,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "structure-star",
-            "filler-anchor-word"
+            "structure-prep",
+            "interview-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -1861,7 +1869,7 @@
       "reply": "Not proven yet. The latest timed rep score is useful evidence, and the transcript has a recommendation plus a clear decision, but board readiness needs pressure evidence because the decision ask has to survive stakes. Missing: one board-style rehearsal. Proof test: record 75 seconds with headline, one metric, decision ask, clean stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 52,
+          "assessmentCacheAgeMs": 33,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -1881,11 +1889,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Not proven yet. The latest timed rep score is useful evidence, and the transcript has a recommendation plus a clear decision, but board readiness needs pressure evidence because the decision ask has to survive stakes. Missing: one board-style rehearsal. Proof test: record 75 seconds with headline, one metric, decision ask, clean stop.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 70,
-          "timeToFirstVisibleTokenMs": 18,
+          "timeToCompleteReplyMs": 35,
+          "timeToFirstVisibleTokenMs": 1,
           "timeToFirstVisibleTokenSource": "localImmediateRead"
         },
         "memory": {
@@ -1906,9 +1914,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 15825,
+              "characterCount": 16468,
               "name": "userContext",
-              "nonEmptyLineCount": 159
+              "nonEmptyLineCount": 162
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -1930,21 +1938,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: leadership-summary-first-update, structure-thirty-second-update",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: leadership-summary-first-update, structure-minto-pyramid",
           "hasDiagnosis": true,
           "queryCharacterCount": 44,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
             "leadership-summary-first-update",
-            "structure-thirty-second-update"
+            "structure-minto-pyramid"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -2022,7 +2030,7 @@
       "reply": "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 47,
+          "assessmentCacheAgeMs": 27,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -2042,11 +2050,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "From the transcript, I would treat defensiveness as a hypothesis, not a label: you softened the disagreement and added context before the point. Check whether that fits; next rep, say the disagreement in sentence one, give one reason, then stop.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 63,
-          "timeToFirstVisibleTokenMs": 63,
+          "timeToCompleteReplyMs": 28,
+          "timeToFirstVisibleTokenMs": 28,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -2067,9 +2075,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 15242,
+              "characterCount": 15842,
               "name": "userContext",
-              "nonEmptyLineCount": 151
+              "nonEmptyLineCount": 154
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -2091,21 +2099,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: conflict-non-defensive-repair, filler-end-of-sentence",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: conflict-non-defensive-repair, interview-star-under-pressure",
           "hasDiagnosis": true,
           "queryCharacterCount": 37,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
             "conflict-non-defensive-repair",
-            "filler-end-of-sentence"
+            "interview-star-under-pressure"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -2188,7 +2196,7 @@
       "reply": "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 38,
+          "assessmentCacheAgeMs": 21,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": true
@@ -2208,11 +2216,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Then reject that hypothesis and keep the observable read: the disagreement arrived after too much setup. Run the same answer disagreement-first and compare whether the listener gets the point sooner.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 58,
-          "timeToFirstVisibleTokenMs": 58,
+          "timeToCompleteReplyMs": 23,
+          "timeToFirstVisibleTokenMs": 23,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -2233,9 +2241,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 14244,
+              "characterCount": 14856,
               "name": "userContext",
-              "nonEmptyLineCount": 145
+              "nonEmptyLineCount": 148
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -2257,21 +2265,21 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: conflict-non-defensive-repair, filler-end-of-sentence",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: conflict-non-defensive-repair, voice-storytelling",
           "hasDiagnosis": true,
           "queryCharacterCount": 85,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
             "conflict-non-defensive-repair",
-            "filler-end-of-sentence"
+            "voice-storytelling"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -2354,7 +2362,7 @@
       "reply": "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 28,
+          "assessmentCacheAgeMs": 11,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": true
@@ -2374,11 +2382,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Use this memory as a testable hypothesis only: disagreement may be getting softened by setup. Keep it if two pressure reps show the point arrives late; drop it if verdict-first solves it.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 45,
-          "timeToFirstVisibleTokenMs": 45,
+          "timeToCompleteReplyMs": 13,
+          "timeToFirstVisibleTokenMs": 13,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -2399,9 +2407,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 15302,
+              "characterCount": 15879,
               "name": "userContext",
-              "nonEmptyLineCount": 154
+              "nonEmptyLineCount": 157
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -2423,21 +2431,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, filler-anchor-word",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 26,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "filler-anchor-word"
+            "interview-answer-first",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -2521,7 +2529,7 @@
       "reply": "Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. The safe signal from the last rep is that the recommendation needs to lead, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 54,
+          "assessmentCacheAgeMs": 32,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -2541,11 +2549,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: the asterisks should never reach you or the voice, and that made the coaching feel robotic and cold. The safe signal from the last rep is that the recommendation needs to lead, so for the next rep, state the recommendation first, give one proof, then stop. No symbols, no report shape.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 72,
-          "timeToFirstVisibleTokenMs": 17,
+          "timeToCompleteReplyMs": 33,
+          "timeToFirstVisibleTokenMs": 1,
           "timeToFirstVisibleTokenSource": "localImmediateRead"
         },
         "memory": {
@@ -2566,9 +2574,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 16135,
+              "characterCount": 16764,
               "name": "userContext",
-              "nonEmptyLineCount": 160
+              "nonEmptyLineCount": 163
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -2590,7 +2598,7 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
+          "activeLever": "answerDevelopment",
           "diagnosticReason": "No cards matched turn",
           "hasDiagnosis": true,
           "queryCharacterCount": 110,
@@ -2601,7 +2609,7 @@
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -2685,7 +2693,7 @@
       "reply": "Fair push: that was advice, not coaching. The ordering signal is warmth before the recommendation, so put the recommendation first, add one reassurance after it, then stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 49,
+          "assessmentCacheAgeMs": 26,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -2705,11 +2713,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: that was advice, not coaching. The ordering signal is warmth before the recommendation, so put the recommendation first, add one reassurance after it, then stop.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 67,
-          "timeToFirstVisibleTokenMs": 17,
+          "timeToCompleteReplyMs": 26,
+          "timeToFirstVisibleTokenMs": 0,
           "timeToFirstVisibleTokenSource": "localImmediateRead"
         },
         "memory": {
@@ -2730,9 +2738,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 16282,
+              "characterCount": 16911,
               "name": "userContext",
-              "nonEmptyLineCount": 162
+              "nonEmptyLineCount": 165
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -2754,7 +2762,7 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
+          "activeLever": "answerDevelopment",
           "diagnosticReason": "No cards matched turn",
           "hasDiagnosis": true,
           "queryCharacterCount": 63,
@@ -2765,7 +2773,7 @@
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -2848,7 +2856,7 @@
       "reply": "Fair push: I used too much writing before the useful read. Your last rep gives enough signal: the close is the leak. Proof test: make the final sentence the ask and stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 49,
+          "assessmentCacheAgeMs": 25,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -2868,11 +2876,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push: I used too much writing before the useful read. Your last rep gives enough signal: the close is the leak. Proof test: make the final sentence the ask and stop.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 71,
-          "timeToFirstVisibleTokenMs": 21,
+          "timeToCompleteReplyMs": 27,
+          "timeToFirstVisibleTokenMs": 1,
           "timeToFirstVisibleTokenSource": "localImmediateRead"
         },
         "memory": {
@@ -2893,9 +2901,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 17263,
+              "characterCount": 17884,
               "name": "userContext",
-              "nonEmptyLineCount": 165
+              "nonEmptyLineCount": 168
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -2917,21 +2925,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: pacing-target-band, structure-answer-first",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: structure-minto-pyramid, pacing-target-band",
           "hasDiagnosis": true,
           "queryCharacterCount": 35,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "pacing-target-band",
-            "structure-answer-first"
+            "structure-minto-pyramid",
+            "pacing-target-band"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -3010,7 +3018,7 @@
       "reply": "Your cold start is hard, so no fake read: there are no rated sessions. Use the first baseline rep as evidence: record a 60-second interview answer, answer first, give one proof, stop, then check whether sentence one gives the point.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 50,
+          "assessmentCacheAgeMs": 31,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -3030,13 +3038,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your cold start is hard, so no fake read: there are no rated sessions. Use the first baseline rep as evidence: record a 60-second interview answer, answer first, give one proof, stop, then check whether sentence one gives the point.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 67,
-          "timeToFirstVisibleTokenMs": 67,
+          "timeToCompleteReplyMs": 32,
+          "timeToFirstVisibleTokenMs": 32,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -3057,9 +3063,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13369,
+              "characterCount": 14460,
               "name": "userContext",
-              "nonEmptyLineCount": 133
+              "nonEmptyLineCount": 140
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -3081,7 +3087,7 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
+          "activeLever": "answerDevelopment",
           "diagnosticReason": "Retrieved 2 cards: interview-buy-thinking-time, interview-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 47,
@@ -3095,7 +3101,7 @@
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -3167,14 +3173,14 @@
         "rawOverall": 82,
         "similarity": {
           "badAnswerExample": 0.0,
-          "excellentAnswerExample": 0.929
+          "excellentAnswerExample": 0.8
         },
         "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "Yes, locally. The useful signal is 181 WPM and fillers after sentence one. Test one silent beat after the verdict; if the next sentence stays clean, pacing is the lever.",
+      "reply": "Yes, locally. The useful signal is 181 WPM and fillers after sentence one. Test one silent beat after the verdict; if the next sentence stays clean, pacing is the focus.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 42,
+          "assessmentCacheAgeMs": 18,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -3193,12 +3199,12 @@
           "qualityGateAcceptedFallback": false,
           "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "Yes, locally. The useful signal is 181 WPM and fillers after sentence one. Test one silent beat after the verdict; if the next sentence stays clean, pacing is the lever.",
-        "gitCommit": "e502cb3c",
+        "finalReply": "Yes, locally. The useful signal is 181 WPM and fillers after sentence one. Test one silent beat after the verdict; if the next sentence stays clean, pacing is the focus.",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 60,
-          "timeToFirstVisibleTokenMs": 60,
+          "timeToCompleteReplyMs": 19,
+          "timeToFirstVisibleTokenMs": 19,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -3219,20 +3225,20 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 14224,
+              "characterCount": 14808,
               "name": "userContext",
-              "nonEmptyLineCount": 145
+              "nonEmptyLineCount": 148
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
-          "targetCoachReply": "Yes, locally. The useful signal is 181 WPM and fillers after sentence one. Test one silent beat after the verdict; if the next sentence stays clean, pacing is the lever."
+          "targetCoachReply": "Yes, locally. The useful signal is 181 WPM and fillers after sentence one. Test one silent beat after the verdict; if the next sentence stays clean, pacing is the focus."
         },
         "provider": {
           "model": "gpt-4o-mini",
           "name": "OpenAI",
           "tierRequested": "geminiFast"
         },
-        "rawReply": "Yes, locally. The useful signal is 181 WPM and fillers after sentence one. Test one silent beat after the verdict; if the next sentence stays clean, pacing is the lever.",
+        "rawReply": "Yes, locally. The useful signal is 181 WPM and fillers after sentence one. Test one silent beat after the verdict; if the next sentence stays clean, pacing is the focus.",
         "reasoning": {
           "qualityGateEvents": [
             "passed"
@@ -3243,21 +3249,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: pacing-target-band, filler-end-of-sentence",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: pacing-target-band, interview-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 13,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
             "pacing-target-band",
-            "filler-end-of-sentence"
+            "interview-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -3335,7 +3341,7 @@
       "reply": "Fix the final sentence: it recaps instead of asking for a decision, so make the last line the ask and stop before explaining it again.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 41,
+          "assessmentCacheAgeMs": 24,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -3355,11 +3361,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fix the final sentence: it recaps instead of asking for a decision, so make the last line the ask and stop before explaining it again.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 59,
-          "timeToFirstVisibleTokenMs": 59,
+          "timeToCompleteReplyMs": 25,
+          "timeToFirstVisibleTokenMs": 25,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -3380,9 +3386,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13710,
+              "characterCount": 14358,
               "name": "userContext",
-              "nonEmptyLineCount": 141
+              "nonEmptyLineCount": 144
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -3404,7 +3410,7 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
+          "activeLever": "answerDevelopment",
           "diagnosticReason": "Retrieved 2 cards: presentation-close-is-the-ask, structure-land-the-close",
           "hasDiagnosis": true,
           "queryCharacterCount": 31,
@@ -3418,7 +3424,7 @@
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -3496,7 +3502,7 @@
       "reply": "Make sentence one the verdict. Your transcript warms into context before the point, so lead with the recommendation, give one reason, then stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 43,
+          "assessmentCacheAgeMs": 25,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -3516,11 +3522,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Make sentence one the verdict. Your transcript warms into context before the point, so lead with the recommendation, give one reason, then stop.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 61,
-          "timeToFirstVisibleTokenMs": 61,
+          "timeToCompleteReplyMs": 26,
+          "timeToFirstVisibleTokenMs": 26,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -3541,9 +3547,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 14180,
+              "characterCount": 14864,
               "name": "userContext",
-              "nonEmptyLineCount": 145
+              "nonEmptyLineCount": 148
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -3565,21 +3571,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: structure-frame-the-open, filler-silent-reset",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: structure-frame-the-open, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 34,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
             "structure-frame-the-open",
-            "filler-silent-reset"
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -3658,7 +3664,7 @@
       "reply": "That panic is the pressure cue because in pressure mode the pause disappears and the answer restarts. The signal to test is one silent beat before sentence one, then only the opener.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 40,
+          "assessmentCacheAgeMs": 22,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -3678,11 +3684,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "That panic is the pressure cue because in pressure mode the pause disappears and the answer restarts. The signal to test is one silent beat before sentence one, then only the opener.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 57,
-          "timeToFirstVisibleTokenMs": 57,
+          "timeToCompleteReplyMs": 23,
+          "timeToFirstVisibleTokenMs": 23,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -3703,9 +3709,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 14376,
+              "characterCount": 15060,
               "name": "userContext",
-              "nonEmptyLineCount": 147
+              "nonEmptyLineCount": 150
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -3727,21 +3733,21 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: composure-tactical-pause, filler-slow-the-open",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: composure-tactical-pause, interview-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 39,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
             "composure-tactical-pause",
-            "filler-slow-the-open"
+            "interview-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -3819,7 +3825,7 @@
       "reply": "For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 46,
+          "assessmentCacheAgeMs": 25,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -3839,11 +3845,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "For your concise voice, use a two-sentence ceiling on a 45-second client recommendation: recommendation first, one reason second, clean stop. The extra condition is the ramble point because if a second reason appears, the answer sprawls.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 64,
-          "timeToFirstVisibleTokenMs": 64,
+          "timeToCompleteReplyMs": 26,
+          "timeToFirstVisibleTokenMs": 26,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -3864,9 +3870,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 14216,
+              "characterCount": 14800,
               "name": "userContext",
-              "nonEmptyLineCount": 145
+              "nonEmptyLineCount": 148
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -3888,21 +3894,21 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: structure-prep, filler-end-of-sentence",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: structure-prep, interview-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 23,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
             "structure-prep",
-            "filler-end-of-sentence"
+            "interview-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -3980,7 +3986,7 @@
       "reply": "Your claim and reason are present; the salience hypothesis is direction because the reason is not tied to an implication or ask. Do not add more reasons. Use claim, one reason, implication, ask, then check whether the listener knows what to do next.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 47,
+          "assessmentCacheAgeMs": 29,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -4000,11 +4006,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Your claim and reason are present; the salience hypothesis is direction because the reason is not tied to an implication or ask. Do not add more reasons. Use claim, one reason, implication, ask, then check whether the listener knows what to do next.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 64,
-          "timeToFirstVisibleTokenMs": 64,
+          "timeToCompleteReplyMs": 31,
+          "timeToFirstVisibleTokenMs": 31,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -4025,9 +4031,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13879,
+              "characterCount": 14414,
               "name": "userContext",
-              "nonEmptyLineCount": 141
+              "nonEmptyLineCount": 144
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -4049,21 +4055,21 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: voice-persuasive, filler-give-the-pause-a-job",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: structure-prep, voice-persuasive",
           "hasDiagnosis": true,
           "queryCharacterCount": 60,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "voice-persuasive",
-            "filler-give-the-pause-a-job"
+            "structure-prep",
+            "voice-persuasive"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -4141,7 +4147,7 @@
       "reply": "The confidence leak is after the ask: maybe or just reopens the decision, so the fix is a clean stop. Make the ask, stop, and listen for whether the final sentence still sounds clean without the qualifier.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 47,
+          "assessmentCacheAgeMs": 27,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -4161,11 +4167,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The confidence leak is after the ask: maybe or just reopens the decision, so the fix is a clean stop. Make the ask, stop, and listen for whether the final sentence still sounds clean without the qualifier.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 65,
-          "timeToFirstVisibleTokenMs": 65,
+          "timeToCompleteReplyMs": 29,
+          "timeToFirstVisibleTokenMs": 29,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -4186,9 +4192,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 14434,
+              "characterCount": 15110,
               "name": "userContext",
-              "nonEmptyLineCount": 148
+              "nonEmptyLineCount": 151
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -4210,21 +4216,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, leadership-gravity-fewer-words",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: social-invite-more, voice-storytelling",
           "hasDiagnosis": true,
           "queryCharacterCount": 41,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "leadership-gravity-fewer-words"
+            "social-invite-more",
+            "voice-storytelling"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -4308,7 +4314,7 @@
       "reply": "Check only the final 10 seconds of the 75-second update, because that is where the update transfers into the room. If the last sentence asks for alignment or a decision, keep it; if it recaps, rewrite the close.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 44,
+          "assessmentCacheAgeMs": 26,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": true
@@ -4328,11 +4334,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Check only the final 10 seconds of the 75-second update, because that is where the update transfers into the room. If the last sentence asks for alignment or a decision, keep it; if it recaps, rewrite the close.",
-        "gitCommit": "e502cb3c",
+        "gitCommit": "b9258cb7",
         "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 63,
-          "timeToFirstVisibleTokenMs": 63,
+          "timeToCompleteReplyMs": 28,
+          "timeToFirstVisibleTokenMs": 28,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -4353,9 +4359,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 14124,
+              "characterCount": 14772,
               "name": "userContext",
-              "nonEmptyLineCount": 145
+              "nonEmptyLineCount": 148
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -4377,7 +4383,7 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
+          "activeLever": "answerDevelopment",
           "diagnosticReason": "Retrieved 2 cards: leadership-summary-first-update, structure-thirty-second-update",
           "hasDiagnosis": true,
           "queryCharacterCount": 158,
@@ -4391,7 +4397,7 @@
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -4475,7 +4481,7 @@
       "reply": "I would not call that causation. Treat it as useful association: on the latest rep you used the prepared close, so your read that the room stayed engaged is a signal, not proof. Keep the close; next time capture the exact question people asked afterward.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 43,
+          "assessmentCacheAgeMs": 26,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -4495,13 +4501,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I would not call that causation. Treat it as useful association: on the latest rep you used the prepared close, so your read that the room stayed engaged is a signal, not proof. Keep the close; next time capture the exact question people asked afterward.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 60,
-          "timeToFirstVisibleTokenMs": 60,
+          "timeToCompleteReplyMs": 27,
+          "timeToFirstVisibleTokenMs": 27,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -4522,9 +4526,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13010,
+              "characterCount": 14101,
               "name": "userContext",
-              "nonEmptyLineCount": 128
+              "nonEmptyLineCount": 135
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -4546,7 +4550,7 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
+          "activeLever": "answerDevelopment",
           "diagnosticReason": "Retrieved 2 cards: leadership-hold-the-room-with-pause, composure-one-anchor-point",
           "hasDiagnosis": true,
           "queryCharacterCount": 50,
@@ -4560,7 +4564,7 @@
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -4639,7 +4643,7 @@
       "reply": "Tonight's risk is over-proving, so practice the boundary sentence only: say the disagreement in sentence one, give one calm reason, then stop before proving you are reasonable.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 49,
+          "assessmentCacheAgeMs": 31,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -4659,13 +4663,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Tonight's risk is over-proving, so practice the boundary sentence only: say the disagreement in sentence one, give one calm reason, then stop before proving you are reasonable.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 66,
-          "timeToFirstVisibleTokenMs": 66,
+          "timeToCompleteReplyMs": 33,
+          "timeToFirstVisibleTokenMs": 33,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -4686,9 +4688,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13344,
+              "characterCount": 14511,
               "name": "userContext",
-              "nonEmptyLineCount": 133
+              "nonEmptyLineCount": 140
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -4710,21 +4712,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: conflict-name-it-then-steer, progress-celebrate-the-behavior",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: conflict-name-it-then-steer, social-invite-more",
           "hasDiagnosis": true,
           "queryCharacterCount": 64,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
             "conflict-name-it-then-steer",
-            "progress-celebrate-the-behavior"
+            "social-invite-more"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -4803,7 +4805,7 @@
       "reply": "Start with a 20-second test: who you help, what changes, and one question for them. No full story yet, because first we need to hear where the ramble starts.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 41,
+          "assessmentCacheAgeMs": 22,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -4823,13 +4825,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Start with a 20-second test: who you help, what changes, and one question for them. No full story yet, because first we need to hear where the ramble starts.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 59,
-          "timeToFirstVisibleTokenMs": 59,
+          "timeToCompleteReplyMs": 24,
+          "timeToFirstVisibleTokenMs": 24,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -4850,9 +4850,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 12940,
+              "characterCount": 14031,
               "name": "userContext",
-              "nonEmptyLineCount": 128
+              "nonEmptyLineCount": 135
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -4874,7 +4874,7 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
+          "activeLever": "answerDevelopment",
           "diagnosticReason": "Retrieved 2 cards: networking-concise-self-frame, networking-memorable-hook",
           "hasDiagnosis": true,
           "queryCharacterCount": 54,
@@ -4888,7 +4888,7 @@
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -4967,7 +4967,7 @@
       "reply": "The words are structured; I cannot prove vocal energy from this text alone. Test the hypothesis by marking one sentence as the peak and recording it with a deliberate emphasis on the consequence.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 51,
+          "assessmentCacheAgeMs": 30,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -4987,13 +4987,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The words are structured; I cannot prove vocal energy from this text alone. Test the hypothesis by marking one sentence as the peak and recording it with a deliberate emphasis on the consequence.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 68,
-          "timeToFirstVisibleTokenMs": 68,
+          "timeToCompleteReplyMs": 31,
+          "timeToFirstVisibleTokenMs": 31,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -5014,9 +5012,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13396,
+              "characterCount": 14449,
               "name": "userContext",
-              "nonEmptyLineCount": 133
+              "nonEmptyLineCount": 140
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -5038,21 +5036,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: presentation-close-is-the-ask, filler-anchor-word",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: presentation-close-is-the-ask, social-story-arc-small",
           "hasDiagnosis": true,
           "queryCharacterCount": 58,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
             "presentation-close-is-the-ask",
-            "filler-anchor-word"
+            "social-story-arc-small"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -5131,7 +5129,7 @@
       "reply": "The likely gap is salience: reasons are there, but nothing for the listener to picture. So add one concrete customer example after the first claim, then return to the ask.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 45,
+          "assessmentCacheAgeMs": 29,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -5151,13 +5149,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The likely gap is salience: reasons are there, but nothing for the listener to picture. So add one concrete customer example after the first claim, then return to the ask.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 62,
-          "timeToFirstVisibleTokenMs": 62,
+          "timeToCompleteReplyMs": 31,
+          "timeToFirstVisibleTokenMs": 31,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -5178,9 +5174,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13082,
+              "characterCount": 14057,
               "name": "userContext",
-              "nonEmptyLineCount": 128
+              "nonEmptyLineCount": 135
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -5202,21 +5198,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-give-the-pause-a-job, networking-concise-self-frame",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: social-story-arc-small, networking-concise-self-frame",
           "hasDiagnosis": true,
           "queryCharacterCount": 51,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-give-the-pause-a-job",
+            "social-story-arc-small",
             "networking-concise-self-frame"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -5296,7 +5292,7 @@
       "reply": "Mechanically, it has board ingredients; I would not yet call it executive in the room. The close recaps instead of asking for a decision, so rehearse the final sentence as the decision you need.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 46,
+          "assessmentCacheAgeMs": 28,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -5316,13 +5312,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Mechanically, it has board ingredients; I would not yet call it executive in the room. The close recaps instead of asking for a decision, so rehearse the final sentence as the decision you need.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 63,
-          "timeToFirstVisibleTokenMs": 63,
+          "timeToCompleteReplyMs": 29,
+          "timeToFirstVisibleTokenMs": 29,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -5343,9 +5337,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 12949,
+              "characterCount": 13976,
               "name": "userContext",
-              "nonEmptyLineCount": 128
+              "nonEmptyLineCount": 135
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -5367,21 +5361,21 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: voice-executive, filler-end-of-sentence",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: voice-executive, interview-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 37,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
             "voice-executive",
-            "filler-end-of-sentence"
+            "interview-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -5460,7 +5454,7 @@
       "reply": "I would call it an overexplaining hypothesis, not a label. The observable signal is three reasons before the recommendation, so cap the next answer at recommendation plus one reason.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 38,
+          "assessmentCacheAgeMs": 22,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -5480,13 +5474,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I would call it an overexplaining hypothesis, not a label. The observable signal is three reasons before the recommendation, so cap the next answer at recommendation plus one reason.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 56,
-          "timeToFirstVisibleTokenMs": 56,
+          "timeToCompleteReplyMs": 23,
+          "timeToFirstVisibleTokenMs": 23,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -5507,9 +5499,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 12962,
+              "characterCount": 13982,
               "name": "userContext",
-              "nonEmptyLineCount": 128
+              "nonEmptyLineCount": 135
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -5531,21 +5523,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, filler-anchor-word",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 17,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "filler-anchor-word"
+            "interview-answer-first",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -5624,7 +5616,7 @@
       "reply": "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement. Test disagreement in sentence one and tell me whether that feels accurate.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 43,
+          "assessmentCacheAgeMs": 23,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -5644,13 +5636,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I would not diagnose fear from one transcript. The observable pattern is delay: reassurance comes before the disagreement. Test disagreement in sentence one and tell me whether that feels accurate.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 59,
-          "timeToFirstVisibleTokenMs": 59,
+          "timeToCompleteReplyMs": 24,
+          "timeToFirstVisibleTokenMs": 24,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -5671,9 +5661,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13206,
+              "characterCount": 14226,
               "name": "userContext",
-              "nonEmptyLineCount": 130
+              "nonEmptyLineCount": 137
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -5695,21 +5685,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, filler-anchor-word",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 24,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "filler-anchor-word"
+            "interview-answer-first",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -5781,15 +5771,15 @@
         "personalMemory": 12,
         "rawOverall": 74,
         "similarity": {
-          "badAnswerExample": 0.057,
-          "excellentAnswerExample": 0.35
+          "badAnswerExample": 0.059,
+          "excellentAnswerExample": 0.359
         },
         "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb.",
+      "reply": "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and recent reps only support a main mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 54,
+          "assessmentCacheAgeMs": 37,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -5808,14 +5798,12 @@
           "qualityGateAcceptedFallback": false,
           "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "finalReply": "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and recent reps only support a main mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb.",
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 72,
-          "timeToFirstVisibleTokenMs": 17,
+          "timeToCompleteReplyMs": 38,
+          "timeToFirstVisibleTokenMs": 1,
           "timeToFirstVisibleTokenSource": "localImmediateRead"
         },
         "memory": {
@@ -5836,20 +5824,20 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13672,
+              "characterCount": 14692,
               "name": "userContext",
-              "nonEmptyLineCount": 136
+              "nonEmptyLineCount": 143
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
-          "targetCoachReply": "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb."
+          "targetCoachReply": "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and recent reps only support a main mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb."
         },
         "provider": {
           "model": "gpt-4o-mini",
           "name": "OpenAI",
           "tierRequested": "claudeReasoning"
         },
-        "rawReply": "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and rolling baseline only support a highest-leverage mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb.",
+        "rawReply": "There is not enough evidence to call this lack of conviction overall. The latest rep, pace estimate, and recent reps only support a main mechanics signal: hedge control before the recommendation, not an identity verdict. Missing: repeated pressure proof. Proof test: repeat the answer and replace the first hedge with a direct verb.",
         "reasoning": {
           "qualityGateEvents": [
             "passed"
@@ -5860,21 +5848,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, filler-anchor-word",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 21,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "filler-anchor-word"
+            "interview-answer-first",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -5953,7 +5941,7 @@
       "reply": "Trust that signal. On the latest rep, keep the structure but replace the most polished sentence with the phrase you would actually say in the room, because that is what makes it sound like you. Record once and check how it feels against the cleaner version.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 52,
+          "assessmentCacheAgeMs": 30,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -5973,13 +5961,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Trust that signal. On the latest rep, keep the structure but replace the most polished sentence with the phrase you would actually say in the room, because that is what makes it sound like you. Record once and check how it feels against the cleaner version.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 69,
-          "timeToFirstVisibleTokenMs": 69,
+          "timeToCompleteReplyMs": 32,
+          "timeToFirstVisibleTokenMs": 32,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -6000,9 +5986,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 12997,
+              "characterCount": 13980,
               "name": "userContext",
-              "nonEmptyLineCount": 128
+              "nonEmptyLineCount": 135
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -6024,21 +6010,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, filler-anchor-word",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: voice-storytelling, interview-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 52,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "filler-anchor-word"
+            "voice-storytelling",
+            "interview-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -6117,7 +6103,7 @@
       "reply": "Yes, it could, but keep it as a structure read, not a claim about you. The latest rep and pace estimate support answer-after-setup: mechanics are usable, but the goal is not proven under pressure. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 55,
+          "assessmentCacheAgeMs": 36,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -6137,13 +6123,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Yes, it could, but keep it as a structure read, not a claim about you. The latest rep and pace estimate support answer-after-setup: mechanics are usable, but the goal is not proven under pressure. Missing: repeated pressure proof and a listener read. Proof test: put the direct answer in sentence one, then use one polished reason after it.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 72,
-          "timeToFirstVisibleTokenMs": 17,
+          "timeToCompleteReplyMs": 37,
+          "timeToFirstVisibleTokenMs": 1,
           "timeToFirstVisibleTokenSource": "localImmediateRead"
         },
         "memory": {
@@ -6164,9 +6148,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13733,
+              "characterCount": 14753,
               "name": "userContext",
-              "nonEmptyLineCount": 136
+              "nonEmptyLineCount": 143
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -6188,21 +6172,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, filler-anchor-word",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 38,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "filler-anchor-word"
+            "interview-answer-first",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -6281,7 +6265,7 @@
       "reply": "I cannot prove timid from text alone. What I can see is indirectness: the recommendation is softened before it arrives. Test a direct recommendation first; audio would be needed for a tone verdict.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 56,
+          "assessmentCacheAgeMs": 29,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -6301,13 +6285,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I cannot prove timid from text alone. What I can see is indirectness: the recommendation is softened before it arrives. Test a direct recommendation first; audio would be needed for a tone verdict.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 73,
-          "timeToFirstVisibleTokenMs": 73,
+          "timeToCompleteReplyMs": 30,
+          "timeToFirstVisibleTokenMs": 30,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -6328,9 +6310,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13246,
+              "characterCount": 14266,
               "name": "userContext",
-              "nonEmptyLineCount": 131
+              "nonEmptyLineCount": 138
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -6352,21 +6334,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, filler-anchor-word",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 17,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "filler-anchor-word"
+            "interview-answer-first",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -6446,7 +6428,7 @@
       "reply": "The pressure break is sentence one. Normal reps are clean, but under the timer the opener gets swallowed and fillers rise, so repeat the same prompt under a timer and protect only the first sentence.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 49,
+          "assessmentCacheAgeMs": 22,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -6466,13 +6448,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The pressure break is sentence one. Normal reps are clean, but under the timer the opener gets swallowed and fillers rise, so repeat the same prompt under a timer and protect only the first sentence.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 67,
-          "timeToFirstVisibleTokenMs": 67,
+          "timeToCompleteReplyMs": 24,
+          "timeToFirstVisibleTokenMs": 24,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -6493,9 +6473,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 12989,
+              "characterCount": 14102,
               "name": "userContext",
-              "nonEmptyLineCount": 128
+              "nonEmptyLineCount": 135
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -6517,21 +6497,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: composure-sudden-death-one-line, composure-tactical-pause",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-star-under-pressure, composure-sudden-death-one-line",
           "hasDiagnosis": true,
           "queryCharacterCount": 34,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "composure-sudden-death-one-line",
-            "composure-tactical-pause"
+            "interview-star-under-pressure",
+            "composure-sudden-death-one-line"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -6615,7 +6595,7 @@
       "reply": "Good correction. On the latest rep, if like was doing semantic comparison work, I should not count it as filler, because that would punish valid speech. Keep the comparison; mark only empty pause-fillers before the next word.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 54,
+          "assessmentCacheAgeMs": 24,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -6635,13 +6615,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Good correction. On the latest rep, if like was doing semantic comparison work, I should not count it as filler, because that would punish valid speech. Keep the comparison; mark only empty pause-fillers before the next word.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 71,
-          "timeToFirstVisibleTokenMs": 71,
+          "timeToCompleteReplyMs": 26,
+          "timeToFirstVisibleTokenMs": 26,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -6662,9 +6640,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 12996,
+              "characterCount": 14016,
               "name": "userContext",
-              "nonEmptyLineCount": 128
+              "nonEmptyLineCount": 135
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -6686,21 +6664,21 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, filler-anchor-word",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 50,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "filler-anchor-word"
+            "interview-answer-first",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -6779,7 +6757,7 @@
       "reply": "Fair boundary. Prompt echo is not the same as filler, so I would not count the repeated prompt phrase. Judge only the words you added while searching for the next thought.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 60,
+          "assessmentCacheAgeMs": 36,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -6799,13 +6777,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair boundary. Prompt echo is not the same as filler, so I would not count the repeated prompt phrase. Judge only the words you added while searching for the next thought.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 79,
-          "timeToFirstVisibleTokenMs": 79,
+          "timeToCompleteReplyMs": 37,
+          "timeToFirstVisibleTokenMs": 37,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -6826,9 +6802,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13273,
+              "characterCount": 14364,
               "name": "userContext",
-              "nonEmptyLineCount": 129
+              "nonEmptyLineCount": 136
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -6850,7 +6826,7 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
+          "activeLever": "answerDevelopment",
           "diagnosticReason": "Retrieved 2 cards: filler-anchor-word, filler-end-of-sentence",
           "hasDiagnosis": true,
           "queryCharacterCount": 56,
@@ -6864,7 +6840,7 @@
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -6947,7 +6923,7 @@
       "reply": "I cannot quote that unless the transcript gives me the exact words. The safe read is non-quote evidence: the close softened after the recommendation, so rerun the final sentence as the ask.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 44,
+          "assessmentCacheAgeMs": 23,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -6967,13 +6943,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I cannot quote that unless the transcript gives me the exact words. The safe read is non-quote evidence: the close softened after the recommendation, so rerun the final sentence as the ask.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 64,
-          "timeToFirstVisibleTokenMs": 64,
+          "timeToCompleteReplyMs": 24,
+          "timeToFirstVisibleTokenMs": 24,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -6994,9 +6968,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 12985,
+              "characterCount": 14005,
               "name": "userContext",
-              "nonEmptyLineCount": 128
+              "nonEmptyLineCount": 135
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -7018,21 +6992,21 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, filler-anchor-word",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 34,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "filler-anchor-word"
+            "interview-answer-first",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -7115,7 +7089,7 @@
       "reply": "Correction: I should not have put that in quotes unless it was exact. I retract the quote. The supported read is only that your recommendation came late, so use that safe read, not the unverified wording.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 41,
+          "assessmentCacheAgeMs": 23,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -7135,13 +7109,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Correction: I should not have put that in quotes unless it was exact. I retract the quote. The supported read is only that your recommendation came late, so use that safe read, not the unverified wording.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 59,
-          "timeToFirstVisibleTokenMs": 59,
+          "timeToCompleteReplyMs": 24,
+          "timeToFirstVisibleTokenMs": 24,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -7162,9 +7134,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 12994,
+              "characterCount": 14036,
               "name": "userContext",
-              "nonEmptyLineCount": 128
+              "nonEmptyLineCount": 135
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -7186,21 +7158,21 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-give-the-pause-a-job, filler-slow-the-open",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 24,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-give-the-pause-a-job",
-            "filler-slow-the-open"
+            "interview-answer-first",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -7277,10 +7249,10 @@
         },
         "suggestedFix": "Tighten diagnosis, cite one real signal, and prescribe one testable move."
       },
-      "reply": "The close is the lever, so make the final sentence the ask, then stop.",
+      "reply": "The close is the focus, so make the final sentence the ask, then stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 30,
+          "assessmentCacheAgeMs": 11,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -7299,14 +7271,12 @@
           "qualityGateAcceptedFallback": false,
           "typedAssessmentFallbackApplied": false
         },
-        "finalReply": "The close is the lever, so make the final sentence the ask, then stop.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "finalReply": "The close is the focus, so make the final sentence the ask, then stop.",
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 48,
-          "timeToFirstVisibleTokenMs": 48,
+          "timeToCompleteReplyMs": 13,
+          "timeToFirstVisibleTokenMs": 13,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -7327,20 +7297,20 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13068,
+              "characterCount": 14039,
               "name": "userContext",
-              "nonEmptyLineCount": 128
+              "nonEmptyLineCount": 135
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
-          "targetCoachReply": "The close is the lever, so make the final sentence the ask, then stop."
+          "targetCoachReply": "The close is the focus, so make the final sentence the ask, then stop."
         },
         "provider": {
           "model": "gpt-4o-mini",
           "name": "OpenAI",
           "tierRequested": "geminiFast"
         },
-        "rawReply": "The close is the lever, so make the final sentence the ask, then stop.",
+        "rawReply": "The close is the focus, so make the final sentence the ask, then stop.",
         "reasoning": {
           "qualityGateEvents": [
             "passed"
@@ -7351,21 +7321,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-pause-beats-filler, filler-give-the-pause-a-job",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 27,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-pause-beats-filler",
-            "filler-give-the-pause-a-job"
+            "interview-answer-first",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -7449,7 +7419,7 @@
       "reply": "Fair. I am stopping that thread. Your ask is about the close, so the move is final sentence as the ask, not another filler drill.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 40,
+          "assessmentCacheAgeMs": 22,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -7469,13 +7439,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair. I am stopping that thread. Your ask is about the close, so the move is final sentence as the ask, not another filler drill.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 58,
-          "timeToFirstVisibleTokenMs": 58,
+          "timeToCompleteReplyMs": 23,
+          "timeToFirstVisibleTokenMs": 23,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -7496,9 +7464,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 12932,
+              "characterCount": 13965,
               "name": "userContext",
-              "nonEmptyLineCount": 128
+              "nonEmptyLineCount": 135
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -7520,21 +7488,21 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, filler-silent-reset",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: filler-pause-beats-filler, interview-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 30,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "filler-silent-reset"
+            "filler-pause-beats-filler",
+            "interview-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -7613,7 +7581,7 @@
       "reply": "Both can be true. The score says mechanics improved; your check-in says the rep felt harder. Change the next test because effort matters too: same prompt, one fewer condition, and check whether effort drops without the score falling.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 50,
+          "assessmentCacheAgeMs": 29,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -7633,13 +7601,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Both can be true. The score says mechanics improved; your check-in says the rep felt harder. Change the next test because effort matters too: same prompt, one fewer condition, and check whether effort drops without the score falling.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 66,
-          "timeToFirstVisibleTokenMs": 66,
+          "timeToCompleteReplyMs": 30,
+          "timeToFirstVisibleTokenMs": 30,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -7660,9 +7626,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13154,
+              "characterCount": 14215,
               "name": "userContext",
-              "nonEmptyLineCount": 130
+              "nonEmptyLineCount": 137
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -7684,21 +7650,21 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: progress-celebrate-the-behavior, filler-end-of-sentence",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: social-story-arc-small, progress-celebrate-the-behavior",
           "hasDiagnosis": true,
           "queryCharacterCount": 52,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "progress-celebrate-the-behavior",
-            "filler-end-of-sentence"
+            "social-story-arc-small",
+            "progress-celebrate-the-behavior"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -7782,7 +7748,7 @@
       "reply": "Treat it as useful self-report, not proof. The reusable move is verdict first plus one example, so keep that for interviews and capture what question made it land.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 49,
+          "assessmentCacheAgeMs": 32,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -7802,13 +7768,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Treat it as useful self-report, not proof. The reusable move is verdict first plus one example, so keep that for interviews and capture what question made it land.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 67,
-          "timeToFirstVisibleTokenMs": 67,
+          "timeToCompleteReplyMs": 34,
+          "timeToFirstVisibleTokenMs": 34,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -7829,9 +7793,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13399,
+              "characterCount": 14495,
               "name": "userContext",
-              "nonEmptyLineCount": 133
+              "nonEmptyLineCount": 140
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -7853,21 +7817,21 @@
           "visionScore": 92
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, interview-buy-thinking-time",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, interview-star-under-pressure",
           "hasDiagnosis": true,
           "queryCharacterCount": 66,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
             "interview-answer-first",
-            "interview-buy-thinking-time"
+            "interview-star-under-pressure"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -7945,7 +7909,7 @@
       "reply": "The close is the move, so make the final sentence the ask, then stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 30,
+          "assessmentCacheAgeMs": 12,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -7965,13 +7929,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "The close is the move, so make the final sentence the ask, then stop.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 47,
-          "timeToFirstVisibleTokenMs": 47,
+          "timeToCompleteReplyMs": 13,
+          "timeToFirstVisibleTokenMs": 13,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -7992,9 +7954,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 12975,
+              "characterCount": 14068,
               "name": "userContext",
-              "nonEmptyLineCount": 128
+              "nonEmptyLineCount": 135
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -8016,21 +7978,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: structure-frame-the-open, filler-pause-beats-filler",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: structure-frame-the-open, structure-prep",
           "hasDiagnosis": true,
           "queryCharacterCount": 21,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
             "structure-frame-the-open",
-            "filler-pause-beats-filler"
+            "structure-prep"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -8109,7 +8071,7 @@
       "reply": "I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 26,
+          "assessmentCacheAgeMs": 8,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -8129,13 +8091,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "I need one rep before I can coach this honestly. Record 60 seconds, then I will read the opener and close.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 42,
-          "timeToFirstVisibleTokenMs": 42,
+          "timeToCompleteReplyMs": 9,
+          "timeToFirstVisibleTokenMs": 9,
           "timeToFirstVisibleTokenSource": "finalReplyCommit"
         },
         "memory": {
@@ -8156,9 +8116,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13011,
+              "characterCount": 14031,
               "name": "userContext",
-              "nonEmptyLineCount": 128
+              "nonEmptyLineCount": 135
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -8180,21 +8140,21 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
-          "diagnosticReason": "Retrieved 2 cards: filler-end-of-sentence, filler-anchor-word",
+          "activeLever": "answerDevelopment",
+          "diagnosticReason": "Retrieved 2 cards: interview-answer-first, structure-answer-first",
           "hasDiagnosis": true,
           "queryCharacterCount": 19,
           "queryPresent": true,
           "retrievedCardCount": 2,
           "retrievedCardIDs": [
-            "filler-end-of-sentence",
-            "filler-anchor-word"
+            "interview-answer-first",
+            "structure-answer-first"
           ],
           "semanticRerankAllowed": true,
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -8279,7 +8239,7 @@
       "reply": "Fair push. That sounded like a generic AI wrapper, not a coach read. One safe signal is that your recommendation arrived late, so put the recommendation in sentence one on the next rep, give one reason, then stop.",
       "trace": {
         "cache": {
-          "assessmentCacheAgeMs": 66,
+          "assessmentCacheAgeMs": 30,
           "assessmentCacheHit": false,
           "sourcePath": "/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json",
           "trajectoryCacheHit": false
@@ -8299,13 +8259,11 @@
           "typedAssessmentFallbackApplied": false
         },
         "finalReply": "Fair push. That sounded like a generic AI wrapper, not a coach read. One safe signal is that your recommendation arrived late, so put the recommendation in sentence one on the next rep, give one reason, then stop.",
-        "gitCommit": "e502cb3c",
-        "issues": [
-          "reliability:floorConfidenceWithEvidence"
-        ],
+        "gitCommit": "b9258cb7",
+        "issues": [],
         "latency": {
-          "timeToCompleteReplyMs": 83,
-          "timeToFirstVisibleTokenMs": 17,
+          "timeToCompleteReplyMs": 31,
+          "timeToFirstVisibleTokenMs": 0,
           "timeToFirstVisibleTokenSource": "localImmediateRead"
         },
         "memory": {
@@ -8326,9 +8284,9 @@
             },
             {
               "cachePolicy": "none",
-              "characterCount": 13641,
+              "characterCount": 14732,
               "name": "userContext",
-              "nonEmptyLineCount": 135
+              "nonEmptyLineCount": 142
             }
           ],
           "source": "CoachReplyPipeline real Swift app-path harness",
@@ -8350,7 +8308,7 @@
           "visionScore": 100
         },
         "retrieval": {
-          "activeLever": "fillerReduction",
+          "activeLever": "answerDevelopment",
           "diagnosticReason": "No cards matched turn",
           "hasDiagnosis": true,
           "queryCharacterCount": 37,
@@ -8361,7 +8319,7 @@
           "strategy": "BM25 + semantic rerank",
           "voice": "authoritative"
         },
-        "sourceFingerprint": "sha256:6eaef2d651b595c273f8d705c3a0ea0025805d16de8f596fb658520a2595a201",
+        "sourceFingerprint": "sha256:3b6e82709b43b56a1bb02764fc57971f78555fddb43c0650d668d1ce6c745fce",
         "versions": {
           "fixtures": "gold-v1",
           "promptTraceSchemaVersion": "coach-prompt-modules-v1",
@@ -8375,7 +8333,7 @@
   ],
   "schemaVersion": "coach-arena-report-v1",
   "summary": {
-    "average": 79.78,
+    "average": 79.76,
     "coverageFailures": [],
     "evidenceClaim": "realPipelineEvidence",
     "failureCount": 0,
@@ -8657,7 +8615,7 @@
     "traceQualityPasses": true,
     "typeAverages": {
       "deepAssessment": 80.67,
-      "groundedRead": 80.5,
+      "groundedRead": 80.44,
       "quickMove": 78.76,
       "trustRepair": 79.67
     },
@@ -8697,6 +8655,12 @@
       },
       {
         "failureReasons": [],
+        "id": "confidence-ending-009",
+        "overall": 72,
+        "turnType": "groundedRead"
+      },
+      {
+        "failureReasons": [],
         "id": "leadership-transfer-capture-026",
         "overall": 72,
         "turnType": "quickMove"
@@ -8711,12 +8675,6 @@
         "failureReasons": [],
         "id": "prompt-echo-041",
         "overall": 72,
-        "turnType": "groundedRead"
-      },
-      {
-        "failureReasons": [],
-        "id": "confidence-ending-009",
-        "overall": 73,
         "turnType": "groundedRead"
       },
       {

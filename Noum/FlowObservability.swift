@@ -83,31 +83,73 @@ struct FlowEvent: Codable, Equatable, Identifiable {
 
 @MainActor
 final class FlowEventLog: ObservableObject {
-    static let shared = FlowEventLog()
+    static let shared = FlowEventLog(accountScoped: true)
     nonisolated static let defaultStorageKey = "flowEvents.recent"
-    nonisolated static let defaultMaxRecords = 200
+    nonisolated static let defaultMaxRecords = 500
 
     @Published private(set) var events: [FlowEvent] = []
 
     private let defaults: UserDefaults
     private let storageKey: String
     private let maxRecords: Int
+    private let accountScoped: Bool
 
     init(
         defaults: UserDefaults = .standard,
         storageKey: String = FlowEventLog.defaultStorageKey,
-        maxRecords: Int = FlowEventLog.defaultMaxRecords
+        maxRecords: Int = FlowEventLog.defaultMaxRecords,
+        accountScoped: Bool = false
     ) {
         self.defaults = defaults
         self.storageKey = storageKey
         self.maxRecords = max(1, maxRecords)
+        self.accountScoped = accountScoped
         load()
     }
 
     func log(_ event: FlowEvent) {
         events.insert(event, at: 0)
-        events = Array(events.prefix(maxRecords))
+        events = trimmed(events)
         persist()
+    }
+
+    func logOnce(_ event: FlowEvent) {
+        guard !events.contains(where: {
+            $0.correlationId == event.correlationId && $0.stage == event.stage
+        }) else { return }
+        log(event)
+    }
+
+    /// Records one account-local active-day event and a durable starting point
+    /// for time-to-first-rep. No device identifier or transcript is captured.
+    func recordActiveDay(now: Date = Date(), calendar: Calendar = .current) {
+        if !events.contains(where: { $0.stage == "activation.firstEligible" }) {
+            log(FlowEvent.make(
+                createdAt: now,
+                correlationId: UUID(),
+                flow: .other,
+                stage: "activation.firstEligible",
+                reason: "first account-local value opportunity"
+            ))
+        }
+        guard !events.contains(where: {
+            $0.stage == "retention.appActive" && calendar.isDate($0.createdAt, inSameDayAs: now)
+        }) else { return }
+        log(FlowEvent.make(
+            createdAt: now,
+            correlationId: UUID(),
+            flow: .other,
+            stage: "retention.appActive",
+            reason: "foreground active day"
+        ))
+    }
+
+    func reloadForCurrentAccount() {
+        load()
+    }
+
+    func endSession() {
+        events = []
     }
 
     /// Events for one flow, in chronological (oldest-first) order.
@@ -127,11 +169,11 @@ final class FlowEventLog: ObservableObject {
 
     func reset() {
         events = []
-        defaults.removeObject(forKey: storageKey)
+        defaults.removeObject(forKey: effectiveStorageKey)
     }
 
     func replaceForDebug(_ seeded: [FlowEvent]) {
-        events = Array(seeded.sorted { $0.createdAt > $1.createdAt }.prefix(maxRecords))
+        events = trimmed(seeded.sorted { $0.createdAt > $1.createdAt })
         persist()
     }
 
@@ -163,17 +205,132 @@ final class FlowEventLog: ObservableObject {
     }
 
     private func load() {
-        guard let data = defaults.data(forKey: storageKey),
+        guard let data = defaults.data(forKey: effectiveStorageKey),
               let decoded = try? JSONDecoder().decode([FlowEvent].self, from: data) else {
             events = []
             return
         }
-        events = Array(decoded.sorted { $0.createdAt > $1.createdAt }.prefix(maxRecords))
+        events = trimmed(decoded.sorted { $0.createdAt > $1.createdAt })
     }
 
     private func persist() {
         guard let data = try? JSONEncoder().encode(events) else { return }
-        defaults.set(data, forKey: storageKey)
+        defaults.set(data, forKey: effectiveStorageKey)
+    }
+
+    private var effectiveStorageKey: String {
+        guard accountScoped else { return storageKey }
+        let accountID = KeychainHelper.load(key: "NoumAccountID") ?? "guest"
+        return "\(storageKey).\(accountID)"
+    }
+
+    private func trimmed(_ source: [FlowEvent]) -> [FlowEvent] {
+        let ordered = source.sorted { $0.createdAt > $1.createdAt }
+        let pinnedPrefixes = ["activation.firstEligible", "transformation.helpfulness"]
+        let pinned = Array(pinnedPrefixes.compactMap { prefix in
+            ordered.first(where: { $0.stage.hasPrefix(prefix) })
+        }.prefix(maxRecords))
+        let pinnedIDs = Set(pinned.map(\.id))
+        let recentCapacity = max(0, maxRecords - pinned.count)
+        let recent = ordered.filter { !pinnedIDs.contains($0.id) }.prefix(recentCapacity)
+        return (Array(recent) + pinned).sorted { $0.createdAt > $1.createdAt }
+    }
+}
+
+struct TransformationKPIReport: Equatable {
+    let firstRepCompleted: Bool
+    let timeToFirstRepSeconds: TimeInterval?
+    let sessionsPerActiveWeek: Double
+    let reviewOpenRate: Double?
+    let prescriptionAcceptanceRate: Double?
+    let cloudToLocalFallbackRate: Double?
+    let typedToLiveUpgradeRate: Double?
+    let goalImprovementRate7Days: Double?
+    let goalImprovementRate28Days: Double?
+    let notificationOptInAfterValue: Bool?
+    let retainedDay1: Bool?
+    let retainedDay7: Bool?
+    let retainedDay28: Bool?
+
+    static func derive(
+        events: [FlowEvent],
+        sessions: [PracticeSession],
+        outcomes: [RecommendationOutcome],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> TransformationKPIReport {
+        let orderedSessions = sessions.filter { !$0.isEvaluationFixture }.sorted { $0.date < $1.date }
+        let firstEligible = events.filter { $0.stage == "activation.firstEligible" }.map(\.createdAt).min()
+        let firstRep = orderedSessions.first?.date
+        let timeToFirstRep = firstEligible.flatMap { start in
+            firstRep.map { max(0, $0.timeIntervalSince(start)) }
+        }
+
+        let activeDays = Set(events.filter { $0.stage == "retention.appActive" }.map {
+            calendar.startOfDay(for: $0.createdAt)
+        })
+        let activeWeekStarts = Set(activeDays.compactMap {
+            calendar.dateInterval(of: .weekOfYear, for: $0)?.start
+        })
+        let sessionsPerWeek = activeWeekStarts.isEmpty
+            ? 0
+            : Double(orderedSessions.count) / Double(activeWeekStarts.count)
+
+        let reviewOpens = events.filter { $0.stage == "review.sessionOpened" }.count
+        let reviewRate = orderedSessions.isEmpty ? nil : min(1, Double(reviewOpens) / Double(orderedSessions.count))
+        let followed = outcomes.filter(\.followed).count
+        let acceptance = outcomes.isEmpty ? nil : Double(followed) / Double(outcomes.count)
+        let providerSessions = orderedSessions.filter { $0.transcriptionProvider != nil }
+        let localSessions = providerSessions.filter { $0.transcriptionProvider == "local" }.count
+        let fallbackRate = providerSessions.isEmpty ? nil : Double(localSessions) / Double(providerSessions.count)
+        let typedOpens = events.filter { $0.stage == "coach.typedOpened" }.count
+        let liveUpgrades = events.filter { $0.stage == "coach.typedToLive" }.count
+        let upgradeRate = typedOpens == 0 ? nil : min(1, Double(liveUpgrades) / Double(typedOpens))
+
+        func improvementRate(days: Int) -> Double? {
+            guard let cutoff = calendar.date(byAdding: .day, value: -days, to: now) else { return nil }
+            let reads = outcomes
+                .filter { $0.completedAt >= cutoff }
+                .compactMap(\.goalFollowUpResult)
+                .filter { $0 != .needsMoreEvidence }
+            guard !reads.isEmpty else { return nil }
+            return Double(reads.filter { $0 == .earlyImprovement }.count) / Double(reads.count)
+        }
+
+        let notificationDecision = events
+            .filter { $0.stage == "notification.authorizationGranted" || $0.stage == "notification.authorizationDeclined" }
+            .max { $0.createdAt < $1.createdAt }
+
+        func retained(day: Int) -> Bool? {
+            guard let firstEligible,
+                  let target = calendar.date(byAdding: .day, value: day, to: calendar.startOfDay(for: firstEligible)),
+                  now >= target else { return nil }
+            return activeDays.contains(target)
+        }
+
+        return TransformationKPIReport(
+            firstRepCompleted: firstRep != nil,
+            timeToFirstRepSeconds: timeToFirstRep,
+            sessionsPerActiveWeek: sessionsPerWeek,
+            reviewOpenRate: reviewRate,
+            prescriptionAcceptanceRate: acceptance,
+            cloudToLocalFallbackRate: fallbackRate,
+            typedToLiveUpgradeRate: upgradeRate,
+            goalImprovementRate7Days: improvementRate(days: 7),
+            goalImprovementRate28Days: improvementRate(days: 28),
+            notificationOptInAfterValue: notificationDecision.map { $0.stage == "notification.authorizationGranted" },
+            retainedDay1: retained(day: 1),
+            retainedDay7: retained(day: 7),
+            retainedDay28: retained(day: 28)
+        )
+    }
+}
+
+enum TransformationQuestionEligibility {
+    static func shouldShow(sessionCount: Int, events: [FlowEvent]) -> Bool {
+        sessionCount >= 3 && !events.contains {
+            $0.stage.hasPrefix("transformation.helpfulness")
+        }
     }
 }
 

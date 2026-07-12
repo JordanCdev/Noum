@@ -1441,6 +1441,11 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var flowEventsCard: some View {
+        let kpis = TransformationKPIReport.derive(
+            events: flowEvents.events,
+            sessions: sessionStore.sessions,
+            outcomes: recommendationLearningStore.outcomes
+        )
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 compactStat(title: "Flow events", value: "\(flowEvents.events.count)")
@@ -1449,6 +1454,45 @@ struct SettingsView: View {
             }
             Text("Correlation-grouped events for reconstructing what happened in a rep or chat turn. Reasons + counts only — no transcript text.")
                 .font(.caption)
+                .foregroundStyle(.secondary)
+            Divider()
+            Text("Transformation signals")
+                .font(.caption.weight(.semibold))
+            HStack {
+                compactStat(
+                    title: "First rep",
+                    value: kpis.firstRepCompleted ? "Complete" : "Pending"
+                )
+                Spacer()
+                compactStat(
+                    title: "Time to rep",
+                    value: kpis.timeToFirstRepSeconds.map { "\(Int($0))s" } ?? "—"
+                )
+            }
+            HStack {
+                compactStat(
+                    title: "Typed → live",
+                    value: kpis.typedToLiveUpgradeRate.map { "\(Int(($0 * 100).rounded()))%" } ?? "—"
+                )
+                Spacer()
+                compactStat(
+                    title: "Goal movement 28d",
+                    value: kpis.goalImprovementRate28Days.map { "\(Int(($0 * 100).rounded()))%" } ?? "—"
+                )
+            }
+            HStack {
+                compactStat(
+                    title: "Review open",
+                    value: kpis.reviewOpenRate.map { "\(Int(($0 * 100).rounded()))%" } ?? "—"
+                )
+                Spacer()
+                compactStat(
+                    title: "Prescription",
+                    value: kpis.prescriptionAcceptanceRate.map { "\(Int(($0 * 100).rounded()))%" } ?? "—"
+                )
+            }
+            Text("Account-local diagnostic signals. No transcript, advertising identifier, or third-party analytics SDK is used.")
+                .font(.caption2)
                 .foregroundStyle(.secondary)
             if flowEvents.events.isEmpty {
                 Text("No flow events yet.")

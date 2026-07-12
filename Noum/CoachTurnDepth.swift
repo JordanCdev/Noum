@@ -62,9 +62,10 @@ enum CoachBrainFlags {
     /// only the local typed coach read until the completed provider draft passes
     /// the existing quality gates"). Off closes the "multi-version reply" defect:
     /// a rich streamed draft can no longer be shown and then quietly replaced by
-    /// a shorter gate-substituted final. The streaming transport still runs for
-    /// latency; only the mid-stream UI overwrite is withheld. On restores the
-    /// prior show-raw-partials behaviour for A/B.
+    /// a shorter gate-substituted final. With partials withheld, every assessed
+    /// turn gets the local read and the provider uses its ordinary endpoint;
+    /// streaming would add connection risk without changing visible latency.
+    /// On restores the prior show-raw-partials behaviour for A/B.
     static var streamRawPartialsToUI: Bool {
         boolFlag(
             key: streamRawPartialsToUIKey,

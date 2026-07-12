@@ -495,6 +495,10 @@ struct SessionHistoryDetailView: View {
     @Binding var navigationPath: NavigationPath
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
+    @StateObject private var baselineStore = BaselineStore.shared
+    @StateObject private var ratingStore = RatingStore.shared
+    @StateObject private var coachMemoryStore = CoachMemoryStore.shared
+    @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @State private var showsFullReview = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -507,6 +511,30 @@ struct SessionHistoryDetailView: View {
                     heroCard
 
                     promptCard
+                    if let goalOutcomeRead {
+                        GoalOutcomeCard(
+                            read: goalOutcomeRead,
+                            actionTitle: "Practice this mode",
+                            onPractice: {
+                                let presentation = SessionHistoryDetailReplayPresentation.make(for: session)
+                                recommendationLearningStore.recordShown(
+                                    fingerprint: "goal-outcome-review|\(session.mode.rawValue)|\(goalOutcomeRead.nextDimension?.dimensionID ?? "general")",
+                                    title: presentation.title,
+                                    focus: goalOutcomeRead.nextDimension?.label ?? presentation.supportingCopy,
+                                    target: goalOutcomeRead.prescribedNextAction,
+                                    mode: session.mode,
+                                    isAIBacked: false,
+                                    goal: goalOutcomeRead.style,
+                                    targetDimensionID: goalOutcomeRead.nextDimension?.dimensionID,
+                                    sourceSessionID: session.id
+                                )
+                                recommendationLearningStore.markTapped(mode: session.mode)
+                                navigationPath.append(
+                                    presentation.destination
+                                )
+                            }
+                        )
+                    }
                     focusCard
                     fullReviewToggle
 
@@ -533,6 +561,25 @@ struct SessionHistoryDetailView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            FlowEventLog.shared.logOnce(FlowEvent.make(
+                correlationId: session.id,
+                flow: .other,
+                stage: "review.sessionOpened",
+                reason: "historical session detail opened"
+            ))
+        }
+    }
+
+    private var goalOutcomeRead: GoalOutcomeRead? {
+        GoalOutcomeEngine.read(
+            profile: coachingProfileStore.profile,
+            baseline: baselineStore.baseline,
+            rating: ratingStore.rating,
+            sessions: sessionStore.sessions.filter { $0.date <= session.date },
+            coachMemory: coachMemoryStore.currentMemory,
+            outcomes: recommendationLearningStore.outcomes.filter { $0.completedAt <= session.date }
+        )
     }
 
     private var heroCard: some View {

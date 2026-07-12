@@ -162,6 +162,15 @@ final class DeferredProfileCaptureManager: ObservableObject {
         UserDefaults.standard.set(true, forKey: seenKey(for: prompt))
     }
 
+    #if DEBUG
+    func resetForUITesting() {
+        for prompt in [Prompt.goal, .whyNow, .successVision] {
+            UserDefaults.standard.removeObject(forKey: seenKey(for: prompt))
+        }
+        pendingPrompt = nil
+    }
+    #endif
+
     /// Already filled in via onboarding (legacy users) or a prior prompt.
     private func alreadyAnswered(_ prompt: Prompt, profile: CoachingProfile?) -> Bool {
         guard let profile else { return false }

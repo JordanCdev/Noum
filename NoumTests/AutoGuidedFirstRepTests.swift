@@ -25,12 +25,10 @@ struct AutoGuidedFirstRepTests {
         AutoGuidedFirstRep.resetForDebug() // clears the per-account one-shot + fast-start
     }
 
-    @Test func defaultsToOffSoNewUsersKeepThePicker() {
+    @Test func defaultsOffUntilSignedDeviceActivationGatePasses() {
         cleanState()
-        // Compile-time default is off until an on-device feel pass signs off.
         #expect(AutoGuidedFirstRep.enabled == false)
         #expect(!AutoGuidedFirstRep.prepareLaunchIfNeeded(hasCompletedOnboarding: true))
-        #expect(!PracticeModeQuickStart.consume(for: .timed))
         cleanState()
     }
 

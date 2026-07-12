@@ -30,15 +30,10 @@ enum GoalRubricStore {
             // verdict-first / hedge-control-heavy mis-reads the voice. Salience
             // and a landed close carry it instead.
             return storytellingRubric
-        case .authoritative, .executive, .persuasive, .concise, nil:
-            // These four share the authoritative spine — verdict-first, low
-            // filler, composed under pressure, committed close — so the
-            // authoritative rubric is a faithful (not punishing) proxy:
-            // executive = composed authority, persuasive still leads with a
-            // claim, concise is verdict-first by definition. They are mapped
-            // deliberately, not for lack of their own rubric; warm/storytelling
-            // are split out precisely because that spine would mis-judge them.
-            return authoritativeRubric
+        case .authoritative, nil: return authoritativeRubric
+        case .executive: return executiveRubric
+        case .persuasive: return persuasiveRubric
+        case .concise: return conciseRubric
         }
     }
 
@@ -134,7 +129,53 @@ enum GoalRubricStore {
             "pressure_stability": 0.18,
             "controlled_pacing": 0.16,
             "salience": 0.08
-        ]
+        ],
+        establishedEvidenceFloor: 0.70
+    )
+
+    static let executiveRubric = GoalRubric(
+        goalID: "executive",
+        displayName: "Executive communication",
+        dimensions: coreDimensions,
+        defaultWeights: [
+            "verdict_first": 0.20,
+            "hedge_control": 0.12,
+            "clean_close": 0.18,
+            "pressure_stability": 0.24,
+            "controlled_pacing": 0.18,
+            "salience": 0.08
+        ],
+        establishedEvidenceFloor: 0.72
+    )
+
+    static let persuasiveRubric = GoalRubric(
+        goalID: "persuasive",
+        displayName: "Persuasive communication",
+        dimensions: coreDimensions,
+        defaultWeights: [
+            "verdict_first": 0.18,
+            "hedge_control": 0.10,
+            "clean_close": 0.18,
+            "pressure_stability": 0.14,
+            "controlled_pacing": 0.14,
+            "salience": 0.26
+        ],
+        establishedEvidenceFloor: 0.70
+    )
+
+    static let conciseRubric = GoalRubric(
+        goalID: "concise",
+        displayName: "Concise communication",
+        dimensions: coreDimensions,
+        defaultWeights: [
+            "verdict_first": 0.28,
+            "hedge_control": 0.18,
+            "clean_close": 0.24,
+            "pressure_stability": 0.10,
+            "controlled_pacing": 0.14,
+            "salience": 0.06
+        ],
+        establishedEvidenceFloor: 0.68
     )
 
     /// Warm voice: down-weight hedge control (softeners are part of warmth) and
@@ -152,7 +193,8 @@ enum GoalRubricStore {
             "pressure_stability": 0.16,
             "controlled_pacing": 0.26,
             "salience": 0.22
-        ]
+        ],
+        establishedEvidenceFloor: 0.70
     )
 
     /// Storytelling voice: a story does not open with the verdict and is not a
@@ -170,6 +212,7 @@ enum GoalRubricStore {
             "pressure_stability": 0.14,
             "controlled_pacing": 0.20,
             "salience": 0.30
-        ]
+        ],
+        establishedEvidenceFloor: 0.70
     )
 }

@@ -611,7 +611,15 @@ final class NotificationManager: ObservableObject {
         case .denied:
             return false
         case .notDetermined:
-            return (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+            let granted = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+            FlowLog.log(
+                correlationId: UUID(),
+                flow: .other,
+                stage: granted ? "notification.authorizationGranted" : "notification.authorizationDeclined",
+                outcome: granted ? .success : .skipped,
+                reason: "notification decision after contextual prompt"
+            )
+            return granted
         @unknown default:
             return false
         }

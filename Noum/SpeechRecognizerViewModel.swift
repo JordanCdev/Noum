@@ -100,6 +100,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var pastSessions: [PracticeSession] = []
     @Published var connectionError: String?
     @Published var activeProviderName: String = ""
+    private var activeProviderIdentifier: String
     @Published var microphonePermissionState: PracticeMicrophonePermissionState = .current()
     @Published private(set) var recordingLifecycle: RecordingLifecycleState = .idle
 
@@ -260,6 +261,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     init(preloadOnInit: Bool = true) {
         self.provider = Self.resolveProvider()
         self.activeProviderName = provider.name
+        self.activeProviderIdentifier = provider.identifier
         installAudioSessionObservers()
         guard preloadOnInit else { return }
         loadSessions()
@@ -278,12 +280,24 @@ class SpeechRecognizerViewModel: ObservableObject {
         let selected = UserDefaults.standard.string(forKey: "transcriptionProvider")
         return makeProvider(for: TranscriptionProviderID.resolved(fromStoredValue: selected))
         #else
-        // Release builds have one authenticated cloud route. Ignore any
-        // provider preference left behind by an internal build so production
-        // can never fall back to the retired AWS credential endpoint or a
-        // client-side Google key.
-        return DeepgramProvider()
+        // Production prefers the authenticated Deepgram route when consent is
+        // present, then falls back to Apple's strictly on-device recognizer if
+        // token/network setup cannot begin. With cloud processing off, never
+        // instantiate a cloud provider at all.
+        return productionProvider(
+            cloudProcessingAllowed: AISettingsManager.shared.isCloudProcessingAllowed
+        )
         #endif
+    }
+
+    /// Pure production selection seam for contract tests. Consent-off never
+    /// constructs a cloud provider; consent-on uses one bounded local fallback.
+    static func productionProvider(cloudProcessingAllowed: Bool) -> any TranscriptionProvider {
+        guard cloudProcessingAllowed else { return LocalSpeechProvider() }
+        return ResilientTranscriptionProvider(
+            primary: DeepgramProvider(),
+            fallback: LocalSpeechProvider()
+        )
     }
 
     /// Shared provider factory. The live coach call (`AskNoumVoiceInput`)
@@ -295,7 +309,16 @@ class SpeechRecognizerViewModel: ObservableObject {
         switch id {
         case .deepgram: return DeepgramProvider()
         case .google: return GoogleSpeechProvider()
-        case .aws: return AWSTranscribeProvider()
+        case .aws:
+            // AWS remains available only for local development compatibility.
+            // A future Release call site must never resurrect the legacy
+            // direct-credential path merely by resolving this enum case.
+            #if DEBUG
+            return AWSTranscribeProvider()
+            #else
+            return LocalSpeechProvider()
+            #endif
+        case .local: return LocalSpeechProvider()
         }
     }
 
@@ -379,16 +402,12 @@ class SpeechRecognizerViewModel: ObservableObject {
             return false
         }
 
-        guard AISettingsManager.shared.isCloudProcessingAllowed else {
-            failStartRecording(with: TranscriptionSessionError.cloudProcessingConsentRequired)
-            return false
-        }
-
         transition(to: .connecting)
 
         // Re-resolve provider in case user changed settings
         provider = Self.resolveProvider()
         activeProviderName = provider.name
+        activeProviderIdentifier = provider.identifier
 
         guard await ensureRecordPermission() else {
             guard recordingLifecycle == .connecting else { return false }
@@ -456,6 +475,10 @@ class SpeechRecognizerViewModel: ObservableObject {
                 return false
             }
             self.activeSession = session
+            if let resolved = session.resolvedProviderIdentifier {
+                activeProviderIdentifier = resolved
+                activeProviderName = TranscriptionProviderID(rawValue: resolved)?.displayName ?? resolved
+            }
 
             transcriptListenerTask = Task { @MainActor [weak self] in
                 do {
@@ -999,7 +1022,7 @@ class SpeechRecognizerViewModel: ObservableObject {
                 date: sessionStart ?? Date(),
                 mode: currentSessionMode,
                 transcriptConfidence: avgConfidence,
-                transcriptionProvider: provider.identifier,
+                transcriptionProvider: activeProviderIdentifier,
                 pressureLevel: pressure,
                 isRated: pressureOn,
                 pauseMetrics: pauseMetrics,
@@ -1038,7 +1061,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         let wordCount = transcribedText.split { !$0.isLetter && !$0.isNumber }.count
 
         let metric = TranscriptionQualityMetrics(
-            provider: provider.identifier,
+            provider: activeProviderIdentifier,
             sessionId: UUID(),
             date: Date(),
             totalLatencyMs: avgLatency,

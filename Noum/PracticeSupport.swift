@@ -8537,6 +8537,17 @@ struct RecommendationExposure: Codable, Equatable {
     let isAIBacked: Bool
     let shownAt: Date
     var tappedAt: Date?
+    /// Goal context is additive so pre-M26 exposures remain valid.
+    var goal: SpeakingStyleGoal? = nil
+    var targetDimensionID: String? = nil
+    var sourceSessionID: UUID? = nil
+}
+
+enum GoalFollowUpResult: String, Codable, Equatable {
+    case held
+    case earlyImprovement
+    case mixed
+    case needsMoreEvidence
 }
 
 struct RecommendationOutcome: Codable, Equatable, Identifiable {
@@ -8566,6 +8577,10 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable {
     /// prescription on pace when the evidence is actually recorded.
     let wordsPerMinute: Double?
     let paceDelta: Double?
+    let goal: SpeakingStyleGoal?
+    let targetDimensionID: String?
+    let sourceSessionID: UUID?
+    let goalFollowUpResult: GoalFollowUpResult?
 
     init(
         id: UUID,
@@ -8582,7 +8597,11 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable {
         fillerDelta: Double,
         durationDelta: Double,
         wordsPerMinute: Double? = nil,
-        paceDelta: Double? = nil
+        paceDelta: Double? = nil,
+        goal: SpeakingStyleGoal? = nil,
+        targetDimensionID: String? = nil,
+        sourceSessionID: UUID? = nil,
+        goalFollowUpResult: GoalFollowUpResult? = nil
     ) {
         self.id = id
         self.fingerprint = fingerprint
@@ -8599,6 +8618,10 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable {
         self.durationDelta = durationDelta
         self.wordsPerMinute = wordsPerMinute
         self.paceDelta = paceDelta
+        self.goal = goal
+        self.targetDimensionID = targetDimensionID
+        self.sourceSessionID = sourceSessionID
+        self.goalFollowUpResult = goalFollowUpResult
     }
 }
 
@@ -8932,7 +8955,25 @@ enum RecommendationResponseAnalyzer {
     }
 
     static func promptLines(from outcomes: [RecommendationOutcome]) -> [String] {
-        summarize(outcomes: outcomes).map { summary in
+        let goalLines = outcomes
+            .filter { $0.followed && $0.goal != nil && $0.goalFollowUpResult != nil }
+            .sorted { $0.completedAt > $1.completedAt }
+            .prefix(2)
+            .map { outcome in
+                let goal = outcome.goal?.title ?? "selected"
+                let target = normalizedFocus(outcome.focus) ?? "the prescribed target"
+                let observation: String
+                switch outcome.goalFollowUpResult {
+                case .held: observation = "that the target held"
+                case .earlyImprovement: observation = "early signs of improvement"
+                case .mixed: observation = "mixed evidence"
+                case .needsMoreEvidence: observation = "a need for more comparable evidence"
+                case .none: observation = "a need for more comparable evidence"
+                }
+                return "- Goal follow-up (\(goal), \(target)): this rep showed \(observation). Treat this as observation, not proof that the drill caused the change."
+            }
+
+        let responseLines = summarize(outcomes: outcomes).map { summary in
             let repNoun = summary.followedCount == 1 ? "rep" : "reps"
             let focusClause = summary.focus.map { " for \($0)" } ?? ""
             var metrics: [String] = []
@@ -8942,6 +8983,7 @@ enum RecommendationResponseAnalyzer {
             metrics.append("fillers \(signed(summary.averageFillerDelta))")
             return "- \(summary.mode.displayLabel)\(focusClause), followed for \(summary.followedCount) \(repNoun): \(metrics.joined(separator: ", ")) vs preceding reps; \(summary.assessment.coachingGuidance)."
         }
+        return Array(goalLines) + responseLines
     }
 
     private static func assessment(
@@ -9293,7 +9335,10 @@ final class RecommendationLearningStore: ObservableObject {
         focus: String,
         target: String,
         mode: PracticeMode,
-        isAIBacked: Bool
+        isAIBacked: Bool,
+        goal: SpeakingStyleGoal? = nil,
+        targetDimensionID: String? = nil,
+        sourceSessionID: UUID? = nil
     ) {
         if pendingExposure?.fingerprint == fingerprint { return }
         pendingExposure = RecommendationExposure(
@@ -9304,7 +9349,10 @@ final class RecommendationLearningStore: ObservableObject {
             mode: mode,
             isAIBacked: isAIBacked,
             shownAt: Date(),
-            tappedAt: nil
+            tappedAt: nil,
+            goal: goal,
+            targetDimensionID: targetDimensionID,
+            sourceSessionID: sourceSessionID
         )
         persistPending()
         syncIfPossible()
@@ -9364,7 +9412,16 @@ final class RecommendationLearningStore: ObservableObject {
             fillerDelta: Double(session.fillerWordCount) - averageFillers,
             durationDelta: session.duration - averageDuration,
             wordsPerMinute: comparablePaceDelta != nil ? sessionPace : nil,
-            paceDelta: comparablePaceDelta
+            paceDelta: comparablePaceDelta,
+            goal: pendingExposure.goal,
+            targetDimensionID: pendingExposure.targetDimensionID,
+            sourceSessionID: pendingExposure.sourceSessionID,
+            goalFollowUpResult: Self.goalFollowUpResult(
+                followed: pendingExposure.mode == session.mode,
+                comparableScoreDelta: comparableScoreDelta,
+                fillerDelta: Double(session.fillerWordCount) - averageFillers,
+                comparablePaceDelta: comparablePaceDelta
+            )
         )
 
         outcomes.insert(outcome, at: 0)
@@ -9373,6 +9430,31 @@ final class RecommendationLearningStore: ObservableObject {
         persistOutcomes()
         persistPending()
         syncIfPossible()
+    }
+
+    nonisolated static func goalFollowUpResult(
+        followed: Bool,
+        comparableScoreDelta: Double?,
+        fillerDelta: Double,
+        comparablePaceDelta: Double?
+    ) -> GoalFollowUpResult? {
+        guard followed else { return nil }
+        // Pace is deliberately excluded here: a raw positive/negative WPM
+        // delta has no stable polarity without the prescription's target band.
+        // RecommendationAdaptationAnalyzer remains the owner of that
+        // focus-aware comparison.
+        _ = comparablePaceDelta
+        let movements = [
+            comparableScoreDelta.map { $0 >= 0.5 ? 1 : ($0 <= -0.5 ? -1 : 0) },
+            abs(fillerDelta) >= 0.75 ? (fillerDelta < 0 ? 1 : -1) : nil
+        ].compactMap { $0 }
+        guard !movements.isEmpty else { return .needsMoreEvidence }
+        let positive = movements.contains(1)
+        let negative = movements.contains(-1)
+        if positive && !negative { return .earlyImprovement }
+        if positive && negative { return .mixed }
+        if negative { return .mixed }
+        return .held
     }
 
     func resetDiagnostics() {
@@ -9512,17 +9594,30 @@ enum PracticeSessionFinalizer {
         }
         let finalized = store.sessions.first(where: { $0.id == session.id }) ?? session
 
+        // Deferred profile capture belongs to durable session completion, not
+        // Summary presentation. Scheduling it here means every finalized mode
+        // gets the same post-value prompt even if the user exits before opening
+        // Summary. The manager remains the sole prompt/state owner.
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_CLEAR_DEFERRED_CAPTURE") {
+            DeferredProfileCaptureManager.shared.resetForUITesting()
+        }
+        #endif
+        DeferredProfileCaptureManager.shared.consider(
+            sessionCount: store.sessions.count,
+            profile: CoachingProfileStore.shared.profile
+        )
+
         // Daily-goal acknowledgement is an explicit completion event. The
         // manager's passive recompute path intentionally never celebrates, so
         // app launch/hydration cannot cover Home with a stale "done" overlay.
         DailyGoalManager.shared.recordSessionCompletion(at: finalized.date)
 
-        // Speech-backed modes record recommendation outcomes once their
-        // delayed evaluation annotates the captured rep. IM Conversation
-        // arrives here already evaluated, so it must enter the same
-        // intervention cycle here or prescribed conversation reps vanish
-        // from the coach's evidence.
-        if finalized.mode == .imConversation, annotation != .empty {
+        // Close any pending intervention only after the rep has a real
+        // evaluation. This shared persistence path covers IM and every
+        // annotated speech mode; mode-specific callers may safely make the
+        // same call because consuming the pending exposure is one-shot.
+        if annotation != .empty {
             RecommendationLearningStore.shared.recordOutcome(
                 for: finalized,
                 previousSessions: store.sessions.filter { $0.id != finalized.id }

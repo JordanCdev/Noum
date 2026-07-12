@@ -49,11 +49,12 @@ struct DeferredCaptureInlineCard: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.tertiary)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 44, height: 44)
                         .background(Color.secondary.opacity(0.10), in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Dismiss reflection")
+                .accessibilityIdentifier("deferredCapture.dismiss")
             }
 
             Text(prompt.headline)
@@ -83,12 +84,14 @@ struct DeferredCaptureInlineCard: View {
                         Text("Add a sentence")
                             .font(Typography.caption.weight(.semibold))
                     }
+                    .frame(minHeight: 44)
                     .foregroundStyle(AppColor.brandBlue)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("deferredCapture.expand")
             }
         }
         .padding(Spacing.lg)
@@ -147,6 +150,8 @@ struct DeferredCaptureInlineCard: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .frame(minHeight: 44)
+                .accessibilityIdentifier("deferredCapture.skip")
 
                 Spacer()
 
@@ -165,6 +170,7 @@ struct DeferredCaptureInlineCard: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
+                    .frame(minHeight: 44)
                     .background(
                         canSubmit(prompt) ? AppColor.brandBlue : Color.secondary.opacity(0.5),
                         in: Capsule()
@@ -172,6 +178,7 @@ struct DeferredCaptureInlineCard: View {
                 }
                 .disabled(!canSubmit(prompt))
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("deferredCapture.save")
             }
         }
     }

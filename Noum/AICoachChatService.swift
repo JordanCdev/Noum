@@ -2082,7 +2082,13 @@ actor AICoachChatService {
             Self.log.debug("attempting chat provider \(provider.displayName, privacy: .public)")
             await onProviderAttemptEvent?(.started(providerChoice))
             let streamEndpoint = provider.streamingEndpoint
-            let usesProviderStream = CoachBrainFlags.providerStreamingEnabled &&
+            let usesProviderStream = Self.providerStreamingShouldRun(
+                turnDepth: turnDepth,
+                surface: surface,
+                responseMode: assessment?.responseMode,
+                providerStreamingEnabled: CoachBrainFlags.providerStreamingEnabled,
+                realtimeCoachModeEnabled: CoachBrainFlags.realtimeCoachModeEnabled
+            ) &&
                 providerHTTPOverride == nil &&
                 streamEndpoint != nil
             let requestEndpoint = usesProviderStream ? (streamEndpoint ?? endpoint) : endpoint
@@ -2097,18 +2103,65 @@ actor AICoachChatService {
                 ),
                 streaming: usesProviderStream
             )
-            var result = try await providerTextHTTP(
-                provider: provider,
-                endpoint: requestEndpoint,
-                key: key,
-                body: body,
-                streaming: usesProviderStream,
-                onStreamedPartialVisible: onStreamedPartialVisible
-            )
+            var result: ProviderTextTransportResult
+            var didRetryTransport = false
+            do {
+                result = try await providerTextHTTP(
+                    provider: provider,
+                    endpoint: requestEndpoint,
+                    key: key,
+                    body: body,
+                    streaming: usesProviderStream,
+                    onStreamedPartialVisible: onStreamedPartialVisible
+                )
+            } catch {
+                guard !Task.isCancelled,
+                      Self.transportFailureCanRetry(error) else {
+                    throw error
+                }
+
+                // A single transient URL failure should not exhaust the only
+                // configured provider. Retry once through the ordinary
+                // response endpoint; when streaming was the failing path this
+                // also gives the turn an independent transport shape. The
+                // retry stays inside the existing per-provider attempt budget
+                // and is surfaced in telemetry rather than hidden.
+                Self.log.notice("\(provider.displayName, privacy: .public) transient transport failure — retrying once without streaming")
+                recordChatDiagnostic(
+                    .fallback,
+                    "Transient transport failure; retrying once without streaming",
+                    provider: provider,
+                    startedAt: startedAt
+                )
+                await onProviderAttemptEvent?(.retry(providerChoice))
+                didRetryTransport = true
+                let retryBody = usesProviderStream
+                    ? chatRequestBody(
+                        for: provider,
+                        systemPrompt: cacheableSystemPrompt,
+                        userContext: cacheableUserContext,
+                        messages: messages,
+                        maxOutputTokens: CoachPromptBundle.maxOutputTokens(
+                            for: turnDepth,
+                            surface: surface
+                        ),
+                        streaming: false
+                    )
+                    : body
+                result = try await providerTextHTTP(
+                    provider: provider,
+                    endpoint: usesProviderStream ? endpoint : requestEndpoint,
+                    key: key,
+                    body: retryBody,
+                    streaming: false,
+                    onStreamedPartialVisible: nil
+                )
+            }
 
             // One in-call retry when the refusal is explicitly short-lived
             // (429/503/529 with Retry-After within the turn's latency budget).
-            if case .refused(let status, let retryAfter) = result,
+            if !didRetryTransport,
+               case .refused(let status, let retryAfter) = result,
                [429, 503, 529].contains(status),
                let delay = retryAfter, delay > 0, delay <= 4 {
                 Self.log.info("\(provider.displayName, privacy: .public) \(status) — retrying after \(delay, format: .fixed(precision: 1))s")
@@ -2175,28 +2228,77 @@ actor AICoachChatService {
                             provider: provider,
                             startedAt: startedAt
                         )
-                        await onProviderAttemptEvent?(.retry(providerChoice))
                         if Self.safeReferenceRepairShouldRunBeforeProvider(
                             issue: issue,
-                            latestUserTurn: latestUserTurn
-                        ),
-                           let safeRepair = Self.safeReferenceRepairReply(
-                            issue: issue,
                             latestUserTurn: latestUserTurn,
-                            system: system,
-                            quoteGuard: quoteGuard,
-                            turnDepth: turnDepth,
+                            system: system
+                        ) {
+                            if let safeRepair = Self.safeReferenceRepairReply(
+                                issue: issue,
+                                latestUserTurn: latestUserTurn,
+                                system: system,
+                                quoteGuard: quoteGuard,
+                                recentCoachReplies: recentCoachReplies,
+                                turnDepth: turnDepth,
+                                assessment: assessment,
+                                surface: surface
+                            ) {
+                                recordChatDiagnostic(
+                                    .success,
+                                    "Safe reference repair accepted before provider rewrite",
+                                    provider: provider
+                                )
+                                await onQualityGateEvent?(.fallback("safeReference:\(issue.auditLabel)"))
+                                return .reply(safeRepair)
+                            }
+                            if let typedRepair = Self.deterministicAssessmentFallbackReply(
+                                assessment: assessment,
+                                latestUserTurn: latestUserTurn,
+                                quoteGuard: quoteGuard,
+                                systemContext: system,
+                                recentCoachReplies: recentCoachReplies,
+                                turnDepth: turnDepth,
+                                surface: surface
+                            ) {
+                                recordChatDiagnostic(
+                                    .success,
+                                    "Typed assessment repair accepted before provider rewrite",
+                                    provider: provider
+                                )
+                                await onQualityGateEvent?(.fallback("typedAssessmentRepair:\(issue.auditLabel)"))
+                                return .reply(typedRepair)
+                            }
+                        }
+                        // The deterministic assessment is already the source
+                        // of truth for evidence, confidence, and the next proof
+                        // test. If it can express a gate-clean answer for this
+                        // exact turn, prefer that bounded local repair over a
+                        // second network generation. This removes a fragile
+                        // latency/cost hop without weakening the floor: the
+                        // fallback is accepted only after it clears the same
+                        // professional, semantic, and VISION gates below.
+                        if let typedRepair = Self.deterministicAssessmentFallbackReply(
                             assessment: assessment,
+                            latestUserTurn: latestUserTurn,
+                            quoteGuard: quoteGuard,
+                            systemContext: system,
+                            recentCoachReplies: recentCoachReplies,
+                            turnDepth: turnDepth,
                             surface: surface
                         ) {
                             recordChatDiagnostic(
                                 .success,
-                                "Safe reference repair accepted before provider rewrite",
+                                "Typed assessment repair accepted before provider rewrite",
                                 provider: provider
                             )
-                            await onQualityGateEvent?(.fallback("safeReference:\(issue.auditLabel)"))
-                            return .reply(safeRepair)
+                            await onQualityGateEvent?(.fallback("typedAssessmentRepair:\(issue.auditLabel)"))
+                            return .reply(typedRepair)
                         }
+                        // A local safe/typed repair is a quality fallback, not a
+                        // provider retry. Emit retry telemetry only when another
+                        // provider request is actually about to run; otherwise
+                        // readiness overstates network pressure and cost.
+                        await onProviderAttemptEvent?(.retry(providerChoice))
                         if let repaired = await repairLowQualityReply(
                             issue: issue,
                             draft: display,
@@ -2209,7 +2311,8 @@ actor AICoachChatService {
                             recentCoachReplies: recentCoachReplies,
                             turnDepth: turnDepth,
                             assessment: assessment,
-                            surface: surface
+                            surface: surface,
+                            onProviderAttemptEvent: onProviderAttemptEvent
                         ) {
                             recordChatDiagnostic(.success, "Repair reply accepted", provider: provider)
                             await onQualityGateEvent?(.repaired(issue.auditLabel))
@@ -2220,6 +2323,7 @@ actor AICoachChatService {
                             latestUserTurn: latestUserTurn,
                             system: system,
                             quoteGuard: quoteGuard,
+                            recentCoachReplies: recentCoachReplies,
                             turnDepth: turnDepth,
                             assessment: assessment,
                             surface: surface
@@ -2268,6 +2372,29 @@ actor AICoachChatService {
                                 provider: provider,
                                 startedAt: startedAt
                             )
+                            if Self.safeReferenceRepairShouldRunBeforeProvider(
+                                issue: issue,
+                                latestUserTurn: latestUserTurn,
+                                system: system
+                            ),
+                               let safeRepair = Self.safeReferenceRepairReply(
+                                issue: issue,
+                                latestUserTurn: latestUserTurn,
+                                system: system,
+                                quoteGuard: quoteGuard,
+                                recentCoachReplies: recentCoachReplies,
+                                turnDepth: turnDepth,
+                                assessment: assessment,
+                                surface: surface
+                               ) {
+                                recordChatDiagnostic(
+                                    .success,
+                                    "Safe reference repair accepted before provider rewrite",
+                                    provider: provider
+                                )
+                                await onQualityGateEvent?(.fallback("safeReference:\(issue.auditLabel)"))
+                                return .reply(safeRepair)
+                            }
                             await onProviderAttemptEvent?(.retry(providerChoice))
                             if let repaired = await repairLowQualityReply(
                                 issue: issue,
@@ -2281,7 +2408,8 @@ actor AICoachChatService {
                                 recentCoachReplies: recentCoachReplies,
                                 turnDepth: turnDepth,
                                 assessment: assessment,
-                                surface: surface
+                                surface: surface,
+                                onProviderAttemptEvent: onProviderAttemptEvent
                             ) {
                                 recordChatDiagnostic(.success, "Semantic repair reply accepted", provider: provider)
                                 await onQualityGateEvent?(.repaired(issue.auditLabel))
@@ -2314,6 +2442,29 @@ actor AICoachChatService {
                             provider: provider,
                             startedAt: startedAt
                         )
+                        if Self.safeReferenceRepairShouldRunBeforeProvider(
+                            issue: visionIssue,
+                            latestUserTurn: latestUserTurn,
+                            system: system
+                        ),
+                           let safeRepair = Self.safeReferenceRepairReply(
+                            issue: visionIssue,
+                            latestUserTurn: latestUserTurn,
+                            system: system,
+                            quoteGuard: quoteGuard,
+                            recentCoachReplies: recentCoachReplies,
+                            turnDepth: turnDepth,
+                            assessment: assessment,
+                            surface: surface
+                           ) {
+                            recordChatDiagnostic(
+                                .success,
+                                "Safe reference repair accepted before provider rewrite",
+                                provider: provider
+                            )
+                            await onQualityGateEvent?(.fallback("safeReference:\(visionIssue.auditLabel)"))
+                            return .reply(safeRepair)
+                        }
                         await onProviderAttemptEvent?(.retry(providerChoice))
                         if let repaired = await repairLowQualityReply(
                             issue: visionIssue,
@@ -2327,7 +2478,8 @@ actor AICoachChatService {
                             recentCoachReplies: recentCoachReplies,
                             turnDepth: turnDepth,
                             assessment: assessment,
-                            surface: surface
+                            surface: surface,
+                            onProviderAttemptEvent: onProviderAttemptEvent
                         ) {
                             recordChatDiagnostic(.success, "Vision repair reply accepted", provider: provider)
                             await onQualityGateEvent?(.repaired(visionIssue.auditLabel))
@@ -2461,7 +2613,8 @@ actor AICoachChatService {
             switch turnDepth {
             case .deepAssessment:
                 raw = deterministicIntentOverrideReply(
-                    latestUserTurn: latestUserTurn
+                    latestUserTurn: latestUserTurn,
+                    systemContext: systemContext
                 ) ?? deterministicDeepAssessmentReply(assessment)
             case .trustRepair:
                 raw = deterministicTrustRepairReply(
@@ -2474,11 +2627,13 @@ actor AICoachChatService {
                     latestUserTurn: latestUserTurn,
                     systemContext: systemContext
                 ) ?? deterministicIntentOverrideReply(
-                    latestUserTurn: latestUserTurn
+                    latestUserTurn: latestUserTurn,
+                    systemContext: systemContext
                 ) ?? deterministicQuickMoveReply(assessment)
             case .groundedRead:
                 raw = deterministicIntentOverrideReply(
-                    latestUserTurn: latestUserTurn
+                    latestUserTurn: latestUserTurn,
+                    systemContext: systemContext
                 ) ?? deterministicGroundedReadReply(assessment)
             }
         }
@@ -2520,14 +2675,107 @@ actor AICoachChatService {
         return normalized
     }
 
+    /// Deterministic follow-through for narrow questions whose answer shape is
+    /// already established by the conversation. These are intentionally
+    /// phrased as observable tests rather than new diagnoses, so a provider
+    /// rewrite failure can still preserve the user's intent without inventing
+    /// evidence.
+    nonisolated static func directFollowThroughRepairReferenceShape(
+        for latestUserTurn: String?,
+        system: String = ""
+    ) -> String? {
+        guard let lower = latestUserTurn?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              !lower.isEmpty else {
+            return nil
+        }
+        let lowerSystem = system.lowercased()
+
+        if lower.contains("slow down"),
+           containsAny(lower, ["unsure", "uncertain"]) {
+            return "Your last rep is clean but compressed, so keep the same first sentence, hold one silent beat after the decision, then deliver the reason at your normal volume."
+        }
+        if containsAny(lower, ["more certain", "more confident"]),
+           containsAny(lower, ["at the end", "at the close", "ending", "closing"]) {
+            return "Your last rep is clear, but the close keeps softening, so say the recommendation once, give one reason, and stop without adding a softener."
+        }
+        if CoachReliabilityGate.rambleStoppingRuleUserTurn(lower) {
+            return "Good read: sentence one gave the point, then the answer drifted after sentence two, so keep sentence one, cut the second explanation to one reason, and stop at 60 seconds."
+        }
+        if lower.contains("interview"),
+           containsAny(lower, ["take into", "bring into", "remember in"]) {
+            return "The drift is the interview risk, so take only the opener and proof test: answer first, one evidence line, then stop. After the interview, check whether the interviewer asked a clearer follow-up or looked confused."
+        }
+        if lower.contains("voice"), lower.contains("cold") {
+            return "If the voice still sounds cold, the issue is tone rather than content, so stop the drill, record one warm version of the same recommendation, and compare whether the proof still lands."
+        }
+        if lower.contains("stop"),
+           containsAny(lower, ["saying practice", "telling me to practice", "just tell me to practice"]) {
+            return "Agreed: that was generic. The actual read is that the prior answer prescribed before it earned trust because it named no behavior and no proof. The repair is one signal and one move. Send one sentence with the exact recommendation you plan to use, and I will judge that sentence before prescribing another rep."
+        }
+        if containsAny(lower, ["people asked for the timeline", "they asked for the timeline"]),
+           containsAny(lowerSystem, ["leadership update", "timeline", "decision"]) {
+            return "Your update gives one outcome signal, not proof: the timeline was clearer than the decision. Because the room asked about timing, capture their exact question, then in the next rep close with the decision you need plus the date and stop."
+        }
+        if containsAny(lower, [
+            "what should i capture now",
+            "what do i capture now",
+            "what should i capture next"
+        ]),
+           containsAny(lowerSystem, [
+            "people asked for the timeline",
+            "asked for the timeline",
+            "timeline, not the decision",
+            "timeline question"
+           ]) {
+            return "Capture their exact timeline question, the decision you wanted, and what they did next. That contrast matters because it shows what the room heard versus what was missing, so in the next rep close with the decision plus the date and stop."
+        }
+        if containsAny(lower, [
+            "when would you call it authority",
+            "when would you call that authority",
+            "when is it authority instead"
+        ]) {
+            return "Only after repeated pressure reps show the verdict stays early and the close stays calm, because authority needs to survive pressure. Until then, call it a structure improvement with authority potential."
+        }
+        if containsAny(lower, [
+            "what should i check after",
+            "what do i check after",
+            "what should i review after"
+        ]) {
+            return "Check only the final 10 seconds of the update, because that is where it transfers into the room. If the last sentence asks for alignment or a decision, keep it; if it recaps, rewrite the close."
+        }
+        if containsAny(lower, [
+            "how do i know if it worked",
+            "how will i know if it worked",
+            "how do i tell if it worked"
+        ]),
+           containsAny(lowerSystem, [
+            "recommendation first",
+            "sounded abrupt",
+            "recommendation, reassurance"
+           ]) {
+            return "The first two sentences carry the tone risk, so use a client concern prompt and check only this order: recommendation, reassurance. If the tone still feels abrupt, soften sentence two, not sentence one."
+        }
+        return nil
+    }
+
     private nonisolated static func deterministicIntentOverrideReply(
-        latestUserTurn: String?
+        latestUserTurn: String?,
+        systemContext: String
     ) -> String? {
         guard let latest = latestUserTurn?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased(),
               !latest.isEmpty else {
             return nil
+        }
+
+        if let followThrough = directFollowThroughRepairReferenceShape(
+            for: latest,
+            system: systemContext
+        ) {
+            return followThrough
         }
 
         if containsAny(latest, ["example of me", "examples of me", "give me an example", "doing this in sessions"]) {
@@ -2748,6 +2996,12 @@ actor AICoachChatService {
         let lowerTurn = latestUserTurn?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? ""
+        if let directFollowThrough = directFollowThroughRepairReferenceShape(
+            for: lowerTurn,
+            system: systemContext
+        ) {
+            return directFollowThrough
+        }
         if containsAny(lowerTurn, [
             "it's not easy", "its not easy", "not that easy",
             "easier said than done", "harder than that"
@@ -2811,7 +3065,7 @@ actor AICoachChatService {
             "robotic", "report", "too much writing", "too long",
             "less text", "less writing", "shorter"
         ]) {
-            clauses.append("it felt robotic or too much like a report")
+            clauses.append("I sounded robotic or too much like a report")
         }
         if containsAny(lowerTurn, [
             "not informative", "not helpful", "not useful",
@@ -2836,7 +3090,7 @@ actor AICoachChatService {
             "overexplained", "over explained", "over-explained",
             "expert coach", "ai tips", "ai wrapper"
         ]) {
-            clauses.append("it sounded cold or generic instead of like expert coaching")
+            clauses.append("I sounded cold or generic instead of giving you a specific coaching read")
         }
 
         guard let last = clauses.last else {
@@ -2984,6 +3238,10 @@ actor AICoachChatService {
         guard !trimmed.isEmpty else { return nil }
 
         let lower = trimmed.lowercased()
+        if CoachReliabilityGate.rambleStoppingRuleUserTurn(latestUserTurn),
+           CoachReliabilityGate.rambleStoppingRuleNeedsRepair(replyText: trimmed) {
+            return .missingPrescribedAction
+        }
         // An honest "I can't coach this without a rep — record one" notice is the
         // correct professional move on a no-evidence turn. It deliberately carries
         // no insight bridge, no prescribed mechanics drill, and no retrieved-expertise
@@ -3726,7 +3984,12 @@ actor AICoachChatService {
         if surface == .live {
             return turnDepth == .deepAssessment ? 66 : 62
         }
-        return turnDepth == .deepAssessment ? 74 : 70
+        // Text has enough room to earn the same quality floor used by the
+        // production-readiness artifact. Accepting a 70-84 draft here made the
+        // shipping service return replies that the declared 85-point launch
+        // contract immediately rejected (most often an observation plus action
+        // with no explanation of why the move matters).
+        return 85
     }
 
     private nonisolated static func qualityIssue(
@@ -4253,7 +4516,9 @@ actor AICoachChatService {
             "why can't", "why can’t", "why cannot",
             "couldn't shape", "couldn’t shape", "shape a useful answer",
             "not informative", "not helpful", "not useful",
-            "missed the point", "doesn't answer", "does not answer"
+            "missed the point", "doesn't answer", "does not answer",
+            "stop saying practice", "stop telling me to practice",
+            "do not just tell me to practice", "don't just tell me to practice"
         ]) || turnRequestsShortness(lower)
             || turnCritiquesCoachOverexplaining(lower)
     }
@@ -4874,6 +5139,16 @@ actor AICoachChatService {
             ]
         }
 
+        if containsAny(lowerTurn, [
+            "stop saying practice", "stop telling me to practice",
+            "do not just tell me to practice", "don't just tell me to practice"
+        ]) {
+            needles += [
+                "generic", "advice", "not coaching", "actual read",
+                "behavior", "proof", "signal", "specific"
+            ]
+        }
+
         return Array(Set(needles))
     }
 
@@ -4951,7 +5226,10 @@ actor AICoachChatService {
             "not my whole", "answered what i meant", "answer what i meant",
             "what i meant", "stop saying", "give me the", "remember",
             "what should noum remember", "what should you remember",
-            "what do you remember"
+            "what do you remember", "i did the", "i gave the",
+            "i finished the",
+            "people asked", "they asked", "after the meeting",
+            "after the update", "after the presentation"
         ]) {
             return true
         }
@@ -5058,6 +5336,22 @@ actor AICoachChatService {
             "the gap", "what broke", "what held",
             "if it names", "if it starts", "listen for sentence"
         ]) {
+            return true
+        }
+        // Natural coaching often expresses the observation → consequence link
+        // without a canned "because/so" connector. Keep these patterns narrow:
+        // they still require an explicit relational subject (that/this/which)
+        // or a when-clause followed by an observable listener effect.
+        if lower.range(
+            of: #"\b(?:that|this|which)\b[^.!?\n]{0,80}\bmeant\b"#,
+            options: .regularExpression
+        ) != nil {
+            return true
+        }
+        if lower.range(
+            of: #"\bwhen\b[^.!?\n]{0,140}\b(?:easier|harder|clearer)\b[^.!?\n]{0,45}\b(?:follow|understand|track|hear)\b"#,
+            options: .regularExpression
+        ) != nil {
             return true
         }
         return replyHasPressureMechanicBridge(lower)
@@ -5581,6 +5875,24 @@ actor AICoachChatService {
               !lower.isEmpty else {
             return false
         }
+        // A user rejecting generic "practice more" advice is repairing trust,
+        // not asking for a first-session baseline. The broad `practice` token
+        // below must not invert that pushback into the exact advice they asked
+        // the coach to stop repeating.
+        if lower.contains("practice"),
+           containsAny(lower, ["stop saying", "stop telling", "do not just", "don't just"]) {
+            return false
+        }
+        // A report from the real moment is follow-through evidence, not a new
+        // user's request for a baseline. The broad moment words below (update,
+        // meeting, presentation) must not erase that temporal distinction.
+        if containsAny(lower, [
+            "i did the", "i gave the", "i finished the", "i tried it",
+            "people asked", "they asked", "it went", "what happened",
+            "after the meeting", "after the update", "after the presentation"
+        ]) {
+            return false
+        }
         return containsAny(lower, [
             "what should i work on",
             "what do i work on",
@@ -5856,7 +6168,8 @@ actor AICoachChatService {
         recentCoachReplies: [String],
         turnDepth: CoachTurnDepth,
         assessment: CoachAssessment?,
-        surface: CoachReplySurface
+        surface: CoachReplySurface,
+        onProviderAttemptEvent: (@MainActor (CoachProviderAttemptEvent) -> Void)? = nil
     ) async -> String? {
         let requiredAnchor = Self.requiredRepairAnchor(
             issue: issue,
@@ -5998,13 +6311,46 @@ actor AICoachChatService {
                 CoachPromptBundle.maxOutputTokens(for: turnDepth, surface: surface)
             )
         )
-        guard
-            let result = try? await providerHTTP(
+        let result: ProviderHTTPResult
+        do {
+            result = try await providerHTTP(
                 provider: provider,
                 endpoint: endpoint,
                 key: key,
                 body: body
-            ),
+            )
+        } catch {
+            guard !Task.isCancelled,
+                  Self.transportFailureCanRetry(error) else {
+                Self.log.error("repair pass transport failed for \(provider.displayName, privacy: .public)")
+                recordChatDiagnostic(.fallback, "Repair response missing content", provider: provider)
+                return nil
+            }
+
+            Self.log.notice("\(provider.displayName, privacy: .public) repair transport failed transiently — retrying once")
+            recordChatDiagnostic(
+                .fallback,
+                "Transient repair transport failure; retrying once",
+                provider: provider
+            )
+            await onProviderAttemptEvent?(.retry(CoachTurnProviderChoice(
+                providerName: provider.displayName,
+                model: provider.model
+            )))
+            do {
+                result = try await providerHTTP(
+                    provider: provider,
+                    endpoint: endpoint,
+                    key: key,
+                    body: body
+                )
+            } catch {
+                Self.log.error("repair pass retry failed for \(provider.displayName, privacy: .public)")
+                recordChatDiagnostic(.fallback, "Repair response missing content", provider: provider)
+                return nil
+            }
+        }
+        guard
             case .success(let data) = result,
             case .text(let text) = Self.chatExtractReplyText(from: data, provider: provider)
         else {
@@ -6089,6 +6435,13 @@ actor AICoachChatService {
             .lowercased() ?? ""
         guard !lowerTurn.isEmpty else { return nil }
 
+        if let followThrough = directFollowThroughRepairReferenceShape(
+            for: lowerTurn,
+            system: system
+        ) {
+            return followThrough
+        }
+
         if turnAsksWhyAnswerLandedBadly(latestUserTurn) {
             if sourceMentionsLateRecommendation(system) {
                 return "From the transcript, the recommendation arrived late, so say the decision first, add one reason, then name the implication."
@@ -6162,13 +6515,15 @@ actor AICoachChatService {
         latestUserTurn: String?,
         system: String,
         quoteGuard: CoachChatQuoteGuardContext?,
+        recentCoachReplies: [String] = [],
         turnDepth: CoachTurnDepth = .groundedRead,
         assessment: CoachAssessment? = nil,
         surface: CoachReplySurface = .text
     ) -> String? {
         guard safeReferenceRepairIssueIsAllowed(
             issue,
-            latestUserTurn: latestUserTurn
+            latestUserTurn: latestUserTurn,
+            system: system
         ) else {
             return nil
         }
@@ -6187,7 +6542,10 @@ actor AICoachChatService {
             in: referenceShape,
             latestUserTurn: latestUserTurn,
             quoteGuard: quoteGuard,
-            systemContext: system
+            systemContext: system,
+            recentCoachReplies: recentCoachReplies,
+            turnDepth: turnDepth,
+            surface: surface
         ) == nil else {
             return nil
         }
@@ -6205,6 +6563,7 @@ actor AICoachChatService {
             latestUserTurn: latestUserTurn,
             quoteGuard: quoteGuard,
             systemContext: system,
+            recentCoachReplies: recentCoachReplies,
             turnDepth: turnDepth,
             assessment: assessment,
             surface: surface
@@ -6217,7 +6576,8 @@ actor AICoachChatService {
 
     private nonisolated static func safeReferenceRepairShouldRunBeforeProvider(
         issue: CoachChatReplyQualityIssue,
-        latestUserTurn: String?
+        latestUserTurn: String?,
+        system: String? = nil
     ) -> Bool {
         let lowerTurn = latestUserTurn?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -6234,6 +6594,18 @@ actor AICoachChatService {
         ) {
             return true
         }
+        if directFollowThroughRepairReferenceShape(
+            for: lowerTurn,
+            system: system ?? ""
+           ) != nil {
+            switch issue {
+            case .missingInsightBridge, .missingPrescribedAction,
+                 .semanticJudgement, .visionGate, .roboticPhrase:
+                return true
+            default:
+                break
+            }
+        }
         guard isCritiqueTurn(lowerTurn) else {
             return false
         }
@@ -6241,10 +6613,13 @@ actor AICoachChatService {
         case .missedTrustRepair, .defensiveProductLanguage, .scaffoldLabel:
             return true
         case .roboticPhrase(let phrase):
-            return phrase.contains("trust-repair report voice")
-                || phrase.contains("sensitive-turn report voice")
-                || phrase.contains("fluff, not coaching")
-                || phrase.contains("generic tip-giving")
+            let lowerPhrase = phrase.lowercased()
+            return lowerPhrase.contains("trust-repair report voice")
+                || lowerPhrase.contains("sensitive-turn report voice")
+                || lowerPhrase.contains("fluff, not coaching")
+                || lowerPhrase.contains("generic tip-giving")
+                || lowerPhrase.contains("let's")
+                || lowerPhrase.contains("let us")
         default:
             return false
         }
@@ -6292,7 +6667,8 @@ actor AICoachChatService {
 
     private nonisolated static func safeReferenceRepairIssueIsAllowed(
         _ issue: CoachChatReplyQualityIssue,
-        latestUserTurn: String?
+        latestUserTurn: String?,
+        system: String
     ) -> Bool {
         switch issue {
         case .overclaimsEvidence, .missingInsightBridge:
@@ -6300,7 +6676,8 @@ actor AICoachChatService {
         default:
             return safeReferenceRepairShouldRunBeforeProvider(
                 issue: issue,
-                latestUserTurn: latestUserTurn
+                latestUserTurn: latestUserTurn,
+                system: system
             )
         }
     }
@@ -6320,6 +6697,12 @@ actor AICoachChatService {
             return true
         }
         if coldStartRepairReferenceShape(for: lowerTurn, system: system) != nil {
+            return true
+        }
+        if directFollowThroughRepairReferenceShape(
+            for: lowerTurn,
+            system: system
+        ) != nil {
             return true
         }
         if turnAsksWhyAnswerLandedBadly(latestUserTurn),
@@ -6748,6 +7131,53 @@ actor AICoachChatService {
         /// The server answered with a non-2xx. `retryAfter` carries the
         /// parsed Retry-After header when the server named one.
         case refused(status: Int, retryAfter: TimeInterval?)
+    }
+
+    /// Only retry failures that can plausibly clear on a second transport
+    /// shape. Cancellation and offline state stay terminal for this turn so
+    /// the app never fights an explicit user action or burns latency while the
+    /// device has no route to the network.
+    nonisolated static func transportFailureCanRetry(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            return [
+                URLError.Code.timedOut,
+                .cannotFindHost,
+                .cannotConnectToHost,
+                .networkConnectionLost,
+                .dnsLookupFailed,
+                .resourceUnavailable
+            ].contains(URLError.Code(rawValue: nsError.code))
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
+            return transportFailureCanRetry(underlying)
+        }
+        return false
+    }
+
+    /// Provider streaming adds no user-visible latency value while the shipping
+    /// pipeline is already showing the local assessment read. Use the ordinary
+    /// response endpoint for those two-speed turns, which avoids holding a
+    /// second long-lived streaming connection behind an already-visible answer.
+    /// A quick text turn streams only in the explicit raw-partial UI posture;
+    /// with gated partials (the shipping default), it receives a local read too.
+    nonisolated static func providerStreamingShouldRun(
+        turnDepth: CoachTurnDepth,
+        surface: CoachReplySurface,
+        responseMode: CoachAssessment.ResponseMode?,
+        providerStreamingEnabled: Bool,
+        realtimeCoachModeEnabled: Bool,
+        streamRawPartialsToUI: Bool = CoachBrainFlags.streamRawPartialsToUI
+    ) -> Bool {
+        guard providerStreamingEnabled else { return false }
+        guard let responseMode else { return true }
+        return !CoachReplyPipeline.shouldShowProvisionalCoachRead(
+            turnDepth: turnDepth,
+            surface: surface,
+            responseMode: responseMode,
+            realtimeCoachModeEnabled: realtimeCoachModeEnabled,
+            streamRawPartialsToUI: streamRawPartialsToUI
+        )
     }
 
     private func providerTextHTTP(

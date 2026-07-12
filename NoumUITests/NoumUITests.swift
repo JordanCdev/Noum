@@ -252,6 +252,73 @@ final class NoumUITests: XCTestCase {
     }
 
     @MainActor
+    func testFirstRunCloudDeclineStillReachesLocalCapablePractice() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_REAL_FIRST_RUN", "UI_TESTING_CLOUD_CONSENT"]
+        app.launch()
+
+        try completeCoachingOnboarding(in: app)
+        let finishButton = app.buttons["coaching.startPracticing"]
+        XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
+        finishButton.tap()
+        declineCloudProcessingIfPresented(in: app)
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12),
+            "Declining cloud processing must still reach the local-capable Timed setup."
+        )
+    }
+
+    @MainActor
+    func testFirstRunProviderFailureHasRecoveryInsteadOfDeadEnd() throws {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "UI_TESTING", "UI_TESTING_REAL_FIRST_RUN", "UI_TESTING_CLOUD_CONSENT",
+            "UI_TESTING_MICROPHONE_GRANTED", "UI_TESTING_TRANSCRIPTION_START_FAILURE"
+        ]
+        app.launch()
+
+        try completeCoachingOnboarding(in: app)
+        let finishButton = app.buttons["coaching.startPracticing"]
+        XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
+        finishButton.tap()
+        declineCloudProcessingIfPresented(in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12))
+
+        let begin = app.buttons["timedPractice.begin"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 8))
+        tapTimedPracticeBegin(begin, in: app)
+        let startNow = app.buttons["timedPractice.startNow"]
+        if startNow.waitForExistence(timeout: 3), startNow.isHittable { startNow.tap() }
+
+        let issue = app.descendants(matching: .any)["timedPractice.recordingIssue"]
+        XCTAssertTrue(issue.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["timedPractice.recordingIssue.retry"].exists)
+        XCTAssertFalse(app.staticTexts["Elapsed"].exists)
+    }
+
+    @MainActor
+    func testCompletedOnboardingSurvivesInterruptionAndRelaunch() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_REAL_FIRST_RUN", "UI_TESTING_CLOUD_CONSENT"]
+        app.launch()
+
+        try completeCoachingOnboarding(in: app)
+        let finishButton = app.buttons["coaching.startPracticing"]
+        XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
+        finishButton.tap()
+        declineCloudProcessingIfPresented(in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["timedPractice.screen"].waitForExistence(timeout: 12))
+        app.terminate()
+
+        let relaunched = XCUIApplication()
+        relaunched.launchArguments += ["UI_TESTING"]
+        relaunched.launch()
+        XCTAssertTrue(relaunched.buttons["app.tab.home"].waitForExistence(timeout: 15))
+        XCTAssertFalse(relaunched.buttons["coaching.start"].exists)
+    }
+
+    @MainActor
     func testOnboardingCustomChallengePath() throws {
         let app = XCUIApplication()
         app.launchArguments += ["UI_TESTING", "UI_TESTING_REAL_FIRST_RUN"]
@@ -306,7 +373,8 @@ final class NoumUITests: XCTestCase {
             "UI_TESTING",
             "UI_TESTING_REAL_FIRST_RUN",
             "UI_TESTING_FIRST_VALUE_LOOP",
-            "UI_TESTING_CLOUD_CONSENT"
+            "UI_TESTING_CLOUD_CONSENT",
+            "UI_TESTING_CLEAR_DEFERRED_CAPTURE"
         ]
         app.launch()
 
@@ -333,6 +401,19 @@ final class NoumUITests: XCTestCase {
             || app.buttons["summary.postRepVerdict.startFullRetry"].exists,
             "The first verdict should include a concrete next action, not just explanatory text."
         )
+
+        let details = app.descendants(matching: .any)["summary.details.toggle"]
+        scrollUntilHittable(details, in: app, attempts: 8)
+        XCTAssertTrue(details.waitForExistence(timeout: 5))
+        details.tap()
+        let deferredGoal = app.buttons["deferredCapture.expand"]
+        scrollUntilHittable(deferredGoal, in: app, attempts: 8)
+        XCTAssertTrue(
+            deferredGoal.waitForExistence(timeout: 8),
+            "The existing deferred-profile owner should offer the first reflection after value, not during onboarding."
+        )
+        let dismiss = app.buttons["deferredCapture.dismiss"]
+        XCTAssertGreaterThanOrEqual(dismiss.frame.height, 44)
     }
 
     @MainActor
@@ -412,6 +493,16 @@ final class NoumUITests: XCTestCase {
             "First-run cloud disclosure must provide an actionable Allow control."
         )
         allow.tap()
+    }
+
+    @MainActor
+    private func declineCloudProcessingIfPresented(in app: XCUIApplication) {
+        let disclosure = app.descendants(matching: .any)["cloudProcessing.disclosure"]
+        guard disclosure.waitForExistence(timeout: 5) else { return }
+        let notNow = app.buttons["cloudProcessing.notNow"]
+        scrollUntilHittable(notNow, in: app, attempts: 8)
+        XCTAssertTrue(notNow.waitForExistence(timeout: 3) && notNow.isHittable)
+        notNow.tap()
     }
 
     @MainActor

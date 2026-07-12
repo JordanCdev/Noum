@@ -1180,6 +1180,14 @@ struct CoachReasoningPassTests {
             surface: .text,
             previousCoachReply: "Try to communicate more clearly."
         )
+        let rejectedPracticeMore = CoachReasoningPass.assess(
+            turnDepth: .trustRepair,
+            userQuestion: "And stop saying practice more.",
+            trajectory: Self.singleRepTrajectory,
+            rubric: ActiveGoalRubric(rubric: GoalRubricStore.rubric(for: .authoritative), voice: .authoritative),
+            surface: .text,
+            previousCoachReply: "Put the recommendation first and give one proof point."
+        )
 
         #expect(repeated.repairFocus == "I repeated the same coaching move instead of advancing the read")
         #expect(repeated.evidenceUsed.first == "trust repair signal: I repeated the same coaching move instead of advancing the read")
@@ -1192,6 +1200,9 @@ struct CoachReasoningPassTests {
         #expect(notInformative.nextProofTest.contains("Answer the actual question in sentence one"))
         #expect(!notInformative.nextProofTest.contains("Repair this turn first"))
         #expect(!notInformative.immediateCoachRead.contains("Proof test:"))
+        #expect(rejectedPracticeMore.repairFocus == "I leaned on generic advice instead of evidence")
+        #expect(rejectedPracticeMore.nextProofTest.contains("user-specific signal"))
+        #expect(!rejectedPracticeMore.nextProofTest.lowercased().contains("practice more"))
     }
 
     @Test func promptBundleCarriesRepairFocusAsProviderConstraint() {
@@ -3810,12 +3821,23 @@ struct CoachProviderRoutingByDepthTests {
 @Suite("CoachProvisionalReadEligibilityTests")
 struct CoachProvisionalReadEligibilityTests {
 
-    @Test func quickTextTurnDoesNotShowLocalProvisionalRead() {
+    @Test func quickTextTurnShowsLocalReadWhenRawPartialsAreWithheld() {
         #expect(CoachReplyPipeline.shouldShowProvisionalCoachRead(
             turnDepth: .quickMove,
             surface: .text,
             responseMode: .immediateOnly,
-            realtimeCoachModeEnabled: true
+            realtimeCoachModeEnabled: true,
+            streamRawPartialsToUI: false
+        ))
+    }
+
+    @Test func quickTextTurnCanUseVisibleProviderStreamWhenExplicitlyEnabled() {
+        #expect(CoachReplyPipeline.shouldShowProvisionalCoachRead(
+            turnDepth: .quickMove,
+            surface: .text,
+            responseMode: .immediateOnly,
+            realtimeCoachModeEnabled: true,
+            streamRawPartialsToUI: true
         ) == false)
     }
 

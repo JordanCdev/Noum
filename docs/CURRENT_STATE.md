@@ -1,5 +1,132 @@
 # Noum — Current state
 
+## 2026-07-12 — Research-loop refinement: rewrites, explicit goal choice, and safe provider defaults
+
+The goal-aware rewrite path now lets a user choose a light, medium, or strong
+editorial movement, while preserving the same vocabulary and semantic-intent
+gates. When an AI provider is unavailable or its response fails the existing
+voice-preservation filter, the same service can make a clearly labelled,
+conservative on-device edit. That fallback only removes transcript-derived
+disfluencies, duplicate wording, and context-free lead-ins; it never adds a
+claim and withholds an edit when it cannot safely improve the selected slice.
+A user can explicitly save an accepted rewrite into a bounded,
+account-scoped Phrase Bank. The bank stores the saved phrase and coaching
+labels—not a duplicate source transcript—rejects identifier-shaped output,
+deduplicates phrase text, supports removal, and participates in account export
+and deletion. The Summary rewrite card exposes comparison, intensity, save, and
+Phrase Bank affordances with accessibility labels.
+
+Goal outcomes and rewrite prompts now use `chosenStyleGoal`, not the profile's
+legacy effective-style fallback. That avoids presenting a tailored identity
+read or voice nudge for a voice the user never selected. `GoalOutcomeRead` also
+applies each goal rubric's own established-evidence floor rather than treating
+all goals as equally evidenced.
+
+The transcription registry no longer turns malformed persisted provider values
+into the legacy direct-AWS route; it falls back to the authenticated Deepgram
+default, while an explicit AWS development choice resolves locally in a Release
+build. The public README now describes the production short-lived credential
+path and forbids bundled long-lived AWS credentials.
+
+Verification: the consolidated focused suite passes 33 tests on an iPhone 17
+simulator, including 15 goal-outcome tests for deterministic on-device rewrite,
+vocabulary-boundary, and cosmetic-edit withholding cases. The two injected
+end-to-end UI loops also pass: established, repeated comparable evidence exposes
+the privacy-safe milestone share control after the prescribed Timed rep, and a
+private on-device rewrite can be saved and reopened from the Phrase Bank. A
+light iPhone 17 five-tab screenshot sweep rendered Home, Train, Review,
+Profile, and Settings without a launch or navigation regression; handoff is at
+`.screenshots/2026-07-12_rewrite-phrase-bank/HANDOFF.md`. A deterministic
+Summary UI test now captures the private on-device rewrite card and a saved
+Phrase Bank row end-to-end. Provider-backed rewrite acceptance and physical
+device behavior remain release evidence, not simulator substitutes.
+
+The local production-readiness command still correctly returns **NO-GO**, but
+the source-matched local substrate is now clean. The canonical Swift app-path
+dump covers 53 conversations / 109 turns with zero target mismatches, missing
+metadata, semantic-gate failures, blocking reliability issues, vision-floor
+failures, or readiness warnings. Its embedded source fingerprint matches the
+current dirty checkout, the 50-fixture arena score averages 79.76, and the
+local score, coverage, real-pipeline, and trace-quality gates all pass. The
+app-path harness now compares against the same `CoachDisplayCopy` persistence
+contract as `AskNoumStore`, so intentional user-facing vocabulary translation
+is no longer misreported as a coach failure. That shared copy guard also
+preserves sentence casing during case-insensitive translations.
+
+Launch readiness remains 18/100 (local target shape 85/100) because actual
+release evidence is still missing for a live-provider transcript sweep,
+blinded professional-coach calibration, longitudinal real-user transfer
+outcomes, physical TestFlight verification, and the completed operational
+launch checklist. Repository static preflight passes 18/18. These are external
+release gates, not code paths to paper over with generated sidecars.
+
+## 2026-07-12 — M26 credible goal-outcome loop
+
+M26 turns the existing goal-aware coaching machinery into one qualitative,
+evidence-bounded read shared by Summary, historical Review detail, and Profile.
+Every `SpeakingStyleGoal` now owns an explicit normalized rubric; executive,
+persuasive, and concise no longer inherit the authoritative weights. The new
+`GoalOutcomeRead` projects the existing `CoachAssessment` into insufficient /
+forming / established evidence and emerging / holding / improving / mixed
+movement without persisting a second score or presenting identity precision.
+
+The existing recommendation-learning ledger remains the sole intervention
+owner. Its exposure/outcome records gain optional goal, target-dimension,
+source-session, and bounded follow-up fields with backward-compatible decode.
+Summary records those fields when its goal-outcome action launches the existing
+recommendation router; Review records the same intervention reference and
+preserves IM setup through the existing replay router. The shared finalized-rep
+path closes outcomes for every annotated mode, so prescriptions do not remain
+pending outside IM or Timed. AI rewrites receive the same weakest supported
+dimension and are withheld for short, low-confidence, semantically ambiguous,
+or likely identifier-bearing transcripts. No singleton, navigation case,
+backend collection, phrase bank, privacy store, or onboarding completion flag
+was added.
+
+Transcription now has an on-device `Speech` provider. Declining cloud processing
+selects it without instantiating Deepgram; consenting uses a bounded
+Deepgram-to-local setup fallback and records which provider actually handled the
+rep. Fallback happens before audio streaming, so a rep is never duplicated to
+two providers.
+
+Verification: the final Release simulator build succeeded. The focused
+goal/offline/activation run passed 33 tests; after the KPI addition the complete
+unit target passed 3,689 tests across 391 suites. Erased-simulator onboarding and the injected
+first-verdict value loop both passed as UI tests. The erased-simulator activation
+matrix also passed cloud-consent decline, provider failure recovery,
+interruption/relaunch persistence, and deferred-profile-capture coverage. A refreshed five-tab light
+screenshot sweep rendered the expected first-run/Home, Train, Review, Profile,
+and Settings states. Auto-guided first rep remains default-off because the
+required signed-device permission, interruption, relaunch, and consent matrix
+has not been completed; simulator success cannot release-enable it.
+
+Deferred profile capture is now scheduled by the shared durable practice
+finalizer rather than by Summary presentation. Completing a qualifying rep
+therefore records the prompt even if the user leaves before opening Summary;
+the existing account-scoped manager remains the sole owner and its seen/pending
+guards still prevent duplicate prompts.
+
+Research KPI instrumentation is now privacy-bounded and account-scoped. The
+existing flow log owns active-day, review-open, typed-to-live, notification, and
+qualitative outcome events; `TransformationKPIReport` combines those with
+sessions and recommendation outcomes without transcript text or a third-party
+analytics SDK. Settings diagnostics can inspect first-rep time, review and
+prescription conversion, typed-to-live upgrade, and 28-day qualitative goal
+movement. After three reps, Profile asks the report's recommended single
+qualitative question once and stores only the bounded response event. Flow data
+participates in account export/deletion and preserves the first-value anchor and
+qualitative response when its bounded ring trims older diagnostics.
+The qualitative prompt's UI test verifies one-shot dismissal and actual
+44-point response targets.
+
+The prescribed-practice loop now has a deterministic end-to-end UI proof:
+seeded Summary exposes the goal read, its primary control records the existing
+intervention and routes through the production Timed destination, the injected
+audio harness completes that real rep pipeline, and the returned Summary shows
+the persisted bounded result (for the fixture, “This rep showed early
+improvement after practice.”). The shared Summary disclosure target was also
+raised from 26 to 44 points after the UI test exposed its undersized hit area.
+
 ## 2026-07-11 — Research-to-coaching loop and first-run trust
 
 Branch `ux-overhaul` translates the valid, product-agnostic findings from the

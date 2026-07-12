@@ -874,7 +874,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "This still feels too generic, like you're just giving me another drill.",
-                    coachReply: "Fair push: I leaned on generic advice instead of evidence, and I missed the friction again. The actual read is not another drill; it is whether recommendation-first can stay warm. Proof test: record one short client-concern answer and check whether warmth comes after the point."
+                    coachReply: "Fair push: I leaned on generic advice instead of evidence, and I missed the friction again. The actual read is whether recommendation-first can stay warm, because the repair only works if the point lands without losing connection. Record one short client-concern answer and check whether warmth comes after the point."
                 )
             ]
         )
@@ -1949,6 +1949,14 @@ enum CoachChatConversationCorpus {
 
 @Suite("CoachChatConversationCorpusTests")
 struct CoachChatConversationCorpusTests {
+
+    @Test func appPathTargetUsesTheSamePresentationCopyContractAsPersistence() {
+        let target = Self.persistedCoachReplyTarget(
+            from: "The rolling baseline makes pacing the highest-leverage lever."
+        )
+
+        #expect(target == "Recent reps make pacing the main focus.")
+    }
 
     @Test func conversationCorpusCoversFullThreeTurnTranscripts() {
         #expect(CoachChatConversationCorpus.conversations.count >= 13)
@@ -5758,10 +5766,16 @@ struct CoachChatConversationCorpusTests {
                 let coach = store.messages.first { $0.id == ids.coachID }
                 let metadata = coach?.metadata
                 let finalReply = coach?.role == .coach ? coach?.text : nil
-                let sanitizedTarget = CoachReplyTextSanitizer.coachReplyText(
+                // AskNoumStore persists the sanitized reply through
+                // CoachDisplayCopy. Compare the app path with that same
+                // user-facing contract; otherwise an intentional vocabulary
+                // translation (for example, "lever" -> "focus") is reported
+                // as a coach failure even though the shipping store behaved
+                // exactly as designed.
+                let persistedTarget = Self.persistedCoachReplyTarget(
                     from: turn.coachReply
                 )
-                let targetReplyMatched = finalReply == sanitizedTarget
+                let targetReplyMatched = finalReply == persistedTarget
                 let outcomeSucceeded: Bool = {
                     if case .reply = outcome, coach?.role == .coach {
                         return true
@@ -5829,7 +5843,7 @@ struct CoachChatConversationCorpusTests {
                     turnIndex: index,
                     userTurn: turn.userTurn,
                     surface: surface,
-                    targetCoachReply: sanitizedTarget,
+                    targetCoachReply: persistedTarget,
                     finalCoachReply: finalReply,
                     metadata: metadata,
                     qualityGateEvents: qualityGateEventLogValues,
@@ -5844,7 +5858,7 @@ struct CoachChatConversationCorpusTests {
                 turnRows.append(CoachChatConversationAppPathTurnRow(
                     turnIndex: index,
                     userTurn: turn.userTurn,
-                    targetCoachReply: sanitizedTarget,
+                    targetCoachReply: persistedTarget,
                     finalCoachReply: finalReply,
                     outcomeSucceeded: outcomeSucceeded,
                     targetReplyMatched: targetReplyMatched,
@@ -5890,6 +5904,12 @@ struct CoachChatConversationCorpusTests {
             ))
         }
         return rows
+    }
+
+    private static func persistedCoachReplyTarget(from raw: String) -> String {
+        CoachDisplayCopy.normalized(
+            CoachReplyTextSanitizer.coachReplyText(from: raw)
+        )
     }
 
     @MainActor

@@ -32,6 +32,7 @@
 		17A465912F94267A003BE025 /* BeatTheBrakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A465902F94267A003BE025 /* BeatTheBrakeView.swift */; };
 		17A465932F9426B4003BE025 /* LandThePauseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A465922F9426B4003BE025 /* LandThePauseView.swift */; };
 		17A465952F9426EF003BE025 /* PREPStackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A465942F9426EF003BE025 /* PREPStackView.swift */; };
+		17C0DE022F000001001C0DE0 /* LocalSpeechProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17C0DE012F000001001C0DE0 /* LocalSpeechProvider.swift */; };
 		18FE033D26AC8C946B0A26A6 /* NoumWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A166822D783742B7625C3CF /* NoumWidget.swift */; };
 		2977C581512A87BD4743E193 /* MessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C63B55A0192A0DE42D1BA84 /* MessagesView.swift */; };
 		2FB46C81A2E2A52DE7330992 /* WatchKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 231C7607E1CC00EE43C19EBA /* WatchKit.framework */; };
@@ -121,6 +122,7 @@
 		17A465902F94267A003BE025 /* BeatTheBrakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeatTheBrakeView.swift; sourceTree = "<group>"; };
 		17A465922F9426B4003BE025 /* LandThePauseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandThePauseView.swift; sourceTree = "<group>"; };
 		17A465942F9426EF003BE025 /* PREPStackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PREPStackView.swift; sourceTree = "<group>"; };
+		17C0DE012F000001001C0DE0 /* LocalSpeechProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSpeechProvider.swift; sourceTree = "<group>"; };
 		1AD78B4DA8DA3A9C4650B058 /* NoumWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoumWatchApp.swift; sourceTree = "<group>"; };
 		230560D9003F4D73ABCAE0D9 /* NoumMessages.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoumMessages.swift; sourceTree = "<group>"; };
 		231C7607E1CC00EE43C19EBA /* WatchKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchKit.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS.sdk/System/Library/Frameworks/WatchKit.framework; sourceTree = DEVELOPER_DIR; };
@@ -305,6 +307,7 @@
 				1707DBC32F8F0456001B0638 /* AWSTranscribeProvider.swift */,
 				1707DBC52F8F046D001B0638 /* DeepgramProvider.swift */,
 				1707DBC72F8F0488001B0638 /* GoogleSpeechProvider.swift */,
+				17C0DE012F000001001C0DE0 /* LocalSpeechProvider.swift */,
 				17A465902F94267A003BE025 /* BeatTheBrakeView.swift */,
 				17A465922F9426B4003BE025 /* LandThePauseView.swift */,
 				17A465942F9426EF003BE025 /* PREPStackView.swift */,
@@ -627,6 +630,7 @@
 				1707DBC62F8F046D001B0638 /* DeepgramProvider.swift in Sources */,
 				1707DBC22F8F0446001B0638 /* TranscriptionProvider.swift in Sources */,
 				1707DBC82F8F0488001B0638 /* GoogleSpeechProvider.swift in Sources */,
+				17C0DE022F000001001C0DE0 /* LocalSpeechProvider.swift in Sources */,
 				1707DBBA2F8EF1BC001B0638 /* RewardEngine.swift in Sources */,
 				17A465952F9426EF003BE025 /* PREPStackView.swift in Sources */,
 				17A465932F9426B4003BE025 /* LandThePauseView.swift in Sources */,

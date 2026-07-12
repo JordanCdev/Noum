@@ -26,6 +26,7 @@ struct CoachSessionView: View {
 
     enum Mode: Equatable { case live, type }
     @State private var mode: Mode
+    @State private var flowCorrelationID = UUID()
 
     init(
         sessionStore: PracticeSessionStore,
@@ -137,6 +138,15 @@ struct CoachSessionView: View {
                 }
             }
         }
+        .onAppear {
+            guard mode == .type else { return }
+            FlowEventLog.shared.logOnce(FlowEvent.make(
+                correlationId: flowCorrelationID,
+                flow: .other,
+                stage: "coach.typedOpened",
+                reason: "typed coach surface opened"
+            ))
+        }
     }
 
     /// The typed surface is also the first-rep gate. Keeping its construction
@@ -166,6 +176,14 @@ struct CoachSessionView: View {
 
     private func transition(to nextMode: Mode) {
         guard mode != nextMode else { return }
+        if mode == .type, nextMode == .live {
+            FlowEventLog.shared.logOnce(FlowEvent.make(
+                correlationId: flowCorrelationID,
+                flow: .other,
+                stage: "coach.typedToLive",
+                reason: "user upgraded from typed coach to live coach"
+            ))
+        }
         if reduceMotion {
             mode = nextMode
         } else {

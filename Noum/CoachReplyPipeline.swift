@@ -118,10 +118,17 @@ enum CoachReplyPipeline {
         turnDepth: CoachTurnDepth,
         surface: CoachReplySurface,
         responseMode: CoachAssessment.ResponseMode,
-        realtimeCoachModeEnabled: Bool
+        realtimeCoachModeEnabled: Bool,
+        streamRawPartialsToUI: Bool = CoachBrainFlags.streamRawPartialsToUI
     ) -> Bool {
         guard realtimeCoachModeEnabled else { return false }
         if surface == .live { return true }
+        // Raw provider partials are withheld by default because they have not
+        // passed the coaching, semantic, or reliability gates. In that shipping
+        // posture every text turn needs the already-computed local read; without
+        // it a quick turn can leave a blank pending row for the whole provider
+        // request (and for a bounded retry after a dropped stream).
+        if !streamRawPartialsToUI { return true }
         if responseMode == .expandable { return true }
         return turnDepth == .deepAssessment || turnDepth == .trustRepair
     }

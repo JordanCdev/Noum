@@ -318,6 +318,364 @@ struct CoachProviderChainTests {
         })
     }
 
+    @Test func transientProviderTimeoutRetriesOnceBeforeFailover() async {
+        let diagnostics = CoachDiagnosticRecorderProbe()
+        let userTurn = "Give me one move for the next rep."
+        let acceptedReply = "Your message asks for one move, so keep the test narrow. Next rep, answer first and stop after one proof point. That tests whether pressure is making you over-explain."
+        let scripted = TransientThenSuccessCoachHTTP(
+            success: .success(Self.geminiData(acceptedReply))
+        )
+        let service = AICoachChatService(
+            keyedProviders: { [.agentPlatform] },
+            keyLookup: { _ in "test-google-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { provider, endpoint, key, body in
+                try await scripted.next(
+                    provider: provider,
+                    endpoint: endpoint,
+                    key: key,
+                    body: body
+                )
+            },
+            diagnosticRecorder: { surface, providerName, model, outcome, reason, statusCode, startedAt, now in
+                diagnostics.record(
+                    surface: surface,
+                    providerName: providerName,
+                    model: model,
+                    outcome: outcome,
+                    reason: reason,
+                    statusCode: statusCode,
+                    startedAt: startedAt,
+                    now: now
+                )
+            }
+        )
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: userTurn)],
+            systemPrompt: "You are Noum.",
+            userContext: "RATING\n- Total rated sessions: 12."
+        )
+
+        guard case .reply(let text) = outcome else {
+            Issue.record("Expected bounded transport retry to recover, got \(outcome)")
+            return
+        }
+        #expect(text == acceptedReply)
+        #expect(await scripted.callCount == 2)
+        #expect(await scripted.providers == [.agentPlatform, .agentPlatform])
+        #expect(diagnostics.records.contains { record in
+            record.provider == "Google Cloud" &&
+            record.outcome == .fallback &&
+            record.reason == "Transient transport failure; retrying once without streaming"
+        })
+    }
+
+    @Test func transportRetryClassifierExcludesCancellationAndOfflineState() {
+        #expect(AICoachChatService.transportFailureCanRetry(URLError(.timedOut)))
+        #expect(AICoachChatService.transportFailureCanRetry(URLError(.networkConnectionLost)))
+        #expect(!AICoachChatService.transportFailureCanRetry(URLError(.cancelled)))
+        #expect(!AICoachChatService.transportFailureCanRetry(URLError(.notConnectedToInternet)))
+        #expect(!AICoachChatService.transportFailureCanRetry(
+            NSError(domain: "CoachDecode", code: 1)
+        ))
+    }
+
+    @Test func providerStreamingSkipsTurnsAlreadyCoveredByLocalRead() {
+        #expect(!AICoachChatService.providerStreamingShouldRun(
+            turnDepth: .trustRepair,
+            surface: .text,
+            responseMode: .expandable,
+            providerStreamingEnabled: true,
+            realtimeCoachModeEnabled: true,
+            streamRawPartialsToUI: false
+        ))
+        #expect(!AICoachChatService.providerStreamingShouldRun(
+            turnDepth: .quickMove,
+            surface: .live,
+            responseMode: .immediateOnly,
+            providerStreamingEnabled: true,
+            realtimeCoachModeEnabled: true,
+            streamRawPartialsToUI: false
+        ))
+        #expect(!AICoachChatService.providerStreamingShouldRun(
+            turnDepth: .quickMove,
+            surface: .text,
+            responseMode: .immediateOnly,
+            providerStreamingEnabled: true,
+            realtimeCoachModeEnabled: true,
+            streamRawPartialsToUI: false
+        ))
+        #expect(AICoachChatService.providerStreamingShouldRun(
+            turnDepth: .quickMove,
+            surface: .text,
+            responseMode: .immediateOnly,
+            providerStreamingEnabled: true,
+            realtimeCoachModeEnabled: true,
+            streamRawPartialsToUI: true
+        ))
+        #expect(AICoachChatService.providerStreamingShouldRun(
+            turnDepth: .trustRepair,
+            surface: .text,
+            responseMode: .expandable,
+            providerStreamingEnabled: true,
+            realtimeCoachModeEnabled: false,
+            streamRawPartialsToUI: false
+        ))
+        #expect(!AICoachChatService.providerStreamingShouldRun(
+            turnDepth: .quickMove,
+            surface: .text,
+            responseMode: .immediateOnly,
+            providerStreamingEnabled: false,
+            realtimeCoachModeEnabled: true,
+            streamRawPartialsToUI: false
+        ))
+    }
+
+    @Test func qualityMissUsesGateCleanAssessmentBeforeSecondProviderCall() async {
+        let diagnostics = CoachDiagnosticRecorderProbe()
+        var providerEvents: [CoachProviderAttemptEvent] = []
+        let turn = "Give me one move for the next rep."
+        let weakDraft = "Here are some tips: be confident, be concise, and practice."
+        let assessment = CoachAssessment(
+            turnDepth: .quickMove,
+            surface: .text,
+            questionRestatement: turn,
+            directVerdict: "The opening is the next lever: put the verdict in sentence one, then prove it once.",
+            confidence: 0.34,
+            evidenceUsed: ["The useful signal is one recent timed rep gives a usable sample."],
+            rubricScores: [],
+            missingEvidence: [],
+            nextProofTest: "Run one answer with the recommendation first, one proof point, then stop.",
+            responseMode: .immediateOnly,
+            toneMode: .prescribe,
+            repairFocus: nil
+        )
+        let scripted = ScriptedCoachHTTP(results: [
+            .success(Self.openAIData(weakDraft))
+        ])
+        let service = AICoachChatService(
+            keyedProviders: { [.openAI] },
+            keyLookup: { _ in "test-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { provider, endpoint, key, body in
+                await scripted.next(provider: provider, endpoint: endpoint, key: key, body: body)
+            },
+            diagnosticRecorder: { surface, providerName, model, outcome, reason, statusCode, startedAt, now in
+                diagnostics.record(
+                    surface: surface,
+                    providerName: providerName,
+                    model: model,
+                    outcome: outcome,
+                    reason: reason,
+                    statusCode: statusCode,
+                    startedAt: startedAt,
+                    now: now
+                )
+            }
+        )
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: turn)],
+            systemPrompt: "You are Noum.",
+            userContext: "RECENT (most-recent first)\n- One recent timed rep gives a usable sample.",
+            turnDepth: .quickMove,
+            assessment: assessment,
+            onProviderAttemptEvent: { event in
+                providerEvents.append(event)
+            }
+        )
+
+        guard case .reply(let text) = outcome else {
+            Issue.record("Expected typed assessment repair, got \(outcome)")
+            return
+        }
+        #expect(await scripted.callCount == 1)
+        #expect(CoachReplyPipeline.providerRetryCount(providerEvents) == 0)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: text,
+            latestUserTurn: turn,
+            systemContext: "RECENT (most-recent first)\n- One recent timed rep gives a usable sample.",
+            turnDepth: .quickMove,
+            surface: .text
+        ) == nil)
+        #expect(diagnostics.records.contains { record in
+            record.provider == "OpenAI" &&
+            record.outcome == .success &&
+            record.reason == "Typed assessment repair accepted before provider rewrite"
+        })
+    }
+
+    @Test func rejectingPracticeMoreRoutesAsTrustRepair() {
+        #expect(TurnDepthClassifier.classify(
+            userText: "And stop saying practice more.",
+            recentTurns: [CoachMessage(role: .coach, text: "Practice more.")]
+        ) == .trustRepair)
+    }
+
+    @Test func rejectingPracticeMoreUsesAssessmentSafeRepairBeforeProviderRewrite() async {
+        let diagnostics = CoachDiagnosticRecorderProbe()
+        var providerEvents: [CoachProviderAttemptEvent] = []
+        let turn = "And stop saying practice more."
+        let weakDraft = "Agreed: that was generic because it named no behavior, so put the recommendation in sentence one, give one proof, then stop."
+        let context = "RECENT (most-recent first)\n- One recent timed rep gives a usable sample.\nRECENT USER TURNS\n- The prior answer gave generic advice instead of a coaching read."
+        let assessment = CoachAssessment(
+            turnDepth: .trustRepair,
+            surface: .text,
+            questionRestatement: turn,
+            directVerdict: "The repair is to name the miss first, then answer with one useful move.",
+            confidence: 0.38,
+            evidenceUsed: ["trust repair signal: I leaned on generic advice instead of evidence"],
+            rubricScores: [],
+            missingEvidence: ["A revised answer that earns trust before prescribing."],
+            nextProofTest: "Use one user-specific signal first, then prescribe exactly one coach move.",
+            responseMode: .expandable,
+            toneMode: .repair,
+            repairFocus: "I leaned on generic advice instead of evidence"
+        )
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: weakDraft,
+            latestUserTurn: turn,
+            systemContext: context,
+            turnDepth: .trustRepair,
+            surface: .text
+        ) == nil)
+        #expect(AICoachChatService.semanticQualityIssue(
+            in: weakDraft,
+            latestUserTurn: turn,
+            systemContext: context,
+            turnDepth: .trustRepair,
+            assessment: assessment
+        ) == .missingRepairInsight)
+
+        let scripted = ScriptedCoachHTTP(results: [
+            .success(Self.openAIData(weakDraft))
+        ])
+        let service = AICoachChatService(
+            keyedProviders: { [.openAI] },
+            keyLookup: { _ in "test-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { provider, endpoint, key, body in
+                await scripted.next(provider: provider, endpoint: endpoint, key: key, body: body)
+            },
+            diagnosticRecorder: { surface, providerName, model, outcome, reason, statusCode, startedAt, now in
+                diagnostics.record(
+                    surface: surface,
+                    providerName: providerName,
+                    model: model,
+                    outcome: outcome,
+                    reason: reason,
+                    statusCode: statusCode,
+                    startedAt: startedAt,
+                    now: now
+                )
+            }
+        )
+
+        let outcome = await service.reply(
+            history: [
+                CoachMessage(role: .coach, text: "Fair push. Put the recommendation first and give one proof point."),
+                CoachMessage(role: .user, text: turn)
+            ],
+            systemPrompt: "You are Noum.",
+            userContext: context,
+            turnDepth: .trustRepair,
+            assessment: assessment,
+            onProviderAttemptEvent: { event in
+                providerEvents.append(event)
+            }
+        )
+
+        guard case .reply(let reply) = outcome else {
+            Issue.record("Expected assessment-safe trust repair, got \(outcome)")
+            return
+        }
+        #expect(await scripted.callCount == 1)
+        #expect(CoachReplyPipeline.providerRetryCount(providerEvents) == 0)
+        #expect(!reply.lowercased().contains("practice more"))
+        #expect(AICoachChatService.semanticQualityIssue(
+            in: reply,
+            latestUserTurn: turn,
+            systemContext: context,
+            turnDepth: .trustRepair,
+            assessment: assessment
+        ) == nil)
+        #expect(diagnostics.records.contains { record in
+            record.provider == "OpenAI" &&
+            record.outcome == .success &&
+            record.reason == "Safe reference repair accepted before provider rewrite"
+        })
+    }
+
+    @Test func transientRepairTransportRetriesOnceBeforeRejectingProvider() async {
+        let diagnostics = CoachDiagnosticRecorderProbe()
+        let userTurn = "Give me one move for the next rep."
+        let weakDraft = "Here are some tips: be confident, be concise, and practice."
+        let repaired = "Your last rep gives one usable signal, so answer in sentence one, give one proof point, then stop."
+        #expect(AICoachChatService.replyQualityIssue(
+            in: weakDraft,
+            latestUserTurn: userTurn
+        ) != nil)
+        #expect(AICoachChatService.replyQualityIssue(
+            in: repaired,
+            latestUserTurn: userTurn
+        ) == nil)
+
+        let scripted = TransientRepairThenSuccessCoachHTTP(
+            first: .success(Self.openAIData(weakDraft)),
+            repaired: .success(Self.openAIData(repaired))
+        )
+        let service = AICoachChatService(
+            keyedProviders: { [.openAI] },
+            keyLookup: { _ in "test-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { provider, endpoint, key, body in
+                try await scripted.next(
+                    provider: provider,
+                    endpoint: endpoint,
+                    key: key,
+                    body: body
+                )
+            },
+            diagnosticRecorder: { surface, providerName, model, outcome, reason, statusCode, startedAt, now in
+                diagnostics.record(
+                    surface: surface,
+                    providerName: providerName,
+                    model: model,
+                    outcome: outcome,
+                    reason: reason,
+                    statusCode: statusCode,
+                    startedAt: startedAt,
+                    now: now
+                )
+            }
+        )
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: userTurn)],
+            systemPrompt: "You are Noum.",
+            userContext: "RECENT (most-recent first)\n- One recent rep is available."
+        )
+
+        guard case .reply(let text) = outcome else {
+            Issue.record("Expected repair retry to recover, got \(outcome)")
+            return
+        }
+        #expect(text == repaired)
+        #expect(await scripted.callCount == 3)
+        #expect(diagnostics.records.contains { record in
+            record.provider == "OpenAI" &&
+            record.outcome == .fallback &&
+            record.reason == "Transient repair transport failure; retrying once"
+        })
+        #expect(diagnostics.records.contains { record in
+            record.provider == "OpenAI" &&
+            record.outcome == .success &&
+            record.reason == "Repair reply accepted"
+        })
+    }
+
     @Test func contentRejectedCritiqueResolvesAsNoticeNotLocalCoachReply() async {
         let diagnostics = CoachDiagnosticRecorderProbe()
         let scripted = ScriptedCoachHTTP(results: [
@@ -437,6 +795,233 @@ struct CoachProviderChainTests {
             record.provider == "OpenAI" &&
             record.outcome == .success &&
             record.reason == "Repair reply accepted"
+        })
+    }
+
+    @Test func directFollowThroughRepairsPassTheShippingGates() throws {
+        let cases: [(turn: String, system: String)] = [
+            (
+                "How do I slow down without sounding unsure?",
+                "RECENT (most-recent first)\n- The last rep was clean but compressed."
+            ),
+            (
+                "How do I sound more certain at the end?",
+                "RECENT (most-recent first)\n- The close softened."
+            ),
+            (
+                "What happened in that rep? It rambled after sentence two.",
+                "RECENT USER TURNS\n- The user reports that the answer rambled after sentence two."
+            ),
+            (
+                "What do I take into the interview?",
+                "RECENT USER TURNS\n- The last answer drifted after sentence two."
+            ),
+            (
+                "What if the voice still sounds cold?",
+                "RECENT USER TURNS\n- The no-symbol version is easier to hear."
+            ),
+            (
+                "And stop saying practice more.",
+                "RECENT (most-recent first)\n- One recent timed rep gives a usable sample.\nRECENT USER TURNS\n- The prior answer gave generic advice instead of a coaching read."
+            ),
+            (
+                "I did the update. People asked for the timeline, not the decision.",
+                "RECENT (most-recent first)\n- One recent timed rep gives a usable sample.\nUPCOMING MOMENT\n- Leadership update.\nRECENT USER TURNS\n- The close should land on the decision."
+            ),
+            (
+                "What should I capture now?",
+                "RECENT (most-recent first)\n- One recent timed rep gives a usable sample.\nRECENT USER TURNS\n- I did the update. People asked for the timeline, not the decision."
+            ),
+            (
+                "When would you call it authority instead?",
+                "RECENT USER TURNS\n- Verdict-first helped, but the user is still unsure."
+            ),
+            (
+                "What should I check after?",
+                "UPCOMING MOMENT\n- A leadership update is tomorrow."
+            ),
+            (
+                "How do I know if it worked?",
+                "RECENT USER TURNS\n- I tried recommendation first and it sounded abrupt."
+            )
+        ]
+
+        for testCase in cases {
+            let turnDepth: CoachTurnDepth = testCase.turn.lowercased().contains("stop saying practice")
+                ? .trustRepair
+                : .quickMove
+            let assessment: CoachAssessment? = {
+                switch testCase.turn {
+                case "And stop saying practice more.":
+                    return CoachAssessment(
+                        turnDepth: .trustRepair,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "The repair is to name the miss first, then answer with one useful move.",
+                        confidence: 0.38,
+                        evidenceUsed: ["trust repair signal: I leaned on generic advice instead of evidence"],
+                        rubricScores: [],
+                        missingEvidence: ["A revised answer that earns trust before prescribing."],
+                        nextProofTest: "Use one user-specific signal first, then prescribe exactly one coach move.",
+                        responseMode: .expandable,
+                        toneMode: .repair,
+                        repairFocus: "I leaned on generic advice instead of evidence"
+                    )
+                case "I did the update. People asked for the timeline, not the decision.":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "The ending is the next lever: make the final sentence the ask or decision, then stop.",
+                        confidence: 0.31,
+                        evidenceUsed: ["One recent Timed rep gives a usable sample."],
+                        rubricScores: [],
+                        missingEvidence: [],
+                        nextProofTest: "End the next rep with the exact decision or ask, then stop talking for two seconds.",
+                        responseMode: .immediateOnly,
+                        toneMode: .prescribe,
+                        repairFocus: nil
+                    )
+                case "What should I capture now?":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "Salience is the next lever: add one concrete detail, then return to the ask.",
+                        confidence: 0.31,
+                        evidenceUsed: ["One recent Timed rep gives a usable sample."],
+                        rubricScores: [],
+                        missingEvidence: [],
+                        nextProofTest: "Replay the latest Timed rep with one concrete detail after the verdict, then return to the ask.",
+                        responseMode: .immediateOnly,
+                        toneMode: .prescribe,
+                        repairFocus: nil
+                    )
+                default:
+                    return nil
+                }
+            }()
+            let recentCoachReplies: [String] = testCase.turn == "And stop saying practice more."
+                ? ["Fair push. The recommendation should come first, followed by one proof point."]
+                : []
+            let expected = try #require(
+                AICoachChatService.directFollowThroughRepairReferenceShape(
+                    for: testCase.turn,
+                    system: testCase.system
+                )
+            )
+            let repaired = try #require(AICoachChatService.safeReferenceRepairReply(
+                issue: .missingInsightBridge,
+                latestUserTurn: testCase.turn,
+                system: testCase.system,
+                quoteGuard: nil,
+                recentCoachReplies: recentCoachReplies,
+                turnDepth: turnDepth,
+                assessment: assessment,
+                surface: .text
+            ))
+
+            #expect(repaired == expected)
+            #expect(AICoachChatService.replyQualityIssue(
+                in: repaired,
+                latestUserTurn: testCase.turn,
+                systemContext: testCase.system,
+                recentCoachReplies: recentCoachReplies,
+                turnDepth: turnDepth,
+                surface: .text
+            ) == nil)
+            #expect(AICoachChatService.semanticQualityIssue(
+                in: repaired,
+                latestUserTurn: testCase.turn,
+                systemContext: testCase.system,
+                turnDepth: turnDepth,
+                assessment: assessment
+            ) == nil)
+            #expect(AICoachChatService.coachVisionEvaluation(
+                reply: repaired,
+                latestUserTurn: testCase.turn,
+                systemContext: testCase.system,
+                recentCoachReplies: recentCoachReplies,
+                turnDepth: turnDepth,
+                assessment: assessment,
+                surface: .text
+            ).passesProductionFloor)
+        }
+
+        #expect(AICoachChatService.replyQualityIssue(
+            in: "I do not have that recording yet, so record it again and I can hear where it drifted.",
+            latestUserTurn: "What happened in that rep? It rambled after sentence two.",
+            systemContext: "RECENT USER TURNS\n- The user reports that the answer rambled after sentence two.",
+            turnDepth: .groundedRead,
+            surface: .text
+        ) == .missingPrescribedAction)
+    }
+
+    @Test func critiqueLetsDraftUsesSafeRepairWithoutSecondProviderCall() async {
+        let diagnostics = CoachDiagnosticRecorderProbe()
+        let turn = "This is robotic and too much writing."
+        let weakDraft = "Fair push. That sounded like a generic report. Let's put the recommendation first, then stop."
+        let scripted = ScriptedCoachHTTP(results: [
+            .success(Self.openAIData(weakDraft))
+        ])
+        let service = AICoachChatService(
+            keyedProviders: { [.openAI] },
+            keyLookup: { _ in "test-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { provider, endpoint, key, body in
+                await scripted.next(provider: provider, endpoint: endpoint, key: key, body: body)
+            },
+            diagnosticRecorder: { surface, providerName, model, outcome, reason, statusCode, startedAt, now in
+                diagnostics.record(
+                    surface: surface,
+                    providerName: providerName,
+                    model: model,
+                    outcome: outcome,
+                    reason: reason,
+                    statusCode: statusCode,
+                    startedAt: startedAt,
+                    now: now
+                )
+            }
+        )
+        let assessment = CoachAssessment(
+            turnDepth: .trustRepair,
+            surface: .text,
+            questionRestatement: turn,
+            directVerdict: "The repair is to name the miss first, then answer with one useful move.",
+            confidence: 0.33,
+            evidenceUsed: ["Your last rep gives one safe signal."],
+            rubricScores: [],
+            missingEvidence: ["Need another rep before making a stronger call."],
+            nextProofTest: "Rewrite the read with one human acknowledgement and one user-specific signal.",
+            responseMode: .expandable,
+            toneMode: .repair,
+            repairFocus: "I sounded cold instead of giving a human coach read"
+        )
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: turn)],
+            systemPrompt: "You are Noum.",
+            userContext: "RECENT (most-recent first)\n- The recommendation arrived late.",
+            turnDepth: .trustRepair,
+            assessment: assessment
+        )
+
+        guard case .reply(let text) = outcome else {
+            Issue.record("Expected deterministic safe repair, got \(outcome)")
+            return
+        }
+        #expect(await scripted.callCount == 1)
+        #expect(!text.lowercased().contains("let's"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: text,
+            latestUserTurn: turn,
+            systemContext: "RECENT (most-recent first)\n- The recommendation arrived late."
+        ) == nil)
+        #expect(diagnostics.records.contains { record in
+            record.provider == "OpenAI" &&
+            record.outcome == .success &&
+            record.reason == "Typed assessment repair accepted before provider rewrite"
         })
     }
 
@@ -856,6 +1441,61 @@ private actor ScriptedCoachHTTP {
             return text
         }
         return nil
+    }
+}
+
+private actor TransientThenSuccessCoachHTTP {
+    private let success: AICoachChatService.ProviderHTTPResult
+    private(set) var callCount: Int = 0
+    private(set) var providers: [CoachChatProvider] = []
+
+    init(success: AICoachChatService.ProviderHTTPResult) {
+        self.success = success
+    }
+
+    func next(
+        provider: CoachChatProvider,
+        endpoint: URL,
+        key: String,
+        body: [String: Any]
+    ) throws -> AICoachChatService.ProviderHTTPResult {
+        callCount += 1
+        providers.append(provider)
+        if callCount == 1 {
+            throw URLError(.timedOut)
+        }
+        return success
+    }
+}
+
+private actor TransientRepairThenSuccessCoachHTTP {
+    private let first: AICoachChatService.ProviderHTTPResult
+    private let repaired: AICoachChatService.ProviderHTTPResult
+    private(set) var callCount: Int = 0
+
+    init(
+        first: AICoachChatService.ProviderHTTPResult,
+        repaired: AICoachChatService.ProviderHTTPResult
+    ) {
+        self.first = first
+        self.repaired = repaired
+    }
+
+    func next(
+        provider: CoachChatProvider,
+        endpoint: URL,
+        key: String,
+        body: [String: Any]
+    ) throws -> AICoachChatService.ProviderHTTPResult {
+        callCount += 1
+        switch callCount {
+        case 1:
+            return first
+        case 2:
+            throw URLError(.networkConnectionLost)
+        default:
+            return repaired
+        }
     }
 }
 

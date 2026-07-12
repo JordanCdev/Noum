@@ -106,6 +106,11 @@ struct NoumApp: App {
                 LessonStore.shared.consumeCelebration()
             }
         }
+        // UI coverage may opt into the existing DEBUG-only entitlement seam
+        // without changing StoreKit state or granting a Release entitlement.
+        if args.contains("UI_TESTING_PREMIUM") {
+            PremiumManager.shared.upgradeToPremium()
+        }
         // `FORCE_GOAL_REFRESH` / `FORCE_NOTIFICATION_PROMPT` flip the
         // respective manager flags so ScreenshotTour can capture conditional
         // surfaces that normally fire on a cadence (2-week direction check)
@@ -151,6 +156,9 @@ struct NoumApp: App {
         // simulator's per-account defaults.
         if args.contains("UI_TESTING_CLEAR_ASK_NOUM") {
             AskNoumStore.shared.clearThread()
+        }
+        if args.contains("UI_TESTING_CLEAR_FLOW_EVENTS") {
+            FlowEventLog.shared.reset()
         }
         // `-DeepLink noum://<host>` launch arg lets the noum-screenshots
         // skill drive tab nav via `simctl launch --terminate-running-process`
@@ -206,11 +214,16 @@ struct NoumApp: App {
         .task {
             await authManager.bootstrapInitialAccountIfNeeded()
             await MainActor.run {
+                FlowEventLog.shared.reloadForCurrentAccount()
+                FlowEventLog.shared.recordActiveDay()
                 _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
+            if authManager.currentAccountID != nil {
+                FlowEventLog.shared.recordActiveDay()
+            }
             Task { @MainActor in
                 _ = UserTrajectoryCache.shared.invalidateAndWarmFromCurrentStores()
             }

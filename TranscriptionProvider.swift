@@ -2,7 +2,8 @@ import Foundation
 
 // MARK: - Provider Protocol
 
-/// Abstraction over speech-to-text services (AWS, Deepgram, Google).
+/// Abstraction over speech-to-text services (Apple on-device, Deepgram,
+/// Google, and the legacy AWS development provider).
 /// Each provider creates a session that streams audio in and transcript updates out.
 protocol TranscriptionProvider: Sendable {
     var name: String { get }
@@ -20,6 +21,13 @@ protocol TranscriptionSession: AnyObject, Sendable {
     /// its own finalization; it does not imply that speech was detected.
     func finish() async throws -> FinalizedTranscript
     var transcriptUpdates: AsyncThrowingStream<TranscriptUpdate, Error> { get }
+    /// Actual provider chosen for this stream. Most direct sessions inherit nil;
+    /// failover wrappers supply the resolved identifier for honest diagnostics.
+    var resolvedProviderIdentifier: String? { get }
+}
+
+extension TranscriptionSession {
+    var resolvedProviderIdentifier: String? { nil }
 }
 
 // MARK: - Configuration
@@ -304,6 +312,7 @@ enum TranscriptionProviderID: String, CaseIterable, Identifiable, Codable {
     case aws = "aws"
     case deepgram = "deepgram"
     case google = "google"
+    case local = "local"
 
     var id: String { rawValue }
 
@@ -312,6 +321,7 @@ enum TranscriptionProviderID: String, CaseIterable, Identifiable, Codable {
         case .aws: return "AWS Transcribe"
         case .deepgram: return "Deepgram Nova-2"
         case .google: return "Google Cloud Speech"
+        case .local: return "Apple On-Device"
         }
     }
 
@@ -319,16 +329,22 @@ enum TranscriptionProviderID: String, CaseIterable, Identifiable, Codable {
     /// UserDefaults string to a provider ID. Single source of truth shared
     /// by practice reps (`SpeechRecognizerViewModel`) and the live coach
     /// call (`AskNoumVoiceInput`) so the two surfaces can never resolve a
-    /// different provider from the same stored value. Mirrors the historic
-    /// behavior exactly: unset → Deepgram (the default), unknown → AWS.
+    /// different provider from the same stored value. An unrecognised legacy
+    /// value falls back to the current authenticated default rather than
+    /// silently selecting the legacy direct-AWS route. Explicit development
+    /// choices for AWS and Google remain supported.
     static func resolved(fromStoredValue raw: String?) -> TranscriptionProviderID {
         switch raw {
         case nil, TranscriptionProviderID.deepgram.rawValue:
             return .deepgram
         case TranscriptionProviderID.google.rawValue:
             return .google
-        default:
+        case TranscriptionProviderID.local.rawValue:
+            return .local
+        case TranscriptionProviderID.aws.rawValue:
             return .aws
+        default:
+            return .deepgram
         }
     }
 }

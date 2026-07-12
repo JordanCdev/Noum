@@ -757,16 +757,16 @@ enum CoachDisplayCopy {
             ("using:", "")
         ]
         for (source, replacement) in replacements {
-            result = result.replacingOccurrences(
-                of: source,
-                with: replacement,
-                options: [.caseInsensitive]
+            result = replacingMatches(
+                of: NSRegularExpression.escapedPattern(for: source),
+                in: result,
+                with: replacement
             )
         }
-        result = result.replacingOccurrences(
+        result = replacingMatches(
             of: "\\blever\\b",
-            with: "focus",
-            options: [.regularExpression, .caseInsensitive]
+            in: result,
+            with: "focus"
         )
         return result
             .components(separatedBy: .newlines)
@@ -776,6 +776,43 @@ enum CoachDisplayCopy {
             }
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Vocabulary substitutions are case-insensitive, but the user's sentence
+    /// casing is not disposable. Preserve an uppercase source initial in the
+    /// replacement so "The rolling baseline..." becomes "Recent reps..."
+    /// rather than a visibly broken lowercase sentence.
+    private static func replacingMatches(
+        of pattern: String,
+        in value: String,
+        with replacement: String
+    ) -> String {
+        guard let regex = try? NSRegularExpression(
+            pattern: pattern,
+            options: [.caseInsensitive]
+        ) else {
+            return value
+        }
+
+        var result = value
+        let source = value as NSString
+        let matches = regex.matches(
+            in: value,
+            range: NSRange(location: 0, length: source.length)
+        )
+        for match in matches.reversed() {
+            guard let range = Range(match.range, in: result) else { continue }
+            let matched = source.substring(with: match.range)
+            let adjustedReplacement: String
+            if matched.first?.isUppercase == true,
+               let first = replacement.first {
+                adjustedReplacement = first.uppercased() + String(replacement.dropFirst())
+            } else {
+                adjustedReplacement = replacement
+            }
+            result.replaceSubrange(range, with: adjustedReplacement)
+        }
+        return result
     }
 }
 

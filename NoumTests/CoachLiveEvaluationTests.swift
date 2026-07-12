@@ -133,6 +133,28 @@ struct CoachLiveEvaluationTests {
         ))
     }
 
+    @Test func liveHarnessRecordsImmediateReadOnlyAfterStoreVisibilityTransition() async {
+        let shown = await Self.verifyImmediateCoachReadVisibility(
+            expected: true,
+            userTurn: "Give me the deeper read.",
+            immediateRead: "The close is the useful signal; test it once under pressure."
+        )
+        let notExpected = await Self.verifyImmediateCoachReadVisibility(
+            expected: false,
+            userTurn: "What next?",
+            immediateRead: "Use one deliberate beat before the reason."
+        )
+        let empty = await Self.verifyImmediateCoachReadVisibility(
+            expected: true,
+            userTurn: "Give me the deeper read.",
+            immediateRead: "   "
+        )
+
+        #expect(shown)
+        #expect(!notExpected)
+        #expect(!empty)
+    }
+
     @Test func liveJudgementCarriesRecentProofTestsAcrossFixtureSweep() {
         CoachAssessmentCache.shared.invalidate()
         UserTrajectoryCache.shared.invalidate()
@@ -160,6 +182,41 @@ struct CoachLiveEvaluationTests {
         #expect(!carried.isEmpty)
         #expect(second.assessment.nextProofTest != first.assessment.nextProofTest)
         #expect(second.assessmentCacheHit == false)
+        CoachAssessmentCache.shared.invalidate()
+        UserTrajectoryCache.shared.invalidate()
+    }
+
+    @Test func readinessSweepRetainsFullProofHistoryForRunLevelDiversity() {
+        CoachAssessmentCache.shared.invalidate()
+        UserTrajectoryCache.shared.invalidate()
+        let fixtures = Self.selectedFixtures(env: [
+            "NOUM_LIVE_AI_FIXTURES": "readiness"
+        ])
+        var recentProofTests: [String] = []
+        var proofKeys: [String] = []
+
+        for fixture in fixtures {
+            let judgement = Self.judgement(
+                for: fixture,
+                history: Self.history(for: fixture),
+                surface: .text,
+                recentProofTests: recentProofTests
+            )
+            let proofTest = judgement.assessment.nextProofTest
+            #expect(!Self.proofTestRecentlyRepeated(
+                proofTest,
+                in: recentProofTests
+            ), "readiness fixture \(fixture.id) repeated an earlier run-level proof test")
+            proofKeys.append(Self.proofTestKey(proofTest))
+            recentProofTests = Self.updatedRecentProofTests(
+                recentProofTests,
+                adding: proofTest,
+                limit: fixtures.count
+            )
+        }
+
+        #expect(recentProofTests.count == fixtures.count)
+        #expect(Set(proofKeys).count == fixtures.count)
         CoachAssessmentCache.shared.invalidate()
         UserTrajectoryCache.shared.invalidate()
     }
@@ -242,6 +299,36 @@ struct CoachLiveEvaluationTests {
 
         #expect(summary.timeToFirstVisibleTokenMs == 250)
         #expect(summary.timeToFirstVisibleTokenSource == .streamedPartialVisible)
+    }
+
+    @Test func liveTelemetrySummaryPrefersVerifiedLocalReadOverProviderTiming() {
+        let gemini = CoachTurnProviderChoice(providerName: "Google Gemini", model: "gemini-test")
+        let turnStartedAt = Date(timeIntervalSince1970: 100)
+        let localVisibleAt = Date(timeIntervalSince1970: 100.03)
+        let streamVisibleAt = Date(timeIntervalSince1970: 100.4)
+        let turnCompletedAt = Date(timeIntervalSince1970: 103)
+
+        let summary = Self.liveTelemetrySummary(
+            providerEvents: [.started(gemini), .retry(gemini)],
+            diagnostics: [
+                CoachLiveDiagnosticRecord(
+                    provider: "Google Gemini",
+                    model: "gemini-test",
+                    outcome: .success,
+                    reason: "Streaming first provider token received",
+                    statusCode: nil,
+                    latencyMs: 280
+                )
+            ],
+            turnStartedAt: turnStartedAt,
+            turnCompletedAt: turnCompletedAt,
+            firstStreamedVisibleAt: streamVisibleAt,
+            completedReplyVisible: true,
+            localImmediateVisibleAt: localVisibleAt
+        )
+
+        #expect((29...30).contains(summary.timeToFirstVisibleTokenMs ?? -1))
+        #expect(summary.timeToFirstVisibleTokenSource == .localImmediateRead)
     }
 
     @Test func liveTrustSignalsSeparateSoftPushbackFromColdnessComplaint() {
@@ -448,7 +535,7 @@ struct CoachLiveEvaluationTests {
         #expect(report.summary.totalProviderRefusalCount == 2)
         #expect(report.summary.firstVisibleTokenMinMs == 210)
         #expect(report.summary.firstVisibleTokenMaxMs == 840)
-        #expect(report.summary.immediateCoachReadExpectedCount == 1)
+        #expect(report.summary.immediateCoachReadExpectedCount == 3)
         #expect(report.summary.immediateCoachReadMissingCount == 1)
         #expect(report.summary.missingImmediateCoachReadFixtureIDs == ["two"])
         #expect(report.summary.userPushbackWithinTwoTurnsCount == 2)
@@ -549,6 +636,57 @@ struct CoachLiveEvaluationTests {
         #expect(report.longFormConversationIDsPassingProductionFloor == ["long-form-one"])
         #expect(report.longFormConversationFailureIDs == ["long-form-two"])
         #expect(report.longFormConversations.map(\.observedTurnCount) == [2, 2])
+    }
+
+    @Test func longFormOperationalPressureBlocksRunReadiness() {
+        let latestRow = Self.sampleLiveReportRow(
+            fixtureID: "latest",
+            liveProductionFloor: true,
+            assessmentConfidence: 0.80,
+            assessmentProofTestHash: "latest-proof",
+            replyWordCount: 24,
+            providerRetryCount: 0,
+            providerRefusalCount: 0,
+            timeToFirstVisibleTokenMs: 12,
+            userPushbackWithinTwoTurns: false,
+            coldnessComplaintFlag: false,
+            softPushbackFlag: false
+        )
+        let slowConversation = CoachLiveLongFormConversationReportRow.make(
+            conversationID: "long-form-slow",
+            sourceFixtureID: "slow",
+            expectedTurnCount: 1,
+            rows: [
+                Self.sampleLiveReportRow(
+                    fixtureID: "long-form-slow#turn-1",
+                    liveProductionFloor: true,
+                    assessmentConfidence: 0.74,
+                    assessmentProofTestHash: "long-proof",
+                    replyWordCount: 31,
+                    providerRetryCount: 2,
+                    providerRefusalCount: 0,
+                    timeToFirstVisibleTokenMs: 7_800,
+                    userPushbackWithinTwoTurns: false,
+                    coldnessComplaintFlag: false,
+                    softPushbackFlag: false
+                )
+            ]
+        )
+
+        let report = CoachLiveEvaluationReport.make(
+            providerChain: ["Google Gemini (gemini-test)"],
+            rows: [latestRow],
+            longFormConversations: [slowConversation]
+        )
+
+        #expect(report.passesProductionFloor)
+        #expect(!report.passesRunReadinessFloor)
+        #expect(report.summary.maxProviderRetryCount == 2)
+        #expect(report.summary.firstVisibleTokenMaxMs == 7_800)
+        #expect(report.summary.readinessWarnings == [
+            CoachLiveReadinessWarning.providerRetryPressure.rawValue,
+            CoachLiveReadinessWarning.slowFirstVisibleToken.rawValue
+        ])
     }
 
     @Test func liveEvaluationReportWithoutRowsIsNotRunReady() {
@@ -681,7 +819,14 @@ struct CoachLiveEvaluationTests {
             )
             recentLiveProofTests = Self.updatedRecentProofTests(
                 recentLiveProofTests,
-                adding: judgement.assessment.nextProofTest
+                adding: judgement.assessment.nextProofTest,
+                // These fixtures represent independent users, but the run-level
+                // readiness audit intentionally requires every assessment shape
+                // to differ. Retain the whole preset while generating the sweep
+                // so the deterministic reasoning pass can exercise its full
+                // candidate set instead of forgetting fixture one at fixture
+                // eight and then failing the artifact's global diversity rule.
+                limit: fixtures.count
             )
             context += "\n" + CoachPromptBundle.contextBlock(
                 assessment: judgement.assessment,
@@ -703,6 +848,17 @@ struct CoachLiveEvaluationTests {
             var providerAttemptEvents: [CoachProviderAttemptEvent] = []
             var firstStreamedVisibleAt: Date?
             let turnStartedAt = Date()
+            let immediateCoachReadExpected = Self.immediateCoachReadExpected(
+                turnDepth: judgement.turnDepth,
+                surface: .text,
+                responseMode: judgement.assessment.responseMode
+            )
+            let immediateCoachReadShown = await Self.verifyImmediateCoachReadVisibility(
+                expected: immediateCoachReadExpected,
+                userTurn: fixture.latestUserTurn,
+                immediateRead: judgement.assessment.immediateCoachRead
+            )
+            let localImmediateVisibleAt = immediateCoachReadShown ? Date() : nil
 
             let outcome = await service.reply(
                 history: history,
@@ -745,7 +901,8 @@ struct CoachLiveEvaluationTests {
                 turnStartedAt: turnStartedAt,
                 turnCompletedAt: turnCompletedAt,
                 firstStreamedVisibleAt: firstStreamedVisibleAt,
-                completedReplyVisible: completedReplyVisible
+                completedReplyVisible: completedReplyVisible,
+                localImmediateVisibleAt: localImmediateVisibleAt
             )
             let trustSignals = Self.liveTrustSignals(
                 userTurn: fixture.latestUserTurn,
@@ -766,12 +923,6 @@ struct CoachLiveEvaluationTests {
             let missingEvidence = judgement.assessment.missingEvidence
             let brainIDs = expertise.map { $0.id }
             let diagnosticRows = newRecords.map(CoachLiveDiagnosticReportRecord.make)
-            let immediateCoachReadExpected = Self.immediateCoachReadExpected(
-                turnDepth: judgement.turnDepth,
-                surface: .text,
-                responseMode: judgement.assessment.responseMode
-            )
-
             emit("")
             emit("## \(fixture.id)")
             emit("")
@@ -796,7 +947,7 @@ struct CoachLiveEvaluationTests {
             emit("assessmentImmediateRead: \(judgement.assessment.immediateCoachRead)")
             emit("assessmentResponseMode: \(judgement.assessment.responseMode.rawValue)")
             emit("immediateCoachReadExpected: \(immediateCoachReadExpected)")
-            emit("immediateCoachReadShown: false")
+            emit("immediateCoachReadShown: \(immediateCoachReadShown)")
             if !missingEvidence.isEmpty {
                 emit("missingEvidence: \(missingEvidence.joined(separator: " | "))")
             }
@@ -871,6 +1022,7 @@ struct CoachLiveEvaluationTests {
                 let reliability = CoachReliabilityGate.evaluate(
                     replyText: reply,
                     previousCoachReply: history.last { $0.role == .coach }?.text,
+                    latestUserTurn: fixture.latestUserTurn,
                     turnDepth: judgement.turnDepth,
                     assessment: judgement.assessment,
                     evidenceCoverage: judgement.trajectory.snapshot.evidenceCoverage,
@@ -912,7 +1064,7 @@ struct CoachLiveEvaluationTests {
                     assessmentImmediateRead: judgement.assessment.immediateCoachRead,
                     assessmentResponseMode: judgement.assessment.responseMode.rawValue,
                     immediateCoachReadExpected: immediateCoachReadExpected,
-                    immediateCoachReadShown: false,
+                    immediateCoachReadShown: immediateCoachReadShown,
                     missingEvidence: missingEvidence,
                     proofTest: judgement.assessment.nextProofTest,
                     proofTestRecentlyRepeated: proofTestRecentlyRepeated,
@@ -976,7 +1128,7 @@ struct CoachLiveEvaluationTests {
                     assessmentImmediateRead: judgement.assessment.immediateCoachRead,
                     assessmentResponseMode: judgement.assessment.responseMode.rawValue,
                     immediateCoachReadExpected: immediateCoachReadExpected,
-                    immediateCoachReadShown: false,
+                    immediateCoachReadShown: immediateCoachReadShown,
                     missingEvidence: missingEvidence,
                     proofTest: judgement.assessment.nextProofTest,
                     proofTestRecentlyRepeated: proofTestRecentlyRepeated,
@@ -1090,7 +1242,11 @@ struct CoachLiveEvaluationTests {
             sourceGitCommit: String? = nil,
             sourceCoachFingerprint: String? = nil
         ) -> CoachLiveEvaluationReport {
-            let summary = CoachLiveEvaluationSummary.make(from: rows)
+            let operationalRows = rows + longFormConversations.flatMap(\.rows)
+            let summary = CoachLiveEvaluationSummary.make(
+                from: rows,
+                operationalRows: operationalRows
+            )
             let passingLongFormIDs = longFormConversations
                 .filter(\.liveProductionFloor)
                 .map(\.conversationID)
@@ -1195,19 +1351,28 @@ struct CoachLiveEvaluationTests {
         let softPushbackCount: Int
         let voiceBargeInCount: Int
 
-        static func make(from rows: [CoachLiveEvaluationReportRow]) -> CoachLiveEvaluationSummary {
+        static func make(
+            from rows: [CoachLiveEvaluationReportRow],
+            operationalRows: [CoachLiveEvaluationReportRow]? = nil
+        ) -> CoachLiveEvaluationSummary {
+            // Distributional coaching checks intentionally use the independent
+            // latest-fixture sweep: proof hashes can legitimately recur across
+            // the turns of one continuing conversation. Operational checks must
+            // cover every turn, though, or a slow/refused long-form turn can be
+            // hidden behind a clean top-level summary.
+            let operationalRows = operationalRows ?? rows
             let failures = rows.filter { !$0.liveProductionFloor }
             let proofHashCounts = Dictionary(grouping: rows.map(\.assessmentProofTestHash), by: { $0 })
             let repeatedProofHashCount = proofHashCounts.values.filter { $0.count > 1 }.count
             let confidences = rows.map(\.assessmentConfidence)
             let roundedConfidences = Set(confidences.map { String(format: "%.2f", $0) })
             let wordCounts = rows.compactMap(\.replyWordCount)
-            let firstVisible = rows.compactMap(\.timeToFirstVisibleTokenMs)
+            let firstVisible = operationalRows.compactMap(\.timeToFirstVisibleTokenMs)
             let productionFloorFailureCount = failures.count
-            let maxProviderRetryCount = rows.map(\.providerRetryCount).max() ?? 0
-            let totalProviderRefusalCount = rows.reduce(0) { $0 + $1.providerRefusalCount }
+            let maxProviderRetryCount = operationalRows.map(\.providerRetryCount).max() ?? 0
+            let totalProviderRefusalCount = operationalRows.reduce(0) { $0 + $1.providerRefusalCount }
             let firstVisibleTokenMaxMs = firstVisible.max()
-            let immediateCoachReadExpectedRows = rows.filter(\.immediateCoachReadExpected)
+            let immediateCoachReadExpectedRows = operationalRows.filter(\.immediateCoachReadExpected)
             let missingImmediateCoachReadRows = immediateCoachReadExpectedRows
                 .filter { !$0.immediateCoachReadShown }
 
@@ -1241,10 +1406,10 @@ struct CoachLiveEvaluationTests {
                 totalProviderRefusalCount: totalProviderRefusalCount,
                 firstVisibleTokenMinMs: firstVisible.min(),
                 firstVisibleTokenMaxMs: firstVisibleTokenMaxMs,
-                userPushbackWithinTwoTurnsCount: rows.filter(\.userPushbackWithinTwoTurns).count,
-                coldnessComplaintCount: rows.filter(\.coldnessComplaintFlag).count,
-                softPushbackCount: rows.filter(\.softPushbackFlag).count,
-                voiceBargeInCount: rows.filter(\.voiceBargeInOccurred).count
+                userPushbackWithinTwoTurnsCount: operationalRows.filter(\.userPushbackWithinTwoTurns).count,
+                coldnessComplaintCount: operationalRows.filter(\.coldnessComplaintFlag).count,
+                softPushbackCount: operationalRows.filter(\.softPushbackFlag).count,
+                voiceBargeInCount: operationalRows.filter(\.voiceBargeInOccurred).count
             )
         }
 
@@ -1385,7 +1550,7 @@ struct CoachLiveEvaluationTests {
         turnDepth: CoachTurnDepth = .groundedRead,
         surface: CoachReplySurface = .text,
         assessmentResponseMode: CoachAssessment.ResponseMode = .immediateOnly,
-        immediateCoachReadShown: Bool = false
+        immediateCoachReadShown: Bool = true
     ) -> CoachLiveEvaluationReportRow {
         let immediateCoachReadExpected = Self.immediateCoachReadExpected(
             turnDepth: turnDepth,
@@ -1595,6 +1760,39 @@ struct CoachLiveEvaluationTests {
         )
     }
 
+    /// Exercise the same pending-row transition that makes the local read
+    /// visible in `CoachReplyPipeline`. The provider-only harness does not call
+    /// the full pipeline, so deriving this flag from eligibility or non-empty
+    /// text would overstate UI evidence. A read counts as shown only when the
+    /// shipping store accepts it onto a real pending coach row.
+    private static func verifyImmediateCoachReadVisibility(
+        expected: Bool,
+        userTurn: String,
+        immediateRead: String
+    ) async -> Bool {
+        guard expected else { return false }
+        return await MainActor.run {
+            let suiteName = "CoachLiveImmediateRead.\(UUID().uuidString)"
+            guard let defaults = UserDefaults(suiteName: suiteName) else {
+                return false
+            }
+            defaults.removePersistentDomain(forName: suiteName)
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+
+            let store = AskNoumStore(
+                defaults: defaults,
+                accountIDProvider: { "live-eval-immediate-read" }
+            )
+            guard let coachID = store.injectUserTurn(userTurn) else {
+                return false
+            }
+            return store.setProvisionalCoachRead(
+                id: coachID,
+                text: immediateRead
+            )
+        }
+    }
+
     private static func liveProductionFloor(
         qualityIssuePresent: Bool,
         semanticIssuePresent: Bool,
@@ -1610,6 +1808,7 @@ struct CoachLiveEvaluationTests {
     }
 
     private enum TimeToFirstVisibleTokenSource: String, Equatable {
+        case localImmediateRead
         case streamedPartialVisible
         case providerFirstTokenDiagnostic
         case completedReplyProxy
@@ -1637,10 +1836,16 @@ struct CoachLiveEvaluationTests {
         turnStartedAt: Date,
         turnCompletedAt: Date,
         firstStreamedVisibleAt: Date?,
-        completedReplyVisible: Bool
+        completedReplyVisible: Bool,
+        localImmediateVisibleAt: Date? = nil
     ) -> LiveTelemetrySummary {
         let firstVisible: (Int?, TimeToFirstVisibleTokenSource)
-        if let firstStreamedVisibleAt {
+        if let localImmediateVisibleAt {
+            firstVisible = (
+                latencyMs(from: turnStartedAt, to: localImmediateVisibleAt),
+                .localImmediateRead
+            )
+        } else if let firstStreamedVisibleAt {
             firstVisible = (
                 latencyMs(from: turnStartedAt, to: firstStreamedVisibleAt),
                 .streamedPartialVisible
@@ -1859,6 +2064,17 @@ struct CoachLiveEvaluationTests {
         var providerAttemptEvents: [CoachProviderAttemptEvent] = []
         var firstStreamedVisibleAt: Date?
         let turnStartedAt = Date()
+        let immediateCoachReadExpected = Self.immediateCoachReadExpected(
+            turnDepth: judgement.turnDepth,
+            surface: .text,
+            responseMode: judgement.assessment.responseMode
+        )
+        let immediateCoachReadShown = await Self.verifyImmediateCoachReadVisibility(
+            expected: immediateCoachReadExpected,
+            userTurn: fixture.latestUserTurn,
+            immediateRead: judgement.assessment.immediateCoachRead
+        )
+        let localImmediateVisibleAt = immediateCoachReadShown ? Date() : nil
 
         let outcome = await service.reply(
             history: history,
@@ -1901,7 +2117,8 @@ struct CoachLiveEvaluationTests {
             turnStartedAt: turnStartedAt,
             turnCompletedAt: turnCompletedAt,
             firstStreamedVisibleAt: firstStreamedVisibleAt,
-            completedReplyVisible: completedReplyVisible
+            completedReplyVisible: completedReplyVisible,
+            localImmediateVisibleAt: localImmediateVisibleAt
         )
         let trustSignals = Self.liveTrustSignals(
             userTurn: fixture.latestUserTurn,
@@ -1922,12 +2139,6 @@ struct CoachLiveEvaluationTests {
         let missingEvidence = judgement.assessment.missingEvidence
         let brainIDs = expertise.map { $0.id }
         let diagnosticRows = newRecords.map(CoachLiveDiagnosticReportRecord.make)
-        let immediateCoachReadExpected = Self.immediateCoachReadExpected(
-            turnDepth: judgement.turnDepth,
-            surface: .text,
-            responseMode: judgement.assessment.responseMode
-        )
-
         emit("")
         emit("### \(fixture.id)")
         emit("userTurn: \(fixture.latestUserTurn)")
@@ -1942,7 +2153,7 @@ struct CoachLiveEvaluationTests {
         emit("assessmentProofTestHash: \(assessmentProofTestHash)")
         emit("assessmentImmediateRead: \(judgement.assessment.immediateCoachRead)")
         emit("immediateCoachReadExpected: \(immediateCoachReadExpected)")
-        emit("immediateCoachReadShown: false")
+        emit("immediateCoachReadShown: \(immediateCoachReadShown)")
         emit("proofTest: \(judgement.assessment.nextProofTest)")
         emit("proofTestRecentlyRepeated: \(proofTestRecentlyRepeated)")
 
@@ -1984,6 +2195,7 @@ struct CoachLiveEvaluationTests {
             let reliability = CoachReliabilityGate.evaluate(
                 replyText: reply,
                 previousCoachReply: history.last { $0.role == .coach }?.text,
+                latestUserTurn: fixture.latestUserTurn,
                 turnDepth: judgement.turnDepth,
                 assessment: judgement.assessment,
                 evidenceCoverage: judgement.trajectory.snapshot.evidenceCoverage,
@@ -2031,7 +2243,7 @@ struct CoachLiveEvaluationTests {
                 assessmentImmediateRead: judgement.assessment.immediateCoachRead,
                 assessmentResponseMode: judgement.assessment.responseMode.rawValue,
                 immediateCoachReadExpected: immediateCoachReadExpected,
-                immediateCoachReadShown: false,
+                immediateCoachReadShown: immediateCoachReadShown,
                 missingEvidence: missingEvidence,
                 proofTest: judgement.assessment.nextProofTest,
                 proofTestRecentlyRepeated: proofTestRecentlyRepeated,
@@ -2083,7 +2295,7 @@ struct CoachLiveEvaluationTests {
                 assessmentImmediateRead: judgement.assessment.immediateCoachRead,
                 assessmentResponseMode: judgement.assessment.responseMode.rawValue,
                 immediateCoachReadExpected: immediateCoachReadExpected,
-                immediateCoachReadShown: false,
+                immediateCoachReadShown: immediateCoachReadShown,
                 missingEvidence: missingEvidence,
                 proofTest: judgement.assessment.nextProofTest,
                 proofTestRecentlyRepeated: proofTestRecentlyRepeated,

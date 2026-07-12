@@ -4,7 +4,7 @@ import Foundation
 
 /// Feature flag + one-shot launch preparation for the **auto-guided first
 /// rep**. Routing remains owned by NoumApp → DeepLinkRouter → AppShell; this
-/// type only seeds and arms the existing Timed engine when felt-QA enables it.
+/// type only seeds and arms the existing Timed engine when release QA enables it.
 /// Closing this "time-to-first-spoken-word" gap is the single biggest lever on
 /// the acquisition axis (see `docs/SPEC_first_rep_auto_guided.md`).
 ///
@@ -15,9 +15,8 @@ import Foundation
 ///
 /// Design principles (mirrors `PracticeModeQuickStart` and the app-level
 /// profile-as-truth gate):
-/// - **Default OFF.** `enabled` is false until an on-device felt-QA pass signs
-///   off on the cold-start moment (the spec's gate). A debug build can flip the
-///   `enabledOverrideKey` to exercise the path without recompiling.
+/// - **Default OFF until the M26 signed-device release gate passes.** The path
+///   remains debug-overridable through the existing key for the required QA.
 /// - **One-shot, per-account.** `firstRepCompleted` is scoped by account id, so
 ///   a fresh account on the same device still gets its first guided rep.
 /// - **Marked at the fork, not at finalize.** The router sets the flag *before*
@@ -32,8 +31,8 @@ enum AutoGuidedFirstRep {
 
     // MARK: Feature flag
 
-    /// Compile-time default. Stays `false` until felt-QA signs off; flipping
-    /// this is the device-owning session's one-line change after the feel pass.
+    /// Release default remains off until the signed-device permission,
+    /// interruption, relaunch, and consent matrix is complete.
     private static let defaultEnabled = false
 
     /// UserDefaults override so a felt-QA build can enable the path without a

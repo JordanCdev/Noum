@@ -4588,6 +4588,22 @@ struct CoachChatLatestLiveEvalRegressionTests {
         ) == nil)
     }
 
+    @Test func textRuntimeGateRejectsNoncriticalVisionMissBelowProductionFloor() throws {
+        let issue = try #require(AICoachChatService.visionQualityIssue(
+            in: "Listen for whether your direct answer actually landed in that first sentence, or if you warmed up before getting to the point.",
+            latestUserTurn: "What should I listen for in the replay?",
+            turnDepth: .quickMove,
+            surface: .text
+        ))
+
+        guard case .visionGate(let score, let misses) = issue else {
+            Issue.record("Expected vision gate issue, got \(issue)")
+            return
+        }
+        #expect(score == 78)
+        #expect(misses.contains(.insightBridge))
+    }
+
     @Test func socialAcknowledgementDoesNotTripVisionRuntimeGate() {
         #expect(AICoachChatService.visionQualityIssue(
             in: "Anytime.",
