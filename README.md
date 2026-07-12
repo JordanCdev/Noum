@@ -26,6 +26,12 @@ Google Sign-In requires its normal OAuth configuration. Production Firebase,
 App Check, and backend configuration are supplied through the app's
 gitignored configuration files and deployed service environment.
 
+Simulator builds use Firebase's App Check debug provider. Register a dedicated
+debug token for the iOS app in Firebase Console, keep it outside the repository,
+and launch with `FIREBASE_APPCHECK_DEBUG_TOKEN` through
+`scripts/run-noum-with-ai.sh`. Never commit or share a registered debug token;
+revoke it if it is exposed.
+
 ## Product behavior
 
 Noum detects common disfluencies with locale-aware heuristics, retains session

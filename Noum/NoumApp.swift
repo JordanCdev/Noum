@@ -44,16 +44,17 @@ final class NoumAppDelegate: NSObject, UIApplicationDelegate {
 #endif
 
 struct NoumApp: App {
+    // This must remain the first stored property. Swift initializes stored
+    // properties in source order, so Firebase Core and the App Check provider
+    // are ready before the UIApplicationDelegateAdaptor or any @StateObject
+    // singleton can cause a Firebase framework to inspect the default app.
+    private let firebaseReady: Void = FirebaseBootstrap.configure()
     #if canImport(UIKit)
     // Configures Firebase at `didFinishLaunchingWithOptions` time — early
-    // enough to satisfy FirebaseCore's launch check (see NoumAppDelegate).
+    // enough for UIKit lifecycle integrations (see NoumAppDelegate). Core is
+    // already configured by firebaseReady before this wrapper initializes.
     @UIApplicationDelegateAdaptor(NoumAppDelegate.self) private var appDelegate
     #endif
-    // Belt-and-suspenders: also configure as the first stored property so the
-    // @StateObject singletons below can never touch Firebase before it exists
-    // (e.g. on a platform without a UIKit delegate). Guarded no-op once the
-    // delegate above has already configured it.
-    private let firebaseReady: Void = FirebaseBootstrap.configure()
     @StateObject private var authManager = AuthManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var aiSettings = AISettingsManager.shared

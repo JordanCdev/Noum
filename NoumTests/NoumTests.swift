@@ -135,6 +135,56 @@ struct FirebaseBootstrapTests {
         #expect(FirebaseBootstrap.shouldStartOptionalServices(configurationPresent: true, configured: true))
     }
 
+    @Test func appConfiguresFirebaseBeforeDelegateAndStateOwnersInitialize() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let appSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum/NoumApp.swift"),
+            encoding: .utf8
+        )
+
+        let bootstrap = try #require(appSource.range(
+            of: "private let firebaseReady: Void = FirebaseBootstrap.configure()"
+        ))
+        let delegateAdaptor = try #require(appSource.range(
+            of: "@UIApplicationDelegateAdaptor(NoumAppDelegate.self)"
+        ))
+        let firstStateOwner = try #require(appSource.range(
+            of: "@StateObject private var authManager = AuthManager.shared"
+        ))
+
+        #expect(bootstrap.lowerBound < delegateAdaptor.lowerBound)
+        #expect(bootstrap.lowerBound < firstStateOwner.lowerBound)
+    }
+
+    @Test func firebaseDelegateProxyOptOutIsTrackedInBothAppBuildConfigurations() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let project = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Noum.xcodeproj/project.pbxproj"),
+            encoding: .utf8
+        )
+
+        #expect(
+            project.components(separatedBy: "INFOPLIST_KEY_FirebaseAppDelegateProxyEnabled = NO;").count - 1 == 2
+        )
+    }
+
+    @Test func simulatorRunnerForwardsAppCheckTokenUsingSDKEnvironmentKey() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let runner = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("scripts/run-noum-with-ai.sh"),
+            encoding: .utf8
+        )
+
+        #expect(runner.contains("SIMCTL_CHILD_AppCheckDebugToken=${FIREBASE_APPCHECK_DEBUG_TOKEN}"))
+        #expect(!runner.contains("SIMCTL_CHILD_FIREBASE_APPCHECK_DEBUG_TOKEN="))
+    }
+
     @Test func authManagerIsTheOnlyAnonymousAuthenticationSourceOwner() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

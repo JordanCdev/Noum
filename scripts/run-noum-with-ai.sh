@@ -38,7 +38,10 @@ fi
 # A registered Firebase App Check debug token can be supplied by the shell.
 # Do not print it or persist it in a scheme or plist.
 if [[ -n "${FIREBASE_APPCHECK_DEBUG_TOKEN:-}" ]]; then
-  child_environment+=("SIMCTL_CHILD_FIREBASE_APPCHECK_DEBUG_TOKEN=${FIREBASE_APPCHECK_DEBUG_TOKEN}")
+  # AppCheckCore reads `AppCheckDebugToken` (or the deprecated
+  # `FIRAAppCheckDebugToken`) from the app process. Keep the shell-facing name
+  # explicit while forwarding the exact SDK key through simctl.
+  child_environment+=("SIMCTL_CHILD_AppCheckDebugToken=${FIREBASE_APPCHECK_DEBUG_TOKEN}")
 fi
 
 # `env` passes values only to simctl and the launched app process. Values are
