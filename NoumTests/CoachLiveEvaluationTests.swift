@@ -134,6 +134,24 @@ struct CoachLiveEvaluationTests {
         ))
     }
 
+    @Test func liveHarnessScoresTheFinalVisibleReliabilityFallback() {
+        let prior = "State the recommendation, add one concrete detail, then stop."
+        let visible = Self.finalVisibleReply(
+            providerReply: prior,
+            history: [CoachMessage(role: .coach, text: prior)],
+            latestUserTurn: "How do I know if it worked?",
+            turnDepth: .quickMove,
+            assessment: nil,
+            evidenceCoverage: 0.5,
+            proofTestRecentlyRepeated: false
+        )
+
+        #expect(visible.fallbackApplied)
+        #expect(visible.sourceIssues.contains(.duplicateReply))
+        #expect(visible.finalIssues.isEmpty)
+        #expect(visible.text != prior)
+    }
+
     @Test func liveHarnessRecordsImmediateReadOnlyAfterStoreVisibilityTransition() async {
         let shown = await Self.verifyImmediateCoachReadVisibility(
             expected: true,
@@ -966,7 +984,16 @@ struct CoachLiveEvaluationTests {
 
             switch outcome {
             case .reply(let raw):
-                let reply = CoachReplyTextSanitizer.coachReplyText(from: raw)
+                let visibleReply = Self.finalVisibleReply(
+                    providerReply: raw,
+                    history: history,
+                    latestUserTurn: fixture.latestUserTurn,
+                    turnDepth: judgement.turnDepth,
+                    assessment: judgement.assessment,
+                    evidenceCoverage: judgement.trajectory.snapshot.evidenceCoverage,
+                    proofTestRecentlyRepeated: proofTestRecentlyRepeated
+                )
+                let reply = visibleReply.text
                 let replyWordCount = Self.wordCount(reply)
                 let rubric = AICoachChatService.professionalCoachRubric(
                     reply: reply,
@@ -1020,25 +1047,16 @@ struct CoachLiveEvaluationTests {
                 emit("qualityIssue: \(String(describing: issue))")
                 emit("semanticIssue: \(String(describing: semanticIssue))")
                 emit("semanticGateIssue: \(semanticIssue?.rawValue ?? "none")")
-                let reliability = CoachReliabilityGate.evaluate(
-                    replyText: reply,
-                    previousCoachReply: history.last { $0.role == .coach }?.text,
-                    latestUserTurn: fixture.latestUserTurn,
-                    turnDepth: judgement.turnDepth,
-                    assessment: judgement.assessment,
-                    evidenceCoverage: judgement.trajectory.snapshot.evidenceCoverage,
-                    proofTestRecentlyRepeated: proofTestRecentlyRepeated,
-                    surface: .text
-                )
-                emit("reliabilityFallbackApplied: \(reliability.blocked)")
-                emit("reliabilityIssues: \(reliability.issues.isEmpty ? "none" : reliability.issues.map(\.rawValue).joined(separator: ","))")
-                let reliabilityPasses = reliability.issues.isEmpty
+                emit("reliabilityFallbackApplied: \(visibleReply.fallbackApplied)")
+                emit("reliabilitySourceIssues: \(visibleReply.sourceIssues.isEmpty ? "none" : visibleReply.sourceIssues.map(\.rawValue).joined(separator: ","))")
+                emit("reliabilityIssues: \(visibleReply.finalIssues.isEmpty ? "none" : visibleReply.finalIssues.map(\.rawValue).joined(separator: ","))")
+                let reliabilityPasses = visibleReply.finalIssues.isEmpty
                 let liveProductionFloor = Self.liveProductionFloor(
                     qualityIssuePresent: issue != nil,
                     semanticIssuePresent: semanticIssue != nil,
                     rubricPasses: rubric.passesSeniorCoachFloor,
                     visionPasses: vision.passesProductionFloor,
-                    reliabilityIssues: reliability.issues
+                    reliabilityIssues: visibleReply.finalIssues
                 )
                 emit("liveProductionFloor: \(liveProductionFloor)")
                 liveRows.append(CoachLiveEvaluationReportRow(
@@ -1085,8 +1103,8 @@ struct CoachLiveEvaluationTests {
                     visionMisses: vision.missed.map(\.rawValue),
                     qualityIssue: issue.map { String(describing: $0) } ?? "none",
                     semanticGateIssue: semanticIssue?.rawValue ?? "none",
-                    reliabilityFallbackApplied: reliability.blocked,
-                    reliabilityIssues: reliability.issues.map(\.rawValue),
+                    reliabilityFallbackApplied: visibleReply.fallbackApplied,
+                    reliabilityIssues: visibleReply.finalIssues.map(\.rawValue),
                     liveProductionFloor: liveProductionFloor,
                     failure: nil
                 ))
@@ -1100,7 +1118,7 @@ struct CoachLiveEvaluationTests {
                 #expect(vision.passesProductionFloor)
                 #expect(
                     reliabilityPasses,
-                    "\(fixture.id) reliability issues: \(reliability.issues.map(\.rawValue).joined(separator: ","))"
+                    "\(fixture.id) reliability issues: \(visibleReply.finalIssues.map(\.rawValue).joined(separator: ","))"
                 )
 
             case .failure(let failure):
@@ -1808,6 +1826,73 @@ struct CoachLiveEvaluationTests {
         reliabilityIssues.isEmpty
     }
 
+    private struct FinalVisibleLiveReply {
+        let text: String
+        let fallbackApplied: Bool
+        let sourceIssues: [CoachReliabilityIssue]
+        let finalIssues: [CoachReliabilityIssue]
+    }
+
+    /// Mirror the shipping `CoachReplyPipeline` last mile before scoring live
+    /// evidence. Provider/service output is first evaluated for reliability;
+    /// a blocking verdict substitutes the same deterministic fallback the user
+    /// would see, then the normal finalizer runs. The production floor evaluates
+    /// that final visible text while retaining whether a fallback was needed.
+    private static func finalVisibleReply(
+        providerReply: String,
+        history: [CoachMessage],
+        latestUserTurn: String,
+        turnDepth: CoachTurnDepth,
+        assessment: CoachAssessment?,
+        evidenceCoverage: Double?,
+        proofTestRecentlyRepeated: Bool
+    ) -> FinalVisibleLiveReply {
+        let sanitized = CoachReplyTextSanitizer.coachReplyText(from: providerReply)
+        let previousCoachReply = history.last { $0.role == .coach }?.text
+        let recentCoachReplies = Array(history
+            .reversed()
+            .filter { $0.role == .coach }
+            .map(\.text)
+            .prefix(4))
+        let sourceVerdict = CoachReliabilityGate.evaluate(
+            replyText: sanitized,
+            previousCoachReply: previousCoachReply,
+            recentCoachReplies: recentCoachReplies,
+            latestUserTurn: latestUserTurn,
+            turnDepth: turnDepth,
+            assessment: assessment,
+            evidenceCoverage: evidenceCoverage,
+            proofTestRecentlyRepeated: proofTestRecentlyRepeated,
+            surface: .text
+        )
+        let effective = sourceVerdict.fallbackText ?? sanitized
+        let finalized = AICoachChatService.finalizedCoachReply(
+            from: effective,
+            latestUserTurn: latestUserTurn,
+            turnDepth: turnDepth
+        )
+        let finalVerdict = CoachReliabilityGate.evaluate(
+            replyText: finalized,
+            previousCoachReply: previousCoachReply,
+            recentCoachReplies: recentCoachReplies,
+            latestUserTurn: latestUserTurn,
+            turnDepth: turnDepth,
+            assessment: assessment,
+            evidenceCoverage: evidenceCoverage,
+            // The run-level proof-test hash audit owns this signal. Reapplying
+            // it after text substitution would fail every fallback regardless
+            // of the final reply's content.
+            proofTestRecentlyRepeated: false,
+            surface: .text
+        )
+        return FinalVisibleLiveReply(
+            text: finalized,
+            fallbackApplied: sourceVerdict.blocked,
+            sourceIssues: sourceVerdict.issues,
+            finalIssues: finalVerdict.issues
+        )
+    }
+
     private enum TimeToFirstVisibleTokenSource: String, Equatable {
         case localImmediateRead
         case streamedPartialVisible
@@ -2160,7 +2245,16 @@ struct CoachLiveEvaluationTests {
 
         switch outcome {
         case .reply(let raw):
-            let reply = CoachReplyTextSanitizer.coachReplyText(from: raw)
+            let visibleReply = Self.finalVisibleReply(
+                providerReply: raw,
+                history: history,
+                latestUserTurn: fixture.latestUserTurn,
+                turnDepth: judgement.turnDepth,
+                assessment: judgement.assessment,
+                evidenceCoverage: judgement.trajectory.snapshot.evidenceCoverage,
+                proofTestRecentlyRepeated: proofTestRecentlyRepeated
+            )
+            let reply = visibleReply.text
             let replyWordCount = Self.wordCount(reply)
             let quoteGuard = CoachChatQuoteGuardContext(
                 transcripts: [grounding.recentTimedTranscript],
@@ -2193,22 +2287,12 @@ struct CoachLiveEvaluationTests {
                 assessment: judgement.assessment,
                 surface: .text
             )
-            let reliability = CoachReliabilityGate.evaluate(
-                replyText: reply,
-                previousCoachReply: history.last { $0.role == .coach }?.text,
-                latestUserTurn: fixture.latestUserTurn,
-                turnDepth: judgement.turnDepth,
-                assessment: judgement.assessment,
-                evidenceCoverage: judgement.trajectory.snapshot.evidenceCoverage,
-                proofTestRecentlyRepeated: proofTestRecentlyRepeated,
-                surface: .text
-            )
             let liveProductionFloor = Self.liveProductionFloor(
                 qualityIssuePresent: issue != nil,
                 semanticIssuePresent: semanticIssue != nil,
                 rubricPasses: rubric.passesSeniorCoachFloor,
                 visionPasses: vision.passesProductionFloor,
-                reliabilityIssues: reliability.issues
+                reliabilityIssues: visibleReply.finalIssues
             )
 
             emit("Noum: \(reply)")
@@ -2217,7 +2301,9 @@ struct CoachLiveEvaluationTests {
             emit("visionScore: \(vision.score) passesProductionFloor=\(vision.passesProductionFloor) missed=\(vision.missed.map { $0.rawValue }.joined(separator: ","))")
             emit("qualityIssue: \(String(describing: issue))")
             emit("semanticGateIssue: \(semanticIssue?.rawValue ?? "none")")
-            emit("reliabilityIssues: \(reliability.issues.isEmpty ? "none" : reliability.issues.map(\.rawValue).joined(separator: ","))")
+            emit("reliabilityFallbackApplied: \(visibleReply.fallbackApplied)")
+            emit("reliabilitySourceIssues: \(visibleReply.sourceIssues.isEmpty ? "none" : visibleReply.sourceIssues.map(\.rawValue).joined(separator: ","))")
+            emit("reliabilityIssues: \(visibleReply.finalIssues.isEmpty ? "none" : visibleReply.finalIssues.map(\.rawValue).joined(separator: ","))")
             emit("liveProductionFloor: \(liveProductionFloor)")
 
             return CoachLiveEvaluationReportRow(
@@ -2264,8 +2350,8 @@ struct CoachLiveEvaluationTests {
                 visionMisses: vision.missed.map(\.rawValue),
                 qualityIssue: issue.map { String(describing: $0) } ?? "none",
                 semanticGateIssue: semanticIssue?.rawValue ?? "none",
-                reliabilityFallbackApplied: reliability.blocked,
-                reliabilityIssues: reliability.issues.map(\.rawValue),
+                reliabilityFallbackApplied: visibleReply.fallbackApplied,
+                reliabilityIssues: visibleReply.finalIssues.map(\.rawValue),
                 liveProductionFloor: liveProductionFloor,
                 failure: nil
             )
