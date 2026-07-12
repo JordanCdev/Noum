@@ -1,6 +1,9 @@
 import CryptoKit
 import Foundation
 import Testing
+#if canImport(FirebaseFunctions)
+import FirebaseFunctions
+#endif
 @testable import Noum
 
 @Suite("Social lifecycle integrity")
@@ -53,6 +56,29 @@ struct SocialLifecycleIntegrityTests {
         } catch {
             #expect(error as? SocialAuthorityError == .trustedSocialStateUnavailable)
         }
+    }
+
+    @Test("Disabled backend challenge reads stop before Firestore")
+    func disabledBackendChallengeReadStopsBeforeFirestore() async {
+        let result = await BackendSyncManager.shared.fetchAsyncChallenges(
+            forParticipant: "account-a"
+        )
+
+        #expect(result == .capabilityUnavailable)
+    }
+
+    @Test("Disabled challenge refresh never invokes its backend fetcher")
+    @MainActor
+    func disabledManagerChallengeReadStopsBeforeFetcher() async {
+        let probe = ChallengeRefreshProbe()
+
+        await ChallengesManager.shared.refreshFromBackend { participantID in
+            await probe.record(participantID: participantID)
+            return .unavailable
+        }
+
+        let callCount = await probe.callCount
+        #expect(callCount == 0)
     }
 
     @Test("Replacement peer read contracts expose no client authority fields")
@@ -145,6 +171,104 @@ struct SocialLifecycleIntegrityTests {
         #expect(merged.first?.opponentScore == 7)
     }
 
+    @Test("Only a complete successful refresh reconciles authoritative removals")
+    func challengeRefreshSeparatesEmptyFromFailures() throws {
+        let cached = try ChallengeDocumentHydrator.hydrate(
+            metadata: metadata(completedAt: completedAt),
+            ownSubmission: nil,
+            combinedResult: combinedResult(),
+            accountID: "account-a"
+        )
+
+        let trueEmpty = BackendAsyncChallengeFetchResult.success(
+            BackendAsyncChallengeSnapshot(
+                challenges: [],
+                seenChallengeIDs: [],
+                failedChallengeIDs: [],
+                metadataQueryIsComplete: true
+            )
+        )
+        let emptyResult = try #require(
+            ChallengesManager.reconcileHydratedChallenges(
+                cached: [cached],
+                result: trueEmpty
+            )
+        )
+        #expect(emptyResult.isEmpty)
+
+        let rowFailure = BackendAsyncChallengeFetchResult.success(
+            BackendAsyncChallengeSnapshot(
+                challenges: [],
+                seenChallengeIDs: [challengeID.uuidString],
+                failedChallengeIDs: [challengeID.uuidString],
+                metadataQueryIsComplete: true
+            )
+        )
+        let partialResult = try #require(
+            ChallengesManager.reconcileHydratedChallenges(
+                cached: [cached],
+                result: rowFailure
+            )
+        )
+        #expect(partialResult == [cached])
+
+        let truncated = BackendAsyncChallengeFetchResult.success(
+            BackendAsyncChallengeSnapshot(
+                challenges: [],
+                seenChallengeIDs: [],
+                failedChallengeIDs: [],
+                metadataQueryIsComplete: false
+            )
+        )
+        let truncatedResult = try #require(
+            ChallengesManager.reconcileHydratedChallenges(
+                cached: [cached],
+                result: truncated
+            )
+        )
+        #expect(truncatedResult == [cached])
+
+        #expect(
+            ChallengesManager.reconcileHydratedChallenges(
+                cached: [cached],
+                result: .unavailable
+            ) == nil
+        )
+    }
+
+    #if canImport(FirebaseFunctions)
+    @Test("Only the explicit Apple detail maps deletion to revocation unavailable")
+    func deletionFailedPreconditionRequiresExplicitAppleReason() {
+        let generic = NSError(
+            domain: FunctionsErrorDomain,
+            code: FunctionsErrorCode.failedPrecondition.rawValue
+        )
+        let unrelated = NSError(
+            domain: FunctionsErrorDomain,
+            code: FunctionsErrorCode.failedPrecondition.rawValue,
+            userInfo: [
+                FunctionsErrorDetailsKey: ["reason": "account-deletion-pending"]
+            ]
+        )
+        let apple = NSError(
+            domain: FunctionsErrorDomain,
+            code: FunctionsErrorCode.failedPrecondition.rawValue,
+            userInfo: [
+                FunctionsErrorDetailsKey: [
+                    "reason": BackendSyncManager.appleRevocationUnavailableReason
+                ]
+            ]
+        )
+
+        #expect(BackendSyncManager.accountDeletionError(from: generic) == .rejected)
+        #expect(BackendSyncManager.accountDeletionError(from: unrelated) == .rejected)
+        #expect(
+            BackendSyncManager.accountDeletionError(from: apple)
+                == .appleRevocationUnavailable
+        )
+    }
+    #endif
+
     private let challengeID = UUID(uuidString: "22222222-2222-4222-8222-222222222222")!
     private let creatorID = "55555555-5555-4555-8555-555555555555"
     private let opponentID = "66666666-6666-4666-8666-666666666666"
@@ -217,5 +341,14 @@ struct SocialLifecycleIntegrityTests {
     private func jsonObject<T: Encodable>(_ value: T) throws -> [String: Any] {
         let data = try JSONEncoder().encode(value)
         return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+}
+
+private actor ChallengeRefreshProbe {
+    private(set) var callCount = 0
+
+    func record(participantID: String) {
+        _ = participantID
+        callCount += 1
     }
 }

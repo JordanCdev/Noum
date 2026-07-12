@@ -570,23 +570,45 @@ final class ChallengesManager: ObservableObject {
     /// Pull challenges where the current user is a participant. Used at
     /// app launch and when the social profile screen appears, so the
     /// opponent's submission and reactions show up without a round-trip.
-    func refreshFromBackend() async {
+    func refreshFromBackend(
+        fetch: @Sendable (String) async -> BackendAsyncChallengeFetchResult = { participantID in
+            await BackendSyncManager.shared.fetchAsyncChallenges(forParticipant: participantID)
+        }
+    ) async {
+        guard SocialReleaseCapabilities.speakOffs.isAvailable else { return }
         guard let context = captureOperationContext() else { return }
-        let remote = await BackendSyncManager.shared.fetchAsyncChallenges(
-            forParticipant: context.accountID
-        )
+        let result = await fetch(context.accountID)
         guard isOperationContextCurrent(context) else { return }
-        guard !remote.isEmpty else { return }
-
-        // Backend hydration returns a row only after metadata plus the
-        // caller-private/combined reads all succeeded. Missing rows therefore
-        // preserve their last authoritative cache instead of regressing a
-        // completed challenge to metadata-only pending state.
-        asyncChallenges = Self.mergeHydratedChallenges(
+        guard let reconciled = Self.reconcileHydratedChallenges(
             cached: asyncChallenges,
-            remote: remote
-        )
+            result: result
+        ) else { return }
+        asyncChallenges = reconciled
         persistAsync(context: context)
+    }
+
+    /// A successful, untruncated metadata query is authoritative for removals,
+    /// including a genuinely empty collection. Query failures leave the cache
+    /// unchanged. If the capped query may have older rows, or any returned row
+    /// failed to hydrate, successful rows may advance the cache but no cached
+    /// row is removed from that partial view.
+    nonisolated static func reconcileHydratedChallenges(
+        cached: [AsyncChallenge],
+        result: BackendAsyncChallengeFetchResult
+    ) -> [AsyncChallenge]? {
+        switch result {
+        case .capabilityUnavailable, .unavailable:
+            return nil
+
+        case .success(let snapshot):
+            let base = snapshot.isAuthoritativeForRemovals
+                ? cached.filter { snapshot.contains($0.id) }
+                : cached
+            return mergeHydratedChallenges(
+                cached: base,
+                remote: snapshot.challenges
+            )
+        }
     }
 
     nonisolated static func mergeHydratedChallenges(

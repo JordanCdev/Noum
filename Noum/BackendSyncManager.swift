@@ -62,6 +62,53 @@ enum BackendBootstrapFetchResult {
     case unavailable
 }
 
+struct BackendAsyncChallengeSnapshot: Equatable, Sendable {
+    let challenges: [AsyncChallenge]
+    let seenChallengeIDs: Set<String>
+    let failedChallengeIDs: Set<String>
+    let metadataQueryIsComplete: Bool
+
+    init(
+        challenges: [AsyncChallenge],
+        seenChallengeIDs: Set<String>,
+        failedChallengeIDs: Set<String>,
+        metadataQueryIsComplete: Bool
+    ) {
+        let normalizedChallengeIDs = Set(challenges.map { Self.normalizedID($0.id.uuidString) })
+        let normalizedFailures = Set(failedChallengeIDs.map(Self.normalizedID))
+        self.challenges = challenges
+        self.seenChallengeIDs = Set(seenChallengeIDs.map(Self.normalizedID))
+            .union(normalizedChallengeIDs)
+            .union(normalizedFailures)
+        self.failedChallengeIDs = normalizedFailures
+        self.metadataQueryIsComplete = metadataQueryIsComplete
+    }
+
+    var isAuthoritativeForRemovals: Bool {
+        metadataQueryIsComplete && failedChallengeIDs.isEmpty
+    }
+
+    func contains(_ challengeID: UUID) -> Bool {
+        seenChallengeIDs.contains(Self.normalizedID(challengeID.uuidString))
+    }
+
+    nonisolated private static func normalizedID(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
+enum BackendAsyncChallengeFetchResult: Equatable, Sendable {
+    /// The release capability is intentionally unavailable. No configuration
+    /// or Firestore access was attempted.
+    case capabilityUnavailable
+    /// Authentication, configuration, or the metadata query failed. Cached
+    /// rows are not authoritative in this state and must remain untouched.
+    case unavailable
+    /// The metadata query succeeded. Row failures are carried separately so
+    /// they cannot be mistaken for a genuinely empty authoritative result.
+    case success(BackendAsyncChallengeSnapshot)
+}
+
 private struct RecommendationSyncPayload: Codable {
     let pendingExposure: RecommendationExposure?
     let outcomes: [RecommendationOutcome]
@@ -77,6 +124,7 @@ actor BackendSyncManager {
     static let createChallengeFunctionName = SocialAuthorityCallable.createChallenge
     static let submitChallengeResultFunctionName = SocialAuthorityCallable.submitChallengeResult
     static let setChallengeReactionFunctionName = SocialAuthorityCallable.setChallengeReaction
+    static let appleRevocationUnavailableReason = "apple-revocation-unavailable"
 
     private init() {}
 
@@ -256,21 +304,28 @@ actor BackendSyncManager {
         } catch let error as BackendAccountDeletionError {
             throw error
         } catch {
-            let nsError = error as NSError
-            guard nsError.domain == FunctionsErrorDomain,
-                  let code = FunctionsErrorCode(rawValue: nsError.code) else {
-                throw BackendAccountDeletionError.serviceUnavailable
+            throw Self.accountDeletionError(from: error)
+        }
+    }
+
+    nonisolated static func accountDeletionError(from error: Error) -> BackendAccountDeletionError {
+        let nsError = error as NSError
+        guard nsError.domain == FunctionsErrorDomain,
+              let code = FunctionsErrorCode(rawValue: nsError.code) else {
+            return .serviceUnavailable
+        }
+        switch code {
+        case .unauthenticated:
+            return .requiresRecentAuthentication
+        case .failedPrecondition:
+            guard functionsFailureReason(from: nsError) == appleRevocationUnavailableReason else {
+                return .rejected
             }
-            switch code {
-            case .unauthenticated:
-                throw BackendAccountDeletionError.requiresRecentAuthentication
-            case .failedPrecondition:
-                throw BackendAccountDeletionError.appleRevocationUnavailable
-            case .unavailable, .deadlineExceeded, .cancelled:
-                throw BackendAccountDeletionError.serviceUnavailable
-            default:
-                throw BackendAccountDeletionError.rejected
-            }
+            return .appleRevocationUnavailable
+        case .unavailable, .deadlineExceeded, .cancelled:
+            return .serviceUnavailable
+        default:
+            return .rejected
         }
     }
     #endif
@@ -439,13 +494,18 @@ actor BackendSyncManager {
 
     /// Fetch all async challenges where the given accountID is a participant.
     /// Returns most-recent-first, capped server-side at 50.
-    func fetchAsyncChallenges(forParticipant participantID: String) async -> [AsyncChallenge] {
+    func fetchAsyncChallenges(
+        forParticipant participantID: String
+    ) async -> BackendAsyncChallengeFetchResult {
+        guard SocialReleaseCapabilities.speakOffs.isAvailable else {
+            return .capabilityUnavailable
+        }
 #if canImport(FirebaseFirestore)
         if firebaseIsConfigured {
             return await fetchFirebaseAsyncChallenges(forParticipant: participantID)
         }
 #endif
-        return []
+        return .unavailable
     }
 
     #if canImport(FirebaseCore) && canImport(FirebaseFunctions) && canImport(FirebaseAuth)
@@ -482,7 +542,7 @@ actor BackendSyncManager {
         }
         if code == .failedPrecondition,
            let capabilityFailure = SocialAuthorityError.capabilityFailure(
-               reason: socialAuthorityFailureReason(from: nsError)
+               reason: functionsFailureReason(from: nsError)
            ) {
             return capabilityFailure
         }
@@ -504,7 +564,7 @@ actor BackendSyncManager {
         }
     }
 
-    nonisolated private static func socialAuthorityFailureReason(from error: NSError) -> String? {
+    nonisolated private static func functionsFailureReason(from error: NSError) -> String? {
         guard let details = error.userInfo[FunctionsErrorDetailsKey] else { return nil }
         if let dictionary = details as? [String: Any] {
             return dictionary["reason"] as? String
@@ -811,7 +871,9 @@ private extension BackendSyncManager {
         }
     }
 
-    func fetchFirebaseAsyncChallenges(forParticipant participantID: String) async -> [AsyncChallenge] {
+    func fetchFirebaseAsyncChallenges(
+        forParticipant participantID: String
+    ) async -> BackendAsyncChallengeFetchResult {
         #if canImport(FirebaseAuth)
         // Firestore rules prove query safety from `request.auth.uid in
         // participantIDs`. Refuse a legacy local UUID here rather than issuing
@@ -819,7 +881,7 @@ private extension BackendSyncManager {
         guard Self.authorizedChallengeParticipantID(
             requestedID: participantID,
             firebaseUID: Auth.auth().currentUser?.uid
-        ) != nil else { return [] }
+        ) != nil else { return .unavailable }
         #endif
         do {
             let documents = try await getDocuments(
@@ -828,7 +890,9 @@ private extension BackendSyncManager {
                     .order(by: "createdAt", descending: true)
                     .limit(to: 50)
             )
-            return await withTaskGroup(of: (Int, AsyncChallenge?).self) { group in
+            let rows = await withTaskGroup(
+                of: (Int, String, AsyncChallenge?).self
+            ) { group in
                 for (index, document) in documents.enumerated() {
                     let documentID = document.documentID
                     let metadata = document.data()
@@ -838,17 +902,33 @@ private extension BackendSyncManager {
                             metadata: metadata,
                             participantID: participantID
                         )
-                        return (index, challenge)
+                        return (index, documentID, challenge)
                     }
                 }
-                var hydrated: [(Int, AsyncChallenge)] = []
-                for await (index, challenge) in group {
-                    if let challenge { hydrated.append((index, challenge)) }
+                var hydrated: [(Int, String, AsyncChallenge?)] = []
+                for await row in group {
+                    hydrated.append(row)
                 }
-                return hydrated.sorted { $0.0 < $1.0 }.map(\.1)
+                return hydrated.sorted { $0.0 < $1.0 }
             }
+            let challenges = rows.compactMap(\.2)
+            let seenIDs = Set(rows.map(\.1))
+            let failedIDs = Set(rows.compactMap { _, documentID, challenge in
+                challenge == nil ? documentID : nil
+            })
+            return .success(
+                BackendAsyncChallengeSnapshot(
+                    challenges: challenges,
+                    seenChallengeIDs: seenIDs,
+                    failedChallengeIDs: failedIDs,
+                    // The query is capped to bound read cost. Exactly 50 rows
+                    // may mean there are older rows outside this snapshot, so
+                    // unseen cached history cannot be treated as deleted.
+                    metadataQueryIsComplete: documents.count < 50
+                )
+            )
         } catch {
-            return []
+            return .unavailable
         }
     }
 
