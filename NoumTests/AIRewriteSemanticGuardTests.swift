@@ -109,6 +109,22 @@ struct AIRewriteSemanticGuardTests {
         ))
     }
 
+    @Test func rejectsChangedSingleNameAtSentenceStart() {
+        #expect(!RewriteSemanticGuard.preservesMeaning(
+            originalTranscript: "Acme approved the launch after the customer evidence became clear.",
+            candidate: "Nimbus approved the launch after the customer evidence became clear.",
+            weakness: .opening
+        ))
+    }
+
+    @Test func acceptsCommonStyleStarterBeforePreservedName() {
+        #expect(RewriteSemanticGuard.preservesMeaning(
+            originalTranscript: "Acme should keep the launch plan because the customer evidence is clear.",
+            candidate: "Keep Acme's launch plan because the customer evidence is clear.",
+            weakness: .opening
+        ))
+    }
+
     @Test func rejectsNewEntityLikeToken() {
         #expect(!RewriteSemanticGuard.preservesMeaning(
             originalTranscript: "The launch budget should stay because customer retention is strong and the team is ready.",

@@ -929,8 +929,9 @@ enum RewriteSemanticGuard {
             let isPotentialName = token.isTitleCase
                 && !commonCapitalizedWords.contains(canonicalEntity(token.value))
             let isNonInitialTitleCase = isPotentialName && !token.isSentenceInitial
+            let isSentenceInitialName = isPotentialName && token.isSentenceInitial
 
-            if isAcronym || isMixedCase || isLetterNumberLabel || isNonInitialTitleCase {
+            if isAcronym || isMixedCase || isLetterNumberLabel || isNonInitialTitleCase || isSentenceInitialName {
                 result.insert(canonicalEntity(token.value))
             }
         }
@@ -993,11 +994,13 @@ enum RewriteSemanticGuard {
     )
 
     private static let commonCapitalizedWords: Set<String> = [
-        "a", "an", "and", "as", "at", "because", "but", "by", "for",
-        "from", "he", "her", "here", "his", "how", "i", "if", "in",
-        "it", "its", "my", "no", "not", "of", "on", "or", "our",
-        "she", "so", "that", "the", "their", "then", "there", "these",
-        "they", "this", "those", "to", "we", "what", "when", "where",
-        "which", "while", "who", "why", "with", "you", "your"
+        "a", "an", "and", "as", "at", "because", "but", "by", "do",
+        "finally", "first", "for", "from", "give", "he", "her", "here",
+        "his", "how", "i", "if", "in", "it", "its", "keep", "lead",
+        "make", "my", "name", "no", "not", "of", "on", "or", "our",
+        "overall", "say", "second", "she", "so", "start", "stop", "that",
+        "the", "their", "then", "there", "these", "they", "third", "this",
+        "those", "to", "we", "what", "when", "where", "which", "while",
+        "who", "why", "with", "you", "your"
     ]
 }
