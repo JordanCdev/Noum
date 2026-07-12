@@ -68,7 +68,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "So not my whole speaking style yet?",
-                    coachReply: "Right, because one rep is too thin for a style diagnosis. Use this first pass to create the baseline, then Noum can judge whether the same pattern repeats."
+                    coachReply: "Right: not your whole speaking style. One interview answer is too thin for that claim, so keep this read narrow: whether sentence one answers before the explanation. Test this across three different interview prompts, including one under pressure, before calling it a broader style pattern."
                 )
             ]
         ),
@@ -136,7 +136,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "And stop saying practice more.",
-                    coachReply: "Agreed: that was too generic. The move is not more volume; the target is a cleaner first sentence because it turns vague advice into a testable line: recommendation, one proof, stop."
+                    coachReply: "Fair push. That was generic. The actual read is that the prior answer prescribed before it earned trust because it named no behavior and no proof. The repair is one signal and one move. Send one sentence with the exact recommendation you plan to use, and I will judge that sentence before prescribing another rep."
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should I record?",
@@ -176,7 +176,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What would make you change the diagnosis?",
-                    coachReply: "Record 2 clean pressure reps with verdict-first openings because that is the evidence that would move the diagnosis from mechanics to presence: less explaining, more settled commitment."
+                    coachReply: "Your latest rep is not enough to change the diagnosis. Two clean pressure reps would: the verdict stays in sentence one and the close stays settled without extra explanation. Run the next rep under the same conditions, because repeatability separates a mechanics gain from presence under pressure."
                 )
             ]
         ),
@@ -822,7 +822,7 @@ enum CoachChatConversationCorpus {
                 ),
                 CoachChatConversationTurn(
                     userTurn: "What should I look for before I call it progress?",
-                    coachReply: "Check whether the verdict arrives before any caveat and whether the final five words stay steady, because two clean reps would update the hypothesis; one clean rep is still early."
+                    coachReply: "The latest rep was cleaner, not settled, so call it progress only after two reps under pressure show the same thing: the verdict stays in sentence one and the close stays steady. In the next rep, keep the verdict first and check whether the final five words stay steady under pressure."
                 )
             ]
         ),
@@ -1570,7 +1570,10 @@ enum CoachChatConversationCorpus {
                 return false
             }
             if user.contains("stop saying practice more") &&
-                !containsAny(reply, ["not more volume", "cleaner first sentence"]) {
+                !containsAny(reply, [
+                    "not more volume", "cleaner first sentence",
+                    "prior answer prescribed", "one signal and one move"
+                ]) {
                 return false
             }
             if user.contains("less warm") &&
@@ -3590,8 +3593,14 @@ struct CoachChatConversationCorpusTests {
     }
 
     @Test func liveProviderSweepEvidenceRequiresTrajectoryCacheCoverage() throws {
+        let allColdLongFormConversations = Self.liveProviderLongFormConversations(
+            passingIDs: CoachLiveProviderSweepEvidence.requiredLongFormConversationIDs,
+            failureIDs: [],
+            trajectoryCacheHitForTurn: { _ in false }
+        )
         let coldSweep = Self.liveProviderSweepEvidence(
-            trajectoryCacheHitIndices: []
+            trajectoryCacheHitIndices: [],
+            longFormConversations: allColdLongFormConversations
         )
         let decoded = try CoachLiveProviderSweepEvidence.decode(
             from: coldSweep.encodedSortedJSON()
@@ -3753,6 +3762,58 @@ struct CoachChatConversationCorpusTests {
         #expect(!genericDecoded.qualifiesForReadiness)
         #expect(genericDecoded.rejectionReasons.contains {
             $0.hasPrefix("genericLatestTurnReplies=")
+        })
+    }
+
+    @Test func liveProviderSweepEvidenceAllowsContextualPlaceholderAsk() throws {
+        let cleanSweep = Self.liveProviderSweepEvidence()
+        var conversations = try #require(cleanSweep.longFormConversations)
+        let conversationIndex = try #require(conversations.firstIndex {
+            $0.conversationID == "long-form-leadership-transfer-setup-conversation"
+        })
+        let conversation = conversations[conversationIndex]
+        var rows = conversation.rows
+        let rowIndex = try #require(rows.indices.dropFirst().first)
+        let row = rows[rowIndex]
+        rows[rowIndex] = CoachLiveProviderSweepEvidence.Row(
+            fixtureID: row.fixtureID,
+            turnDepth: row.turnDepth,
+            providerChosen: row.providerChosen,
+            providerModel: row.providerModel,
+            timeToFirstVisibleTokenMs: row.timeToFirstVisibleTokenMs,
+            trajectoryCacheHit: row.trajectoryCacheHit,
+            assessmentConfidence: row.assessmentConfidence,
+            assessmentProofTestHash: row.assessmentProofTestHash,
+            immediateCoachReadExpected: row.immediateCoachReadExpected,
+            immediateCoachReadShown: row.immediateCoachReadShown,
+            liveProductionFloor: row.liveProductionFloor,
+            reply: "Use a placeholder ask: I need alignment on the next step, then test the close.",
+            passesRubric: row.passesRubric,
+            visionPassesProductionFloor: row.visionPassesProductionFloor,
+            qualityIssue: row.qualityIssue,
+            semanticGateIssue: row.semanticGateIssue,
+            reliabilityIssues: row.reliabilityIssues
+        )
+        conversations[conversationIndex] = CoachLiveProviderSweepEvidence.LongFormConversation(
+            conversationID: conversation.conversationID,
+            sourceFixtureID: conversation.sourceFixtureID,
+            expectedTurnCount: conversation.expectedTurnCount,
+            observedTurnCount: conversation.observedTurnCount,
+            liveProductionFloor: conversation.liveProductionFloor,
+            failure: conversation.failure,
+            rows: rows
+        )
+
+        let decoded = try CoachLiveProviderSweepEvidence.decode(
+            from: Self.copyLiveProviderSweepEvidence(
+                cleanSweep,
+                longFormConversations: conversations
+            ).encodedSortedJSON()
+        )
+
+        #expect(decoded.qualifiesForReadiness, "Unexpected rejection: \(decoded.rejectionReasons)")
+        #expect(!decoded.rejectionReasons.contains {
+            $0.hasPrefix("genericDetailedLongFormReplies=")
         })
     }
 
@@ -5253,7 +5314,8 @@ struct CoachChatConversationCorpusTests {
 
     private static func liveProviderLongFormConversations(
         passingIDs: [String],
-        failureIDs: [String]
+        failureIDs: [String],
+        trajectoryCacheHitForTurn: (Int) -> Bool = { $0 > 0 }
     ) -> [CoachLiveProviderSweepEvidence.LongFormConversation] {
         let ids = passingIDs + failureIDs
         let failureIDSet = Set(failureIDs)
@@ -5276,7 +5338,7 @@ struct CoachChatConversationCorpusTests {
                     providerChosen: "Gemini",
                     providerModel: "gemini-test",
                     timeToFirstVisibleTokenMs: 520 + index,
-                    trajectoryCacheHit: index == 0,
+                    trajectoryCacheHit: trajectoryCacheHitForTurn(index),
                     assessmentConfidence: 0.64 + (Double(index % 4) * 0.04),
                     assessmentProofTestHash: "\(conversationID)-proof-\(index)",
                     immediateCoachReadExpected: false,

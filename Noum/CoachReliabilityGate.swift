@@ -304,6 +304,9 @@ enum CoachReliabilityGate {
         "that read was",
         "that read too much like a report",
         "that read like a report",
+        "cold report",
+        "generic tip sheet",
+        "actual practice",
         "that sounded cold",
         "robotic and cold",
         "too much writing",
@@ -1098,10 +1101,7 @@ enum CoachReliabilityGate {
         let lowered = normalize(latestUserTurn ?? "")
         if containsAny(lowered, ["engaging", "more engaging", "engage"]) {
             let progress = goalStateProgressAnchor(replyText)
-            if surface == .live {
-                return "\(progress)Engaging maps closest to Storytelling because the goal is more memorable shape; Warm is the comparison only if the gap is connection. What changed: does the room need more energy, or does the current voice feel too distant?"
-            }
-            return "\(progress)Engaging maps closest to Storytelling because the goal is more memorable shape; Warm is the comparison only if the gap is connection. What changed: does the room need more energy, or does the current voice feel too distant?"
+            return "\(progress)Engaging maps closest to Storytelling because the goal is more memorable shape; Warm is the comparison only if the gap is connection. Use the latest rep as the baseline, then test Storytelling once. What changed: did the room need more energy, or did the current voice feel too distant?"
         }
         if containsAny(lowered, ["what voice", "which voice", "voice should", "six", "dont know", "don't know"]) {
             return "Start with Authoritative because short verdicts can hold the floor in meetings where you get talked over; Executive presence is the comparison only if the real pressure is a senior room."
@@ -1399,8 +1399,11 @@ enum CoachReliabilityGate {
         "qualifier",
         "flat sentence",
         "recommendation arrived",
+        "recommendation to the end",
+        "recommendation all the way to the end",
         "recommendation first",
         "recommendation-first",
+        "first sentence",
         "sentence one",
         "opener",
         "opening",
@@ -1409,6 +1412,8 @@ enum CoachReliabilityGate {
         "warmth arrives",
         "warmth before",
         "warmth comes after",
+        "reassuring the client",
+        "reassurance before",
         "ordering signal",
         "one safe signal",
         "safe signal"
@@ -1865,7 +1870,18 @@ enum CoachReliabilityGate {
 
     static func rambleStoppingRuleUserTurn(_ latestUserTurn: String?) -> Bool {
         guard let latestUserTurn else { return false }
-        return containsAny(normalize(latestUserTurn), rambleStoppingRuleUserMarkers)
+        let normalized = normalize(latestUserTurn)
+        // "Add depth without rambling" names a design constraint, not an
+        // observed loss of control. Treating every such phrase as a ramble
+        // incident discards the user's actual depth question and forces the
+        // generic hard-stop recovery.
+        if containsAny(normalized, [
+            "without rambling",
+            "without ramble"
+        ]) {
+            return false
+        }
+        return containsAny(normalized, rambleStoppingRuleUserMarkers)
     }
 
     static func rambleStoppingRuleFallbackContext(

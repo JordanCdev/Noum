@@ -2376,24 +2376,42 @@ actor AICoachChatService {
                                 issue: issue,
                                 latestUserTurn: latestUserTurn,
                                 system: system
-                            ),
-                               let safeRepair = Self.safeReferenceRepairReply(
-                                issue: issue,
-                                latestUserTurn: latestUserTurn,
-                                system: system,
-                                quoteGuard: quoteGuard,
-                                recentCoachReplies: recentCoachReplies,
-                                turnDepth: turnDepth,
-                                assessment: assessment,
-                                surface: surface
-                               ) {
-                                recordChatDiagnostic(
-                                    .success,
-                                    "Safe reference repair accepted before provider rewrite",
-                                    provider: provider
-                                )
-                                await onQualityGateEvent?(.fallback("safeReference:\(issue.auditLabel)"))
-                                return .reply(safeRepair)
+                            ) {
+                                if let safeRepair = Self.safeReferenceRepairReply(
+                                    issue: issue,
+                                    latestUserTurn: latestUserTurn,
+                                    system: system,
+                                    quoteGuard: quoteGuard,
+                                    recentCoachReplies: recentCoachReplies,
+                                    turnDepth: turnDepth,
+                                    assessment: assessment,
+                                    surface: surface
+                                ) {
+                                    recordChatDiagnostic(
+                                        .success,
+                                        "Safe reference repair accepted before provider rewrite",
+                                        provider: provider
+                                    )
+                                    await onQualityGateEvent?(.fallback("safeReference:\(issue.auditLabel)"))
+                                    return .reply(safeRepair)
+                                }
+                                if let typedRepair = Self.deterministicAssessmentFallbackReply(
+                                    assessment: assessment,
+                                    latestUserTurn: latestUserTurn,
+                                    quoteGuard: quoteGuard,
+                                    systemContext: system,
+                                    recentCoachReplies: recentCoachReplies,
+                                    turnDepth: turnDepth,
+                                    surface: surface
+                                ) {
+                                    recordChatDiagnostic(
+                                        .success,
+                                        "Typed assessment repair accepted before provider rewrite",
+                                        provider: provider
+                                    )
+                                    await onQualityGateEvent?(.fallback("typedAssessmentRepair:\(issue.auditLabel)"))
+                                    return .reply(typedRepair)
+                                }
                             }
                             await onProviderAttemptEvent?(.retry(providerChoice))
                             if let repaired = await repairLowQualityReply(
@@ -2446,24 +2464,42 @@ actor AICoachChatService {
                             issue: visionIssue,
                             latestUserTurn: latestUserTurn,
                             system: system
-                        ),
-                           let safeRepair = Self.safeReferenceRepairReply(
-                            issue: visionIssue,
-                            latestUserTurn: latestUserTurn,
-                            system: system,
-                            quoteGuard: quoteGuard,
-                            recentCoachReplies: recentCoachReplies,
-                            turnDepth: turnDepth,
-                            assessment: assessment,
-                            surface: surface
-                           ) {
-                            recordChatDiagnostic(
-                                .success,
-                                "Safe reference repair accepted before provider rewrite",
-                                provider: provider
-                            )
-                            await onQualityGateEvent?(.fallback("safeReference:\(visionIssue.auditLabel)"))
-                            return .reply(safeRepair)
+                        ) {
+                            if let safeRepair = Self.safeReferenceRepairReply(
+                                issue: visionIssue,
+                                latestUserTurn: latestUserTurn,
+                                system: system,
+                                quoteGuard: quoteGuard,
+                                recentCoachReplies: recentCoachReplies,
+                                turnDepth: turnDepth,
+                                assessment: assessment,
+                                surface: surface
+                            ) {
+                                recordChatDiagnostic(
+                                    .success,
+                                    "Safe reference repair accepted before provider rewrite",
+                                    provider: provider
+                                )
+                                await onQualityGateEvent?(.fallback("safeReference:\(visionIssue.auditLabel)"))
+                                return .reply(safeRepair)
+                            }
+                            if let typedRepair = Self.deterministicAssessmentFallbackReply(
+                                assessment: assessment,
+                                latestUserTurn: latestUserTurn,
+                                quoteGuard: quoteGuard,
+                                systemContext: system,
+                                recentCoachReplies: recentCoachReplies,
+                                turnDepth: turnDepth,
+                                surface: surface
+                            ) {
+                                recordChatDiagnostic(
+                                    .success,
+                                    "Typed assessment repair accepted before provider rewrite",
+                                    provider: provider
+                                )
+                                await onQualityGateEvent?(.fallback("typedAssessmentRepair:\(visionIssue.auditLabel)"))
+                                return .reply(typedRepair)
+                            }
                         }
                         await onProviderAttemptEvent?(.retry(providerChoice))
                         if let repaired = await repairLowQualityReply(
@@ -2692,27 +2728,221 @@ actor AICoachChatService {
         }
         let lowerSystem = system.lowercased()
 
+        if containsAny(lower, [
+            "what should i do with that filler count",
+            "what do i do with that filler count"
+        ]),
+           fillerEvidenceSitsInsideDecisionLine(system),
+           let count = firstFillerCount(in: system) {
+            return "Your last rep had \(count) \(count == 1 ? "filler" : "fillers"); the signal is inside the recommendation, not before it. Next rep, hold one beat after the decision line and restart if a filler appears."
+        }
+        if containsAny(lower, [
+            "what should i listen for in the replay",
+            "what do i listen for in the replay"
+        ]),
+           containsAny(lowerSystem, ["no rated sessions", "baseline", "interview"]) {
+            return "For your first baseline rep, listen for sentence one only. If it names the answer before the setup, keep it. If it starts with background, rewrite that first sentence and run the rep again."
+        }
+        if containsAny(lower, [
+            "how far off am i from sounding authoritative",
+            "how close am i to sounding authoritative"
+        ]),
+           lowerSystem.contains("latest rep"),
+           lowerSystem.contains("pace estimate"),
+           lowerSystem.contains("recommendation") {
+            return "You are closer mechanically than you are to sounding authoritative overall. The latest timed rep gives one clean recommendation and a usable pace signal, so the mechanics are partly landing; authority still needs repeatable pressure evidence. I still need more than one clean rep under stakes. Run one stakes-style pressure answer: verdict first, one reason, clean stop, then compare it with a normal rep."
+        }
         if lower.contains("slow down"),
            containsAny(lower, ["unsure", "uncertain"]) {
             return "Your last rep is clean but compressed, so keep the same first sentence, hold one silent beat after the decision, then deliver the reason at your normal volume."
+        }
+        if containsAny(lower, [
+            "do i pause before every sentence",
+            "should i pause before every sentence"
+        ]),
+           containsAny(lowerSystem, ["filler", "pressure", "close"]) {
+            return "No. Pause before the close only, because that is where the pressure leaks; pausing before every sentence would sound managed rather than steady."
+        }
+        if containsAny(lower, ["what proves it worked", "what would prove it worked"]),
+           containsAny(lowerSystem, ["filler", "silent beat", "close"]) {
+            return "Use the same 60-second prompt and timer because you only want to test the pause point. Success is fewer fillers after that point and a final sentence that still lands cleanly."
+        }
+        if lower.contains("tried the close pause"),
+           lower.contains("fillers dropped"),
+           lower.contains("sounded stiff") {
+            return "In your latest rep, the close pause reduced fillers but cost warmth, so keep the beat only before the final sentence and add one natural phrase after it in the next rep."
+        }
+        if containsAny(lower, [
+            "how do i make that natural tomorrow",
+            "how can i make that natural tomorrow"
+        ]),
+           containsAny(lowerSystem, ["filler", "close", "stiff", "pause"]) {
+            return "The close pause reduced fillers but sounded stiff, so tomorrow test naturalness without changing the target. Run a 30-second close with one spoken rehearsal of the last sentence, then check whether it sounds like a decision rather than a performance."
         }
         if containsAny(lower, ["more certain", "more confident"]),
            containsAny(lower, ["at the end", "at the close", "ending", "closing"]) {
             return "Your last rep is clear, but the close keeps softening, so say the recommendation once, give one reason, and stop without adding a softener."
         }
-        if CoachReliabilityGate.rambleStoppingRuleUserTurn(lower) {
+        if CoachReliabilityGate.rambleStoppingRuleUserTurn(lower),
+           containsAny(lower, [
+            "rambled after sentence two",
+            "ramble after sentence two",
+            "drifted after sentence two"
+           ]) {
             return "Good read: sentence one gave the point, then the answer drifted after sentence two, so keep sentence one, cut the second explanation to one reason, and stop at 60 seconds."
         }
         if lower.contains("interview"),
            containsAny(lower, ["take into", "bring into", "remember in"]) {
             return "The drift is the interview risk, so take only the opener and proof test: answer first, one evidence line, then stop. After the interview, check whether the interviewer asked a clearer follow-up or looked confused."
         }
+        if normalizedTurnText(lower) == "what do i run next",
+           lowerSystem.contains("filler"),
+           containsAny(lowerSystem, ["decision line", "recommendation"]) {
+            return "Use a 45-second recommendation prompt because it tests the decision line without inviting a full essay. Sentence one is the decision, sentence two is one reason, then stop cleanly."
+        }
+        if normalizedTurnText(lower) == "what next",
+           containsAny(lowerSystem, ["close lost force", "closing strength", "rushed close", "final sentence"]) {
+            return "The recurring close is the lever, so review the last transcript, rewrite only the final sentence, then run one rep with that close as the target."
+        }
+        if containsAny(lower, [
+            "why the close instead of the opening",
+            "why the close rather than the opening"
+        ]),
+           containsAny(lowerSystem, ["close lost force", "closing strength", "rushed close", "final sentence"]) {
+            return "In the last transcript, the opening is serviceable enough. The close is where authority leaks because the answer ends as a summary instead of an ask."
+        }
+        if containsAny(lower, ["what is the exact rep", "what's the exact rep"]),
+           containsAny(lowerSystem, ["close", "closing", "final sentence", "the ask"]) {
+            return "Your last rep makes the close the target, so use 60 seconds on the same topic. Make the last sentence the ask; if it turns into a recap, run it once more."
+        }
+        if lower.contains("rewrote the close"), lower.contains("too direct") {
+            return "Good boundary: direct is useful, but abrupt is the risk. Keep the ask and add one reason before it so the listener can agree without feeling pushed."
+        }
+        if containsAny(lower, ["what do i do after that rep", "what should i do after that rep"]),
+           containsAny(lowerSystem, ["close", "ask", "direct", "abrupt"]) {
+            return "The last sentence is where direct can become pressure, so review only that sentence and check the ask. If it asks for alignment and the reason is clear, stop; if it sounds like pressure, rewrite it with one softer verb."
+        }
+        if containsAny(lower, [
+            "do i change the whole answer",
+            "should i change the whole answer"
+        ]),
+           lowerSystem.contains("proof"),
+           containsAny(lowerSystem, ["decision line", "recommendation"]) {
+            return "No. Keep the answer structure because that isolates the proof handoff. Run 45 seconds and check only the word before the proof."
+        }
         if lower.contains("voice"), lower.contains("cold") {
             return "If the voice still sounds cold, the issue is tone rather than content, so stop the drill, record one warm version of the same recommendation, and compare whether the proof still lands."
         }
+        if containsAny(lower, [
+            "the no-symbol version is easier to hear",
+            "the no symbol version is easier to hear"
+        ]) {
+            return "Good, delivery format was part of the trust issue, so keep the no-symbol rule and test only the recommendation line with one proof."
+        }
+        if lower == "this is robotic and too much writing." ||
+           lower == "this is robotic and too much writing" {
+            return "Fair push. That read was robotic and too much writing. Your last rep gives enough signal, so in the next rep use one clean opener and stop after the point lands."
+        }
+        if containsAny(lower, ["what was generic about it", "what exactly was generic about it"]) {
+            return "That was generic because it named a plan without naming the behavior. The target is the opener, so run a 45-second rep where sentence one lands before the explanation starts."
+        }
+        if containsAny(lower, [
+            "so what should you remember next time",
+            "what should you remember next time"
+        ]),
+           containsAny(lowerSystem, ["real coach", "sharper read", "robotic", "generic"]) {
+            return "I should keep the reply short, name the behavior, and give one test because that is what was missing from the repair. You should run the opener once and check whether it sounds like a coachable behavior, not an assignment."
+        }
+        if containsAny(lower, [
+            "okay, that's cool. however, i don't feel like that answered what i meant",
+            "okay, thats cool. however, i dont feel like that answered what i meant"
+        ]) {
+            return "Fair push. That was generic advice instead of evidence, and the polite wording hid stronger friction. The actual read is order: reassurance arrived before the recommendation, so in the next rep put the recommendation first, add one reassurance, then stop."
+        }
+        if containsAny(lower, [
+            "does that make me sound less warm",
+            "does that make me less warm",
+            "will that make me sound less warm"
+        ]) {
+            return "No. The target is placement, not less warmth: lead with the decision so people know what you mean, then use warmth to make the decision easier to hear."
+        }
+        if containsAny(lower, ["what did you miss", "what exactly did you miss"]),
+           containsAny(lowerSystem, ["warmth", "reassurance", "recommendation"]) {
+            return "I missed the hesitation inside the polite pushback. Your last rep gives the behavior: reassurance came first and the recommendation arrived late, so you were asking for that read, not a harder drill."
+        }
+        if containsAny(lower, [
+            "how do i test that without sounding harsh",
+            "how can i test that without sounding harsh"
+        ]) {
+            return "Run one 45-second client concern answer. Sentence one is the recommendation; sentence two is one reassurance. That tests order without removing warmth, because the tone stays kind while the point arrives first."
+        }
+        if containsAny(lower, [
+            "i said cool because i was trying not to be rude",
+            "i said cool because i did not want to be rude",
+            "i said cool because i didn't want to be rude"
+        ]) {
+            return "Your last rep gives the useful repair: the polite wording hid a stronger no-fit signal, so I should name the miss before the drill. In the next rep, keep the target narrow: recommendation first, one reassurance, stop."
+        }
+        if lower.contains("tried recommendation first"),
+           lower.contains("sounded abrupt") {
+            return "The recommendation-first version sounded abrupt, so keep the order and change only the tone bridge. In the next rep, state the recommendation, add one reassurance before the reason, then stop."
+        }
         if lower.contains("stop"),
            containsAny(lower, ["saying practice", "telling me to practice", "just tell me to practice"]) {
-            return "Agreed: that was generic. The actual read is that the prior answer prescribed before it earned trust because it named no behavior and no proof. The repair is one signal and one move. Send one sentence with the exact recommendation you plan to use, and I will judge that sentence before prescribing another rep."
+            return "Fair push. That was generic. The actual read is that the prior answer prescribed before it earned trust because it named no behavior and no proof. The repair is one signal and one move. Send one sentence with the exact recommendation you plan to use, and I will judge that sentence before prescribing another rep."
+        }
+        if lower.contains("leadership update"),
+           containsAny(lower, ["tomorrow", "what should i practice", "what do i practice"]),
+           containsAny(lowerSystem, ["filler", "light on the close", "closing", "final sentence"]) {
+            return "Your recent timed rep was solid on fillers but light on the close, so practice one 75-second leadership update and make the final sentence the ask, not a summary."
+        }
+        if containsAny(lower, [
+            "i do not know the ask yet",
+            "i don't know the ask yet",
+            "i dont know the ask yet"
+        ]),
+           containsAny(lowerSystem, ["leadership", "update", "final sentence", "the ask"]) {
+            return "Your latest rep was light on the close, so use 'I need alignment on the next step' as the placeholder ask for this rep. That lets you train the close before the business content is final."
+        }
+        if lower.contains("not my whole speaking style") {
+            return "Right: not your whole speaking style. One interview answer is too thin for that claim, so keep this read narrow: whether sentence one answers before the explanation. Test this across three different interview prompts, including one under pressure, before calling it a broader style pattern."
+        }
+        if lower.contains("7/10"), lower.contains("bad"),
+           containsAny(lowerSystem, ["authority", "authoritative"]),
+           lowerSystem.contains("recommendation") {
+            return "No. A 7/10 is one useful mechanics signal, not an authority verdict. The transcript puts the recommendation first, so keep that opener in the next rep under pressure and test whether the close stays settled."
+        }
+        if containsAny(lower, [
+            "what would make you change the diagnosis",
+            "what would change your diagnosis"
+        ]),
+           containsAny(lowerSystem, ["authority", "authoritative", "pressure"]) {
+            return "Your latest rep is not enough to change the diagnosis. Two clean pressure reps would: the verdict stays in sentence one and the close stays settled without extra explanation. Run the next rep under the same conditions, because repeatability separates a mechanics gain from presence under pressure."
+        }
+        if containsAny(lower, [
+            "i did one pressure rep. it was cleaner but not settled",
+            "i did one pressure rep; it was cleaner but not settled",
+            "one pressure rep was cleaner but not settled"
+        ]),
+           containsAny(lowerSystem, ["authority", "authoritative", "pressure"]) {
+            return "Your pressure rep was cleaner but not settled, so the next test should separate mechanics from presence. In the next rep, keep the same verdict, slow only the final five words, and compare whether the close stays steady under the same pressure."
+        }
+        if containsAny(lower, [
+            "still filled before the proof",
+            "still used a filler before the proof",
+            "filler still came before the proof"
+        ]),
+           containsAny(lowerSystem, ["decision", "recommendation"]),
+           containsAny(lowerSystem, ["filler", "proof"]) {
+            return "The filler is still showing up before the proof, so move the pause to that exact boundary. In the next rep, state the decision, hold one silent beat immediately before the proof, then give the proof without restarting."
+        }
+        if lower.contains("call it progress"),
+           containsAny(lowerSystem, ["authority", "authoritative", "pressure rep", "under pressure"]) {
+            return "The latest rep was cleaner, not settled, so call it progress only after two reps under pressure show the same thing: the verdict stays in sentence one and the close stays steady. In the next rep, keep the verdict first and check whether the final five words stay steady under pressure."
+        }
+        if containsAny(lower, ["what test separates those", "which test separates those"]),
+           containsAny(lowerSystem, ["authority", "hypothesis", "recommendation arrived late"]) {
+            return "In the next rep, run the same answer twice, once as-is and once with the verdict in sentence one, because that holds the voice and filler count steady. If the verdict-first version lands more clearly, structure is the better explanation; if it does not, the authority hypothesis still needs more evidence."
         }
         if containsAny(lower, ["people asked for the timeline", "they asked for the timeline"]),
            containsAny(lowerSystem, ["leadership update", "timeline", "decision"]) {
@@ -2727,7 +2957,10 @@ actor AICoachChatService {
             "people asked for the timeline",
             "asked for the timeline",
             "timeline, not the decision",
-            "timeline question"
+            "timeline question",
+            "leadership update",
+            "timeline",
+            "decision"
            ]) {
             return "Capture their exact timeline question, the decision you wanted, and what they did next. That contrast matters because it shows what the room heard versus what was missing, so in the next rep close with the decision plus the date and stop."
         }
@@ -2865,7 +3098,10 @@ actor AICoachChatService {
     private nonisolated static func deterministicQuickMoveReply(
         _ assessment: CoachAssessment
     ) -> String {
-        let action = connectorClause(assessment.nextProofTest)
+        var action = connectorClause(assessment.nextProofTest)
+        if action.lowercased().hasPrefix("run the same answer under ") {
+            action = "use" + String(action.dropFirst("run".count))
+        }
         guard let anchor = coachSafeEvidencePhrase(from: assessment.evidenceUsed.first) else {
             if action.contains("one silent beat after the verdict"),
                action.contains("without speeding up") {
@@ -2911,8 +3147,7 @@ actor AICoachChatService {
             "real room"
         ]) || containsAny(lowerSystem, [
             "pressure rep",
-            "under pressure",
-            "timed rep"
+            "under pressure"
         ])
         let fillerContext = containsAny(latestUserTurn, [
             "filler",
@@ -2952,18 +3187,70 @@ actor AICoachChatService {
     ) -> String {
         var lines: [String] = []
         lines.append(completeSentence(deepAssessmentFallbackVerdict(from: assessment)))
-        lines.append("That matters because one score can show a cleaner answer, while authority under pressure needs repeated evidence.")
+        lines.append("That matters because one result can show a mechanics gain, while the full goal needs repeated evidence under pressure.")
         let evidence = assessment.evidenceUsed
             .prefix(2)
-            .compactMap { conciseEvidencePhrase(from: $0) }
+            .compactMap { deepAssessmentEvidencePhrase(from: $0) }
         if !evidence.isEmpty {
-            lines.append("The evidence I can use is \(evidence.joined(separator: " and ")).")
+            lines.append("The usable evidence is \(evidence.joined(separator: " and ")).")
         }
-        if let missing = assessment.missingEvidence.first {
-            lines.append("What is still missing is \(completeSentence(missing))")
+        if let missing = assessment.missingEvidence.first,
+           let clause = deepAssessmentMissingEvidenceClause(from: missing) {
+            lines.append("I still need \(completeSentence(clause))")
         }
         lines.append("For the next check, \(connectorClause(assessment.nextProofTest))")
         return lines.joined(separator: " ")
+    }
+
+    private nonisolated static func deepAssessmentEvidencePhrase(
+        from raw: String
+    ) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        guard !trimmed.isEmpty else { return nil }
+
+        if lower.hasPrefix("latest rep:") {
+            let rest = String(trimmed.dropFirst("latest rep:".count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let mode = rest.split(separator: ",", maxSplits: 1)
+                .first?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            return mode.map { "the latest \($0) rep" } ?? "the latest rep"
+        }
+        if lower.hasPrefix("pace estimate:") {
+            return "its pace estimate"
+        }
+        if lower.hasPrefix("transcript signal:") {
+            return "the available transcript"
+        }
+        if lower.hasPrefix("case summary:") {
+            return "the active case file"
+        }
+        if lower.hasPrefix("active intervention:") {
+            return "the active intervention"
+        }
+        return conciseEvidencePhrase(from: trimmed)
+    }
+
+    private nonisolated static func deepAssessmentMissingEvidenceClause(
+        from raw: String
+    ) -> String? {
+        var clause = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clause.isEmpty else { return nil }
+        for prefix in ["Need ", "Still need ", "Missing: "]
+            where clause.lowercased().hasPrefix(prefix.lowercased()) {
+            clause = String(clause.dropFirst(prefix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            break
+        }
+        clause = clause.replacingOccurrences(
+            of: "before calling the user close overall",
+            with: "before making an overall readiness call",
+            options: .caseInsensitive
+        )
+        guard let first = clause.first else { return nil }
+        return first.lowercased() + String(clause.dropFirst())
     }
 
     private nonisolated static func deepAssessmentFallbackVerdict(
@@ -4170,11 +4457,236 @@ actor AICoachChatService {
         }
 
         if containsAny(latest, [
+            "pause before every sentence",
+            "pause before each sentence"
+        ]) {
+            let answersNo = lower.hasPrefix("no")
+            let keepsPauseLocal = containsAny(lower, [
+                "before the close", "where the pressure", "pause only",
+                "final sentence"
+            ])
+            return !(answersNo && keepsPauseLocal)
+        }
+
+        if containsAny(latest, ["what proves it worked", "what would prove it worked"]) {
+            let namesSuccess = containsAny(lower, [
+                "success", "worked", "fewer fillers", "final sentence"
+            ])
+            let keepsTestComparable = containsAny(lower, [
+                "same 60", "same prompt", "same timer", "pause point"
+            ])
+            return !(namesSuccess && keepsTestComparable)
+        }
+
+        if latest.contains("tried the close pause"),
+           latest.contains("sounded stiff") {
+            let carriesResult = containsAny(lower, [
+                "reduced fillers", "fillers dropped", "cost warmth",
+                "sounded stiff"
+            ])
+            let adaptsMove = containsAny(lower, [
+                "natural phrase", "only before the final", "keep the beat",
+                "keep the pause"
+            ])
+            return !(carriesResult && adaptsMove)
+        }
+
+        if containsAny(latest, [
+            "make that natural tomorrow",
+            "make it natural tomorrow"
+        ]) {
+            let testsNaturalness = containsAny(lower, [
+                "naturalness", "natural", "sounded stiff"
+            ])
+            let givesTomorrowRep = containsAny(lower, [
+                "tomorrow", "30-second", "30 second", "spoken rehearsal"
+            ])
+            return !(testsNaturalness && givesTomorrowRep)
+        }
+
+        if normalizedTurnText(latest) == "what next" {
+            let choosesOneLever = containsAny(lower, [
+                "is the lever", "is the target", "next lever",
+                "pattern i'd pick", "pattern i would pick", "one move"
+            ])
+            let givesMove = containsAny(lower, [
+                "rewrite", "review", "run one", "next rep"
+            ])
+            return !(choosesOneLever && givesMove)
+        }
+
+        if containsAny(latest, [
+            "why the close instead of the opening",
+            "why the close rather than the opening"
+        ]) {
+            let comparesBoth = containsAny(lower, ["opening", "opener"])
+                && containsAny(lower, ["close", "closing"])
+            return !(comparesBoth && replyHasInsightBridge(lower))
+        }
+
+        if containsAny(latest, ["what is the exact rep", "what's the exact rep"]) {
+            let givesExactShape = lower.contains("60")
+                && containsAny(lower, ["same topic", "last sentence", "final sentence"])
+                && containsAny(lower, ["the ask", "ask"])
+            return !givesExactShape
+        }
+
+        if latest.contains("rewrote the close"), latest.contains("too direct") {
+            let preservesAsk = containsAny(lower, ["keep the ask", "keep that ask"])
+            let softensWithReason = containsAny(lower, [
+                "one reason", "add a reason", "before it", "before the ask"
+            ])
+            return !(preservesAsk && softensWithReason)
+        }
+
+        if containsAny(latest, [
+            "what do i do after that rep",
+            "what should i do after that rep"
+        ]) {
+            let reviewsClose = containsAny(lower, [
+                "review", "check", "last sentence", "close", "ask"
+            ])
+            let givesDecisionRule = containsAny(lower, [
+                "if ", "alignment", "pressure", "rewrite", "softer verb"
+            ])
+            return !(reviewsClose && givesDecisionRule)
+        }
+
+        if containsAny(latest, [
+            "make me sound less warm",
+            "make me less warm"
+        ]) {
+            let answersNo = lower.hasPrefix("no") || containsAny(lower, [
+                "not less warm", "does not mean less warmth",
+                "doesn't mean less warmth"
+            ])
+            let preservesWarmth = containsAny(lower, [
+                "placement", "order", "warmth", "warm",
+                "reassurance"
+            ])
+            return !(answersNo && preservesWarmth)
+        }
+
+        if containsAny(latest, ["what did you miss", "what exactly did you miss"]) {
+            let ownsMiss = containsAny(lower, [
+                "i missed", "missed the hesitation", "missed the pushback"
+            ])
+            let namesBehavior = containsAny(lower, [
+                "reassurance", "warmth", "recommendation", "order",
+                "point arrived"
+            ])
+            return !(ownsMiss && namesBehavior)
+        }
+
+        if containsAny(latest, [
+            "test that without sounding harsh",
+            "test it without sounding harsh"
+        ]) {
+            let namesTest = containsAny(lower, ["test", "run ", "record"])
+            let preservesTone = containsAny(lower, [
+                "reassurance", "warmth", "warm", "tone", "harsh"
+            ])
+            return !(namesTest && preservesTone)
+        }
+
+        if latest.contains("said cool because"),
+           containsAny(latest, ["not to be rude", "did not want to be rude", "didn't want to be rude"]) {
+            let readsPoliteness = containsAny(lower, [
+                "polite", "not rude", "hesitation", "pushback"
+            ])
+            let changesRepair = containsAny(lower, [
+                "name the miss", "before the drill", "recommendation first",
+                "reassurance"
+            ])
+            return !(readsPoliteness && changesRepair)
+        }
+
+        if latest.contains("leadership update"),
+           containsAny(latest, ["what should i practice", "what do i practice"]) {
+            let namesLeadershipClose = containsAny(lower, [
+                "leadership", "final sentence", "close", "the ask",
+                "decision"
+            ])
+            let givesPracticeMove = containsAny(lower, [
+                "practice", "record", "run ", "75-second", "75 second"
+            ])
+            return !(namesLeadershipClose && givesPracticeMove)
+        }
+
+        if containsAny(latest, [
+            "i do not know the ask yet",
+            "i don't know the ask yet",
+            "i dont know the ask yet"
+        ]) {
+            let suppliesPlaceholder = containsAny(lower, [
+                "placeholder ask", "alignment on the next step",
+                "temporary ask", "provisional ask"
+            ])
+            return !(suppliesPlaceholder && containsAny(lower, [
+                "ask", "close", "final sentence"
+            ]))
+        }
+
+        if containsAny(latest, [
+            "what should i check after",
+            "what do i check after",
+            "what should i review after"
+        ]) {
+            let namesCheck = containsAny(lower, [
+                "check", "review", "listen for", "look for"
+            ])
+            let checksClose = containsAny(lower, [
+                "final", "last sentence", "close", "closing",
+                "the ask", "decision", "recap"
+            ])
+            return !(namesCheck && checksClose)
+        }
+
+        if containsAny(latest, [
             "what test", "test separates", "what separates"
         ]) {
             let namesTest = containsAny(lower, ["test", "run", "compare", "separates"])
             let namesOutcome = containsAny(lower, ["if ", "whether", "then", "compare"])
             return !(namesTest && namesOutcome)
+        }
+
+        if latest.contains("not my whole speaking style") {
+            let keepsClaimNarrow = containsAny(lower, [
+                "not your whole", "one answer", "one rep", "too thin",
+                "baseline", "broader style", "speaking style"
+            ])
+            let namesEvidenceBoundary = containsAny(lower, [
+                "different prompts", "under pressure", "repeated answers",
+                "more evidence", "before calling"
+            ])
+            return !(keepsClaimNarrow && namesEvidenceBoundary)
+        }
+
+        if containsAny(latest, [
+            "what would make you change the diagnosis",
+            "what would change your diagnosis"
+        ]) {
+            let namesRevision = containsAny(lower, [
+                "change the diagnosis", "would change", "change my view",
+                "update the diagnosis"
+            ])
+            let namesEvidenceCondition = containsAny(lower, [
+                "two ", "more than one", "repeated", "repeatability",
+                "repeatable", "across pressure"
+            ])
+            return !(namesRevision && namesEvidenceCondition)
+        }
+
+        if latest.contains("call it progress") {
+            let namesProgressBoundary = containsAny(lower, [
+                "call it progress", "progress only", "not a trend",
+                "two reps", "repeated"
+            ])
+            let namesObservableCheck = containsAny(lower, [
+                "verdict", "sentence one", "close", "final five",
+                "steady", "settled"
+            ])
+            return !(namesProgressBoundary && namesObservableCheck)
         }
 
         if containsAny(latest, [
@@ -5408,7 +5920,8 @@ actor AICoachChatService {
         if containsAny(lower, [
             "fillers because", "filler because", "filler words because",
             "fillers came because", "filler came because",
-            "fillers happened because", "filler happened because"
+            "fillers happened because", "filler happened because",
+            "fillers drifted in because", "filler drifted in because"
         ]) {
             return true
         }
@@ -5518,6 +6031,7 @@ actor AICoachChatService {
             "recommendation at the end",
             "recommendation came at the end",
             "recommendation landed at the end",
+            "recommendation arrived late",
             "point didn't lead",
             "point did not lead",
             "main point didn't lead",
@@ -5534,6 +6048,13 @@ actor AICoachChatService {
 
         return quoteGuard.sourceTexts.contains { source in
             let sourceLower = source.lowercased()
+            // A transcript can mention the recommendation near the start while
+            // explicitly saying it was delivered late (for example, "I waited
+            // too long to state the recommendation"). Position in this source
+            // string is not evidence of position in the described answer.
+            guard !sourceMentionsLateRecommendation(sourceLower) else {
+                return false
+            }
             guard let range = sourceLower.range(of: "recommendation") else {
                 return false
             }
@@ -6599,10 +7120,33 @@ actor AICoachChatService {
             system: system ?? ""
            ) != nil {
             switch issue {
-            case .missingInsightBridge, .missingPrescribedAction,
+            case .tooLong, .missingInsightBridge, .missingPrescribedAction,
+                 .unanchoredCoaching,
+                 .unengagedUserSpeechClaim, .overclaimsEvidence,
                  .semanticJudgement, .visionGate, .roboticPhrase:
                 return true
             default:
+                break
+            }
+        }
+        // This intent has a grounded transcript read and an explicit evidence
+        // check, so prefer its validated local reference over a second network
+        // call. Keep the broader critique/quote-sensitive paths on their
+        // existing provider policy; they can require nuance this shape cannot
+        // safely supply.
+        if turnAsksWhyAnswerLandedBadly(latestUserTurn),
+           sourceMentionsLateRecommendation(system ?? "") {
+            switch issue {
+            case .tooLong, .roboticPhrase, .bareClarification,
+                 .defensiveProductLanguage, .menuInsteadOfDecision,
+                 .missedTrustRepair, .missingPrescribedAction,
+                 .missingInsightBridge, .unanchoredCoaching,
+                 .overclaimsEvidence, .unrequestedNamedTechnique,
+                 .scaffoldLabel, .unengagedUserSpeechClaim,
+                 .visionGate, .semanticJudgement:
+                return true
+            case .unverifiedQuotedUserSpeech, .missingVerifiedExampleQuote,
+                 .ignoredCoachingExpertise, .repeatedProofTest:
                 break
             }
         }
@@ -6610,7 +7154,8 @@ actor AICoachChatService {
             return false
         }
         switch issue {
-        case .missedTrustRepair, .defensiveProductLanguage, .scaffoldLabel:
+        case .missedTrustRepair, .defensiveProductLanguage,
+             .scaffoldLabel, .visionGate, .semanticJudgement:
             return true
         case .roboticPhrase(let phrase):
             let lowerPhrase = phrase.lowercased()
@@ -6930,9 +7475,12 @@ actor AICoachChatService {
             return "Start with Authoritative because getting talked over is best trained with short verdicts that hold the floor. If the real pressure is senior-room calm, Executive presence is the comparison to test."
         }
 
+        if containsAny(lowerTurn, ["sound more engaging", "more engaging", "engaging"]) {
+            return "Engaging maps closest to Storytelling because the goal is more memorable shape; Warm is the comparison only if the gap is connection. Use the latest rep as the baseline, then test Storytelling once. What changed: did the room need more energy, or did the current voice feel too distant?"
+        }
+
         if containsAny(lowerTurn, [
-            "warmer", "warm", "cold", "switch", "change",
-            "sound more engaging", "engaging"
+            "warmer", "warm", "cold", "switch", "change"
         ]) {
             return "That warmer pull makes sense to test, but I would not treat it as decided yet. The closest real voice is Warm and welcoming because the concern is connection, not authority; what changed: one comment that felt cold, or repeated rooms where Authoritative stopped feeling like you?"
         }
@@ -7016,11 +7564,14 @@ actor AICoachChatService {
 
     private nonisolated static func firstFillerCount(in text: String) -> Int? {
         let pattern = #"(?i)\b(\d{1,3})\s+fillers?\b"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(
-                in: text,
-                range: NSRange(text.startIndex..., in: text)
-              ),
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return nil
+        }
+        let matches = regex.matches(
+            in: text,
+            range: NSRange(text.startIndex..., in: text)
+        )
+        guard let match = matches.last,
               match.numberOfRanges > 1,
               let range = Range(match.range(at: 1), in: text) else {
             return nil

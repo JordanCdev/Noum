@@ -502,7 +502,94 @@ struct CoachProviderChainTests {
         #expect(diagnostics.records.contains { record in
             record.provider == "OpenAI" &&
             record.outcome == .success &&
-            record.reason == "Typed assessment repair accepted before provider rewrite"
+            [
+                "Safe reference repair accepted before provider rewrite",
+                "Typed assessment repair accepted before provider rewrite"
+            ].contains(record.reason)
+        })
+    }
+
+    @Test func allowedLandingReadUsesSafeReferenceBeforeSecondProviderCall() async {
+        let diagnostics = CoachDiagnosticRecorderProbe()
+        var providerEvents: [CoachProviderAttemptEvent] = []
+        let turn = "Why did that answer land badly?"
+        let weakDraft = "Let's focus on the opening. State the decision first, give one reason, then stop."
+        let context = "COACH FORMULATION\n- Observable behavior: the recommendation arrived late."
+        let assessment = CoachAssessment(
+            turnDepth: .quickMove,
+            surface: .text,
+            questionRestatement: turn,
+            directVerdict: "The recommendation arrived late, so order is the next lever.",
+            confidence: 0.32,
+            evidenceUsed: ["The transcript places the recommendation after the setup."],
+            rubricScores: [],
+            missingEvidence: [],
+            nextProofTest: "Say the decision first, add one reason, then name the implication.",
+            responseMode: .immediateOnly,
+            toneMode: .prescribe,
+            repairFocus: nil
+        )
+        #expect(AICoachChatService.replyQualityIssue(
+            in: weakDraft,
+            latestUserTurn: turn,
+            systemContext: context,
+            turnDepth: .quickMove,
+            surface: .text
+        ) == .roboticPhrase("let's"))
+
+        let scripted = ScriptedCoachHTTP(results: [
+            .success(Self.openAIData(weakDraft))
+        ])
+        let service = AICoachChatService(
+            keyedProviders: { [.openAI] },
+            keyLookup: { _ in "test-key" },
+            localeSupportsAI: { true },
+            providerHTTP: { provider, endpoint, key, body in
+                await scripted.next(provider: provider, endpoint: endpoint, key: key, body: body)
+            },
+            diagnosticRecorder: { surface, providerName, model, outcome, reason, statusCode, startedAt, now in
+                diagnostics.record(
+                    surface: surface,
+                    providerName: providerName,
+                    model: model,
+                    outcome: outcome,
+                    reason: reason,
+                    statusCode: statusCode,
+                    startedAt: startedAt,
+                    now: now
+                )
+            }
+        )
+
+        let outcome = await service.reply(
+            history: [CoachMessage(role: .user, text: turn)],
+            systemPrompt: "You are Noum.",
+            userContext: context,
+            turnDepth: .quickMove,
+            assessment: assessment,
+            onProviderAttemptEvent: { event in
+                providerEvents.append(event)
+            }
+        )
+
+        guard case .reply(let reply) = outcome else {
+            Issue.record("Expected safe local landing read, got \(outcome)")
+            return
+        }
+        #expect(await scripted.callCount == 1)
+        #expect(CoachReplyPipeline.providerRetryCount(providerEvents) == 0)
+        #expect(reply.contains("recommendation arrived late"))
+        #expect(AICoachChatService.replyQualityIssue(
+            in: reply,
+            latestUserTurn: turn,
+            systemContext: context,
+            turnDepth: .quickMove,
+            surface: .text
+        ) == nil)
+        #expect(diagnostics.records.contains { record in
+            record.provider == "OpenAI" &&
+            record.outcome == .success &&
+            record.reason == "Safe reference repair accepted before provider rewrite"
         })
     }
 
@@ -801,8 +888,36 @@ struct CoachProviderChainTests {
     @Test func directFollowThroughRepairsPassTheShippingGates() throws {
         let cases: [(turn: String, system: String)] = [
             (
+                "What should I do with that filler count?",
+                "GLOBAL EXAMPLE\n- A different example had 6 fillers.\nRECENT (most-recent first)\n- The latest rep had 5 fillers.\n- Safe filler fact: filler appeared after the decision/recommendation line."
+            ),
+            (
+                "What should I listen for in the replay?",
+                "PERSONALIZATION FLOOR\n- no rated sessions yet\nUPCOMING MOMENT\n- Interview."
+            ),
+            (
+                "How far off am I from sounding authoritative?",
+                "RECENT (most-recent first)\n- latest rep: Timed Practice, 7/10, 1 filler, 60s\n- pace estimate: usable\nTRANSCRIPT\n- My recommendation is to keep the launch date."
+            ),
+            (
                 "How do I slow down without sounding unsure?",
                 "RECENT (most-recent first)\n- The last rep was clean but compressed."
+            ),
+            (
+                "Do I pause before every sentence?",
+                "RECENT (most-recent first)\n- The pressure rep had 6 fillers, mostly before the close."
+            ),
+            (
+                "What proves it worked?",
+                "RECENT (most-recent first)\n- Test one silent beat before the close on the same 60-second prompt."
+            ),
+            (
+                "I tried the close pause and fillers dropped, but I sounded stiff.",
+                "RECENT (most-recent first)\n- The close pause reduced fillers.\nRECENT USER TURNS\n- The user reports that the result sounded stiff."
+            ),
+            (
+                "How do I make that natural tomorrow?",
+                "RECENT (most-recent first)\n- The close pause reduced fillers but sounded stiff."
             ),
             (
                 "How do I sound more certain at the end?",
@@ -817,12 +932,116 @@ struct CoachProviderChainTests {
                 "RECENT USER TURNS\n- The last answer drifted after sentence two."
             ),
             (
+                "What do I run next?",
+                "RECENT (most-recent first)\n- The last recommendation rep had 5 fillers.\nRECENT USER TURNS\n- The decision line came first; the proof is the next boundary to test."
+            ),
+            (
+                "What next?",
+                "RECENT (most-recent first)\n- Closing strength lost force in recent reps.\nRECENT USER TURNS\n- The final sentence became a summary instead of the ask."
+            ),
+            (
+                "Why the close instead of the opening?",
+                "RECENT (most-recent first)\n- Closing strength lost force in recent reps.\nRECENT USER TURNS\n- The final sentence became a summary instead of the ask."
+            ),
+            (
+                "What is the exact rep?",
+                "RECENT (most-recent first)\n- The close is the target.\nRECENT USER TURNS\n- The last sentence should be the ask."
+            ),
+            (
+                "I rewrote the close and it became too direct.",
+                "RECENT (most-recent first)\n- The close is the target.\nRECENT USER TURNS\n- Keep the ask without making it abrupt."
+            ),
+            (
+                "What do I do after that rep?",
+                "RECENT (most-recent first)\n- The close can become pressure when the ask is too direct."
+            ),
+            (
+                "Do I change the whole answer?",
+                "RECENT USER TURNS\n- The decision line is cleaner, but the proof handoff still leaks."
+            ),
+            (
                 "What if the voice still sounds cold?",
                 "RECENT USER TURNS\n- The no-symbol version is easier to hear."
             ),
             (
+                "The no-symbol version is easier to hear.",
+                "RECENT USER TURNS\n- The user says the no-symbol version is easier to hear."
+            ),
+            (
+                "This is robotic and too much writing.",
+                "RECENT (most-recent first)\n- The last rep gives one usable opener signal."
+            ),
+            (
+                "What was generic about it?",
+                "RECENT (most-recent first)\n- The prior reply named a plan without naming the opener behavior."
+            ),
+            (
+                "So what should you remember next time?",
+                "RECENT USER TURNS\n- The prior repair still did not sound like a real coach; the user wanted a sharper read rather than more generic instructions."
+            ),
+            (
+                "Okay, that's cool. However, I don't feel like that answered what I meant.",
+                "RECENT (most-recent first)\n- The client answer put reassurance before the recommendation.\nRECENT USER TURNS\n- The polite wording hid stronger friction."
+            ),
+            (
+                "Does that make me sound less warm?",
+                "RECENT (most-recent first)\n- The client answer reassured before reaching the recommendation.\nRECENT USER TURNS\n- Put the recommendation first, then use warmth after clarity."
+            ),
+            (
+                "What did you miss?",
+                "RECENT (most-recent first)\n- The client answer put reassurance before the recommendation.\nRECENT USER TURNS\n- The polite pushback hid stronger friction."
+            ),
+            (
+                "How do I test that without sounding harsh?",
+                "RECENT (most-recent first)\n- The client answer put reassurance before the recommendation.\nRECENT USER TURNS\n- Test order without removing warmth."
+            ),
+            (
+                "I said cool because I was trying not to be rude.",
+                "RECENT (most-recent first)\n- The client answer put reassurance before the recommendation.\nRECENT USER TURNS\n- The polite wording hid a stronger no-fit signal."
+            ),
+            (
+                "I tried recommendation first and it sounded abrupt.",
+                "RECENT (most-recent first)\n- The client answer reassured before reaching the recommendation.\nRECENT USER TURNS\n- Recommendation first improved order; tone is the next boundary."
+            ),
+            (
                 "And stop saying practice more.",
                 "RECENT (most-recent first)\n- One recent timed rep gives a usable sample.\nRECENT USER TURNS\n- The prior answer gave generic advice instead of a coaching read."
+            ),
+            (
+                "So not my whole speaking style yet?",
+                "RECENT (most-recent first)\n- No rated sessions yet.\nRECENT USER TURNS\n- The user is creating an interview baseline and checking sentence one first."
+            ),
+            (
+                "Is 7/10 bad?",
+                "RECENT (most-recent first)\n- The transcript begins: My recommendation is to keep the launch date.\nVOICE TARGET\n- Authoritative."
+            ),
+            (
+                "What would make you change the diagnosis?",
+                "RECENT (most-recent first)\n- One timed rep is useful mechanics evidence, not an authority verdict.\nVOICE TARGET\n- Authoritative under pressure."
+            ),
+            (
+                "I did one pressure rep. It was cleaner but not settled.",
+                "RECENT (most-recent first)\n- The authority hypothesis still needs repeated pressure evidence.\nRECENT USER TURNS\n- The user completed one pressure rep."
+            ),
+            (
+                "I tried it and still filled before the proof.",
+                "RECENT (most-recent first)\n- The last recommendation rep had 5 fillers.\nRECENT USER TURNS\n- The decision line came first; the proof is the next boundary to test."
+            ),
+            (
+                "What should I look for before I call it progress?",
+                "RECENT (most-recent first)\n- The latest pressure rep was cleaner but not settled.\nVOICE TARGET\n- Authoritative."
+            ),
+            (
+                "What test separates those?",
+                "RECENT (most-recent first)\n- The recommendation arrived late.\nCOACH FORMULATION\n- Structure is observable; authority remains a hypothesis."
+            ),
+            (
+                "I have a leadership update tomorrow, what should I practice?",
+                "RECENT (most-recent first)\n- The latest timed rep had 1 filler and was light on the close.\nUPCOMING MOMENT\n- Leadership update tomorrow."
+            ),
+            (
+                "I do not know the ask yet.",
+                "RECENT (most-recent first)\n- The latest timed rep was light on the close.\nUPCOMING MOMENT\n- Leadership update tomorrow; the final sentence should be the ask."
             ),
             (
                 "I did the update. People asked for the timeline, not the decision.",
@@ -847,11 +1066,78 @@ struct CoachProviderChainTests {
         ]
 
         for testCase in cases {
-            let turnDepth: CoachTurnDepth = testCase.turn.lowercased().contains("stop saying practice")
-                ? .trustRepair
-                : .quickMove
+            let turnDepth: CoachTurnDepth = {
+                if testCase.turn.lowercased().contains("stop saying practice") {
+                    return .trustRepair
+                }
+                if testCase.turn == "This is robotic and too much writing." ||
+                    testCase.turn.contains("don't feel like that answered") {
+                    return .trustRepair
+                }
+                if testCase.turn.lowercased().contains("how far off") {
+                    return .deepAssessment
+                }
+                return .quickMove
+            }()
             let assessment: CoachAssessment? = {
                 switch testCase.turn {
+                case "How far off am I from sounding authoritative?":
+                    return CoachAssessment(
+                        turnDepth: .deepAssessment,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "I do not have enough evidence for an overall authoritative communication verdict yet.",
+                        confidence: 0.35,
+                        evidenceUsed: [
+                            "latest rep: Timed Practice, 7/10, 1 fillers, 60s",
+                            "pace estimate: 145 WPM"
+                        ],
+                        rubricScores: [],
+                        missingEvidence: [
+                            "Need repeated evidence across more than one clean rep before calling the user close overall."
+                        ],
+                        nextProofTest: "Run one stakes-style pressure proof: verdict first, one reason, clean stop, then compare it with a normal rep.",
+                        responseMode: .expandable,
+                        toneMode: .explain,
+                        repairFocus: nil
+                    )
+                case "Do I pause before every sentence?",
+                     "What proves it worked?",
+                     "I tried the close pause and fillers dropped, but I sounded stiff.",
+                     "How do I make that natural tomorrow?":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "Pacing is the next lever: keep the pause local to the close.",
+                        confidence: 0.26,
+                        evidenceUsed: ["The recent pressure rep had 6 fillers around the close."],
+                        rubricScores: [],
+                        missingEvidence: [],
+                        nextProofTest: "Use the same 60-second prompt and one silent beat before the final sentence.",
+                        responseMode: .immediateOnly,
+                        toneMode: .prescribe,
+                        repairFocus: nil
+                    )
+                case "What next?",
+                     "Why the close instead of the opening?",
+                     "What is the exact rep?",
+                     "I rewrote the close and it became too direct.",
+                     "What do I do after that rep?":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "The ending is the next lever: make the final sentence the ask or decision, then stop.",
+                        confidence: 0.30,
+                        evidenceUsed: ["Closing strength lost force in the recent rep."],
+                        rubricScores: [],
+                        missingEvidence: [],
+                        nextProofTest: "Use the same topic and make the final sentence the ask, then stop.",
+                        responseMode: .immediateOnly,
+                        toneMode: .prescribe,
+                        repairFocus: nil
+                    )
                 case "And stop saying practice more.":
                     return CoachAssessment(
                         turnDepth: .trustRepair,
@@ -866,6 +1152,233 @@ struct CoachProviderChainTests {
                         responseMode: .expandable,
                         toneMode: .repair,
                         repairFocus: "I leaned on generic advice instead of evidence"
+                    )
+                case "This is robotic and too much writing.":
+                    return CoachAssessment(
+                        turnDepth: .trustRepair,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "The repair is to name the miss first, then answer with one useful move.",
+                        confidence: 0.33,
+                        evidenceUsed: ["trust repair signal: I sounded robotic or too much like a report"],
+                        rubricScores: [],
+                        missingEvidence: ["A shorter behavior-first reply."],
+                        nextProofTest: "Use one clean opener in the next rep and stop after the point lands.",
+                        responseMode: .expandable,
+                        toneMode: .repair,
+                        repairFocus: "I sounded robotic or too much like a report"
+                    )
+                case "Okay, that's cool. However, I don't feel like that answered what I meant.":
+                    return CoachAssessment(
+                        turnDepth: .trustRepair,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "The repair is to answer the friction underneath the polite pushback.",
+                        confidence: 0.33,
+                        evidenceUsed: ["trust repair signal: I gave generic advice instead of evidence"],
+                        rubricScores: [],
+                        missingEvidence: ["A behavior-first answer to the user's actual friction."],
+                        nextProofTest: "Put the recommendation first, add one reassurance, then stop.",
+                        responseMode: .expandable,
+                        toneMode: .repair,
+                        repairFocus: "I gave generic advice instead of evidence"
+                    )
+                case "What was generic about it?":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "The prior reply named a plan without naming the behavior.",
+                        confidence: 0.33,
+                        evidenceUsed: ["The opener is the behavior worth training."],
+                        rubricScores: [],
+                        missingEvidence: [],
+                        nextProofTest: "Run a 45-second rep where sentence one lands before the explanation starts.",
+                        responseMode: .immediateOnly,
+                        toneMode: .explain,
+                        repairFocus: nil
+                    )
+                case "Does that make me sound less warm?":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "Salience is the next lever: add one concrete detail, then return to the ask.",
+                        confidence: 0.30,
+                        evidenceUsed: ["The recent client answer reassured before reaching the recommendation."],
+                        rubricScores: [],
+                        missingEvidence: [],
+                        nextProofTest: "Replay the latest rep with one concrete detail after the verdict, then return to the ask.",
+                        responseMode: .immediateOnly,
+                        toneMode: .explain,
+                        repairFocus: nil
+                    )
+                case "What did you miss?",
+                     "How do I test that without sounding harsh?",
+                     "I said cool because I was trying not to be rude.":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "The useful read is order: reassurance came before the recommendation.",
+                        confidence: 0.30,
+                        evidenceUsed: ["The recent client answer reassured before reaching the recommendation."],
+                        rubricScores: [],
+                        missingEvidence: [],
+                        nextProofTest: "Run one client concern answer with the recommendation first and one reassurance second.",
+                        responseMode: .immediateOnly,
+                        toneMode: .explain,
+                        repairFocus: nil
+                    )
+                case "I tried recommendation first and it sounded abrupt.":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "Order improved faster than tone, so change only the bridge after the recommendation.",
+                        confidence: 0.30,
+                        evidenceUsed: ["The user reports the recommendation-first version sounded abrupt."],
+                        rubricScores: [],
+                        missingEvidence: [],
+                        nextProofTest: "Use one reassurance after the recommendation and before the reason.",
+                        responseMode: .immediateOnly,
+                        toneMode: .prescribe,
+                        repairFocus: nil
+                    )
+                case "So not my whole speaking style yet?":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "The opening is the next lever: put the verdict in sentence one, then prove it once.",
+                        confidence: 0.20,
+                        evidenceUsed: ["No rated sessions yet; this is a first interview baseline."],
+                        rubricScores: [],
+                        missingEvidence: ["Repeated answers across different interview prompts under pressure."],
+                        nextProofTest: "Test three different interview prompts, including one under pressure, before widening the claim.",
+                        responseMode: .immediateOnly,
+                        toneMode: .explain,
+                        repairFocus: nil
+                    )
+                case "Is 7/10 bad?":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "Pacing is the next lever: add one deliberate beat before the reason, then judge the same answer.",
+                        confidence: 0.36,
+                        evidenceUsed: ["One recent timed rep gives a usable mechanics sample."],
+                        rubricScores: [],
+                        missingEvidence: ["Repeated pressure evidence before calling the authority goal ready."],
+                        nextProofTest: "Repeat the latest timed rep with one silent beat after sentence one.",
+                        responseMode: .immediateOnly,
+                        toneMode: .explain,
+                        repairFocus: nil
+                    )
+                case "What would make you change the diagnosis?":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "The diagnosis should move only when the result repeats under pressure.",
+                        confidence: 0.36,
+                        evidenceUsed: ["One timed rep gives a usable mechanics sample."],
+                        rubricScores: [],
+                        missingEvidence: ["A repeated pressure result with the verdict first and a settled close."],
+                        nextProofTest: "Run the next rep under the same conditions and compare the close.",
+                        responseMode: .immediateOnly,
+                        toneMode: .explain,
+                        repairFocus: nil
+                    )
+                case "I did one pressure rep. It was cleaner but not settled.":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "Pressure is the next lever: repeat the same answer and protect the close.",
+                        confidence: 0.36,
+                        evidenceUsed: ["The user reports one pressure rep was cleaner but not settled."],
+                        rubricScores: [],
+                        missingEvidence: ["A second pressure result showing the close stays settled."],
+                        nextProofTest: "Run the next rep with the same verdict and slow only the final five words.",
+                        responseMode: .immediateOnly,
+                        toneMode: .validate,
+                        repairFocus: nil
+                    )
+                case "I tried it and still filled before the proof.":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "Pacing is the next lever: move the pause to the proof boundary.",
+                        confidence: 0.34,
+                        evidenceUsed: ["The user reports that the filler still appeared before the proof."],
+                        rubricScores: [],
+                        missingEvidence: [],
+                        nextProofTest: "Run the next rep with a one-beat pause before the proof and no restart.",
+                        responseMode: .immediateOnly,
+                        toneMode: .prescribe,
+                        repairFocus: nil
+                    )
+                case "What should I look for before I call it progress?":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "One cleaner rep is a signal, not a trend.",
+                        confidence: 0.36,
+                        evidenceUsed: ["The latest pressure rep was cleaner but not settled."],
+                        rubricScores: [],
+                        missingEvidence: ["A repeated pressure result with the same verdict and steady close."],
+                        nextProofTest: "Run the next pressure rep with the verdict first and check the final five words.",
+                        responseMode: .immediateOnly,
+                        toneMode: .validate,
+                        repairFocus: nil
+                    )
+                case "What test separates those?":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "Treat structure as the observable hypothesis and authority as unproven.",
+                        confidence: 0.33,
+                        evidenceUsed: ["The recommendation arrived late in the available transcript."],
+                        rubricScores: [],
+                        missingEvidence: ["A controlled comparison that changes order without changing voice or filler count."],
+                        nextProofTest: "Run the same answer both as-is and verdict-first, then compare the result.",
+                        responseMode: .immediateOnly,
+                        toneMode: .explain,
+                        repairFocus: nil
+                    )
+                case "I have a leadership update tomorrow, what should I practice?":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "The ending is the next lever: make the final sentence the ask or decision, then stop.",
+                        confidence: 0.31,
+                        evidenceUsed: ["The latest timed rep was solid on fillers but light on the close."],
+                        rubricScores: [],
+                        missingEvidence: [],
+                        nextProofTest: "Give the update as decision, one business reason, and the ask in under 75 seconds.",
+                        responseMode: .immediateOnly,
+                        toneMode: .prescribe,
+                        repairFocus: nil
+                    )
+                case "I do not know the ask yet.":
+                    return CoachAssessment(
+                        turnDepth: .quickMove,
+                        surface: .text,
+                        questionRestatement: testCase.turn,
+                        directVerdict: "The ending is still the lever, even while the business ask is provisional.",
+                        confidence: 0.31,
+                        evidenceUsed: ["The leadership update needs a final-sentence ask."],
+                        rubricScores: [],
+                        missingEvidence: [],
+                        nextProofTest: "Use a placeholder ask and rehearse the close once.",
+                        responseMode: .immediateOnly,
+                        toneMode: .prescribe,
+                        repairFocus: nil
                     )
                 case "I did the update. People asked for the timeline, not the decision.":
                     return CoachAssessment(
@@ -901,17 +1414,135 @@ struct CoachProviderChainTests {
                     return nil
                 }
             }()
-            let recentCoachReplies: [String] = testCase.turn == "And stop saying practice more."
-                ? ["Fair push. The recommendation should come first, followed by one proof point."]
-                : []
+            let recentCoachReplies: [String] = {
+                switch testCase.turn {
+                case "And stop saying practice more.":
+                    return ["Fair push. The recommendation should come first, followed by one proof point."]
+                case "This is robotic and too much writing.":
+                    return ["The prior reply sounded like a report instead of a coach read."]
+                case "What was generic about it?":
+                    return ["The prior answer named a plan without naming the behavior."]
+                case "Okay, that's cool. However, I don't feel like that answered what I meant.":
+                    return ["The polite wording hid stronger friction than the words suggested."]
+                case "Do I pause before every sentence?":
+                    return ["Replace the filler urge with one silent beat before the final sentence."]
+                case "What proves it worked?":
+                    return ["Pause only where the pressure leaks: before the close."]
+                case "I tried the close pause and fillers dropped, but I sounded stiff.":
+                    return ["Use the same prompt and compare fillers after the pause point."]
+                case "How do I make that natural tomorrow?":
+                    return ["Keep the beat only before the final sentence and add one natural phrase after it."]
+                case "What next?":
+                    return ["Choose the highest-leverage next action instead of offering a broad menu."]
+                case "Why the close instead of the opening?":
+                    return ["The recurring close is the lever; rewrite only the final sentence."]
+                case "What is the exact rep?":
+                    return ["The close is where authority leaks because the answer ends as a summary."]
+                case "I rewrote the close and it became too direct.":
+                    return ["Use 60 seconds and make the last sentence the ask."]
+                case "What do I do after that rep?":
+                    return ["Keep the ask and add one reason before it."]
+                case "Does that make me sound less warm?":
+                    return ["Put the recommendation first, add one reassurance after it, then stop."]
+                case "What did you miss?":
+                    return ["The polite pushback hid stronger friction than the words suggested."]
+                case "How do I test that without sounding harsh?":
+                    return ["The actual read is order: warmth came before the recommendation."]
+                case "I said cool because I was trying not to be rude.":
+                    return ["Run one client concern answer without removing warmth."]
+                case "I tried recommendation first and it sounded abrupt.":
+                    return ["Use this order: recommendation, one reason, one reassurance, then stop."]
+                case "So not my whole speaking style yet?":
+                    return ["For the first baseline, listen to sentence one and rerun it if the answer starts with background."]
+                case "Is 7/10 bad?":
+                    return ["You are not proven authoritative overall yet; one score is only mechanics evidence."]
+                case "What would make you change the diagnosis?":
+                    return ["A 7/10 is one useful mechanics signal, not an authority verdict."]
+                case "I did one pressure rep. It was cleaner but not settled.":
+                    return ["Two clean pressure reps would change the diagnosis; repeatability is the evidence threshold."]
+                case "I tried it and still filled before the proof.":
+                    return ["Use a 45-second recommendation prompt: decision, one reason, then stop cleanly."]
+                case "What should I look for before I call it progress?":
+                    return ["Run a second pressure rep with the same verdict and slow only the final five words."]
+                case "What test separates those?":
+                    return ["The observable issue is order; the authority claim is not proven by this transcript."]
+                case "I have a leadership update tomorrow, what should I practice?":
+                    return ["The recent timed rep was solid on fillers but light on the close."]
+                case "I do not know the ask yet.":
+                    return ["Practice one leadership update and make the final sentence the ask, not a summary."]
+                default:
+                    return []
+                }
+            }()
+            let repairIssue: CoachChatReplyQualityIssue = {
+                switch testCase.turn {
+                case "How far off am I from sounding authoritative?":
+                    return .overclaimsEvidence
+                case "Do I pause before every sentence?":
+                    return .roboticPhrase("let's")
+                case "The no-symbol version is easier to hear.":
+                    return .roboticPhrase("understood")
+                case "This is robotic and too much writing?",
+                     "This is robotic and too much writing.",
+                     "What was generic about it?",
+                     "Okay, that's cool. However, I don't feel like that answered what I meant.":
+                    return .roboticPhrase("let us")
+                case "What is the exact rep?":
+                    return .unanchoredCoaching
+                case "So not my whole speaking style yet?":
+                    return .unengagedUserSpeechClaim
+                case "Is 7/10 bad?", "What should I look for before I call it progress?":
+                    return .overclaimsEvidence
+                case "What would make you change the diagnosis?":
+                    return .semanticJudgement(.missingIntentFit)
+                case "Does that make me sound less warm?":
+                    return .semanticJudgement(.missingIntentFit)
+                case "What did you miss?", "How do I test that without sounding harsh?":
+                    return .missingInsightBridge
+                case "I said cool because I was trying not to be rude.":
+                    return .unanchoredCoaching
+                case "I tried recommendation first and it sounded abrupt.":
+                    return .tooLong
+                default:
+                    return .missingInsightBridge
+                }
+            }()
             let expected = try #require(
                 AICoachChatService.directFollowThroughRepairReferenceShape(
                     for: testCase.turn,
                     system: testCase.system
                 )
             )
+            let expectedQualityIssue = AICoachChatService.replyQualityIssue(
+                in: expected,
+                latestUserTurn: testCase.turn,
+                systemContext: testCase.system,
+                recentCoachReplies: recentCoachReplies,
+                turnDepth: turnDepth,
+                surface: .text
+            )
+            let expectedSemanticIssue = AICoachChatService.semanticQualityIssue(
+                in: expected,
+                latestUserTurn: testCase.turn,
+                systemContext: testCase.system,
+                turnDepth: turnDepth,
+                assessment: assessment
+            )
+            let expectedVision = AICoachChatService.coachVisionEvaluation(
+                reply: expected,
+                latestUserTurn: testCase.turn,
+                systemContext: testCase.system,
+                recentCoachReplies: recentCoachReplies,
+                turnDepth: turnDepth,
+                assessment: assessment,
+                surface: .text
+            )
+
+            #expect(expectedQualityIssue == nil, "\(testCase.turn): \(String(describing: expectedQualityIssue))")
+            #expect(expectedSemanticIssue == nil, "\(testCase.turn): \(String(describing: expectedSemanticIssue))")
+            #expect(expectedVision.passesProductionFloor, "\(testCase.turn): \(expectedVision)")
             let repaired = try #require(AICoachChatService.safeReferenceRepairReply(
-                issue: .missingInsightBridge,
+                issue: repairIssue,
                 latestUserTurn: testCase.turn,
                 system: testCase.system,
                 quoteGuard: nil,
@@ -1021,7 +1652,10 @@ struct CoachProviderChainTests {
         #expect(diagnostics.records.contains { record in
             record.provider == "OpenAI" &&
             record.outcome == .success &&
-            record.reason == "Typed assessment repair accepted before provider rewrite"
+            [
+                "Safe reference repair accepted before provider rewrite",
+                "Typed assessment repair accepted before provider rewrite"
+            ].contains(record.reason)
         })
     }
 
@@ -1134,7 +1768,26 @@ struct CoachProviderChainTests {
         ).passesSeniorCoachFloor)
     }
 
-    @Test func overclaimRepairPromptPinsEvidenceSourceOfTruth() async throws {
+    @Test func quoteGuardRejectsRecommendationArrivedLateWhenTranscriptLeads() {
+        let turn = "Is 7/10 bad?"
+        let transcript = "My recommendation is to keep the launch date because the migration risk is contained."
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: [transcript],
+            latestUserTurn: turn
+        )
+
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your last rep was clean, but the recommendation arrived late, so put it in sentence one.",
+            latestUserTurn: turn,
+            quoteGuard: guardContext,
+            systemContext: "TRANSCRIPT\n- \(transcript)",
+            turnDepth: .quickMove
+        )
+
+        #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func overclaimRepairUsesEvidenceSourceOfTruthBeforeProviderRewrite() async throws {
         let turn = "Why did that answer land badly?"
         let transcript = "I waited too long to state the recommendation, then gave the context after it."
         let repaired = "From the transcript, the recommendation arrived late, so say the decision first, add one reason, then name the implication."
@@ -1149,8 +1802,7 @@ struct CoachProviderChainTests {
             systemContext: "TRANSCRIPT\n- \(transcript)"
         ) == nil)
         let scripted = ScriptedCoachHTTP(results: [
-            .success(Self.openAIData("Your last rep led with the point, but it lacked a reason, so give one proof point next time.")),
-            .success(Self.openAIData(repaired))
+            .success(Self.openAIData("Your last rep led with the point, but it lacked a reason, so give one proof point next time."))
         ])
         let service = AICoachChatService(
             keyedProviders: { [.openAI] },
@@ -1177,16 +1829,14 @@ struct CoachProviderChainTests {
         #expect(text == repaired)
 
         let systemMessages = await scripted.systemMessages
-        #expect(systemMessages.count == 2)
+        #expect(await scripted.callCount == 1)
+        #expect(systemMessages.count == 1)
         let systemMessage = try #require(systemMessages.last)
 
-        #expect(systemMessage.contains("Evidence overclaim repair"))
-        #expect(systemMessage.contains("source of truth"))
-        #expect(systemMessage.contains("recommendation arrived late"))
-        #expect(systemMessage.contains("do not say the rep led with the point"))
+        #expect(!systemMessage.contains("Evidence overclaim repair"))
     }
 
-    @Test func safeReferenceRepairResolvesEvidenceBoundaryAfterProviderRepairMiss() async throws {
+    @Test func safeReferenceRepairResolvesEvidenceBoundaryBeforeProviderRepair() async throws {
         let diagnostics = CoachDiagnosticRecorderProbe()
         let turn = "Why did that answer land badly?"
         let transcript = "I waited too long to state the recommendation, then gave the context after it."
@@ -1202,8 +1852,7 @@ struct CoachProviderChainTests {
             systemContext: "TRANSCRIPT\n- \(transcript)"
         ) == nil)
         let scripted = ScriptedCoachHTTP(results: [
-            .success(Self.openAIData("Your last rep led with the point, but it lacked a reason, so give one proof point next time.")),
-            .success(Self.openAIData("Your last rep put the recommendation right up front, but it needed a reason, so lead with the point and add one implication."))
+            .success(Self.openAIData("Your last rep led with the point, but it lacked a reason, so give one proof point next time."))
         ])
         let service = AICoachChatService(
             keyedProviders: { [.openAI] },
@@ -1240,12 +1889,12 @@ struct CoachProviderChainTests {
             return
         }
         #expect(text == safeRepair)
-        #expect(await scripted.callCount == 2)
+        #expect(await scripted.callCount == 1)
         #expect(diagnostics.records.contains { record in
             record.surface == "Ask Noum chat" &&
             record.provider == "OpenAI" &&
             record.outcome == .success &&
-            record.reason == "Safe reference repair accepted"
+            record.reason == "Safe reference repair accepted before provider rewrite"
         })
         #expect(!diagnostics.records.contains { record in
             record.reason == "All chat providers failed quality gate"

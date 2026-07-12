@@ -2344,6 +2344,10 @@ struct CoachTypedFallbackTests {
             #expect(lower.contains("not proven authoritative overall"))
             #expect(!lower.contains("you're close"))
             #expect(!lower.contains("you are close"))
+            #expect(!lower.contains("the evidence i can use is latest rep"))
+            #expect(!lower.contains("what is still missing is need"))
+            #expect(lower.contains("the usable evidence is the latest timed rep"))
+            #expect(lower.contains("i still need repeated evidence"))
             #expect(AICoachChatService.replyQualityIssue(
                 in: text,
                 latestUserTurn: userTurn,
@@ -3167,8 +3171,13 @@ struct CoachTypedFallbackTests {
 
         switch outcome {
         case .reply(let text):
+            let lower = text.lowercased()
             #expect(text.contains("Fair push"))
-            #expect(text.lowercased().contains("report"))
+            #expect(lower.contains("robotic"))
+            #expect(lower.contains("last rep"))
+            #expect(lower.contains("one clean opener"))
+            #expect(lower.contains("stop"))
+            #expect(!lower.contains("let us"))
             #expect(AICoachChatService.replyQualityIssue(
                 in: text,
                 latestUserTurn: userTurn,

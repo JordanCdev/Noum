@@ -391,6 +391,55 @@ struct CoachReliabilityGateTests {
         #expect(!verdict.blocked)
     }
 
+    @Test func trustRepairColdReportOwnershipNamesTheRepair() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Good call. That read like a cold report and it was too much to take in at once. Your last rep was clean, but the recommendation arrived late, so start with the recommendation in the first sentence, then stop.",
+            previousCoachReply: "Earlier generic report.",
+            latestUserTurn: "This is robotic and too much writing.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+
+        #expect(!verdict.issues.contains(.thinTrustRepair))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func politePushbackGenericTipSheetOwnershipNamesTheRepair() {
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: "Fair push. That read like a generic tip sheet instead of looking at your actual practice. In your last rep, reassurance came first and the recommendation arrived late, so state the recommendation in the first sentence next time.",
+            previousCoachReply: "Earlier generic advice.",
+            latestUserTurn: "Okay, that's cool. However, I don't feel like that answered what I meant.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+
+        #expect(!verdict.issues.contains(.thinTrustRepair))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func rejectedPracticeFollowThroughAcknowledgesPushbackAndPasses() throws {
+        let turn = "And stop saying practice more."
+        let reply = try #require(
+            AICoachChatService.directFollowThroughRepairReferenceShape(for: turn)
+        )
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: reply,
+            previousCoachReply: "Fair push. The recommendation should come first, followed by one proof point.",
+            latestUserTurn: turn,
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: nil
+        )
+
+        #expect(reply.hasPrefix("Fair push."))
+        #expect(!verdict.issues.contains(.noAttunementOnPushback))
+        #expect(!verdict.issues.contains(.thinTrustRepair))
+        #expect(!verdict.issues.contains(.genericRepairScaffolded))
+        #expect(!verdict.blocked)
+    }
+
     @Test func trustRepairNamesGenericDrillAsTheMiss() {
         let verdict = CoachReliabilityGate.evaluate(
             replyText: "Fair push. I leaned on a generic drill instead of coaching how you sound. In your last rep, the recommendation arrived late, so put it in sentence one.",
@@ -506,6 +555,22 @@ struct CoachReliabilityGateTests {
             replyText: "Fair push: I leaned on generic advice instead of evidence. The ordering signal is warmth before the recommendation. Test recommendation-first, then check whether warmth comes after the point.",
             previousCoachReply: "Try another communication drill.",
             latestUserTurn: "This still feels too generic.",
+            turnDepth: .trustRepair,
+            assessment: Self.quickMoveAssessment(),
+            evidenceCoverage: 0.5
+        )
+
+        #expect(!verdict.issues.contains(.genericRepairScaffolded))
+        #expect(!verdict.issues.contains(.thinTrustRepair))
+        #expect(!verdict.blocked)
+    }
+
+    @Test func genericDrillRepairWithConcreteRecommendationOrderPasses() {
+        let reply = "Good call. I leaned on a generic drill instead of looking at what happened in your last rep. Because you spent the first part reassuring the client, the recommendation moved all the way to the end. Try the same response again, but say the recommendation in the first sentence, then use the reassurance to back it up."
+        let verdict = CoachReliabilityGate.evaluate(
+            replyText: reply,
+            previousCoachReply: "Run another communication drill.",
+            latestUserTurn: "This still feels too generic, like you're just giving me another drill.",
             turnDepth: .trustRepair,
             assessment: Self.quickMoveAssessment(),
             evidenceCoverage: 0.5

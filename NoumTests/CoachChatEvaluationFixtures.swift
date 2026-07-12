@@ -2220,8 +2220,18 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
                 "latestTurnReadinessTelemetryFailures=\(latestReadinessTelemetryFailureIDs.joined(separator: ","))"
             )
         }
-        let trajectoryCacheHitCount = rows.filter { $0.trajectoryCacheHit == true }.count
-        let minimumTrajectoryCacheHitCount = Self.minimumTrajectoryCacheHitCount(for: rows.count)
+        // Latest-turn fixtures intentionally represent independent users, so
+        // their trajectories should usually be cold. Cache reuse is exercised
+        // by later turns in the detailed conversations. Audit the full live
+        // operational set instead of rejecting genuine warm-conversation hits
+        // merely because the independent fixture slice has none.
+        let operationalRows = rows + detailedLongFormRows.flatMap(\.rows)
+        let trajectoryCacheHitCount = operationalRows.filter {
+            $0.trajectoryCacheHit == true
+        }.count
+        let minimumTrajectoryCacheHitCount = Self.minimumTrajectoryCacheHitCount(
+            for: operationalRows.count
+        )
         if trajectoryCacheHitCount < minimumTrajectoryCacheHitCount {
             reasons.append(
                 "weakTrajectoryCacheCoverage=\(trajectoryCacheHitCount)/\(minimumTrajectoryCacheHitCount)"
@@ -2383,11 +2393,15 @@ struct CoachLiveProviderSweepEvidence: Codable, Equatable {
     private static func genericPlaceholderReply(_ value: String?) -> Bool {
         let normalized = normalizedReplyKey(value)
         guard !normalized.isEmpty else { return false }
+        if normalized == "placeholder" ||
+            normalized.contains("placeholder reply") ||
+            normalized.contains("placeholder coach reply") {
+            return true
+        }
         return [
             "focused coach reply with concrete evidence",
             "grounded coach reply with a proof test",
             "generic coach reply",
-            "placeholder",
             "practice more and communicate clearly",
             "based on your data",
             "keep practicing and track your progress"
