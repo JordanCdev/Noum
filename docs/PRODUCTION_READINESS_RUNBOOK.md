@@ -7,6 +7,31 @@ TestFlight, and proof that Chat with Noum is ready for production use. A green
 local eval or smoke flow is evidence, but it is not enough to claim production
 readiness.
 
+## Current Recovery Status (2026-07-11)
+
+**Release verdict: NO-GO for external TestFlight or App Store release.**
+
+- The production transcription route now exists: the iOS release path calls
+  the authenticated, App Check-enforced Firebase `transcriptionToken` callable,
+  which rate-limits by Firebase UID and returns short-lived Deepgram access from
+  a server-only Secret Manager credential. This is a configured production
+  boundary, not proof that real-device recording succeeds.
+- The historical Deepgram/AWS credential incident in
+  `docs/SECURITY_deepgram_key_endpoint.md` remains open. The replacement path
+  does not revoke the exposed legacy credentials, disable every legacy route,
+  or provide the missing usage and billing audit.
+- `https://noum-d0b6f.web.app/privacy` is live and serves the current Noum
+  policy. The custom `noum.app` domain is still parked at GoDaddy; it must not be
+  described as connected to Firebase Hosting until DNS, TLS, and policy content
+  are verified.
+- The repository's hardened social rules and functions must **not** be deployed
+  until legacy social data is backed up and quarantined, the explicit cutover is
+  complete, and a trusted server-side evidence producer exists. Client-authored
+  ratings or results are not acceptable production evidence.
+- Sign in with Apple provider configuration, paid-team archive signing,
+  App Store Connect StoreKit verification, and the signed-device TestFlight
+  sweep remain blocked. Simulator evidence cannot close these items.
+
 ## Fast Verdict
 
 ```bash
@@ -74,6 +99,10 @@ The operational live probe is narrower: it checks the public privacy URL only.
 It does not prove Firestore rule deployment, TestFlight upload, App Store privacy
 review, or release-blocking bug triage.
 
+At present, a successful privacy probe applies to the Firebase Hosting
+`web.app` URL. It does not prove that `noum.app` is serving Noum content while
+the registrar DNS remains parked.
+
 ## Live Cloud Operations Probe
 
 With an authenticated `gcloud` identity that can read the production project,
@@ -94,6 +123,40 @@ This is current cloud-configuration evidence, not signed-device evidence. It
 does not prove that App Attest succeeds on an archived build, that StoreKit
 entitlements match App Store Connect, or that a real microphone session reaches
 Deepgram and finalizes correctly.
+
+The probe's Deepgram checks validate the replacement Firebase boundary without
+reading its secret. They do not contain the separate historical incident; that
+requires the closure evidence listed in
+`docs/SECURITY_deepgram_key_endpoint.md`.
+
+## Protected Social Deployment Gate
+
+Do not run a blanket Firestore-rules or Functions deployment from the current
+repository while this gate is open. The social contract is a coordinated data
+migration and server-authority change, not an independent rules update.
+
+Before deploying the reviewed social rules and functions together:
+
+1. Back up the production legacy social collections and record inventory
+   fingerprints and counts.
+2. Obtain explicit approval for the legacy-data disposition, then quarantine
+   the client-authored public profiles and league rows. Do not promote their
+   ratings, streaks, or results into trusted server state.
+3. Complete and verify the one-time social reference cutover. Account deletion
+   must fail safely before cutover without leaving a deletion tombstone or
+   discarding either the legacy or current cleanup worklist.
+4. Deploy a trusted server-side session-evidence producer that derives eligible
+   competitive results from authenticated, immutable recording evidence. The
+   `_verifiedSessionEvidence` consumer contract alone is not a producer.
+5. Rerun Functions lint/build/unit tests and Firestore emulator tests for forged
+   ratings, cross-user reads/writes, malformed challenges, replayed results,
+   deletion retries, and pre-cutover failure cleanup.
+6. Perform a dry-run inventory immediately before the coordinated deployment,
+   deploy rules/functions, verify the cutover marker and callable-only reads,
+   then complete a rollback-aware production smoke test.
+
+Until every step passes, keep league and challenge actions unavailable in the
+client. A disabled social surface is safer than accepting untrusted progress.
 
 ## Local Evidence Path
 
@@ -118,8 +181,8 @@ VISION blockers unless the external sidecar artifacts below are present in
 | `noLiveProviderTranscriptSweep` | `coach-live-eval-v1.json` | Real provider transcript sweep over the required app-path fixtures, with `sourceGitCommit` and `sourceCoachFingerprint` matching the source sidecars. |
 | `noProfessionalCoachCalibration` | `coach-chat-conversation-expert-calibration-results-v2.json` | Blinded professional-coach reviews for the required calibration packet, meeting the rubric and review-count floor. |
 | `noRealUserLongitudinalTransferOutcomes` | `coach-real-user-transfer-outcomes-v2.json` | Closed-beta real-user transfer outcomes with follow-up delay, real-world moments, linked interventions, and evidence references. |
-| `noRealDeviceTestFlightVerification` | `coach-real-device-testflight-qa-v2.json` | Physical-device TestFlight verification for `liveActivity`, `aiPromptLatency`, `soundscapeAudioSession`, and `paywallPurchase`. |
-| `operationalLaunchChecklistIncomplete` | `coach-operational-launch-checklist-v2.json` | M14 launch checklist: Firestore rules, privacy URL, Settings privacy link, App Store privacy disclosures, TestFlight upload, and release-blocking bug triage. |
+| `noRealDeviceTestFlightVerification` | `coach-real-device-testflight-qa-v2.json` | Physical-device TestFlight verification for App Check, real-microphone transcription, consent/offline/reconnect behavior, authentication, deletion, notifications, widgets, Live Activities, accessibility, and StoreKit purchase/restore. |
+| `operationalLaunchChecklistIncomplete` | `coach-operational-launch-checklist-v2.json` | M14 launch checklist: historical credential-incident closure, guarded social cutover, hosted privacy and custom-domain verification, Apple provider/signing, App Store privacy disclosures and StoreKit configuration, TestFlight upload, and release-blocking bug triage. |
 
 Do not create placeholder sidecars. `{}` files now fail the Python readiness
 preflight, and missing proof should stay missing.
@@ -148,6 +211,13 @@ ready only when:
 - the app-path report passes local score, real-pipeline, and trace-quality gates
 - the VISION readiness gate exits 0
 - Maestro smoke flows pass on the installed simulator build
+- the historical Deepgram/AWS credential incident has documented closure
+- the legacy social backup/quarantine, cutover, trusted evidence producer, and
+  coordinated rules/functions deployment have all passed
+- Firebase Hosting privacy content is live and the `noum.app` custom domain is
+  no longer parked
+- Sign in with Apple, paid-team archive signing, and App Store Connect StoreKit
+  products are configured and verified
 - real-device TestFlight evidence is attached
 - external coach calibration and longitudinal user outcomes are attached
 - the operational launch checklist is complete against the release candidate

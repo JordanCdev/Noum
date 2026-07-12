@@ -44,9 +44,12 @@ Combined verification on iOS 26.4 includes a full simulator build, 38 focused
 unit/contract tests, an erased-simulator production onboarding smoke, the
 Review-to-Timed end-to-end UI test, built-manifest and binary inspection, and a
 five-tab light screenshot sweep plus the targeted Review detail capture. The
-hosted `public/privacy.html` source is updated but deployment remains an M14
+hosted policy is now deployed at `https://noum-d0b6f.web.app/privacy`; the
+custom `noum.app` DNS still resolves to GoDaddy parking and remains an M14
 operational step. Auto-guided first-rep launch preparation remains default-off
-pending real-device felt QA.
+pending real-device felt QA. The wider release-recovery verdict remains no-go;
+see `docs/PRODUCTION_READINESS_RUNBOOK.md` for the active security, social,
+Apple/StoreKit, and signed-device gates.
 
 ## 2026-07-11 — Home, practice, and Path production polish
 
