@@ -31,6 +31,10 @@ import {
   CHALLENGE_DOCUMENT_SCHEMA_VERSION,
   CHALLENGE_REACTION_HOUR_LIMIT,
   CHALLENGE_REACTION_MINUTE_LIMIT,
+  LEAGUE_LIST_READ_HOUR_LIMIT,
+  LEAGUE_LIST_READ_MINUTE_LIMIT,
+  PEER_PROFILE_READ_HOUR_LIMIT,
+  PEER_PROFILE_READ_MINUTE_LIMIT,
   SOCIAL_SCHEMA_VERSION,
   advanceSocialState,
   assertSocialReferenceCutoverComplete,
@@ -39,10 +43,12 @@ import {
   challengeSide,
   challengeSubmissionDocument,
   combinedChallengeDocument,
+  currentTrustedLeagueBucket,
   profileFromSocialState,
   promptDigest,
   socialDateMilliseconds,
   socialReferenceManifestIncludingChallenge,
+  socialReferenceManifestUpdatingLeagueMembership,
   stableLegacyUUID,
   storedSocialState,
   validateChallengeSubmission,
@@ -57,7 +63,6 @@ import {
   validateStoredChallenge,
   validateStoredPublicProfile,
   validateSubmitChallengeResultRequest,
-  validateTrustedSocialState,
   validateVerifiedSessionEvidence,
   type ChallengeSubmission,
   type PublicProfileEnvelope,
@@ -833,7 +838,9 @@ function socialProfileDisplayName(value: unknown): string {
   return value.displayName;
 }
 
-type SocialRateOperation = "challengeCreate" | "challengeReaction";
+type SocialRateOperation =
+  "challengeCreate" | "challengeReaction" |
+  "peerProfileRead" | "leagueListRead";
 
 /**
  * Rejects every social mutation while account deletion is pending.
@@ -908,6 +915,12 @@ export const getPeerProfile = onCall(
         "Choose another speaker's profile."
       );
     }
+    await enforceSocialRateLimit(
+      uid,
+      "peerProfileRead",
+      PEER_PROFILE_READ_MINUTE_LIMIT,
+      PEER_PROFILE_READ_HOUR_LIMIT
+    );
     const firestore = getFirestore();
     const snapshots = await firestore.getAll(
       firestore.collection("_accountDeletionState").doc(uid),
@@ -952,26 +965,28 @@ export const listLeagueMembers = onCall(
       throw new HttpsError("unauthenticated", "A secure session is required.");
     }
     const input = validateListLeagueMembersRequest(request.data);
+    await enforceSocialRateLimit(
+      uid,
+      "leagueListRead",
+      LEAGUE_LIST_READ_MINUTE_LIMIT,
+      LEAGUE_LIST_READ_HOUR_LIMIT
+    );
     const firestore = getFirestore();
     const [deletionSnapshot, stateSnapshot] = await firestore.getAll(
       firestore.collection("_accountDeletionState").doc(uid),
       firestore.collection("_socialState").doc(uid)
     );
     assertAccountDeletionNotPending(deletionSnapshot.exists);
-    const state = validateTrustedSocialState(stateSnapshot.data());
-    if (!state.currentBucket) {
-      throw new HttpsError(
-        "failed-precondition",
-        "Trusted league state is not available.",
-        {reason: "trusted-social-state-unavailable"}
-      );
-    }
+    const bucket = currentTrustedLeagueBucket(
+      stateSnapshot.data(),
+      Date.now()
+    );
     const snapshot = await firestore.collection("leagues")
-      .doc(state.currentBucket).collection("members")
+      .doc(bucket).collection("members")
       .orderBy("rating", "desc").limit(input.limit).get();
     return {
       schemaVersion: SOCIAL_SCHEMA_VERSION,
-      bucket: state.currentBucket,
+      bucket,
       members: snapshot.docs.map((document) =>
         validateStoredPublicProfile(document.data(), document.id)
       ),
@@ -1067,12 +1082,15 @@ export const recordPeerSession = onCall(
         processedAt: updatedAt,
       });
       transaction.set(publicProfileRef, profileData);
-      const membershipPath = advanced.state.currentBucket ?
-        `leagues/${advanced.state.currentBucket}/members/${uid}` : null;
+      const updatedReferences =
+        socialReferenceManifestUpdatingLeagueMembership(
+          references,
+          uid,
+          previous.currentBucket,
+          advanced.state.currentBucket
+        );
       transaction.set(referencesRef, {
-        leagueMembershipPaths: membershipPath ? [membershipPath] : [],
-        challengeIDs: references.challengeIDs,
-        friendAccountIDs: references.friendAccountIDs,
+        ...updatedReferences,
         updatedAt,
       });
       if (advanced.state.currentBucket) {
@@ -1568,6 +1586,10 @@ export const deleteAccount = onCall(
 
     assertAppleRevocationSupported(providerIDs);
     const firestore = getFirestore();
+    const cutoverSnapshot = await firestore
+      .collection("_socialReferenceCutover").doc("current").get();
+    assertSocialReferenceCutoverComplete(cutoverSnapshot.data());
+
     const deletionStateRef = firestore.collection("_accountDeletionState")
       .doc(uid);
     await firestore.runTransaction(async (transaction) => {
@@ -1584,9 +1606,6 @@ export const deleteAccount = onCall(
         updatedAt: Timestamp.now(),
       });
     });
-    const cutoverSnapshot = await firestore
-      .collection("_socialReferenceCutover").doc("current").get();
-    assertSocialReferenceCutoverComplete(cutoverSnapshot.data());
 
     const work: AccountDeletionWork = {
       userTree: async () => {
@@ -1720,7 +1739,20 @@ export const deleteAccount = onCall(
         }
       },
       deletionTombstone: async () => {
-        await deletionStateRef.delete();
+        try {
+          await deletionStateRef.delete();
+        } catch (error) {
+          logger.warn(
+            "deleteAccount tombstone cleanup deferred",
+            accountDeletionLogMetadata(
+              requestID,
+              "tombstone-cleanup-deferred",
+              Date.now() - startedAt,
+              ["deletionTombstone"]
+            )
+          );
+          throw error;
+        }
       },
     };
 

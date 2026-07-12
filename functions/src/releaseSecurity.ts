@@ -241,7 +241,8 @@ export function assertAppleRevocationSupported(
   if (providerIDs.includes("apple.com")) {
     throw new HttpsError(
       "failed-precondition",
-      "Sign in with Apple access must be revoked before account deletion."
+      "Sign in with Apple access must be revoked before account deletion.",
+      {reason: "apple-revocation-unavailable"}
     );
   }
 }
@@ -367,9 +368,10 @@ export function accountDeletionLogMetadata(
 }
 
 /**
- * Runs all dependent cleanup steps even when one fails. The exact worklist,
- * Auth user, and write-blocking tombstone finalize strictly in that order and
- * only after every dependent cleanup succeeds.
+ * Runs all dependent cleanup steps even when one fails. The exact worklist
+ * and Auth user finalize strictly in that order after every dependent cleanup
+ * succeeds. Tombstone removal is best effort because Auth deletion is
+ * irreversible and a deleted user cannot authenticate a retry.
  * @param {AccountDeletionWork} work Injected deletion operations.
  * @return {Promise<void>} Resolves only after complete deletion.
  */
@@ -387,15 +389,17 @@ export async function executeAccountDeletionPlan(
   if (failures.length > 0) {
     throw new AccountDeletionPartialError(failures);
   }
-  for (const step of [
-    "socialReferenceManifest",
-    "authUser",
-    "deletionTombstone",
-  ] as const) {
+  for (const step of ["socialReferenceManifest", "authUser"] as const) {
     try {
       await work[step]();
     } catch {
       throw new AccountDeletionPartialError([step]);
     }
+  }
+  try {
+    await work.deletionTombstone();
+  } catch {
+    // A retained tombstone safely denies stale tokens and can be purged by an
+    // operational cleanup. The account and its Noum data are already gone.
   }
 }

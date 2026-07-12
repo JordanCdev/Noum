@@ -6,8 +6,10 @@ from documentation or the Firebase console.
 
 The release contract is intentionally narrow:
 
-- Private `users/{uid}` data is owner-readable and owner-writable only while
-  `_accountDeletionState/{uid}` is absent.
+- Private `users/{uid}` data is limited to the registered root, profile,
+  progress, session, and recommendation paths with bounded document shapes.
+  Those paths are owner-readable and owner-writable only while
+  `_accountDeletionState/{uid}` is absent; arbitrary nested paths are denied.
 - Competitive evidence, state, rate limits, friend authorization, deletion
   references, legacy-cutover proof, and deletion tombstones are client-denied.
 - `profiles_public` and league members are not directly readable. Authenticated,
@@ -23,6 +25,20 @@ The release contract is intentionally narrow:
 Account deletion deliberately fails closed until
 `_socialReferenceCutover/current` proves the legacy social inventory was
 backfilled. A pending tombstone blocks writes throughout retryable cleanup.
+
+Prepare that cutover with the guarded migration utility. The first command is
+remote-read-only and produces an ignored local backup; neither write mode
+should be used without reviewing that backup and obtaining approval:
+
+```sh
+node scripts/migrate-social-reference-cutover.mjs --project=noum-d0b6f
+node scripts/migrate-social-reference-cutover.mjs --project=noum-d0b6f \
+  --apply --confirm-project=noum-d0b6f
+```
+
+Legacy league purge additionally requires `--purge-legacy-leagues` and
+`--approve-purge=DELETE_LEGACY_LEAGUES`. The script writes the global cutover
+marker only after every selected backfill/purge operation succeeds.
 
 Verification and deployment:
 

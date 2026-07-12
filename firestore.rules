@@ -38,6 +38,101 @@ service cloud.firestore {
       return value is string && value.size() > 0 && value.size() <= 60;
     }
 
+    function validBoundedString(value, maximum) {
+      return value is string && value.size() <= maximum;
+    }
+
+    function validPrivateUserRoot(data, accountID) {
+      return data.keys().hasOnly(['accountID', 'provider', 'updatedAt'])
+             && data.keys().hasAll(['accountID', 'provider', 'updatedAt'])
+             && data.accountID == accountID
+             && data.provider in ['guest', 'apple', 'google']
+             && data.updatedAt is number
+             && data.updatedAt >= 0;
+    }
+
+    function validPrivateProfile(data) {
+      return data.keys().hasOnly([
+               'speakingContext', 'primaryGoal', 'confidenceLevel',
+               'biggestChallenge', 'customChallengeText', 'desiredOutcome',
+               'speakingStyleGoal', 'chosenStyleGoal', 'styleReference',
+               'coachingBrief', 'motivationWhyNow', 'successVision',
+               'paraphrasedGoal', 'bigMomentID', 'secondaryStyleGoal'
+             ])
+             && data.keys().hasAll([
+               'speakingContext', 'primaryGoal', 'confidenceLevel',
+               'biggestChallenge', 'desiredOutcome', 'speakingStyleGoal',
+               'chosenStyleGoal', 'styleReference', 'coachingBrief',
+               'motivationWhyNow', 'successVision'
+             ])
+             && validBoundedString(data.speakingContext, 64)
+             && validBoundedString(data.primaryGoal, 64)
+             && validBoundedString(data.confidenceLevel, 64)
+             && validBoundedString(data.biggestChallenge, 64)
+             && validBoundedString(data.desiredOutcome, 64)
+             && validBoundedString(data.speakingStyleGoal, 64)
+             && (data.chosenStyleGoal == null
+                 || validBoundedString(data.chosenStyleGoal, 64))
+             && validBoundedString(data.styleReference, 500)
+             && validBoundedString(data.coachingBrief, 2000)
+             && validBoundedString(data.motivationWhyNow, 1000)
+             && validBoundedString(data.successVision, 1000);
+    }
+
+    function validPrivateProgress(data) {
+      return data.keys().hasOnly(['xp'])
+             && data.keys().hasAll(['xp'])
+             && data.xp is int
+             && data.xp >= 0
+             && data.xp <= 1000000000;
+    }
+
+    function validPrivateSession(data, sessionID) {
+      return sessionID.matches(
+               '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[1-5][0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$'
+             )
+             && data.keys().hasOnly([
+               'id', 'transcript', 'fillerWordCount', 'duration', 'date',
+               'mode', 'imConversationDetails', 'score', 'xpEarned',
+               'headline', 'insights', 'coachSummary', 'aiCoachFeedback',
+               'prompt', 'theme', 'drillResult', 'transcriptConfidence',
+               'transcriptionProvider', 'pressureLevel', 'isRated',
+               'pauseMetrics', 'pitchMetrics', 'grammarFindings',
+               'intentFocus', 'intentLabel', 'vocalEnergyMetrics',
+               'repEventLocations', 'isEvaluationFixture', 'fixtureID'
+             ])
+             && data.keys().hasAll([
+               'id', 'transcript', 'fillerWordCount', 'duration', 'date',
+               'mode', 'insights', 'pressureLevel', 'isRated',
+               'isEvaluationFixture'
+             ])
+             && data.id == sessionID
+             && validBoundedString(data.transcript, 100000)
+             && data.fillerWordCount is int
+             && data.fillerWordCount >= 0
+             && data.fillerWordCount <= 100000
+             && data.duration is number
+             && data.duration >= 0
+             && data.duration <= 14400
+             && data.date is number
+             && data.date >= 1577836800
+             && validBoundedString(data.mode, 64)
+             && data.insights is list
+             && data.insights.size() <= 32
+             && validBoundedString(data.pressureLevel, 64)
+             && data.isRated is bool
+             && data.isEvaluationFixture == false;
+    }
+
+    function validPrivateRecommendations(data) {
+      return data.keys().hasOnly(['pendingExposure', 'outcomes'])
+             && data.keys().hasAll(['pendingExposure', 'outcomes'])
+             && (data.pendingExposure == null
+                 || data.pendingExposure is map)
+             && data.outcomes is list
+             && data.outcomes.size() <= 40;
+    }
+
     function validPublicProfile(data, accountID) {
       return data.keys().hasOnly([
                'accountID', 'displayName',
@@ -113,12 +208,53 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Existing private account ownership remains unchanged in this slice.
-    // Per-path user-subtree schemas are a separate hardening change because
-    // profile, progress, session, and recommendation documents differ.
-    match /users/{accountID}/{document=**} {
-      allow read: if isOwner(accountID);
-      allow write: if isWritableOwner(accountID);
+    // The iOS sync owner has exactly five private paths. Explicit matches stop
+    // an authenticated client from manufacturing an unbounded nested subtree
+    // that later makes account deletion expensive or incomplete.
+    match /users/{accountID} {
+      allow get: if isOwner(accountID);
+      allow list, delete: if false;
+      allow create, update: if isWritableOwner(accountID)
+                            && validPrivateUserRoot(
+                              request.resource.data,
+                              accountID
+                            );
+
+      match /profile/{profileID} {
+        allow read: if isOwner(accountID) && profileID == 'main';
+        allow create, update: if isWritableOwner(accountID)
+                              && profileID == 'main'
+                              && validPrivateProfile(request.resource.data);
+        allow delete: if false;
+      }
+
+      match /progress/{progressID} {
+        allow read: if isOwner(accountID) && progressID == 'main';
+        allow create, update: if isWritableOwner(accountID)
+                              && progressID == 'main'
+                              && validPrivateProgress(request.resource.data);
+        allow delete: if false;
+      }
+
+      match /sessions/{sessionID} {
+        allow read: if isOwner(accountID);
+        allow create, update: if isWritableOwner(accountID)
+                              && validPrivateSession(
+                                request.resource.data,
+                                sessionID
+                              );
+        allow delete: if false;
+      }
+
+      match /recommendations/{recommendationID} {
+        allow read: if isOwner(accountID) && recommendationID == 'state';
+        allow create, update: if isWritableOwner(accountID)
+                              && recommendationID == 'state'
+                              && validPrivateRecommendations(
+                                request.resource.data
+                              );
+        allow delete: if false;
+      }
     }
 
     match /profiles_public/{accountID} {

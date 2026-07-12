@@ -16,6 +16,10 @@ export const CHALLENGE_CREATE_MINUTE_LIMIT = 3;
 export const CHALLENGE_CREATE_HOUR_LIMIT = 20;
 export const CHALLENGE_REACTION_MINUTE_LIMIT = 10;
 export const CHALLENGE_REACTION_HOUR_LIMIT = 100;
+export const PEER_PROFILE_READ_MINUTE_LIMIT = 30;
+export const PEER_PROFILE_READ_HOUR_LIMIT = 300;
+export const LEAGUE_LIST_READ_MINUTE_LIMIT = 10;
+export const LEAGUE_LIST_READ_HOUR_LIMIT = 100;
 export const MAX_LEAGUE_MEMBER_RESULTS = 50;
 export const VERIFIED_EVIDENCE_SOURCE = "noum-server-evaluator";
 export const CHALLENGE_REACTIONS = [
@@ -738,6 +742,23 @@ export function validateTrustedSocialState(value: unknown): StoredSocialState {
   }
 }
 
+export function currentTrustedLeagueBucket(
+  value: unknown,
+  nowMs: number
+): string {
+  const state = validateTrustedSocialState(value);
+  const currentWeek = isoWeekKey(nowMs);
+  if (!state.currentBucket || state.weekKey !== currentWeek ||
+      !state.currentBucket.endsWith(`_${currentWeek}`)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Trusted league state is not available.",
+      {reason: "trusted-social-state-unavailable"}
+    );
+  }
+  return state.currentBucket;
+}
+
 export function assertSocialReferenceCutoverComplete(value: unknown): void {
   if (!isSocialRecord(value) || value.schemaVersion !== 1 ||
       value.status !== "complete" || !isServerTimestamp(value.completedAt)) {
@@ -1083,6 +1104,37 @@ export function socialReferenceManifestIncludingChallenge(
   return {
     leagueMembershipPaths: references.leagueMembershipPaths,
     challengeIDs: [...references.challengeIDs, canonicalChallengeID],
+    friendAccountIDs: references.friendAccountIDs,
+  };
+}
+
+export function socialReferenceManifestUpdatingLeagueMembership(
+  value: unknown,
+  accountID: string,
+  previousBucket: string | null,
+  nextBucket: string | null
+): SocialReferenceManifest {
+  const references = validateSocialReferenceManifest(value, accountID);
+  const previousPath = previousBucket ?
+    `leagues/${previousBucket}/members/${accountID}` : null;
+  const nextPath = nextBucket ?
+    `leagues/${nextBucket}/members/${accountID}` : null;
+  const leagueMembershipPaths = references.leagueMembershipPaths.filter(
+    (path) => path !== previousPath
+  );
+  if (nextPath && !leagueMembershipPaths.includes(nextPath)) {
+    if (leagueMembershipPaths.length >= MAX_REFERENCE_LEAGUES) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "Too many retained league references. Try again later.",
+        {reason: "league-reference-capacity"}
+      );
+    }
+    leagueMembershipPaths.push(nextPath);
+  }
+  return {
+    leagueMembershipPaths,
+    challengeIDs: references.challengeIDs,
     friendAccountIDs: references.friendAccountIDs,
   };
 }

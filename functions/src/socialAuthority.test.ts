@@ -14,9 +14,11 @@ import {
   challengeEnvelope,
   challengeSubmissionDocument,
   combinedChallengeDocument,
+  currentTrustedLeagueBucket,
   isoWeekKey,
   promptDigest,
   socialReferenceManifestIncludingChallenge,
+  socialReferenceManifestUpdatingLeagueMembership,
   stableLegacyUUID,
   storedSocialState,
   validateCreateChallengeRequest,
@@ -291,6 +293,23 @@ test("public profiles and legacy cutover proof validate strictly", () => {
   );
 });
 
+test("league reads reject a trusted bucket from a previous ISO week", () => {
+  const currentWeek = isoWeekKey(nowMs);
+  const currentState = {
+    ...storedSocialState(undefined, "Jordan", nowMs),
+    currentBucket: `silver_${currentWeek}`,
+  };
+  assert.equal(
+    currentTrustedLeagueBucket(currentState, nowMs),
+    `silver_${currentWeek}`
+  );
+  assert.throws(
+    () => currentTrustedLeagueBucket(currentState, nowMs + 8 * 86_400_000),
+    (error: unknown) => (error as {details?: {reason?: string}})
+      .details?.reason === "trusted-social-state-unavailable"
+  );
+});
+
 test("prompt binding rejects mismatched and expired evidence", () => {
   const metadata = challenge();
   const bound = validateVerifiedSessionEvidence(evidence({
@@ -463,6 +482,24 @@ test("challenge references preserve a complete bounded deletion manifest", () =>
     challengeIDs,
     friendAccountIDs: [],
   }, "firebase-user", challengeID));
+});
+
+test("trusted reps preserve backfilled legacy league references", () => {
+  const legacyPaths = Array.from({length: 5}, (_, index) =>
+    `leagues/silver_2026-W${String(index + 1).padStart(2, "0")}/` +
+      "members/firebase-user"
+  );
+  const updated = socialReferenceManifestUpdatingLeagueMembership({
+    leagueMembershipPaths: legacyPaths,
+    challengeIDs: [challengeID],
+    friendAccountIDs: ["firebase-opponent"],
+  }, "firebase-user", null, "silver_2026-W28");
+  assert.deepEqual(updated.leagueMembershipPaths, [
+    ...legacyPaths,
+    "leagues/silver_2026-W28/members/firebase-user",
+  ]);
+  assert.deepEqual(updated.challengeIDs, [challengeID]);
+  assert.deepEqual(updated.friendAccountIDs, ["firebase-opponent"]);
 });
 
 test("legacy challenge UUIDs remain deterministic presentation values", () => {

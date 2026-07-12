@@ -244,10 +244,11 @@ test("Apple-linked deletion is blocked before a plan can run", () => {
     "password",
     "google.com",
   ]));
-  assert.throws(() => assertAppleRevocationSupported([
-    "google.com",
-    "apple.com",
-  ]));
+  assert.throws(
+    () => assertAppleRevocationSupported(["google.com", "apple.com"]),
+    (error: unknown) => (error as {details?: {reason?: string}})
+      .details?.reason === "apple-revocation-unavailable"
+  );
 });
 
 /**
@@ -328,3 +329,12 @@ test(
     assert.equal(calls.includes("deletionTombstone"), false);
   }
 );
+
+test("tombstone cleanup is best effort after Auth deletion", async () => {
+  const calls: AccountDeletionStep[] = [];
+  await executeAccountDeletionPlan(deletionWork(
+    calls,
+    ["deletionTombstone"]
+  ));
+  assert.deepEqual(calls, ACCOUNT_DELETION_STEPS);
+});

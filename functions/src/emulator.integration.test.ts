@@ -210,6 +210,8 @@ function socialSessionFields(
     date: {doubleValue: dateSeconds},
     mode: {stringValue: "timed"},
     score: {integerValue: String(score)},
+    insights: {arrayValue: {values: []}},
+    pressureLevel: {stringValue: "standard"},
     isRated: {booleanValue: isRated},
     isEvaluationFixture: {booleanValue: false},
     headline: {stringValue: "Clear structure"},
@@ -523,6 +525,59 @@ test(
   }
 );
 
+test("private account sync is limited to registered bounded paths", async () => {
+  const identity = await anonymousIdentity();
+  assert.equal((await writeFirestoreDocument(
+    `users/${identity.localId}`,
+    {
+      accountID: {stringValue: identity.localId},
+      provider: {stringValue: "guest"},
+      updatedAt: {doubleValue: Date.now() / 1_000},
+    },
+    identity
+  )).status, 200);
+  assert.equal((await writeFirestoreDocument(
+    `users/${identity.localId}/profile/main`,
+    {
+      speakingContext: {stringValue: "work"},
+      primaryGoal: {stringValue: "clarity"},
+      confidenceLevel: {stringValue: "building"},
+      biggestChallenge: {stringValue: "fillers"},
+      desiredOutcome: {stringValue: "confident"},
+      speakingStyleGoal: {stringValue: "concise"},
+      chosenStyleGoal: {stringValue: "concise"},
+      styleReference: {stringValue: ""},
+      coachingBrief: {stringValue: "Speak with a clear structure."},
+      motivationWhyNow: {stringValue: "Upcoming presentation"},
+      successVision: {stringValue: "Land the main point"},
+    },
+    identity
+  )).status, 200);
+  assert.equal((await writeFirestoreDocument(
+    `users/${identity.localId}/progress/main`,
+    {xp: {integerValue: "120"}},
+    identity
+  )).status, 200);
+  assert.equal((await writeFirestoreDocument(
+    `users/${identity.localId}/recommendations/state`,
+    {
+      pendingExposure: {mapValue: {fields: {}}},
+      outcomes: {arrayValue: {values: []}},
+    },
+    identity
+  )).status, 200);
+  assert.equal((await writeFirestoreDocument(
+    `users/${identity.localId}/profile/not-main`,
+    {speakingContext: {stringValue: "forged"}},
+    identity
+  )).status, 403);
+  assert.equal((await writeFirestoreDocument(
+    `users/${identity.localId}/arbitrary/nested-data`,
+    {payload: {stringValue: "unregistered private subtree"}},
+    identity
+  )).status, 403);
+});
+
 test("owner sessions cannot become competitive evidence", async () => {
   const identity = await anonymousIdentity();
   const other = await anonymousIdentity();
@@ -558,6 +613,16 @@ test("owner sessions cannot become competitive evidence", async () => {
     identity
   )).status, 403);
 
+  const legacyLeaguePath =
+    `leagues/silver_2026-W01/members/${identity.localId}`;
+  await adminFirestore.doc(legacyLeaguePath).set({accountID: identity.localId});
+  await adminFirestore.collection("_socialReferences").doc(identity.localId)
+    .set({
+      leagueMembershipPaths: [legacyLeaguePath],
+      challengeIDs: [],
+      friendAccountIDs: [],
+      updatedAt: AdminTimestamp.now(),
+    });
   await seedVerifiedEvidence(identity, peerSessionID, {score: 8});
   const first = await recordSocialSession(
     identity,
@@ -570,7 +635,9 @@ test("owner sessions cannot become competitive evidence", async () => {
   const references = await adminFirestore.collection("_socialReferences")
     .doc(identity.localId).get();
   assert.deepEqual(references.data()?.challengeIDs, []);
-  assert.equal(references.data()?.leagueMembershipPaths?.length, 1);
+  const membershipPaths = references.data()?.leagueMembershipPaths ?? [];
+  assert.equal(membershipPaths.length, 2);
+  assert.equal(membershipPaths.includes(legacyLeaguePath), true);
   const replay = await recordSocialSession(identity, peerSessionID, "Jordan") as {
     result?: {processed?: boolean; profile?: Record<string, unknown>};
   };
@@ -716,6 +783,20 @@ test("challenge submissions remain private until both are verified", async () =>
   };
   assert.equal(peerBody.result?.profile?.accountID, opponent.localId);
   assert.equal(peerBody.result?.profile?.rating, 410);
+  for (let attempt = 1; attempt < 30; attempt += 1) {
+    assert.equal((await callable(
+      getPeerProfileURL,
+      {schemaVersion: 1, accountID: opponent.localId},
+      creator,
+      true
+    )).status, 200);
+  }
+  assert.equal((await callable(
+    getPeerProfileURL,
+    {schemaVersion: 1, accountID: opponent.localId},
+    creator,
+    true
+  )).status, 429);
   const unauthorizedPeer = await callable(
     getPeerProfileURL,
     {schemaVersion: 1, accountID: opponent.localId},
@@ -745,6 +826,20 @@ test("challenge submissions remain private until both are verified", async () =>
   assert.equal(leagueAccountIDs.includes(creator.localId), true);
   assert.equal(leagueAccountIDs.includes(opponent.localId), true);
   assert.equal(leagueAccountIDs.length <= 20, true);
+  for (let attempt = 1; attempt < 10; attempt += 1) {
+    assert.equal((await callable(
+      listLeagueMembersURL,
+      {schemaVersion: 1, limit: 20},
+      creator,
+      true
+    )).status, 200);
+  }
+  assert.equal((await callable(
+    listLeagueMembersURL,
+    {schemaVersion: 1, limit: 20},
+    creator,
+    true
+  )).status, 429);
   const leagueBucket = leagueBody.result?.bucket ?? "missing";
   assert.equal((await listFirestoreCollection(
     `leagues/${leagueBucket}/members`,
@@ -1048,7 +1143,7 @@ test("legacy social data fails closed until exact cutover is backfilled", async 
     assert.equal((await adminFirestore.doc(path).get()).exists, true);
   }
   assert.equal((await adminFirestore.collection("_accountDeletionState")
-    .doc(identity.localId).get()).exists, true);
+    .doc(identity.localId).get()).exists, false);
   assert.equal((await readFirestoreDocument(
     `_accountDeletionState/${identity.localId}`,
     identity
@@ -1065,7 +1160,7 @@ test("legacy social data fails closed until exact cutover is backfilled", async 
       Date.now() / 1_000
     ),
     identity
-  )).status, 403);
+  )).status, 200);
 
   await adminFirestore.collection("_socialReferences").doc(identity.localId)
     .set({

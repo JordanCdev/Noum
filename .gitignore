@@ -69,3 +69,6 @@ tools/coach-arena/.env.local
 
 # Firebase CLI local hosting/deploy cache.
 .firebase/
+
+# Local social-cutover backups may contain account identifiers.
+backups/social-cutover-*.json
