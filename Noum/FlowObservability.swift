@@ -32,6 +32,16 @@ enum FlowKind: String, Codable, CaseIterable {
     }
 }
 
+/// Stable, bounded event vocabulary for the transformation KPIs. Keeping these
+/// names beside the report prevents call sites and denominators drifting apart.
+enum TransformationKPIEventStage {
+    static let prescriptionShown = "prescription.shown"
+    static let prescriptionAccepted = "prescription.accepted"
+    static let cloudTranscriptionResolvedCloud = "transcription.cloudResolvedCloud"
+    static let cloudTranscriptionResolvedLocal = "transcription.cloudResolvedLocal"
+    static let localTranscriptionResolvedLocal = "transcription.localResolvedLocal"
+}
+
 struct FlowEvent: Codable, Equatable, Identifiable {
     let id: UUID
     let createdAt: Date
@@ -141,6 +151,56 @@ final class FlowEventLog: ObservableObject {
             flow: .other,
             stage: "retention.appActive",
             reason: "foreground active day"
+        ))
+    }
+
+    /// Records the user-visible prescription denominator. The caller supplies
+    /// one durable correlation ID for the exposure so a later tap can be paired
+    /// without storing the recommendation text or fingerprint in telemetry.
+    func recordPrescriptionShown(correlationId: UUID, now: Date = Date()) {
+        logOnce(FlowEvent.make(
+            createdAt: now,
+            correlationId: correlationId,
+            flow: .other,
+            stage: TransformationKPIEventStage.prescriptionShown,
+            reason: "prescription shown"
+        ))
+    }
+
+    func recordPrescriptionAccepted(correlationId: UUID, now: Date = Date()) {
+        logOnce(FlowEvent.make(
+            createdAt: now,
+            correlationId: correlationId,
+            flow: .other,
+            stage: TransformationKPIEventStage.prescriptionAccepted,
+            reason: "prescription tapped"
+        ))
+    }
+
+    /// Records the requested route separately from the provider that actually
+    /// started. A deliberate local-only session is observable but never enters
+    /// the cloud-fallback denominator.
+    func recordTranscriptionRoute(
+        correlationId: UUID,
+        requestedCloud: Bool,
+        resolvedProviderIdentifier: String,
+        now: Date = Date()
+    ) {
+        let resolvedLocally = resolvedProviderIdentifier == TranscriptionProviderID.local.rawValue
+        let stage: String
+        if requestedCloud {
+            stage = resolvedLocally
+                ? TransformationKPIEventStage.cloudTranscriptionResolvedLocal
+                : TransformationKPIEventStage.cloudTranscriptionResolvedCloud
+        } else {
+            stage = TransformationKPIEventStage.localTranscriptionResolvedLocal
+        }
+        logOnce(FlowEvent.make(
+            createdAt: now,
+            correlationId: correlationId,
+            flow: .practiceRep,
+            stage: stage,
+            reason: "transcription route resolved"
         ))
     }
 
@@ -278,11 +338,26 @@ struct TransformationKPIReport: Equatable {
 
         let reviewOpens = events.filter { $0.stage == "review.sessionOpened" }.count
         let reviewRate = orderedSessions.isEmpty ? nil : min(1, Double(reviewOpens) / Double(orderedSessions.count))
-        let followed = outcomes.filter(\.followed).count
-        let acceptance = outcomes.isEmpty ? nil : Double(followed) / Double(outcomes.count)
-        let providerSessions = orderedSessions.filter { $0.transcriptionProvider != nil }
-        let localSessions = providerSessions.filter { $0.transcriptionProvider == "local" }.count
-        let fallbackRate = providerSessions.isEmpty ? nil : Double(localSessions) / Double(providerSessions.count)
+        let shownPrescriptionIDs = Set(events.lazy
+            .filter { $0.stage == TransformationKPIEventStage.prescriptionShown }
+            .map(\.correlationId))
+        let acceptedPrescriptionIDs = Set(events.lazy
+            .filter { $0.stage == TransformationKPIEventStage.prescriptionAccepted }
+            .map(\.correlationId))
+            .intersection(shownPrescriptionIDs)
+        let acceptance = shownPrescriptionIDs.isEmpty
+            ? nil
+            : Double(acceptedPrescriptionIDs.count) / Double(shownPrescriptionIDs.count)
+        let cloudRoutes = events.filter {
+            $0.stage == TransformationKPIEventStage.cloudTranscriptionResolvedCloud
+                || $0.stage == TransformationKPIEventStage.cloudTranscriptionResolvedLocal
+        }
+        let localFallbacks = cloudRoutes.filter {
+            $0.stage == TransformationKPIEventStage.cloudTranscriptionResolvedLocal
+        }.count
+        let fallbackRate = cloudRoutes.isEmpty
+            ? nil
+            : Double(localFallbacks) / Double(cloudRoutes.count)
         let typedOpens = events.filter { $0.stage == "coach.typedOpened" }.count
         let liveUpgrades = events.filter { $0.stage == "coach.typedToLive" }.count
         let upgradeRate = typedOpens == 0 ? nil : min(1, Double(liveUpgrades) / Double(typedOpens))

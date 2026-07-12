@@ -9,6 +9,8 @@ struct TransformationKPIReportTests {
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let day1 = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: start))!
+        let prescriptionID = UUID()
+        let transcriptionID = UUID()
         let events = [
             FlowEvent.make(createdAt: start, correlationId: UUID(), flow: .other, stage: "activation.firstEligible"),
             FlowEvent.make(createdAt: start, correlationId: UUID(), flow: .other, stage: "retention.appActive"),
@@ -16,7 +18,10 @@ struct TransformationKPIReportTests {
             FlowEvent.make(createdAt: start.addingTimeInterval(120), correlationId: UUID(), flow: .other, stage: "review.sessionOpened"),
             FlowEvent.make(createdAt: start.addingTimeInterval(121), correlationId: UUID(), flow: .other, stage: "coach.typedOpened"),
             FlowEvent.make(createdAt: start.addingTimeInterval(122), correlationId: UUID(), flow: .other, stage: "coach.typedToLive"),
-            FlowEvent.make(createdAt: start.addingTimeInterval(123), correlationId: UUID(), flow: .other, stage: "notification.authorizationGranted")
+            FlowEvent.make(createdAt: start.addingTimeInterval(123), correlationId: UUID(), flow: .other, stage: "notification.authorizationGranted"),
+            FlowEvent.make(createdAt: start.addingTimeInterval(124), correlationId: prescriptionID, flow: .other, stage: TransformationKPIEventStage.prescriptionShown),
+            FlowEvent.make(createdAt: start.addingTimeInterval(125), correlationId: prescriptionID, flow: .other, stage: TransformationKPIEventStage.prescriptionAccepted),
+            FlowEvent.make(createdAt: start.addingTimeInterval(126), correlationId: transcriptionID, flow: .practiceRep, stage: TransformationKPIEventStage.cloudTranscriptionResolvedLocal)
         ]
         let session = PracticeSession(
             transcript: "A private transcript that must never enter KPI events.",
@@ -28,7 +33,7 @@ struct TransformationKPIReportTests {
         )
         let outcome = RecommendationOutcome(
             id: UUID(), fingerprint: "one", title: "Practice", focus: nil,
-            target: nil, mode: .timed, sessionID: session.id, followed: true,
+            target: nil, mode: .timed, sessionID: session.id, followed: false,
             completedAt: start.addingTimeInterval(45), scoreDelta: 0,
             hasComparableScore: false, fillerDelta: 0, durationDelta: 0,
             goal: .concise, targetDimensionID: "clean_close",
@@ -52,6 +57,139 @@ struct TransformationKPIReportTests {
         #expect(report.notificationOptInAfterValue == true)
         #expect(report.retainedDay1 == true)
         #expect(events.allSatisfy { !$0.reason.contains("private transcript") })
+    }
+
+    @Test func prescriptionAcceptanceUsesDistinctShownToTapPairs() {
+        let accepted = UUID()
+        let ignored = UUID()
+        let unpairedTap = UUID()
+        let events = [
+            FlowEvent.make(correlationId: accepted, flow: .other, stage: TransformationKPIEventStage.prescriptionShown),
+            FlowEvent.make(correlationId: accepted, flow: .other, stage: TransformationKPIEventStage.prescriptionAccepted),
+            FlowEvent.make(correlationId: accepted, flow: .other, stage: TransformationKPIEventStage.prescriptionAccepted),
+            FlowEvent.make(correlationId: ignored, flow: .other, stage: TransformationKPIEventStage.prescriptionShown),
+            FlowEvent.make(correlationId: unpairedTap, flow: .other, stage: TransformationKPIEventStage.prescriptionAccepted),
+        ]
+        let completedWithoutAcceptance = RecommendationOutcome(
+            id: UUID(), fingerprint: "completed", title: "Practice", focus: nil,
+            target: nil, mode: .timed, sessionID: UUID(), followed: true,
+            completedAt: Date(), scoreDelta: 0, hasComparableScore: false,
+            fillerDelta: 0, durationDelta: 0
+        )
+
+        let report = TransformationKPIReport.derive(
+            events: events,
+            sessions: [],
+            outcomes: [completedWithoutAcceptance]
+        )
+
+        #expect(report.prescriptionAcceptanceRate == 0.5)
+    }
+
+    @Test func prescriptionAcceptanceHasNoDenominatorForOutcomeOrUnpairedTap() {
+        let report = TransformationKPIReport.derive(
+            events: [
+                FlowEvent.make(correlationId: UUID(), flow: .other, stage: TransformationKPIEventStage.prescriptionAccepted)
+            ],
+            sessions: [],
+            outcomes: []
+        )
+
+        #expect(report.prescriptionAcceptanceRate == nil)
+    }
+
+    @Test func fallbackRateUsesOnlyCloudRequestedRoutes() {
+        let events = [
+            FlowEvent.make(correlationId: UUID(), flow: .practiceRep, stage: TransformationKPIEventStage.cloudTranscriptionResolvedLocal),
+            FlowEvent.make(correlationId: UUID(), flow: .practiceRep, stage: TransformationKPIEventStage.cloudTranscriptionResolvedCloud),
+            FlowEvent.make(correlationId: UUID(), flow: .practiceRep, stage: TransformationKPIEventStage.localTranscriptionResolvedLocal),
+        ]
+        let deliberateLocalSession = PracticeSession(
+            transcript: "Deliberately on device.", fillerWordCount: 0,
+            duration: 20, date: Date(), mode: .timed, transcriptionProvider: "local"
+        )
+
+        let report = TransformationKPIReport.derive(
+            events: events,
+            sessions: [deliberateLocalSession],
+            outcomes: []
+        )
+
+        #expect(report.cloudToLocalFallbackRate == 0.5)
+    }
+
+    @Test func deliberateLocalOnlySessionsDoNotCreateFallbackDenominator() {
+        let localRoute = FlowEvent.make(
+            correlationId: UUID(), flow: .practiceRep,
+            stage: TransformationKPIEventStage.localTranscriptionResolvedLocal
+        )
+        let localSession = PracticeSession(
+            transcript: "Private local practice.", fillerWordCount: 0,
+            duration: 20, date: Date(), mode: .timed, transcriptionProvider: "local"
+        )
+
+        let report = TransformationKPIReport.derive(
+            events: [localRoute],
+            sessions: [localSession],
+            outcomes: []
+        )
+
+        #expect(report.cloudToLocalFallbackRate == nil)
+    }
+
+    @MainActor
+    @Test func boundedInstrumentationEmitsPairablePrescriptionAndRouteStages() {
+        let defaults = UserDefaults(suiteName: "kpi.\(UUID().uuidString)")!
+        let log = FlowEventLog(defaults: defaults, storageKey: "events")
+        let prescriptionID = UUID()
+        let cloudFallbackID = UUID()
+        let localOnlyID = UUID()
+
+        log.recordPrescriptionShown(correlationId: prescriptionID)
+        log.recordPrescriptionShown(correlationId: prescriptionID)
+        log.recordPrescriptionAccepted(correlationId: prescriptionID)
+        log.recordPrescriptionAccepted(correlationId: prescriptionID)
+        log.recordTranscriptionRoute(
+            correlationId: cloudFallbackID,
+            requestedCloud: true,
+            resolvedProviderIdentifier: TranscriptionProviderID.local.rawValue
+        )
+        log.recordTranscriptionRoute(
+            correlationId: localOnlyID,
+            requestedCloud: false,
+            resolvedProviderIdentifier: TranscriptionProviderID.local.rawValue
+        )
+
+        #expect(log.events.filter { $0.correlationId == prescriptionID }.count == 2)
+        #expect(log.events.contains {
+            $0.correlationId == cloudFallbackID
+                && $0.stage == TransformationKPIEventStage.cloudTranscriptionResolvedLocal
+        })
+        #expect(log.events.contains {
+            $0.correlationId == localOnlyID
+                && $0.stage == TransformationKPIEventStage.localTranscriptionResolvedLocal
+        })
+        #expect(log.events.allSatisfy { $0.reason.count <= 256 && $0.numerics.isEmpty })
+    }
+
+    @Test func preInstrumentationRecommendationExposureStillDecodes() throws {
+        let legacyExposure = RecommendationExposure(
+            fingerprint: "legacy",
+            title: "Practice",
+            focus: "Clear close",
+            target: "One final sentence",
+            mode: .timed,
+            isAIBacked: false,
+            shownAt: Date(timeIntervalSince1970: 1_700_000_000),
+            tappedAt: nil
+        )
+
+        let data = try JSONEncoder().encode(legacyExposure)
+        #expect(!String(decoding: data, as: UTF8.self).contains("observabilityID"))
+        let decoded = try JSONDecoder().decode(RecommendationExposure.self, from: data)
+
+        #expect(decoded.observabilityID == nil)
+        #expect(decoded.fingerprint == legacyExposure.fingerprint)
     }
 
     @MainActor

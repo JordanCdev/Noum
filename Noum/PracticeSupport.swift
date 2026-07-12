@@ -8541,6 +8541,10 @@ struct RecommendationExposure: Codable, Equatable {
     var goal: SpeakingStyleGoal? = nil
     var targetDimensionID: String? = nil
     var sourceSessionID: UUID? = nil
+    /// Content-free join key for account-local shown -> tap observability. It
+    /// remains optional so pre-instrumentation exposures decode; a remote
+    /// exposure without a matching local shown event never enters the KPI.
+    var observabilityID: UUID? = nil
 }
 
 enum GoalFollowUpResult: String, Codable, Equatable {
@@ -9341,6 +9345,7 @@ final class RecommendationLearningStore: ObservableObject {
         sourceSessionID: UUID? = nil
     ) {
         if pendingExposure?.fingerprint == fingerprint { return }
+        let observabilityID = UUID()
         pendingExposure = RecommendationExposure(
             fingerprint: fingerprint,
             title: title,
@@ -9352,19 +9357,25 @@ final class RecommendationLearningStore: ObservableObject {
             tappedAt: nil,
             goal: goal,
             targetDimensionID: targetDimensionID,
-            sourceSessionID: sourceSessionID
+            sourceSessionID: sourceSessionID,
+            observabilityID: observabilityID
         )
         persistPending()
         syncIfPossible()
+        FlowEventLog.shared.recordPrescriptionShown(correlationId: observabilityID)
     }
 
     func markTapped(mode: PracticeMode) {
         guard var pendingExposure else { return }
         guard pendingExposure.mode == mode else { return }
+        guard pendingExposure.tappedAt == nil else { return }
         pendingExposure.tappedAt = Date()
         self.pendingExposure = pendingExposure
         persistPending()
         syncIfPossible()
+        if let observabilityID = pendingExposure.observabilityID {
+            FlowEventLog.shared.recordPrescriptionAccepted(correlationId: observabilityID)
+        }
     }
 
     func recordOutcome(for session: PracticeSession, previousSessions: [PracticeSession]) {

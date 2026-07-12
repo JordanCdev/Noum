@@ -468,6 +468,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         )
 
         do {
+            let requestedCloud = provider.identifier != TranscriptionProviderID.local.rawValue
             let session = try await provider.startSession(config: config)
             guard Self.shouldFinalize(captured: generation, current: sessionGeneration),
                   recordingLifecycle == .connecting else {
@@ -475,10 +476,16 @@ class SpeechRecognizerViewModel: ObservableObject {
                 return false
             }
             self.activeSession = session
-            if let resolved = session.resolvedProviderIdentifier {
-                activeProviderIdentifier = resolved
-                activeProviderName = TranscriptionProviderID(rawValue: resolved)?.displayName ?? resolved
+            let resolvedProviderIdentifier = session.resolvedProviderIdentifier ?? provider.identifier
+            if session.resolvedProviderIdentifier != nil {
+                activeProviderIdentifier = resolvedProviderIdentifier
+                activeProviderName = TranscriptionProviderID(rawValue: resolvedProviderIdentifier)?.displayName ?? resolvedProviderIdentifier
             }
+            FlowEventLog.shared.recordTranscriptionRoute(
+                correlationId: currentRepCorrelationID,
+                requestedCloud: requestedCloud,
+                resolvedProviderIdentifier: resolvedProviderIdentifier
+            )
 
             transcriptListenerTask = Task { @MainActor [weak self] in
                 do {
