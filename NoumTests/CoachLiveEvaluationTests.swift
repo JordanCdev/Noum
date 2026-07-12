@@ -1175,6 +1175,7 @@ struct CoachLiveEvaluationTests {
                 failed = true
                 #expect(Bool(false), "\(fixture.id) failed with \(failure)")
             }
+            await Self.paceLiveReadinessSweep()
         }
 
         for conversation in longFormConversations {
@@ -1236,6 +1237,16 @@ struct CoachLiveEvaluationTests {
         return true
         #else
         return ProcessInfo.processInfo.environment["NOUM_LIVE_AI_EVAL"] == "1"
+        #endif
+    }
+
+    /// The readiness corpus is an operator tool, not a production traffic
+    /// generator. Space turns so 75 sequential checks do not create an
+    /// artificial provider burst and fail the zero-refusal contract on quota
+    /// pressure that a single real conversation would never produce.
+    private static func paceLiveReadinessSweep() async {
+        #if NOUM_LIVE_AI_EVAL_READINESS
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
         #endif
     }
 
@@ -2077,6 +2088,7 @@ struct CoachLiveEvaluationTests {
                 break
             }
             history.append(CoachMessage(role: .coach, text: reply))
+            await Self.paceLiveReadinessSweep()
         }
 
         let result = CoachLiveLongFormConversationReportRow.make(
