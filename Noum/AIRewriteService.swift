@@ -266,6 +266,14 @@ actor AIRewriteService {
                 record(.fallback, "Rewrite failed voice-preservation filter", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
                 return onDeviceFallback
             }
+            guard RewriteSemanticGuard.preservesMeaning(
+                originalTranscript: trimmed,
+                candidate: cleaned,
+                weakness: weakness
+            ) else {
+                record(.fallback, "Rewrite failed semantic-preservation guard", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
+                return onDeviceFallback
+            }
             record(.success, "Rewrite accepted", provider: provider, statusCode: http.statusCode, startedAt: startedAt)
             return Rewrite(text: cleaned, weakness: weakness, intensity: intensity)
         } catch {
@@ -329,7 +337,8 @@ actor AIRewriteService {
         5. Voice nudge takes second place to vocabulary fidelity. The voice register colours how you arrange the words, never which words you use.
         6. Rewrite strength: \(intensity.instruction)
         7. \(weakness.fixInstruction)
-        8. Output ONLY the rewritten slice. No preface, no explanation, no quotes. Plain text. 8-26 words maximum.
+        8. Preserve factual meaning exactly: keep negation polarity, every numeric fact (including currency and percentages), and every named person, organisation, product, place, or acronym in the targeted slice unchanged.
+        9. Output ONLY the rewritten slice. No preface, no explanation, no quotes. Plain text. 8-26 words maximum.
         """
     }
 
@@ -731,4 +740,264 @@ enum RewriteContentFilter {
 
         return text
     }
+}
+
+// MARK: - Semantic preservation
+
+/// Source-aware validation for provider rewrites. Prompt instructions are not
+/// evidence that a model obeyed them, so high-confidence meaning anchors are
+/// checked again before provider text can reach the user. The guard stays
+/// deliberately narrow: it does not attempt general semantic similarity and
+/// therefore does not penalise legitimate reordering, tightening, or cadence
+/// changes across the light / medium / strong rewrite intensities.
+enum RewriteSemanticGuard {
+    static func preservesMeaning(
+        originalTranscript: String,
+        candidate: String,
+        weakness: AIRewriteService.Weakness
+    ) -> Bool {
+        let source = targetSlice(from: originalTranscript, weakness: weakness)
+        guard !source.isEmpty, !candidate.isEmpty else { return false }
+
+        return negationSignature(in: source) == negationSignature(in: candidate)
+            && numericFacts(in: source) == numericFacts(in: candidate)
+            && preservesEntityAnchors(source: source, candidate: candidate)
+    }
+
+    /// Opening and closing rewrites operate on the same bounded section named
+    /// in their prompt. Structure and concision are whole-rep transformations,
+    /// so every high-signal fact in the source remains part of their contract.
+    private static func targetSlice(
+        from transcript: String,
+        weakness: AIRewriteService.Weakness
+    ) -> String {
+        let sentences = sentences(in: transcript)
+        guard !sentences.isEmpty else { return "" }
+
+        switch weakness {
+        case .opening:
+            return Array(sentences.prefix(2)).joined(separator: ". ")
+        case .closing:
+            return Array(sentences.suffix(2)).joined(separator: ". ")
+        case .structure, .concise:
+            return transcript
+        }
+    }
+
+    /// Keeps decimal points inside numeric facts while still bounding opening
+    /// and closing slices. A character scan is more predictable here than
+    /// splitting on every period (`$1.25 million` must remain one fact).
+    private static func sentences(in text: String) -> [String] {
+        var result: [String] = []
+        var start = text.startIndex
+        var index = text.startIndex
+
+        while index < text.endIndex {
+            let character = text[index]
+            let next = text.index(after: index)
+            let isDecimalPoint: Bool = {
+                guard character == ".", index > text.startIndex, next < text.endIndex else {
+                    return false
+                }
+                return text[text.index(before: index)].isNumber && text[next].isNumber
+            }()
+
+            if ".!?".contains(character), !isDecimalPoint {
+                let sentence = String(text[start...index]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !sentence.isEmpty { result.append(sentence) }
+                start = next
+            }
+            index = next
+        }
+
+        if start < text.endIndex {
+            let remainder = String(text[start...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !remainder.isEmpty { result.append(remainder) }
+        }
+        return result
+    }
+
+    /// Contractions and their expanded `not` form share one signature so a
+    /// stylistic edit such as “didn't” → “did not” is accepted. Stronger
+    /// negative terms stay distinct because “never” and “not” are not factual
+    /// equivalents.
+    private static func negationSignature(in text: String) -> [String: Int] {
+        var signature: [String: Int] = [:]
+        for token in lexicalTokens(in: text) {
+            let lowered = token.value
+                .lowercased()
+                .replacingOccurrences(of: "’", with: "'")
+                .trimmingCharacters(in: .punctuationCharacters)
+            let marker: String?
+            if lowered.hasSuffix("n't") || lowered == "cannot" || lowered == "not" {
+                marker = "not"
+            } else if ["never", "no", "none", "neither", "nor", "without"].contains(lowered) {
+                marker = lowered
+            } else {
+                marker = nil
+            }
+            if let marker { signature[marker, default: 0] += 1 }
+        }
+        return signature
+    }
+
+    /// Literal numeric anchors are normalized across harmless formatting
+    /// changes (`92%` / `92 percent`, `$1,250` / `$ 1,250`). Currency and
+    /// magnitude remain part of the identity, so dropping `$` or changing
+    /// `million` is rejected rather than treated as cosmetic.
+    private static func numericFacts(in text: String) -> Set<String> {
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return Set(numericRegex.matches(in: text, range: range).compactMap { match in
+            guard let matchRange = Range(match.range, in: text) else { return nil }
+            return normalizedNumericFact(String(text[matchRange]))
+        })
+    }
+
+    private static func normalizedNumericFact(_ raw: String) -> String {
+        var value = raw
+            .lowercased()
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: #"\s+"#, with: "", options: .regularExpression)
+
+        var currency = ""
+        let currencies: [(markers: [String], canonical: String)] = [
+            (["$", "dollar", "dollars"], "usd"),
+            (["£", "pound", "pounds"], "gbp"),
+            (["€", "euro", "euros"], "eur"),
+            (["¥", "yen"], "yen")
+        ]
+        for entry in currencies where entry.markers.contains(where: value.contains) {
+            currency = entry.canonical
+            for marker in entry.markers {
+                value = value.replacingOccurrences(of: marker, with: "")
+            }
+            break
+        }
+
+        var unit = ""
+        if value.hasSuffix("percent") {
+            value.removeLast("percent".count)
+            unit = "percent"
+        } else if value.hasSuffix("%") {
+            value.removeLast()
+            unit = "percent"
+        }
+
+        let magnitudes: [(markers: [String], canonical: String)] = [
+            (["thousand", "k"], "thousand"),
+            (["million", "m"], "million"),
+            (["billion", "b"], "billion")
+        ]
+        var magnitude = ""
+        for entry in magnitudes {
+            if let marker = entry.markers.first(where: value.hasSuffix) {
+                value.removeLast(marker.count)
+                magnitude = entry.canonical
+                break
+            }
+        }
+
+        return [currency, value, magnitude, unit].joined(separator: "|")
+    }
+
+    /// Names are intentionally heuristic rather than an invented NLP stack.
+    /// Acronyms, mixed-case/product tokens, letter-number labels, and
+    /// non-initial title-case words (including multi-word name continuations)
+    /// are high-signal enough to require exact case-insensitive preservation.
+    /// Ordinary sentence-start capitalization remains free to change.
+    private static func preservesEntityAnchors(source: String, candidate: String) -> Bool {
+        let sourceAnchors = entityLikeTokens(in: source)
+        let candidateAnchors = entityLikeTokens(in: candidate)
+        let sourceWords = canonicalWords(in: source)
+        let candidateWords = canonicalWords(in: candidate)
+        return sourceAnchors.isSubset(of: candidateWords)
+            && candidateAnchors.isSubset(of: sourceWords)
+    }
+
+    private static func entityLikeTokens(in text: String) -> Set<String> {
+        let tokens = lexicalTokens(in: text)
+        var result: Set<String> = []
+
+        for token in tokens {
+            let letters = token.value.unicodeScalars.filter(CharacterSet.letters.contains)
+            let hasLowercase = letters.contains(where: CharacterSet.lowercaseLetters.contains)
+            let uppercaseCount = letters.filter(CharacterSet.uppercaseLetters.contains).count
+            let isAcronym = letters.count >= 2 && uppercaseCount == letters.count
+            let isMixedCase = hasLowercase && uppercaseCount > 0 && !token.isTitleCase
+            let isLetterNumberLabel = token.value.unicodeScalars.contains(where: CharacterSet.decimalDigits.contains)
+                && !letters.isEmpty
+            let isPotentialName = token.isTitleCase
+                && !commonCapitalizedWords.contains(canonicalEntity(token.value))
+            let isNonInitialTitleCase = isPotentialName && !token.isSentenceInitial
+
+            if isAcronym || isMixedCase || isLetterNumberLabel || isNonInitialTitleCase {
+                result.insert(canonicalEntity(token.value))
+            }
+        }
+        return result
+    }
+
+    private static func canonicalWords(in text: String) -> Set<String> {
+        Set(lexicalTokens(in: text).map { canonicalEntity($0.value) })
+    }
+
+    private static func canonicalEntity(_ value: String) -> String {
+        value
+            .lowercased()
+            .trimmingCharacters(in: .punctuationCharacters)
+            .replacingOccurrences(of: #"(?:'s|’s)$"#, with: "", options: .regularExpression)
+    }
+
+    private struct LexicalToken {
+        let value: String
+        let isSentenceInitial: Bool
+
+        var isTitleCase: Bool {
+            let letters = value.unicodeScalars.filter(CharacterSet.letters.contains)
+            guard letters.count > 1,
+                  let firstLetter = letters.first,
+                  CharacterSet.uppercaseLetters.contains(firstLetter) else { return false }
+            return letters.dropFirst().allSatisfy(CharacterSet.lowercaseLetters.contains)
+        }
+    }
+
+    private static func lexicalTokens(in text: String) -> [LexicalToken] {
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return lexicalRegex.matches(in: text, range: range).compactMap { match in
+            guard let tokenRange = Range(match.range, in: text) else { return nil }
+            return LexicalToken(
+                value: String(text[tokenRange]),
+                isSentenceInitial: isSentenceInitial(tokenRange.lowerBound, in: text)
+            )
+        }
+    }
+
+    private static func isSentenceInitial(_ index: String.Index, in text: String) -> Bool {
+        var cursor = index
+        while cursor > text.startIndex {
+            cursor = text.index(before: cursor)
+            let character = text[cursor]
+            if character.isWhitespace || "\"'“”‘’([{—–-".contains(character) { continue }
+            return ".!?".contains(character)
+        }
+        return true
+    }
+
+    private static let numericRegex = try! NSRegularExpression(
+        pattern: #"(?<![\p{L}\p{N}_])(?:[$£€¥]\s*)?[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s*(?:%|percent\b|per\s+cent\b|[kmb]\b|thousand\b|million\b|billion\b|dollars?\b|pounds?\b|euros?\b|yen\b))?"#,
+        options: [.caseInsensitive]
+    )
+
+    private static let lexicalRegex = try! NSRegularExpression(
+        pattern: #"[\p{L}][\p{L}\p{M}\p{N}'’.-]*"#
+    )
+
+    private static let commonCapitalizedWords: Set<String> = [
+        "a", "an", "and", "as", "at", "because", "but", "by", "for",
+        "from", "he", "her", "here", "his", "how", "i", "if", "in",
+        "it", "its", "my", "no", "not", "of", "on", "or", "our",
+        "she", "so", "that", "the", "their", "then", "there", "these",
+        "they", "this", "those", "to", "we", "what", "when", "where",
+        "which", "while", "who", "why", "with", "you", "your"
+    ]
 }
