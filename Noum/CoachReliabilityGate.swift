@@ -667,6 +667,15 @@ enum CoachReliabilityGate {
             fallback = straightAnswerSplitFallback(surface: surface)
         } else if issues.contains(.repetitionCourseCorrectionMiss) {
             fallback = repetitionCourseCorrectionFallback(surface: surface)
+        } else if issues.contains(.repetitiveDiscourseMove) {
+            // Reusing the assessment read here can reproduce the exact
+            // prescription-only loop this gate just blocked. Respond to the
+            // user's reported result and preserve the active plan without
+            // handing back another generic rep assignment.
+            fallback = discourseLoopFallback(
+                surface: surface,
+                latestUserTurn: latestUserTurn
+            )
         } else if issues.contains(.vulnerablePushbackQuestionBurden) {
             fallback = vulnerablePushbackFallback(surface: surface, assessment: assessment)
         } else if issues.contains(.goalStateDirectiveLeak) ||
@@ -718,6 +727,26 @@ enum CoachReliabilityGate {
         }
 
         return CoachReliabilityVerdict(issues: issues, fallbackText: fallback)
+    }
+
+    static func discourseLoopFallback(
+        surface: CoachReplySurface,
+        latestUserTurn: String?
+    ) -> String {
+        let turn = normalize(latestUserTurn ?? "")
+        if containsAny(turn, ["natural", "stiff", "forced", "managed"]) {
+            return surface == .live
+                ? "Keep the change that helped; drop the managed rhythm everywhere else. Use the pause only at the pressure point."
+                : "Keep the change that helped; drop the managed rhythm everywhere else. Tomorrow, let the rest of the answer run normally and use the pause only at the pressure point."
+        }
+        if containsAny(turn, ["real coach", "not like a coach", "robotic", "generic"]) {
+            return surface == .live
+                ? "Fair. I slipped back into a template instead of responding to your result. I should stay with what changed before prescribing anything else."
+                : "Fair. I slipped back into a template instead of responding to what changed. The earlier move felt better; the remaining gap is my response, not another speaking drill. I should stay with that result before prescribing anything else."
+        }
+        return surface == .live
+            ? "You're right — that's the same kind of drill again. Keep what helped, drop what felt forced, and stay with the current target."
+            : "You're right — that's the same kind of drill again. Stay with the result you just gave me: keep what helped, drop what felt forced, and do not change the target until a real moment gives us new evidence."
     }
 
     /// Markers that only appear when a reply is a diagnostic coaching read /

@@ -1377,7 +1377,20 @@ struct CoachReliabilityGateTests {
         #expect(verdict.issues.contains(.repetitiveDiscourseMove))
         #expect(verdict.blockingIssues.contains(.repetitiveDiscourseMove))
         #expect(verdict.blocked)
-        #expect(verdict.fallbackText == assessment.immediateCoachRead)
+        #expect(verdict.fallbackText != assessment.immediateCoachRead)
+        let fallbackVerdict = CoachReliabilityGate.evaluate(
+            replyText: verdict.fallbackText ?? "",
+            previousCoachReply: "Run one focused rep on the proof line. Check whether one proof line is concrete.",
+            recentCoachReplies: [
+                "Run one focused rep on the proof line. Check whether one proof line is concrete.",
+                "Run one focused rep on the opener. Check whether sentence one lands before setup."
+            ],
+            turnDepth: .quickMove,
+            assessment: assessment,
+            evidenceCoverage: 0.5
+        )
+        #expect(!fallbackVerdict.issues.contains(.repetitiveDiscourseMove))
+        #expect(!fallbackVerdict.blocked)
     }
 
     @Test func narrowedRepeatFollowUpDoesNotTripDiscourseLoopWhenReplyNamesExactLine() {
@@ -1414,7 +1427,7 @@ struct CoachReliabilityGateTests {
         #expect(verdict.issues.contains(.repetitiveDiscourseMove))
         #expect(verdict.blockingIssues.contains(.repetitiveDiscourseMove))
         #expect(verdict.blocked)
-        #expect(verdict.fallbackText == assessment.immediateCoachRead)
+        #expect(verdict.fallbackText != assessment.immediateCoachRead)
     }
 
     @Test func twoPrescriptionOnlyTurnsDoNotTripDiscourseLoop() {
