@@ -42,6 +42,22 @@ final class AccountDataRegistryTests: XCTestCase {
         }
     }
 
+    func testAccountBucketRuleDoesNotClaimAnotherAccountsCache() {
+        let rule = AccountDataStorageRule.accountBucket(prefix: "homeRecommendation.")
+        XCTAssertTrue(rule.matches(
+            "homeRecommendation.account-a.fingerprint",
+            accountID: "account-a"
+        ))
+        XCTAssertFalse(rule.matches(
+            "homeRecommendation.account-b.fingerprint",
+            accountID: "account-a"
+        ))
+        XCTAssertFalse(rule.matches(
+            "homeRecommendation.unattributed-profile",
+            accountID: "account-a"
+        ))
+    }
+
     func testExportAndDeletionStayAccountIsolatedIncludingResidualKeys() throws {
         let suite = "AccountDataRegistryTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -112,6 +128,56 @@ final class AccountDataRegistryTests: XCTestCase {
         XCTAssertEqual(recorder.events, ["delete:failing", "delete:healthy"])
     }
 
+    func testCodableSnapshotExportUsesVersionedAccountEnvelope() throws {
+        struct Snapshot: Codable, Equatable {
+            let value: String
+        }
+
+        var deletedAccountID: String?
+        let item = AccountDataParticipant.codableSnapshot(
+            id: "social",
+            rules: [.accountKey(prefix: "social.")],
+            reload: {},
+            endSession: {},
+            snapshot: { Snapshot(value: "snapshot-for-\($0)") },
+            delete: { deletedAccountID = $0 }
+        )
+        let registry = try AccountDataRegistry(participants: [item])
+
+        let entries = try registry.exportEntries(for: "account-a")
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: try data(in: entries, path: "data/social.json")
+        ) as? [String: Any])
+        XCTAssertEqual(payload["schemaVersion"] as? Int, 1)
+        XCTAssertEqual(payload["participantID"] as? String, "social")
+        XCTAssertEqual(payload["scope"] as? String, "account")
+        XCTAssertEqual(
+            (payload["snapshot"] as? [String: Any])?["value"] as? String,
+            "snapshot-for-account-a"
+        )
+
+        try registry.deleteAllData(for: "account-a")
+        XCTAssertEqual(deletedAccountID, "account-a")
+    }
+
+    func testLegacyHomeRecommendationCachesAreQuarantinedOnce() throws {
+        let suite = "HomeRecommendationCacheMigration.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(Data("legacy".utf8), forKey: "homeRecommendation.unattributed-profile")
+        defaults.set("keep", forKey: "unrelated")
+
+        ContentView.quarantineLegacyHomeRecommendationCachesIfNeeded(defaults: defaults)
+
+        XCTAssertNil(defaults.object(forKey: "homeRecommendation.unattributed-profile"))
+        XCTAssertEqual(defaults.string(forKey: "unrelated"), "keep")
+
+        let scopedKey = "homeRecommendation.account-a.fingerprint"
+        defaults.set(Data("scoped".utf8), forKey: scopedKey)
+        ContentView.quarantineLegacyHomeRecommendationCachesIfNeeded(defaults: defaults)
+        XCTAssertNotNil(defaults.data(forKey: scopedKey))
+    }
+
     func testProductionParticipantInventoryIsStable() {
         let suite = "AccountDataRegistryInventory.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -134,7 +200,8 @@ final class AccountDataRegistryTests: XCTestCase {
             "daily-goal", "streak-freeze", "path-progress", "lessons",
             "skill-progression", "daily-challenges", "word-of-day",
             "practice-locale", "roleplay", "primary-focus", "prompt-history",
-            "account-prompts", "ai-rate-limits", "legacy-device-social",
+            "account-prompts", "home-recommendations", "ai-rate-limits",
+            "friends", "challenges", "clubs", "feedback-requests", "league",
             "legacy-device-coaching", "app-managed-recordings",
         ])
         XCTAssertTrue(registry.coverage.hasParity)

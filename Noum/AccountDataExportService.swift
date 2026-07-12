@@ -78,7 +78,7 @@ final class AccountDataExportService {
             limitations: [
                 "Keychain credentials, provider tokens, and other authentication secrets are excluded.",
                 "Recordings saved to Photos are controlled by the Photos library and are not included.",
-                "Legacy device-wide social records and app-managed fallback recordings cannot be attributed to one account; they are labelled as unattributed in this archive.",
+                "Legacy device-wide records and app-managed fallback recordings cannot be attributed to one account; they are labelled as unattributed in this archive.",
                 "Data retained by cloud processors is not copied into this local export.",
             ]
         )

@@ -17,7 +17,7 @@ struct FeedbackRequestManagerTests {
         let fixture = makeFixture(accountID: "alpha")
         defer { fixture.defaults.removePersistentDomain(forName: fixture.suiteName) }
 
-        fixture.store.createRequest(
+        _ = fixture.store.createRequest(
             recipientName: "Alpha reviewer",
             transcript: "Alpha private transcript",
             score: 72,
@@ -31,7 +31,7 @@ struct FeedbackRequestManagerTests {
         fixture.store.reloadForCurrentAccount()
         #expect(fixture.store.requests.isEmpty)
 
-        fixture.store.createRequest(
+        _ = fixture.store.createRequest(
             recipientName: "Beta reviewer",
             transcript: "Beta private transcript",
             score: 81,
@@ -97,7 +97,7 @@ struct FeedbackRequestManagerTests {
         let fixture = makeFixture(accountID: "alpha")
         defer { fixture.defaults.removePersistentDomain(forName: fixture.suiteName) }
 
-        fixture.store.createRequest(
+        _ = fixture.store.createRequest(
             recipientName: "Alpha reviewer",
             transcript: "Alpha private transcript",
             score: 72,
@@ -108,7 +108,7 @@ struct FeedbackRequestManagerTests {
         )
         fixture.account.id = "beta"
         fixture.store.reloadForCurrentAccount()
-        fixture.store.createRequest(
+        _ = fixture.store.createRequest(
             recipientName: "Beta reviewer",
             transcript: "Beta private transcript",
             score: 82,

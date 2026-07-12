@@ -136,8 +136,42 @@ struct AccountDataParticipant {
         )
     }
 
-    /// Registration point for social owners while their legacy storage remains
-    /// device-wide. The scope prevents exports from implying account ownership.
+    static func codableSnapshot<Snapshot: Encodable>(
+        id: String,
+        rules: [AccountDataStorageRule],
+        reload: @escaping () -> Void,
+        endSession: @escaping () -> Void,
+        snapshot: @escaping (String) throws -> Snapshot,
+        delete: @escaping (String) throws -> Void
+    ) -> AccountDataParticipant {
+        AccountDataParticipant(
+            id: id,
+            storageRules: rules,
+            reload: reload,
+            endSession: endSession,
+            export: { accountID in
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+                let data = try encoder.encode(AccountDataSnapshotEnvelope(
+                    schemaVersion: 1,
+                    participantID: id,
+                    scope: .account,
+                    snapshot: try snapshot(accountID)
+                ))
+                return [AccountDataExportEntry(
+                    relativePath: "data/\(id).json",
+                    participantID: id,
+                    scope: .account,
+                    source: .data(data)
+                )]
+            },
+            delete: delete
+        )
+    }
+
+    /// Registration point for legacy owners whose storage remains device-wide.
+    /// The scope prevents exports from implying account ownership.
     static func legacyDeviceDefaults(
         id: String,
         keys: [String],
@@ -154,6 +188,13 @@ struct AccountDataParticipant {
             endSession: endSession
         )
     }
+}
+
+private struct AccountDataSnapshotEnvelope<Snapshot: Encodable>: Encodable {
+    let schemaVersion: Int
+    let participantID: String
+    let scope: AccountDataScope
+    let snapshot: Snapshot
 }
 
 struct AccountDataCoverage: Equatable {
@@ -372,13 +413,56 @@ extension AccountDataRegistry {
             participant("primary-focus", [.accountKey(prefix: "lastPrimaryFocus.")], reload: {}, end: {}),
             participant("prompt-history", [.accountKey(prefix: "noum.promptHistory."), .accountKey(prefix: "noum.promptHistory.texts.")], reload: {}, end: {}),
             participant("account-prompts", [.accountKey(prefix: "noum.notification.prePrompt.seen."), .accountKey(prefix: "noum.notification.prePrompt.declinedAt."), .accountKey(prefix: "noum.deferredCapture.seen.goal."), .accountKey(prefix: "noum.deferredCapture.seen.whyNow."), .accountKey(prefix: "noum.deferredCapture.seen.successVision."), .accountKey(prefix: "noum.goalRefresh.lastDate."), .accountKey(prefix: FirstRunOnboardingGate.legacyCompletedKeyPrefix), .accountKey(prefix: AutoGuidedFirstRep.completedKeyPrefix)], reload: {}, end: {}),
+            participant("home-recommendations", [.accountBucket(prefix: "homeRecommendation.")], reload: {}, end: {}),
             participant("ai-rate-limits", [.accountBucket(prefix: "aiRateLimiter.")], reload: {}, end: { AIRateLimiter.shared.endSession() }),
         ]
 
-        items.append(.legacyDeviceDefaults(
-            id: "legacy-device-social",
-            keys: ["NoumFriendsList", "NoumChallenges", "NoumCompletedChallenges", "NoumAsyncChallenges", "NoumSavedClubs"],
-            defaults: defaults
+        items.append(.codableSnapshot(
+            id: "friends",
+            rules: [.accountKey(prefix: "NoumFriendsList.")],
+            reload: { FriendsManager.shared.reloadForCurrentAccount() },
+            endSession: { FriendsManager.shared.endSession() },
+            snapshot: { FriendsManager.shared.exportSnapshot(for: $0) },
+            delete: { FriendsManager.shared.deleteAllData(for: $0) }
+        ))
+        items.append(.codableSnapshot(
+            id: "challenges",
+            rules: [
+                .accountKey(prefix: "NoumChallenges."),
+                .accountKey(prefix: "NoumCompletedChallenges."),
+                .accountKey(prefix: "NoumAsyncChallenges."),
+                .accountKey(prefix: "NoumAsyncChallengeArmedRep."),
+            ],
+            reload: { ChallengesManager.shared.reloadForCurrentAccount() },
+            endSession: { ChallengesManager.shared.endSession() },
+            snapshot: { ChallengesManager.shared.exportSnapshot(for: $0) },
+            delete: { ChallengesManager.shared.deleteAllData(for: $0) }
+        ))
+        items.append(.codableSnapshot(
+            id: "clubs",
+            rules: [.accountKey(prefix: "NoumSavedClubs.")],
+            reload: { ClubsManager.shared.reloadForCurrentAccount() },
+            endSession: { ClubsManager.shared.endSession() },
+            snapshot: { ClubsManager.shared.exportSnapshot(for: $0) },
+            delete: { ClubsManager.shared.deleteAllData(for: $0) }
+        ))
+        items.append(.codableSnapshot(
+            id: "feedback-requests",
+            rules: [.accountKey(prefix: "noum_feedback_requests.")],
+            reload: { FeedbackRequestManager.shared.reloadForCurrentAccount() },
+            endSession: { FeedbackRequestManager.shared.endSession() },
+            snapshot: { FeedbackRequestManager.shared.exportSnapshot(for: $0) },
+            delete: { FeedbackRequestManager.shared.deleteAllData(for: $0) }
+        ))
+        items.append(.codableSnapshot(
+            id: "league",
+            rules: LeagueManager.accountDataKeyBases.map {
+                .accountKey(prefix: "\($0).")
+            },
+            reload: { LeagueManager.shared.reloadForCurrentAccount() },
+            endSession: { LeagueManager.shared.endSession() },
+            snapshot: { LeagueManager.shared.exportSnapshot(for: $0) },
+            delete: { LeagueManager.shared.deleteAllData(for: $0) }
         ))
         items.append(.legacyDeviceDefaults(
             id: "legacy-device-coaching",

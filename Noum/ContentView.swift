@@ -1670,6 +1670,8 @@ struct ContentView: View {
     }
 
     private var recommendationCacheKey: String {
+        Self.quarantineLegacyHomeRecommendationCachesIfNeeded()
+        let accountID = AuthManager.shared.currentAccountID ?? "guest"
         let recent = sessionStore.sessions.prefix(5).map { session in
             "\(session.id.uuidString)-\(session.mode.rawValue)-\(session.fillerWordCount)-\(Int(session.duration))-\(session.score ?? 0)"
         }.joined(separator: "|")
@@ -1697,7 +1699,21 @@ struct ContentView: View {
             bias.focus,
             bias.target
         ].joined(separator: "-")
-        return "homeRecommendation.\(profileKey).\(caseKey).\(biasKey).\(recent)"
+        return "homeRecommendation.\(accountID).\(profileKey).\(caseKey).\(biasKey).\(recent)"
+    }
+
+    /// Home recommendations were previously cached without an account owner.
+    /// Quarantine that day-zero history once rather than risk restoring a
+    /// recommendation derived from another signed-in account.
+    nonisolated static func quarantineLegacyHomeRecommendationCachesIfNeeded(
+        defaults: UserDefaults = .standard
+    ) {
+        let migrationKey = "homeRecommendation.accountScopeMigration.v1"
+        guard !defaults.bool(forKey: migrationKey) else { return }
+        defaults.dictionaryRepresentation().keys
+            .filter { $0.hasPrefix("homeRecommendation.") }
+            .forEach(defaults.removeObject(forKey:))
+        defaults.set(true, forKey: migrationKey)
     }
 
     /// Load the proof moment for the active path celebration. Picks

@@ -154,7 +154,9 @@ final class ClubsManager: ObservableObject {
     @Published var searchError: String?
 
     private let savedKey = "NoumSavedClubs"
-    private let locationService = LocationService.shared
+    /// Resolve Core Location only when the user explicitly starts a nearby
+    /// search. Account bootstrap/teardown must not construct CLLocationManager.
+    private var locationService: LocationService { LocationService.shared }
 
     private init() {
         savedClubs = Self.loadSaved(accountID: Self.persistedAccountID)
