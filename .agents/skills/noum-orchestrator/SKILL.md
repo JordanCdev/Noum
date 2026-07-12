@@ -147,7 +147,7 @@ If invoked without arguments: read `docs/M15_handoff.md`, list the PENDING phase
 2. `docs/CURRENT_STATE.md` — anything that landed since the handoff was written
 3. `docs/VISION.md` § Anti-goals — never violate
 4. `AGENTS.md` (repo root) — required response structure
-5. `.Codex/skills/noum-design/SKILL.md` — voice rules so worker bundles inherit them
+5. `.agents/skills/noum-design/SKILL.md` — voice rules so worker bundles inherit them
 
 If any are missing, stop and report.
 
@@ -242,7 +242,7 @@ Whether you're spawning teammates via Agent Teams (default) or producing static 
 2. **Goal in one paragraph** — quoted directly from the corresponding phase in `docs/M15_handoff.md`. Don't paraphrase.
 3. **File paths with line numbers** — pulled from the phase brief.
 4. **What NOT to change** — the `Forbidden:` list. "If you find you need to touch a Forbidden file, stop and report. Do not silently expand scope."
-5. **Brand voice reminder.** "Coach voice: direct, second person, no chirpy filler, no exclamation marks, no emoji. See `.Codex/skills/noum-design/SKILL.md`."
+5. **Brand voice reminder.** "Coach voice: direct, second person, no chirpy filler, no exclamation marks, no emoji. See `.agents/skills/noum-design/SKILL.md`."
 6. **Worktree hygiene.** "If `Noum/Info.plist`, `Noum/GoogleService-Info.plist`, `Noum/AIConfig.plist`, or `Noum/BackendConfig.plist` is missing, re-copy: `for f in Info.plist GoogleService-Info.plist AIConfig.plist BackendConfig.plist; do cp /Users/jordan/src/GitHub/Noum/Noum/$f Noum/$f; done`."
 7. **Validation command.** "Run `xcodebuild build -project Noum.xcodeproj -scheme Noum -destination 'platform=iOS Simulator,id=BD2DE1AB-DAC7-4538-A5AD-BECC4D603C0E' -configuration Debug -derivedDataPath .build` before reporting complete."
 8. **Disposition.** "Stage changes but do not commit. Leave the worktree clean for human review + sequential rebase."

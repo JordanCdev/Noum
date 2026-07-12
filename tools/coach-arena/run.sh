@@ -21,6 +21,9 @@
 #                         stamp source commit/fingerprint sidecars before XCTest
 #   ./run.sh app-path-preflight [dump-dir]
 #                         check whether the app-path dump is fresh enough to score
+#   ./run.sh evidence-refresh [readiness options]
+#                         refresh source sidecars, app-path dumps, expert packet,
+#                         readiness manifest, scoring, and final artifact audit
 #   ./run.sh readiness [report.json] [--dump-dir dir] [--repo-root dir] [--probe-live] [--no-fail]
 #                         evaluate the VISION production-readiness gate from
 #                         an app-path report; exits nonzero until launch evidence exists
@@ -114,6 +117,8 @@ case "$cmd" in
       shift
     fi
     python3 runners/coach_arena.py --app-path-preflight "$dump_dir" "$@" ;;
+  evidence-refresh)
+    exec ./refresh-evidence.sh "$@" ;;
   readiness)
     report_path="${NOUM_COACH_READINESS_REPORT:-reports/app-path/latest.json}"
     if [[ $# -gt 0 && "${1:0:1}" != "-" ]]; then
@@ -122,5 +127,5 @@ case "$cmd" in
     fi
     python3 runners/readiness_gate.py --report "$report_path" "$@" ;;
   python)   python3 runners/coach_arena.py "$@" ;;
-  *)        echo "usage: ./run.sh {run|plan|prepare|report|validate|synth|extract|test|app-path|app-path-source|app-path-preflight|readiness|python}" >&2; exit 1 ;;
+  *)        echo "usage: ./run.sh {run|plan|prepare|report|validate|synth|extract|test|app-path|app-path-source|app-path-preflight|evidence-refresh|readiness|python}" >&2; exit 1 ;;
 esac

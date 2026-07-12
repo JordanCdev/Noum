@@ -66,6 +66,12 @@ ARENA_PROVIDER=replay ./tools/coach-arena/run.sh run
 ARENA_INCLUDE_SYNTHETIC=1 ./tools/coach-arena/run.sh run
 
 # Real Swift app-path evidence from the XCTest artifact dump
+./tools/coach-arena/run.sh evidence-refresh --no-fail
+# Release decision also verifies the public privacy endpoint and exits nonzero
+# until every independently sourced artifact passes.
+./tools/coach-arena/run.sh evidence-refresh --probe-live
+
+# Lower-level steps when diagnosing one part of the chain
 ./tools/coach-arena/run.sh app-path-source
 ./tools/coach-arena/run.sh app-path-preflight --no-fail
 ./tools/coach-arena/run.sh app-path
@@ -114,6 +120,10 @@ conversation coverage, provider evidence, immediate-read telemetry, confidence
 variety, proof-test variety, trajectory-cache coverage, and clean
 production-floor rows. A placeholder or stale JSON file stays blocked even if
 the filename is present.
+The `evidence-refresh` command also emits the source packet used for
+professional calibration and the canonical Swift readiness manifest. Python
+then deeply validates the transfer-outcome, physical-device, and operational
+rows rather than accepting schema-only or empty artifacts.
 The app-path trace-quality gate also treats missing or all-cold
 `trajectoryCacheHit` telemetry and exact repeated `finalReply` hashes as
 production evidence failures: the launch report has to prove differentiated,

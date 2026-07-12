@@ -2407,7 +2407,7 @@ struct CoachChatConversationCorpusTests {
         })
 
         #expect(markdownRepair.turnDepths[0] == CoachTurnDepth.trustRepair.rawValue)
-        #expect(markdownRepair.trustRepairTurnIndices == [0])
+        #expect(markdownRepair.trustRepairTurnIndices == [0, 1])
         #expect(markdownRepair.userPushbackWithinTwoTurns)
         #expect(markdownRepair.coldnessComplaintFlag)
         #expect(markdownRepair.coldnessComplaintTurnIndices == [0])
@@ -3077,9 +3077,11 @@ struct CoachChatConversationCorpusTests {
 
         #expect(manifest.schemaVersion == CoachChatConversationCorpus.readinessEvidenceManifestSchemaVersion)
         #expect(manifest.audit.score == expectedScore)
-        #expect(manifest.audit.maximumAllowedScore == 20)
-        #expect(manifest.audit.claim == .localEvaluationSubstrateOnly)
-        #expect(!manifest.audit.productionReady)
+        #expect(manifest.audit.maximumAllowedScore == expectedCap)
+        #expect(manifest.audit.claim == (expectedBlockers.isEmpty
+            ? .productionReadyEvidenceAvailable
+            : .localEvaluationSubstrateOnly))
+        #expect(manifest.audit.productionReady == (expectedBlockers.isEmpty && expectedScore >= 85))
         #expect(manifest.audit.blockers == expectedBlockers)
         #expect(manifest.evidence.localConversationCount == CoachChatConversationCorpus.conversations.count)
         #expect(manifest.evidence.localRowsPassingProductionFloor == CoachChatConversationCorpus.conversations.count)
@@ -4258,6 +4260,17 @@ struct CoachChatConversationCorpusTests {
                 overBudgetLatencySurfaceKeys: ["aiPromptLatency"]
             ).encodedSortedJSON()
         )
+        let negativeLatency = try CoachRealDeviceTestFlightEvidence.decode(
+            from: Self.realDeviceTestFlightEvidence(
+                latencyOverrides: ["aiPromptLatency": -1]
+            ).encodedSortedJSON()
+        )
+        let missingRunMetadata = try CoachRealDeviceTestFlightEvidence.decode(
+            from: Self.realDeviceTestFlightEvidence(
+                appVersion: "",
+                osVersion: ""
+            ).encodedSortedJSON()
+        )
         let mixedBuild = try CoachRealDeviceTestFlightEvidence.decode(
             from: Self.realDeviceTestFlightEvidence(
                 buildMismatchSurfaceKeys: ["soundscapeAudioSession"]
@@ -4277,6 +4290,11 @@ struct CoachChatConversationCorpusTests {
         #expect(!overBudgetLatency.qualifiesForReadiness)
         #expect(overBudgetLatency.rejectionReasons.contains("aiPromptLatencyOverBudget"))
         #expect(overBudgetLatency.rejectionReasons.contains("rowSurfaceFloorFailures"))
+        #expect(!negativeLatency.qualifiesForReadiness)
+        #expect(negativeLatency.rejectionReasons.contains("aiPromptLatencyOverBudget"))
+        #expect(negativeLatency.rejectionReasons.contains("rowSurfaceFloorFailures"))
+        #expect(!missingRunMetadata.qualifiesForReadiness)
+        #expect(missingRunMetadata.rejectionReasons.contains("missingRunMetadata"))
         #expect(!mixedBuild.qualifiesForReadiness)
         #expect(mixedBuild.rejectionReasons.contains("buildNumberMismatch=soundscapeAudioSession"))
         #expect(!thinEvidence.qualifiesForReadiness)
@@ -4533,6 +4551,57 @@ struct CoachChatConversationCorpusTests {
         #expect(rejectedManifest.audit.score == 18)
     }
 
+    @MainActor
+    @Test func productionReadinessManifestCanReachReadyOnlyWhenEveryEvidenceContractPasses() async throws {
+        let conversationReport = CoachChatConversationEvaluationReport.make(
+            from: CoachChatConversationCorpus.conversations
+        )
+        let longFormConversationReport = CoachChatConversationEvaluationReport.make(
+            from: CoachChatConversationCorpus.longFormConversations,
+            schemaVersion: CoachChatConversationCorpus.longFormReportSchemaVersion
+        )
+        let expertPacket = CoachChatConversationExpertCalibrationPacket.make(
+            from: CoachChatConversationCorpus.professionalCalibrationConversations
+        )
+        let textAppPathReport = Self.cleanAppPathReport(
+            surface: .text,
+            schemaVersion: CoachChatConversationCorpus.appPathReportSchemaVersion,
+            localTargetShapeScore: conversationReport.visionProductionReadiness.localTargetShapeScore
+        )
+        let liveAppPathReport = Self.cleanAppPathReport(
+            surface: .live,
+            schemaVersion: CoachChatConversationCorpus.liveAppPathReportSchemaVersion,
+            localTargetShapeScore: conversationReport.visionProductionReadiness.localTargetShapeScore
+        )
+        let manifest = CoachVisionProductionReadinessEvidenceManifest.make(
+            conversationReport: conversationReport,
+            longFormConversationReport: longFormConversationReport,
+            expertPacket: expertPacket,
+            textAppPathReport: textAppPathReport,
+            liveAppPathReport: liveAppPathReport,
+            liveProviderSweep: Self.liveProviderSweepEvidence(),
+            professionalCalibration: Self.professionalCalibrationEvidence(),
+            realUserTransferOutcomes: Self.realUserTransferOutcomeEvidence(),
+            realDeviceTestFlight: Self.realDeviceTestFlightEvidence(),
+            operationalLaunchChecklist: Self.operationalLaunchChecklistEvidence()
+        )
+
+        #expect(manifest.audit.blockers.isEmpty)
+        #expect(manifest.audit.score == 100)
+        #expect(manifest.audit.maximumAllowedScore == 100)
+        #expect(manifest.audit.claim == .productionReadyEvidenceAvailable)
+        #expect(manifest.audit.productionReady)
+        let requiredExternalKeys = Set([
+            "liveProviderTranscriptSweep",
+            "professionalCoachCalibration",
+            "realUserLongitudinalTransferOutcomes",
+            "realDeviceTestFlightVerification",
+            "operationalLaunchChecklist"
+        ])
+        #expect(manifest.rows.filter { requiredExternalKeys.contains($0.key) }
+            .allSatisfy { $0.status == .earned })
+    }
+
     @Test func evaluationArtifactDumpDirectoryReadsXcodeAndSimulatorInputs() {
         let suiteName = "CoachChatConversationArtifactDump.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -4712,10 +4781,16 @@ struct CoachChatConversationCorpusTests {
                     .dropLast()
                     .filter { $0.role == .coach }
                     .map(\.text)
+                let turnDepth = TurnDepthClassifier.classify(
+                    userText: turn.userTurn,
+                    recentTurns: history
+                )
                 let issue = AICoachChatService.replyQualityIssue(
                     in: turn.coachReply,
                     latestUserTurn: turn.userTurn,
-                    recentCoachReplies: recentCoachReplies
+                    recentCoachReplies: recentCoachReplies,
+                    turnDepth: turnDepth,
+                    surface: .text
                 )
                 #expect(issue == nil,
                         "\(conversation.id) target turn tripped gate for user turn '\(turn.userTurn)': \(String(describing: issue))")
@@ -4724,7 +4799,8 @@ struct CoachChatConversationCorpusTests {
                 let outcome = await service.reply(
                     history: history,
                     systemPrompt: "You are Noum.",
-                    userContext: "Conversation fixture \(conversation.id)"
+                    userContext: "Conversation fixture \(conversation.id)",
+                    turnDepth: turnDepth
                 )
                 guard case .reply(let accepted) = outcome else {
                     Issue.record("\(conversation.id) expected accepted reply, got \(outcome)")
@@ -5540,6 +5616,8 @@ struct CoachChatConversationCorpusTests {
     }
 
     private static func realDeviceTestFlightEvidence(
+        appVersion: String = "1.0",
+        osVersion: String = "iOS 26.2",
         readinessWarnings: [String] = [],
         failingSurfaceKeys: Set<String> = [],
         evidenceKindOverrides: [String: String] = [:],
@@ -5547,7 +5625,8 @@ struct CoachChatConversationCorpusTests {
         missingEvidenceTimestampSurfaceKeys: Set<String> = [],
         buildMismatchSurfaceKeys: Set<String> = [],
         missingDeviceIdentitySurfaceKeys: Set<String> = [],
-        overBudgetLatencySurfaceKeys: Set<String> = []
+        overBudgetLatencySurfaceKeys: Set<String> = [],
+        latencyOverrides: [String: Int] = [:]
     ) -> CoachRealDeviceTestFlightEvidence {
         let buildNumber = "2026.06.30.1"
         let rows = CoachRealDeviceTestFlightEvidence.requiredSurfaceKeys.map { key in
@@ -5558,7 +5637,8 @@ struct CoachChatConversationCorpusTests {
             let buildNumberForRow = buildMismatchSurfaceKeys.contains(key) ?
                 "2026.06.29.9" : buildNumber
             let latency = key == "aiPromptLatency" ?
-                (overBudgetLatencySurfaceKeys.contains(key) || failed ? 4_200 : 1_850) : nil
+                (latencyOverrides[key] ??
+                    (overBudgetLatencySurfaceKeys.contains(key) || failed ? 4_200 : 1_850)) : nil
             return CoachRealDeviceTestFlightEvidence.Row(
                 surfaceKey: key,
                 passed: !failed,
@@ -5612,10 +5692,10 @@ struct CoachChatConversationCorpusTests {
         return CoachRealDeviceTestFlightEvidence(
             schemaVersion: CoachRealDeviceTestFlightEvidence.expectedSchemaVersion,
             testRunID: "real-device-qa-2026-06-30",
-            appVersion: "1.0",
+            appVersion: appVersion,
             buildNumber: buildNumber,
             deviceModel: "iPhone 15 Pro",
-            osVersion: "iOS 26.2",
+            osVersion: osVersion,
             testerRole: "internalTestFlightQA",
             summary: CoachRealDeviceTestFlightEvidence.Summary(
                 rowCount: rows.count,
@@ -5993,6 +6073,26 @@ struct CoachChatConversationCorpusTests {
     }
 
     @MainActor
+    static func dumpExpertCalibrationPacketForXCTestBridge() throws {
+        let packet = CoachChatConversationExpertCalibrationPacket.make(
+            from: CoachChatConversationCorpus.professionalCalibrationConversations
+        )
+        try Self.dumpEvaluationArtifactIfRequested(
+            packet.encodedSortedJSON(),
+            fileName: "\(CoachChatConversationCorpus.expertCalibrationPacketSchemaVersion).json"
+        )
+    }
+
+    @MainActor
+    static func dumpProductionReadinessManifestForXCTestBridge() throws {
+        let manifest = try Self.productionReadinessEvidenceManifestFromCurrentArtifacts()
+        try Self.dumpEvaluationArtifactIfRequested(
+            manifest.encodedSortedJSON(),
+            fileName: "coach-vision-production-readiness-evidence-manifest-v1.json"
+        )
+    }
+
+    @MainActor
     private static func dumpAppPathReportForXCTestBridge(
         surface: CoachReplySurface,
         schemaVersion: String,
@@ -6024,6 +6124,14 @@ final class CoachChatConversationArtifactDumpXCTest: XCTestCase {
 
     func testDumpLiveAppPathReport() async throws {
         try await CoachChatConversationCorpusTests.dumpLiveAppPathReportForXCTestBridge()
+    }
+
+    func testDumpExpertCalibrationPacket() throws {
+        try CoachChatConversationCorpusTests.dumpExpertCalibrationPacketForXCTestBridge()
+    }
+
+    func testDumpProductionReadinessManifest() throws {
+        try CoachChatConversationCorpusTests.dumpProductionReadinessManifestForXCTestBridge()
     }
 }
 

@@ -1,6 +1,6 @@
 # Coach Arena Latest Report
 
-- Generated: `2026-07-12T21:30:07+00:00`
+- Generated: `2026-07-12T21:57:51+00:00`
 - Candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Fixtures: `50`
 - Average: `79.76/100`
@@ -63,7 +63,7 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 ## Previous Run
 
 - Status: `compared`
-- Previous generated: `2026-07-12T20:53:57+00:00`
+- Previous generated: `2026-07-12T21:30:07+00:00`
 - Previous candidate: `/private/tmp/noum-coach-eval/coach-chat-conversation-app-path-eval-v1.json`
 - Candidate changed: `False`
 - Fixture count changed: `False`
@@ -85,14 +85,14 @@ VISION production readiness 18/100; local target-shape 85/100; claim localEvalua
 - App-path local fixture floor: `True`
 - Source target-reply mismatches: `0`
 - Source app-path failure samples: `0` of `0`
-- Source trace git commits: `5aa6b8ff`
+- Source trace git commits: `d4b1a56b`
 - Source traces missing git commit: `0`
-- Current git commit: `5aa6b8ff`
-- Source trace coach fingerprints: `sha256:deab3935f807243486dcf41c1652880bb5875744bed621a1866be8a20d252b8e`
+- Current git commit: `d4b1a56b`
+- Source trace coach fingerprints: `sha256:003eb0d274efd5d63e09191d08fd24b242a136acbc05fade872718e16a5aba07`
 - Source traces missing coach fingerprint: `0`
-- Current coach source fingerprint: `sha256:deab3935f807243486dcf41c1652880bb5875744bed621a1866be8a20d252b8e`
+- Current coach source fingerprint: `sha256:003eb0d274efd5d63e09191d08fd24b242a136acbc05fade872718e16a5aba07`
 - Source fingerprint matches current: `True`
-- Dirty coach source files: `7`
+- Dirty coach source files: `2`
 - Source freshness passes: `True`
 - Coverage passes: `True`
 - Requested fixtures: `50`

@@ -18,6 +18,8 @@ REPO_ROOT = ARENA_ROOT.parents[1]
 DEFAULT_REPORT = ARENA_ROOT / "reports" / "app-path" / "latest.json"
 CANONICAL_APP_PATH_REPORT_DIR = ARENA_ROOT / "reports" / "app-path"
 DEFAULT_DUMP_DIR = Path(os.environ.get("NOUM_COACH_EVAL_DUMP_DIR", "/private/tmp/noum-coach-eval"))
+READINESS_MANIFEST_FILE = "coach-vision-production-readiness-evidence-manifest-v1.json"
+READINESS_MANIFEST_SCHEMA = "coach-vision-production-readiness-evidence-manifest-v1"
 READY_CLAIM = "productionReadyEvidenceAvailable"
 READY_SCORE = 85
 READY_LOCAL_TARGET_SHAPE_SCORE = 85
@@ -281,7 +283,6 @@ GENERIC_PLACEHOLDER_REPLY_FRAGMENTS = [
     "focused coach reply with concrete evidence",
     "grounded coach reply with a proof test",
     "generic coach reply",
-    "placeholder",
     "practice more and communicate clearly",
     "based on your data",
     "keep practicing and track your progress",
@@ -298,6 +299,56 @@ PROFESSIONAL_CALIBRATION_MIN_REVIEW_COUNT = (
     * PROFESSIONAL_CALIBRATION_DEFAULT_REVIEWS_PER_CONVERSATION
 )
 MIN_TRAJECTORY_CACHE_HIT_RATIO = 0.10
+
+REAL_USER_TRANSFER_SCHEMA = "coach-real-user-transfer-outcomes-v2"
+REAL_USER_TRANSFER_PROTOCOL = "coach-transfer-outcome-ledger-v2"
+REAL_USER_TRANSFER_REQUIRED_OUTCOMES = 10
+REAL_USER_TRANSFER_REQUIRED_USERS = 8
+REAL_USER_TRANSFER_REQUIRED_MOMENT_CATEGORIES = 4
+REAL_USER_TRANSFER_MAX_OUTCOMES_PER_USER = 2
+REAL_USER_TRANSFER_MIN_FOLLOW_UP_HOURS = 24
+
+REAL_DEVICE_TESTFLIGHT_SCHEMA = "coach-real-device-testflight-qa-v2"
+REAL_DEVICE_MAX_AI_PROMPT_LATENCY_MS = 3000
+REAL_DEVICE_REQUIRED_SURFACES = [
+    "liveActivity",
+    "aiPromptLatency",
+    "soundscapeAudioSession",
+    "paywallPurchase",
+]
+REAL_DEVICE_EVIDENCE_KIND_BY_SURFACE = {
+    "liveActivity": "screenRecording",
+    "aiPromptLatency": "latencyTrace",
+    "soundscapeAudioSession": "audioSessionLog",
+    "paywallPurchase": "storeKitReceipt",
+}
+
+OPERATIONAL_LAUNCH_SCHEMA = "coach-operational-launch-checklist-v2"
+OPERATIONAL_LAUNCH_CHECKLIST_VERSION = "m14-launch-gate-v2"
+OPERATIONAL_LAUNCH_REQUIRED_ITEMS = [
+    "firestoreRulesDeployed",
+    "privacyPolicyURLHosted",
+    "settingsPrivacyURLVerified",
+    "appStorePrivacyDisclosuresReviewed",
+    "testFlightBuildUploaded",
+    "releaseBlockingBugsTriaged",
+]
+OPERATIONAL_LAUNCH_EVIDENCE_KIND_BY_ITEM = {
+    "firestoreRulesDeployed": "firebaseDeployLog",
+    "privacyPolicyURLHosted": "publicURLProbe",
+    "settingsPrivacyURLVerified": "settingsScreenshot",
+    "appStorePrivacyDisclosuresReviewed": "appStorePrivacyExport",
+    "testFlightBuildUploaded": "appStoreConnectBuildRecord",
+    "releaseBlockingBugsTriaged": "releaseTriageReport",
+}
+OPERATIONAL_LAUNCH_ENVIRONMENT_BY_ITEM = {
+    "firestoreRulesDeployed": "production",
+    "privacyPolicyURLHosted": "production",
+    "settingsPrivacyURLVerified": "releaseCandidate",
+    "appStorePrivacyDisclosuresReviewed": "appStoreConnect",
+    "testFlightBuildUploaded": "appStoreConnect",
+    "releaseBlockingBugsTriaged": "releaseBoard",
+}
 
 
 UI_FLOW_BOUNDARY = {
@@ -333,6 +384,106 @@ def readiness_from_report(report):
         return readiness
     readiness = report.get("visionProductionReadiness")
     return readiness if isinstance(readiness, dict) else None
+
+
+def readiness_with_verified_artifacts(local_readiness, artifact_audit):
+    if not isinstance(local_readiness, dict):
+        return None
+    valid_blockers = {
+        item.get("blocker")
+        for item in artifact_audit.get("requiredArtifacts", [])
+        if item.get("present") and item.get("passesLightweightContract")
+    }
+    blockers = [
+        blocker for blocker in EVIDENCE_REQUIREMENTS
+        if blocker not in valid_blockers
+    ]
+    local_score = strict_int(local_readiness.get("score")) or 0
+    raw_score = min(18, local_score)
+    weights = {
+        "noLiveProviderTranscriptSweep": 16,
+        "noProfessionalCoachCalibration": 20,
+        "noRealUserLongitudinalTransferOutcomes": 26,
+        "noRealDeviceTestFlightVerification": 12,
+        "operationalLaunchChecklistIncomplete": 8,
+    }
+    for blocker, weight in weights.items():
+        if blocker in valid_blockers:
+            raw_score += weight
+    if any(blocker in blockers for blocker in [
+        "noLiveProviderTranscriptSweep",
+        "noProfessionalCoachCalibration",
+        "noRealUserLongitudinalTransferOutcomes",
+    ]):
+        maximum = 20
+    elif "noRealDeviceTestFlightVerification" in blockers:
+        maximum = 45
+    elif "operationalLaunchChecklistIncomplete" in blockers:
+        maximum = 60
+    else:
+        maximum = 100
+    score = min(raw_score, maximum)
+    claim = READY_CLAIM if not blockers else "localEvaluationSubstrateOnly"
+    local_target = local_readiness.get("localTargetShapeScore")
+    blocker_text = ", ".join(blockers) if blockers else "no blocking evidence gaps"
+    return {
+        "score": score,
+        "maximumAllowedScore": maximum,
+        "localTargetShapeScore": local_target,
+        "claim": claim,
+        "blockers": blockers,
+        "summary": (
+            f"VISION production readiness {score}/100; local target-shape "
+            f"{local_target}/100; claim {claim}; blockers: {blocker_text}."
+        ),
+    }
+
+
+def readiness_manifest_audit(dump_dir, expected_readiness):
+    path = Path(dump_dir) / READINESS_MANIFEST_FILE
+    result = {
+        "path": str(path),
+        "present": path.is_file(),
+        "schemaVersion": None,
+        "passes": False,
+        "failures": [],
+    }
+    if not path.is_file():
+        result["failures"].append("missing")
+        return result
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        result["failures"].append(f"invalidJSON:{type(exc).__name__}")
+        return result
+    if not isinstance(payload, dict):
+        result["failures"].append("invalidTopLevelType")
+        return result
+    result["schemaVersion"] = payload.get("schemaVersion")
+    if payload.get("schemaVersion") != READINESS_MANIFEST_SCHEMA:
+        result["failures"].append("schemaVersionMismatch")
+    audit = payload.get("audit") if isinstance(payload.get("audit"), dict) else None
+    if audit is None:
+        result["failures"].append("missingAudit")
+    elif expected_readiness:
+        for key in ["score", "maximumAllowedScore", "claim", "blockers"]:
+            if audit.get(key) != expected_readiness.get(key):
+                result["failures"].append(f"auditMismatch:{key}")
+        manifest_local_target = strict_int(audit.get("localTargetShapeScore"))
+        expected_local_target = strict_int(expected_readiness.get("localTargetShapeScore"))
+        if (
+            manifest_local_target is None
+            or expected_local_target is None
+            or manifest_local_target < expected_local_target
+        ):
+            result["failures"].append("auditMismatch:localTargetShapeScore")
+    if not isinstance(payload.get("evidence"), dict):
+        result["failures"].append("missingEvidence")
+    if not isinstance(payload.get("rows"), list) or not payload.get("rows"):
+        result["failures"].append("missingRows")
+    result["failures"] = list(dict.fromkeys(result["failures"]))
+    result["passes"] = not result["failures"]
+    return result
 
 
 def local_gates_from_report(report):
@@ -706,12 +857,17 @@ def computed_launch_ready(
     readiness,
     local_gates,
     artifact_audit=None,
+    readiness_manifest=None,
     ops_preflight=None,
     ops_live_probe=None,
     source_freshness_audit=None,
     report_source_audit=None,
 ):
     artifact_failures = artifact_gate_failures(artifact_audit) if artifact_audit else []
+    manifest_failures = (
+        readiness_manifest_gate_failures(readiness_manifest)
+        if readiness_manifest else []
+    )
     ops_failures = operational_static_gate_failures(ops_preflight) if ops_preflight else []
     ops_live_failures = (
         operational_live_gate_failures(ops_live_probe) if ops_live_probe else []
@@ -730,6 +886,7 @@ def computed_launch_ready(
         not local_readiness_failures(local_gates, readiness) and
         not source_failures and
         not artifact_failures and
+        not manifest_failures and
         not ops_failures and
         not ops_live_failures
     )
@@ -790,6 +947,12 @@ def generic_placeholder_reply(value):
     normalized = normalized_reply_key(value)
     if not normalized:
         return False
+    if (
+        normalized == "placeholder"
+        or "placeholder reply" in normalized
+        or "placeholder coach reply" in normalized
+    ):
+        return True
     return any(fragment in normalized for fragment in GENERIC_PLACEHOLDER_REPLY_FRAGMENTS)
 
 
@@ -1353,21 +1516,32 @@ def live_provider_sweep_contract_failures(payload, source_expectations=None):
     append_ids_failure(failures, "latestTurnReadinessTelemetryFailures", latest_telemetry_failures)
     append_ids_failure(failures, "latestTurnGateTelemetryFailures", latest_gate_failures)
 
-    trajectory_cache_hit_rows = [
-        row_identifier(row) or "unknown" for row in rows
-        if isinstance(row, dict) and row.get("trajectoryCacheHit") is True
+    # Latest-turn fixtures represent independent users and should usually be
+    # cold. Warm cache reuse is exercised by later turns in the detailed live
+    # conversations, so readiness must audit the complete operational set.
+    operational_rows = list(rows)
+    for conversation in long_form_details:
+        if not isinstance(conversation, dict):
+            continue
+        nested_rows = conversation.get("rows")
+        if isinstance(nested_rows, list):
+            operational_rows.extend(row for row in nested_rows if isinstance(row, dict))
+
+    operational_trajectory_cache_hit_rows = [
+        row_identifier(row) or "unknown" for row in operational_rows
+        if row.get("trajectoryCacheHit") is True
     ]
-    required_trajectory_hits = min_trajectory_cache_hits(len(rows))
+    required_trajectory_hits = min_trajectory_cache_hits(len(operational_rows))
     summary_trajectory_hits = strict_int(summary.get("trajectoryCacheHitCount"))
     if (
         "trajectoryCacheHitCount" in summary
-        and summary_trajectory_hits != len(trajectory_cache_hit_rows)
+        and summary_trajectory_hits != len(operational_trajectory_cache_hit_rows)
     ):
         failures.append("trajectoryCacheHitSummaryMismatch")
-    if len(trajectory_cache_hit_rows) < required_trajectory_hits:
+    if len(operational_trajectory_cache_hit_rows) < required_trajectory_hits:
         failures.append(
             "weakTrajectoryCacheCoverage="
-            f"{len(trajectory_cache_hit_rows)}/{required_trajectory_hits}"
+            f"{len(operational_trajectory_cache_hit_rows)}/{required_trajectory_hits}"
         )
 
     duplicated_latest_replies = duplicated_reply_ids(rows)
@@ -1444,6 +1618,396 @@ def live_provider_sweep_contract_failures(payload, source_expectations=None):
     return deduped
 
 
+def usable_evidence_reference(value):
+    normalized = normalized_reply_key(value if isinstance(value, str) else "")
+    return bool(normalized) and normalized not in {
+        "n/a", "na", "none", "todo", "tbd", "placeholder", "unknown",
+    }
+
+
+def real_user_transfer_row_passes(row):
+    if not isinstance(row, dict):
+        return False
+    identity_keys = ["outcomeID", "userIDHash", "momentCategory", "interventionID"]
+    evidence_keys = [
+        "interventionEvidenceReference",
+        "momentEvidenceReference",
+        "followUpEvidenceReference",
+        "audienceResponseEvidenceReference",
+        "selfReportEvidenceReference",
+    ]
+    days_since_first = strict_int(row.get("daysSinceFirstNoumSession"))
+    follow_up_delay = strict_int(row.get("followUpDelayHours"))
+    linked_interventions = strict_int(row.get("linkedCoachInterventionCount"))
+    pre_confidence = strict_int(row.get("preMomentConfidence"))
+    post_confidence = strict_int(row.get("postMomentConfidence"))
+    return bool(
+        all(trimmed_non_empty(row.get(key)) for key in identity_keys)
+        and all(usable_evidence_reference(row.get(key)) for key in evidence_keys)
+        and row.get("realWorldMomentOccurred") is True
+        and row.get("followUpCompleted") is True
+        and linked_interventions is not None and linked_interventions > 0
+        and days_since_first is not None and days_since_first >= 7
+        and follow_up_delay is not None
+        and follow_up_delay >= REAL_USER_TRANSFER_MIN_FOLLOW_UP_HOURS
+        and pre_confidence is not None
+        and post_confidence is not None
+        and post_confidence >= pre_confidence
+        and row.get("positiveTransferReported") is True
+        and row.get("audienceResponseEvidenceCollected") is True
+        and row.get("adverseOutcomeReported") is False
+        and row.get("causalityClaims") == []
+    )
+
+
+def real_user_transfer_contract_failures(payload):
+    failures = []
+    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    if any(not isinstance(row, dict) for row in rows):
+        failures.append("invalidOutcomeRows")
+    typed_rows = [row for row in rows if isinstance(row, dict)]
+
+    if payload.get("studyProtocolVersion") != REAL_USER_TRANSFER_PROTOCOL:
+        failures.append(f"studyProtocolVersion={payload.get('studyProtocolVersion')}")
+    outcome_count = strict_int(payload.get("outcomeCount"))
+    if (
+        outcome_count is None
+        or outcome_count < REAL_USER_TRANSFER_REQUIRED_OUTCOMES
+        or len(rows) < REAL_USER_TRANSFER_REQUIRED_OUTCOMES
+    ):
+        failures.append("fewerThanTenOutcomes")
+    if outcome_count != len(rows) or strict_int(summary.get("rowCount")) != len(rows):
+        failures.append("rowCountMismatch")
+
+    outcome_keys = [normalized_reply_key(row.get("outcomeID")) for row in typed_rows]
+    user_keys = [normalized_reply_key(row.get("userIDHash")) for row in typed_rows]
+    moment_keys = [normalized_reply_key(row.get("momentCategory")) for row in typed_rows]
+    missing_identity = []
+    for index, row in enumerate(typed_rows):
+        if not all(trimmed_non_empty(row.get(key)) for key in [
+            "outcomeID", "userIDHash", "momentCategory", "interventionID",
+        ]):
+            missing_identity.append(trimmed_non_empty(row.get("outcomeID")) or f"row-{index}")
+    if len(set(outcome_keys)) != len(rows):
+        failures.append("duplicateOutcomeIDs")
+    append_ids_failure(failures, "missingRowIdentity", missing_identity)
+
+    unique_users = len(set(user_keys))
+    if (
+        strict_int(summary.get("uniqueUserCount")) != unique_users
+        or unique_users < REAL_USER_TRANSFER_REQUIRED_USERS
+    ):
+        failures.append("insufficientUniqueUsers")
+    unique_moments = len(set(moment_keys))
+    if (
+        strict_int(summary.get("uniqueMomentCategoryCount")) != unique_moments
+        or unique_moments < REAL_USER_TRANSFER_REQUIRED_MOMENT_CATEGORIES
+    ):
+        failures.append("insufficientMomentCategoryDiversity")
+
+    outcomes_by_user = {}
+    for user_key in user_keys:
+        outcomes_by_user[user_key] = outcomes_by_user.get(user_key, 0) + 1
+    maximum_per_user = max(outcomes_by_user.values(), default=0)
+    if (
+        strict_int(summary.get("maximumOutcomesPerUser")) != maximum_per_user
+        or maximum_per_user > REAL_USER_TRANSFER_MAX_OUTCOMES_PER_USER
+    ):
+        failures.append("excessiveOutcomesPerUser")
+
+    evidence_keys = [
+        "interventionEvidenceReference",
+        "momentEvidenceReference",
+        "followUpEvidenceReference",
+        "audienceResponseEvidenceReference",
+        "selfReportEvidenceReference",
+    ]
+    verified_evidence_count = sum(
+        all(usable_evidence_reference(row.get(key)) for key in evidence_keys)
+        for row in typed_rows
+    )
+    if (
+        strict_int(summary.get("verifiedEvidenceReferenceCount")) != verified_evidence_count
+        or verified_evidence_count < REAL_USER_TRANSFER_REQUIRED_OUTCOMES
+        or verified_evidence_count < len(rows)
+    ):
+        failures.append("insufficientEvidenceReferences")
+
+    follow_up_delays = [strict_int(row.get("followUpDelayHours")) for row in typed_rows]
+    minimum_follow_up = min((value for value in follow_up_delays if value is not None), default=0)
+    if (
+        any(value is None for value in follow_up_delays)
+        or strict_int(summary.get("minimumFollowUpDelayHours")) != minimum_follow_up
+        or minimum_follow_up < REAL_USER_TRANSFER_MIN_FOLLOW_UP_HOURS
+    ):
+        failures.append("insufficientFollowUpDelay")
+
+    count_contracts = [
+        ("completedFollowUpCount", "followUpCompleted", "insufficientCompletedFollowUps"),
+        ("realWorldMomentCount", "realWorldMomentOccurred", "insufficientRealWorldMoments"),
+        ("positiveTransferCount", "positiveTransferReported", "insufficientPositiveTransferOutcomes"),
+        ("audienceResponseEvidenceCount", "audienceResponseEvidenceCollected", "insufficientAudienceResponseEvidence"),
+    ]
+    for summary_key, row_key, failure in count_contracts:
+        observed = sum(row.get(row_key) is True for row in typed_rows)
+        if strict_int(summary.get(summary_key)) != observed or observed < REAL_USER_TRANSFER_REQUIRED_OUTCOMES:
+            failures.append(failure)
+
+    linked_count = sum((strict_int(row.get("linkedCoachInterventionCount")) or 0) > 0 for row in typed_rows)
+    if (
+        strict_int(summary.get("linkedInterventionOutcomeCount")) != linked_count
+        or linked_count < REAL_USER_TRANSFER_REQUIRED_OUTCOMES
+    ):
+        failures.append("insufficientLinkedInterventions")
+    no_regression_count = sum(
+        strict_int(row.get("preMomentConfidence")) is not None
+        and strict_int(row.get("postMomentConfidence")) is not None
+        and strict_int(row.get("postMomentConfidence")) >= strict_int(row.get("preMomentConfidence"))
+        for row in typed_rows
+    )
+    if (
+        strict_int(summary.get("noRegressionOutcomeCount")) != no_regression_count
+        or no_regression_count < REAL_USER_TRANSFER_REQUIRED_OUTCOMES
+    ):
+        failures.append("insufficientNoRegressionOutcomes")
+    adverse_count = sum(row.get("adverseOutcomeReported") is True for row in typed_rows)
+    if strict_int(summary.get("adverseOutcomeCount")) != adverse_count or adverse_count > 0:
+        failures.append("adverseOutcomesReported")
+    if (
+        (strict_int(summary.get("minimumDaysSinceFirstSession")) or 0) < 7
+        or (strict_int(summary.get("studyDurationDays")) or 0) < 14
+    ):
+        failures.append("insufficientLongitudinalWindow")
+    if any(row.get("causalityClaims") != [] for row in typed_rows):
+        failures.append("causalityClaimsPresent")
+
+    passing_count = sum(real_user_transfer_row_passes(row) for row in typed_rows)
+    if (
+        passing_count != len(rows)
+        or strict_int(summary.get("passingOutcomeCount")) != passing_count
+        or passing_count < REAL_USER_TRANSFER_REQUIRED_OUTCOMES
+    ):
+        failures.append("outcomeFloorFailures")
+    warnings = summary.get("readinessWarnings")
+    if not isinstance(warnings, list):
+        failures.append("invalidReadinessWarnings")
+    else:
+        append_ids_failure(failures, "readinessWarnings", [
+            item for item in warnings if isinstance(item, str) and item.strip()
+        ])
+    return list(dict.fromkeys(failures))
+
+
+def real_device_row_passes(row):
+    if not isinstance(row, dict):
+        return False
+    surface = row.get("surfaceKey")
+    expected_kind = REAL_DEVICE_EVIDENCE_KIND_BY_SURFACE.get(surface)
+    latency = strict_int(row.get("latencyMs"))
+    latency_passes = surface != "aiPromptLatency" or (
+        latency is not None and 0 <= latency <= REAL_DEVICE_MAX_AI_PROMPT_LATENCY_MS
+    )
+    trail_keys = [
+        "evidenceReference", "evidenceKind", "evidenceCapturedAtISO8601",
+        "testFlightBuildNumber", "deviceIdentifierHash",
+    ]
+    return bool(
+        row.get("passed") is True
+        and row.get("realDevice") is True
+        and row.get("testFlightBuildInstalled") is True
+        and strict_int(row.get("blockingIssueCount")) == 0
+        and all(usable_evidence_reference(row.get(key)) for key in trail_keys)
+        and trimmed_non_empty(row.get("evidenceKind")) == expected_kind
+        and latency_passes
+    )
+
+
+def real_device_testflight_contract_failures(payload):
+    failures = []
+    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    if any(not isinstance(row, dict) for row in rows):
+        failures.append("invalidDeviceRows")
+    typed_rows = [row for row in rows if isinstance(row, dict)]
+    build = trimmed_non_empty(payload.get("buildNumber"))
+    if not all(trimmed_non_empty(payload.get(key)) for key in [
+        "testRunID", "appVersion", "buildNumber", "deviceModel", "osVersion", "testerRole",
+    ]):
+        failures.append("missingRunMetadata")
+    if strict_int(summary.get("rowCount")) != len(rows):
+        failures.append("rowCountMismatch")
+    surface_keys = [row.get("surfaceKey") for row in typed_rows]
+    if len(set(surface_keys)) != len(rows):
+        failures.append("duplicateSurfaceKeys")
+    required = set(REAL_DEVICE_REQUIRED_SURFACES)
+    missing = sorted(required.difference(surface_keys))
+    append_ids_failure(failures, "missingRequiredSurfaces", missing)
+
+    required_rows = [row for row in typed_rows if row.get("surfaceKey") in required]
+    passing_rows = [row for row in required_rows if real_device_row_passes(row)]
+    real_device_rows = [row for row in required_rows if row.get("realDevice") is True]
+    testflight_rows = [row for row in required_rows if row.get("testFlightBuildInstalled") is True]
+    trail_keys = [
+        "evidenceReference", "evidenceKind", "evidenceCapturedAtISO8601",
+        "testFlightBuildNumber", "deviceIdentifierHash",
+    ]
+    artifact_rows = [row for row in required_rows if all(
+        usable_evidence_reference(row.get(key)) for key in trail_keys
+    )]
+    kind_rows = [row for row in required_rows if (
+        trimmed_non_empty(row.get("evidenceKind")) ==
+        REAL_DEVICE_EVIDENCE_KIND_BY_SURFACE.get(row.get("surfaceKey"))
+    )]
+    same_build_rows = [row for row in required_rows if (
+        trimmed_non_empty(row.get("testFlightBuildNumber")) == build
+    )]
+    identity_rows = [row for row in required_rows if usable_evidence_reference(
+        row.get("deviceIdentifierHash")
+    )]
+    latency_rows = [row for row in required_rows if row.get("surfaceKey") == "aiPromptLatency"]
+    latency_pass_rows = [row for row in latency_rows if (
+        strict_int(row.get("latencyMs")) is not None
+        and 0 <= strict_int(row.get("latencyMs")) <= REAL_DEVICE_MAX_AI_PROMPT_LATENCY_MS
+    )]
+
+    if strict_int(summary.get("requiredSurfaceCount")) != len(REAL_DEVICE_REQUIRED_SURFACES):
+        failures.append("requiredSurfaceCountMismatch")
+    if strict_int(summary.get("passedRequiredSurfaceCount")) != len(passing_rows) or len(passing_rows) < len(required):
+        failures.append("surfaceFloorFailures")
+    if strict_int(summary.get("realDeviceSurfaceCount")) != len(real_device_rows) or len(real_device_rows) < len(required):
+        failures.append("notAllSurfacesOnRealDevice")
+    if strict_int(summary.get("testFlightBuildSurfaceCount")) != len(testflight_rows) or len(testflight_rows) < len(required):
+        failures.append("notAllSurfacesOnTestFlightBuild")
+    missing_artifacts = sorted(required.difference(row.get("surfaceKey") for row in artifact_rows))
+    if strict_int(summary.get("artifactBackedSurfaceCount")) != len(artifact_rows) or missing_artifacts:
+        failures.append(f"missingDeviceEvidence={','.join(missing_artifacts)}")
+    kind_mismatches = sorted(required.difference(row.get("surfaceKey") for row in kind_rows))
+    if strict_int(summary.get("expectedEvidenceKindSurfaceCount")) != len(kind_rows) or kind_mismatches:
+        failures.append(f"evidenceKindMismatch={','.join(kind_mismatches)}")
+    build_mismatches = sorted(required.difference(row.get("surfaceKey") for row in same_build_rows))
+    if strict_int(summary.get("sameBuildSurfaceCount")) != len(same_build_rows) or build_mismatches:
+        failures.append(f"buildNumberMismatch={','.join(build_mismatches)}")
+    identity_missing = sorted(required.difference(row.get("surfaceKey") for row in identity_rows))
+    if strict_int(summary.get("deviceIdentitySurfaceCount")) != len(identity_rows) or identity_missing:
+        failures.append(f"missingDeviceIdentity={','.join(identity_missing)}")
+    if (
+        len(latency_rows) != 1
+        or strict_int(summary.get("latencyWithinBudgetSurfaceCount")) != len(latency_pass_rows)
+        or len(latency_pass_rows) != 1
+    ):
+        failures.append("aiPromptLatencyOverBudget")
+    issue_counts = [strict_int(row.get("blockingIssueCount")) for row in typed_rows]
+    blocking_count = sum(value for value in issue_counts if value is not None)
+    if any(value is None for value in issue_counts) or strict_int(summary.get("blockingIssueCount")) != blocking_count or blocking_count > 0:
+        failures.append("blockingIssuesPresent")
+    if summary.get("crashFree") is not True:
+        failures.append("crashesObserved")
+    if len(passing_rows) != len(required_rows):
+        failures.append("rowSurfaceFloorFailures")
+    warnings = summary.get("readinessWarnings")
+    if not isinstance(warnings, list):
+        failures.append("invalidReadinessWarnings")
+    else:
+        append_ids_failure(failures, "readinessWarnings", [
+            item for item in warnings if isinstance(item, str) and item.strip()
+        ])
+    return list(dict.fromkeys(failures))
+
+
+def operational_launch_item_passes(item):
+    if not isinstance(item, dict):
+        return False
+    key = item.get("key")
+    return bool(
+        item.get("completed") is True
+        and all(usable_evidence_reference(item.get(field)) for field in [
+            "evidenceReference", "verificationReference",
+            "commandOrReviewOutputReference", "completedAtISO8601",
+        ])
+        and trimmed_non_empty(item.get("evidenceKind")) ==
+            OPERATIONAL_LAUNCH_EVIDENCE_KIND_BY_ITEM.get(key)
+        and trimmed_non_empty(item.get("environment")) ==
+            OPERATIONAL_LAUNCH_ENVIRONMENT_BY_ITEM.get(key)
+        and usable_evidence_reference(item.get("verifiedAtISO8601"))
+        and usable_evidence_reference(item.get("verifiedByRole"))
+    )
+
+
+def operational_launch_contract_failures(payload):
+    failures = []
+    items = payload.get("items") if isinstance(payload.get("items"), list) else []
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    if any(not isinstance(item, dict) for item in items):
+        failures.append("invalidChecklistItems")
+    typed_items = [item for item in items if isinstance(item, dict)]
+    build = trimmed_non_empty(payload.get("releaseCandidateBuild"))
+    if payload.get("checklistVersion") != OPERATIONAL_LAUNCH_CHECKLIST_VERSION:
+        failures.append(f"checklistVersion={payload.get('checklistVersion')}")
+    if build is None or trimmed_non_empty(payload.get("completedByRole")) is None:
+        failures.append("missingReleaseMetadata")
+    if strict_int(summary.get("itemCount")) != len(items):
+        failures.append("itemCountMismatch")
+    keys = [item.get("key") for item in typed_items]
+    if len(set(keys)) != len(items):
+        failures.append("duplicateChecklistItems")
+    required = set(OPERATIONAL_LAUNCH_REQUIRED_ITEMS)
+    append_ids_failure(failures, "missingRequiredItems", sorted(required.difference(keys)))
+    required_items = [item for item in typed_items if item.get("key") in required]
+    completed_items = [item for item in required_items if item.get("completed") is True]
+    failed_items = [item for item in required_items if item.get("completed") is not True]
+    artifact_items = [item for item in required_items if all(
+        usable_evidence_reference(item.get(field)) for field in [
+            "evidenceReference", "verificationReference",
+            "commandOrReviewOutputReference", "completedAtISO8601",
+        ]
+    )]
+    kind_items = [item for item in required_items if (
+        trimmed_non_empty(item.get("evidenceKind")) ==
+        OPERATIONAL_LAUNCH_EVIDENCE_KIND_BY_ITEM.get(item.get("key"))
+    )]
+    environment_items = [item for item in required_items if (
+        trimmed_non_empty(item.get("environment")) ==
+        OPERATIONAL_LAUNCH_ENVIRONMENT_BY_ITEM.get(item.get("key"))
+    )]
+    same_build_items = [item for item in required_items if (
+        trimmed_non_empty(item.get("releaseCandidateBuild")) == build
+    )]
+    verified_items = [item for item in required_items if (
+        usable_evidence_reference(item.get("verifiedAtISO8601"))
+        and usable_evidence_reference(item.get("verifiedByRole"))
+    )]
+    if strict_int(summary.get("completedRequiredItemCount")) != len(completed_items) or len(completed_items) < len(required):
+        failures.append("incompleteRequiredItems")
+    if strict_int(summary.get("failedRequiredItemCount")) != len(failed_items) or failed_items:
+        failures.append("failedRequiredItems")
+    missing_artifacts = sorted(required.difference(item.get("key") for item in artifact_items))
+    if strict_int(summary.get("artifactBackedItemCount")) != len(artifact_items) or missing_artifacts:
+        failures.append(f"missingOperationalEvidence={','.join(missing_artifacts)}")
+    kind_mismatches = sorted(required.difference(item.get("key") for item in kind_items))
+    if strict_int(summary.get("expectedEvidenceKindItemCount")) != len(kind_items) or kind_mismatches:
+        failures.append(f"evidenceKindMismatch={','.join(kind_mismatches)}")
+    environment_mismatches = sorted(required.difference(item.get("key") for item in environment_items))
+    if strict_int(summary.get("expectedEnvironmentItemCount")) != len(environment_items) or environment_mismatches:
+        failures.append(f"environmentMismatch={','.join(environment_mismatches)}")
+    build_mismatches = sorted(required.difference(item.get("key") for item in same_build_items))
+    if strict_int(summary.get("sameBuildItemCount")) != len(same_build_items) or build_mismatches:
+        failures.append(f"releaseCandidateBuildMismatch={','.join(build_mismatches)}")
+    verification_missing = sorted(required.difference(item.get("key") for item in verified_items))
+    if strict_int(summary.get("verifiedRequiredItemCount")) != len(verified_items) or verification_missing:
+        failures.append(f"missingOperationalVerification={','.join(verification_missing)}")
+    if any(not operational_launch_item_passes(item) for item in required_items):
+        failures.append("itemFloorFailures")
+    warnings = summary.get("readinessWarnings")
+    if not isinstance(warnings, list):
+        failures.append("invalidReadinessWarnings")
+    else:
+        append_ids_failure(failures, "readinessWarnings", [
+            item for item in warnings if isinstance(item, str) and item.strip()
+        ])
+    return list(dict.fromkeys(failures))
+
+
 def evidence_artifact_contract_status(path, requirement, source_expectations=None):
     if not path.is_file():
         return {
@@ -1504,6 +2068,12 @@ def evidence_artifact_contract_status(path, requirement, source_expectations=Non
                 (source_expectations or {}).get("professionalCalibrationPacket"),
             )
         )
+    if expected_schema == REAL_USER_TRANSFER_SCHEMA:
+        failures.extend(real_user_transfer_contract_failures(payload))
+    if expected_schema == REAL_DEVICE_TESTFLIGHT_SCHEMA:
+        failures.extend(real_device_testflight_contract_failures(payload))
+    if expected_schema == OPERATIONAL_LAUNCH_SCHEMA:
+        failures.extend(operational_launch_contract_failures(payload))
 
     return {
         "parseStatus": "ok",
@@ -1569,9 +2139,9 @@ def evidence_artifact_audit(dump_dir, readiness=None):
         "dumpDir": str(root),
         "dumpDirExists": root.is_dir(),
         "validationBoundary": (
-            "Python performs structured JSON/schema, source-freshness, coverage, "
-            "and telemetry staging checks; Swift manifest loaders remain the "
-            "authoritative launch evidence gate."
+            "Python mirrors the Swift row-level evidence contracts, validates "
+            "source freshness, and requires the current Swift readiness manifest "
+            "to agree before launch readiness can pass."
         ),
         "requiredArtifactCount": len(required),
         "presentArtifactCount": len(required) - len(missing),
@@ -1638,6 +2208,23 @@ def artifact_gate_failures(artifact_audit):
                 "nextStep": "Run `./tools/coach-arena/run.sh app-path-source` for the same dump directory.",
             })
     return failures
+
+
+def readiness_manifest_gate_failures(manifest_audit):
+    if manifest_audit.get("passes"):
+        return []
+    return [{
+        "label": READINESS_MANIFEST_FILE,
+        "observed": ",".join(manifest_audit.get("failures") or ["invalid"]),
+        "gate": (
+            "The Swift readiness manifest must be regenerated from the current "
+            "artifact directory and agree with the independently validated sidecars."
+        ),
+        "nextStep": (
+            "Run `./tools/coach-arena/run.sh evidence-refresh --no-fail` for "
+            "the same dump directory."
+        ),
+    }]
 
 
 def file_text(root, relative_path):
@@ -2209,18 +2796,22 @@ def build_readiness_status(
     probe_live=False,
     fetch_url=default_fetch_url,
 ):
-    readiness = readiness_from_report(report)
+    local_readiness = readiness_from_report(report)
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     local_gates = local_gates_from_report(report)
     report_audit = report_source_audit(report, report_path)
     report_source_failures = report_source_gate_failures(report_audit)
+    artifact_audit = evidence_artifact_audit(dump_dir, local_readiness)
+    readiness = readiness_with_verified_artifacts(local_readiness, artifact_audit)
+    artifact_audit = evidence_artifact_audit(dump_dir, readiness)
+    manifest_audit = readiness_manifest_audit(dump_dir, readiness)
     computed_ready = computed_production_ready(readiness)
     local_failures = report_source_failures + local_readiness_failures(local_gates, readiness)
-    artifact_audit = evidence_artifact_audit(dump_dir, readiness)
     source_audit = source_freshness_audit(report, artifact_audit, repo_root)
     source_failures = source_freshness_gate_failures(source_audit)
     local_failures = local_failures + source_failures
     artifact_failures = artifact_gate_failures(artifact_audit)
+    manifest_failures = readiness_manifest_gate_failures(manifest_audit)
     ops_preflight = operational_static_preflight(repo_root)
     ops_failures = operational_static_gate_failures(ops_preflight)
     ops_live_probe = operational_live_probe(repo_root, fetch_url) if probe_live else None
@@ -2229,6 +2820,7 @@ def build_readiness_status(
         readiness,
         local_gates,
         artifact_audit,
+        manifest_audit,
         ops_preflight,
         ops_live_probe,
         source_audit,
@@ -2239,7 +2831,7 @@ def build_readiness_status(
     if blockers is None:
         blockers = list(EVIDENCE_REQUIREMENTS.keys())
     warnings = []
-    if reported_ready is not None and bool(reported_ready) != computed_ready:
+    if reported_ready is not None and bool(reported_ready) != computed_production_ready(local_readiness):
         warnings.append("reportedVisionProductionReadyMismatch")
     if readiness is None:
         warnings.append("missingVisionProductionReadiness")
@@ -2252,6 +2844,7 @@ def build_readiness_status(
         "localGates": local_gates,
         "localBlockingRequirements": local_failures,
         "artifactBlockingRequirements": artifact_failures,
+        "readinessManifestBlockingRequirements": manifest_failures,
         "operationalStaticBlockingRequirements": ops_failures,
         "operationalLiveBlockingRequirements": ops_live_failures,
         "vision": {
@@ -2268,6 +2861,7 @@ def build_readiness_status(
         },
         "blockingRequirements": blocking_requirements(readiness),
         "artifactAudit": artifact_audit,
+        "readinessManifestAudit": manifest_audit,
         "sourceFreshnessAudit": source_audit,
         "operationalStaticPreflight": ops_preflight,
         "operationalLiveProbe": ops_live_probe,
@@ -2280,6 +2874,7 @@ def render_markdown(status):
     vision = status["vision"]
     local = status["localGates"]
     report_source = status.get("reportSourceAudit") or {}
+    manifest_audit = status.get("readinessManifestAudit") or {}
     lines = [
         "# Coach Production Readiness Gate",
         "",
@@ -2287,6 +2882,7 @@ def render_markdown(status):
         f"- Generated: `{status.get('generatedAt')}`",
         f"- Report family: `{status.get('reportFamily')}`",
         f"- Canonical app-path report: `{report_source.get('passes')}`",
+        f"- Current Swift readiness manifest: `{manifest_audit.get('passes')}`",
         f"- Launch gate ready: `{status.get('launchReady')}`",
         f"- Local score/coverage gates pass: `{local.get('scoreThresholdsPass')}`",
         f"- Real-pipeline evidence passes: `{local.get('realPipelineEvidencePasses')}`",
@@ -2348,6 +2944,17 @@ def render_markdown(status):
     if artifact_requirements:
         lines.extend(["## Artifact Gate Failures", ""])
         for requirement in artifact_requirements:
+            lines.append(
+                f"- `{requirement['label']}` observed `{requirement.get('observed')}`"
+            )
+            lines.append(f"  Gate: {requirement['gate']}")
+            lines.append(f"  Next: {requirement['nextStep']}")
+        lines.append("")
+
+    manifest_requirements = status.get("readinessManifestBlockingRequirements") or []
+    if manifest_requirements:
+        lines.extend(["## Readiness Manifest Failures", ""])
+        for requirement in manifest_requirements:
             lines.append(
                 f"- `{requirement['label']}` observed `{requirement.get('observed')}`"
             )

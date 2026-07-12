@@ -1055,8 +1055,10 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
     var rejectionReasons: [String] {
         var reasons: [String] = []
         let trimmedRunID = testRunID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedAppVersion = appVersion.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBuild = buildNumber.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedDevice = deviceModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedOSVersion = osVersion.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedTesterRole = testerRole.trimmingCharacters(in: .whitespacesAndNewlines)
         let uniqueSurfaceKeys = Set(rows.map(\.surfaceKey))
         let requiredSurfaceKeys = Set(Self.requiredSurfaceKeys)
@@ -1091,7 +1093,8 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
         if schemaVersion != Self.expectedSchemaVersion {
             reasons.append("schemaVersion=\(schemaVersion)")
         }
-        if trimmedRunID.isEmpty || trimmedBuild.isEmpty || trimmedDevice.isEmpty || trimmedTesterRole.isEmpty {
+        if trimmedRunID.isEmpty || trimmedAppVersion.isEmpty || trimmedBuild.isEmpty ||
+            trimmedDevice.isEmpty || trimmedOSVersion.isEmpty || trimmedTesterRole.isEmpty {
             reasons.append("missingRunMetadata")
         }
         if summary.rowCount != rows.count {
@@ -1226,7 +1229,8 @@ struct CoachRealDeviceTestFlightEvidence: Codable, Equatable {
         var latencyWithinBudget: Bool {
             guard surfaceKey == "aiPromptLatency" else { return true }
             guard let latencyMs else { return false }
-            return latencyMs <= CoachRealDeviceTestFlightEvidence.maximumAIPromptLatencyMs
+            return latencyMs >= 0 &&
+                latencyMs <= CoachRealDeviceTestFlightEvidence.maximumAIPromptLatencyMs
         }
 
         var passesSurfaceFloor: Bool {

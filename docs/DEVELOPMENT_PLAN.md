@@ -1,8 +1,35 @@
 # Noum Development Plan: Goal-Directed Speaking Transformation
 
 **Source:** `deep-research-report (6).md`  
-**Status:** Proposed implementation roadmap  
-**Planning assumption:** 8–10 weeks for the first validated release, with one iOS feature team and shared design/analytics support.
+**Status:** Core loop implemented locally; production-evidence closure in progress
+**Planning assumption:** The original 8–10 week estimate is historical. Runtime
+code, `docs/CURRENT_STATE.md`, and `docs/RESEARCH_IMPLEMENTATION_AUDIT.md` now
+define the implemented state.
+
+## Current execution status — 2026-07-12
+
+The research plan is no longer a greenfield specification. Noum already reuses
+the established goal, session, coach, recommendation, privacy, transcription,
+export/deletion, and navigation owners. Do not create the proposed parallel
+`GoalStyle`, `GoalPrescription`, privacy, onboarding, or analytics systems.
+
+| Research phase | Current status | Remaining closure |
+|---|---|---|
+| Baseline and contracts | Implemented locally | Keep event names and cohort claims honest; population analytics still requires a privacy decision |
+| Fast-lane activation | Implemented behind a default-off flag | Signed-device permission, consent, interruption, relaunch, and elapsed-time matrix before enablement |
+| Goal-style scoring | Implemented as qualitative `GoalRubricStore` / `GoalOutcomeRead` projections | Human calibration; suppress unsupported locale and identity precision |
+| Actionable coaching | Rewrite, phrase bank, and adaptive recommendation loop implemented | Provider semantic-preservation corpus; unify remaining prescription projections |
+| Trust and reliability | Local speech, consent routing, privacy, export, and deletion implemented | Physical-device and release-policy verification |
+| Retention and expansion | Local KPI, weekly check-in, reminder, and goal-movement substrate implemented | Real cohort validation, experiment assignment decision, and calibrated language expansion |
+
+The supported local evidence refresh is:
+
+```bash
+./tools/coach-arena/run.sh evidence-refresh --no-fail
+```
+
+Production readiness still requires independently sourced professional-coach,
+longitudinal real-user, physical TestFlight, and operational release evidence.
 
 ## 1. Product outcome
 

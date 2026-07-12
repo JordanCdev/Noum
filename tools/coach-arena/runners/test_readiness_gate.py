@@ -349,6 +349,146 @@ def complete_professional_calibration_evidence(
     }
 
 
+def complete_real_user_transfer_evidence():
+    rows = []
+    categories = ["presentation", "interview", "leadership", "conflict", "client-call", "networking"]
+    for index in range(12):
+        category = categories[index % len(categories)]
+        outcome_id = f"transfer-outcome-{index}"
+        rows.append({
+            "outcomeID": outcome_id,
+            "userIDHash": f"user-{index % 10}",
+            "momentCategory": category,
+            "interventionID": f"intervention-{index}",
+            "realWorldMomentOccurred": True,
+            "followUpCompleted": True,
+            "linkedCoachInterventionCount": 2,
+            "daysSinceFirstNoumSession": 14 + index,
+            "followUpDelayHours": 36 + index,
+            "preMomentConfidence": 2 + (index % 2),
+            "postMomentConfidence": 3 + (index % 2),
+            "positiveTransferReported": True,
+            "audienceResponseEvidenceCollected": True,
+            "adverseOutcomeReported": False,
+            "interventionEvidenceReference": f"noum://intervention/intervention-{index}",
+            "momentEvidenceReference": f"beta://moment/{category}/{index}",
+            "followUpEvidenceReference": f"beta://follow-up/{outcome_id}",
+            "audienceResponseEvidenceReference": f"beta://audience-response/{outcome_id}",
+            "selfReportEvidenceReference": f"beta://self-report/{outcome_id}",
+            "causalityClaims": [],
+            "notes": ["Verified transfer follow-up."],
+        })
+    return {
+        "schemaVersion": gate.REAL_USER_TRANSFER_SCHEMA,
+        "studyProtocolVersion": gate.REAL_USER_TRANSFER_PROTOCOL,
+        "cohortDescription": "closed-beta-transfer-cohort",
+        "outcomeCount": len(rows),
+        "summary": {
+            "rowCount": len(rows),
+            "uniqueUserCount": 10,
+            "completedFollowUpCount": len(rows),
+            "realWorldMomentCount": len(rows),
+            "linkedInterventionOutcomeCount": len(rows),
+            "positiveTransferCount": len(rows),
+            "audienceResponseEvidenceCount": len(rows),
+            "noRegressionOutcomeCount": len(rows),
+            "adverseOutcomeCount": 0,
+            "passingOutcomeCount": len(rows),
+            "minimumDaysSinceFirstSession": 14,
+            "studyDurationDays": 42,
+            "uniqueMomentCategoryCount": len(categories),
+            "verifiedEvidenceReferenceCount": len(rows),
+            "minimumFollowUpDelayHours": 36,
+            "maximumOutcomesPerUser": 2,
+            "readinessWarnings": [],
+        },
+        "rows": rows,
+    }
+
+
+def complete_real_device_testflight_evidence():
+    build = "2026.06.30.1"
+    rows = []
+    for surface in gate.REAL_DEVICE_REQUIRED_SURFACES:
+        rows.append({
+            "surfaceKey": surface,
+            "passed": True,
+            "realDevice": True,
+            "testFlightBuildInstalled": True,
+            "evidenceReference": f"testflight://noum/qa/{build}/{surface}",
+            "evidenceKind": gate.REAL_DEVICE_EVIDENCE_KIND_BY_SURFACE[surface],
+            "evidenceCapturedAtISO8601": "2026-06-30T09:12:00Z",
+            "testFlightBuildNumber": build,
+            "deviceIdentifierHash": "sha256:iphone15pro-real-device-qa",
+            "latencyMs": 1850 if surface == "aiPromptLatency" else None,
+            "blockingIssueCount": 0,
+            "notes": ["Verified on physical device through TestFlight."],
+        })
+    return {
+        "schemaVersion": gate.REAL_DEVICE_TESTFLIGHT_SCHEMA,
+        "testRunID": "real-device-qa-2026-06-30",
+        "appVersion": "1.0",
+        "buildNumber": build,
+        "deviceModel": "iPhone 15 Pro",
+        "osVersion": "iOS 26.2",
+        "testerRole": "internalTestFlightQA",
+        "summary": {
+            "rowCount": len(rows),
+            "requiredSurfaceCount": len(rows),
+            "passedRequiredSurfaceCount": len(rows),
+            "realDeviceSurfaceCount": len(rows),
+            "testFlightBuildSurfaceCount": len(rows),
+            "artifactBackedSurfaceCount": len(rows),
+            "expectedEvidenceKindSurfaceCount": len(rows),
+            "sameBuildSurfaceCount": len(rows),
+            "deviceIdentitySurfaceCount": len(rows),
+            "latencyWithinBudgetSurfaceCount": 1,
+            "blockingIssueCount": 0,
+            "crashFree": True,
+            "readinessWarnings": [],
+        },
+        "rows": rows,
+    }
+
+
+def complete_operational_launch_evidence():
+    build = "2026.06.30.1"
+    items = []
+    for key in gate.OPERATIONAL_LAUNCH_REQUIRED_ITEMS:
+        items.append({
+            "key": key,
+            "completed": True,
+            "evidenceReference": f"m14://launch-checklist/{build}/{key}",
+            "evidenceKind": gate.OPERATIONAL_LAUNCH_EVIDENCE_KIND_BY_ITEM[key],
+            "verificationReference": f"m14://launch-verification/{build}/{key}",
+            "commandOrReviewOutputReference": f"m14://launch-output/{build}/{key}",
+            "releaseCandidateBuild": build,
+            "environment": gate.OPERATIONAL_LAUNCH_ENVIRONMENT_BY_ITEM[key],
+            "completedAtISO8601": "2026-06-30T00:00:00Z",
+            "verifiedAtISO8601": "2026-06-30T00:15:00Z",
+            "verifiedByRole": "releaseManager",
+            "notes": ["Launch item completed and evidence captured."],
+        })
+    return {
+        "schemaVersion": gate.OPERATIONAL_LAUNCH_SCHEMA,
+        "checklistVersion": gate.OPERATIONAL_LAUNCH_CHECKLIST_VERSION,
+        "releaseCandidateBuild": build,
+        "completedByRole": "releaseManager",
+        "summary": {
+            "itemCount": len(items),
+            "completedRequiredItemCount": len(items),
+            "failedRequiredItemCount": 0,
+            "artifactBackedItemCount": len(items),
+            "expectedEvidenceKindItemCount": len(items),
+            "expectedEnvironmentItemCount": len(items),
+            "sameBuildItemCount": len(items),
+            "verifiedRequiredItemCount": len(items),
+            "readinessWarnings": [],
+        },
+        "items": items,
+    }
+
+
 def write_complete_evidence(root, source_fingerprint="sha256:test-source", git_commit="abc123"):
     root = Path(root)
     (root / gate.PROFESSIONAL_CALIBRATION_PACKET_FILE).write_text(
@@ -363,36 +503,26 @@ def write_complete_evidence(root, source_fingerprint="sha256:test-source", git_c
         "coach-chat-conversation-expert-calibration-results-v2.json": (
             complete_professional_calibration_evidence()
         ),
-        "coach-real-user-transfer-outcomes-v2.json": {
-            "schemaVersion": "coach-real-user-transfer-outcomes-v2",
-            "studyProtocolVersion": "coach-transfer-outcome-ledger-v2",
-            "cohortDescription": "closed-beta-transfer-cohort",
-            "outcomeCount": 10,
-            "summary": {},
-            "rows": [],
-        },
-        "coach-real-device-testflight-qa-v2.json": {
-            "schemaVersion": "coach-real-device-testflight-qa-v2",
-            "testRunID": "qa-run",
-            "appVersion": "1.0",
-            "buildNumber": "2026.06.30.1",
-            "deviceModel": "iPhone 15 Pro",
-            "osVersion": "iOS 26",
-            "testerRole": "releaseQA",
-            "summary": {},
-            "rows": [],
-        },
-        "coach-operational-launch-checklist-v2.json": {
-            "schemaVersion": "coach-operational-launch-checklist-v2",
-            "checklistVersion": "m14-launch-gate-v2",
-            "releaseCandidateBuild": "2026.06.30.1",
-            "completedByRole": "releaseManager",
-            "summary": {},
-            "items": [],
-        },
+        "coach-real-user-transfer-outcomes-v2.json": complete_real_user_transfer_evidence(),
+        "coach-real-device-testflight-qa-v2.json": complete_real_device_testflight_evidence(),
+        "coach-operational-launch-checklist-v2.json": complete_operational_launch_evidence(),
     }
     for file_name, payload in payloads.items():
         (root / file_name).write_text(json.dumps(payload), encoding="utf-8")
+    (root / gate.READINESS_MANIFEST_FILE).write_text(json.dumps({
+        "schemaVersion": gate.READINESS_MANIFEST_SCHEMA,
+        "localTargetShapeScore": 85,
+        "audit": {
+            "score": 100,
+            "maximumAllowedScore": 100,
+            "localTargetShapeScore": 85,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+            "summary": "All independently sourced evidence contracts passed.",
+        },
+        "evidence": {"externalEvidenceComplete": True},
+        "rows": [{"key": "externalEvidence", "status": "earned"}],
+    }), encoding="utf-8")
     (root / "source-coach-fingerprint.txt").write_text(source_fingerprint, encoding="utf-8")
     (root / "source-git-commit.txt").write_text(git_commit, encoding="utf-8")
 
@@ -418,10 +548,12 @@ class ReadinessGateTests(unittest.TestCase):
             ],
         }
 
-        status = gate.build_readiness_status(
-            report_with_readiness(readiness),
-            Path("tools/coach-arena/reports/app-path/latest.json"),
-        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            status = gate.build_readiness_status(
+                report_with_readiness(readiness),
+                Path("tools/coach-arena/reports/app-path/latest.json"),
+                Path(temp_dir),
+            )
 
         self.assertFalse(status["vision"]["productionReady"])
         artifacts = {
@@ -543,7 +675,7 @@ class ReadinessGateTests(unittest.TestCase):
                 Path(temp_dir),
             )
 
-        self.assertTrue(status["vision"]["productionReady"])
+        self.assertFalse(status["vision"]["productionReady"])
         self.assertFalse(status["launchReady"])
         self.assertIn(
             "coach-live-eval-v1.json",
@@ -578,6 +710,64 @@ class ReadinessGateTests(unittest.TestCase):
         self.assertEqual(status["artifactAudit"]["presentArtifactCount"], 5)
         self.assertEqual(status["artifactAudit"]["presentSourceSidecarCount"], 2)
         self.assertEqual(status["operationalStaticBlockingRequirements"], [])
+
+    def test_launch_ready_rejects_structurally_empty_external_evidence(self):
+        readiness = {
+            "score": 85,
+            "maximumAllowedScore": 100,
+            "claim": "productionReadyEvidenceAvailable",
+            "blockers": [],
+        }
+        cases = [
+            ("coach-real-user-transfer-outcomes-v2.json", "rows"),
+            ("coach-real-device-testflight-qa-v2.json", "rows"),
+            ("coach-operational-launch-checklist-v2.json", "items"),
+        ]
+        for file_name, collection_key in cases:
+            with self.subTest(file_name=file_name), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                write_static_ops_repo(root)
+                write_complete_evidence(root)
+                path = root / file_name
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                payload["summary"] = {}
+                payload[collection_key] = []
+                path.write_text(json.dumps(payload), encoding="utf-8")
+
+                status = gate.build_readiness_status(
+                    report_with_readiness(readiness),
+                    canonical_report_path(),
+                    root,
+                    root,
+                )
+
+                self.assertFalse(status["launchReady"])
+                invalid = next(
+                    item for item in status["artifactAudit"]["invalidArtifacts"]
+                    if item["artifact"] == file_name
+                )
+                self.assertTrue(invalid["contractFailures"])
+
+    def test_external_contracts_reject_smoothed_or_unverifiable_rows(self):
+        transfer = complete_real_user_transfer_evidence()
+        transfer["rows"][0]["causalityClaims"] = ["Noum caused the outcome."]
+        device = complete_real_device_testflight_evidence()
+        device["rows"][1]["latencyMs"] = -1
+        operational = complete_operational_launch_evidence()
+        operational["items"][0]["evidenceKind"] = "screenshot"
+
+        self.assertIn(
+            "causalityClaimsPresent",
+            gate.real_user_transfer_contract_failures(transfer),
+        )
+        self.assertIn(
+            "aiPromptLatencyOverBudget",
+            gate.real_device_testflight_contract_failures(device),
+        )
+        self.assertTrue(any(
+            failure.startswith("evidenceKindMismatch=")
+            for failure in gate.operational_launch_contract_failures(operational)
+        ))
 
     def test_launch_ready_rejects_prompt_layer_report_family(self):
         readiness = {
@@ -758,6 +948,9 @@ class ReadinessGateTests(unittest.TestCase):
             payload["summary"]["repeatedProofTestHashCount"] = 7
             for row in payload["rows"]:
                 row["trajectoryCacheHit"] = False
+            for conversation in payload["longFormConversations"]:
+                for row in conversation["rows"]:
+                    row["trajectoryCacheHit"] = False
             live_path.write_text(json.dumps(payload), encoding="utf-8")
 
             status = gate.build_readiness_status(
@@ -814,6 +1007,30 @@ class ReadinessGateTests(unittest.TestCase):
                 reason.startswith("genericLatestTurnReplies=")
                 for reason in live_artifact["contractFailures"]
             )
+        )
+
+    def test_live_sweep_accepts_warm_cache_coverage_from_long_form_turns(self):
+        payload = complete_live_provider_evidence()
+        for row in payload["rows"]:
+            row["trajectoryCacheHit"] = False
+
+        failures = gate.live_provider_sweep_contract_failures(payload)
+
+        self.assertFalse(
+            any(reason.startswith("weakTrajectoryCacheCoverage=") for reason in failures)
+        )
+
+    def test_live_sweep_allows_contextual_placeholder_question(self):
+        payload = complete_live_provider_evidence()
+        payload["longFormConversations"][0]["rows"][0]["reply"] = (
+            "Your placeholder ask is specific: name the decision first, then give "
+            "one reason and stop so the listener can test the recommendation."
+        )
+
+        failures = gate.live_provider_sweep_contract_failures(payload)
+
+        self.assertFalse(
+            any(reason.startswith("genericDetailedLongFormReplies=") for reason in failures)
         )
 
     def test_live_sweep_contract_accepts_real_swift_producer_shape(self):

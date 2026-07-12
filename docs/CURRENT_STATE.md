@@ -129,13 +129,12 @@ raised from 26 to 44 points after the UI test exposed its undersized hit area.
 
 ## 2026-07-11 — Research-to-coaching loop and first-run trust
 
-Branch `ux-overhaul` translates the valid, product-agnostic findings from the
-referenced research report into Noum's M14 launch gate. The report could not
-inspect the private repository and incorrectly benchmarked Noum as a fintech
-app, so transaction feeds, budgets, bills, and other finance systems were
-explicitly rejected. The retained goals reinforce the actual product pillars:
-a no-dead-end first run, an evidence-to-practice loop, and trustworthy privacy
-and account behavior.
+Branch `ux-overhaul` translates the communication-training findings from the
+referenced research report into Noum's M14 launch gate. Several repository
+observations in the report predate the current branch, so runtime code and
+tests remain authoritative. The retained goals reinforce the product pillars:
+a no-dead-end first run, a goal-directed evidence-to-practice loop, and
+trustworthy privacy and account behavior.
 
 First run is now transactional. `AuthManager` establishes and verifies a
 durable account before onboarding can save, with a bounded Firebase-anonymous
@@ -254,11 +253,12 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   it fresh after every session finalize and on every scenePhase active.
   Widget extension + Live Activity read this snapshot — never the main
   app's UserDefaults.
-- **Audio / speech:** `AVAudioEngine` capture →
-  pluggable `TranscriptionProvider` (AWS Transcribe streaming, Deepgram
-  WebSocket, Google Speech-to-Text V2). Provider chosen via the
-  `transcriptionProvider` AppStorage key. On-device `SFSpeechRecognizer`
-  is **not** used.
+- **Audio / speech:** `AVAudioEngine` capture → pluggable
+  `TranscriptionProvider`. Release selection uses the strictly on-device
+  `LocalSpeechProvider` when cloud consent is off and a bounded
+  Deepgram-to-local setup fallback when cloud processing is allowed. AWS and
+  Google providers remain development/compatibility paths, not a reason to
+  bypass the consent owner.
 - **Backend:** Firebase Auth (Apple, Google, anonymous), Firestore
   via `BackendSyncManager`, optional REST backend for vended AWS
   credentials. Privacy posture documented in `Noum/Noum/PRIVACY_*.md`.
@@ -1378,10 +1378,12 @@ _Last updated: 2026-06-04 (M24 deferred slate round 41 — TONE-DRILL SOLVED fre
   placeholder copy is rendered. See `Noum/RatingHistoryChart.swift`
   lines 38–49.
 
-### Not started
+### Deferred or partial
 
-- **Multilingual support** — every transcription provider is hardcoded
-  to `en-US`; all copy and prompts are English.
+- **Multilingual coaching expansion** — English, Spanish, and French locale
+  plumbing exists for transcription and filler handling. AI coaching, goal
+  scoring, and rewrite semantics remain intentionally English-only until
+  native-speaker calibration corpora exist.
 - **Sponsor / advertisement surfaces** — none, and they conflict with
   the paid model. Mentioned on the original Trello but flagged here
   as "do not build".

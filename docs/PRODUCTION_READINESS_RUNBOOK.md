@@ -161,18 +161,16 @@ client. A disabled social surface is safer than accepting untrusted progress.
 ## Local Evidence Path
 
 ```bash
-./tools/coach-arena/run.sh app-path-source
-xcodebuild test \
-  -scheme Noum \
-  -destination 'platform=iOS Simulator,name=iPhone 17' \
-  -only-testing:NoumTests/CoachChatConversationArtifactDumpXCTest
-./tools/coach-arena/run.sh app-path
-./tools/coach-arena/run.sh readiness --no-fail
+NOUM_COACH_XCODE_DESTINATION='platform=iOS Simulator,name=iPhone 17' \
+  ./tools/coach-arena/run.sh evidence-refresh --no-fail
 ```
 
-This proves the real Swift app path and trace quality. It does not remove any
-VISION blockers unless the external sidecar artifacts below are present in
-`NOUM_COACH_EVAL_DUMP_DIR` and pass the Swift manifest loader.
+This single command refreshes the source sidecars, text/live Swift app-path
+reports, professional-calibration packet, readiness manifest, arena scoring,
+and final artifact audit. It does not create external evidence or remove any
+VISION blocker unless the sidecars below are present in
+`NOUM_COACH_EVAL_DUMP_DIR` and pass both the Swift and Python contracts. For a
+release decision, rerun without `--no-fail` and include `--probe-live`.
 
 ## Required Launch Evidence
 
@@ -184,8 +182,9 @@ VISION blockers unless the external sidecar artifacts below are present in
 | `noRealDeviceTestFlightVerification` | `coach-real-device-testflight-qa-v2.json` | Physical-device TestFlight verification for App Check, real-microphone transcription, consent/offline/reconnect behavior, authentication, deletion, notifications, widgets, Live Activities, accessibility, and StoreKit purchase/restore. |
 | `operationalLaunchChecklistIncomplete` | `coach-operational-launch-checklist-v2.json` | M14 launch checklist: historical credential-incident closure, guarded social cutover, hosted privacy and custom-domain verification, Apple provider/signing, App Store privacy disclosures and StoreKit configuration, TestFlight upload, and release-blocking bug triage. |
 
-Do not create placeholder sidecars. `{}` files now fail the Python readiness
-preflight, and missing proof should stay missing.
+Do not create placeholder sidecars. Empty or summary-only transfer, device, and
+launch artifacts fail the same row-level floors as the Swift manifest; missing
+proof should stay missing.
 
 ## UI Flow Boundary
 
