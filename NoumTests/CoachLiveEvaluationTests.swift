@@ -29,6 +29,7 @@
 //    -D NOUM_LIVE_AI_EVAL_OVERCLAIM
 //    -D NOUM_LIVE_AI_EVAL_LATEST_TRANSCRIPT
 //    -D NOUM_LIVE_AI_EVAL_FULL_CORPUS
+//    -D NOUM_LIVE_AI_EVAL_READINESS
 //
 //  This is not CI evidence and not a claim of human-coach parity. It is a
 //  repeatable transcript capture for the exact live model path, context builder,
@@ -2349,7 +2350,10 @@ struct CoachLiveEvaluationTests {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard let raw, !raw.isEmpty else {
-            #if NOUM_LIVE_AI_EVAL_FULL_CORPUS
+            #if NOUM_LIVE_AI_EVAL_READINESS
+            return CoachChatEvaluationCorpus.latestManualEvalFixtureIDs
+                .compactMap { id in all.first { $0.id == id } }
+            #elseif NOUM_LIVE_AI_EVAL_FULL_CORPUS
             return all
             #else
             // Keep the default run cheap but representative: cold start,
@@ -2410,7 +2414,11 @@ struct CoachLiveEvaluationTests {
             return all
         }
         guard let raw, !raw.isEmpty else {
+            #if NOUM_LIVE_AI_EVAL_READINESS
+            return all
+            #else
             return []
+            #endif
         }
         let preset = raw.lowercased()
         if ["1", "true", "yes", "all", "required", "long-form", "longform", "readiness"].contains(preset) {
@@ -2655,6 +2663,16 @@ struct CoachLiveEvaluationTests {
 
     private static func defaultReportPath() -> String {
         #if NOUM_LIVE_AI_EVAL
+        if let dumpDirectory = liveEvaluationDumpDirectory() {
+            let directory = URL(fileURLWithPath: dumpDirectory, isDirectory: true)
+            try? FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            return directory
+                .appendingPathComponent("coach-live-eval-v1.md")
+                .path
+        }
         let source = URL(fileURLWithPath: #filePath)
         let repoRoot = source
             .deletingLastPathComponent()
@@ -2669,7 +2687,7 @@ struct CoachLiveEvaluationTests {
         return derivedData
             .appendingPathComponent("noum-live-coach-eval.md")
             .path
-        #endif
+        #else
         if let shared = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.com.jordancoaten.noum"
         ) {
@@ -2679,6 +2697,7 @@ struct CoachLiveEvaluationTests {
             return documents.appendingPathComponent("noum-live-coach-eval.md").path
         }
         return (NSTemporaryDirectory() as NSString).appendingPathComponent("noum-live-coach-eval.md")
+        #endif
     }
 }
 
